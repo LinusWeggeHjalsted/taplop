@@ -47,9 +47,9 @@ next session meets it as a surprise instead of a known.
 - **Render target resolution** — the offscreen `RenderTexture` size is
   DECOUPLED from the 4K design space (`types.reference_width/height`). All
   layout/view math lives in 4K reference space; the backend draws into a
-  separate, possibly smaller target (`types.render_width/height`, build
-  options `-Drender-width`/`-Drender-height`, default 1920×1080) via a
-  `beginMode2D(Camera2D)` camera zoom (`render_scale = render_width /
+  separate, possibly smaller target (the `render_resolution` setting —
+  `types.RenderResolution`, a 720p/1080p/1440p/2160p preset enum, default
+  1080p) via a `beginMode2D(Camera2D)` camera zoom (`render_width /
   reference_width`) that auto-scales every draw call down — no per-call-site
   changes. The target is then blitted to the window letterboxed via a
   `blitTransform` (render-dims → window), separate from the pointer's
@@ -57,10 +57,24 @@ next session meets it as a surprise instead of a known.
   design space the game thinks in). Lowering the render target cuts fill rate
   (the dominant cost on fill-rate-limited GPUs — a level-visible 4K target
   can cap uncapped FPS at ~60 on an old integrated GPU; 1080p is 4× less
-  fill). The render target MUST share the reference's 16:9 aspect ratio
-  (comptime-checked in types.zig) — the camera zoom is uniform, so a
-  mismatched aspect would squish content. Opt back to 3840×2160 for crispness
-  on high-DPI displays. `beginMode2D` does NOT affect `clearBackground`
+  fill). All presets share the reference's 16:9 aspect ratio
+  (comptime-checked over the enum in types.zig) — the camera zoom is uniform,
+  so a mismatched aspect would squish content. Higher presets sharpen SDF
+  text for free (glyphs rasterize into the target at target resolution).
+  **Runtime apply:** the setting is LIVE — `frame()`'s diff-and-apply (the
+  audio-volumes pattern; `SessionState.last_applied_render_resolution`
+  snapshot) calls `backend.applyRenderResolution`, which creates the NEW
+  target first and unloads the old one only on success. On apply failure
+  (`loadRenderTexture` errors — GPU texture-size limits on weak hardware)
+  the backend keeps its old target, the setting REVERTS to the
+  currently-running preset (dirty-marked so the revert persists) and the
+  pending-error popup names both presets — recoverable-class handling, no
+  retry loop (setting now matches the snapshot; the user's next click on
+  the failed preset is the only re-attempt). The backend creates its target
+  at the default before settings load (it's passed into
+  `createSessionSetup`), so the snapshot starts in sync and a default
+  setting costs no first-frame swap; a non-default setting swaps on frame
+  one. `beginMode2D` does NOT affect `clearBackground`
   (clears the full target regardless of matrix), so it runs before the camera
   block.
 - The drain is BUDGET-DRIVEN: `frame()` calls `update()` repeatedly while the
@@ -3899,7 +3913,11 @@ handlers pure — no backend pointer): `SessionState` holds a
 `last_applied_settings` snapshot; `frame()` compares it to `history.settings`
 (cheap scalar equality over ~10 fields) and, on diff, calls
 `backend.applyVolumes` for audio changes, then updates the snapshot. Input
-handlers just mutate `history.settings` + `markWriteDirty`. **vsync does NOT
+handlers just mutate `history.settings` + `markWriteDirty`. **Render
+resolution live-applies the same way** (`last_applied_render_resolution`
+snapshot → `backend.applyRenderResolution`, which recreates the render
+target; a failed apply reverts the setting + popup — see Platform Seam →
+Render target resolution). **vsync does NOT
 live-apply** — `rl.setConfigFlags` may not take effect without a window
 recreate, so the vsync control shows a "(change requires restart)" label
 and the setting persists for next launch; `applyVsync` is called only at

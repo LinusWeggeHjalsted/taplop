@@ -12184,3 +12184,69 @@ read it).
       History: DONE.md "mac 9-slice panels" entries (incl. two falsified
       theories — framework link, upload stall — kept for the trail).
 
+
+## Render resolution setting (runtime live-apply)
+
+The offscreen render target resolution moved from a compile-time build
+option (`-Drender-width`/`-Drender-height`, default 1920×1080) to a runtime
+user setting: `render_resolution`, a 720p/1080p/1440p/2160p preset enum
+(`types.RenderResolution`, default 1080p everywhere), live-applied so the
+fill-rate benefit of a smaller target is immediate. Design: DESIGN →
+Platform Seam → Render target resolution (+ Settings screen → Live-apply).
+
+What landed, per layer:
+
+- **types.zig**: `RenderResolution` enum (p720/p1080/p1440/p2160) with
+  `label()` — the single "720p"…"2160p" spelling shared by parse (loader),
+  write (writer), and the settings-screen row, so the file value matches
+  the UI — and `pixelDimensions()`. The comptime 16:9 aspect guard now
+  checks every preset (it used to check the build-option pair).
+  `Settings.render_resolution` + `SettingId.render_resolution` +
+  `default_render_resolution`.
+- **build.zig**: the two build options REMOVED — the setting is the sole
+  source (two sources invite "which wins?" drift; the build option's use
+  case, perf tuning, is exactly what the setting now serves).
+- **raylib_backend.zig**: render target dims + scale became struct fields
+  (`render_width`/`render_height`, initialized to the default before
+  settings load — the backend is built before `createSessionSetup`).
+  `applyRenderResolution(resolution) bool` creates the NEW
+  `RenderTexture` first and unloads the old one only on success, so a
+  failed apply leaves the session rendering unchanged. `blitTransform`
+  takes dims as parameters (it was a zero-arg fn over comptime consts).
+  All camera-zoom/blit/diag-readback sites read the fields.
+- **state.zig**: `SessionState.last_applied_render_resolution` snapshot,
+  initialized to the default (in sync with the backend's init-time target,
+  so a default setting costs no first-frame swap; a non-default setting
+  swaps on frame one).
+- **main.zig**: `applyRenderResolutionSetting(backend, history)` called from
+  `frame()` next to the audio-volume diff-and-apply — same pattern, keeps
+  input handlers free of a backend pointer. On apply failure (raylib's
+  `loadRenderTexture` returns a clean error on GPU texture-size limits /
+  incomplete FBOs): the setting REVERTS to the currently-running preset
+  (the snapshot names it), `markSettingsDirty` so the revert persists, and
+  the pending-error popup names both presets ("2160p rendering is not
+  supported on this system — kept 1080p."). Recoverable-class handling —
+  the failure is detected cleanly at apply time and rendering state is
+  untouched. The revert also stops a retry loop: setting == snapshot, so
+  the user's next click on the failed preset is the only re-attempt.
+  (Boot-time target creation still panics — no prior target to keep.)
+- **Loader/writer/parser**: `render_resolution` parsed by label
+  (unrecognized values keep the default — preferences, not gameplay),
+  written by label, whitelisted in `settings_display_keys`, added to
+  `data/default_settings.txt`. No settings-format version bump — a missing
+  key falls back to the default.
+- **Settings screen**: a "Render Resolution" 4-button choice row after
+  Camera Zoom (the camera_zoom pattern); a failed apply snaps the
+  highlighted button back to what actually runs.
+- **Tests**: label round-trip through writeSettings → loadSettings,
+  unknown-value-keeps-default, loader Display-section parse, and the
+  diff-and-apply helper against a fake backend (applies on diff, no-op
+  without one; failed apply reverts + popup + no retry loop).
+
+Higher presets sharpen SDF text for free (glyphs rasterize into the
+target at target resolution through the camera zoom) — no asset changes.
+The window size is NOT affected (letterboxed independently; the mac
+high-DPI/window-sizing TODO is separate).
+
+Web compiles (WEB OK); browser + native runtime confirmation pending
+(the platform-seam "compiles ≠ runs" rule).

@@ -447,6 +447,7 @@ pub const SettingId = enum {
     render_fps_cap,
     camera_zoom,
     animation_fps,
+    render_resolution,
     auto_skip_attack_step_out_of_combat,
     auto_target_at_cursor,
     show_fps,
@@ -742,6 +743,11 @@ pub const Settings = struct {
     /// in), 25 = 0.25× (max zoom out), default 50. The f32 lives at the
     /// render/input seam only (`@as(f32, @floatFromInt(zoom)) / 100.0`).
     camera_zoom: u32 = 50,
+    /// Offscreen render target resolution. Live-applied by `frame()` (the
+    /// backend recreates its `RenderTexture` on change); a failed apply
+    /// reverts this to the currently-running preset. See DESIGN → Platform
+    /// Seam → Render target resolution.
+    render_resolution: RenderResolution = default_render_resolution,
 };
 
 pub const Camera = struct {
@@ -2149,25 +2155,58 @@ pub const NPC = struct {
 pub const reference_width: i32 = 3840;
 pub const reference_height: i32 = 2160;
 
-/// Offscreen render target resolution (from the `-Drender-width`/`-Drender-
-/// height` build options, default 1920×1080). The backend creates its
+/// Offscreen render target resolution (the `render_resolution` setting, a
+/// runtime 4-choice — see `RenderResolution` below). The backend creates its
 /// `RenderTexture` at this size and scales 4K design-space content into it
-/// via `beginMode2D`. Lower than reference → less fill rate. MUST share the
-/// reference aspect ratio (16:9) — the camera zoom is uniform, so a
-/// mismatched aspect would squish content (comptime-checked below).
-pub const render_width: i32 = build_info.render_width;
-pub const render_height: i32 = build_info.render_height;
+/// via `beginMode2D`. Lower than reference → less fill rate. All presets
+/// share the reference aspect ratio (16:9, comptime-checked below) — the
+/// camera zoom is uniform, so a mismatched aspect would squish content.
+pub const RenderResolution = enum {
+    p720,
+    p1080,
+    p1440,
+    p2160,
+
+    /// The value as written in settings files and shown on the settings
+    /// screen. The single mapping source for parse (loader), write
+    /// (writer), and display (settings screen) — one spelling everywhere.
+    pub fn label(resolution: RenderResolution) []const u8 {
+        return switch (resolution) {
+            .p720 => "720p",
+            .p1080 => "1080p",
+            .p1440 => "1440p",
+            .p2160 => "2160p",
+        };
+    }
+
+    /// Offscreen target pixel dimensions. 16:9 by construction (the presets
+    /// are the only values, comptime-checked below).
+    pub fn pixelDimensions(resolution: RenderResolution) struct { width: i32, height: i32 } {
+        return switch (resolution) {
+            .p720 => .{ .width = 1280, .height = 720 },
+            .p1080 => .{ .width = 1920, .height = 1080 },
+            .p1440 => .{ .width = 2560, .height = 1440 },
+            .p2160 => .{ .width = 3840, .height = 2160 },
+        };
+    }
+};
+
+/// Default `render_resolution`. Both the `Settings` default and the render
+/// target the backend creates at init (before settings load), so the
+/// last-applied snapshot starts in sync with the backend's actual target.
+pub const default_render_resolution: RenderResolution = .p1080;
 
 // Comptime aspect-ratio guard: the camera zoom (`render_width /
 // reference_width`) must be uniform, so the render target's aspect ratio
-// must match the reference's. A build with a mismatched aspect fails at
+// must match the reference's. A preset with a mismatched aspect fails at
 // compile time with a clear message rather than rendering squished content.
 comptime {
-    const ref_ar = reference_width * reference_height; // unused, keeps both live
-    _ = ref_ar;
-    if (render_width * reference_height != render_height * reference_width) {
-        @compileError("render target aspect ratio must match reference (16:9): " ++
-            "render-width/render-height must be in the same ratio as 3840/2160");
+    for (std.meta.tags(RenderResolution)) |resolution| {
+        const dims = resolution.pixelDimensions();
+        if (dims.width * reference_height != dims.height * reference_width) {
+            @compileError("render target aspect ratio must match reference (16:9): " ++
+                resolution.label() ++ " must be in the same ratio as 3840/2160");
+        }
     }
 }
 

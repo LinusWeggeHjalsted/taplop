@@ -11,7 +11,8 @@
 //! Rendering model: all UI/world content is authored in a fixed reference
 //! (design) resolution (types.reference_width x types.reference_height = 4K).
 //! We draw it into a RenderTexture at a SEPARATE, possibly smaller render
-//! target resolution (types.render_width/height, build option, default 1080p)
+//! target resolution (the `render_resolution` setting — 720p…2160p presets,
+//! default 1080p, applied live via `applyRenderResolution`)
 //! via a `beginMode2D` camera zoom that scales 4K-space content down, then
 //! blit the target to the window letterboxed (aspect-preserving, centered).
 //! Input maps the pointer back through the inverse of the reference→window
@@ -34,13 +35,6 @@ const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
-// Offscreen render target dims (build option, default 1920×1080) + the
-// uniform camera zoom that scales 4K design-space draws into the target.
-// See DESIGN → Platform Seam → Render target resolution.
-const render_width_int: i32 = types.render_width;
-const render_height_int: i32 = types.render_height;
-const render_width: f32 = @floatFromInt(render_width_int);
-const render_height: f32 = @floatFromInt(render_height_int);
 
 // -- Dev diagnostics (dev-mode builds only) --
 // A best-effort diagnostic log flushed to "logs/diag.txt" in the persistent
@@ -71,7 +65,6 @@ fn glString(name: c_int) []const u8 {
     const string = glGetString(name) orelse return "(null)";
     return std.mem.sliceTo(string, 0);
 }
-const render_scale: f32 = render_width / reference_width;
 
 /// Base rasterization size for the TTF font. raylib bakes glyphs into an
 /// atlas at this fixed size; `drawTextEx` scales from it. Sized to cover the
@@ -318,17 +311,19 @@ fn viewTransform() ViewTransform {
 /// The pointer transform (`viewTransform`) stays reference-based — the game
 /// thinks in 4K design space — so these differ when the render target is
 /// smaller than reference. They share the same aspect ratio (16:9, comptime-
-/// checked in types.zig), so the on-screen content is identical; only the
-/// intermediate pixel count changes. See DESIGN → Platform Seam → Render
-/// target resolution.
-fn blitTransform() ViewTransform {
+/// checked over the presets in types.zig), so the on-screen content is
+/// identical; only the intermediate pixel count changes. See DESIGN →
+/// Platform Seam → Render target resolution.
+fn blitTransform(target_width_int: i32, target_height_int: i32) ViewTransform {
+    const target_width: f32 = @floatFromInt(target_width_int);
+    const target_height: f32 = @floatFromInt(target_height_int);
     const window_width: f32 = @floatFromInt(rl.getScreenWidth());
     const window_height: f32 = @floatFromInt(rl.getScreenHeight());
-    const scale = @min(window_width / render_width, window_height / render_height);
+    const scale = @min(window_width / target_width, window_height / target_height);
     return .{
         .scale = scale,
-        .offset_x = (window_width - render_width * scale) / 2,
-        .offset_y = (window_height - render_height * scale) / 2,
+        .offset_x = (window_width - target_width * scale) / 2,
+        .offset_y = (window_height - target_height * scale) / 2,
     };
 }
 
@@ -614,6 +609,11 @@ pub const RaylibBackend = struct {
     sprite_bounds_cache: std.StringHashMapUnmanaged(?types.SpriteBounds) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
+    /// Current render target pixel dimensions (a `RenderResolution` preset,
+    /// applied via `applyRenderResolution`). The struct fields (not comptime
+    /// consts) so the `render_resolution` setting can change them at runtime.
+    render_width: i32,
+    render_height: i32,
     /// Text-label font. Normally the embedded TTF (loaded from
     /// `assets/fonts/freezilla.ttf` via the FileSource); falls back to
     /// raylib's default bitmap font if the TTF is missing or fails to load
@@ -695,7 +695,12 @@ pub const RaylibBackend = struct {
         rl.initWindow(width, height, title);
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
 
-        const render_target = rl.loadRenderTexture(render_width_int, render_height_int) catch
+        // Create the render target at the DEFAULT preset (settings load after
+        // init — the backend is passed into createSessionSetup). `run`'s
+        // per-frame diff-and-apply (main.zig) recreates it at the user's
+        // `render_resolution` on the first frame after settings load.
+        const default_dims = types.default_render_resolution.pixelDimensions();
+        const render_target = rl.loadRenderTexture(default_dims.width, default_dims.height) catch
             @panic("failed to create render target");
         // Smooth the universal reference(4K) -> window blit. raylib defaults
         // textures to point (nearest-neighbor) filtering, which on the
@@ -709,6 +714,8 @@ pub const RaylibBackend = struct {
         return .{
             .allocator = allocator,
             .render_target = render_target,
+            .render_width = default_dims.width,
+            .render_height = default_dims.height,
             .font = font.font,
             .font_is_default = font.is_default,
             .sdf = sdf,
@@ -761,6 +768,34 @@ pub const RaylibBackend = struct {
         } else {
             rl.clearWindowState(.{ .vsync_hint = true });
         }
+    }
+
+    /// Recreate the render target at a new resolution preset. Creates the NEW
+    /// target first and only unloads the old one on success, so a failed apply
+    /// (GPU/texture-size limits — `loadRenderTexture` returns an error) leaves
+    /// the session rendering at the current preset, untouched. Returns false
+    /// on failure; the caller (main.zig's diff-and-apply) reverts the setting
+    /// + surfaces the popup. See DESIGN → Platform Seam → Render target
+    /// resolution.
+    pub fn applyRenderResolution(self: *RaylibBackend, resolution: types.RenderResolution) bool {
+        const dims = resolution.pixelDimensions();
+        if (dims.width == self.render_width and dims.height == self.render_height) return true;
+        const new_target = rl.loadRenderTexture(dims.width, dims.height) catch return false;
+        // Bilinear smoothing on the target→window blit — same reasoning as
+        // init (point filtering turns smooth alpha edges into chunky
+        // boundaries on the downscale).
+        rl.setTextureFilter(new_target.texture, .bilinear);
+        rl.unloadRenderTexture(self.render_target);
+        self.render_target = new_target;
+        self.render_width = dims.width;
+        self.render_height = dims.height;
+        return true;
+    }
+
+    /// The uniform camera zoom scaling 4K design-space draws into the render
+    /// target (`render_width / reference_width`).
+    fn renderScale(self: *const RaylibBackend) f32 {
+        return @as(f32, @floatFromInt(self.render_width)) / reference_width;
     }
 
     /// Open the audio device and load all sfx + the music stream from the
@@ -1097,12 +1132,12 @@ pub const RaylibBackend = struct {
         if (diag_enabled and !self.diag_boot_logged) self.diagLogBoot();
 
         // Draw all reference-space content into the offscreen target. The
-        // target may be smaller than the 4K reference (build option, default
-        // 1080p); a `beginMode2D` camera zoom scales every draw call down so
-        // layout math stays in 4K design space while fill happens at the
-        // target resolution. clearBackground is NOT camera-affected, so it
-        // runs before the camera block and clears the full target. See
-        // DESIGN → Platform Seam → Render target resolution.
+        // target may be smaller than the 4K reference (the render_resolution
+        // setting, default 1080p); a `beginMode2D` camera zoom scales every
+        // draw call down so layout math stays in 4K design space while fill
+        // happens at the target resolution. clearBackground is NOT
+        // camera-affected, so it runs before the camera block and clears the
+        // full target. See DESIGN → Platform Seam → Render target resolution.
         rl.beginTextureMode(self.render_target);
         rl.clearBackground(toRaylibColor(view_state.background_color, 255));
         // Premultiplied alpha blending for the compositing pass: every
@@ -1114,7 +1149,7 @@ pub const RaylibBackend = struct {
         // premultiplied too. Outline masks are binary (already premult).
         // See DESIGN → Platform Seam → Render target resolution.
         rl.beginBlendMode(.alpha_premultiply);
-        rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = render_scale });
+        rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = self.renderScale() });
         // World layers first (tiles, then overlays + ground drawables as they
         // land), then the UI on top.
         for (view_state.tiles) |tile| self.drawWorldSprite(
@@ -1147,18 +1182,20 @@ pub const RaylibBackend = struct {
             rl.swapScreenBuffer();
         }
         rl.clearBackground(rl.Color.black);
-        const transform = blitTransform();
+        const transform = blitTransform(self.render_width, self.render_height);
+        const target_width: f32 = @floatFromInt(self.render_width);
+        const target_height: f32 = @floatFromInt(self.render_height);
         const source = rl.Rectangle{
             .x = 0,
             .y = 0,
-            .width = render_width,
-            .height = -render_height,
+            .width = target_width,
+            .height = -target_height,
         };
         const destination = rl.Rectangle{
             .x = transform.offset_x,
             .y = transform.offset_y,
-            .width = render_width * transform.scale,
-            .height = render_height * transform.scale,
+            .width = target_width * transform.scale,
+            .height = target_height * transform.scale,
         };
         rl.drawTexturePro(self.render_target.texture, source, destination, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
     }
@@ -1727,7 +1764,7 @@ pub const RaylibBackend = struct {
             rl.getRenderWidth(),
             rl.getRenderHeight(),
         });
-        self.diagAppend("render target {d}x{d}\n", .{ render_width_int, render_height_int });
+        self.diagAppend("render target {d}x{d}\n", .{ self.render_width, self.render_height });
         self.diagAppend("GL_VENDOR {s}\n", .{glString(gl_vendor)});
         self.diagAppend("GL_RENDERER {s}\n", .{glString(gl_renderer)});
         self.diagAppend("GL_VERSION {s}\n", .{glString(gl_version)});
@@ -1799,7 +1836,7 @@ pub const RaylibBackend = struct {
     /// half: pixels PRESENT = the draw landed in the offscreen target, so a
     /// missing panel on screen is the blit/present path (window/compositor);
     /// pixels ABSENT = the batch draw itself failed. Samples are in TARGET
-    /// space (reference × `render_scale`); RenderTextures are stored
+    /// space (reference × the render camera zoom); RenderTextures are stored
     /// y-flipped, so the sampled row is flipped back.
     fn diagLogTargetReadback(self: *RaylibBackend) void {
         self.diag_readback_pending = false;
@@ -1826,14 +1863,17 @@ pub const RaylibBackend = struct {
         label: []const u8,
         rect: types.Rectangle,
     ) void {
+        const scale = self.renderScale();
+        const target_width: i64 = self.render_width;
+        const target_height: i64 = self.render_height;
         for ([_]f32{ 0.25, 0.5, 0.75 }) |fraction| {
             const column: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.x)) +
-                @as(f32, @floatFromInt(rect.width)) * fraction) * render_scale);
+                @as(f32, @floatFromInt(rect.width)) * fraction) * scale);
             const target_row: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.y)) +
-                @as(f32, @floatFromInt(rect.height)) * 0.5) * render_scale);
-            const stored_row: i64 = render_height_int - 1 - target_row;
-            if (column < 0 or stored_row < 0 or column >= render_width_int or stored_row >= render_height_int) continue;
-            const index: usize = @intCast(stored_row * render_width_int + column);
+                @as(f32, @floatFromInt(rect.height)) * 0.5) * scale);
+            const stored_row: i64 = target_height - 1 - target_row;
+            if (column < 0 or stored_row < 0 or column >= target_width or stored_row >= target_height) continue;
+            const index: usize = @intCast(stored_row * target_width + column);
             if (index >= colors.len) continue;
             const color = colors[index];
             self.diagAppend(

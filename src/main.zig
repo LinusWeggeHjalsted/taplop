@@ -438,6 +438,33 @@ fn update(
 /// The frame_allocator is a per-frame arena — everything the ViewState
 /// points at is allocated from it and lives until the next frame.
 
+/// Live-apply the `render_resolution` setting (called from `frame()` each
+/// iteration): compare against the last-applied snapshot and swap the
+/// backend's render target on a diff. Same diff-and-apply shape as the audio
+/// volumes block above. On apply failure the backend kept its old target, so
+/// the setting REVERTS to the currently-running preset — dirty-marked so the
+/// revert persists, and surfaced via the pending-error popup. The revert also
+/// stops a retry loop: the setting now matches the snapshot, so the user's
+/// next click on the failed preset (a fresh diff) is the only re-attempt.
+/// See DESIGN → Platform Seam → Render target resolution.
+fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) void {
+    if (history.settings.render_resolution == history.session.last_applied_render_resolution) return;
+    if (backend.applyRenderResolution(history.settings.render_resolution)) {
+        history.session.last_applied_render_resolution = history.settings.render_resolution;
+        return;
+    }
+    const requested = history.settings.render_resolution;
+    const kept = history.session.last_applied_render_resolution;
+    history.settings.render_resolution = kept;
+    input_handlers.markSettingsDirty(history);
+    const message = std.fmt.allocPrint(
+        history.history_arena.allocator(),
+        "{s} rendering is not supported on this system — kept {s}.",
+        .{ requested.label(), kept.label() },
+    ) catch @panic("failed to format render resolution error message");
+    history.session.setPendingError(history.history_arena.allocator(), message);
+}
+
 /// Drain budget: process events for at most this long per frame before
 /// returning control to the driver. Long enough that a typical small-level
 /// drain completes in one frame on both platforms; short enough that the
@@ -474,6 +501,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.last_applied_volumes = .{ .master = s.master_volume, .music = s.music_volume, .sfx = s.sound_effects_volume };
         }
     }
+
+    applyRenderResolutionSetting(backend, history);
 
     const platform_input = backend.pollInput();
     // Camera is derived (centered on the player + clamped to the view
@@ -1005,6 +1034,73 @@ fn runToIdle(history: *GameStateHistory) void {
         history.current_state.waiting = null;
     }
     history.recordIdlePoint();
+}
+
+/// Minimal duck-typed backend for the `applyRenderResolutionSetting` tests:
+/// records the apply + whether it succeeded (the helper only needs
+/// `applyRenderResolution`).
+const FakeRenderBackend = struct {
+    fail: bool = false,
+    applied: ?types.RenderResolution = null,
+    apply_count: usize = 0,
+
+    fn applyRenderResolution(self: *FakeRenderBackend, resolution: types.RenderResolution) bool {
+        self.applied = resolution;
+        self.apply_count += 1;
+        return !self.fail;
+    }
+};
+
+test "applyRenderResolutionSetting: applies on diff, snapshot follows, no-op without one" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var harness = test_harness.Harness.init(arena);
+    var history = harness.newHistory(null);
+
+    // The snapshot starts in sync with the backend's init-time target (both
+    // default) — the harness settings load the same default.
+    try std.testing.expectEqual(types.default_render_resolution, history.session.last_applied_render_resolution);
+
+    // No diff → no backend call.
+    var backend = FakeRenderBackend{};
+    applyRenderResolutionSetting(&backend, &history);
+    try std.testing.expectEqual(@as(?types.RenderResolution, null), backend.applied);
+
+    // Diff → backend called, snapshot updated, no error popup.
+    history.settings.render_resolution = .p2160;
+    applyRenderResolutionSetting(&backend, &history);
+    try std.testing.expectEqual(@as(?types.RenderResolution, .p2160), backend.applied);
+    try std.testing.expectEqual(types.RenderResolution.p2160, history.session.last_applied_render_resolution);
+    try std.testing.expect(history.session.pendingError() == null);
+}
+
+test "applyRenderResolutionSetting: failed apply reverts the setting + popup, no retry loop" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var harness = test_harness.Harness.init(arena);
+    var history = harness.newHistory(null);
+
+    var backend = FakeRenderBackend{ .fail = true };
+    history.settings.render_resolution = .p2160;
+    applyRenderResolutionSetting(&backend, &history);
+
+    // The setting reverts to the currently-running preset; the snapshot
+    // (and the backend's actual target) never moved.
+    try std.testing.expectEqual(types.default_render_resolution, history.settings.render_resolution);
+    try std.testing.expectEqual(types.default_render_resolution, history.session.last_applied_render_resolution);
+
+    // The popup names both the requested and the kept preset.
+    const message = history.session.pendingError() orelse return error.ExpectedPendingError;
+    try std.testing.expect(std.mem.indexOf(u8, message, "2160p") != null);
+    try std.testing.expect(std.mem.indexOf(u8, message, "1080p") != null);
+
+    // Setting now matches the snapshot → a second frame does not retry.
+    applyRenderResolutionSetting(&backend, &history);
+    try std.testing.expectEqual(@as(usize, 1), backend.apply_count);
 }
 
 test "session log round-trips through reconstruction (forward play == replay)" {

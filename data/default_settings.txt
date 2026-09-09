@@ -11,6 +11,7 @@ vsync true
 render_fps_cap 0
 camera_zoom 50
 animation_fps 4
+render_resolution 1080p
 
 Gameplay
 auto_skip_attack_step_out_of_combat true

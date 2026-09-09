@@ -1155,6 +1155,16 @@ Logging follow-ups (open):
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
+- [x] **Render resolution setting (runtime live-apply)** — DONE. The
+      offscreen target resolution moved from the `-Drender-width`/
+      `-Drender-height` build options (removed) to a `render_resolution`
+      setting (720p/1080p/1440p/2160p, default 1080p), applied live via the
+      frame diff-and-apply; a failed apply (GPU texture-size limits)
+      reverts to the running preset + popup. Design: DESIGN → Platform Seam
+      → Render target resolution; history in DONE.md. OPEN: browser + native
+      runtime confirmation of the live swap (the platform-seam
+      compiles-≠-runs rule).
+
 - **Zig toolchain policy (settled): stay on 0.16.0** for the
   foreseeable future; migrate to 0.17.0 ONLY when it RELEASES and
   raylib_zig/zemscripten ship 0.17-compatible versions (today's

@@ -271,6 +271,18 @@ pub fn loadSettings(
             if (findValue(pairs, "animation_fps")) |value| {
                 settings.animation_fps = asU32(value) orelse settings.animation_fps;
             }
+            if (findValue(pairs, "render_resolution")) |value| {
+                // 4-choice preset, parsed by label so the file value matches
+                // the settings screen ("1080p"). An unrecognized value keeps
+                // the default (preferences, not gameplay). See DESIGN →
+                // Platform Seam → Render target resolution.
+                for (std.meta.tags(types.RenderResolution)) |resolution| {
+                    if (std.mem.eql(u8, value, resolution.label())) {
+                        settings.render_resolution = resolution;
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -2452,6 +2464,7 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\vsync false
         \\render_fps_cap 144
         \\camera_zoom 75
+        \\render_resolution 1440p
         \\
         \\Gameplay
         \\auto_skip_attack_step_out_of_combat false
@@ -2485,6 +2498,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     try std.testing.expectEqual(false, settings.vsync);
     try std.testing.expectEqual(@as(u32, 144), settings.render_fps_cap);
     try std.testing.expectEqual(@as(u32, 75), settings.camera_zoom);
+    try std.testing.expectEqual(types.RenderResolution.p1440, settings.render_resolution);
 
     // Gameplay values
     try std.testing.expectEqual(false, settings.auto_skip_attack_step_out_of_combat);

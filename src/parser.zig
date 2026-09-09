@@ -594,7 +594,7 @@ pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptim
 // action, context + modifier flags.
 
 const settings_audio_keys = [_][]const u8{ "master_volume", "music_volume", "sound_effects_volume" };
-const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom", "animation_fps" };
+const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom", "animation_fps", "render_resolution" };
 const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_combat", "auto_target_at_cursor", "show_fps", "player_color_index" };
 const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "context", "ctrl", "shift", "alt" };
 

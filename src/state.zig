@@ -278,6 +278,17 @@ pub const SessionState = struct {
     /// screen (Live-apply).
     last_applied_volumes: struct { master: u32, music: u32, sfx: u32 } = .{ .master = 0, .music = 0, .sfx = 0 },
 
+    /// Snapshot of the render resolution the last time `frame()` applied it
+    /// to the backend. `frame()` compares `history.settings.render_resolution`
+    /// against this and calls `backend.applyRenderResolution` on a diff, then
+    /// updates it on success. Initialized to the default preset — the backend
+    /// creates its target at the same default before settings load, so the
+    /// snapshot starts in sync and a default setting costs no first-frame
+    /// swap. On apply failure the setting REVERTS to this value (the backend
+    /// kept its old target), so it also names the "kept" preset in the
+    /// failure popup. See DESIGN → Platform Seam → Render target resolution.
+    last_applied_render_resolution: types.RenderResolution = types.default_render_resolution,
+
     /// Smoothed FPS counter for the optional on-screen diagnostic overlay
     /// (`settings.show_fps`). An exponential moving average over the actual
     /// rendered frame interval (the time between consecutive renders, sampled

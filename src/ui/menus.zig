@@ -952,7 +952,7 @@ pub fn buildSettingsPanel(
     // the label text, not at a fixed column). Vertically stacked below the
     // header, centered as a group between header and Back button.
 
-    // 11 rows (5 toggle/choice + 5 slider + 1 fps toggle):
+    // 12 rows (6 toggle/choice + 5 slider + 1 fps toggle):
     //   0. Master Volume (slider 0–100)
     //   1. Music Volume (slider 0–100)
     //   2. Sound Effects Volume (slider 0–100)
@@ -960,11 +960,12 @@ pub fn buildSettingsPanel(
     //   4. Animation FPS (slider 1–16)
     //   5. VSync (toggle)
     //   6. Camera Zoom (4-button choice)
-    //   7. Player Color (6-swatch choice)
-    //   8. Auto-skip attack step (toggle)
-    //   9. Auto-target at cursor (toggle)
-    //  10. Show FPS (toggle)
-    const row_count: i32 = 11;
+    //   7. Render Resolution (4-button choice)
+    //   8. Player Color (6-swatch choice)
+    //   9. Auto-skip attack step (toggle)
+    //  10. Auto-target at cursor (toggle)
+    //  11. Show FPS (toggle)
+    const row_count: i32 = 12;
     const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
     const buttons_top = screen.y + screen.height - settings_padding -
         panel_button_height - settings_button_gap;
@@ -1134,7 +1135,36 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 7: Player Color — 6 swatches (player gradient indices 0–5).
+    // Row 7: Render Resolution — 4 buttons (720p/1080p/1440p/2160p). The
+    // choice is live-applied by `frame()`'s diff-and-apply; a failed apply
+    // (GPU/texture-size limits) reverts the setting + popup, so the
+    // highlighted button snaps back to what actually runs. See DESIGN →
+    // Platform Seam → Render target resolution.
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Render Resolution", content_x, r_y);
+        for (std.meta.tags(types.RenderResolution), 0..) |resolution, i| {
+            try emitSettingButton(
+                elements,
+                allocator,
+                font_metrics,
+                .{
+                    .x = ctrl_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
+                    .y = r_y,
+                    .width = settings_choice_button_width,
+                    .height = settings_row_height,
+                },
+                resolution.label(),
+                settings_row_font_size,
+                .{ .id = .render_resolution, .choice_value = @intFromEnum(resolution) },
+                settings.render_resolution == resolution,
+                button_color,
+            );
+        }
+    }
+    row_index += 1;
+
+    // Row 8: Player Color — 6 swatches (player gradient indices 0–5).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", content_x, r_y);
@@ -1162,7 +1192,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 8: Auto-skip attack step toggle.
+    // Row 9: Auto-skip attack step toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-skip Attack Step", content_x, r_y);
@@ -1180,7 +1210,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 9: Auto-target at cursor toggle.
+    // Row 10: Auto-target at cursor toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-target at Cursor", content_x, r_y);
@@ -1198,7 +1228,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 10: Show FPS toggle.
+    // Row 11: Show FPS toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Show FPS", content_x, r_y);

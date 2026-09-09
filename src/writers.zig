@@ -275,6 +275,7 @@ pub fn writeSettings(
     try buffer.print(allocator, "render_fps_cap {d}\n", .{settings.render_fps_cap});
     try buffer.print(allocator, "camera_zoom {d}\n", .{settings.camera_zoom});
     try buffer.print(allocator, "animation_fps {d}\n", .{settings.animation_fps});
+    try buffer.print(allocator, "render_resolution {s}\n", .{settings.render_resolution.label()});
 
     // Gameplay
     try buffer.appendSlice(allocator, "\nGameplay\n");
@@ -1158,6 +1159,35 @@ const editor_write_fixture: types.Editor = .{
         },
     } },
 };
+
+test "writeSettings round-trips render_resolution through loadSettings" {
+    const allocator = std.testing.allocator;
+
+    // Written by label ("2160p"), parsed back by the same label mapping.
+    const settings: Settings = .{ .render_resolution = .p2160, .input_bindings = &.{} };
+    const bytes = try writeSettings(settings, allocator);
+    defer allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "render_resolution 2160p") != null);
+
+    const sections = try parser.parseConfigFile(bytes, allocator);
+    defer parser.freeParsedSections(sections, allocator);
+    const loaded = try loaders.loadSettings(sections, allocator, null, null);
+    defer loaders.freeSettings(loaded, allocator);
+    try std.testing.expectEqual(types.RenderResolution.p2160, loaded.render_resolution);
+
+    // An unrecognized value keeps the default (preferences, not gameplay).
+    const raw_text = try std.fmt.allocPrint(
+        allocator,
+        "Metadata\nfile_format_version {d}\n\nDisplay\nrender_resolution 4320p\n",
+        .{parser.settings_file_format_version},
+    );
+    defer allocator.free(raw_text);
+    const unknown_sections = try parser.parseConfigFile(raw_text, allocator);
+    defer parser.freeParsedSections(unknown_sections, allocator);
+    const unknown_loaded = try loaders.loadSettings(unknown_sections, allocator, null, null);
+    defer loaders.freeSettings(unknown_loaded, allocator);
+    try std.testing.expectEqual(types.default_render_resolution, unknown_loaded.render_resolution);
+}
 
 test "writeEditorMission round-trips through the load path" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);

@@ -998,6 +998,9 @@ pub fn handleAnytimeInput(
                     .show_fps => settings.show_fps = !settings.show_fps,
                     .camera_zoom => settings.camera_zoom = sref.choice_value orelse return,
                     .player_color_index => settings.player_color_index = sref.choice_value orelse return,
+                    // Choice buttons carry the preset's int tag; the live
+                    // apply (frame diff-and-apply) swaps the render target.
+                    .render_resolution => settings.render_resolution = @enumFromInt(sref.choice_value orelse return),
                     // Sliders are handled by the drag handler (slice 3b),
                     // not by this click path. A click on a slider label
                     // area without a choice_value is a no-op here.
