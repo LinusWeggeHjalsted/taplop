@@ -1655,10 +1655,16 @@ pub const RaylibBackend = struct {
         // didn't pick an explicit color inherits the active theme's `darkest`
         // (mirrors the text-label convention in `drawTextLabel`). An explicit
         // `.color` overrides it.
-        const tint = if (std.meta.eql(panel.color, ui.default_tint))
-            toRaylibColor(theme_darkest, 255)
+        // Select the SOURCE color first, then convert once — an if/else
+        // EXPRESSION returning the extern rl.Color by value miscompiles on
+        // aarch64-macos optimized builds (both branch stores vanish; the
+        // draw tints with uninitialized stack — see DONE.md, "mac 9-slice
+        // panels — ROOT CAUSE FOUND").
+        const source_color = if (std.meta.eql(panel.color, ui.default_tint))
+            theme_darkest
         else
-            toRaylibColor(panel.color, 255);
+            panel.color;
+        const tint = toRaylibColor(source_color, 255);
 
         const destination = types.Rectangle{
             .x = panel.screen_position.x,
