@@ -1175,10 +1175,11 @@ Open:
         still ships. Design: DESIGN → Input (macOS: Command reports as the
         Control ids); history in DONE.md.
   - [ ] **mac 9-slice panel bug — UNSOLVED, systematic bisection done.**
-        All panels render fully transparent on mac in optimized builds
-        WITHOUT dev-mode code; every build WITH dev-mode code renders them
-        fine. Everything else renders correctly in every build. The FULL
-        data matrix (each row = one binary the friend actually ran):
+        All panels render fully transparent on mac in ReleaseFast builds
+        UNLESS the dev diag code is compiled in (it masks the bug); Debug
+        builds never exhibit it. Everything else renders correctly in
+        every build. The FULL data matrix (each row = one binary the
+        friend actually ran):
         | build | panels |
         |---|---|
         | mac `--release=fast`, no dev code, no OpenGL framework link | BROKEN |
@@ -1188,27 +1189,46 @@ Open:
         | mac `--release=fast`, dev off, + `completeTextureUploadMac`
         (glFinish + 2ms sleep after every texture upload, since REVERTED) | BROKEN |
         | linux `--release=fast`, no dev code | renders |
-        Historical note: the very FIRST hardware test (c2ee21e, the first
-        mac build) was `--release=fast` with no dev-mode — the bug was
-        seen there from the start, but that state was NEVER run WITH
-        dev-mode enabled. The first-state dev cells were the missing
-        data points (now in flight — step 0 below).
-        RULED OUT: the framework link (row 2); optimize level (row 4 vs 1);
-        upload→draw stall timing (row 5 — glFinish+2ms sat exactly where
-        the probe's file write sits, still broken); the game-side draw
-        state (probe data from a working mac build is byte-identical to
-        Linux: same texture/tint/rects); Linux repro (row 6).
+        | FIRST STATE (a472891 — no diag code existed; dev code there is
+        only the skip-level binding) `--release=fast` +dev | BROKEN |
+        | FIRST STATE `--release=fast` no dev | BROKEN |
+        | FIRST STATE Debug +dev | renders |
+        | FIRST STATE Debug no-dev | renders |
+        KEY REFRAME (the first-state 2×2, friend-confirmed): the
+        dev/non-dev axis was an ARTIFACT of which HEAD cells happened to
+        be tested — at first state, release is broken REGARDLESS of dev
+        code and Debug renders regardless. The base variable is
+        OPTIMIZE LEVEL; and cross-referenced with HEAD (release+dev
+        RENDERS there, with diag), the ONLY thing that ever rescued a
+        release build is the diag code specifically — generic dev code
+        (skip-level) is demonstrably insufficient (first-state release+dev).
+        RULED OUT: the framework link; the game-side draw state (probe
+        data from a working mac build is byte-identical to Linux: same
+        texture/tint/rects); Linux repro; dev code presence per se as
+        the rescuer (first-state release+dev broken); upload→draw stall
+        timing by GL sync alone (glFinish+2ms sat exactly where the
+        probe's file write sits, still broken — note the stall build had
+        NO allocations, so the probe's mid-frame FORMATTING ALLOCATIONS
+        remain a live sub-candidate); "optimize level" which was
+        previously listed as ruled out — CORRECTED: it is the base
+        variable (the old row-4-vs-1 inference attributed the release
+        delta to dev code, but the first-state cells show dev code
+        doesn't rescue release; the diag code does).
         REMAINING HYPOTHESES:
-        (A) a specific diag element is load-bearing — not the stall, but
-        the boot-time glGetString calls (they run before the FIRST
-        beginTextureMode; maybe they force shim context init that raylib's
-        own init doesn't), or the mid-frame file writes (the
-        DebugAllocator sub-item is dead — it runs in every config, see C);
-        (B) BINARY LAYOUT NOISE / latent UB — any dev-mode code addition
-        shifts code/data layout and masks a memory bug; fits "content of
-        the addition doesn't matter" (link/stall/optimize all failed as
-        explanations); if so the real bug is mac-release-only UB somewhere
-        in the render path;
+        (A) WORKING THEORY — a specific diag element masks the bug in
+        release builds: candidates are the boot-time direct glGetString
+        calls (before the FIRST beginTextureMode), the boot/mid-frame
+        file writes (std.Io syscalls), the mid-frame formatting
+        ALLOCATIONS through the session allocator (the falsified stall
+        test had none — glFinish+sleep is not equivalent), or the
+        end-of-frame readback glReadPixels sync;
+        (B) WEAKENED — binary layout noise / latent UB: any code
+        addition shifts layout; but the first-state cells show generic
+        dev code (skip-level) did NOT shift layout the lucky way, so a
+        layout mask would have to come specifically from the diag code
+        — indistinguishable from (A) until the piece bisection; if real,
+        the underlying bug is mac-ReleaseFast-only UB in the render
+        path.
         (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
         has exactly three consumers — the skip_level handler
         (input_handlers), the player_skip_level replay whitelist
@@ -1220,19 +1240,33 @@ Open:
         allocator"), so the allocator is identical across all tested
         cells.
         EXPERIMENT LADDER (one friend round trip at a time):
-        0. IN FLIGHT — first-state 2×2 at a472891 (the first mac build
-           + Command-key fix, BEFORE any diag code; dev-mode code there
-           is only the skip-level binding). Four builds in the sibling
-           worktree `../ziglop-mac-bisect/handoff/` (numbered .app
-           bundles + README): release±dev, debug±dev. Interpretation:
-           first-state DEV cells render → dev code presence per se is
-           load-bearing from the start → (B); first-state dev cells
-           BROKEN → the diag code specifically flipped dev builds
-           broken→working → (A), go to step 3; first-state
-           release-nodev RENDERS (vs the known-broken original) → the
-           breakage was INTRODUCED between first state and HEAD →
-           bisect the mac commits. The rebuilt release-nodev cell also
-           confirms the repro survives the key-mapping delta.
+        0. DONE — first-state 2×2 at a472891 (the first mac build +
+           Command-key fix, BEFORE any diag code). RESULTS: release
+           broken with AND without dev (generic dev code does not
+           rescue); Debug renders with and without dev. Optimize level
+           is the base variable; the diag code is the only known
+           release rescuer — see the KEY REFRAME above.
+        0a. NEXT ROUND — four HEAD cells (all carry the c_allocator
+           release switch, so they're internally consistent; vs
+           pre-switch cells the allocator is a noted delta):
+           - HEAD `--release=fast` no dev (c_allocator) — the ALLOCATOR
+             probe: renders ⇒ named mechanism (mmap/page-fault timing
+             on the shim), likely solved; broken ⇒ allocator ruled out
+             as the sole rescuer.
+           - HEAD `--release=fast -Ddev-mode=true` (diag ON, c_allocator)
+             — regression check that the switch didn't break the
+             known-working dev cell.
+           - HEAD `--release=fast -Ddev-mode=true`, diag KILLED (temp
+             comptime toggle on `diag_enabled` in raylib_backend, built
+             from a worktree, NOT committed) — closes the diag loop:
+             broken (with the allocator cell also broken) ⇒ the diag
+             code specifically rescues → piece bisection (step 3);
+             renders ⇒ the allocator rescued without diag.
+           - HEAD ReleaseSafe no dev (DebugAllocator, safety ON) — the
+             UB probe: panic + stack trace ⇒ jackpot (the UB is ours
+             and the trace names it); renders ⇒ safety-dependent
+             behavior, strong UB hint; broken silently ⇒ the bug is
+             below Zig safety (raylib C level or driver).
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state

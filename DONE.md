@@ -11763,3 +11763,36 @@ on, any HEAD `--release=fast` mac cell doubles as the allocator
 experiment: if panels render with c_allocator, the DebugAllocator's
 mmap timing on the shim was load-bearing — see TODO → macOS native port
 → mac 9-slice panel bug (the NOTE in the experiment ladder).
+
+## mac 9-slice panels — first-state 2×2 results: optimize level is the base variable
+
+The first-state experiment (a472891 — the first mac build + Command-key
+fix, BEFORE any diag code existed; dev-mode code there was only the
+skip-level binding) closed the missing cells. Friend-tested, all four:
+
+| build (a472891) | panels |
+|---|---|
+| `--release=fast` + dev-mode | BROKEN |
+| `--release=fast` no dev | BROKEN |
+| Debug + dev-mode | renders |
+| Debug no dev | renders |
+
+KEY REFRAME: the dev/non-dev axis was an artifact of which HEAD cells
+happened to be tested. At first state, release is broken REGARDLESS of
+dev code and Debug renders regardless — the base variable is OPTIMIZE
+LEVEL. Cross-referenced with HEAD (release+dev RENDERS there, with the
+diag code), the only thing that has EVER rescued a release build is the
+diag code specifically; generic dev code (skip-level) is demonstrably
+insufficient. The old "optimize level ruled out (row 4 vs 1)" inference
+is corrected — it attributed the release delta to dev code, which the
+first-state cells disprove.
+
+Consequences: (A) "a specific diag element masks the bug" is the working
+theory, with sharpened candidates (boot glGetString calls, file writes,
+mid-frame formatting ALLOCATIONS — the falsified glFinish+sleep test had
+none — and the end-of-frame readback sync); (B) layout-noise/UB is
+weakened but not dead (a layout mask would have to come specifically
+from the diag code). Next round designed in TODO → mac 9-slice panel bug
+→ ladder step 0a: four HEAD cells — allocator probe (c_allocator
+release), dev regression check, diag-killed loop-closer, and the
+ReleaseSafe UB probe.
