@@ -188,8 +188,9 @@ d  diff before running them across the tree.** Asserted replacements catch
   build.zig.zon declares the same package so the exe's link step gets the
   framework search paths raylib's own module doesn't propagate — see
   DONE.md, mac port). The build also links the OpenGL framework
-  explicitly (the dev diag's glGetString + the mac upload-completion fix's
-  glFinish need it; raylib itself goes through its glad loader).
+  explicitly (the dev diag's glGetString needs it — an earlier
+  upload-fix's glFinish was also cited here but that fix was falsified
+  and reverted; raylib itself goes through its glad loader).
   Produces `zig-out/bin/ziglop` PLUS the double-clickable
   `zig-out/ziglop.app/` bundle (minimal Info.plist, no icon yet, unsigned —
   a browser-downloaded copy needs `xattr -cr ziglop.app` once; codesigning
@@ -273,6 +274,22 @@ back at the comment to update it.
   fns, types, fields). Inside a function body it's always `//` — a `///`
   there is "expected statement, found a document comment".
 - `opaque` is a reserved keyword (opaque types) — don't name a variable it.
+- **By-value extern-struct arguments on aarch64 — a 0.16.0 compiler
+  bug; avoid the triggering pattern until the 0.17 migration:** Zig
+  0.16.0 lowers the caller side of a by-value extern-struct parameter
+  (raylib's `Color`, `Rectangle`, ...) to an out-of-bounds 8-byte load
+  from the 4-byte object — IR-level poison, which licensed LLVM to
+  DELETE the stores building the value, silently passing uninitialized
+  (or `undef`) memory to the C call. The trigger shape is an if/else
+  EXPRESSION whose branches are calls returning the extern struct by
+  value, with the extern call as the value's only consumer. RULE:
+  pre-select the plain source value, then convert once — the
+  `drawNineSlice`/`drawTextLabel` tint shape. Affects ALL aarch64
+  targets, optimized builds only (Debug is fine; ReleaseSafe breaks
+  SILENTLY — no panic). Fixed on zig master (fa3a9fcd / PR #35711);
+  NOT in any 0.16.x release. History: DONE → "mac 9-slice panels —
+  ROOT CAUSE FOUND"; repro + report kit:
+  `../ziglop-mac-bisect/repro/` (UPSTREAM_REPORT.md).
 - `std.heap.page_allocator` is UNUSABLE on wasm32-emscripten: on wasm it is
   BrkAllocator, which grows memory via the raw `@wasmMemoryGrow` intrinsic
   behind emscripten's back — the JS heap views detach and SAFE_HEAP bounds

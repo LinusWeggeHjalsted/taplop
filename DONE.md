@@ -11971,3 +11971,216 @@ the same shape as the fix.
 Remaining: the final friend cell (the fixed plain release build, in the
 bisect handoff) and the upstream zig issue with a minimized repro (see
 TODO → mac 9-slice panel bug → remaining items).
+
+## mac 9-slice panels — consolidated experiment matrix (archived from TODO)
+
+Each row = one binary the friend actually ran; the full per-round narrative
+is in the round entries above. The matrix is the consolidated evidence base
+behind the root cause (reading the tint rescues; every broken cell didn't
+read it).
+
+      The historical matrix + the full experiment ladder are below.
+      (each matrix row = one binary the friend actually ran)
+      | build | panels |
+      |---|---|
+      | mac `--release=fast`, no dev code, no OpenGL framework link | BROKEN |
+      | mac `--release=fast`, no dev code, WITH framework link | BROKEN |
+      | mac Debug (dev diag present) | renders |
+      | mac `--release=fast -Ddev-mode=true` (dev diag present) | renders |
+      | mac `--release=fast`, dev off, + `completeTextureUploadMac`
+      (glFinish + 2ms sleep after every texture upload, since REVERTED) | BROKEN |
+      | linux `--release=fast`, no dev code | renders |
+      | FIRST STATE (a472891 — no diag code existed; dev code there is
+      only the skip-level binding) `--release=fast` +dev | BROKEN |
+      | FIRST STATE `--release=fast` no dev | BROKEN |
+      | FIRST STATE Debug +dev | renders |
+      | FIRST STATE Debug no-dev | renders |
+      | HEAD round 2 (c_allocator release switch landed) `--release=fast`
+      no dev | BROKEN |
+      | HEAD r2 `--release=fast -Ddev-mode=true` (diag ON) | renders |
+      | HEAD r2 `--release=fast -Ddev-mode=true`, diag KILLED (temp
+      comptime toggle, allocator + dev code otherwise identical) | BROKEN |
+      | HEAD r2 ReleaseSafe no dev (DebugAllocator, safety ON) | BROKEN
+      silently — no panic, no trace |
+      | HEAD r3 (release+dev, c_allocator) no-boot | renders |
+      | HEAD r3 no-sprite-probe | renders |
+      | HEAD r3 no-panel-probe | **BROKEN** |
+      | HEAD r3 no-readback | renders |
+      | HEAD r3 all-on control (rebuilt through the toggle consts) | renders |
+      | HEAD r4 (release+dev, within-probe toggles) format-only
+      (appends, no file write at the probe) | renders |
+      | HEAD r4 flush-only (file write at the probe, no appends) | **BROKEN** |
+      | HEAD r4 full probe moved AFTER the draw loop | renders |
+      | HEAD r5 alloc-only (bare 4096-byte session alloc at the probe) | **BROKEN** |
+      | HEAD r5 stack-format-only (formatting, NO heap alloc) | renders |
+      | HEAD r5 reads-only (field reads, sunk via doNotOptimizeAway) | renders |
+      | HEAD r5 flush + texture-texel GL read (cell rendered; texels
+      describe a healthy build) | renders |
+      | HEAD r6 texture-read only | **BROKEN** |
+      | HEAD r6 pieces-read only | **BROKEN** |
+      | HEAD r6 tint-read only | renders |
+      | HEAD r6 destination-read only | **BROKEN** |
+      (Texel baseline: the panel ASSET is a pure-white procedural fill
+      with a black border at the edges — friend-confirmed locally, the
+      texel dump (255,255,255,255)×3 is a healthy read; the visible
+      panel color is entirely the draw-time tint.)
+      THE UNIFIED RESCUE CONDITION (r5): read the draw's input values
+      (texture struct / pieces / tint / destination) inside
+      drawNineSlice between computation and draw. Every rendering
+      cell ever tested does that; every broken cell doesn't —
+      alloc-only (bare heap alloc) BROKEN kills the allocation
+      theory, while stack-format (NO heap alloc) and reads-only
+      (nothing but field reads, sunk via doNotOptimizeAway) RENDER.
+      Allocations, file writes, syscalls, GPU sync, timing: all
+      irrelevant. This is pure CODEGEN PERTURBATION.
+      FIRST-UPLOAD GROUNDING (r4 diags): the [control] sprite-probe
+      section is ABSENT from all three r4 diag files → no drawSprite
+      ever ran → the friend judged on the spriteless main menu → the
+      probed first panel (destination 1408,824 1024×160) is a MAIN-MENU
+      panel, and ui/panel is the session's FIRST texture upload (all
+      other textures upload later, in-game — and work). The broken
+      cell's readback shows the panel ABSENT from the offscreen target
+      (75% sample (190,199,97) vs the working builds' (132,93,76) =
+      the panel's own tint) → the failure is INSIDE the target (the
+      upload or the draw of that texture), NOT the blit/present path.
+      KEY REFRAME (the first-state 2×2, friend-confirmed): the
+      dev/non-dev axis was an ARTIFACT of which HEAD cells happened to
+      be tested — at first state, release is broken REGARDLESS of dev
+      code and Debug renders regardless. The base variable is
+      OPTIMIZE LEVEL; and cross-referenced with HEAD (release+dev
+      RENDERS there, with diag), the ONLY thing that ever rescued a
+      release build is the diag code specifically — generic dev code
+      (skip-level) is demonstrably insufficient (first-state release+dev).
+      RULED OUT: the framework link; the game-side draw state (probe
+      data from a working mac build is byte-identical to Linux: same
+      texture/tint/rects); Linux repro; dev code presence per se as
+      the rescuer (first-state release+dev broken); upload→draw stall
+      timing by GL sync alone (glFinish+2ms sat exactly where the
+      probe's file write sits, still broken — note the stall build had
+      NO allocations, so the probe's mid-frame FORMATTING ALLOCATIONS
+      remain a live sub-candidate); the allocator as the sole rescuer
+      (HEAD r2 cell 1: c_allocator release-no-dev still broken — the
+      switch stays on its own merits); Zig-safety-catchable UB in game
+      code (HEAD r2 cell 4: ReleaseSafe breaks SILENTLY — checked UB
+      would panic with a trace, so the fault is below Zig safety:
+      raylib C under optimization, the GL-on-Metal shim, or unchecked
+      Zig↔C interop); "optimize level" which was previously listed as
+      ruled out — CORRECTED: it is the base variable (the old row-4-vs-1
+      inference attributed the release delta to dev code, but the
+      first-state cells show dev code doesn't rescue release; the diag
+      code does).
+      REMAINING HYPOTHESES:
+      (A) RESOLVED INTO THE UNIFIED RESCUE CONDITION (see the matrix
+      note): reading the draw's input values inside drawNineSlice
+      rescues; nothing else does. The mechanism is codegen
+      perturbation, not semantics —
+      (B) RETURNED IN SPECIFIC FORM: an LLVM MISCOMPILE or unchecked
+      UB in the OPTIMIZED codegen of drawNineSlice on aarch64-macos
+      (ReleaseFast AND ReleaseSafe both break ⇒ optimization level,
+      not Zig safety; Debug's -O0 codegen is fine; Linux x86_64
+      release is fine), masked by any read of the draw's inputs
+      (texture / pieces / tint / destination) between computation
+      and draw — the reads re-materialize the values the draw needs.
+      Prime suspect zone: the by-value rl.drawTexturePro call chain
+      (Texture2D + two Rectangles + Color passed to extern C) or the
+      loop that builds them from `pieces`. Next: read-set bisection
+      (which single read is the bullseye — ladder 0e) + LOCAL
+      aarch64-macos IR/asm diff with vs without the reads block (no
+      friend needed — the miscompiled code is inspectable on the
+      Linux box).
+      (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
+      has exactly three consumers — the skip_level handler
+      (input_handlers), the player_skip_level replay whitelist
+      (state.zig), and the diag code (raylib_backend). No rendering
+      consumers outside the diag → C folds into A. Also ruled out as a
+      dev/non-dev variable: every friend-tested cell so far is
+      DebugAllocator-backed (the c_allocator release switch landed
+      AFTER the first-state 2×2 binaries — see DONE, "Native
+      allocator"), so the allocator is identical across all tested
+      cells.
+      EXPERIMENT LADDER (one friend round trip at a time):
+      0. DONE — first-state 2×2 at a472891 (the first mac build +
+         Command-key fix, BEFORE any diag code). RESULTS: release
+         broken with AND without dev (generic dev code does not
+         rescue); Debug renders with and without dev. Optimize level
+         is the base variable; the diag code is the only known
+         release rescuer — see the KEY REFRAME above.
+      0a. DONE — four HEAD cells (all c_allocator). RESULTS: allocator
+         probe BROKEN (allocator ruled out as sole rescuer); dev+diag
+         RENDERS (regression passed); dev+diag-killed BROKEN (the diag
+         code specifically rescues — hypothesis A confirmed at block
+         level); ReleaseSafe BROKEN SILENTLY (not Zig-safety-catchable
+         — the fault is below Zig safety). See the matrix + RULED OUT.
+      0b. DONE — piece bisection, leave-one-out + control (five HEAD
+         release+dev cells, c_allocator, temp comptime toggle consts).
+         RESULTS: no-boot renders, no-sprite-probe renders, no-readback
+         renders, all-on control renders, NO-PANEL-PROBE BROKEN — the
+         panel probe is the necessary piece; see (A).
+      0c. DONE — within-probe split (three cells). RESULTS: format-only
+         RENDERS, flush-only BROKEN, moved-after-draw RENDERS. The
+         rescuer is the formatting work, position-flexible; the file
+         write is not it. See (A) + the FIRST-UPLOAD GROUNDING note.
+      0d. DONE — minimal-rescuer split. RESULTS: alloc-only BROKEN
+         (allocation theory falsified), stack-format-only RENDERS (no
+         heap alloc needed), reads-only RENDERS (nothing but field
+         reads), texel-dump RENDERS (its GL read also reads `texture`).
+         → the unified rescue condition; see the matrix note + (B).
+      0e. NEXT ROUND — READ-SET BISECTION (four HEAD release+dev
+         cells, c_allocator, temp toggles, all at the probe site,
+         each reading exactly ONE group, sunk via doNotOptimizeAway):
+         - TEXTURE-READ: texture.id/width/height only;
+         - PIECES-READ: the nine pieces' rect fields only;
+         - TINT-READ: resolved_tint.r/g/b/a only;
+         - DESTINATION-READ: destination.x/y/w/h only.
+         The group whose read rescues is the bullseye — it names the
+         value whose materialization the draw depends on, and tells
+         the local IR diff exactly which region of drawNineSlice to
+         scrutinize (e.g. texture-only ⇒ the by-value Texture2D
+         passing into rl.drawTexturePro). Multiple groups rescuing ⇒
+         broader perturbation; none ⇒ the read must span groups
+         (next: pairwise).
+      0f. LOCAL (no friend): emit LLVM IR or asm for the aarch64-
+         macos ReleaseFast exe with vs without the reads block and
+         diff drawNineSlice's codegen (worktree temp build; the
+         generated code is inspectable on the Linux box). Also worth
+         checking zig/LLVM versions' known arm64-apple miscompiles,
+         and whether a newer/older zig changes the broken cell.
+      NOTE (allocator switch, landed after the 2×2 binaries were built):
+      HEAD release builds now use c_allocator instead of DebugAllocator
+      (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state
+      2×2 binaries predate the switch (a472891, all four cells
+      DebugAllocator-backed — their comparison is unaffected). From the
+      switch on, any HEAD `--release=fast` cell DOUBLES as the allocator
+      experiment: panels render there ⇒ the DebugAllocator's
+      mmap/page-fault timing on the Metal shim was load-bearing — a
+      named mechanism (and the switch is correct regardless).
+      1. DONE — dev_mode consumer enumeration (see C above).
+      2. CHEAP FIRST BUILD (HEAD): `zig build -Dtarget=aarch64-macos
+         -Doptimize=ReleaseSafe` (safety checks on, dev code off). If a
+         panic/stack trace appears → the UB is OURS and the trace points
+         at it (jackpot). If panels render → UB-dependent behavior, hunt
+         the UB. If panels break silently → the bug is below Zig safety
+         (C level or driver), skip to 3.
+      3. Bisect diag pieces in dev builds (friend ladder): disable the
+         panel probe only (one-line comptime toggle in the probe call
+         site) → broken? ⇒ the panel probe's presence between upload and
+         draw is load-bearing (then move the probe call AFTER the piece
+         loop: still broken ⇒ mid-draw position matters; renders ⇒ mere
+         presence); renders? ⇒ disable the boot section next, then the
+         control probe, then everything → whatever toggle flips it to
+         broken IS the load-bearing element.
+      4. Once a BROKEN build WITH diag is constructible (some diag piece
+         disabled), pair it with the render-target READBACK probe
+         (diagLogTargetReadback — already implemented + verified on
+         Linux, never yet exercised on a broken mac build): "pixels
+         present in the target" = blit/present-side failure;
+         "pixels absent" = the draw itself fails → then instrument the
+         failing stage directly.
+      5. Do NOT re-add stall/sleep hacks as fixes — row 5 falsified the
+         stall theory; every landed "fix" must name its mechanism.
+      Instruments available: the dev diag log (AGENTS → Dev Tools) with
+      boot GL info + draw probes + pixel readback; the friend reproduces
+      deterministically per binary and sends diag.txt without Terminal.
+      History: DONE.md "mac 9-slice panels" entries (incl. two falsified
+      theories — framework link, upload stall — kept for the trail).
+
