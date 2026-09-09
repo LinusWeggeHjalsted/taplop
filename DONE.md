@@ -11615,7 +11615,12 @@ build carries this; the mac 9-slice investigation (panels render nothing on
 mac, everything else renders — draw path audited and identical to working
 sprites) proceeds from his `logs/diag.txt`.
 
-## mac 9-slice panels: fixed by the OpenGL framework link (mechanism unknown)
+## mac 9-slice panels: "fixed by the OpenGL framework link" — FALSIFIED
+
+> This entry's conclusion is WRONG — the release-build bisection
+> falsified it (see the CORRECTION entry below). The framework link is
+> NOT the fix; it stays only because glGetString/glFinish need it.
+> Kept for the trail.
 
 Mystery bug, empirically resolved. Two consecutive mac builds rendered
 EVERYTHING except 9-slice panels (all panels invisible; sprites, text,
