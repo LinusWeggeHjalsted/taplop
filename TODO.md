@@ -1210,6 +1210,20 @@ Open:
         (appends, no file write at the probe) | renders |
         | HEAD r4 flush-only (file write at the probe, no appends) | **BROKEN** |
         | HEAD r4 full probe moved AFTER the draw loop | renders |
+        | HEAD r5 alloc-only (bare 4096-byte session alloc at the probe) | **BROKEN** |
+        | HEAD r5 stack-format-only (formatting, NO heap alloc) | renders |
+        | HEAD r5 reads-only (field reads, sunk via doNotOptimizeAway) | renders |
+        | HEAD r5 flush + texture-texel GL read (cell rendered; texels
+        describe a healthy build) | renders |
+        THE UNIFIED RESCUE CONDITION (r5): read the draw's input values
+        (texture struct / pieces / tint / destination) inside
+        drawNineSlice between computation and draw. Every rendering
+        cell ever tested does that; every broken cell doesn't —
+        alloc-only (bare heap alloc) BROKEN kills the allocation
+        theory, while stack-format (NO heap alloc) and reads-only
+        (nothing but field reads, sunk via doNotOptimizeAway) RENDER.
+        Allocations, file writes, syscalls, GPU sync, timing: all
+        irrelevant. This is pure CODEGEN PERTURBATION.
         FIRST-UPLOAD GROUNDING (r4 diags): the [control] sprite-probe
         section is ABSENT from all three r4 diag files → no drawSprite
         ever ran → the friend judged on the spriteless main menu → the
@@ -1247,25 +1261,24 @@ Open:
         first-state cells show dev code doesn't rescue release; the diag
         code does).
         REMAINING HYPOTHESES:
-        (A) REFIRMED + RESHAPED by r4: the rescuer is the probe's
-        FORMATTING work — format-only renders, flush-only (the file
-        write) BROKEN, full-probe-after-the-draw renders (position-
-        flexible: same frame, after the upload, before OR after the
-        first draw). The boot section's appends — same frame but BEFORE
-        the upload — do NOT rescue (r3 app-3). And the flush-only cell's
-        end-of-frame readback appends didn't rescue either — with no
-        probe appends the diag buffer had spare capacity, so they
-        ALLOCATED NOTHING, while the format cells' ~750 bytes of appends
-        GREW the buffer. Working hypothesis: the rescuer is a
-        session-allocator ALLOCATION after ui/panel's upload, within
-        that first frame. Which minimal component suffices (bare
-        alloc? formatting without alloc? field reads?) + the upload-vs-
-        draw split = ladder 0d;
-        (B) NEARLY DEAD — layout noise: the control rendered AND three
-        of the four piece-removals rendered (each removal shifts layout
-        too), so a layout coincidence where exactly the panel-probe
-        removal is unlucky is implausible. Survives only if 0d's cells
-        behave incoherently;
+        (A) RESOLVED INTO THE UNIFIED RESCUE CONDITION (see the matrix
+        note): reading the draw's input values inside drawNineSlice
+        rescues; nothing else does. The mechanism is codegen
+        perturbation, not semantics —
+        (B) RETURNED IN SPECIFIC FORM: an LLVM MISCOMPILE or unchecked
+        UB in the OPTIMIZED codegen of drawNineSlice on aarch64-macos
+        (ReleaseFast AND ReleaseSafe both break ⇒ optimization level,
+        not Zig safety; Debug's -O0 codegen is fine; Linux x86_64
+        release is fine), masked by any read of the draw's inputs
+        (texture / pieces / tint / destination) between computation
+        and draw — the reads re-materialize the values the draw needs.
+        Prime suspect zone: the by-value rl.drawTexturePro call chain
+        (Texture2D + two Rectangles + Color passed to extern C) or the
+        loop that builds them from `pieces`. Next: read-set bisection
+        (which single read is the bullseye — ladder 0e) + LOCAL
+        aarch64-macos IR/asm diff with vs without the reads block (no
+        friend needed — the miscompiled code is inspectable on the
+        Linux box).
         (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
         has exactly three consumers — the skip_level handler
         (input_handlers), the player_skip_level replay whitelist
@@ -1298,35 +1311,31 @@ Open:
            RENDERS, flush-only BROKEN, moved-after-draw RENDERS. The
            rescuer is the formatting work, position-flexible; the file
            write is not it. See (A) + the FIRST-UPLOAD GROUNDING note.
-        0d. NEXT ROUND — minimal-rescuer split + the upload-vs-draw
-           probe (four HEAD release+dev cells, c_allocator, temp
-           toggles, all at the standard probe site):
-           - ALLOC-ONLY: one 4096-byte session-allocator alloc + free,
-             nothing else. Renders ⇒ a bare allocation suffices (the
-             buffer-growth theory confirmed); the minimal repro is then
-             "one malloc after the session's first texture upload, in
-             that frame".
-           - STACK-FORMAT-ONLY: the same ~750 bytes of formatting into
-             a fixed stack buffer (no heap alloc), sunk via
-             doNotOptimizeAway (DCE guard). Renders ⇒ formatting CPU
-             work suffices without any allocation.
-           - READS-ONLY: the same field reads summed + sunk. Renders ⇒
-             the field reads (codegen perturbation) suffice.
-           - ALL broken ⇒ the alloc+format combination is needed.
-           - TEXEL-DUMP (the decisive one): flush-only config (both
-             file-write and end-of-frame readback proven NON-rescuing in
-             r4) + a gated block that reads the panel texture's OWN
-             texels (rl.loadImageFromTexture + loadImageColors),
-             copies 3 sample texels (40,40 / 192,192 / 344,344 — all
-             opaque in the art) as RAW 12 bytes to
-             logs/diag-texels.bin via FileSource.writeFile (no session
-             allocs, no formatting). If this cell stays BROKEN, the
-             texel bytes split the fault: alpha 0 ⇒ the texture UPLOADED
-             TRANSPARENT (upload-side corruption of the session's
-             first texture); panel-art values ⇒ the texture is fine
-             and its DRAW fails. If it renders, the GL texture read
-             (or raylib's internal mallocs) is itself a rescuer — a
-             data point, and the dump then describes a healthy build.
+        0d. DONE — minimal-rescuer split. RESULTS: alloc-only BROKEN
+           (allocation theory falsified), stack-format-only RENDERS (no
+           heap alloc needed), reads-only RENDERS (nothing but field
+           reads), texel-dump RENDERS (its GL read also reads `texture`).
+           → the unified rescue condition; see the matrix note + (B).
+        0e. NEXT ROUND — READ-SET BISECTION (four HEAD release+dev
+           cells, c_allocator, temp toggles, all at the probe site,
+           each reading exactly ONE group, sunk via doNotOptimizeAway):
+           - TEXTURE-READ: texture.id/width/height only;
+           - PIECES-READ: the nine pieces' rect fields only;
+           - TINT-READ: resolved_tint.r/g/b/a only;
+           - DESTINATION-READ: destination.x/y/w/h only.
+           The group whose read rescues is the bullseye — it names the
+           value whose materialization the draw depends on, and tells
+           the local IR diff exactly which region of drawNineSlice to
+           scrutinize (e.g. texture-only ⇒ the by-value Texture2D
+           passing into rl.drawTexturePro). Multiple groups rescuing ⇒
+           broader perturbation; none ⇒ the read must span groups
+           (next: pairwise).
+        0f. LOCAL (no friend): emit LLVM IR or asm for the aarch64-
+           macos ReleaseFast exe with vs without the reads block and
+           diff drawNineSlice's codegen (worktree temp build; the
+           generated code is inspectable on the Linux box). Also worth
+           checking zig/LLVM versions' known arm64-apple miscompiles,
+           and whether a newer/older zig changes the broken cell.
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state

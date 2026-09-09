@@ -11864,3 +11864,31 @@ offscreen target (75% sample (190,199,97) vs the working builds'
 not the blit/present path. Central open question: does the texture
 UPLOAD transparent, or does its draw fail? Round 5 (minimal-rescuer
 split + raw texel dump) is designed in TODO → ladder step 0d.
+
+## mac 9-slice panels — round 5 results: the unified rescue condition (pure field reads)
+
+Minimal-rescuer split (four HEAD release+dev cells, c_allocator, temp
+uncommitted toggles): ALLOC-ONLY (bare 4096-byte session-allocator alloc
+at the probe site) BROKEN — the allocation theory is falsified;
+STACK-FORMAT-ONLY (the same formatting into a stack buffer, NO heap
+allocation, DCE-guarded) RENDERS; READS-ONLY (nothing but field reads of
+texture/pieces/tint/destination, sunk via doNotOptimizeAway) RENDERS;
+TEXEL-DUMP (file write + GL texture read — which also reads `texture`)
+RENDERS.
+
+Unified rescue condition, consistent with EVERY cell ever tested: read
+the draw's input values inside drawNineSlice between computation and
+draw. Every rendering build does that; every broken build doesn't
+(alloc-only, flush-only, glFinish+sleep, boot, no-probe). Allocations,
+file writes, syscalls, GPU sync, timing — all irrelevant. The mechanism
+is pure CODEGEN PERTURBATION: the optimized codegen of drawNineSlice on
+aarch64-macos (ReleaseFast AND ReleaseSafe both break — optimization
+level, not Zig safety; Debug -O0 is fine; Linux x86_64 release is fine)
+is miscompiled or exploits unchecked UB, and any read of the draw's
+inputs masks it by re-materializing the values. Prime suspect: the
+by-value rl.drawTexturePro extern-C call chain (Texture2D + rectangles +
+Color) or the loop building them from `pieces`. Next: read-set bisection
+(which single read is the bullseye — TODO ladder 0e) and, for the first
+time in this hunt, a LOCAL investigation: emit aarch64-macos LLVM IR/asm
+with vs without the reads and diff the generated code on the Linux box
+(ladder 0f).
