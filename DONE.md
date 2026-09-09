@@ -12250,3 +12250,18 @@ high-DPI/window-sizing TODO is separate).
 
 Web compiles (WEB OK); browser + native runtime confirmation pending
 (the platform-seam "compiles ≠ runs" rule).
+
+## Camera zoom gated to camera-bearing screens
+
+The scroll wheel and the zoom keyboard shortcuts (PgUp/PgDn/ctrl+0) used
+to zoom the camera even on screens with no camera — the wheel fell
+through the anytime-input wheel-routing chain to its zoom fallback on the
+main menu (and the replay viewer), silently mutating the `camera_zoom`
+setting while nothing on screen responded. Both paths are now gated by
+`cameraZoomAllowed(screen)` at the consumption site in
+`handleAnytimeInput` (input_handlers.zig): zoom fires only on hub, level,
+and editor. The gate lives at the handler (not in the binding contexts)
+because the wheel isn't a binding, and the zoom keys must gate uniformly
+across existing installs whose user settings still carry the old
+`anytime`-context zoom bindings. Test: the new handler test pins
+wheel+keys no-op on main_menu + replay_viewer, zoom on hub.

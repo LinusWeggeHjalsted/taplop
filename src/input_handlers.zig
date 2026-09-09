@@ -53,6 +53,20 @@ const min_camera_zoom: u32 = 25;
 const max_camera_zoom: u32 = 100;
 const default_camera_zoom: u32 = 50;
 
+/// Camera zoom (wheel + keyboard) is a world-view control: only the screens
+/// that render a camera (levels, hubs, the editor viewport) zoom. The main
+/// menu and the replay viewer have no meaningful zoom — the wheel and the
+/// zoom keys are simply unused there instead of silently mutating the
+/// `camera_zoom` setting. The consumption-site gate (not a binding context):
+/// the wheel isn't a binding at all, and the keys must gate uniformly across
+/// installs whose user files still carry the old `anytime` zoom bindings.
+fn cameraZoomAllowed(screen: state.Screen) bool {
+    return switch (screen) {
+        .hub, .level, .editor => true,
+        else => false,
+    };
+}
+
 /// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
 /// errors are swallowed since a failed preferences write is not critical;
 /// the preference just doesn't persist). Called as a `PendingWrite` writer
@@ -2233,7 +2247,7 @@ pub fn handleAnytimeInput(
                 max_offset,
             );
             history.session.ui_state.editor_palette_scroll[group_index] = scrolled;
-        } else {
+        } else if (cameraZoomAllowed(history.current_state.screen)) {
             // Additive zoom in fixed steps, clamped to [min, max]. Additive
             // (not multiplicative) so one zoom-in followed by one zoom-out
             // always returns to the exact same value. scroll_delta is
@@ -2251,22 +2265,23 @@ pub fn handleAnytimeInput(
     }
 
     // Keyboard zoom shortcuts (PgUp / PgDn / ctrl+0). Same additive
-    // step + bounds as the wheel. Reset snaps to the default.
-    if (anytime.zoom_in) {
+    // step + bounds as the wheel, same screen gate. Reset snaps to the
+    // default.
+    if (anytime.zoom_in and cameraZoomAllowed(history.current_state.screen)) {
         const new_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
         if (new_zoom != history.settings.camera_zoom) {
             history.settings.camera_zoom = new_zoom;
             markSettingsDirty(history);
         }
     }
-    if (anytime.zoom_out) {
+    if (anytime.zoom_out and cameraZoomAllowed(history.current_state.screen)) {
         const new_zoom = @max(min_camera_zoom, history.settings.camera_zoom - camera_zoom_step);
         if (new_zoom != history.settings.camera_zoom) {
             history.settings.camera_zoom = new_zoom;
             markSettingsDirty(history);
         }
     }
-    if (anytime.zoom_reset) {
+    if (anytime.zoom_reset and cameraZoomAllowed(history.current_state.screen)) {
         if (history.settings.camera_zoom != default_camera_zoom) {
             history.settings.camera_zoom = default_camera_zoom;
             markSettingsDirty(history);
@@ -3568,6 +3583,33 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
         viewport,
     );
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+}
+
+test "camera zoom (wheel + keys): gated to camera-bearing screens" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    var history = harness.newHistory(null);
+    const pointer = types.ScreenPosition{ .x = 0, .y = 0 };
+    const zoom_before = history.settings.camera_zoom;
+
+    // Main menu: neither the wheel nor the zoom keys touch the setting.
+    history.current_state.screen = .main_menu;
+    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, pointer, &.{});
+    handleAnytimeInput(&history, .{ .zoom_in = true }, pointer, &.{});
+    try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
+
+    // Replay viewer: same — no camera, no zoom.
+    history.current_state.screen = .replay_viewer;
+    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, pointer, &.{});
+    try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
+
+    // Hub: the wheel and the keys zoom (1 notch + one key step).
+    history.current_state.screen = .hub;
+    handleAnytimeInput(&history, .{ .scroll_delta = 1 }, pointer, &.{});
+    handleAnytimeInput(&history, .{ .zoom_in = true }, pointer, &.{});
+    try std.testing.expectEqual(zoom_before + 2 * camera_zoom_step, history.settings.camera_zoom);
 }
 
 test "handleCameraPan: pan engages only past the drag threshold" {
