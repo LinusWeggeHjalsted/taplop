@@ -1212,9 +1212,30 @@ Open:
               (payload-slot shape, exercised by slots, rendered fine),
               drawTextLabel (already the pre-selected-source-color shape
               — same shape as the fix).
-        - [ ] Upstream zig issue with a minimized repro + the IR evidence
-              (attribution Zig frontend vs LLVM pass still open; the
-              i64-load-of-4-byte-alloca tint passing is itself notable).
+        - [ ] Upstream zig report — findings gathered, decision pending.
+              Minimal repros in the bisect worktree
+              `../ziglop-mac-bisect/repro/` (repro.zig = 40-line form,
+              repro2.zig = faithful drawNineSlice shape; per-version
+              emitted IR alongside). Version matrix: 0.16.0 (current
+              stable) AFFECTED — the repro passes `i64 undef` as a
+              by-value extern-struct argument on ALL aarch64 targets
+              (aarch64-macos AND aarch64-linux; x86_64-linux lowers the
+              param as i32 and is correct); master 0.17.0-dev.2085
+              (2026-09-08 nightly) FIXED — the caller now emits an
+              in-bounds `load i32` + `zext i64` (the stores survive).
+              Likely fix: fa3a9fcd / PR #35711 "llvm: only load/store
+              ABI-sized integers to/from memory" (2026-06-10, motivated
+              by #35560 — a different symptom, same class) — postdates
+              0.16.0; no 0.16 point release exists. Options: comment on
+              #35711/#35560 with the repro (another manifestation + a
+              regression-test request), or file a new issue framed as
+              "0.16.0 stable affected; fixed on master — please add a
+              regression test / consider a 0.16.x backport".
+              Attribution note for any report: the root is Zig's caller-
+              side lowering of a 4-byte extern struct by-value param as
+              an OOB `load i64` from a 4-byte object (poison) — LLVM
+              then "legitimately" deletes the stores feeding it (the
+              whole tint computation folds to `undef`).
         The historical matrix + the full experiment ladder are below.
         (each matrix row = one binary the friend actually ran)
         | build | panels |
