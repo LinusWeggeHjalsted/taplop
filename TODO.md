@@ -1155,6 +1155,22 @@ Logging follow-ups (open):
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
+- **Zig toolchain policy (settled): stay on 0.16.0** for the
+  foreseeable future; migrate to 0.17.0 ONLY when it RELEASES and
+  raylib_zig/zemscripten ship 0.17-compatible versions (today's
+  master cannot build the project — deps fail on the removed
+  `LazyPath.getPath` + the pointer-deref language change). Migrate as
+  a deliberate session (the 0.16 migration shape), with the friend as
+  mac runtime validator. Built-in acceptance test for that day:
+  `../ziglop-mac-bisect/repro/repro2.zig` (the miscompile repro) +
+  the PRE-fix tint pattern — verify the emitted IR stores the tint
+  (or just that panels render) on 0.17.0. Watch for **0.16.1**: the
+  STOPSIG fix (`2eda0ef8`) is on the 0.16.x branch, so 0.16.1 retires
+  the web patched-stdlib hack with zero work; the aarch64 ABI fix
+  (`fa3a9fcd`) is NOT on 0.16.x, but our source restructure handles
+  it permanently. Rationale (two 0.16.0 bugs, both settled, both at
+  platform edges): DONE.md "mac 9-slice panels — ROOT CAUSE FOUND" +
+  AGENTS → Build & Test (patched stdlib).
 - **macOS native port** — cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
