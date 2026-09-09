@@ -335,6 +335,15 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   UBSan symbols). The sdf_atlas_generator also builds in Debug (not
   ReleaseFast) for faster clean builds; the SDF generation run is a few
   seconds slower but only runs once per clean build.
+- **Diagnostics log** — currently the dev diag log in
+  `raylib_backend.zig` (dev-mode builds, not on web): boot GL info +
+  one-shot draw probes + the render-target pixel readback, best-effort
+  writes to `logs/diag.txt` in the persistent dir. A REDESIGN IS
+  SETTLED — a raylib-free `src/diagnostics.zig` + a `--diagnostics`
+  runtime flag working in ANY build (release included), event-driven
+  end-of-frame flushing (never mid-draw), the same proven section set:
+  DESIGN → Platform Seam → Diagnostics. Implementation tracked in
+  TODO.
 - The BINDING ships in `data/default_settings.txt` regardless (so the
   settings file stays the source of truth and a future binding-UI sees one
   set). The gate is at the HANDLER site (`if (build_info.dev_mode and ...)`),

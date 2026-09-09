@@ -280,6 +280,46 @@ untracked allocations (font bytes, crash-dump output, existence probes)
 use `transient_allocator.zig` — c_allocator on emscripten, page_allocator
 on native. Never call `std.heap.page_allocator` directly from shared code.
 
+### Diagnostics (settled design; implementation pending)
+
+Purpose: Terminal-less platform troubleshooting — getting data from
+machines whose users can't debug (the friend workflow; future player bug
+reports). The section set is exactly what carried the mac miscompile
+hunt; extend only when a real incident asks for more.
+
+- **File + naming:** `src/diagnostics.zig`, a raylib-free `Diagnostics`
+  type (values fed in by the backend — the GL-touching probe sites stay
+  in raylib_backend and only record values, so diagnostics.zig compiles
+  in the headless test build). One instance owned by `RaylibBackend`:
+  an append buffer + section policy + flush scheduling. NO
+  abbreviations anywhere: `Diagnostics`, `diagnostics_enabled` — the
+  migration renames every `diag_*` identifier.
+- **Activation — a single toggle:** the `--diagnostics` runtime CLI
+  flag, valid on ANY native build INCLUDING plain release (the hunt's
+  structural catch-22 was "the broken build can't log" — dev-gated
+  diagnostics can't capture release-only failures; the runtime flag
+  lets the very binary that exhibits a bug produce its own data). Dev-
+  mode builds default to active (the comptime dev_mode acts as the
+  flag's default). The code ships in all native builds — a few KB,
+  zero runtime cost when inactive.
+- **Writing — event-driven, never per frame:** sections are one-shots
+  (boot once at first render; each first-draw probe once per primitive
+  per session; the readback once on the frame a probe armed) — a
+  handful of writes per session. A pending flush executes at the
+  END-OF-FRAME safe point (after present), never mid-draw: observation
+  work inside the draw path perturbs the observed system — the mac-
+  hunt lesson. Whole-file rewrite per flush (the file is always
+  self-consistent). Clean shutdown flushes anything pending; a hard
+  crash loses at most the unflushed buffer (crash-time state is the
+  crash dump's job, DESIGN → Error Handling → Crash dump).
+- **Sections:** boot (game_version, target, window/framebuffer dims,
+  render target dims, GL vendor/renderer/version/GLSL); first-draw
+  one-shot probes per primitive (drawSprite, drawNineSlice — full draw
+  state); render-target pixel readback at the probed destinations (the
+  pipeline-stage split: pixels present in the target = present-path
+  failure, pixels absent = the draw/upload failed).
+- Web: out of scope for now (native-only, like today's system).
+
 ## Audio
 
 Sound is a **side effect**, never gameplay state. Same replay-safety rule as

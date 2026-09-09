@@ -1180,6 +1180,16 @@ Open:
   split it into a `raylib/` subdirectory behind the SAME module
   boundary (same exclusion, same `rl` containment). Design constraint:
   DESIGN → Platform Seam.
+- **Diagnostics redesign — settled design, implementation pending**
+  (DESIGN → Platform Seam → Diagnostics): create raylib-free
+  `src/diagnostics.zig` (`Diagnostics` type: buffer + section policy +
+  end-of-frame flush scheduling, renames every `diag_*` identifier);
+  add the `--diagnostics` CLI flag (native.zig, like `--replay` — any
+  build, release included; dev-mode defaults to active); migrate the
+  boot/probe/readback sections out of raylib_backend as thin
+  value-recording call sites; keep `logs/diag.txt` + whole-file-rewrite
+  semantics. Composes with the raylib_backend split item above — land
+  the split first if tackling both.
 - **macOS native port** — cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
