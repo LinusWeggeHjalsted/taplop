@@ -11938,3 +11938,36 @@ stores) is open — matters only for the upstream report. Our fix is a
 source restructure that avoids the two-branch if/else-expression
 returning an extern struct by value (single `toRaylibColor` call on a
 pre-selected `types.Color`), verified in IR + a friend cell.
+
+## mac 9-slice panels — round 6 confirms the root cause; fix landed + IR-verified; audit clean
+
+Round 6 (read-set bisection, four cells): texture-read BROKEN, pieces-read
+BROKEN, TINT-READ RENDERS, destination-read BROKEN — the pre-registered
+prediction held exactly, independently confirming that the miscompiled
+value is the tint.
+
+THE FIX (drawNineSlice, raylib_backend.zig): select the source
+types.Color first (`source_color = if eql(panel.color, default_tint)
+theme_darkest else panel.color`), then ONE toRaylibColor call — no
+if/else expression returning the extern rl.Color by value. IR-verified
+on the historically-broken config (aarch64-macos ReleaseFast, dev off):
+the two never-stored `alloca %raylib.Color` slots are GONE; the tint is
+scalarized into registers (zext i8→i64 + shifts) assembled from the
+actually-loaded source-color bytes — no allocas, no pointer select,
+every byte traceable to real data. Semantically identical to the
+original code (same sentinel check, same two possible colors).
+
+AUDIT (clean): the dangerous pattern — an if/else EXPRESSION whose
+branches are function calls returning an extern struct BY VALUE, the
+result feeding an extern call — existed only at the tint site. The
+nearby candidates are safe by shape and by evidence: drawSprite's
+source rect is struct literals in both branches (plus a post-mutation
+`var`, forcing materialization) and rendered fine in-game on broken
+builds; the ?rl.Rectangle optional site is a payload-slot shape,
+exercised by in-game slots on broken builds, rendered fine;
+drawTextLabel already pre-selects its source color before converting —
+the same shape as the fix.
+
+Remaining: the final friend cell (the fixed plain release build, in the
+bisect handoff) and the upstream zig issue with a minimized repro (see
+TODO → mac 9-slice panel bug → remaining items).

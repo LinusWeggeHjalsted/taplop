@@ -1188,18 +1188,33 @@ Open:
         correctly. Full evidence chain + explanation of every matrix
         cell: DONE.md, "mac 9-slice panels — ROOT CAUSE FOUND".
         Remaining:
-        - [ ] Round-6 validation (in flight): prediction — tint-read cell
-              RENDERS, texture/pieces/destination reads BROKEN.
-        - [ ] THE FIX: restructure the tint to a single call on a
-              pre-selected types.Color (no two-branch if/else returning an
-              extern struct by value) — verify in IR that the stores
-              appear on aarch64-macos, then a friend cell confirms.
-        - [ ] Audit the tree for the same pattern elsewhere (if/else
-              expressions returning extern/C structs by value feeding
-              extern calls — drawSprite/drawTextLabel tint paths are the
-              candidates; sprites render, so drawSprite is presumably
-              fine, but verify the pattern is absent).
-        - [ ] Upstream zig issue with a minimized repro + the IR evidence.
+        - [x] Round-6 validation (friend-confirmed): the tint-read cell
+              RENDERS; texture/pieces/destination reads stay BROKEN —
+              the root cause is independently confirmed: the miscompiled
+              value is the TINT.
+        - [x] THE FIX (landed): restructure to select the source
+              types.Color first, then one toRaylibColor call
+              (raylib_backend.zig drawNineSlice). IR-verified on the
+              historically-broken config (aarch64-macos ReleaseFast,
+              dev off): the two never-stored Color allocas are GONE; the
+              tint is scalarized into registers assembled from the
+              loaded source-color bytes (zext/shl/insert) — no allocas,
+              no pointer select, every byte traceable to real data.
+              Final friend cell (fixed release build) in the bisect
+              handoff — pending confirmation.
+        - [x] Audit (clean): the dangerous pattern (if/else EXPRESSION
+              returning an extern struct BY VALUE from function calls,
+              feeding an extern call) existed only in the drawNineSlice
+              tint. The other candidate sites are safe by shape and by
+              evidence: drawSprite's source rect (struct LITERALS both
+              branches + post-mutation `var`, rendered fine in-game on
+              broken builds), the ?rl.Rectangle optional at 1524
+              (payload-slot shape, exercised by slots, rendered fine),
+              drawTextLabel (already the pre-selected-source-color shape
+              — same shape as the fix).
+        - [ ] Upstream zig issue with a minimized repro + the IR evidence
+              (attribution Zig frontend vs LLVM pass still open; the
+              i64-load-of-4-byte-alloca tint passing is itself notable).
         The historical matrix + the full experiment ladder are below.
         (each matrix row = one binary the friend actually ran)
         | build | panels |
@@ -1237,6 +1252,14 @@ Open:
         | HEAD r5 reads-only (field reads, sunk via doNotOptimizeAway) | renders |
         | HEAD r5 flush + texture-texel GL read (cell rendered; texels
         describe a healthy build) | renders |
+        | HEAD r6 texture-read only | **BROKEN** |
+        | HEAD r6 pieces-read only | **BROKEN** |
+        | HEAD r6 tint-read only | renders |
+        | HEAD r6 destination-read only | **BROKEN** |
+        (Texel baseline: the panel ASSET is a pure-white procedural fill
+        with a black border at the edges — friend-confirmed locally, the
+        texel dump (255,255,255,255)×3 is a healthy read; the visible
+        panel color is entirely the draw-time tint.)
         THE UNIFIED RESCUE CONDITION (r5): read the draw's input values
         (texture struct / pieces / tint / destination) inside
         drawNineSlice between computation and draw. Every rendering
