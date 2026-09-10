@@ -703,12 +703,13 @@ pub fn beginFocusedTextEdit(
     ui.beginTextEdit(&history.session.ui_state, field, current_value);
 }
 
-/// Queue the menu sound for an Escape keypress that does something (a
-/// closing overlay or a triggered action). Keybind-triggered actions have no
-/// button, so the input-handler site queues the feedback sound (see DESIGN →
-/// Audio → Button press/release model).
-fn queueMenuSound(history: *GameStateHistory) void {
-    if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+/// Queue the feedback sound for an Escape keypress that does something (a
+/// closing overlay or a triggered action). Keybind-triggered actions have
+/// no button, so the input-handler site queues the action's texture (with
+/// its interim placeholder) — no base up, per the no-click-sounds-for-keys
+/// rule. See DESIGN → Audio (layered cues).
+fn queueEscapeSound(history: *GameStateHistory) void {
+    if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_options_menu);
 }
 
 /// Escape: close the topmost open overlay; with nothing closable open (and
@@ -727,7 +728,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // it opens on top of the options menu, so Escape steps back to the menu
     // underneath — only the settings layer closes.
     if (ui_state.settings_open) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.settings_open = false;
         return;
     }
@@ -735,7 +736,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Editor mission browser (opens over the editor / on top of the options
     // menu): Escape steps back one layer — only the browser closes.
     if (ui_state.editor_mission_browser_open) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.editor_mission_browser_open = false;
         return;
     }
@@ -746,7 +747,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // remains the other escape from the fail state.
     if (view_mod.playerDead(current)) {
         if (current.screen != .level) return;
-        queueMenuSound(history);
+        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .player_exit_mission);
         return;
     }
@@ -755,7 +756,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // dismiss_mission_complete (on the undo timeline — undo re-shows, redo
     // dismisses).
     if (current.last_completed_mission != null) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .dismiss_mission_complete);
         return;
     }
@@ -763,12 +764,12 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Main-menu overlays (the options menu and mission overlays can never be
     // open on the main menu, so these sit topmost whenever they're up).
     if (ui_state.load_save_menu_open) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.load_save_menu_open = false;
         return;
     }
     if (ui_state.credits_open) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.credits_open = false;
         return;
     }
@@ -776,7 +777,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Options menu (always-on-top modal): close it, leaving any full-screen
     // overlay beneath it open.
     if (ui_state.options_menu_open) {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.options_menu_open = false;
         return;
     }
@@ -788,7 +789,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         if (overlay != null) topmost_overlay_slot = slot_index;
     }
     if (topmost_overlay_slot) |slot_index| {
-        queueMenuSound(history);
+        queueEscapeSound(history);
         ui_state.open_full_screen_overlays[slot_index] = null;
         return;
     }
@@ -798,7 +799,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // meaningful only in level/hub; the main menu has its own button stack,
     // so Escape is a no-op there.
     if (current.screen == .main_menu) return;
-    queueMenuSound(history);
+    queueEscapeSound(history);
     ui_state.options_menu_open = true;
 }
 
@@ -828,6 +829,7 @@ pub fn handleAnytimeInput(
     // See DESIGN → Error Handling → Recoverable error surface.
     if (history.session.pending_error != null) {
         if (anytime.dismiss_error) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .dismiss_error);
             history.session.clearPendingError();
             return;
         }
@@ -846,11 +848,17 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.undo) {
-        _ = history.undo(&event_handlers.processEvent);
+        // Sound only when a step actually undid (a no-op at the timeline
+        // start stays silent).
+        if (history.undo(&event_handlers.processEvent)) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .undo);
+        }
     }
 
     if (anytime.redo) {
-        _ = history.redo(&event_handlers.processEvent);
+        if (history.redo(&event_handlers.processEvent)) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .redo);
+        }
     }
 
     if (anytime.dump_event_log) {
@@ -865,6 +873,7 @@ pub fn handleAnytimeInput(
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             // The popup on failure is surfaced inside; the return value is
             // irrelevant to the bare save button.
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .save_editor_mission);
             _ = mission_io.saveEditorMission(history);
         }
     }
@@ -872,6 +881,7 @@ pub fn handleAnytimeInput(
     if (anytime.export_editor_mission) {
         // The mission export — same side-effect class + gates as the save.
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .export_editor_mission);
             mission_io.exportEditorMission(history);
         }
     }
@@ -882,17 +892,15 @@ pub fn handleAnytimeInput(
         // screen no-ops (the save_editor_mission discipline).
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             const ui_state = &history.session.ui_state;
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_editor_mission_browser);
             ui_state.editor_mission_browser_open = !ui_state.editor_mission_browser_open;
             if (ui_state.editor_mission_browser_open) {
-                queueMenuSound(history);
                 // Fresh view state on every open (the load-save browser's
                 // reset-on-open pattern): scroll to the top + the local tab
                 // (your collection is the primary target), then scan now.
                 ui_state.editor_mission_scroll_offset = 0;
                 ui_state.editor_mission_browser_tab = .local;
                 mission_io.rescanEditorMissionsNow(history);
-            } else {
-                queueMenuSound(history);
             }
         }
     }
@@ -908,6 +916,7 @@ pub fn handleAnytimeInput(
         // Editor-only; every other screen no-ops (the
         // save_editor_mission discipline).
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .new_editor_mission);
             pushPlayerActionAndDrain(history, .{ .open_editor = .{ .mission_path = null } });
         }
     }
@@ -920,6 +929,11 @@ pub fn handleAnytimeInput(
     // immediately despite the menu pausing the game. Draining is
     // pushPlayerActionAndDrain's job (see its doc for the baseline reasoning).
     if (anytime.options_action) |action| {
+        // The action's texture (with interim placeholder) — one effect-site
+        // queue for the options-menu / settings / editor button AND keybind
+        // paths (both fold into options_action). The release seam owns the
+        // base up. See DESIGN → Audio (layered cues).
+        if (!history.replaying) history.session.queueActionSound(history.backing_allocator, action);
         const current = &history.current_state;
         const allocator = history.current_arena.allocator();
         switch (action) {
@@ -1025,7 +1039,7 @@ pub fn handleAnytimeInput(
                     .animation_fps,
                     => return,
                 }
-                if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
                 markSettingsDirty(history);
             },
             // Editor palette group header (expand/collapse). The group
@@ -2296,22 +2310,22 @@ pub fn handleAnytimeInput(
         const in_game = anytime.in_game;
 
         if (in_game.toggle_inventory) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_inventory);
             ui_state.toggleMiddlePanel(.inventory);
         }
 
         if (in_game.toggle_gear) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_gear);
             ui_state.toggleMiddlePanel(.gear);
         }
 
         if (in_game.toggle_skills) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_skills);
             ui_state.toggleMiddlePanel(.skills);
         }
 
         if (in_game.toggle_entity_inspect) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_entity_inspect);
             ui_state.toggleMiddlePanel(.entity_inspect);
             ui_state.inspected_entity_index = null;
         }
@@ -2320,7 +2334,7 @@ pub fn handleAnytimeInput(
         // run later in update); a keyboard binding for it is not wired.
 
         if (in_game.toggle_world_map) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_world_map);
             ui_state.toggleFullScreenOverlay(.world_map);
         }
         // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
@@ -2338,7 +2352,7 @@ pub fn handleAnytimeInput(
                 false;
             const any_weapon = player.main_hand_weapon != null or player.off_hand_weapon != null;
             if (any_weapon or skill_prepared) {
-                if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
+                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .swap_weapons);
                 event_push.pushPlayerAction(current, .swap_hands, allocator);
             }
         }
@@ -2486,6 +2500,10 @@ pub fn handleIdleInput(
     // Main menu: menu buttons emit a menu_action (no keybind path).
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
+            // Same effect-site texture rule as the options_action dispatch
+            // (menu buttons are mouse-only, so this is the release cue's
+            // texture half).
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, action);
             switch (action) {
                 .new_game => event_push.pushPlayerAction(current, .start_new_game, allocator),
                 // Main-menu Editor button: open a FRESH empty mission
@@ -2705,7 +2723,10 @@ pub fn handleIdleInput(
                                     .prepare = false,
                                 } }, allocator),
                                 .prepare => |skill_id| {
-                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                                        .base = .button_click_up,
+                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                    });
                                     event_push.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
                                         .skill_id = skill_id,
                                         .target = null,
@@ -2718,7 +2739,10 @@ pub fn handleIdleInput(
                                     // phase) — the arm keeps the shared union
                                     // switch total; the cancel is the sane
                                     // behavior if that invariant ever breaks.
-                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                                        .base = .button_click_up,
+                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                    });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
                             }
@@ -2761,7 +2785,10 @@ pub fn handleIdleInput(
                                     allocator,
                                 ),
                                 .prepare => |skill_id| {
-                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                                        .base = .button_click_up,
+                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                    });
                                     event_push.pushPlayerAction(current, .{ .player_prepare_skill = .{
                                         .caster_index = 0,
                                         .skill_id = skill_id,
@@ -2773,7 +2800,10 @@ pub fn handleIdleInput(
                                     // binding (clear highlights + clear the
                                     // preparation), so the press is a real
                                     // undo step instead of a recorded no-op.
-                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                                        .base = .button_click_up,
+                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                    });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
                             }

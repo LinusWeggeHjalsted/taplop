@@ -971,7 +971,7 @@ pub fn handlePlayerInputEvent(
             }, allocator);
         },
         .player_skip_move => |skip| {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .skip);
             pushEvents(current, &.{
                 .{ .level_event = .{ .player_turn_attack = .{
                     .force_attack_step = skip.force_attack_step,
@@ -1011,7 +1011,7 @@ pub fn handlePlayerInputEvent(
             }, allocator);
         },
         .player_skip_attack => {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .skip);
             pushEvents(current, &.{
                 .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
                 .{ .level_event = .clear_highlights },

@@ -309,12 +309,14 @@ fn update(
                         if (button.editor_mission_row) |mission_row| {
                             player_input.anytime.clicked_editor_mission_row = mission_row;
                         }
-                        // Release sound: generic button-up for actions without a
-                        // specific sound. Actions WITH a specific sound (skip,
-                        // swap_weapons, panel toggles) get their sound from the
-                        // input/event handler that processes the action, so no
-                        // generic up here (would double-play). See DESIGN → Audio.
-                        if (types.releaseSoundForAction(button.action) == null) {
+                        // Release sound: the base up for every button except
+                        // skill slots (auto-fire's use_skill cue subsumes it;
+                        // the prepare path plays its own up base at the
+                        // consumption site). The action's TEXTURE is queued at
+                        // the consumption/effect site, so keyboard triggers
+                        // share it (keys stay click-sound-free). See DESIGN →
+                        // Audio (layered cues).
+                        if (!types.actionIsSkillSlot(button.action)) {
                             history.session.queueSound(history.backing_allocator, .button_click_up);
                         }
                         player_input.idle.tile_clicked = null;

@@ -60,7 +60,7 @@ pub const SoundTexture = union(enum) {
 /// The action-texture arm: the action whose `sfx/buttons/<name>` file
 /// textures the cue, plus the interim placeholder sound played when that
 /// file is missing (actions that carried a specific sound pre-layering —
-/// the placeholder map is `releaseSoundForAction`). Once a texture file
+/// the placeholder map is `actionTextureFallback`). Once a texture file
 /// ships, the placeholder is dead weight; drop the map entry then.
 pub const ActionTexture = struct {
     action: Action,
@@ -523,23 +523,38 @@ pub fn skillTypeBaseSound(skill_type: SkillType) SoundId {
     };
 }
 
-pub fn releaseSoundForAction(action: Action) ?SoundId {
+/// The interim placeholder sound for an action's texture — played while the
+/// action's `sfx/buttons/<name>` file is missing. This is the pre-layering
+/// specific-sound map kept as a bridge: once a texture file ships, its
+/// entry is dead weight (the file wins) — prune entries as assets land.
+/// Skill slots have NO placeholder (the prepare path's up base is the
+/// feedback; auto-fire's use_skill cue subsumes any button sound). See
+/// DESIGN → Audio (layered cues).
+pub fn actionTextureFallback(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
         .swap_weapons => .swap_skill,
         .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu, .toggle_editor_inspector, .toggle_editor_mission_browser => .menu,
-        // Undo/redo: reuses the menu sound (no dedicated sfx).
+        // Undo/redo: reuses the menu sound (no dedicated sfx yet).
         .undo, .redo => .menu,
         .save_game => .menu,
         .restart_mission, .exit_mission, .exit_to_menu => .menu,
         .continue_after_mission, .replay_mission, .overwrite_clone,
         .overwrite_validation_replay => .menu,
-        // Skill slots: suppress the generic button-up (the use_skill event
-        // plays weapon_swing/spell on auto-fire; the prepare path plays
-        // button_click_up explicitly). See DESIGN → Audio.
-        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
-        .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => .button_click_up,
         else => null,
+    };
+}
+
+/// Whether `action` is one of the eight skill-slot actions. The release
+/// seam suppresses the base up for these: auto-fire plays the full skill
+/// cue from the use_skill event (which subsumes any button sound), and the
+/// prepare path plays its own up base at the consumption site. See DESIGN
+/// → Audio (layered cues).
+pub fn actionIsSkillSlot(action: Action) bool {
+    return switch (action) {
+        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
+        .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => true,
+        else => false,
     };
 }
 

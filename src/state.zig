@@ -434,6 +434,25 @@ pub const SessionState = struct {
             @panic("failed to queue sound");
     }
 
+    /// Queue the texture half of an action cue for `action` — no base (the
+    /// release seam owns the base up, and keyboard-triggered actions get
+    /// the texture alone so keys stay click-sound-free). The action's
+    /// interim placeholder (`types.actionTextureFallback`) plays while its
+    /// texture file is missing. Callers gate on `!history.replaying` (the
+    /// `queueSound` convention).
+    pub fn queueActionSound(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        action: types.Action,
+    ) void {
+        self.queueCue(allocator, .{
+            .texture = .{ .action = .{
+                .action = action,
+                .fallback = types.actionTextureFallback(action),
+            } },
+        });
+    }
+
     /// Drain and return the pending sounds slice. The caller owns playing
     /// them; the queue length is reset to 0 (capacity retained) WITHOUT
     /// memset — Zig's `clearRetainingCapacity` does `@memset(items,
