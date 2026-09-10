@@ -36,6 +36,37 @@ const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
 
+/// Upper bound on probed music intensity layers (a pathological-dir guard —
+/// probing stops at the first missing file long before this in practice).
+/// See DESIGN → Audio (layered music).
+const max_music_layers: usize = 16;
+
+/// The intensity-layer fade duration (volume-lerp time constant, real
+/// microseconds): aggro/death transitions crossfade instead of hard-cutting.
+/// See DESIGN → Audio (layered music).
+const music_fade_microseconds: u64 = 1_000_000;
+
+/// One ambient-music stream layer (see `RaylibBackend.music_layers`).
+/// `volume` is the lerped TIER-level volume (0..1); the music/master
+/// settings scaling is applied at setMusicVolume time each frame.
+const MusicLayer = struct {
+    stream: rl.Music,
+    data: []const u8,
+    volume: f32,
+};
+
+/// The tier-level volume of music intensity layer `index` (1-based) while
+/// active — descending so a full stack never drowns the base track. The
+/// table covers more tiers than any realistic stem set; the last entry is
+/// the floor for anything beyond. See DESIGN → Audio (layered music).
+fn musicLayerVolume(layer_index: usize) f32 {
+    const tier_volumes = [_]f32{ 0.8, 0.65, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15 };
+    return if (layer_index <= tier_volumes.len)
+        tier_volumes[layer_index - 1]
+    else
+        tier_volumes[tier_volumes.len - 1];
+}
+
 // -- Dev diagnostics (dev-mode builds only) --
 // A best-effort diagnostic log flushed to "logs/diag.txt" in the persistent
 // dir after every section (see AGENTS → Dev Tools). Purpose: troubleshooting
@@ -656,18 +687,18 @@ pub const RaylibBackend = struct {
     /// `Action`, resolved from `assets/audio/sfx/buttons/<action>`. Same
     /// miss-not-cached discipline as `skill_sound_cache`.
     action_sound_cache: std.AutoHashMapUnmanaged(types.Action, ?rl.Sound) = .empty,
-    /// The always-on ambient music stream, loaded via
-    /// `loadMusicStreamFromMemory`. null if the audio device isn't ready or
-    /// the asset failed to load. Looping; updated each frame by
-    /// `updateMusic`. See DESIGN → Audio.
-    music: ?rl.Music = null,
-    /// The raw audio bytes backing `music` (shipped `.ogg` or a shadowed
-    /// file — see `FileSource.readAudioFile`). raylib's
-    /// `LoadMusicStreamFromMemory`
-    /// (stb_vorbis) keeps a POINTER to the passed buffer (no internal copy),
-    /// so the bytes must outlive the stream — freed in `deinitAudio` alongside
-    /// the music unload. null when no music loaded.
-    music_data: ?[]const u8 = null,
+    /// The ambient-music stream stack: index 0 = the base track (always
+    /// on), 1..N = the intensity layers (`ambient_layer_1..N` — one per
+    /// active enemy, played while the projected active count >= the layer
+    /// index; see DESIGN → Audio — layered music). Loaded generically at
+    /// init: layers are probed until the first missing file, so new stems
+    /// are a pure asset drop — the stack extends without code changes.
+    /// All layers must be IDENTICAL-LENGTH, sample-aligned loops (raylib
+    /// loops each stream independently — only exact-equal lengths keep
+    /// them phase-locked; a mismatch is diag-warned at load in dev
+    /// builds). Empty when audio isn't ready or the base asset is
+    /// missing.
+    music_layers: []MusicLayer = &.{},
     /// Whether `initAudio` succeeded in opening the audio device. If false,
     /// all audio methods no-op (the game runs silent, never crashes).
     audio_ready: bool = false,
@@ -822,23 +853,52 @@ pub const RaylibBackend = struct {
         if (!rl.isAudioDeviceReady()) return;
         self.audio_ready = true;
 
-        // Load + start the music stream FIRST (looping). raylib's stb_vorbis
-        // keeps a POINTER to the buffer (no copy), so the bytes must outlive
-        // the stream — hold them in `music_data`, freed in `deinitAudio`.
-        // Loading music before sfx: LoadSoundFromWave converts to the device
-        // format, and the music stream's setup must happen first so the sfx
-        // conversion targets the right state.
-        if (self.file_source.readAudioFile(self.allocator, "assets/audio/music/ambient")) |audio_file| {
-            if (rl.loadMusicStreamFromMemory(audio_file.format, audio_file.bytes) catch null) |music_value| {
-                var music = music_value;
-                music.looping = true;
-                self.music = music;
-                self.music_data = audio_file.bytes;
-                rl.playMusicStream(music);
-            } else {
+        // Load + start the music streams FIRST (looping): the base track,
+        // then the intensity layers (probed until the first missing file —
+        // see `music_layers`). raylib's stb_vorbis keeps a POINTER to the
+        // buffer (no copy), so each layer holds its own bytes in
+        // `music_layers[i].data`, freed in `deinitAudio`. Loading music
+        // before sfx: LoadSoundFromWave converts to the device format, and
+        // the music stream's setup must happen first so the sfx conversion
+        // targets the right state.
+        var layers: std.ArrayListUnmanaged(MusicLayer) = .empty;
+        var layer_index: usize = 0;
+        while (layer_index < max_music_layers) : (layer_index += 1) {
+            const path: []const u8 = if (layer_index == 0)
+                "assets/audio/music/ambient"
+            else
+                std.fmt.allocPrint(
+                    self.frame_arena.allocator(),
+                    "assets/audio/music/ambient_layer_{d}",
+                    .{layer_index},
+                ) catch @panic("failed to build music layer path");
+            const audio_file = self.file_source.readAudioFile(self.allocator, path) orelse break;
+            const stream = rl.loadMusicStreamFromMemory(audio_file.format, audio_file.bytes) catch {
                 self.allocator.free(audio_file.bytes);
+                break;
+            };
+            var music = stream;
+            music.looping = true;
+            // Base on; layers start silent (their volumes are driven by
+            // the per-frame active-enemy projection in `updateMusic`).
+            layers.append(self.allocator, .{
+                .stream = music,
+                .data = audio_file.bytes,
+                .volume = if (layer_index == 0) 1.0 else 0.0,
+            }) catch @panic("failed to append music layer");
+            // Phase-lock check: stems must be identical-length loops or the
+            // layers drift apart as they loop independently (dev-mode diag
+            // only, best-effort — never let a diag write crash init).
+            if (layer_index > 0 and layers.items[0].stream.frameCount != music.frameCount) {
+                self.diagAppend(
+                    "music layer {d} frame count {d} != base {d} (stems must be identical-length loops)\n",
+                    .{ layer_index, music.frameCount, layers.items[0].stream.frameCount },
+                );
             }
+            rl.playMusicStream(music);
         }
+        self.music_layers = layers.toOwnedSlice(self.allocator) catch
+            @panic("failed to finalize music layers");
 
         // Load every sfx AFTER the music stream is set up. A missing/unreadable
         // file caches null (the game continues silent for that sound).
@@ -846,7 +906,7 @@ pub const RaylibBackend = struct {
             self.ensureSoundLoaded(sound);
         }
 
-        self.applyVolumes(settings);
+        self.applyMusicVolumes(settings);
     }
 
     /// Load a single sfx from the file source into the sound cache. Caches
@@ -906,19 +966,22 @@ pub const RaylibBackend = struct {
         };
     }
 
-    /// Tear down audio: stop + unload music, unload all sfx, close the audio
-    /// device. Safe to call when audio was never initialized (no-op).
+    /// Tear down audio: stop + unload the music streams, unload all sfx,
+    /// close the audio device. Safe to call when audio was never
+    /// initialized (no-op).
     pub fn deinitAudio(self: *RaylibBackend) void {
         if (!self.audio_ready) return;
-        if (self.music) |music| {
-            rl.stopMusicStream(music);
-            rl.unloadMusicStream(music);
-            self.music = null;
+        for (self.music_layers) |*layer| {
+            rl.stopMusicStream(layer.stream);
+            rl.unloadMusicStream(layer.stream);
+            self.allocator.free(layer.data);
         }
-        if (self.music_data) |bytes| {
-            self.allocator.free(bytes);
-            self.music_data = null;
+        // toOwnedSlice on an empty list yields a zero-length slice —
+        // freeing that would be invalid (the freeMissions discipline).
+        if (self.music_layers.len > 0) {
+            self.allocator.free(self.music_layers);
         }
+        self.music_layers = &.{};
         var sounds = self.sound_cache.valueIterator();
         while (sounds.next()) |maybe_sound| {
             if (maybe_sound.*) |sound| rl.unloadSound(sound);
@@ -936,20 +999,6 @@ pub const RaylibBackend = struct {
         self.action_sound_cache.deinit(self.allocator);
         rl.closeAudioDevice();
         self.audio_ready = false;
-    }
-
-    /// Apply music + sfx volumes from settings. Sfx volume is applied per-play
-    /// (see `playSounds`); this sets the music stream volume. Master scales
-    /// both. Volumes are u32 0–100 in Settings; converted to f32 0.0–1.0
-    /// here at the raylib seam. No-op when audio isn't ready. See DESIGN → UI
-    /// Framework → Settings screen (Volume integer migration).
-    pub fn applyVolumes(self: *RaylibBackend, settings: types.Settings) void {
-        if (!self.audio_ready) return;
-        if (self.music) |music| {
-            const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
-            const music_vol = @as(f32, @floatFromInt(settings.music_volume)) / 100.0;
-            rl.setMusicVolume(music, music_vol * master);
-        }
     }
 
     /// Play all queued one-shot sounds (drained from `SessionState`), each at
@@ -1071,12 +1120,51 @@ pub const RaylibBackend = struct {
         return sound;
     }
 
-    /// Advance the music stream each frame. Must be called every frame the
-    /// game runs (raylib requires it for streaming audio). No-op when audio
-    /// isn't ready or music failed to load.
-    pub fn updateMusic(self: *RaylibBackend) void {
+    /// Advance every music stream each frame (raylib requires it for
+    /// streaming) + drive the intensity layers: each layer's volume lerps
+    /// toward its target — the base always 1.0, layer i on when
+    /// `active_enemy_count >= i` — then the music/master settings scaling
+    /// is applied. `active_enemy_count` is the frame's projection of ALIVE,
+    /// AGGRO'D, enemy-team entities: a state projection, not an event, so
+    /// it is replay/undo-safe by construction (see DESIGN → Audio —
+    /// layered music). No-op when audio isn't ready.
+    pub fn updateMusic(
+        self: *RaylibBackend,
+        active_enemy_count: u32,
+        delta_microseconds: u64,
+        settings: types.Settings,
+    ) void {
         if (!self.audio_ready) return;
-        if (self.music) |music| rl.updateMusicStream(music);
+        const fade_fraction = @min(
+            @as(f32, 1.0),
+            @as(f32, @floatFromInt(delta_microseconds)) /
+                @as(f32, @floatFromInt(music_fade_microseconds)),
+        );
+        for (self.music_layers, 0..) |*layer, layer_index| {
+            rl.updateMusicStream(layer.stream);
+            const target: f32 = if (layer_index == 0)
+                1.0
+            else if (active_enemy_count >= layer_index)
+                musicLayerVolume(layer_index)
+            else
+                0.0;
+            layer.volume += (target - layer.volume) * fade_fraction;
+        }
+        self.applyMusicVolumes(settings);
+    }
+
+    /// Apply the music/master settings scaling to every layer's current
+    /// tier volume (the settings half of a layer's final volume — the
+    /// tier half is `layer.volume`). Called per frame from `updateMusic`
+    /// and once at init so the first stream never blares at raylib's
+    /// default volume. No-op when audio isn't ready.
+    fn applyMusicVolumes(self: *RaylibBackend, settings: types.Settings) void {
+        if (!self.audio_ready) return;
+        const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
+        const music_vol = @as(f32, @floatFromInt(settings.music_volume)) / 100.0;
+        for (self.music_layers) |*layer| {
+            rl.setMusicVolume(layer.stream, layer.volume * music_vol * master);
+        }
     }
 
     /// Extract per-glyph advance widths from the loaded font into a

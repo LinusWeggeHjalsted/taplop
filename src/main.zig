@@ -477,8 +477,26 @@ fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) vo
 const drain_budget_microseconds: u64 = 10 * std.time.ms_per_s;
 
 /// One frame's worth of work — the platform-agnostic core, shared by both the
-/// native and web drivers. Gameplay outcome depends on event order + real-
-/// clock wait deltas, both identical across platforms; only wall-clock drain
+/// The number of ALIVE, AGGRO'D, enemy-team entities — the music
+/// intensity projection (one ambient layer per active enemy; see DESIGN →
+/// Audio — layered music). Pure integer gameplay logic; a state projection
+/// computed per frame (never an event), so replay/undo are safe by
+/// construction. Hubs have no `level` → 0 layers there.
+fn countActiveEnemies(game_state: *const state.GameState) u32 {
+    const level = game_state.level orelse return 0;
+    var count: u32 = 0;
+    for (level.entities) |entity| {
+        if (entity.team == 0) continue; // the player + same-team helpers
+        if (entity.current_health == 0) continue;
+        if (!entity.is_active) continue; // not yet aggroed — no intensity
+        count += 1;
+    }
+    return count;
+}
+
+/// The platform-agnostic per-frame update step, shared by the native and
+/// web drivers. Gameplay outcome depends on event order + real-clock wait
+/// deltas, both identical across platforms; only wall-clock drain
 /// duration differs (native drains as fast as the CPU allows within the
 /// budget, web drains within the budget per requestAnimationFrame). This
 /// function NEVER yields/sleeps — scheduling is the driver's job (native
@@ -487,22 +505,16 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const history = &frame_state.history;
 
     // Music streams require a per-frame update call (raylib decodes in
-    // chunks). No-op when audio isn't initialized. See DESIGN → Audio.
-    backend.updateMusic();
-
-    // Live-apply audio volumes: compare the current settings against the
-    // last-applied snapshot and re-apply on a diff. Keeps input handlers
-    // pure (no backend pointer) — the settings slider mutates
-    // `history.settings` directly, and this diff fires next frame. See
-    // DESIGN → UI Framework → Settings screen (Live-apply).
-    {
-        const s = history.settings;
-        const last = history.session.last_applied_volumes;
-        if (s.master_volume != last.master or s.music_volume != last.music or s.sound_effects_volume != last.sfx) {
-            backend.applyVolumes(s);
-            history.session.last_applied_volumes = .{ .master = s.master_volume, .music = s.music_volume, .sfx = s.sound_effects_volume };
-        }
-    }
+    // chunks) + the intensity projection drives the layer volumes. No-op
+    // when audio isn't initialized. The music/master volume scaling is
+    // applied per frame here (sfx volume is per-play in `playSounds`), so
+    // volume-setting changes apply live with no diff machinery. See
+    // DESIGN → Audio.
+    backend.updateMusic(
+        countActiveEnemies(&history.current_state),
+        backend.deltaMicroseconds(),
+        history.settings,
+    );
 
     applyRenderResolutionSetting(backend, history);
 
@@ -1052,6 +1064,38 @@ const FakeRenderBackend = struct {
         return !self.fail;
     }
 };
+
+test "countActiveEnemies: alive + aggro'd + enemy-team only, null level is 0" {
+    // The music intensity projection (see DESIGN → Audio — layered music).
+    var entities = [_]types.Entity{
+        .{ .team = 0, .current_health = 10, .is_active = true }, // player
+        .{ .team = 1, .current_health = 10, .is_active = true }, // active enemy
+        .{ .team = 1, .current_health = 10, .is_active = false }, // not aggroed
+        .{ .team = 1, .current_health = 0, .is_active = true }, // dead
+        .{ .team = 2, .current_health = 10, .is_active = true }, // second enemy team counts
+        .{ .team = 0, .current_health = 10, .is_active = true }, // helper, player team
+    };
+    var level: types.Level = .{};
+    level.entities = &entities;
+    var game_state = state.GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = level,
+        .hub = null,
+    };
+    game_state.level = level;
+    try std.testing.expectEqual(@as(u32, 2), countActiveEnemies(&game_state));
+
+    // No level (hub, main menu) — nothing to project.
+    game_state.level = null;
+    try std.testing.expectEqual(@as(u32, 0), countActiveEnemies(&game_state));
+}
 
 test "applyRenderResolutionSetting: applies on diff, snapshot follows, no-op without one" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
