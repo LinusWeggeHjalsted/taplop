@@ -152,7 +152,7 @@ fn update(
             player_input.idle.confirm = false;
         } else if (ui.buttonAt(ui_elements, pointer_position)) |button| {
             history.session.pressed_button = button.action;
-            history.session.queueSound(history.backing_allocator, .button_click_down);
+            history.session.queueSound(history.backing_allocator, .button_base_down);
             player_input.idle.tile_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.blockingElementAt(ui_elements, pointer_position) != null) {
@@ -317,7 +317,7 @@ fn update(
                         // share it (keys stay click-sound-free). See DESIGN →
                         // Audio (layered cues).
                         if (!types.actionIsSkillSlot(button.action)) {
-                            history.session.queueSound(history.backing_allocator, .button_click_up);
+                            history.session.queueSound(history.backing_allocator, .button_base_up);
                         }
                         player_input.idle.tile_clicked = null;
                         player_input.idle.confirm = false;

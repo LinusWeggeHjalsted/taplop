@@ -348,74 +348,87 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   and plays them through the backend. The `!replaying` gate is at the PUSH
   site, so replay pushes nothing.
 - **Layered cues (`SoundCue`, types.zig).** Every trigger is a CUE: a
-  category BASE layer plus an optional specific TEXTURE layer, played
-  simultaneously; mix balance is baked into the asset files (both layers play
-  at the sfx volume — no per-layer volume data). Plain one-shots (damage,
-  move, ...) are base-only cues. The two layered families:
+  category BASE layer plus an optional specific LAYER, played
+  simultaneously; mix balance is baked into the asset files (both layers
+  play at the sfx volume — no per-layer volume data). Whether the base is
+  percussive and the layer ambient (or the reverse) is a per-file authoring
+  choice — every file name carries its role explicitly (`*_base` /
+  `*_layer`), so the naming never presumes either. Plain one-shots (damage,
+  move, ...) are base-only cues. The three layered families:
   - **Skill cues** — base by `SkillType` (`skillTypeBaseSound`:
-    weapon_skill→weapon_swing, spell→spell, cantrip/enchantment/curse→their
-    own ids) + texture by `SkillId` at `assets/audio/sfx/skills/<id>` (stem
-    defaults to the skill's own id — zero declaration per skill). Queued by
-    the `use_skill` handler. The cantrip/enchantment/curse base FILES haven't
-    shipped: the backend's `soundFallback` chain plays `spell` in their
-    place (one level deep, terminates — spell has no fallback).
-  - **Button cues** — press ALWAYS plays plain `button_click_down`; release
-    plays the `button_click_up` base plus the action's TEXTURE at
-    `assets/audio/sfx/buttons/<action_snake_case>`. Texture ownership is
-    split by layer, which is what keeps the layers from double-playing:
+    weapon_skill→weapon_base, spell→spell_base, cantrip/enchantment/curse→
+    their own `*_base` ids) + layer by `SkillId` at
+    `assets/audio/sfx/skills/<id>_layer` (stem defaults to the skill's own
+    id — zero declaration per skill). Queued by the `use_skill` handler.
+    The cantrip/enchantment/curse base FILES haven't shipped: the backend's
+    `soundFallback` chain plays `spell_base` in their place (one level
+    deep, terminates — spell_base has no fallback).
+  - **Button cues** — press ALWAYS plays plain `button_base_down`; release
+    plays the `button_base_up` base plus the action's LAYER at
+    `assets/audio/sfx/buttons/<action_snake_case>_layer`. Layer ownership is
+    split by role, which is what keeps the layers from double-playing:
     the release SEAM owns the base up; the consumption/effect sites own the
-    texture (`queueActionSound`) — so keyboard triggers share the texture
+    layer (`queueActionSound`) — so keyboard triggers share the layer
     with no click sounds (the no-click-sounds-for-keys rule), and semantic
     feedback still only fires when the action does something. The
     `options_action` + `menu_action` dispatch switches queue their action's
-    texture in one place each (covering ~50 actions for button AND keybind
+    layer in one place each (covering ~50 actions for button AND keybind
     paths); the scattered flag sections (toggles, swap, skip, undo/redo,
     editor save/export/new-mission, mission browser, dismiss_error) queue at
     their sites. Skill slots: the release seam suppresses the up base
     (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes any
     button sound, and the prepare/unprepare path plays its own up base +
-    slot texture at the consumption site.
-  - **`types.actionTextureFallback`** is the interim placeholder map: while
-    an action's texture file is missing, its pre-layering specific sound
+    slot layer at the consumption site.
+  - **Item-action cues** (equip / salvage / learn_skill) — the shared
+    `item_base` base plus a per-action layer keyed by the one-shot `SoundId`
+    at `assets/audio/sfx/items/<stem>_layer`. The keyed SoundId doubles as
+    the interim fallback: while the layer file is missing, the
+    pre-layering one-shot plays (and `item_base` is separately silent until
+    it ships, so the interim result is exactly the old solo sound). Queued
+    at the effect sites (the `equip_item`/`salvage_item`/`learn_skill`
+    event handlers — after their no-op guards, so empty-slot salvages stay
+    silent).
+  - **`types.actionLayerFallback`** is the interim placeholder map: while
+    an action's layer file is missing, its pre-layering specific sound
     plays (skip, swap_weapons→swap_skill, the menu-sound cluster→menu).
-    Entries go dead as texture files ship — prune them as assets land.
-  - **Texture caches miss-not-cached** (`skill_sound_cache`/
-    `action_sound_cache`, keyed by SkillId/Action): a missing texture file is
-    RETRIED on the next cue, so a file dropped into the persistent dir
-    mid-session plays on the next cast/click without relaunching — the
-    sound-designer iteration loop. Bases (`sound_cache`) stay eager +
-    null-cached (they're few, and all shipped).
+    Entries go dead as layer files ship — prune them as assets land.
+  - **Layer caches miss-not-cached** (`skill_layer_cache`/
+    `action_layer_cache`/`item_layer_cache`, keyed by SkillId/Action/
+    SoundId): a missing layer file is RETRIED on the next cue, so a file
+    dropped into the persistent dir mid-session plays on the next
+    cast/click without relaunching — the sound-designer iteration loop.
+    Bases (`sound_cache`) stay eager + null-cached (they're few, and all
+    shipped).
 - **`SoundId` enum** (types.zig) — one variant per sfx file under
-  `assets/audio/sfx/` — the BASE sounds (skill-type bases weapon_swing /
-  spell / cantrip / enchantment / curse + the button pair button_click_down /
-  button_click_up) and the one-shots (move, damage, pickup, skip, equip,
-  learn_skill, salvage, swap_skill, menu, defeat, mission_completion, heal,
-  stun, knockback, retreat, death, level_complete, aggro). Music is a stream
-  stack, NOT a `SoundId`. **Sound names align with their trigger events where
-  one exists** (move↔move, pickup↔pickup, equip↔equip, etc.); the
-  one intentional divergence is `damage` (fired by the `attack` + `collision`
-  events — many-to-one, no `damage` event so no name clash) and
-  `weapon_swing` (the weapon-skill BASE, fired by the `use_skill` handler for
-  weapon skills — renamed from `attack` so `attack` refers to exactly one
-  thing: the damage-primitive event).
-  The one-shot map: `move_entity`/`move_player`→move, `attack`/`collision`→
-  damage, `heal`→heal, `stun`→stun, `knockback`→knockback, `retreat`→retreat,
-  `death`(enemy)→death, `death`(player)→defeat, `pickup_items`→pickup,
-  `equip_item`→equip, `learn_skill`→learn_skill, `salvage_item`→salvage,
-  `aggro` (every newly-aggroed enemy, via `activateEntity` — the one queue
-  site all activation paths route through)→aggro, non-final `end_level`→
-  level_complete, final `end_level`→mission_completion. Multi-hit skills fire
-  one damage sound per `attack` (N hits → N impacts); if that becomes an
-  audio mess, throttle in the backend's `playSounds` (per-sfx cooldown), NOT
-  at trigger sites.
+  `assets/audio/sfx/` — the BASE sounds (skill-type bases weapon_base /
+  spell_base / cantrip_base / enchantment_base / curse_base, the item base,
+  the button base pair button_base_down / button_base_up) and the one-shots
+  (move, damage, collision, pickup, skip, equip, salvage, learn_skill,
+  swap_skill, menu, defeat, mission_completion, heal, stun, knockback,
+  retreat, death, level_complete, aggro). Music is a stream stack, NOT a
+  `SoundId`. **Sound names align with their trigger events where one
+  exists** (move↔move, pickup↔pickup, collision↔collision, etc.).
+  The one-shot map: `move_entity`/`move_player`→move, `attack`→damage,
+  `collision`→collision, `heal`→heal, `stun`→stun,
+  `knockback`→knockback, `retreat`→retreat, `death`(enemy)→death,
+  `death`(player)→defeat, `pickup_items`→pickup, `aggro` (every
+  newly-aggroed enemy, via `activateEntity` — the one queue site all
+  activation paths route through)→aggro, non-final `end_level`→
+  level_complete, final `end_level`→mission_completion. The item actions
+  (equip_item/salvage_item/learn_skill) are layered CUES, not plain
+  one-shots — their SoundIds (equip/salvage/learn_skill) name the LAYER
+  files + serve as interim fallbacks. Multi-hit skills fire one damage
+  sound per `attack` (N hits → N impacts); if that becomes an audio mess,
+  throttle in the backend's `playSounds` (per-sfx cooldown), NOT at trigger
+  sites.
 - **Button press/release model.** Button actions fire on mouse RELEASE, not
   press (standard UI behavior; drag-off cancels). `SessionState.pressed_button:
   ?Action` records the button under the press; release fires the action only
   if the release is over the same button. Press always queues
-  `button_click_down` (plain — never layered). Release queues the
-  `button_click_up` base for every action EXCEPT skill slots (see the layered
-  cues bullet), and the action's texture is queued at the consumption site
-  (`queueActionSound`), shared with keyboard triggers — keys get the texture
+  `button_base_down` (plain — never layered). Release queues the
+  `button_base_up` base for every action EXCEPT skill slots (see the layered
+  cues bullet), and the action's layer is queued at the consumption site
+  (`queueActionSound`), shared with keyboard triggers — keys get the layer
   alone (no click sounds, since no button was involved). Text-field commits
   play a plain up (no button was pressed; the commit IS the interaction).
   `pressed_button` is transient — cleared on screen transition alongside
@@ -426,8 +439,8 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   loads + starts the music streams, then loads the sfx. The base cache
   (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded bases; missing audio
   caches null and skips play through the `soundFallback` chain (like missing
-  sprites → magenta, but for audio it's silent). The skill/action TEXTURE
-  caches are lazy + hit-only (see layered cues). `deinitAudio` (called from
+  sprites → magenta, but for audio it's silent). The skill/action/item
+  LAYER caches are lazy + hit-only (see layered cues). `deinitAudio` (called from
   `deinit`) unloads everything + closes the device. If the audio device
   can't open, `audio_ready` stays false and ALL audio methods no-op — the
   game runs silent, never crashes. **MUSIC LIFETIME GOTCHA:** raylib's

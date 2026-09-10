@@ -2870,8 +2870,32 @@ asset drops. Five commits, one per slice:
    redundant; DESIGN's live-apply section updated).
 
 Zero asset churn, zero behavior regression: every pre-layering sound is
-preserved either as a base or as an `actionTextureFallback`/`soundFallback`
+preserved either as a base or as an `actionLayerFallback`/`soundFallback`
 placeholder that a shipped file automatically overrides.
+
+### Slice 10 — `_base`/`_layer` naming + item cues + collision (DONE)
+
+Naming pass so no file or identifier presumes which half is percussive vs
+ambient (an undecided authoring question): every layered family now uses the
+neutral `_base` / `_layer` vocabulary in code AND asset names.
+
+- **Renames** — `SoundTexture`→`SoundLayer` (+ `ActionTexture`→`ActionLayer`,
+  `SoundCue.texture`→`.layer`, `actionTextureFallback`→`actionLayerFallback`);
+  SoundId bases: `weapon_swing`→`weapon_base`, `spell`→`spell_base`,
+  `cantrip/enchantment/curse`→`*_base`, `button_click_down/up`→
+  `button_base_down/base_up`; backend fns/caches: `getSkillLayer`/
+  `getActionLayer`/`loadSoundLayerAt`, `*_layer_cache`. Assets followed: 4
+  `git mv`s in `assets/audio/sfx/`. Layer files gained the explicit suffix:
+  `sfx/skills/<id>_layer`, `sfx/buttons/<action>_layer`.
+- **Item-action cues** — equip / salvage / learn_skill became layered cues:
+  shared `item_base` + per-action layer keyed by the one-shot `SoundId` at
+  `sfx/items/<stem>_layer` (a third `SoundLayer` arm). The keyed SoundId
+  doubles as the interim fallback (the pre-layering solo sound plays until
+  the layer file ships — zero behavior regression). Queued at the effect
+  sites in the `equip_item`/`salvage_item`/`learn_skill` handlers, after
+  their no-op guards.
+- **`collision`** got its own one-shot (was sharing `damage`); `stun` already
+  had one from slice 9.
 
 ## Animation
 

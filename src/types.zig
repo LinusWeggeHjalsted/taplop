@@ -15,33 +15,30 @@ pub const EffectId = generated.EffectId;
 pub const utility_skill_count = 5;
 
 /// One-shot sound effects, one variant per sfx file under `assets/audio/sfx/`.
-/// Pushed onto `SessionState.pending_sounds` by event handlers (gated
-/// `!replaying`) and input handlers, then drained by `frame()` and played via
-/// the backend. Music is a single always-on stream, not a `SoundId`. See
-/// DESIGN → Audio.
-/// One-shot sound effects, one variant per sfx file under `assets/audio/sfx/`.
-/// The skill-type bases (weapon_swing, spell, cantrip, enchantment, curse)
-/// are the base layer of a skill cue — see `skillTypeBaseSound`. Pushed
-/// onto `SessionState.pending_sounds` (as cue bases) by event handlers
-/// (gated `!replaying`) and input handlers, then drained by `frame()` and
-/// played via the backend. Music is a single always-on stream, not a
-/// `SoundId`. See DESIGN → Audio.
+/// The BASE sounds of layered cues (skill-type bases `*_base`, the item
+/// base, the button base pair) and the plain one-shots — see
+/// `skillTypeBaseSound` + DESIGN → Audio (layered cues). Pushed onto
+/// `SessionState.pending_sounds` (as cue bases) by event handlers (gated
+/// `!replaying`) and input handlers, then drained by `frame()` and played
+/// via the backend. Music is a stream stack, not a `SoundId`.
 pub const SoundId = enum {
     move,
-    weapon_swing,
-    spell,
-    cantrip,
-    enchantment,
-    curse,
+    weapon_base,
+    spell_base,
+    cantrip_base,
+    enchantment_base,
+    curse_base,
+    item_base,
     damage,
+    collision,
     pickup,
     skip,
     equip,
     learn_skill,
     salvage,
     swap_skill,
-    button_click_down,
-    button_click_up,
+    button_base_down,
+    button_base_up,
     menu,
     defeat,
     mission_completion,
@@ -54,34 +51,46 @@ pub const SoundId = enum {
     aggro,
 };
 
-/// The specific half of a layered cue, resolved to a file by enum key:
-/// skill textures at `assets/audio/sfx/skills/<id>.ogg`, action textures at
-/// `assets/audio/sfx/buttons/<action>.ogg` (`.wav` accepted for both — see
-/// FileSource.readAudioFile). A missing texture file is a normal state —
-/// the cue's base layer plays alone. See DESIGN → Audio (layered cues).
-pub const SoundTexture = union(enum) {
+/// The specific half of a layered cue (the LAYER, resolved to a file by
+/// enum key): skill layers at `assets/audio/sfx/skills/<id>_layer.ogg`,
+/// action layers at `assets/audio/sfx/buttons/<action>_layer.ogg`, item
+/// layers at `assets/audio/sfx/items/<stem>_layer.ogg` (`.wav` accepted —
+/// see FileSource.readAudioFile). A missing layer file is a normal state —
+/// the cue's base plays alone (or the arm's interim fallback sounds).
+/// Whether the base is percussive and the layer ambient (or the reverse)
+/// is a per-file authoring choice — the names are deliberately neutral.
+/// See DESIGN → Audio (layered cues).
+pub const SoundLayer = union(enum) {
     skill: SkillId,
-    action: ActionTexture,
+    action: ActionLayer,
+    /// Item-action layer (equip / salvage / learn_skill), keyed by the
+    /// one-shot `SoundId` whose stem names the layer file. The keyed
+    /// SoundId doubles as the interim fallback: while the layer file is
+    /// missing, the pre-layering one-shot plays (and the `item_base`
+    /// base is separately silent until it ships, so the interim result
+    /// is exactly the old solo sound).
+    item: SoundId,
 };
 
-/// The action-texture arm: the action whose `sfx/buttons/<name>` file
-/// textures the cue, plus the interim placeholder sound played when that
+/// The action-layer arm: the action whose `sfx/buttons/<name>_layer` file
+/// layers the cue, plus the interim placeholder sound played when that
 /// file is missing (actions that carried a specific sound pre-layering —
-/// the placeholder map is `actionTextureFallback`). Once a texture file
+/// the placeholder map is `actionLayerFallback`). Once a layer file
 /// ships, the placeholder is dead weight; drop the map entry then.
-pub const ActionTexture = struct {
+pub const ActionLayer = struct {
     action: Action,
     fallback: ?SoundId = null,
 };
 
-/// One queued sound cue: a category base layer plus an optional specific
-/// texture layer, played simultaneously. Plain one-shots (damage, move,
-/// ...) are base-only cues; skill casts and button releases layer a
-/// texture over their base. Layer mix balance is baked into the asset
-/// files, not expressed here. See DESIGN → Audio (layered cues).
+/// One queued sound cue: a category BASE layer plus an optional specific
+/// LAYER, played simultaneously. Plain one-shots (damage, move, ...) are
+/// base-only cues; skill casts, button releases, and item actions layer
+/// their specific sound over the base. Layer mix balance is baked into
+/// the asset files, not expressed here. See DESIGN → Audio (layered
+/// cues).
 pub const SoundCue = struct {
     base: ?SoundId = null,
-    texture: ?SoundTexture = null,
+    layer: ?SoundLayer = null,
 };
 
 pub const Vector2 = struct {
@@ -522,22 +531,22 @@ pub const SettingRef = struct {
 /// placeholder. See DESIGN → Audio (layered cues).
 pub fn skillTypeBaseSound(skill_type: SkillType) SoundId {
     return switch (skill_type) {
-        .weapon_skill => .weapon_swing,
-        .spell => .spell,
-        .cantrip => .cantrip,
-        .enchantment => .enchantment,
-        .curse => .curse,
+        .weapon_skill => .weapon_base,
+        .spell => .spell_base,
+        .cantrip => .cantrip_base,
+        .enchantment => .enchantment_base,
+        .curse => .curse_base,
     };
 }
 
-/// The interim placeholder sound for an action's texture — played while the
-/// action's `sfx/buttons/<name>` file is missing. This is the pre-layering
-/// specific-sound map kept as a bridge: once a texture file ships, its
+/// The interim placeholder sound for an action's layer — played while the
+/// action's `sfx/buttons/<name>_layer` file is missing. This is the pre-layering
+/// specific-sound map kept as a bridge: once a layer file ships, its
 /// entry is dead weight (the file wins) — prune entries as assets land.
 /// Skill slots have NO placeholder (the prepare path's up base is the
 /// feedback; auto-fire's use_skill cue subsumes any button sound). See
 /// DESIGN → Audio (layered cues).
-pub fn actionTextureFallback(action: Action) ?SoundId {
+pub fn actionLayerFallback(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
         .swap_weapons => .swap_skill,

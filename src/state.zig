@@ -297,7 +297,7 @@ pub const SessionState = struct {
     /// gate is automatic). See DESIGN → Input.
     pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
 
-    /// Pending sound cues (base + optional texture layers) queued by event
+    /// Pending sound cues (base + optional layer) queued by event
     /// handlers (gated `!replaying`) and input handlers during a frame.
     /// Drained by `frame()` after the update drain and played via the
     /// backend. Off the undoable GameState → replay-safe by construction
@@ -412,7 +412,7 @@ pub const SessionState = struct {
         self.queueCue(allocator, .{ .base = sound });
     }
 
-    /// Append a layered sound cue (base + optional texture) to the pending
+    /// Append a layered sound cue (base + optional layer) to the pending
     /// queue. Same replay-gate convention as `queueSound` (the gate is at
     /// the call site). See DESIGN → Audio (layered cues).
     pub fn queueCue(
@@ -424,11 +424,11 @@ pub const SessionState = struct {
             @panic("failed to queue sound");
     }
 
-    /// Queue the texture half of an action cue for `action` — no base (the
+    /// Queue the layer half of an action cue for `action` — no base (the
     /// release seam owns the base up, and keyboard-triggered actions get
-    /// the texture alone so keys stay click-sound-free). The action's
-    /// interim placeholder (`types.actionTextureFallback`) plays while its
-    /// texture file is missing. Callers gate on `!history.replaying` (the
+    /// the layer alone so keys stay click-sound-free). The action's
+    /// interim placeholder (`types.actionLayerFallback`) plays while its
+    /// layer file is missing. Callers gate on `!history.replaying` (the
     /// `queueSound` convention).
     pub fn queueActionSound(
         self: *SessionState,
@@ -436,9 +436,9 @@ pub const SessionState = struct {
         action: types.Action,
     ) void {
         self.queueCue(allocator, .{
-            .texture = .{ .action = .{
+            .layer = .{ .action = .{
                 .action = action,
-                .fallback = types.actionTextureFallback(action),
+                .fallback = types.actionLayerFallback(action),
             } },
         });
     }
@@ -2682,15 +2682,15 @@ test "SessionState sound queue: queue + drain returns sounds in order" {
     defer session.pending_sounds.deinit(allocator);
 
     session.queueSound(allocator, .move);
-    session.queueSound(allocator, .weapon_swing);
+    session.queueSound(allocator, .weapon_base);
     session.queueSound(allocator, .damage);
 
     const drained = session.drainPendingSounds();
     try std.testing.expectEqual(@as(usize, 3), drained.len);
     try std.testing.expectEqual(types.SoundId.move, drained[0].base.?);
-    try std.testing.expectEqual(types.SoundId.weapon_swing, drained[1].base.?);
+    try std.testing.expectEqual(types.SoundId.weapon_base, drained[1].base.?);
     try std.testing.expectEqual(types.SoundId.damage, drained[2].base.?);
-    try std.testing.expect(drained[0].texture == null);
+    try std.testing.expect(drained[0].layer == null);
 
     // A second drain returns empty (the queue was cleared).
     const drained_again = session.drainPendingSounds();
@@ -2731,27 +2731,33 @@ test "SessionState sound queue: reuse after drain" {
     try std.testing.expectEqual(types.SoundId.equip, drained[0].base.?);
 }
 
-test "SessionState sound queue: layered cue queues base + texture together" {
+test "SessionState sound queue: layered cue queues base + layer together" {
     const allocator = std.testing.allocator;
     var session: SessionState = .{};
     defer session.pending_sounds.deinit(allocator);
 
     session.queueCue(allocator, .{
-        .base = .spell,
-        .texture = .{ .skill = .worldfire },
+        .base = .spell_base,
+        .layer = .{ .skill = .worldfire },
     });
     session.queueCue(allocator, .{
-        .base = .button_click_up,
-        .texture = .{ .action = .{ .action = .skip, .fallback = .skip } },
+        .base = .button_base_up,
+        .layer = .{ .action = .{ .action = .skip, .fallback = .skip } },
+    });
+    session.queueCue(allocator, .{
+        .base = .item_base,
+        .layer = .{ .item = .equip },
     });
 
     const drained = session.drainPendingSounds();
-    try std.testing.expectEqual(@as(usize, 2), drained.len);
-    try std.testing.expectEqual(types.SoundId.spell, drained[0].base.?);
-    try std.testing.expectEqual(types.SkillId.worldfire, drained[0].texture.?.skill);
-    try std.testing.expectEqual(types.SoundId.button_click_up, drained[1].base.?);
-    try std.testing.expectEqual(types.Action.skip, drained[1].texture.?.action.action);
-    try std.testing.expectEqual(types.SoundId.skip, drained[1].texture.?.action.fallback.?);
+    try std.testing.expectEqual(@as(usize, 3), drained.len);
+    try std.testing.expectEqual(types.SoundId.spell_base, drained[0].base.?);
+    try std.testing.expectEqual(types.SkillId.worldfire, drained[0].layer.?.skill);
+    try std.testing.expectEqual(types.SoundId.button_base_up, drained[1].base.?);
+    try std.testing.expectEqual(types.Action.skip, drained[1].layer.?.action.action);
+    try std.testing.expectEqual(types.SoundId.skip, drained[1].layer.?.action.fallback.?);
+    try std.testing.expectEqual(types.SoundId.item_base, drained[2].base.?);
+    try std.testing.expectEqual(types.SoundId.equip, drained[2].layer.?.item);
 }
 
 // --- replay player-action validation tests ---

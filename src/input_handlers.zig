@@ -441,7 +441,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
             if (std.mem.eql(u8, current_value, value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_name = .{
                 .target = entity_target,
                 .value = value,
@@ -462,7 +462,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             ) catch @panic("failed to format entity field value");
             const current = parseUnboundedStatValue(current_formatted) orelse return;
             if (parsed == current) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             const action: events.PlayerInputEvent = switch (stat) {
                 .max_health => .{ .player_set_editor_entity_max_health = .{
                     .target = entity_target,
@@ -495,7 +495,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // An empty slot commits nothing (nothing to rename).
             const item = template.gearSlotItem(slot) orelse return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             const action = editorGearSlotAction(
                 entity_target,
                 slot,
@@ -516,7 +516,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // items — the same max_* the parser clamps with).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(item_field.stat)) orelse return;
             if (parsed == current) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             const action = editorGearSlotAction(
                 entity_target,
                 item_field.slot,
@@ -541,7 +541,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // offered; the gate holds for crafted state).
             if (std.meta.activeTag(item) == .skill_tome) return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_item_name = .{
                 .type_id = type_id,
                 .value = value,
@@ -561,7 +561,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // items — the same max_* the parser clamps with).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
             if (parsed == current) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             const action = editorItemDefAction(
                 type_id,
                 types.itemWithStat(item, stat, parsed),
@@ -584,7 +584,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const item = editor.player_def.template.inventory.slots[slot_index] orelse return;
             if (std.meta.activeTag(item) == .skill_tome) return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_inventory_item_name = .{
                 .index = slot_index,
                 .value = value,
@@ -604,7 +604,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             // with — the player can pick up exactly these items).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
             if (parsed == current) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             const action = editorInventoryItemDefAction(
                 slot_index,
                 types.itemWithStat(item, stat, parsed),
@@ -619,7 +619,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             if (std.mem.eql(u8, editor.mission.name, value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_mission_name = .{
                 .name = value,
             } });
@@ -630,7 +630,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (level_index >= history.current_state.editor.?.levels.len) return;
             const current_name = history.current_state.editor.?.levels[level_index].name;
             if (std.mem.eql(u8, current_name, value)) return;
-            history.session.queueSound(history.backing_allocator, .button_click_up);
+            history.session.queueSound(history.backing_allocator, .button_base_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_level_name = .{
                 .level_index = level_index,
                 .name = value,
@@ -2724,8 +2724,8 @@ pub fn handleIdleInput(
                                 } }, allocator),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
-                                        .base = .button_click_up,
-                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .base = .button_base_up,
+                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
                                     });
                                     event_push.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
                                         .skill_id = skill_id,
@@ -2740,8 +2740,8 @@ pub fn handleIdleInput(
                                     // switch total; the cancel is the sane
                                     // behavior if that invariant ever breaks.
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
-                                        .base = .button_click_up,
-                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .base = .button_base_up,
+                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
                                     });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
@@ -2786,8 +2786,8 @@ pub fn handleIdleInput(
                                 ),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
-                                        .base = .button_click_up,
-                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .base = .button_base_up,
+                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
                                     });
                                     event_push.pushPlayerAction(current, .{ .player_prepare_skill = .{
                                         .caster_index = 0,
@@ -2801,8 +2801,8 @@ pub fn handleIdleInput(
                                     // preparation), so the press is a real
                                     // undo step instead of a recorded no-op.
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
-                                        .base = .button_click_up,
-                                        .texture = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .base = .button_base_up,
+                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
                                     });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },

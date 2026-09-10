@@ -308,7 +308,14 @@ pub fn handlePlayerEvent(
     const current = &history.current_state;
     switch (player_event) {
         .learn_skill => |learn| {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .learn_skill);
+            // Item-action cue: the shared item base + the action's layer
+            // (`sfx/items/<stem>_layer`; the pre-layering one-shot plays as
+            // the interim layer until the file ships). See DESIGN → Audio
+            // (layered cues).
+            if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                .base = .item_base,
+                .layer = .{ .item = .learn_skill },
+            });
             const player = getPlayerEntity(current, 0);
             const slot = &player.inventory.slots[learn.inventory_slot_index];
 
@@ -343,8 +350,12 @@ pub fn handlePlayerEvent(
             const item = slot.* orelse return;
             // Sound after the guard: a salvage of an empty slot
             // (crafted logs; live clicks are gated to occupied
-            // slots) must not click.
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .salvage);
+            // slots) must not click. Item-action cue — see the
+            // learn_skill arm.
+            if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                .base = .item_base,
+                .layer = .{ .item = .salvage },
+            });
 
             // Compute salvage value and add to player materials
             const materials = functions.computeSalvageValue(item, history.salvage_definitions);
@@ -361,8 +372,12 @@ pub fn handlePlayerEvent(
             if (!itemFitsGearSlot(item, equip.gear_slot)) return;
             // Sound after the guards: a no-op equip (empty slot /
             // unfitting item — crafted logs; live drags are gated at
-            // the drop site) must not click.
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .equip);
+            // the drop site) must not click. Item-action cue — see the
+            // learn_skill arm.
+            if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
+                .base = .item_base,
+                .layer = .{ .item = .equip },
+            });
 
             // Capture the displaced weapon before the gear-slot swap
             // overwrites the slot, so its skill cooldowns can be

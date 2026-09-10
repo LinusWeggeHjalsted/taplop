@@ -629,7 +629,7 @@ pub fn handleLevelEvent(
                     // DESIGN → Audio (layered cues).
                     history.session.queueCue(history.backing_allocator, .{
                         .base = types.skillTypeBaseSound(skill_definition.skill_type),
-                        .texture = .{ .skill = use.skill_id },
+                        .layer = .{ .skill = use.skill_id },
                     });
                     // One-shot anim: show the skill's icon above the
                     // caster for 500ms. `current_event_index - 1` is
@@ -997,7 +997,7 @@ pub fn handleSubLevelEvent(
             }
         },
         .collision => |collision| {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .collision);
             const attacker = getLevelEntity(current, collision.attacker_index);
             const defender = getLevelEntity(current, collision.defender_index);
 

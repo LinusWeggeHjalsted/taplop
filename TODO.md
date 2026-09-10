@@ -1284,31 +1284,39 @@ Open:
 
 Architecture DONE — see DESIGN → Audio (layered cues + layered music + the
 file-formats bullet). The engine side is FULLY WIRED for the layered sound
-design: skill cues (type base + `sfx/skills/<skill_id>` texture), button
-cues (base up + `sfx/buttons/<action>` texture, effect-site queued), the
-music intensity stack (`ambient_layer_1..N`, one per active enemy, probed
-generically), and all missing one-shots (heal, stun, knockback, retreat,
-death, level_complete, aggro). **Everything missing is a pure ASSET DROP** —
-the sound designer prioritizes on his own; `.wav` or `.ogg`, persistent-dir
-shadowing works mid-session for textures (miss-not-cached).
+design — every family follows the `_base` / `_layer` naming (the roles are
+deliberately neutral: which half is percussive vs ambient is a per-file
+authoring choice): skill cues (type base + `sfx/skills/<skill_id>_layer`),
+button cues (base pair + `sfx/buttons/<action>_layer`, effect-site queued),
+item-action cues (`item_base` + `sfx/items/<stem>_layer` for
+equip/salvage/learn), the music intensity stack (`ambient_layer_1..N`, one
+per active enemy, probed generically), and all missing one-shots (heal, stun,
+knockback, retreat, death, collision, level_complete, aggro). **Everything
+missing is a pure ASSET DROP** — the sound designer prioritizes on his own;
+`.wav` or `.ogg`, persistent-dir shadowing works mid-session for layers
+(miss-not-cached).
 
 Open:
 
 - **Assets themselves** — the full shopping list for current content:
-  5 skill-type bases (cantrip/enchantment/curse missing, spell/weapon_swing
-  exist as pre-layering placeholders), 44 skill textures
-  (`sfx/skills/<id>`), button textures (`sfx/buttons/<action_snake_case>` —
-  optional per action), the music stem set (re-export `ambient` as the
-  base of a sample-aligned stem set + as many `ambient_layer_N` as he
-  writes), and the new one-shots (heal/stun/knockback/retreat/death/
-  level_complete/aggro). Current files are placeholders to re-author.
+  6 bases (`weapon_base`, `spell_base` exist as reworked pre-layering
+  placeholders; `cantrip_base`/`enchantment_base`/`curse_base`/`item_base`
+  missing), the button base pair (`button_base_down`/`button_base_up` —
+  renamed from the click placeholders), 44 skill layers
+  (`sfx/skills/<id>_layer`), button layers (`sfx/buttons/<action>_layer` —
+  optional per action), 3 item layers (`sfx/items/equip_layer`,
+  `salvage_layer`, `learn_skill_layer`), the music stem set (re-export
+  `ambient` as the base of a sample-aligned stem set + as many
+  `ambient_layer_N` as he writes), and the new one-shots (heal/stun/
+  knockback/retreat/death/collision/level_complete/aggro). Current files are
+  placeholders to re-author.
 - **Music authoring constraint** — identical-length, sample-aligned loop
   stems (one DAW session); a mismatch is dev-diag-warned at load.
 - Deliberately unwired (feedback-noise class — a texture file for these
   won't play until a site is added, by design): zoom keys (the wheel zoom
   has no sound; keys shouldn't be noisier), error-scroll ticks,
   `dump_event_log` (dev tool).
-- **Prune `actionTextureFallback`** entries as button textures ship (each
+- **Prune `actionLayerFallback`** entries as button layers ship (each
   entry is dead weight once its file exists).
 - Web autoplay policy: browsers may block audio until a user gesture. The
   stream no-ops until then by design; verify it resumes after the first click
