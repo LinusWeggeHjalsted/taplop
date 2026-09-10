@@ -2897,6 +2897,42 @@ neutral `_base` / `_layer` vocabulary in code AND asset names.
 - **`collision`** got its own one-shot (was sharing `damage`); `stun` already
   had one from slice 9.
 
+### Slice 11 — no-fallbacks policy + the sound asset overview (DONE)
+
+**Every sound fallback REMOVED** (author decision: silence is the honest
+"not authored yet" signal — with placeholders standing in for missing
+assets, the designer can't tell what's done):
+
+- Gone: the backend `soundFallback` chain (cantrip/enchantment/curse bases
+  → spell_base), `types.actionLayerFallback` (+ `ActionLayer.fallback`
+  field — `SoundLayer.action` collapsed to a bare `Action`), and the
+  item-arm's keyed-one-shot fallback. `playSounds` plays exactly what
+  loaded, nothing more.
+- Dead ids pruned: `.skip`/`.menu`/`.equip`/`.salvage`/`.learn_skill` were
+  only reachable via fallbacks (or as pure layer keys) — removed from
+  `SoundId`, their stale placeholder files `git rm`'d. The item layer keys
+  moved to a dedicated `types.ItemActionSound` enum (tag names are the
+  file stems). `types.max_music_layers` moved into types.zig so the
+  report tool shares the backend's probe cap.
+- Wired `cancel` (cancel-targeting) — a real interaction that had no sound.
+- Deliberately NOT wired (feedback-noise class, excluded from the report
+  with a printed note): zoom/cursor keys, error-scroll ticks,
+  `dump_event_log`, `skip_level`, `confirm`.
+
+**The sound asset overview** — `src/sound_report.zig`, a host build tool
+invoked on demand via `scripts/sound_report.sh` (`zig build sound-report`;
+never part of a normal build). Enum-keyed (walks `SoundId`/`SkillId`/
+`Action`/`ItemActionSound` via the real modules) so new skills/actions
+appear automatically — no hand-maintained inventory to drift. Writes
+`sound_report.md` (gitignored): every wired path (bases, one-shots, skill/
+button/item layers, the music stack incl. all 16 layer slots) with a
+trigger description + a status resolved against BOTH the shipped assets
+tree and the persistent dir, showing WHICH file resolved
+(`shipped (.ogg)` / `shadowed (.wav)` / `MISSING (silent)`). Verified
+against a scratch `$ZIGLOP_DATA` dir: a dropped `skills/stab_layer.wav`
+reports `shadowed (.wav)`. Current state: 11 shipped, 174 missing — the
+designer's complete, honest work list.
+
 ## Animation
 
 ### One-shot anim infrastructure + skill-icon pop (DONE)

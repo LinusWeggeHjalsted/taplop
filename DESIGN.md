@@ -360,9 +360,9 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
     their own `*_base` ids) + layer by `SkillId` at
     `assets/audio/sfx/skills/<id>_layer` (stem defaults to the skill's own
     id — zero declaration per skill). Queued by the `use_skill` handler.
-    The cantrip/enchantment/curse base FILES haven't shipped: the backend's
-    `soundFallback` chain plays `spell_base` in their place (one level
-    deep, terminates — spell_base has no fallback).
+    Missing base or layer files are SILENT — no fallbacks anywhere
+    (silence is the "not authored yet" signal; the report tool lists
+    every path).
   - **Button cues** — press ALWAYS plays plain `button_base_down`; release
     plays the `button_base_up` base plus the action's LAYER at
     `assets/audio/sfx/buttons/<action_snake_case>_layer`. Layer ownership is
@@ -380,25 +380,27 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
     button sound, and the prepare/unprepare path plays its own up base +
     slot layer at the consumption site.
   - **Item-action cues** (equip / salvage / learn_skill) — the shared
-    `item_base` base plus a per-action layer keyed by the one-shot `SoundId`
-    at `assets/audio/sfx/items/<stem>_layer`. The keyed SoundId doubles as
-    the interim fallback: while the layer file is missing, the
-    pre-layering one-shot plays (and `item_base` is separately silent until
-    it ships, so the interim result is exactly the old solo sound). Queued
-    at the effect sites (the `equip_item`/`salvage_item`/`learn_skill`
-    event handlers — after their no-op guards, so empty-slot salvages stay
+    `item_base` base plus a per-action layer keyed by `ItemActionSound`
+    (types.zig) at `assets/audio/sfx/items/<tag>_layer`. Queued at the
+    effect sites (the `equip_item`/`salvage_item`/`learn_skill` event
+    handlers — after their no-op guards, so empty-slot salvages stay
     silent).
-  - **`types.actionLayerFallback`** is the interim placeholder map: while
-    an action's layer file is missing, its pre-layering specific sound
-    plays (skip, swap_weapons→swap_skill, the menu-sound cluster→menu).
-    Entries go dead as layer files ship — prune them as assets land.
   - **Layer caches miss-not-cached** (`skill_layer_cache`/
     `action_layer_cache`/`item_layer_cache`, keyed by SkillId/Action/
-    SoundId): a missing layer file is RETRIED on the next cue, so a file
+    ItemActionSound): a missing layer file is RETRIED on the next cue, so a file
     dropped into the persistent dir mid-session plays on the next
     cast/click without relaunching — the sound-designer iteration loop.
     Bases (`sound_cache`) stay eager + null-cached (they're few, and all
     shipped).
+- **The sound asset overview** (`src/sound_report.zig`, a host build tool:
+  `scripts/sound_report.sh` → `zig build sound-report`, run on demand —
+  never part of a normal build) regenerates `sound_report.md`: every
+  wired path walked off the enums (new skills/actions appear
+  automatically), each with its trigger description + a status resolved
+  against BOTH the shipped `assets/` tree and the persistent dir
+  (`shipped (.ogg)` / `shadowed (.wav)` / `MISSING (silent)`). The
+  designer's complete inventory — the truth the no-fallbacks policy makes
+  exact.
 - **`SoundId` enum** (types.zig) — one variant per sfx file under
   `assets/audio/sfx/` — the BASE sounds (skill-type bases weapon_base /
   spell_base / cantrip_base / enchantment_base / curse_base, the item base,
@@ -416,8 +418,8 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   activation paths route through)→aggro, non-final `end_level`→
   level_complete, final `end_level`→mission_completion. The item actions
   (equip_item/salvage_item/learn_skill) are layered CUES, not plain
-  one-shots — their SoundIds (equip/salvage/learn_skill) name the LAYER
-  files + serve as interim fallbacks. Multi-hit skills fire one damage
+  one-shots — their layer keys live on `ItemActionSound`, not `SoundId`.
+  Multi-hit skills fire one damage
   sound per `attack` (N hits → N impacts); if that becomes an audio mess,
   throttle in the backend's `playSounds` (per-sfx cooldown), NOT at trigger
   sites.
@@ -437,9 +439,10 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   device, loads all sfx bases via `loadWaveFromMemory` + `loadSoundFromWave`
   from the `FileSource` (never the filesystem — same seam as textures),
   loads + starts the music streams, then loads the sfx. The base cache
-  (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded bases; missing audio
-  caches null and skips play through the `soundFallback` chain (like missing
-  sprites → magenta, but for audio it's silent). The skill/action/item
+  (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded bases; a missing audio
+  file caches null and plays nothing — no fallbacks (unlike missing
+  sprites → magenta; silence is the audio equivalent of an honest
+  "not authored yet"). The skill/action/item
   LAYER caches are lazy + hit-only (see layered cues). `deinitAudio` (called from
   `deinit`) unloads everything + closes the device. If the audio device
   can't open, `audio_ready` stays false and ALL audio methods no-op — the

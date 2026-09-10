@@ -361,6 +361,32 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+
+    // === Sound asset overview (scripts/sound_report.sh) ===
+    // A host tool that walks the engine's enums and writes sound_report.md —
+    // the sound designer's complete inventory of wired paths (status per
+    // asset: shipped / shadowed / MISSING-silent). Root lives in src/ so it
+    // can import types.zig; the same `generated` + `build_info` modules the
+    // game uses keep it enum-keyed (no hand-maintained list).
+    const sound_report_exe = b.addExecutable(.{
+        .name = "sound_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/sound_report.zig"),
+            .target = b.resolveTargetQuery(.{}), // always the build host
+            .optimize = .Debug,
+            // libc for std.c.getenv (the native.zig resolvePersistentPath
+            // discipline — the tool mirrors it without raylib).
+            .link_libc = true,
+        }),
+    });
+    sound_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    sound_report_exe.root_module.addImport("build_info", build_info_module);
+    const sound_report_run = b.addRunArtifact(sound_report_exe);
+    // Runs from the project root so it can stat assets/ + write
+    // sound_report.md where the developer expects it.
+    sound_report_run.setCwd(b.path("."));
+    const sound_report_step = b.step("sound-report", "Generate sound_report.md (the wired-sound asset inventory)");
+    sound_report_step.dependOn(&sound_report_run.step);
 }
 
 /// Computes the game_version string at configure time:

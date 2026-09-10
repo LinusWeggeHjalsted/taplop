@@ -2840,6 +2840,7 @@ pub fn handleIdleInput(
                         // Cancel skill targeting
                         if (level.prepared_skill != null) {
                             // Stay in player_attack phase
+                            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .cancel);
                             event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                         }
                     }

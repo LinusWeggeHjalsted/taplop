@@ -1294,11 +1294,16 @@ per active enemy, probed generically), and all missing one-shots (heal, stun,
 knockback, retreat, death, collision, level_complete, aggro). **Everything
 missing is a pure ASSET DROP** — the sound designer prioritizes on his own;
 `.wav` or `.ogg`, persistent-dir shadowing works mid-session for layers
-(miss-not-cached).
+(miss-not-cached). **NO FALLBACKS: a missing sound is silence**, so the
+status is always honest — `scripts/sound_report.sh` regenerates
+`sound_report.md`, the complete per-path inventory with statuses (shipped /
+shadowed / MISSING) resolved against both the assets tree and the
+persistent dir. That report IS the shopping list — don't hand-maintain a
+second one here.
 
 Open:
 
-- **Assets themselves** — the full shopping list for current content:
+- **Assets themselves** — the summary (see the report for exact paths):
   6 bases (`weapon_base`, `spell_base` exist as reworked pre-layering
   placeholders; `cantrip_base`/`enchantment_base`/`curse_base`/`item_base`
   missing), the button base pair (`button_base_down`/`button_base_up` —
@@ -1312,12 +1317,12 @@ Open:
   placeholders to re-author.
 - **Music authoring constraint** — identical-length, sample-aligned loop
   stems (one DAW session); a mismatch is dev-diag-warned at load.
-- Deliberately unwired (feedback-noise class — a texture file for these
-  won't play until a site is added, by design): zoom keys (the wheel zoom
-  has no sound; keys shouldn't be noisier), error-scroll ticks,
-  `dump_event_log` (dev tool).
-- **Prune `actionLayerFallback`** entries as button layers ship (each
-  entry is dead weight once its file exists).
+- Deliberately unwired (feedback-noise class — a layer file for these
+  won't play until a site is added, by design; they do NOT appear in the
+  report, which prints the same note): zoom + cursor keys (the wheel/mouse
+  paths carry no sound; keys shouldn't be noisier), error-scroll ticks,
+  `dump_event_log` + `skip_level` (dev tools), `confirm` (the simulated
+  tile click plays the move/skill sounds).
 - Web autoplay policy: browsers may block audio until a user gesture. The
   stream no-ops until then by design; verify it resumes after the first click
   on the web build.

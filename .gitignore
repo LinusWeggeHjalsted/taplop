@@ -16,3 +16,4 @@ src/generated_test_root.zig
 # (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
 zig-out/
 zig-pkg/
+sound_report.md

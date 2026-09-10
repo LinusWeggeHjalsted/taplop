@@ -36,10 +36,10 @@ const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
 
-/// Upper bound on probed music intensity layers (a pathological-dir guard —
-/// probing stops at the first missing file long before this in practice).
-/// See DESIGN → Audio (layered music).
-const max_music_layers: usize = 16;
+/// Upper bound on probed music intensity layers — the shared constant lives
+/// in types.zig (`types.max_music_layers`); see DESIGN → Audio (layered
+/// music).
+const max_music_layers = types.max_music_layers;
 
 /// The intensity-layer fade duration (volume-lerp time constant, real
 /// microseconds): aggro/death transitions crossfade instead of hard-cutting.

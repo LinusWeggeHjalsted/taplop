@@ -46,6 +46,12 @@ pub const SoundId = enum {
     aggro,
 };
 
+/// Upper bound on probed music intensity layers (a pathological-dir guard —
+/// probing stops at the first missing file long before this in practice).
+/// Shared by the backend's probe loop + the sound-report tool. See DESIGN →
+/// Audio (layered music).
+pub const max_music_layers: usize = 16;
+
 /// The item-action layer keys (see `SoundLayer.item`): one per item-action
 /// event handler that queues an item cue. Tag names are the file stems at
 /// `assets/audio/sfx/items/<tag>_layer`.
