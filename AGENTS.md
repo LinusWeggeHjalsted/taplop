@@ -36,6 +36,20 @@ the lifecycle above. A fact lives in ONE place: AGENTS never restates design
 — it points (Subsystem Map below); DESIGN never restates a working rule — it
 links to AGENTS.
 
+Two hygiene rules that keep the above true in practice:
+
+- **Staleness is cleaned WHILE working, never deferred.** When renaming or
+  removing a code symbol, grep DESIGN.md + TODO.md for stale references and
+  fix them in the same commit — a doc naming a dead symbol is worse than no
+  doc (it reads as truth). Same for comments the edit invalidates.
+- **Prefer machine-walked truth over hand-maintained lists.** When an
+  inventory/report/lookup can be DERIVED from source truth (an enum, a
+  directory scan), generate it instead of curating it —
+  `generated_lookups.zig`, `generated_sprite_metadata.zig`, and
+  `sound_report.zig` are the pattern: new content appears automatically and
+  a lie is structurally impossible. Hand-maintained duplicates of
+  machine-derivable facts are drift by definition.
+
 > **Collaboration style** (small steps, pause at checkpoints, surface
 > tradeoffs, clarifying questions, stay inside the cwd) lives in
 > `~/.pi/agent/APPEND_SYSTEM.md` as cross-project working conventions.

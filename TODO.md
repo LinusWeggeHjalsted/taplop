@@ -82,6 +82,21 @@ Test by running `zig build run` and clicking through.
   recenter via cameraRecenterKey; clamp bounds are a level-switch-time
   snapshot so mid-edit tile changes never reframe — see DESIGN → Platform
   Seam → Camera clamping).
+- **Input dispatch convergence (planned refactor — design before code).**
+  `translateInput` sets the `anytime`/`idle` input flags directly (~40
+  `checkAction` lines), while button releases fold through
+  `applyAction` — TWO hand-maintained copies of the same action→flag
+  mapping. Consequences: no single consumption choke point (the button-layer
+  sound wiring was a ~25-site hunt across `handleAnytimeInput`'s flag
+  sections; the `options_action`/`menu_action` switches covered ~50 actions
+  in one line each because they already converge), and every new keybind
+  keeps the five-places pipeline above. Plan: route `translateInput`'s
+  keyboard actions through `applyAction` (the one mapping) + a
+  fired-actions record on `PlayerInput`, giving ONE dispatch choke point
+  for per-action behavior (action sound layers now; analytics/policy
+  later). Fold the `input_handlers.zig` SPLIT (2800+ lines, ten concerns)
+  into this work — if the convergence lands well, the file may split
+  naturally or not need it; don't split as a separate chore first.
 - **New-keybind pipeline friction** — a new keybind touches FIVE places
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):
@@ -1326,6 +1341,15 @@ Open:
 - Web autoplay policy: browsers may block audio until a user gesture. The
   stream no-ops until then by design; verify it resumes after the first click
   on the web build.
+- **Cue-wiring test coverage** — the sound queue sites live in
+  headless-testable handlers, but nothing asserts what lands on
+  `pending_sounds`: the `.change_setting` double-play and the silent
+  `releaseSoundForAction` entries shipped for months because only ears
+  could catch them. Extend the harness (`test_harness.zig`) to drive a
+  trigger and assert the drained cues (skill cast = type base + skill
+  layer; skip = action layer; equip/salvage/learn = item cues; toggles =
+  action layer) — pins the base-at-the-seam / layer-at-the-effect-site
+  ownership rules so the double-play class can't regress.
 - Tune volumes / mix against real assets (layer volumes are placeholders).
 - Per-sfx cooldown in `playSounds` if multi-hit overlap (N `attack` events
   in one frame → N damage sounds) sounds bad. Trigger sites stay clean; the
