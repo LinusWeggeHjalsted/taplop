@@ -61,8 +61,8 @@ next session meets it as a surprise instead of a known.
   (comptime-checked over the enum in types.zig) — the camera zoom is uniform,
   so a mismatched aspect would squish content. Higher presets sharpen SDF
   text for free (glyphs rasterize into the target at target resolution).
-  **Runtime apply:** the setting is LIVE — `frame()`'s diff-and-apply (the
-  audio-volumes pattern; `SessionState.last_applied_render_resolution`
+  **Runtime apply:** the setting is LIVE — `frame()`'s diff-and-apply
+  (`SessionState.last_applied_render_resolution`
   snapshot) calls `backend.applyRenderResolution`, which creates the NEW
   target first and unloads the old one only on success. On apply failure
   (`loadRenderTexture` errors — GPU texture-size limits on weak hardware)
@@ -340,68 +340,131 @@ Sound is a **side effect**, never gameplay state. Same replay-safety rule as
 file writes: event handlers queue sounds gated `!replaying`, so undo/redo
 scrubbing is silent. The architecture mirrors `PendingWrite`:
 
-- **`SessionState.pending_sounds: std.ArrayListUnmanaged(SoundId)`** (off
+- **`SessionState.pending_sounds: std.ArrayListUnmanaged(SoundCue)`** (off
   the undoable GameState → replay-safe by construction; `backing_allocator`-
   backed, cleared each frame). Event handlers + input handlers call
-  `session.queueSound(allocator, .id)`; `frame()` drains via
-  `session.drainPendingSounds()` after the update drain and plays them through
-  the backend. The `!replaying` gate is at the PUSH site, so replay pushes
-  nothing.
+  `session.queueSound(allocator, .id)` / `queueCue` / `queueActionSound`;
+  `frame()` drains via `session.drainPendingSounds()` after the update drain
+  and plays them through the backend. The `!replaying` gate is at the PUSH
+  site, so replay pushes nothing.
+- **Layered cues (`SoundCue`, types.zig).** Every trigger is a CUE: a
+  category BASE layer plus an optional specific TEXTURE layer, played
+  simultaneously; mix balance is baked into the asset files (both layers play
+  at the sfx volume — no per-layer volume data). Plain one-shots (damage,
+  move, ...) are base-only cues. The two layered families:
+  - **Skill cues** — base by `SkillType` (`skillTypeBaseSound`:
+    weapon_skill→weapon_swing, spell→spell, cantrip/enchantment/curse→their
+    own ids) + texture by `SkillId` at `assets/audio/sfx/skills/<id>` (stem
+    defaults to the skill's own id — zero declaration per skill). Queued by
+    the `use_skill` handler. The cantrip/enchantment/curse base FILES haven't
+    shipped: the backend's `soundFallback` chain plays `spell` in their
+    place (one level deep, terminates — spell has no fallback).
+  - **Button cues** — press ALWAYS plays plain `button_click_down`; release
+    plays the `button_click_up` base plus the action's TEXTURE at
+    `assets/audio/sfx/buttons/<action_snake_case>`. Texture ownership is
+    split by layer, which is what keeps the layers from double-playing:
+    the release SEAM owns the base up; the consumption/effect sites own the
+    texture (`queueActionSound`) — so keyboard triggers share the texture
+    with no click sounds (the no-click-sounds-for-keys rule), and semantic
+    feedback still only fires when the action does something. The
+    `options_action` + `menu_action` dispatch switches queue their action's
+    texture in one place each (covering ~50 actions for button AND keybind
+    paths); the scattered flag sections (toggles, swap, skip, undo/redo,
+    editor save/export/new-mission, mission browser, dismiss_error) queue at
+    their sites. Skill slots: the release seam suppresses the up base
+    (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes any
+    button sound, and the prepare/unprepare path plays its own up base +
+    slot texture at the consumption site.
+  - **`types.actionTextureFallback`** is the interim placeholder map: while
+    an action's texture file is missing, its pre-layering specific sound
+    plays (skip, swap_weapons→swap_skill, the menu-sound cluster→menu).
+    Entries go dead as texture files ship — prune them as assets land.
+  - **Texture caches miss-not-cached** (`skill_sound_cache`/
+    `action_sound_cache`, keyed by SkillId/Action): a missing texture file is
+    RETRIED on the next cue, so a file dropped into the persistent dir
+    mid-session plays on the next cast/click without relaunching — the
+    sound-designer iteration loop. Bases (`sound_cache`) stay eager +
+    null-cached (they're few, and all shipped).
 - **`SoundId` enum** (types.zig) — one variant per sfx file under
-  `assets/audio/sfx/` (15 shipped: move, weapon_swing, spell, damage, pickup,
-  skip, equip, learn_skill, salvage, swap_skill, button_click_down,
-  button_click_up, menu, defeat, mission_completion). Music is a single
-  always-on stream, NOT a `SoundId`. **Sound names align with their trigger
-  events where one exists** (move↔move, pickup↔pickup, equip↔equip, etc.); the
+  `assets/audio/sfx/` — the BASE sounds (skill-type bases weapon_swing /
+  spell / cantrip / enchantment / curse + the button pair button_click_down /
+  button_click_up) and the one-shots (move, damage, pickup, skip, equip,
+  learn_skill, salvage, swap_skill, menu, defeat, mission_completion, heal,
+  stun, knockback, retreat, death, level_complete, aggro). Music is a stream
+  stack, NOT a `SoundId`. **Sound names align with their trigger events where
+  one exists** (move↔move, pickup↔pickup, equip↔equip, etc.); the
   one intentional divergence is `damage` (fired by the `attack` + `collision`
   events — many-to-one, no `damage` event so no name clash) and
-  `weapon_swing` (fired by `use_skill` for weapon skills — renamed from
-  `attack` so `attack` refers to exactly one thing: the damage-primitive event).
-  The full map: `move_entity`/`move_player`→move, `use_skill`(weapon)→
-  weapon_swing, `use_skill`(spell/cantrip/enchantment/curse)→spell,
-  `attack`/`collision`→damage, `pickup_items`→pickup, `equip_item`→equip,
-  `learn_skill`→learn_skill, `salvage_item`→salvage. Multi-hit skills fire one
-  damage sound per `attack` (N hits → N impacts); if that becomes an audio
-  mess, throttle in the backend's `playSounds` (per-sfx cooldown), NOT at
-  trigger sites.
+  `weapon_swing` (the weapon-skill BASE, fired by the `use_skill` handler for
+  weapon skills — renamed from `attack` so `attack` refers to exactly one
+  thing: the damage-primitive event).
+  The one-shot map: `move_entity`/`move_player`→move, `attack`/`collision`→
+  damage, `heal`→heal, `stun`→stun, `knockback`→knockback, `retreat`→retreat,
+  `death`(enemy)→death, `death`(player)→defeat, `pickup_items`→pickup,
+  `equip_item`→equip, `learn_skill`→learn_skill, `salvage_item`→salvage,
+  `aggro` (every newly-aggroed enemy, via `activateEntity` — the one queue
+  site all activation paths route through)→aggro, non-final `end_level`→
+  level_complete, final `end_level`→mission_completion. Multi-hit skills fire
+  one damage sound per `attack` (N hits → N impacts); if that becomes an
+  audio mess, throttle in the backend's `playSounds` (per-sfx cooldown), NOT
+  at trigger sites.
 - **Button press/release model.** Button actions fire on mouse RELEASE, not
   press (standard UI behavior; drag-off cancels). `SessionState.pressed_button:
   ?Action` records the button under the press; release fires the action only
   if the release is over the same button. Press always queues
-  `button_click_down`. Release queues: the generic `button_click_up` for
-  actions WITHOUT a specific sound; actions WITH a specific sound (skip,
-  swap_weapons, panel toggles, skill slots) get their specific sound from the
-  input/event handler that processes the action — so no generic up (would
-  double-play). Skill slots are special: auto-fire suppresses the generic up
-  and lets the `use_skill` event's weapon_swing/spell play alone; the prepare
-  (targeting) path plays `button_click_up` explicitly so the player gets
-  feedback that targeting started (and the same-slot toggle-off plays it
-  too — feedback that targeting ended). `releaseSoundForAction` (types.zig) maps an
-  Action to its specific release sound (or null = generic up). Keybind-
-  triggered actions queue their specific sound at the input-handler site (no
-  click sounds, since no button was involved). `pressed_button` is transient —
-  cleared on screen transition alongside `ui_state`/`tile_cursor`/`camera_pan`.
+  `button_click_down` (plain — never layered). Release queues the
+  `button_click_up` base for every action EXCEPT skill slots (see the layered
+  cues bullet), and the action's texture is queued at the consumption site
+  (`queueActionSound`), shared with keyboard triggers — keys get the texture
+  alone (no click sounds, since no button was involved). Text-field commits
+  play a plain up (no button was pressed; the commit IS the interaction).
+  `pressed_button` is transient — cleared on screen transition alongside
+  `ui_state`/`tile_cursor`/`camera_pan`.
 - **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
-  device, loads all sfx via `loadWaveFromMemory` + `loadSoundFromWave` from
-  the `FileSource` (never the filesystem — same seam as textures), loads the
-  music via `loadMusicStreamFromMemory`, sets it looping, starts it. A sound
-  cache (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded sounds; missing
-  audio caches null and skips play (like missing sprites → magenta, but for
-  audio it's silent). `deinitAudio` (called from `deinit`) unloads everything
-  + closes the device. If the audio device can't open, `audio_ready` stays
-  false and ALL audio methods no-op — the game runs silent, never crashes.
-  **MUSIC LIFETIME GOTCHA:** raylib's `LoadMusicStreamFromMemory` (stb_vorbis)
-  keeps a POINTER to the passed buffer (no internal copy), so the bytes must
-  outlive the stream — held in `music_data` and freed in `deinitAudio`
-  alongside the stream unload. Freeing the bytes right after load (the
-  texture-cache pattern) crashes on the next `updateMusicStream`.
-  **MUSIC-MUST-LOAD-FIRST GOTCHA:** the music stream must be loaded + started
-  BEFORE the sfx. `LoadSoundFromWave` converts samples to the active device
-  format; if the music stream hasn't initialized the audio system's state
-  yet, the sfx convert to a stale format and silently never play (no error,
-  no log — the sounds load valid, `playSound` is called, but no audio). The
-  order in `initAudio` is: open device → load+start music → load sfx. No
-  compile-time guard — reordering silently breaks sfx.
+  device, loads all sfx bases via `loadWaveFromMemory` + `loadSoundFromWave`
+  from the `FileSource` (never the filesystem — same seam as textures),
+  loads + starts the music streams, then loads the sfx. The base cache
+  (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded bases; missing audio
+  caches null and skips play through the `soundFallback` chain (like missing
+  sprites → magenta, but for audio it's silent). The skill/action TEXTURE
+  caches are lazy + hit-only (see layered cues). `deinitAudio` (called from
+  `deinit`) unloads everything + closes the device. If the audio device
+  can't open, `audio_ready` stays false and ALL audio methods no-op — the
+  game runs silent, never crashes. **MUSIC LIFETIME GOTCHA:** raylib's
+  `LoadMusicStreamFromMemory` (stb_vorbis) keeps a POINTER to the passed
+  buffer (no internal copy), so each layer's bytes must outlive its stream —
+  held per-layer in `music_layers[i].data` and freed in `deinitAudio`
+  alongside the stream unload. **MUSIC-MUST-LOAD-FIRST GOTCHA:** the music
+  streams must be loaded + started BEFORE the sfx. `LoadSoundFromWave`
+  converts samples to the active device format; if the music stream hasn't
+  initialized the audio system's state yet, the sfx convert to a stale format
+  and silently never play (no error, no log — the sounds load valid,
+  `playSound` is called, but no audio). The order in `initAudio` is: open
+  device → load+start music → load sfx. No compile-time guard — reordering
+  silently breaks sfx.
+- **Layered music (intensity stack).** `music_layers: []MusicLayer` — index
+  0 is the base track (`assets/audio/music/ambient`), 1..N are intensity
+  layers (`assets/audio/music/ambient_layer_1..N`, probed at init until the
+  first missing file, capped at 16 — the stack extends by pure asset drop,
+  no code change). Each frame `frame()` projects the count of ALIVE, AGGRO'D,
+  enemy-team entities (`main.countActiveEnemies`) and passes it to
+  `backend.updateMusic(count, delta, settings)`: every stream advances
+  (raylib requires per-frame streaming updates), each layer's tier volume
+  lerps toward its target (base always 1.0; layer i ON while count >= i, at
+  a descending tier volume — `musicLayerVolume`: 0.8/0.65/0.5/0.4/...), and
+  the music/master settings scaling is applied per frame (sfx volume is
+  per-play). The fade is ~1s real-time, so aggro/death transitions
+  crossfade instead of hard-cutting. **The projection is a STATE projection,
+  not an event** (like the combat log / camera): no queue, no `!replaying`
+  gate — undo/redo/replay are safe by construction (scrubbing before the
+  fight calms the music down for free). **AUTHORING CONSTRAINT:** all layers
+  must be IDENTICAL-LENGTH, sample-aligned loops (export as stems from one
+  DAW session) — raylib loops each stream independently, and only
+  exact-equal lengths keep them phase-locked; a frameCount mismatch is
+  diag-warned at load in dev builds. One base track everywhere for now
+  (per-screen base tracks are a later extension); medal stingers for the
+  mission-complete overlay are sfx one-shots, not layers (one per medal type
+  when the medals work lands).
 - **File formats (`.ogg` shipped, `.wav` accepted):** every shipped sound is
   `.ogg` (smaller embedded exe); `FileSource.readAudioFile` (file_source.zig)
   also accepts `.wav` so a persistent-dir shadow can drop WAV exports — file
@@ -414,11 +477,14 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   `.wav` and an `.ogg` sit in the persistent dir, the `.wav` wins
   (deterministic). Applies to sfx and the music stream alike (the candidate
   policy is a FileSource concern, not a backend one).
-- **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
-  requires it for streaming) + `backend.playSounds(drained, settings)` after
-  the drain. Sfx volume = `sound_effects_volume * master_volume`; music
-  volume = `music_volume * master_volume` (set via `applyVolumes`, called at
-  init; re-call when settings change in the options menu).
+- **Per-frame:** `frame()` calls `backend.updateMusic(count, delta,
+  settings)` at the top (raylib requires it for streaming + it drives the
+  intensity layers — see layered music) + `backend.playSounds(drained,
+  settings)` after the drain. Sfx volume = `sound_effects_volume *
+  master_volume` (per-play); music volume = `music_volume * master_volume`,
+  applied to every layer per frame — volume-setting changes apply live with
+  NO diff machinery (the old `applyVolumes` + `last_applied_volumes`
+  snapshot were removed when per-frame application landed).
 - **Assets:** all audio shipped as OGG (ported from the Unity project's WAVs
   via ffmpeg). Music: `assets/audio/music/ambient.ogg` (looping, ~3.3 MB).
   SFX: `assets/audio/sfx/*.ogg` (~220 KB total). Embedding OGG (not WAV) keeps
@@ -3889,9 +3955,11 @@ on the main menu, surfacing nonsensical exit buttons.
 they are now u32 0–100 (percentage, obvious on disk + in UI). This collapses
 audio sliders onto the same integer-slider widget as the fps fields (one
 control kind, not two) and moves the last floats out of `Settings` (a data
-struct) to the backend seam: `RaylibBackend.applyVolumes` /
+struct) to the backend seam: the backend's music-volume application /
 `playSounds` convert `@as(f32, vol) / 100.0` immediately before the raylib
-call. AGENTS → Code Style already restricts floats to input/settings/
+call. (The audio diff-and-apply snapshot was later removed — volume
+scaling is applied per frame by `updateMusic`; see Audio.) AGENTS → Code
+Style already restricts floats to input/settings/
 rendering; this narrows it further — `Settings` is all-integer for scalar
 fields except `camera_zoom` (u32 hundredths, a 4-choice 25/50/75/100; the
 f32 lives at the render/input seam). Migration is
@@ -3921,11 +3989,11 @@ web `beforeunload` flush on shutdown.
 by `view()`/`computeCamera`; `render_fps_cap` by
 `renderIntervalMicroseconds`; `animation_fps` by `view()`), so a change
 there takes effect next frame with no apply step. Audio + vsync need an
-explicit apply. The apply model is **frame()-diff-and-apply** (keeps input
-handlers pure — no backend pointer): `SessionState` holds a
-`last_applied_settings` snapshot; `frame()` compares it to `history.settings`
-(cheap scalar equality over ~10 fields) and, on diff, calls
-`backend.applyVolumes` for audio changes, then updates the snapshot. Input
+explicit apply. **Audio applies per frame with NO diff machinery**: the
+backend's `updateMusic` scales every music layer by the current settings
+each frame and `playSounds` reads the sfx volume per play (the old
+`last_applied_volumes` snapshot + `backend.applyVolumes` diff were removed
+when layered music landed — see Audio). Input
 handlers just mutate `history.settings` + `markWriteDirty`. **Render
 resolution live-applies the same way** (`last_applied_render_resolution`
 snapshot → `backend.applyRenderResolution`, which recreates the render

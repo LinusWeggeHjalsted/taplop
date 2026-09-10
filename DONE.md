@@ -2817,6 +2817,62 @@ own file-size tradeoff, so `.wav` is accepted too.
   embedded fallback, `.wav` shadow, both-present priority, `.ogg`-only
   shadow, and the no-candidate null.
 
+### Slice 9 — layered sound design: cues + music intensity stack (DONE)
+
+The design session settled the layered model (see DESIGN → Audio — layered
+cues / layered music; the full asset shopping list + deliberately-unwired
+notes live in TODO → Audio). Motivation: the sound designer authors in
+layers — a category base plus a specific texture — and iterates by pure
+asset drops. Five commits, one per slice:
+
+1. **Cue model** — `types.SoundCue { base, texture }` replaces bare
+   `SoundId`s on the queue (`queueSound` wraps as base-only; `queueCue` +
+   `queueActionSound` add layered entries). Backend `playSounds` walks
+   bases through a `soundFallback` chain (missing base → placeholder, one
+   level deep) and textures through two NEW lazy caches keyed by
+   `SkillId` / `Action` (`sfx/skills/<id>`, `sfx/buttons/<action>`).
+   **Texture caches do NOT cache misses** — a file dropped into the
+   persistent dir mid-session plays on the next cast/click, no relaunch
+   (the designer-iteration loop; bases stay eager + null-cached).
+2. **Skill cues** — `use_skill` queues base-by-type + per-skill texture.
+   New base ids cantrip/enchantment/curse with `soundFallback` → `spell`
+   until their files ship (no silence regression vs the old
+   everything-is-spell placeholder). `skillTypeBaseSound` in types.zig.
+3. **Button cues** — press always plain `button_click_down`; release =
+   `button_click_up` base at the release seam (ALL actions except skill
+   slots — `actionIsSkillSlot`; auto-fire's use_skill cue subsumes it,
+   prepare/unprepare play up + slot texture at the consumption site) +
+   the action texture at the EFFECT site. The options_action +
+   menu_action dispatch switches queue ~50 actions' textures in one line
+   each; the flag sections (toggles, swap, skip, undo/redo — now
+   success-gated, editor save/export/new-mission, mission browser,
+   dismiss_error) queue at their sites. `releaseSoundForAction` →
+   `actionTextureFallback` (interim placeholder map; skill-slot arm
+   dropped). **Fixed latent bug:** `.change_setting` clicks played
+   `button_click_up` TWICE (release site + consumption site both queued
+   it) — the new layer ownership (base at seam, texture at effect) makes
+   doubling structurally impossible.
+4. **Missing one-shots** — heal, stun, knockback, retreat, death (enemy;
+   player keeps `defeat`), level_complete (non-final `end_level`), aggro
+   (inside `activateEntity` — the one queue site every activation path
+   routes through; one sting per newly-aggroed enemy).
+5. **Music intensity stack** — `music_layers: []MusicLayer` (index 0 =
+   base, 1..N probed generically until first missing file, cap 16 — the
+   stack extends by pure asset drop). `frame()` projects
+   `countActiveEnemies` (alive + aggro'd + enemy-team; main.zig, tested)
+   → `updateMusic(count, delta, settings)`: per-stream advance, tier
+   volume lerp (~1s fade; descending table 0.8/0.65/0.5/... so a full
+   stack never drowns the base), per-frame settings scaling. **A state
+   projection, not events** — replay/undo-safe by construction. Sample-
+   aligned equal-length stems are the authoring constraint (frameCount
+   mismatch → dev diag warn). **Removed** `applyVolumes` + the
+   `last_applied_volumes` diff machinery (per-frame application made it
+   redundant; DESIGN's live-apply section updated).
+
+Zero asset churn, zero behavior regression: every pre-layering sound is
+preserved either as a base or as an `actionTextureFallback`/`soundFallback`
+placeholder that a shipped file automatically overrides.
+
 ## Animation
 
 ### One-shot anim infrastructure + skill-icon pop (DONE)

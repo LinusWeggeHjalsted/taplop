@@ -1282,27 +1282,47 @@ Open:
 
 ## Audio
 
-Architecture DONE — see DESIGN → Audio. Sound queue on `SessionState`,
-backend sfx cache + looping music stream, `frame()` drains + updates music.
-All shipped sfx wired except the two that wait for mission end-state screens.
+Architecture DONE — see DESIGN → Audio (layered cues + layered music + the
+file-formats bullet). The engine side is FULLY WIRED for the layered sound
+design: skill cues (type base + `sfx/skills/<skill_id>` texture), button
+cues (base up + `sfx/buttons/<action>` texture, effect-site queued), the
+music intensity stack (`ambient_layer_1..N`, one per active enemy, probed
+generically), and all missing one-shots (heal, stun, knockback, retreat,
+death, level_complete, aggro). **Everything missing is a pure ASSET DROP** —
+the sound designer prioritizes on his own; `.wav` or `.ogg`, persistent-dir
+shadowing works mid-session for textures (miss-not-cached).
+
 Open:
 
-- `defeat` DONE — wired in the `death` handler when the player dies
-  (entity_index == 0), gated `!replaying`. `mission_completion` DONE — wired
-  in `end_level` when the last level completes, gated `!replaying`.
-  Cantrip/enchantment/curse currently reuse the `spell` sound (placeholder
-  until dedicated assets ship).
-- Options menu volume controls (settings fields exist; UI is the TODO
-  `buildOptionsMenu`). `applyVolumes` is called at init; re-call it when the
-  settings change in the options menu so volume adjusts live.
+- **Assets themselves** — the full shopping list for current content:
+  5 skill-type bases (cantrip/enchantment/curse missing, spell/weapon_swing
+  exist as pre-layering placeholders), 44 skill textures
+  (`sfx/skills/<id>`), button textures (`sfx/buttons/<action_snake_case>` —
+  optional per action), the music stem set (re-export `ambient` as the
+  base of a sample-aligned stem set + as many `ambient_layer_N` as he
+  writes), and the new one-shots (heal/stun/knockback/retreat/death/
+  level_complete/aggro). Current files are placeholders to re-author.
+- **Music authoring constraint** — identical-length, sample-aligned loop
+  stems (one DAW session); a mismatch is dev-diag-warned at load.
+- Deliberately unwired (feedback-noise class — a texture file for these
+  won't play until a site is added, by design): zoom keys (the wheel zoom
+  has no sound; keys shouldn't be noisier), error-scroll ticks,
+  `dump_event_log` (dev tool).
+- **Prune `actionTextureFallback`** entries as button textures ship (each
+  entry is dead weight once its file exists).
 - Web autoplay policy: browsers may block audio until a user gesture. The
   stream no-ops until then by design; verify it resumes after the first click
   on the web build.
-- Tune volumes / mix against real assets (current volumes are the Unity
-  defaults carried over).
+- Tune volumes / mix against real assets (layer volumes are placeholders).
 - Per-sfx cooldown in `playSounds` if multi-hit overlap (N `attack` events
   in one frame → N damage sounds) sounds bad. Trigger sites stay clean; the
   throttle is backend-only.
+- **Later extensions (settled direction, not scheduled):** per-screen base
+  tracks (menu/hub/level ambience); per-enemy-TYPE music stems (the current
+  stack is intensity-only); a medal-stinger layer per medal type
+  (author/gold/silver/bronze) for the mission-complete overlay when the
+  medals work lands; player-vs-enemy sound variants (move/hit/death) if the
+  designer wants them (trivial at the queue sites).
 
 ## Memory / Budget
 
