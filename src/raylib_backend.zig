@@ -645,6 +645,17 @@ pub const RaylibBackend = struct {
     /// Missing audio is a normal in-progress state (like missing sprites) ->
     /// cache null and skip play. See DESIGN → Audio.
     sound_cache: std.AutoHashMapUnmanaged(types.SoundId, ?rl.Sound) = .empty,
+    /// Skill texture sounds (the specific half of a skill cue), keyed by
+    /// `SkillId`, resolved from `assets/audio/sfx/skills/<id>`. Unlike
+    /// `sound_cache`, MISSES ARE NOT CACHED — a texture file dropped into
+    /// the persistent dir mid-session is picked up by the next cast, no
+    /// relaunch (the sound-designer iteration loop). See DESIGN → Audio
+    /// (layered cues).
+    skill_sound_cache: std.AutoHashMapUnmanaged(types.SkillId, ?rl.Sound) = .empty,
+    /// Action texture sounds (the specific half of a button cue), keyed by
+    /// `Action`, resolved from `assets/audio/sfx/buttons/<action>`. Same
+    /// miss-not-cached discipline as `skill_sound_cache`.
+    action_sound_cache: std.AutoHashMapUnmanaged(types.Action, ?rl.Sound) = .empty,
     /// The always-on ambient music stream, loaded via
     /// `loadMusicStreamFromMemory`. null if the audio device isn't ready or
     /// the asset failed to load. Looping; updated each frame by
@@ -903,6 +914,16 @@ pub const RaylibBackend = struct {
             if (maybe_sound.*) |sound| rl.unloadSound(sound);
         }
         self.sound_cache.deinit(self.allocator);
+        var skill_textures = self.skill_sound_cache.valueIterator();
+        while (skill_textures.next()) |maybe_sound| {
+            if (maybe_sound.*) |sound| rl.unloadSound(sound);
+        }
+        self.skill_sound_cache.deinit(self.allocator);
+        var action_textures = self.action_sound_cache.valueIterator();
+        while (action_textures.next()) |maybe_sound| {
+            if (maybe_sound.*) |sound| rl.unloadSound(sound);
+        }
+        self.action_sound_cache.deinit(self.allocator);
         rl.closeAudioDevice();
         self.audio_ready = false;
     }
@@ -926,19 +947,115 @@ pub const RaylibBackend = struct {
     /// converted to f32 0.0–1.0 here at the raylib seam. Missing sounds
     /// (cached null) are skipped. No-op when audio isn't ready. See DESIGN →
     /// Audio.
-    pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundId, settings: types.Settings) void {
+    /// Play the drained sound cues. Each cue plays its base layer and its
+    /// texture layer (if any) simultaneously — mix balance is baked into the
+    /// asset files, both layers play at the sfx volume. Missing bases are
+    /// tried through `soundFallback`; missing textures play nothing (or the
+    /// action arm's interim placeholder sound). No-op when audio isn't
+    /// ready. See DESIGN → Audio (layered cues).
+    pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundCue, settings: types.Settings) void {
         if (!self.audio_ready) return;
         const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
         const sfx_vol = @as(f32, @floatFromInt(settings.sound_effects_volume)) / 100.0;
         const volume = sfx_vol * master;
-        for (sounds) |sound| {
-            if (self.sound_cache.get(sound)) |maybe_loaded| {
+        for (sounds) |cue| {
+            if (cue.base) |base| self.playSoundId(base, volume);
+            if (cue.texture) |texture| switch (texture) {
+                .skill => |skill_id| {
+                    if (self.getSkillTexture(skill_id)) |loaded| {
+                        rl.setSoundVolume(loaded, volume);
+                        rl.playSound(loaded);
+                    }
+                },
+                .action => |action_texture| {
+                    const loaded = self.getActionTexture(action_texture.action) orelse {
+                        // No texture file yet — the interim placeholder
+                        // (the pre-layering specific sound), if any.
+                        if (action_texture.fallback) |fallback| self.playSoundId(fallback, volume);
+                        continue;
+                    };
+                    rl.setSoundVolume(loaded, volume);
+                    rl.playSound(loaded);
+                },
+            };
+        }
+    }
+
+    /// Play one `SoundId` at `volume`, walking the `soundFallback` chain
+    /// when its cache entry is null (a missing file whose placeholder
+    /// exists). Skips silently when nothing in the chain is loaded.
+    fn playSoundId(self: *RaylibBackend, sound: types.SoundId, volume: f32) void {
+        var candidate: ?types.SoundId = sound;
+        while (candidate) |id| {
+            if (self.sound_cache.get(id)) |maybe_loaded| {
                 if (maybe_loaded) |loaded| {
                     rl.setSoundVolume(loaded, volume);
                     rl.playSound(loaded);
+                    return;
                 }
             }
+            candidate = soundFallback(id);
         }
+    }
+
+    /// Interim placeholder chain for base sounds whose dedicated file
+    /// hasn't shipped yet (missing base -> placeholder base, one level
+    /// deep, no loops). Currently empty — the cantrip/enchantment/curse
+    /// skill-type bases will chain to `spell` until their files ship. See
+    /// DESIGN → Audio (layered cues).
+    fn soundFallback(sound: types.SoundId) ?types.SoundId {
+        _ = sound;
+        return null;
+    }
+
+    /// The loaded texture sound for `skill_id`, or null when no file
+    /// exists. Lazy, hit-only caching — a miss is retried on the next cue
+    /// (so a dropped file works without relaunching); a hit is cached for
+    /// the session (decoded audio is immutable per file path).
+    fn getSkillTexture(self: *RaylibBackend, skill_id: types.SkillId) ?rl.Sound {
+        if (self.skill_sound_cache.get(skill_id)) |cached| return cached;
+        const path = std.fmt.allocPrint(
+            self.frame_arena.allocator(),
+            "assets/audio/sfx/skills/{s}",
+            .{@tagName(skill_id)},
+        ) catch @panic("failed to build skill texture path");
+        const loaded = self.loadSoundTextureAt(path);
+        if (loaded) |sound| {
+            self.skill_sound_cache.put(self.allocator, skill_id, sound) catch
+                @panic("failed to cache skill texture");
+        }
+        return loaded;
+    }
+
+    /// The loaded texture sound for `action`, or null when no file exists.
+    /// Same lazy hit-only caching discipline as `getSkillTexture`.
+    fn getActionTexture(self: *RaylibBackend, action: types.Action) ?rl.Sound {
+        if (self.action_sound_cache.get(action)) |cached| return cached;
+        const path = std.fmt.allocPrint(
+            self.frame_arena.allocator(),
+            "assets/audio/sfx/buttons/{s}",
+            .{@tagName(action)},
+        ) catch @panic("failed to build action texture path");
+        const loaded = self.loadSoundTextureAt(path);
+        if (loaded) |sound| {
+            self.action_sound_cache.put(self.allocator, action, sound) catch
+                @panic("failed to cache action texture");
+        }
+        return loaded;
+    }
+
+    /// Load a texture sound from `path_without_extension` (the FileSource
+    /// audio candidate policy applies — `.wav` then `.ogg`). Returns null
+    /// on any miss/decode failure; the caller decides caching.
+    fn loadSoundTextureAt(self: *RaylibBackend, path_without_extension: []const u8) ?rl.Sound {
+        const audio_file = self.file_source.readAudioFile(self.allocator, path_without_extension) orelse
+            return null;
+        defer self.allocator.free(audio_file.bytes);
+        const wave = rl.loadWaveFromMemory(audio_file.format, audio_file.bytes) catch return null;
+        defer rl.unloadWave(wave);
+        const sound = rl.loadSoundFromWave(wave);
+        if (!rl.isSoundValid(sound)) return null;
+        return sound;
     }
 
     /// Advance the music stream each frame. Must be called every frame the

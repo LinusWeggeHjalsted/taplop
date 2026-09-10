@@ -307,14 +307,14 @@ pub const SessionState = struct {
     /// gate is automatic). See DESIGN → Input.
     pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
 
-    /// Pending one-shot sound effects queued by event handlers (gated
-    /// `!replaying`) and input handlers during a frame. Drained by `frame()`
-    /// after the update drain and played via the backend. Off the undoable
-    /// GameState → replay-safe by construction (replay queues nothing; the
-    /// `!replaying` gate is at the push site). Backed by `backing_allocator`
-    /// (not an arena — cleared each frame, so an arena would leak growth).
-    /// See DESIGN → Audio.
-    pending_sounds: std.ArrayListUnmanaged(types.SoundId) = .empty,
+    /// Pending sound cues (base + optional texture layers) queued by event
+    /// handlers (gated `!replaying`) and input handlers during a frame.
+    /// Drained by `frame()` after the update drain and played via the
+    /// backend. Off the undoable GameState → replay-safe by construction
+    /// (replay queues nothing; the `!replaying` gate is at the push site).
+    /// Backed by `backing_allocator` (not an arena — cleared each frame, so
+    /// an arena would leak growth). See DESIGN → Audio.
+    pending_sounds: std.ArrayListUnmanaged(types.SoundCue) = .empty,
 
     /// Pending one-shot anims queued by event handlers (gated `!replaying`)
     /// during a frame. `frame()` drains this after the update drain, stamps
@@ -410,16 +410,27 @@ pub const SessionState = struct {
         return self.pending_error;
     }
 
-    /// Append a one-shot sound to the pending queue. Callers gate on
-    /// `!history.replaying` so replaying pushes nothing (replay-safe by
-    /// construction). `allocator` is `history.backing_allocator`. See
-    /// DESIGN → Audio.
+    /// Append a plain one-shot sound (a base-only cue) to the pending
+    /// queue. Callers gate on `!history.replaying` so replaying pushes
+    /// nothing (replay-safe by construction). `allocator` is
+    /// `history.backing_allocator`. See DESIGN → Audio.
     pub fn queueSound(
         self: *SessionState,
         allocator: std.mem.Allocator,
         sound: types.SoundId,
     ) void {
-        self.pending_sounds.append(allocator, sound) catch
+        self.queueCue(allocator, .{ .base = sound });
+    }
+
+    /// Append a layered sound cue (base + optional texture) to the pending
+    /// queue. Same replay-gate convention as `queueSound` (the gate is at
+    /// the call site). See DESIGN → Audio (layered cues).
+    pub fn queueCue(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        cue: types.SoundCue,
+    ) void {
+        self.pending_sounds.append(allocator, cue) catch
             @panic("failed to queue sound");
     }
 
@@ -432,7 +443,7 @@ pub const SessionState = struct {
     /// `append`). See DESIGN → Audio.
     pub fn drainPendingSounds(
         self: *SessionState,
-    ) []const types.SoundId {
+    ) []const types.SoundCue {
         const sounds = self.pending_sounds.items;
         self.pending_sounds.items.len = 0;
         return sounds;
@@ -2667,9 +2678,10 @@ test "SessionState sound queue: queue + drain returns sounds in order" {
 
     const drained = session.drainPendingSounds();
     try std.testing.expectEqual(@as(usize, 3), drained.len);
-    try std.testing.expectEqual(types.SoundId.move, drained[0]);
-    try std.testing.expectEqual(types.SoundId.weapon_swing, drained[1]);
-    try std.testing.expectEqual(types.SoundId.damage, drained[2]);
+    try std.testing.expectEqual(types.SoundId.move, drained[0].base.?);
+    try std.testing.expectEqual(types.SoundId.weapon_swing, drained[1].base.?);
+    try std.testing.expectEqual(types.SoundId.damage, drained[2].base.?);
+    try std.testing.expect(drained[0].texture == null);
 
     // A second drain returns empty (the queue was cleared).
     const drained_again = session.drainPendingSounds();
@@ -2692,8 +2704,8 @@ test "SessionState sound queue: drained slice stays valid after clear" {
     // Read the slice AFTER the drain cleared the queue — the values must
     // still be the originals, not undefined garbage.
     try std.testing.expectEqual(@as(usize, 2), drained.len);
-    try std.testing.expectEqual(types.SoundId.pickup, drained[0]);
-    try std.testing.expectEqual(types.SoundId.skip, drained[1]);
+    try std.testing.expectEqual(types.SoundId.pickup, drained[0].base.?);
+    try std.testing.expectEqual(types.SoundId.skip, drained[1].base.?);
 }
 
 test "SessionState sound queue: reuse after drain" {
@@ -2707,7 +2719,30 @@ test "SessionState sound queue: reuse after drain" {
 
     const drained = session.drainPendingSounds();
     try std.testing.expectEqual(@as(usize, 1), drained.len);
-    try std.testing.expectEqual(types.SoundId.equip, drained[0]);
+    try std.testing.expectEqual(types.SoundId.equip, drained[0].base.?);
+}
+
+test "SessionState sound queue: layered cue queues base + texture together" {
+    const allocator = std.testing.allocator;
+    var session: SessionState = .{};
+    defer session.pending_sounds.deinit(allocator);
+
+    session.queueCue(allocator, .{
+        .base = .spell,
+        .texture = .{ .skill = .worldfire },
+    });
+    session.queueCue(allocator, .{
+        .base = .button_click_up,
+        .texture = .{ .action = .{ .action = .skip, .fallback = .skip } },
+    });
+
+    const drained = session.drainPendingSounds();
+    try std.testing.expectEqual(@as(usize, 2), drained.len);
+    try std.testing.expectEqual(types.SoundId.spell, drained[0].base.?);
+    try std.testing.expectEqual(types.SkillId.worldfire, drained[0].texture.?.skill);
+    try std.testing.expectEqual(types.SoundId.button_click_up, drained[1].base.?);
+    try std.testing.expectEqual(types.Action.skip, drained[1].texture.?.action.action);
+    try std.testing.expectEqual(types.SoundId.skip, drained[1].texture.?.action.fallback.?);
 }
 
 // --- replay player-action validation tests ---

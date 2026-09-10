@@ -37,6 +37,36 @@ pub const SoundId = enum {
     mission_completion,
 };
 
+/// The specific half of a layered cue, resolved to a file by enum key:
+/// skill textures at `assets/audio/sfx/skills/<id>.ogg`, action textures at
+/// `assets/audio/sfx/buttons/<action>.ogg` (`.wav` accepted for both — see
+/// FileSource.readAudioFile). A missing texture file is a normal state —
+/// the cue's base layer plays alone. See DESIGN → Audio (layered cues).
+pub const SoundTexture = union(enum) {
+    skill: SkillId,
+    action: ActionTexture,
+};
+
+/// The action-texture arm: the action whose `sfx/buttons/<name>` file
+/// textures the cue, plus the interim placeholder sound played when that
+/// file is missing (actions that carried a specific sound pre-layering —
+/// the placeholder map is `releaseSoundForAction`). Once a texture file
+/// ships, the placeholder is dead weight; drop the map entry then.
+pub const ActionTexture = struct {
+    action: Action,
+    fallback: ?SoundId = null,
+};
+
+/// One queued sound cue: a category base layer plus an optional specific
+/// texture layer, played simultaneously. Plain one-shots (damage, move,
+/// ...) are base-only cues; skill casts and button releases layer a
+/// texture over their base. Layer mix balance is baked into the asset
+/// files, not expressed here. See DESIGN → Audio (layered cues).
+pub const SoundCue = struct {
+    base: ?SoundId = null,
+    texture: ?SoundTexture = null,
+};
+
 pub const Vector2 = struct {
     x: i32,
     y: i32,
