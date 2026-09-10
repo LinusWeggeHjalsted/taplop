@@ -117,6 +117,48 @@ pub const FileSource = struct {
         return error.FileNotFound;
     }
 
+    /// An audio file resolved through the layered source: the raw bytes
+    /// (caller-owned) + the raylib format tag (the extension, dot included)
+    /// matching whichever accepted candidate hit.
+    pub const AudioFile = struct {
+        bytes: []u8,
+        format: [:0]const u8,
+    };
+
+    /// The accepted audio-file extensions, in lookup priority order — see
+    /// DESIGN → Audio (file formats). `.wav` MUST be tried first: the
+    /// layering is per-path and every shipped sound is an `.ogg` in the
+    /// embedded map, so an `.ogg`-first order would always hit the embedded
+    /// copy and a dropped `.wav` would never load.
+    const audio_file_extensions = [2][:0]const u8{ ".wav", ".ogg" };
+
+    /// Read the first existing audio file at `path_without_extension` plus
+    /// each accepted extension, in `audio_file_extensions` priority order —
+    /// every candidate goes through the normal `readFile` layering
+    /// (persistent dir first, embedded second). Returns the bytes + the
+    /// extension that hit as the format tag, or null when no candidate
+    /// exists in any layer. Any read error on a candidate counts as a miss
+    /// for that candidate (audio load failures degrade to silence in the
+    /// backend, never a crash).
+    pub fn readAudioFile(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        path_without_extension: []const u8,
+    ) ?AudioFile {
+        for (audio_file_extensions) |extension| {
+            const path = std.fmt.allocPrint(
+                allocator,
+                "{s}{s}",
+                .{ path_without_extension, extension },
+            ) catch @panic("failed to build audio file path");
+            defer allocator.free(path);
+            if (self.readFile(allocator, path)) |bytes| {
+                return .{ .bytes = bytes, .format = extension };
+            } else |_| {}
+        }
+        return null;
+    }
+
     /// Whether a file exists in the persistent dir at the given project-root-
     /// relative path. Does NOT consult the embedded map (shipped content is
     /// always present; this is for detecting player-written artifacts like an
@@ -1219,4 +1261,65 @@ test "listSaveFiles: only .txt files, newest first, non-txt excluded" {
     // Sanity on the sort key: mtimes strictly descending.
     try testing.expect(files[0].mtime_ns > files[1].mtime_ns);
     try testing.expect(files[1].mtime_ns > files[2].mtime_ns);
+}
+
+// --- tests for readAudioFile ---
+
+test "readAudioFile: embedded .ogg fallback, .wav shadow wins, priority order" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-read-audio-file";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Shadows are hand-dropped files, so they can't go through
+    // FileSource.writeFile (it refuses assets/ paths) — write through the
+    // raw dir handle, exactly like a player would by hand.
+    try dir.createDirPath(io, "assets/audio/sfx");
+
+    // No shadow: the shipped damage sound is served from the embedded map
+    // as .ogg (we ship no .wav — that's what makes a .wav-first candidate
+    // order safe).
+    const embedded = file_source.readAudioFile(allocator, "assets/audio/sfx/damage") orelse
+        return error.TestUnexpectedResult;
+    defer allocator.free(embedded.bytes);
+    try testing.expectEqualStrings(".ogg", embedded.format);
+    try testing.expect(embedded.bytes.len > 0);
+
+    // A dropped .wav shadows the shipped .ogg. This is THE case the
+    // .wav-first order exists for: the .ogg candidate exists in the
+    // embedded map at the same relative path, so an .ogg-first order would
+    // always hit the embedded copy and this .wav would never load.
+    try dir.writeFile(io, .{ .sub_path = "assets/audio/sfx/damage.wav", .data = "fake wav bytes" });
+    const wav = file_source.readAudioFile(allocator, "assets/audio/sfx/damage") orelse
+        return error.TestUnexpectedResult;
+    defer allocator.free(wav.bytes);
+    try testing.expectEqualStrings(".wav", wav.format);
+    try testing.expectEqualStrings("fake wav bytes", wav.bytes);
+
+    // Both extensions dropped: .wav keeps priority (deterministic pick).
+    try dir.writeFile(io, .{ .sub_path = "assets/audio/sfx/damage.ogg", .data = "fake ogg bytes" });
+    const both = file_source.readAudioFile(allocator, "assets/audio/sfx/damage") orelse
+        return error.TestUnexpectedResult;
+    defer allocator.free(both.bytes);
+    try testing.expectEqualStrings(".wav", both.format);
+    try testing.expectEqualStrings("fake wav bytes", both.bytes);
+
+    // A .ogg-only shadow still shadows the embedded copy (per-path
+    // layering, the plain readFile behavior).
+    try dir.writeFile(io, .{ .sub_path = "assets/audio/sfx/move.ogg", .data = "shadowed ogg bytes" });
+    const ogg_shadow = file_source.readAudioFile(allocator, "assets/audio/sfx/move") orelse
+        return error.TestUnexpectedResult;
+    defer allocator.free(ogg_shadow.bytes);
+    try testing.expectEqualStrings(".ogg", ogg_shadow.format);
+    try testing.expectEqualStrings("shadowed ogg bytes", ogg_shadow.bytes);
+
+    // No candidate in any layer → null (the backend caches silence).
+    try testing.expect(file_source.readAudioFile(allocator, "assets/audio/sfx/nonexistent") == null);
 }

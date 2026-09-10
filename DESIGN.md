@@ -402,6 +402,18 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   no log — the sounds load valid, `playSound` is called, but no audio). The
   order in `initAudio` is: open device → load+start music → load sfx. No
   compile-time guard — reordering silently breaks sfx.
+- **File formats (`.ogg` shipped, `.wav` accepted):** every shipped sound is
+  `.ogg` (smaller embedded exe); `FileSource.readAudioFile` (file_source.zig)
+  also accepts `.wav` so a persistent-dir shadow can drop WAV exports — file
+  size is then the shadowing author's tradeoff, not ours (see File System &
+  IO → Modding by shadowing). `.wav` is tried FIRST: the layering is
+  per-path and every shipped sound's `.ogg` exists in the embedded map at
+  the same relative path, so an `.ogg`-first order would always hit the
+  embedded copy and a dropped `.wav` would never load. We ship no `.wav`, so
+  a `.wav` candidate can only ever be a persistent-dir shadow. When both a
+  `.wav` and an `.ogg` sit in the persistent dir, the `.wav` wins
+  (deterministic). Applies to sfx and the music stream alike (the candidate
+  policy is a FileSource concern, not a backend one).
 - **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
   requires it for streaming) + `backend.playSounds(drained, settings)` after
   the drain. Sfx volume = `sound_effects_volume * master_volume`; music
@@ -1401,7 +1413,8 @@ main menu. Design points:
 Because the read order checks the persistent dir BEFORE the embedded map, a
 player can drop a file at `~/.ziglop/<shipped-path>` to shadow shipped
 content, or add new paths (e.g. `~/.ziglop/assets/weapons/my_new_sword.png`)
-for new sprites/campaigns. This is a side effect of the unified-source
+for new sprites/campaigns. Audio shadows may be `.wav` or `.ogg` (see
+Audio → File formats). This is a side effect of the unified-source
 layering, NOT a designed modding feature: no policy on which paths are
 overridable, no verification, no safe-mode flag. It's accepted as-is for now;
 revisit and add structure (override policy, verification, a disable-for-

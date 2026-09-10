@@ -650,7 +650,9 @@ pub const RaylibBackend = struct {
     /// the asset failed to load. Looping; updated each frame by
     /// `updateMusic`. See DESIGN → Audio.
     music: ?rl.Music = null,
-    /// The raw OGG bytes backing `music`. raylib's `LoadMusicStreamFromMemory`
+    /// The raw audio bytes backing `music` (shipped `.ogg` or a shadowed
+    /// file — see `FileSource.readAudioFile`). raylib's
+    /// `LoadMusicStreamFromMemory`
     /// (stb_vorbis) keeps a POINTER to the passed buffer (no internal copy),
     /// so the bytes must outlive the stream — freed in `deinitAudio` alongside
     /// the music unload. null when no music loaded.
@@ -815,18 +817,17 @@ pub const RaylibBackend = struct {
         // Loading music before sfx: LoadSoundFromWave converts to the device
         // format, and the music stream's setup must happen first so the sfx
         // conversion targets the right state.
-        const music_path = "assets/audio/music/ambient.ogg";
-        if (self.file_source.readFile(self.allocator, music_path)) |bytes| {
-            if (rl.loadMusicStreamFromMemory(".ogg", bytes) catch null) |music_value| {
+        if (self.file_source.readAudioFile(self.allocator, "assets/audio/music/ambient")) |audio_file| {
+            if (rl.loadMusicStreamFromMemory(audio_file.format, audio_file.bytes) catch null) |music_value| {
                 var music = music_value;
                 music.looping = true;
                 self.music = music;
-                self.music_data = bytes;
+                self.music_data = audio_file.bytes;
                 rl.playMusicStream(music);
             } else {
-                self.allocator.free(bytes);
+                self.allocator.free(audio_file.bytes);
             }
-        } else |_| {}
+        }
 
         // Load every sfx AFTER the music stream is set up. A missing/unreadable
         // file caches null (the game continues silent for that sound).
@@ -842,17 +843,16 @@ pub const RaylibBackend = struct {
     fn ensureSoundLoaded(self: *RaylibBackend, sound: types.SoundId) void {
         if (self.sound_cache.contains(sound)) return;
         const stem = soundFileName(sound);
-        const path = std.fmt.allocPrintSentinel(
+        const path = std.fmt.allocPrint(
             self.frame_arena.allocator(),
-            "assets/audio/sfx/{s}.ogg",
+            "assets/audio/sfx/{s}",
             .{stem},
-            0,
         ) catch @panic("failed to build sfx path");
         const loaded: ?rl.Sound = blk: {
-            const bytes = self.file_source.readFile(self.allocator, path) catch
+            const audio_file = self.file_source.readAudioFile(self.allocator, path) orelse
                 break :blk null;
-            defer self.allocator.free(bytes);
-            const wave = rl.loadWaveFromMemory(".ogg", bytes) catch break :blk null;
+            defer self.allocator.free(audio_file.bytes);
+            const wave = rl.loadWaveFromMemory(audio_file.format, audio_file.bytes) catch break :blk null;
             defer rl.unloadWave(wave);
             const s = rl.loadSoundFromWave(wave);
             if (!rl.isSoundValid(s)) break :blk null;
@@ -862,8 +862,9 @@ pub const RaylibBackend = struct {
             @panic("failed to cache sound");
     }
 
-    /// The on-disk stem for a `SoundId` (matches the file names under
-    /// `assets/audio/sfx/`).
+    /// The on-disk stem for a `SoundId` (extension-less — `.wav` and
+    /// `.ogg` are accepted, see `FileSource.readAudioFile`). Matches the
+    /// file names under `assets/audio/sfx/`.
     fn soundFileName(sound: types.SoundId) []const u8 {
         return switch (sound) {
             .move => "move",

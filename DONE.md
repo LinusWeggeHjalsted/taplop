@@ -2789,6 +2789,34 @@ end-state screens.
 sounds silently never play (no error, no log). `initAudio` order: open device
 → load+start music → load sfx. Documented in DESIGN → Audio.
 
+### Slice 8 — audio file formats: .ogg shipped, .wav accepted for shadows (DONE)
+
+Motivation: the sound-designer QoL workflow — drop a replacement at
+`~/.ziglop/assets/audio/sfx/damage.ogg` (or `.wav`) + relaunch. Shipped
+content stays `.ogg` for embedded-exe size; a shadowing author owns their
+own file-size tradeoff, so `.wav` is accepted too.
+
+- `FileSource.readAudioFile(allocator, path_without_extension) ?AudioFile`
+  (file_source.zig) owns the candidate policy: try each accepted extension
+  through the normal readFile layering, return the bytes + the extension
+  that hit as the raylib format tag. In the file-source layer (not the
+  backend) so it's testable headless — raylib_backend.zig is excluded from
+  the test build.
+- **`.wav` is tried FIRST, and the order is load-bearing, not a style
+  choice:** the layering is per-path and every shipped sound's `.ogg`
+  exists in the embedded map at the same relative path, so an `.ogg`-first
+  order would always hit the embedded copy and a dropped `.wav` would
+  NEVER load. We ship no `.wav`, so a `.wav` candidate can only ever be a
+  persistent-dir shadow. Both extensions dropped → `.wav` wins
+  (deterministic).
+- Backend: `ensureSoundLoaded` + the music block in `initAudio` swapped
+  from hardcoded `readFile("….ogg")` + `loadWaveFromMemory(".ogg", …)` to
+  `readAudioFile` + the returned format tag. Music + sfx both.
+- Design: DESIGN → Audio → File formats; one-line pointer in DESIGN →
+  File System & IO → Modding by shadowing. Test in file_source.zig pins
+  embedded fallback, `.wav` shadow, both-present priority, `.ogg`-only
+  shadow, and the no-candidate null.
+
 ## Animation
 
 ### One-shot anim infrastructure + skill-icon pop (DONE)
