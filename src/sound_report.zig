@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const types = @import("types.zig");
+const file_source = @import("file_source.zig");
 const lookups = @import("generated_lookups.zig");
 
 /// One reported sound asset: the project-relative path (extension-less —
@@ -33,9 +34,9 @@ const AssetStatus = struct {
     shadowed_ext: ?[]const u8 = null,
 };
 
-/// The audio extensions in runtime lookup order (mirrors
-/// `FileSource.readAudioFile`).
-const audio_extensions = [_][]const u8{ ".wav", ".ogg" };
+/// The audio extensions in runtime lookup order — shared with the
+/// FileSource (the single source of the `.wav`-first policy).
+const audio_extensions = file_source.FileSource.audio_file_extensions;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);

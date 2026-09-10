@@ -381,6 +381,8 @@ pub fn build(b: *std.Build) void {
     });
     sound_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
     sound_report_exe.root_module.addImport("build_info", build_info_module);
+    // file_source.zig (the shared audio-extension policy) imports it.
+    sound_report_exe.root_module.addImport("generated_assets", assets_module);
     const sound_report_run = b.addRunArtifact(sound_report_exe);
     // Runs from the project root so it can stat assets/ + write
     // sound_report.md where the developer expects it.

@@ -917,11 +917,13 @@ pub const RaylibBackend = struct {
     /// null on miss/failure (idempotent via cache presence).
     fn ensureSoundLoaded(self: *RaylibBackend, sound: types.SoundId) void {
         if (self.sound_cache.contains(sound)) return;
-        const stem = soundFileName(sound);
+        // The stem is the tag name by construction — every base/one-shot
+        // file is named exactly after its enum variant (extension-less;
+        // `.wav`/`.ogg` via `FileSource.readAudioFile`).
         const path = std.fmt.allocPrint(
             self.frame_arena.allocator(),
             "assets/audio/sfx/{s}",
-            .{stem},
+            .{@tagName(sound)},
         ) catch @panic("failed to build sfx path");
         const loaded: ?rl.Sound = blk: {
             const audio_file = self.file_source.readAudioFile(self.allocator, path) orelse
@@ -937,35 +939,6 @@ pub const RaylibBackend = struct {
             @panic("failed to cache sound");
     }
 
-    /// The on-disk stem for a `SoundId` (extension-less — `.wav` and
-    /// `.ogg` are accepted, see `FileSource.readAudioFile`). Matches the
-    /// file names under `assets/audio/sfx/`.
-    fn soundFileName(sound: types.SoundId) []const u8 {
-        return switch (sound) {
-            .move => "move",
-            .weapon_base => "weapon_base",
-            .spell_base => "spell_base",
-            .cantrip_base => "cantrip_base",
-            .enchantment_base => "enchantment_base",
-            .curse_base => "curse_base",
-            .item_base => "item_base",
-            .damage => "damage",
-            .collision => "collision",
-            .pickup => "pickup",
-            .swap_skill => "swap_skill",
-            .button_base_down => "button_base_down",
-            .button_base_up => "button_base_up",
-            .defeat => "defeat",
-            .mission_completion => "mission_completion",
-            .heal => "heal",
-            .stun => "stun",
-            .knockback => "knockback",
-            .retreat => "retreat",
-            .death => "death",
-            .level_complete => "level_complete",
-            .aggro => "aggro",
-        };
-    }
 
     /// Tear down audio: stop + unload the music streams, unload all sfx,
     /// close the audio device. Safe to call when audio was never

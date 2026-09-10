@@ -129,8 +129,10 @@ pub const FileSource = struct {
     /// DESIGN → Audio (file formats). `.wav` MUST be tried first: the
     /// layering is per-path and every shipped sound is an `.ogg` in the
     /// embedded map, so an `.ogg`-first order would always hit the embedded
-    /// copy and a dropped `.wav` would never load.
-    const audio_file_extensions = [2][:0]const u8{ ".wav", ".ogg" };
+    /// copy and a dropped `.wav` would never load. Pub: the sound-report
+    /// tool walks the same order so its statuses name the file that
+    /// actually resolves.
+    pub const audio_file_extensions = [2][:0]const u8{ ".wav", ".ogg" };
 
     /// Read the first existing audio file at `path_without_extension` plus
     /// each accepted extension, in `audio_file_extensions` priority order —
