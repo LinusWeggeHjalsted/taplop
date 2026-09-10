@@ -19,10 +19,20 @@ pub const utility_skill_count = 5;
 /// `!replaying`) and input handlers, then drained by `frame()` and played via
 /// the backend. Music is a single always-on stream, not a `SoundId`. See
 /// DESIGN → Audio.
+/// One-shot sound effects, one variant per sfx file under `assets/audio/sfx/`.
+/// The skill-type bases (weapon_swing, spell, cantrip, enchantment, curse)
+/// are the base layer of a skill cue — see `skillTypeBaseSound`. Pushed
+/// onto `SessionState.pending_sounds` (as cue bases) by event handlers
+/// (gated `!replaying`) and input handlers, then drained by `frame()` and
+/// played via the backend. Music is a single always-on stream, not a
+/// `SoundId`. See DESIGN → Audio.
 pub const SoundId = enum {
     move,
     weapon_swing,
     spell,
+    cantrip,
+    enchantment,
+    curse,
     damage,
     pickup,
     skip,
@@ -498,6 +508,21 @@ pub const SettingRef = struct {
 /// Actions without a specific sound use the generic `button_click_up`.
 /// Press-down is always `button_click_down` regardless of action. See
 /// DESIGN → Audio.
+/// The base layer of a skill cue, by skill type. The dedicated
+/// cantrip/enchantment/curse base FILES may not have shipped yet — the
+/// backend's `soundFallback` chain plays `spell` in their place until they
+/// do, so this mapping always names the eventual base, never the
+/// placeholder. See DESIGN → Audio (layered cues).
+pub fn skillTypeBaseSound(skill_type: SkillType) SoundId {
+    return switch (skill_type) {
+        .weapon_skill => .weapon_swing,
+        .spell => .spell,
+        .cantrip => .cantrip,
+        .enchantment => .enchantment,
+        .curse => .curse,
+    };
+}
+
 pub fn releaseSoundForAction(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,

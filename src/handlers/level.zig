@@ -616,16 +616,16 @@ pub fn handleLevelEvent(
             }
 
             if (lookups.getSkillDefinition(use.skill_id)) |skill_definition| {
-                // Sound for the cast/swing, by skill type: weapon skills
-                // play the swing; spells/cantrips/enchantments/curses play
-                // the spell cast (cantrip/enchantment reuse `spell` — see
-                // TODO → Audio). See DESIGN → Audio.
                 if (!history.replaying) {
-                    const cast_sound: types.SoundId = switch (skill_definition.skill_type) {
-                        .weapon_skill => .weapon_swing,
-                        .spell, .cantrip, .enchantment, .curse => .spell,
-                    };
-                    history.session.queueSound(history.backing_allocator, cast_sound);
+                    // Layered skill cue: base by skill type + texture by
+                    // skill id. A missing texture file plays the base alone;
+                    // the cantrip/enchantment/curse bases fall back to
+                    // `spell` in the backend until their files ship. See
+                    // DESIGN → Audio (layered cues).
+                    history.session.queueCue(history.backing_allocator, .{
+                        .base = types.skillTypeBaseSound(skill_definition.skill_type),
+                        .texture = .{ .skill = use.skill_id },
+                    });
                     // One-shot anim: show the skill's icon above the
                     // caster for 500ms. `current_event_index - 1` is
                     // this `use_skill` event's index (processEvent

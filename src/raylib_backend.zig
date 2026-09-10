@@ -881,6 +881,9 @@ pub const RaylibBackend = struct {
             .move => "move",
             .weapon_swing => "weapon_swing",
             .spell => "spell",
+            .cantrip => "cantrip",
+            .enchantment => "enchantment",
+            .curse => "curse",
             .damage => "damage",
             .pickup => "pickup",
             .skip => "skip",
@@ -1000,12 +1003,15 @@ pub const RaylibBackend = struct {
 
     /// Interim placeholder chain for base sounds whose dedicated file
     /// hasn't shipped yet (missing base -> placeholder base, one level
-    /// deep, no loops). Currently empty — the cantrip/enchantment/curse
-    /// skill-type bases will chain to `spell` until their files ship. See
-    /// DESIGN → Audio (layered cues).
+    /// deep, no loops). See DESIGN → Audio (layered cues).
     fn soundFallback(sound: types.SoundId) ?types.SoundId {
-        _ = sound;
-        return null;
+        return switch (sound) {
+            // The cantrip/enchantment/curse skill-type bases chain to
+            // `spell` until their dedicated files ship (one level deep —
+            // `spell` itself has no fallback, so the chain terminates).
+            .cantrip, .enchantment, .curse => .spell,
+            else => null,
+        };
     }
 
     /// The loaded texture sound for `skill_id`, or null when no file
