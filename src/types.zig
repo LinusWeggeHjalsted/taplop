@@ -32,14 +32,9 @@ pub const SoundId = enum {
     damage,
     collision,
     pickup,
-    skip,
-    equip,
-    learn_skill,
-    salvage,
     swap_skill,
     button_base_down,
     button_base_up,
-    menu,
     defeat,
     mission_completion,
     heal,
@@ -51,43 +46,40 @@ pub const SoundId = enum {
     aggro,
 };
 
+/// The item-action layer keys (see `SoundLayer.item`): one per item-action
+/// event handler that queues an item cue. Tag names are the file stems at
+/// `assets/audio/sfx/items/<tag>_layer`.
+pub const ItemActionSound = enum {
+    equip,
+    salvage,
+    learn_skill,
+};
+
 /// The specific half of a layered cue (the LAYER, resolved to a file by
 /// enum key): skill layers at `assets/audio/sfx/skills/<id>_layer.ogg`,
 /// action layers at `assets/audio/sfx/buttons/<action>_layer.ogg`, item
-/// layers at `assets/audio/sfx/items/<stem>_layer.ogg` (`.wav` accepted —
-/// see FileSource.readAudioFile). A missing layer file is a normal state —
-/// the cue's base plays alone (or the arm's interim fallback sounds).
-/// Whether the base is percussive and the layer ambient (or the reverse)
-/// is a per-file authoring choice — the names are deliberately neutral.
-/// See DESIGN → Audio (layered cues).
+/// layers at `assets/audio/sfx/items/<tag>_layer.ogg` (`.wav` accepted —
+/// see FileSource.readAudioFile). A missing layer file plays NOTHING — no
+/// placeholder, no fallback; silence IS the "not authored yet" signal for
+/// the sound designer. Whether the base is percussive and the layer
+/// ambient (or the reverse) is a per-file authoring choice — the names are
+/// deliberately neutral. See DESIGN → Audio (layered cues).
 pub const SoundLayer = union(enum) {
     skill: SkillId,
-    action: ActionLayer,
-    /// Item-action layer (equip / salvage / learn_skill), keyed by the
-    /// one-shot `SoundId` whose stem names the layer file. The keyed
-    /// SoundId doubles as the interim fallback: while the layer file is
-    /// missing, the pre-layering one-shot plays (and the `item_base`
-    /// base is separately silent until it ships, so the interim result
-    /// is exactly the old solo sound).
-    item: SoundId,
-};
-
-/// The action-layer arm: the action whose `sfx/buttons/<name>_layer` file
-/// layers the cue, plus the interim placeholder sound played when that
-/// file is missing (actions that carried a specific sound pre-layering —
-/// the placeholder map is `actionLayerFallback`). Once a layer file
-/// ships, the placeholder is dead weight; drop the map entry then.
-pub const ActionLayer = struct {
     action: Action,
-    fallback: ?SoundId = null,
+    /// Item-action layer (equip / salvage / learn_skill), keyed by
+    /// `ItemActionSound`. The cue's base is the shared `item_base`.
+    item: ItemActionSound,
 };
 
 /// One queued sound cue: a category BASE layer plus an optional specific
 /// LAYER, played simultaneously. Plain one-shots (damage, move, ...) are
 /// base-only cues; skill casts, button releases, and item actions layer
 /// their specific sound over the base. Layer mix balance is baked into
-/// the asset files, not expressed here. See DESIGN → Audio (layered
-/// cues).
+/// the asset files, not expressed here. A missing base or layer file is
+/// SILENT — no fallbacks anywhere, so silence always means "asset not
+/// authored yet" (the report tool lists every path; see
+/// scripts/sound_report.sh). See DESIGN → Audio (layered cues).
 pub const SoundCue = struct {
     base: ?SoundId = null,
     layer: ?SoundLayer = null,
@@ -536,28 +528,6 @@ pub fn skillTypeBaseSound(skill_type: SkillType) SoundId {
         .cantrip => .cantrip_base,
         .enchantment => .enchantment_base,
         .curse => .curse_base,
-    };
-}
-
-/// The interim placeholder sound for an action's layer — played while the
-/// action's `sfx/buttons/<name>_layer` file is missing. This is the pre-layering
-/// specific-sound map kept as a bridge: once a layer file ships, its
-/// entry is dead weight (the file wins) — prune entries as assets land.
-/// Skill slots have NO placeholder (the prepare path's up base is the
-/// feedback; auto-fire's use_skill cue subsumes any button sound). See
-/// DESIGN → Audio (layered cues).
-pub fn actionLayerFallback(action: Action) ?SoundId {
-    return switch (action) {
-        .skip => .skip,
-        .swap_weapons => .swap_skill,
-        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu, .toggle_editor_inspector, .toggle_editor_mission_browser => .menu,
-        // Undo/redo: reuses the menu sound (no dedicated sfx yet).
-        .undo, .redo => .menu,
-        .save_game => .menu,
-        .restart_mission, .exit_mission, .exit_to_menu => .menu,
-        .continue_after_mission, .replay_mission, .overwrite_clone,
-        .overwrite_validation_replay => .menu,
-        else => null,
     };
 }
 

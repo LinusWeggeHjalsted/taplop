@@ -2725,7 +2725,7 @@ pub fn handleIdleInput(
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                                         .base = .button_base_up,
-                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .layer = .{ .action = ui.skillSlotAction(slot) },
                                     });
                                     event_push.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
                                         .skill_id = skill_id,
@@ -2741,7 +2741,7 @@ pub fn handleIdleInput(
                                     // behavior if that invariant ever breaks.
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                                         .base = .button_base_up,
-                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .layer = .{ .action = ui.skillSlotAction(slot) },
                                     });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
@@ -2787,7 +2787,7 @@ pub fn handleIdleInput(
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                                         .base = .button_base_up,
-                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .layer = .{ .action = ui.skillSlotAction(slot) },
                                     });
                                     event_push.pushPlayerAction(current, .{ .player_prepare_skill = .{
                                         .caster_index = 0,
@@ -2802,7 +2802,7 @@ pub fn handleIdleInput(
                                     // undo step instead of a recorded no-op.
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                                         .base = .button_base_up,
-                                        .layer = .{ .action = .{ .action = ui.skillSlotAction(slot) } },
+                                        .layer = .{ .action = ui.skillSlotAction(slot) },
                                     });
                                     event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },

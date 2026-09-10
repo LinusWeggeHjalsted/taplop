@@ -688,10 +688,9 @@ pub const RaylibBackend = struct {
     /// Same miss-not-cached discipline as `skill_layer_cache`.
     action_layer_cache: std.AutoHashMapUnmanaged(types.Action, ?rl.Sound) = .empty,
     /// Item-action layer sounds (equip / salvage / learn_skill), keyed by
-    /// the one-shot `SoundId` whose stem names the file
-    /// (`assets/audio/sfx/items/<stem>_layer`). Same miss-not-cached
-    /// discipline as `skill_layer_cache`.
-    item_layer_cache: std.AutoHashMapUnmanaged(types.SoundId, ?rl.Sound) = .empty,
+    /// `ItemActionSound`, resolved from `assets/audio/sfx/items/<tag>_layer`.
+    /// Same miss-not-cached discipline as `skill_layer_cache`.
+    item_layer_cache: std.AutoHashMapUnmanaged(types.ItemActionSound, ?rl.Sound) = .empty,
     /// The ambient-music stream stack: index 0 = the base track (always
     /// on), 1..N = the intensity layers (`ambient_layer_1..N` — one per
     /// active enemy, played while the projected active count >= the layer
@@ -953,14 +952,9 @@ pub const RaylibBackend = struct {
             .damage => "damage",
             .collision => "collision",
             .pickup => "pickup",
-            .skip => "skip",
-            .equip => "equip",
-            .learn_skill => "learn_skill",
-            .salvage => "salvage",
             .swap_skill => "swap_skill",
             .button_base_down => "button_base_down",
             .button_base_up => "button_base_up",
-            .menu => "menu",
             .defeat => "defeat",
             .mission_completion => "mission_completion",
             .heal => "heal",
@@ -1020,18 +1014,24 @@ pub const RaylibBackend = struct {
     /// Audio.
     /// Play the drained sound cues. Each cue plays its base layer and its
     /// specific layer (if any) simultaneously — mix balance is baked into the
-    /// asset files, both layers play at the sfx volume. Missing bases are
-    /// tried through `soundFallback`; missing layers play their arm's
-    /// interim fallback (action: the placeholder map; item: the keyed
-    /// one-shot; skill: nothing). No-op when audio isn't ready. See DESIGN →
-    /// Audio (layered cues).
+    /// asset files, both layers play at the sfx volume. A missing base or
+    /// layer file is SILENT — no fallbacks anywhere, silence is the
+    /// "not authored yet" signal (the report tool lists every path). No-op
+    /// when audio isn't ready. See DESIGN → Audio (layered cues).
     pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundCue, settings: types.Settings) void {
         if (!self.audio_ready) return;
         const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
         const sfx_vol = @as(f32, @floatFromInt(settings.sound_effects_volume)) / 100.0;
         const volume = sfx_vol * master;
         for (sounds) |cue| {
-            if (cue.base) |base| self.playSoundId(base, volume);
+            if (cue.base) |base| {
+                if (self.sound_cache.get(base)) |maybe_loaded| {
+                    if (maybe_loaded) |loaded| {
+                        rl.setSoundVolume(loaded, volume);
+                        rl.playSound(loaded);
+                    }
+                }
+            }
             if (cue.layer) |layer| switch (layer) {
                 .skill => |skill_id| {
                     if (self.getSkillLayer(skill_id)) |loaded| {
@@ -1039,58 +1039,20 @@ pub const RaylibBackend = struct {
                         rl.playSound(loaded);
                     }
                 },
-                .action => |action_layer| {
-                    const loaded = self.getActionLayer(action_layer.action) orelse {
-                        // No layer file yet — the interim placeholder
-                        // (the pre-layering specific sound), if any.
-                        if (action_layer.fallback) |fallback| self.playSoundId(fallback, volume);
-                        continue;
-                    };
-                    rl.setSoundVolume(loaded, volume);
-                    rl.playSound(loaded);
+                .action => |action| {
+                    if (self.getActionLayer(action)) |loaded| {
+                        rl.setSoundVolume(loaded, volume);
+                        rl.playSound(loaded);
+                    }
                 },
-                .item => |item_sound| {
-                    const loaded = self.getItemLayer(item_sound) orelse {
-                        // No layer file yet — the keyed one-shot is its own
-                        // interim placeholder (the pre-layering solo sound).
-                        self.playSoundId(item_sound, volume);
-                        continue;
-                    };
-                    rl.setSoundVolume(loaded, volume);
-                    rl.playSound(loaded);
+                .item => |item_action| {
+                    if (self.getItemLayer(item_action)) |loaded| {
+                        rl.setSoundVolume(loaded, volume);
+                        rl.playSound(loaded);
+                    }
                 },
             };
         }
-    }
-
-    /// Play one `SoundId` at `volume`, walking the `soundFallback` chain
-    /// when its cache entry is null (a missing file whose placeholder
-    /// exists). Skips silently when nothing in the chain is loaded.
-    fn playSoundId(self: *RaylibBackend, sound: types.SoundId, volume: f32) void {
-        var candidate: ?types.SoundId = sound;
-        while (candidate) |id| {
-            if (self.sound_cache.get(id)) |maybe_loaded| {
-                if (maybe_loaded) |loaded| {
-                    rl.setSoundVolume(loaded, volume);
-                    rl.playSound(loaded);
-                    return;
-                }
-            }
-            candidate = soundFallback(id);
-        }
-    }
-
-    /// Interim placeholder chain for base sounds whose dedicated file
-    /// hasn't shipped yet (missing base -> placeholder base, one level
-    /// deep, no loops). See DESIGN → Audio (layered cues).
-    fn soundFallback(sound: types.SoundId) ?types.SoundId {
-        return switch (sound) {
-            // The cantrip/enchantment/curse skill-type bases chain to
-            // `spell_base` until their dedicated files ship (one level deep —
-            // `spell_base` itself has no fallback, so the chain terminates).
-            .cantrip_base, .enchantment_base, .curse_base => .spell_base,
-            else => null,
-        };
     }
 
     /// The loaded layer sound for `skill_id`, or null when no file
@@ -1129,19 +1091,19 @@ pub const RaylibBackend = struct {
         return loaded;
     }
 
-    /// The loaded layer sound for the item action keyed by `item_sound`
+    /// The loaded layer sound for the item action `item_action`
     /// (equip / salvage / learn_skill), or null when no file exists. Same
     /// lazy hit-only caching discipline as `getSkillLayer`.
-    fn getItemLayer(self: *RaylibBackend, item_sound: types.SoundId) ?rl.Sound {
-        if (self.item_layer_cache.get(item_sound)) |cached| return cached;
+    fn getItemLayer(self: *RaylibBackend, item_action: types.ItemActionSound) ?rl.Sound {
+        if (self.item_layer_cache.get(item_action)) |cached| return cached;
         const path = std.fmt.allocPrint(
             self.frame_arena.allocator(),
             "assets/audio/sfx/items/{s}_layer",
-            .{soundFileName(item_sound)},
+            .{@tagName(item_action)},
         ) catch @panic("failed to build item layer path");
         const loaded = self.loadSoundLayerAt(path);
         if (loaded) |sound| {
-            self.item_layer_cache.put(self.allocator, item_sound, sound) catch
+            self.item_layer_cache.put(self.allocator, item_action, sound) catch
                 @panic("failed to cache item layer");
         }
         return loaded;
