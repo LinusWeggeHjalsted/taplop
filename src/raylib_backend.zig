@@ -896,6 +896,13 @@ pub const RaylibBackend = struct {
             .menu => "menu",
             .defeat => "defeat",
             .mission_completion => "mission_completion",
+            .heal => "heal",
+            .stun => "stun",
+            .knockback => "knockback",
+            .retreat => "retreat",
+            .death => "death",
+            .level_complete => "level_complete",
+            .aggro => "aggro",
         };
     }
 

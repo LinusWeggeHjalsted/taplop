@@ -72,6 +72,11 @@ fn activateEntity(
 ) void {
     entity.is_active = true;
     if (history.replaying) return;
+    // The combat-start sting: one per newly-aggroed enemy (a group aggro
+    // stings once per enemy — same moment in practice; tuned with real
+    // assets). Every activation path (aggro_check, aggro_in_radius, the
+    // hostile-effect arms) routes through here. See DESIGN → Audio.
+    history.session.queueSound(history.backing_allocator, .aggro);
     history.session.queueAnim(history.backing_allocator, .{
         .event_index = history.current_event_index - 1,
         .kind = .{ .aggro_indicator = .{ .entity_index = entity_index } },
@@ -887,6 +892,8 @@ pub fn handleSubLevelEvent(
                 // Architecture (the stun rule).
                 defender.stun_duration = @max(defender.stun_duration, effective_duration);
 
+                if (!history.replaying) history.session.queueSound(history.backing_allocator, .stun);
+
                 for (attacker.active_effects) |active_effect| {
                     const definition = lookups.getEffectDefinition(active_effect.effect_id);
                     if (definition.onOutgoingStun(stun.attacker_index, current.*, allocator)) |effect_events| {
@@ -911,6 +918,8 @@ pub fn handleSubLevelEvent(
 
             // Hostile-effect activation — see the attack arm.
             if (!defender.is_active) activateEntity(history, defender, knockback.defender_index);
+
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .knockback);
 
             // Trigger on_outgoing_knockback / on_incoming_knockback
             for (attacker.active_effects) |active_effect| {
@@ -1295,6 +1304,10 @@ pub fn handleSubLevelEvent(
                 return;
             }
 
+            // Enemy death sound (the player keeps the dedicated defeat
+            // sting above). See DESIGN → Audio.
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .death);
+
             // Trigger on_opponent_death on all alive, active entities from opposing teams
             for (level.entities, 0..) |other_entity, other_index| {
                 if (other_index == death.entity_index) continue;
@@ -1420,6 +1433,8 @@ pub fn handleSubLevelEvent(
 
             if (entity.current_health == 0) return;
 
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .retreat);
+
             // Trigger on_retreat effect callbacks
             for (entity.active_effects) |active_effect| {
                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
@@ -1484,6 +1499,7 @@ pub fn handleSubLevelEvent(
             // Only when heal is actually applied (a full-health heal
             // shows nothing). See AGENTS Animation.
             if (!history.replaying and applied > 0) {
+                history.session.queueSound(history.backing_allocator, .heal);
                 history.session.queueAnim(history.backing_allocator, .{
                     .event_index = history.current_event_index - 1,
                     .kind = .{ .heal_number = .{

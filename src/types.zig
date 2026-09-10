@@ -45,6 +45,13 @@ pub const SoundId = enum {
     menu,
     defeat,
     mission_completion,
+    heal,
+    stun,
+    knockback,
+    retreat,
+    death,
+    level_complete,
+    aggro,
 };
 
 /// The specific half of a layered cue, resolved to a file by enum key:

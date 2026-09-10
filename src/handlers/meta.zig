@@ -645,7 +645,12 @@ pub fn handleMetaEvent(
                 .default => {
                     if (current.mission) |mission| {
                         if (mission.current_level_index < mission.level_count) {
-                            // More levels — push the next one
+                            // More levels — push the next one. The
+                            // level-complete sting (distinct from the
+                            // final level's mission_completion below).
+                            if (!history.replaying) {
+                                history.session.queueSound(history.backing_allocator, .level_complete);
+                            }
                             const next_index = mission.current_level_index + 1;
                             pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                                 .mission_path = mission.path,
