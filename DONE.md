@@ -12594,3 +12594,33 @@ one mechanism, per design discussion: the pass-scoped evaluation frame
 - Replay-safety: the frame is pass-scoped scratch, never on GameState, never
   serialized; the cut pattern is a pure function of the fixed slot-scan
   order — live and replay compute identical ratings.
+
+## That Which Lingers on the beneficiary rule (rating audit, continued)
+
+Lingers is the duration meta-enhancer — the skill whose beneficiaries are
+all ENCHANTMENTS (`skill_duration != null` = the effect-creating skills; a
+fact-correction from the audit discussion: the outgoing-duration modifier
+feeds `create_effect` durations only, NOT stuns — those flow through stone
+form's separate `outgoing_stun_duration` pipeline).
+
+- The old rating was UNCONDITIONAL 1 — it fired on every cd-5 cycle even
+  when nothing duration-bearing would cast in its 2-turn window (the same
+  waste-bug class as focus). Under the rule: rate = best live beneficiary
+  + 1 (planned ending cast if it carries `skill_duration`; plus every
+  positive-rated off-cd non-ending skill with the field), NO fallback —
+  extends nothing → no cast (its own recast is outside its window,
+  cd 5 > duration 2).
+- Its self-exclusion needed zero code: the frame's in-progress guard cuts
+  lingers from its own beneficiary scan mechanically (it would otherwise
+  count its own `skill_duration`).
+- The lingers test caught a subtle invariant violation: `freshOptions` had
+  called `aiOptions` directly (bypassing `optionsFor`), so lingers' outer
+  evaluation ran UNMARKED and its scan then read lingers' own memoized
+  result as a beneficiary rating (2 → offered 3 instead of 2). A direct
+  call doesn't crash — it silently mis-rates, which is exactly why the
+  "every evaluation enters through optionsFor" rule exists in the docs.
+  The helper now takes a SkillId and routes through `optionsFor` like
+  everything else; the handler path was already correct (it enters via
+  bestCasts → optionsFor, where the guard + memo hold).
+- Test: lingers+reaches equipped → lingers offers reaches' rating + 1
+  (fires first, so reaches' cast gains the +1 duration); alone → nothing.

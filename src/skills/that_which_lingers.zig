@@ -4,6 +4,8 @@ const state = @import("../state.zig");
 const events = @import("../events.zig");
 const skill_mod = @import("../skill.zig");
 const helpers = @import("../skill_helpers.zig");
+const ai_select = @import("../ai_select.zig");
+const lookups = @import("../generated_lookups.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -40,19 +42,62 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at 1 (the enchantment's slot value; the
-/// duration extension on recast is handled by create_effect).
+/// AI options: rated against the casts the +1 outgoing-duration modifier
+/// would enhance — the LIVE beneficiaries (casts that will actually fire
+/// this turn and apply a duration): the planned ending cast if it carries
+/// a `skill_duration`, plus any off-cooldown NON-ending skill with a
+/// `skill_duration` offering a positive cast (all positive
+/// cantrips/enchantments fire this turn; a future duration cantrip or
+/// curse slots in automatically). Everything evaluates through the shared
+/// frame (ai_select.optionsFor — lingers itself is cut by the
+/// in-progress guard, mechanically excluded from its own scan). Rating =
+/// best such cast + 1, so lingers fires BEFORE them in the chain (the +1
+/// ordering rule — see DESIGN → Architecture, AI rating scale). No live
+/// beneficiary → NO cast, no fallback: lingers extends nothing on its
+/// own (its own recast is outside its 2-turn window, cd 5 > duration 2).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
-    _: types.WeaponTypeDefinitions,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
-    _: *skill_mod.EvalFrame,
+    frame: *skill_mod.EvalFrame,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.that_which_lingers) > 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = caster.position, .priority = 1 });
+
+    var best_beneficiary: u32 = 0;
+
+    // The planned turn-ending cast — the only ending skill that fires
+    // this turn. Counted only if it applies a duration the +1 lengthens.
+    const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
+    if (casts.ending) |plan| {
+        if (lookups.getSkillDefinition(plan.skill_id)) |definition| {
+            if (definition.skill_duration != null and plan.priority > best_beneficiary) {
+                best_beneficiary = plan.priority;
+            }
+        }
+    }
+
+    // Non-ending beneficiaries (cantrips + enchantments): every
+    // positive-rated one fires this turn, so each one's best option
+    // counts. Ending skills are excluded — at most one fires, already
+    // counted above via the plan.
+    const slots = caster.collectSkillSlots(weapon_type_definitions);
+    for (&slots) |maybe_skill_id| {
+        const skill_id = maybe_skill_id orelse continue;
+        if (caster.skill_cooldowns.get(skill_id) > 0) continue;
+        const definition = lookups.getSkillDefinition(skill_id) orelse continue;
+        if (definition.skill_type == .weapon_skill or definition.skill_type == .spell) continue;
+        if (definition.skill_duration == null) continue;
+        const options = ai_select.optionsFor(frame, skill_id, caster_index, game_state, weapon_type_definitions, allocator);
+        for (options) |option| {
+            if (option.priority > best_beneficiary) best_beneficiary = option.priority;
+        }
+    }
+
+    if (best_beneficiary == 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = caster.position, .priority = best_beneficiary + 1 });
 }
 
 /// Self-cast — target is the caster's own position.

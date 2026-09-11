@@ -41,6 +41,7 @@ const burst_skill = @import("skills/burst.zig");
 const meditate_skill = @import("skills/meditate.zig");
 const accelerate_skill = @import("skills/accelerate.zig");
 const that_which_reaches_skill = @import("skills/that_which_reaches.zig");
+const that_which_lingers_skill = @import("skills/that_which_lingers.zig");
 const bull_form_skill = @import("skills/bull_form.zig");
 const that_which_rushes_skill = @import("skills/that_which_rushes.zig");
 const that_which_explodes_skill = @import("skills/that_which_explodes.zig");
@@ -59,14 +60,14 @@ const Vector2 = types.Vector2;
 /// memoized options; within one real pass the state is frozen, but a test
 /// block isn't).
 fn freshOptions(
-    skill: skill_mod.Skill,
+    skill_id: types.SkillId,
     caster_index: u32,
     game_state: state.GameState,
     weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
 ) []const skill_mod.AiOption {
     var frame = skill_mod.EvalFrame.empty();
-    return skill.aiOptions(caster_index, game_state, weapon_type_definitions, allocator, &frame);
+    return ai_select.optionsFor(&frame, skill_id, caster_index, game_state, weapon_type_definitions, allocator);
 }
 
 /// Set one entity's cooldown entry on a const GameState's level (handlers
@@ -236,7 +237,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(shoot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile beyond effective range 3.
     {
@@ -246,7 +247,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{},
         );
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(shoot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile exactly at range 3.
     {
@@ -255,7 +256,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{ caster, in_range },
             &.{},
         );
-        const options = freshOptions(shoot_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.shoot, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -268,7 +269,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
         );
         setCooldown(game_state, 0, .shoot, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(shoot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -392,7 +393,7 @@ test "bash: option is 3 with the colliding pick, 2 on an open path" {
             &.{ caster, adjacent },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
-        const options = freshOptions(bash_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.bash, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -407,7 +408,7 @@ test "bash: option is 3 with the colliding pick, 2 on an open path" {
             &.{ caster, adjacent, walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
-        const options = freshOptions(bash_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.bash, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         try testing.expectEqual(walled.position, options[0].target.?);
@@ -421,7 +422,7 @@ test "bash: option is 3 with the colliding pick, 2 on an open path" {
         );
         setCooldown(game_state, 0, .bash, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(bash_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.bash, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -472,7 +473,7 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ caster, near_open },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(powerful_shot_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.powerful_shot, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -484,7 +485,7 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ caster, near_open, far_walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(powerful_shot_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.powerful_shot, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -497,7 +498,7 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
         );
         setCooldown(game_state, 0, .powerful_shot, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(powerful_shot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.powerful_shot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -546,7 +547,7 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
             &.{},
         );
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(head_shot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
     }
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -554,12 +555,12 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
             &.{ caster, in_range },
             &.{},
         );
-        const options = freshOptions(head_shot_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.head_shot, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         setCooldown(game_state, 0, .head_shot, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(head_shot_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -593,26 +594,26 @@ test "idol heal: priority is 1 only below half health" {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 20 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(heal_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
     // Exactly half → 0 (at/above half).
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 10 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(heal_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
     // Below half → 1.
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        const options = freshOptions(heal_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.heal, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
         // Cooldown overrides (a swap can leave one on a no-cooldown skill).
         setCooldown(game_state, 0, .heal, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(heal_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -635,21 +636,21 @@ test "focus: options rate by ticking weapon-skill count, cantrips excluded" {
     setCooldown(game_state, 0, .slice, 2);
     setCooldown(game_state, 0, .blink, 3);
     {
-        const options = freshOptions(focus_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.focus, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     // Two weapon skills ticking → rate = 2.
     setCooldown(game_state, 0, .spinblade, 2);
     {
-        const options = freshOptions(focus_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.focus, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Only the cantrip ticking → nothing to reset, no option.
     setCooldown(game_state, 0, .slice, 0);
     setCooldown(game_state, 0, .spinblade, 0);
     try testing.expectEqual(@as(usize, 0),
-        freshOptions(focus_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+        freshOptions(.focus, 0, game_state, definitions, arena.allocator()).len);
 }
 
 test "stone form: rates above the planned stun cast; HoT fallback without one" {
@@ -691,7 +692,7 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
     try testing.expectEqual(@as(u32, 2), plan.?.priority);
 
     {
-        const options = freshOptions(stone_form_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.stone_form, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
@@ -704,7 +705,7 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
         ai_select.bestCasts(0, game_state, definitions, arena.allocator(), &frame).ending == null,
     );
     {
-        const options = freshOptions(stone_form_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.stone_form, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -712,7 +713,7 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
     // Full health with no beneficiary: nothing at all.
     @constCast(game_state.level.?.entities)[0].current_health = 20;
     try testing.expectEqual(@as(usize, 0),
-        freshOptions(stone_form_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+        freshOptions(.stone_form, 0, game_state, definitions, arena.allocator()).len);
     @constCast(game_state.level.?.entities)[0].current_health = 9;
 
     // A sword-carrier (chop plans, but chops don't stun) below full
@@ -720,10 +721,55 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
     @constCast(game_state.level.?.entities)[0].main_hand_weapon = .{ .weapon_type = .sword };
     @constCast(game_state.level.?.entities)[0].current_health = 9;
     {
-        const options = freshOptions(stone_form_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.stone_form, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
+}
+
+test "that which lingers: rates above a live duration beneficiary, nothing alone" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // Lingers + reaches equipped (both off cooldown): reaches carries a
+    // skill_duration and offers its cast, so lingers rates one above it —
+    // firing FIRST in the chain so reaches' cast gains the +1 duration.
+    // Lingers itself is cut from its own scan by the frame's in-progress
+    // guard (it would otherwise count its own skill_duration).
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .equipped_utility_skills = .{ .that_which_lingers, .that_which_reaches, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+    {
+        const options = freshOptions(
+            .that_which_lingers,
+            0,
+            game_state,
+            definitions,
+            arena.allocator(),
+        );
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+
+    // Lingers alone: extends nothing on its own (its recast is outside its
+    // 2-turn window) — no beneficiary, no cast (no fallback).
+    const lone_caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .equipped_utility_skills = .{ .that_which_lingers, null, null, null, null },
+    };
+    const lone_state = test_harness.levelStateWithEntities(arena.allocator(), &.{lone_caster}, &.{});
+    try testing.expectEqual(@as(usize, 0),
+        freshOptions(.that_which_lingers, 0, lone_state, definitions, arena.allocator()).len);
 }
 
 test "stunTarget: an unstunned target beats a weaker stunned one" {
@@ -774,14 +820,14 @@ test "cleave: priority is 2 with an unstunned target, 1 when all are stunned" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        const options = freshOptions(cleave_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.cleave, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     {
         const stunned = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
-        const options = freshOptions(cleave_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.cleave, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -794,7 +840,7 @@ test "head shot: priority drops to 2 when the only target is already stunned" {
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
     const stunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
     const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
-    const options = freshOptions(head_shot_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.head_shot, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
 }
@@ -814,7 +860,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 8, .y = 8 } },
         );
         try testing.expectEqual(@as(usize, 0),
-            freshOptions(meteor_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+            freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
     }
     // A cluster straddling tile (3,0): the hostile ON the tile is a direct
     // hit (distance 0), its diagonal neighbor at (4,1) is at distance 1 →
@@ -830,7 +876,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
             &.{ caster, on_tile, diagonal_neighbor },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 1 } },
         );
-        const options = freshOptions(meteor_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.meteor, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         try testing.expectEqual(Vector2{ .x = 3, .y = 0 }, options[0].target.?);
@@ -845,7 +891,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
             &.{ caster, adjacent_a, adjacent_b },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
-        const options = freshOptions(meteor_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.meteor, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         try testing.expectEqual(caster.position, options[0].target.?);
@@ -860,12 +906,12 @@ test "meteor: options pick the tile with the most hostiles within radius" {
             &.{ caster, target },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(meteor_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.meteor, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
         setCooldown(game_state, 0, .meteor, 1);
         try testing.expectEqual(@as(usize, 0),
-            freshOptions(meteor_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+            freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -1075,7 +1121,7 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_full, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        const options = freshOptions(absorb_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.absorb, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -1086,7 +1132,7 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        const options = freshOptions(absorb_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.absorb, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
@@ -1098,7 +1144,7 @@ test "absorb: priority tiers by threat and health" {
             &.{},
         );
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(absorb_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+    freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
     }
     // Threatened but on cooldown → 0.
     {
@@ -1109,7 +1155,7 @@ test "absorb: priority tiers by threat and health" {
         );
         setCooldown(game_state, 0, .absorb, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(absorb_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+    freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1158,7 +1204,7 @@ test "reflect: priority tiers by threat and health" {
             &.{ caster_full, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        const options = freshOptions(reflect_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.reflect, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -1168,7 +1214,7 @@ test "reflect: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        const options = freshOptions(reflect_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.reflect, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
@@ -1182,7 +1228,7 @@ test "reflect: priority tiers by threat and health" {
         );
         @constCast(game_state.level.?.entities)[1].is_active = false;
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(reflect_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+    freshOptions(.reflect, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1227,14 +1273,14 @@ test "spinblade: priority bumps to 4 with two hostiles in radius" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        const options = freshOptions(spinblade_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.spinblade, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     {
         const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
-        const options = freshOptions(spinblade_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.spinblade, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -1257,7 +1303,7 @@ test "flash strike: priority counts hits over the best landing tile" {
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(flash_strike_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.flash_strike, 0, game_state, undefined, arena.allocator()).len);
     }
     // A landing tile at (3,0) is within range 3 and radius 1 of BOTH
     // hostiles → the max count is 2 → 4, and the option's target IS that
@@ -1268,7 +1314,7 @@ test "flash strike: priority counts hits over the best landing tile" {
             &.{ caster, pair_a, pair_b },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(flash_strike_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.flash_strike, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 3), options[0].priority);
         try testing.expectEqual(Vector2{ .x = 3, .y = 0 }, options[0].target.?);
@@ -1315,19 +1361,19 @@ test "drain: priority follows the AoE bump (3 single, 4 double)" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        const options = freshOptions(drain_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.drain, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     {
         const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
-        const options = freshOptions(drain_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.drain, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         setCooldown(game_state, 0, .drain, 1);
         try testing.expectEqual(@as(usize, 0),
-    freshOptions(drain_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+    freshOptions(.drain, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -1341,13 +1387,13 @@ test "howl: priority bumps with multiple inactive entities" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a }, &.{});
-        const options = freshOptions(howl_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.howl, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a, inactive_b }, &.{});
-        const options = freshOptions(howl_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.howl, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -1369,7 +1415,7 @@ test "stab: rating follows the pick, not any-healthy (seam fix)" {
         &.{},
     );
 
-    const options = freshOptions(stab_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.stab, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(wounded_weakest.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 1), options[0].priority);
@@ -1415,7 +1461,7 @@ test "worldfire: options follow the AoE bump at radius 5" {
     // One target in the big radius → 1.
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, far_single }, &.{});
-        const options = freshOptions(worldfire_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.worldfire, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -1428,11 +1474,11 @@ test "worldfire: options follow the AoE bump at radius 5" {
             &.{ caster, far_single, cluster_a, cluster_b },
             &.{},
         );
-        const options = freshOptions(worldfire_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.worldfire, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 3), options[0].priority);
         setCooldown(game_state, 0, .worldfire, 1);
-        try testing.expectEqual(@as(usize, 0), freshOptions(worldfire_skill.skill, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.worldfire, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -1524,7 +1570,7 @@ test "shockwave: options follow the stacked-bump ladder" {
             &.{ caster, single },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(shockwave_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.shockwave, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
@@ -1536,7 +1582,7 @@ test "shockwave: options follow the stacked-bump ladder" {
             &.{ caster, single },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
-        const options = freshOptions(shockwave_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.shockwave, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Two targets, one open one walled → 3 + 1 (cluster) + 1 (collision).
@@ -1548,7 +1594,7 @@ test "shockwave: options follow the stacked-bump ladder" {
             &.{ caster, open, walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
-        const options = freshOptions(shockwave_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.shockwave, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
 }
@@ -1567,7 +1613,7 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
             &.{ caster, single },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        const options = freshOptions(slam_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.slam, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     // Cluster with one walled → 5 (the old AoE-bump-only rating said 4 —
@@ -1580,7 +1626,7 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
             &.{ caster, open, walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
-        const options = freshOptions(slam_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.slam, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
 }
@@ -1626,7 +1672,7 @@ test "charged bolt: options offer the focus-fire pick at 2 (one significant bonu
         &.{},
     );
 
-    const options = freshOptions(charged_bolt_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.charged_bolt, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(in_range.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 2), options[0].priority);
@@ -1643,7 +1689,7 @@ test "blitz: options count hits plus stuns-that-pay (value units)" {
     // Single unstunned target: attack 1 + stun 1 → 2.
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent_a }, &.{});
-        const options = freshOptions(blitz_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.blitz, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
@@ -1651,13 +1697,13 @@ test "blitz: options count hits plus stuns-that-pay (value units)" {
     {
         const stunned = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 }, .stun_duration = 2 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent_a, stunned }, &.{});
-        const options = freshOptions(blitz_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.blitz, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
     // Two unstunned targets: 2 hits + 2 paying stuns → 4.
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent_a, adjacent_b }, &.{});
-        const options = freshOptions(blitz_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.blitz, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
 }
@@ -1681,7 +1727,7 @@ test "drain: lifesteal adds a hit's worth below half health" {
     );
 
     // 2 targets + 1 lifesteal bonus (caster below half) → 3.
-    const options = freshOptions(drain_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.drain, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(@as(u32, 3), options[0].priority);
 }
@@ -1759,7 +1805,7 @@ test "chain lightning: options pick the target with the largest component" {
         &.{},
     );
 
-    const options = freshOptions(chain_lightning_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.chain_lightning, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(pair_head.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 2), options[0].priority);
@@ -1800,7 +1846,7 @@ test "adrenaline surge: options rate the target by its ticking on-bar count" {
     @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.blink, 1); // utility
     @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.skewer, 9); // off-bar: not counted
 
-    const options = freshOptions(adrenaline_surge_skill.skill, 0, game_state, definitions, arena.allocator());
+    const options = freshOptions(.adrenaline_surge, 0, game_state, definitions, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(heavily_cooled.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 3), options[0].priority);
@@ -1820,7 +1866,7 @@ test "adrenaline surge: nothing ticking on any target offers nothing" {
     };
     const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
 
-    try testing.expectEqual(@as(usize, 0), freshOptions(adrenaline_surge_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+    try testing.expectEqual(@as(usize, 0), freshOptions(.adrenaline_surge, 0, game_state, definitions, arena.allocator()).len);
 }
 
 test "adrenaline surge: useSkill delegates to the machinery event" {
@@ -1864,7 +1910,7 @@ test "burst: useSkill attacks each hostile in radius with spell damage" {
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
     }
 
-    const options = freshOptions(burst_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.burst, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(u32, 2), options[0].priority); // 1 per target hit
 }
 
@@ -1892,7 +1938,7 @@ test "meditate: resets each OTHER equipped utility skill, itself excluded" {
         try testing.expect(change.entity_index == 0);
     }
 
-    const options = freshOptions(meditate_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.meditate, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(u32, 2), options[0].priority); // the reset count
 }
 
@@ -1917,7 +1963,7 @@ test "accelerate: gains 2 momentum per enemy within radius" {
     try testing.expectEqual(@as(u32, 0), change.entity_index);
     try testing.expectEqual(@as(i32, 4), change.delta); // two enemies within 3, 2 momentum each
 
-    const options = freshOptions(accelerate_skill.skill, 0, game_state, undefined, arena.allocator());
+    const options = freshOptions(.accelerate, 0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(u32, 2), options[0].priority); // direct enemy count
 }
 
@@ -1939,7 +1985,7 @@ test "modifier enchantments: reaching, bull, rushing apply their effects" {
         const modifiers = lookups.getEffectDefinition(.that_which_reaches).additive_effect_modifiers;
         try testing.expectEqual(@as(i32, 1), modifiers.range);
         try testing.expectEqual(@as(i32, 1), modifiers.radius);
-        const options = freshOptions(that_which_reaches_skill.skill, 0, game_state, undefined, arena.allocator());
+        const options = freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     // Bull Form: distance +10.
@@ -2044,7 +2090,7 @@ test "that which explodes: options gate on the threat model" {
             &.{ caster, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        const options = freshOptions(that_which_explodes_skill.skill, 0, game_state, definitions, arena.allocator());
+        const options = freshOptions(.that_which_explodes, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Unthreatened (far away) → no option (exploding into the void).
@@ -2054,7 +2100,7 @@ test "that which explodes: options gate on the threat model" {
             &.{ caster, sword_enemy_at(.{ .x = 9, .y = 9 }) },
             &.{},
         );
-        try testing.expectEqual(@as(usize, 0), freshOptions(that_which_explodes_skill.skill, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_explodes, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
