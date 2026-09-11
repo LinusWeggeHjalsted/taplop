@@ -12734,3 +12734,66 @@ swaps might be deliberate displacement).
 
 Also retired here: the aiOptions-churn watch item (superseded by the
 frame's once-per-pass bound).
+
+## raylib_backend.zig split — src/raylib/ (the platform-seam cleanup session)
+
+The single-file platform backend (2,704 lines: window + render + audio +
+input polling + texture caches + SDF text + diagnostics) is now a
+`src/raylib/` directory behind a STRONGER version of the same module
+boundary: the headless test-root scan (build.zig `collectZigFiles`) skips
+the whole directory instead of one filename, and `scripts/test.sh` carries
+a boundary assert (`@import("raylib")` may appear only under `src/raylib/`)
+so a stray import fails the test run explicitly. The single-seam rationale
+from the mac miscompile hunt (one place raylib can be imported; one
+exclusion to forget) is preserved — the exclusion is now per-directory,
+which is harder to accidentally bypass than a per-file list.
+
+Files, each a commit with `scripts/test.sh` + `zig build` + a boot-to-menu
+run + a `scripts/web.sh` compile (the platform-seam compiles-≠-runs rule;
+the headless test build never compiles any of this, so those were the real
+gates):
+
+- **backend.zig (433 lines, was 2,704)** — the composition root + driver:
+  window, render target + `render()` render pass, real clock, letterbox
+  transforms, the duck-typed `RaylibBackend` interface main.zig drives
+  (`anytype` — unchanged surface), and thin wrappers over the sub-structs
+  (`initAudio`/`playSounds`/`updateMusic`/`fontMetrics`/`entitySpriteBounds`).
+- **input_poll.zig** — the key/mouse mapping tables (incl. the mac
+  Command-as-Control entries) + the read-then-pump poll body as a free fn
+  over the backend's scratch buffers; the letterbox transform is passed in
+  (window math stays with the window owner).
+- **audio.zig** — `Audio` sub-struct: the music intensity stack + the four
+  layered-cue caches. Path building moved off the frame_arena onto fixed
+  stack buffers; the init-time music phase-lock warning flows through a
+  small sink callback (`DiagnosticsSink`) so Audio stays independent of the
+  backend type. `deinitAudio` dropped (deinit calls `audio.deinit()`
+  directly — it had no external caller).
+- **textures.zig** — `TextureStore` sub-struct: the four lazy caches
+  (textures / outline masks / composite inset masks / sprite bounds) + all
+  mask-generation math (disk-SE dilation, composite blit, opaque-bounds
+  scan). `premultiplyAlpha` shared with the font loader. Draw sites go
+  through `backend.textures.*`.
+- **text.zig** — `TextRenderer` sub-struct: the TTF load (CPU-premultiplied
+  atlas) + the SDF text-outline pipeline (build-time blob, shaders,
+  comptime constant guard) + `drawOutlinedText`/`drawTextLabel` (frame-arena
+  scratch passed in) + `fontMetrics`. Landed with **conversions.zig**
+  (toRaylibColor / toPremultipliedColor / referenceRectangle) shared by text
+  + draw, aliased in backend.zig.
+- **diagnostics.zig** — `Diagnostics` sub-struct (boot GL info, one-shot
+  sprite/panel draw probes, render-target pixel readback), moved as-is
+  AHEAD of draw so the draw slice landed clean. The `diag_*` identifier +
+  `logs/diag.txt` renames the settled diagnostics REDESIGN had planned
+  landed here early (author request): everything is `Diagnostics` /
+  `diagnostics` / `logs/diagnostics.txt`; the redesign keeps the names and
+  moves the type out of the raylib dir + re-gates it behind --diagnostics.
+- **draw.zig** — the world passes (tiles, overlays, ground drawables,
+  occlusion insets, world overlays) + the flat UI element list as free fns
+  over the backend (the handlers/ pattern); the six render-called fns are
+  pub, the internal helpers private.
+
+Design constraints kept: DESIGN → Platform Seam (render target resolution,
+premultiplied alpha, SDF text outline), DESIGN → Audio (layered cues, miss-
+not-cached layers), the aarch64 tint pre-selection shape in drawNineSlice,
+the comptime-out diagnostics gating in non-dev builds. The two-runtime
+checks each slice: native boot to main menu + the diagnostics file written
+with the new name on both the default and $ZIGLOP_DATA paths.

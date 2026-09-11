@@ -451,9 +451,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   the SDF text-outline pipeline + text drawing) +
   `src/raylib/conversions.zig` (shared Color/rect raylib conversions) +
   `src/raylib/diagnostics.zig` (the dev boot/probe/readback log, dev-mode
-  builds, `logs/diagnostics.txt`). The
-  ONLY directory whose files import raylib; the test-root scan skips it
-  wholesale (see DESIGN → Platform Seam)
+  builds, `logs/diagnostics.txt`) + `src/raylib/draw.zig` (the world +
+  UI element drawing passes). The ONLY directory whose files import raylib;
+  the test-root scan skips it wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
   replay timeline: recordEvent/discardFutureTimeline/replayTo/
   reconstructFromEventLog/validatePlayerAction), Screen

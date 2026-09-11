@@ -1198,60 +1198,17 @@ Open:
   it permanently. Rationale (two 0.16.0 bugs, both settled, both at
   platform edges): DONE.md "mac 9-slice panels — ROOT CAUSE FOUND" +
   AGENTS → Build & Test (patched stdlib).
-- **raylib_backend.zig split — IN PROGRESS (this session):** the file
-  owned rendering + audio + input polling + texture cache + SDF text +
-  diagnostics and was the largest file in the tree (~2,700 lines). The
-  single-seam design is right (one place to exclude from the headless
-  test build, one place raylib can be imported — it made the miscompile
-  hunt tractable); the split keeps the SAME module boundary, stronger:
-  `src/raylib/` is a directory excluded WHOLESALE by the test-root scan
-  (build.zig collectZigFiles) + asserted by scripts/test.sh (raylib may
-  only be imported from src/raylib/). Design constraint: DESIGN →
-  Platform Seam. Slices (each a commit; validation = scripts/test.sh +
-  `zig build` + `zig build run` to the main menu, `scripts/web.sh`
-  compile per the platform-seam compiles-≠-runs rule):
-  - [x] 1. Pure move — `src/raylib_backend.zig` → `src/raylib/backend.zig`,
-        import updates (native.zig/web.zig), directory-level exclusion,
-        boundary assert in scripts/test.sh, doc sweep (AGENTS/DESIGN/TODO/
-        build.zig + sdf_atlas_generator comments).
-  - [x] 2. `src/raylib/input_poll.zig` — key/mouse mapping tables + the
-        pollInput body (free fn over the backend's scratch buffers;
-        ViewTransform stays in backend.zig — window math with the window
-        owner).
-  - [x] 3. `src/raylib/audio.zig` — `Audio` sub-struct owning the music
-        stack + the four cue caches; RaylibBackend keeps thin pub
-        wrappers (initAudio/playSounds/updateMusic — main.zig's `anytype`
-        backend surface unchanged; deinitAudio dropped, deinit calls
-        audio.deinit directly). Path building moved off the frame_arena
-        onto fixed stack buffers; the init-time music phase-lock warning
-        flows through a diag-sink callback (the backend formats it into
-        the dev diag log).
-  - [x] 4. `src/raylib/textures.zig` — `TextureStore` sub-struct owning
-        the texture/outline/inset/sprite-bounds caches + all
-        mask-generation math; `premultiplyAlpha` shared with the font
-        loader; path building on fixed stack buffers. Draw sites go
-        through `self.textures.*`; `entitySpriteBounds` keeps a pub
-        wrapper (main.zig's RenderContext build).
-  - [x] 5. `src/raylib/text.zig` — `TextRenderer` sub-struct: the TTF
-        load (premultiplied CPU atlas) + the SDF outline pipeline (shaders,
-        blob parse, comptime guard) + `drawOutlinedText`/`drawTextLabel`
-        (frame-arena scratch passed in) + `fontMetrics`; the
-        `text_outline_thickness` const is pub (the floating-number call
-        site reads it). Landed with a shared `src/raylib/conversions.zig`
-        (toRaylibColor/toPremultipliedColor/referenceRectangle — needed
-        by both text and the future draw file, so backend.zig aliases
-        them).
-  - [x] 6. `src/raylib/diagnostics.zig` — `Diagnostics` sub-struct (the
-        boot/probe/readback log) moved as-is, ahead of draw so the draw
-        slice lands clean (done before slice 7; the pending diagnostics
-        REDESIGN now has its landing spot). The `diag_*` identifier +
-        `logs/diag.txt` filename renames the redesign had planned landed
-        here early (author request): everything is `diagnostics`/
-        `Diagnostics`/`logs/diagnostics.txt` already; the redesign keeps the
-        names and moves the type out of the raylib dir + re-gates it.
-  - [ ] 7. `src/raylib/draw.zig` — world + UI element drawing (free fns
-        over the backend, the handlers/ pattern); leaves backend.zig the
-        thin driver.
+- [x] **raylib_backend.zig split — COMPLETE (this session):** the
+  single-file platform backend is now `src/raylib/` (backend.zig driver +
+  input_poll / audio / textures / text / diagnostics / draw + shared
+  conversions.zig), behind a STRONGER version of the same module boundary:
+  the test-root scan skips the whole directory (build.zig
+  collectZigFiles) + scripts/test.sh asserts `@import("raylib")` appears
+  only under src/raylib/. The `diag_*` → `diagnostics` +
+  `logs/diag.txt` → `logs/diagnostics.txt` renames landed early (the
+  settled diagnostics redesign keeps the names and only moves/re-gates
+  the type). All slices, method + validation, history in DONE.md.
+  Design constraint: DESIGN → Platform Seam.
 - **Diagnostics redesign — settled design, implementation pending**
   (DESIGN → Platform Seam → Diagnostics): create raylib-free
   `src/diagnostics.zig` (`Diagnostics` type: buffer + section policy +
