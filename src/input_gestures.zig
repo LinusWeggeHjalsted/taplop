@@ -168,7 +168,7 @@ pub fn handleDrag(
 
     // --- Left button: press → pending or drag ---
     if (pointer.pressed) {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| {
+        if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |ref| {
             // Two press paths share `pending_slot_press`:
             //   • Shift+left on an INVENTORY slot (occupied or empty) tracks
             //     a salvage-region selection — empty slots are valid region
@@ -183,7 +183,7 @@ pub fn handleDrag(
                     // is unused on this path (empty-slot shift+click is a
                     // harmless no-op salvage).
                     .icon_sprite_id = "ui/item_slot",
-                    .press_position = pointer.position,
+                    .press_position = pointer.position.toScreenPosition(),
                     .button = .left,
                     .shift_held = true,
                 };
@@ -191,7 +191,7 @@ pub fn handleDrag(
                 ui_state.pending_slot_press = .{
                     .source = ref,
                     .icon_sprite_id = icon,
-                    .press_position = pointer.position,
+                    .press_position = pointer.position.toScreenPosition(),
                     .button = .left,
                     .shift_held = pointer.modifiers.shift,
                 };
@@ -207,8 +207,8 @@ pub fn handleDrag(
     // See `handleRightClickInspect` for the same `>` convention.
     if (ui_state.pending_slot_press) |press| {
         if (press.button == .left) {
-            const dx = pointer.position.x - press.press_position.x;
-            const dy = pointer.position.y - press.press_position.y;
+            const dx = pointer.position.toScreenPosition().x - press.press_position.x;
+            const dy = pointer.position.toScreenPosition().y - press.press_position.y;
             if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 if (press.shift_held and press.source == .inventory) {
                     ui_state.salvage_region = .{
@@ -233,7 +233,7 @@ pub fn handleDrag(
     // is off-grid (null / non-inventory ref) the previous end slot is kept —
     // the release then salves the last valid region.
     if (ui_state.salvage_region) |region| {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| switch (ref) {
+        if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |ref| switch (ref) {
             .inventory => |slot_index| ui_state.salvage_region = .{
                 .start_slot = region.start_slot,
                 .end_slot = slot_index,
@@ -269,7 +269,7 @@ pub fn handleDrag(
             // Resolve the drop. `target` is null when the release is over empty
             // space (or non-ref UI like a panel background). A resolved
             // orchestrator (swap / assign / equip / clear) is pushed as-is.
-            const target: ?ui.SlotRef = ui.refAt(ui_elements, pointer.position);
+            const target: ?ui.SlotRef = ui.refAt(ui_elements, pointer.position.toScreenPosition());
             var resolved: ?events.PlayerInputEvent = null;
             if (target) |target_ref| {
                 if (dragToOrchestrator(drag.source, target_ref)) |orchestrator| {
@@ -313,7 +313,7 @@ pub fn handleDrag(
         } else if (ui_state.pending_slot_press) |press| {
             if (press.button == .left) {
                 // Release over the same slot = click; elsewhere = cancel.
-                if (ui.refAt(ui_elements, pointer.position)) |target| {
+                if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |target| {
                     if (slotRefsEqual(target, press.source)) {
                         resolveInventoryClick(history, press.source, .left, pointer.modifiers);
                     }
@@ -325,14 +325,14 @@ pub fn handleDrag(
 
     // --- Right button: press → pending (click only, no drag) ---
     if (pointer.right_pressed) {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| {
+        if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |ref| {
             // Same content gate as left-press: only occupied slots are
             // clickable (an empty slot has nothing to equip/salvage).
             if (ui.slotContentIcon(current, ref)) |icon| {
                 ui_state.pending_slot_press = .{
                     .source = ref,
                     .icon_sprite_id = icon,
-                    .press_position = pointer.position,
+                    .press_position = pointer.position.toScreenPosition(),
                     .button = .right,
                 };
             }
@@ -343,7 +343,7 @@ pub fn handleDrag(
     if (pointer.right_released) {
         if (ui_state.pending_slot_press) |press| {
             if (press.button == .right and ui_state.drag == null) {
-                if (ui.refAt(ui_elements, pointer.position)) |target| {
+                if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |target| {
                     if (slotRefsEqual(target, press.source)) {
                         resolveInventoryClick(history, press.source, .right, pointer.modifiers);
                     }
@@ -482,7 +482,7 @@ pub fn handleCameraPan(
 
     // Right-button press begins a pan — unless the cursor is over blocking UI.
     if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
             session.camera_pan_anchor = null;
             session.camera_pan_press = null;
             return;
@@ -520,15 +520,18 @@ pub fn handleCameraPan(
         // latching the pan engaged: a later wiggle back near the press point
         // keeps panning. Strict `>` matches the other drag gestures.
         if (session.camera_pan_press) |press| {
+            // Full-precision pointer math (press + cursor both f32) — the
+            // threshold compare runs in float against the i32 threshold.
             const dx = pointer.position.x - press.x;
             const dy = pointer.position.y - press.y;
-            if (dx * dx + dy * dy <= ui.drag_threshold_pixels * ui.drag_threshold_pixels) return;
+            const threshold: f32 = @floatFromInt(ui.drag_threshold_pixels);
+            if (dx * dx + dy * dy <= threshold * threshold) return;
             session.camera_pan_press = null;
         }
         const tile_pixels = input.tile_size_pixels * camera_zoom;
         const anchor = session.camera_pan_anchor.?;
-        const cursor_x: f32 = @floatFromInt(pointer.position.x);
-        const cursor_y: f32 = @floatFromInt(pointer.position.y);
+        const cursor_x: f32 = pointer.position.x;
+        const cursor_y: f32 = pointer.position.y;
         const target_camera_x = anchor.world_x * tile_pixels - (cursor_x - viewport.width / 2.0);
         const target_camera_y = anchor.world_y * tile_pixels - (cursor_y - viewport.height / 2.0);
 
@@ -616,9 +619,9 @@ pub fn handleSliderDrag(
 
     // Left-press over a slider begins a drag + jumps to the pointer.
     if (pointer.pressed) {
-        if (ui.sliderAt(ui_elements, pointer.position)) |slider| {
+        if (ui.sliderAt(ui_elements, pointer.position.toScreenPosition())) |slider| {
             session.ui_state.active_slider = slider.setting_id;
-            applySliderValue(history, slider, pointer.position.x);
+            applySliderValue(history, slider, pointer.position.toScreenPosition().x);
         }
     }
 
@@ -626,7 +629,7 @@ pub fn handleSliderDrag(
     // setting in the current UI + apply the value from the pointer x).
     if (pointer.held and session.ui_state.active_slider != null) {
         if (ui.findSlider(ui_elements, session.ui_state.active_slider.?)) |slider| {
-            applySliderValue(history, slider, pointer.position.x);
+            applySliderValue(history, slider, pointer.position.toScreenPosition().x);
         }
     }
 
@@ -663,12 +666,12 @@ pub fn handleRightClickInspect(
     // tile, or a tile holding only corpses, clear any stale pending (a
     // right-click on a panel, empty ground, or a corpse inspects nothing).
     if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
             clearPendingRightClick(ui_state, .inspect);
             return;
         }
         const mouse_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            pointer.position,
             camera,
             camera_zoom,
             viewport,
@@ -683,7 +686,7 @@ pub fn handleRightClickInspect(
             if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
                 ui_state.pending_right_click = .{ .inspect = .{
                     .entity_index = @intCast(index),
-                    .press_position = pointer.position,
+                    .press_position = pointer.position.toScreenPosition(),
                 } };
                 return;
             }
@@ -701,8 +704,8 @@ pub fn handleRightClickInspect(
         switch (press) {
             .inspect => |pending| {
                 if (pointer.right_held) {
-                    const dx = pointer.position.x - pending.press_position.x;
-                    const dy = pointer.position.y - pending.press_position.y;
+                    const dx = pointer.position.toScreenPosition().x - pending.press_position.x;
+                    const dy = pointer.position.toScreenPosition().y - pending.press_position.y;
                     if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                         ui_state.pending_right_click = null;
                     }
@@ -783,19 +786,19 @@ pub fn handleRightClickEditorDelete(
     }
 
     if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
             clearPendingRightClick(ui_state, .editor_delete);
             return;
         }
         const mouse_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            pointer.position,
             camera,
             camera_zoom,
             viewport,
         );
         ui_state.pending_right_click = .{ .editor_delete = .{
             .position = mouse_tile,
-            .press_position = pointer.position,
+            .press_position = pointer.position.toScreenPosition(),
         } };
         return;
     }
@@ -806,8 +809,8 @@ pub fn handleRightClickEditorDelete(
         switch (press) {
             .editor_delete => |pending| {
                 if (pointer.right_held) {
-                    const dx = pointer.position.x - pending.press_position.x;
-                    const dy = pointer.position.y - pending.press_position.y;
+                    const dx = pointer.position.toScreenPosition().x - pending.press_position.x;
+                    const dy = pointer.position.toScreenPosition().y - pending.press_position.y;
                     if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                         ui_state.pending_right_click = null;
                     }
@@ -877,9 +880,9 @@ pub fn handleEditorMarquee(
         // not); a press over blocking UI belongs to the panel, never the
         // world.
         if (!pointer.modifiers.shift) return;
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) return;
         const press_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            pointer.position,
             camera,
             camera_zoom,
             viewport,
@@ -888,7 +891,7 @@ pub fn handleEditorMarquee(
         ui_state.editor_marquee = .{
             .start_position = press_tile,
             .end_position = press_tile,
-            .press_position = pointer.position,
+            .press_position = pointer.position.toScreenPosition(),
             .promoted = false,
         };
         return;
@@ -900,8 +903,8 @@ pub fn handleEditorMarquee(
         // release as a click; same convention as the inventory drag +
         // right-click cancel).
         if (pointer.held) {
-            const dx = pointer.position.x - marquee.press_position.x;
-            const dy = pointer.position.y - marquee.press_position.y;
+            const dx = pointer.position.toScreenPosition().x - marquee.press_position.x;
+            const dy = pointer.position.toScreenPosition().y - marquee.press_position.y;
             if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 marquee.promoted = true;
             }
@@ -911,10 +914,10 @@ pub fn handleEditorMarquee(
         // LAST VALID region (inventory salvage-region behavior: the region
         // keeps the last valid corner).
         if (pointer.held and marquee.promoted and
-            ui.blockingElementAt(ui_elements, pointer.position) == null)
+            ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) == null)
         {
             marquee.end_position = input.screenToTile(
-                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+                pointer.position,
                 camera,
                 camera_zoom,
                 viewport,
@@ -1002,9 +1005,9 @@ pub fn handleEditorMoveDrag(
         // A Shift press belongs to the marquee gesture; a press over
         // blocking UI belongs to the panel.
         if (pointer.modifiers.shift) return;
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) return;
         const press_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            pointer.position,
             camera,
             camera_zoom,
             viewport,
@@ -1020,7 +1023,7 @@ pub fn handleEditorMoveDrag(
         ui_state.editor_move_drag = .{
             .press_position_tile = press_tile,
             .current_position_tile = press_tile,
-            .press_position = pointer.position,
+            .press_position = pointer.position.toScreenPosition(),
             .promoted = false,
         };
         return;
@@ -1030,8 +1033,8 @@ pub fn handleEditorMoveDrag(
         // Promotion: movement beyond the threshold (strict `>`, the house
         // convention — a no-movement press+release stays a click).
         if (pointer.held) {
-            const dx = pointer.position.x - move_drag.press_position.x;
-            const dy = pointer.position.y - move_drag.press_position.y;
+            const dx = pointer.position.toScreenPosition().x - move_drag.press_position.x;
+            const dy = pointer.position.toScreenPosition().y - move_drag.press_position.y;
             if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 move_drag.promoted = true;
             }
@@ -1040,10 +1043,10 @@ pub fn handleEditorMoveDrag(
         // (not blocking UI) — a release over a panel commits the LAST
         // VALID delta (the marquee's end-corner behavior).
         if (pointer.held and move_drag.promoted and
-            ui.blockingElementAt(ui_elements, pointer.position) == null)
+            ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) == null)
         {
             move_drag.current_position_tile = input.screenToTile(
-                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+                pointer.position,
                 camera,
                 camera_zoom,
                 viewport,
@@ -1135,7 +1138,7 @@ pub fn handleEditorTileDrag(
         // A press over blocking UI belongs to the panel — the drag never
         // starts there, and dragging out of a panel onto the world paints
         // nothing (the press wasn't a world press).
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) return;
         ui_state.editor_tile_drag = true;
         history.session.editor_tile_drag_visited.clearRetainingCapacity();
     }
@@ -1149,12 +1152,12 @@ pub fn handleEditorTileDrag(
     // button held at the press edge), so the press tile paints in this
     // same call — "as soon as the drag begins".
     if (!pointer.held or current.event_stack.len != 0 or
-        ui.blockingElementAt(ui_elements, pointer.position) != null)
+        ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null)
     {
         return;
     }
     const tile = input.screenToTile(
-        .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+        pointer.position,
         camera,
         camera_zoom,
         viewport,
@@ -1302,10 +1305,13 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
     // +256px per tile, zoom 1, reference viewport.
     const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
     const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
-    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const center = input.PointerPosition{ .x = 1920, .y = 1080 };
     const at = struct {
-        fn call(tile: types.Vector2) types.ScreenPosition {
-            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        fn call(tile: types.Vector2) input.PointerPosition {
+            return .{
+                .x = center.x + @as(f32, @floatFromInt(tile.x)) * 256,
+                .y = center.y + @as(f32, @floatFromInt(tile.y)) * 256,
+            };
         }
     }.call;
 

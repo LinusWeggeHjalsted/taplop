@@ -233,11 +233,11 @@ pub const SessionState = struct {
     // input_gestures.zig.
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
-    // Press screen position of a right-drag that hasn't crossed the drag
-    // threshold yet; dropped when the pan engages (latch — a wiggle back
-    // near the press point keeps panning) and on release. Read only by
-    // handleCameraPan.
-    camera_pan_press: ?types.ScreenPosition = null,
+    // Press position (full-precision pointer space) of a right-drag that
+    // hasn't crossed the drag threshold yet; dropped when the pan engages
+    // (latch — a wiggle back near the press point keeps panning) and on
+    // release. Read only by handleCameraPan.
+    camera_pan_press: ?input.PointerPosition = null,
 
     /// Held keyboard modifiers at this frame, copied from the per-frame
     /// `PlayerInput.modifiers` each tick in `update()`. Read by `view()` to

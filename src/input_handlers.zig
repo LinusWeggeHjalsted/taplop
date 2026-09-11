@@ -2937,7 +2937,7 @@ pub fn resolveTileCursor(
 
     if (in_game.mouse_moved_this_tick) {
         // Mouse owns the cursor this frame.
-        if (ui.blockingElementAt(ui_elements, player_input.pointer.position) != null) {
+        if (ui.blockingElementAt(ui_elements, player_input.pointer.position.toScreenPosition()) != null) {
             history.session.tile_cursor = null;
             return;
         }
@@ -3014,7 +3014,7 @@ fn resolveEditorTileCursor(
     const in_game = player_input.anytime.in_game;
     if (in_game.mouse_moved_this_tick) {
         // Mouse owns the cursor this frame.
-        if (ui.blockingElementAt(ui_elements, player_input.pointer.position) != null) {
+        if (ui.blockingElementAt(ui_elements, player_input.pointer.position.toScreenPosition()) != null) {
             history.session.tile_cursor = null;
             return;
         }
@@ -3066,10 +3066,10 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     // screen center maps to tile (0,0), +256px x to tile (1,0).
     const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
     const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
-    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
     // One tile right of center → tile (1,0), a bare deletable tile (the
     // plan is nonempty; the input gate no-ops empty ground).
-    const over_tile = types.ScreenPosition{ .x = center.x + 256, .y = center.y };
+    const center = input.PointerPosition{ .x = 1920, .y = 1080 };
+    const over_tile = input.PointerPosition{ .x = center.x + 256, .y = center.y };
 
     // Clean press + release over the tile → the delete event is pushed
     // (targeting the pressed tile (1,0)).
@@ -3318,8 +3318,11 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     const shift: types.Modifiers = .{ .shift = true };
     const no_shift: types.Modifiers = .{};
     const tilePosition = struct {
-        fn call(tile: types.Vector2) types.ScreenPosition {
-            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        fn call(tile: types.Vector2) input.PointerPosition {
+            return .{
+                .x = center.x + @as(f32, @floatFromInt(tile.x)) * 256,
+                .y = center.y + @as(f32, @floatFromInt(tile.y)) * 256,
+            };
         }
     }.call;
 
@@ -3475,10 +3478,13 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     // screen center maps to tile (0,0), +256px per tile.
     const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
     const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
-    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const center = input.PointerPosition{ .x = 1920, .y = 1080 };
     const tilePosition = struct {
-        fn call(tile: types.Vector2) types.ScreenPosition {
-            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        fn call(tile: types.Vector2) input.PointerPosition {
+            return .{
+                .x = center.x + @as(f32, @floatFromInt(tile.x)) * 256,
+                .y = center.y + @as(f32, @floatFromInt(tile.y)) * 256,
+            };
         }
     }.call;
 
@@ -3665,7 +3671,7 @@ test "handleCameraPan: pan engages only past the drag threshold" {
 
     const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
     const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
-    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const center = input.PointerPosition{ .x = 1920, .y = 1080 };
 
     // Press records the anchor + press position but does not pan yet.
     input_gestures.handleCameraPan(
@@ -3684,7 +3690,7 @@ test "handleCameraPan: pan engages only past the drag threshold" {
     // wiggle pans nothing, so a clean right-click stays clean.
     input_gestures.handleCameraPan(
         &history,
-        .{ .right_held = true, .position = .{ .x = center.x + ui.drag_threshold_pixels, .y = center.y } },
+        .{ .right_held = true, .position = .{ .x = center.x + @as(f32, @floatFromInt(ui.drag_threshold_pixels)), .y = center.y } },
         &.{},
         camera,
         1.0,

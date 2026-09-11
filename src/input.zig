@@ -249,13 +249,15 @@ const key_repeat_interval_microseconds: u64 = 40 * std.time.us_per_ms;
 
 /// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
 /// lifecycle). Deliberately semantic-free: main.zig decides what a press/
-/// release over a given position means. Position is in reference-resolution
-/// space (types.ScreenPosition), matching where ui_elements are laid out.
+/// release over a given position means. Position is the full-precision
+/// reference-space `PointerPosition` (f32): UI hit-testing truncates via
+/// `toScreenPosition()` at the seam (the layout grid is i32); world/tile
+/// resolution (camera pan, screenToTile) uses the float directly.
 pub const PointerInput = struct {
     pressed: bool = false, // primary button went down this tick
     released: bool = false, // primary button went up this tick
     held: bool = false, // primary button is held (for slider drag)
-    position: types.ScreenPosition = .{ .x = 0, .y = 0 },
+    position: PointerPosition = .{ .x = 0, .y = 0 },
     /// Secondary (right) button edges + held state, for the camera-pan drag.
     /// Not a binding — like the tile cursor, this is raw pointer state
     /// consumed in the input path (see handleCameraPan).
@@ -651,14 +653,11 @@ pub fn screenToTile(
 
 /// The float world position (tile units) under a screen position — the
 /// inverse of the camera transform, before `@floor`. Used by the camera-pan
-/// anchor so the grabbed point tracks the cursor. Kept beside screenToTile so
-/// the two halves of the camera<->screen mapping stay in sync.
-/// NOTE: takes `types.ScreenPosition` (i32), so the input is already
-/// truncated at the `PointerInput.position` seam — sub-pixel precision is
-/// lost before this fn sees it. See TODO → Tech Debt (`floatWorldPoint`
-/// precision loss).
+/// anchor so the grabbed point tracks the cursor with the pointer's full
+/// sub-pixel precision. Kept beside screenToTile so the two halves of the
+/// camera<->screen mapping stay in sync.
 pub fn floatWorldPoint(
-    screen_position: types.ScreenPosition,
+    screen_position: PointerPosition,
     camera: Camera,
     zoom: f32,
     viewport: ViewportSize,
@@ -666,9 +665,9 @@ pub fn floatWorldPoint(
     const tile_pixels = tile_size_pixels * zoom;
     return .{
         .x = (@as(f32, @floatFromInt(camera.position.x)) +
-            (@as(f32, @floatFromInt(screen_position.x)) - viewport.width / 2.0)) / tile_pixels,
+            (screen_position.x - viewport.width / 2.0)) / tile_pixels,
         .y = (@as(f32, @floatFromInt(camera.position.y)) +
-            (@as(f32, @floatFromInt(screen_position.y)) - viewport.height / 2.0)) / tile_pixels,
+            (screen_position.y - viewport.height / 2.0)) / tile_pixels,
     };
 }
 
@@ -1093,7 +1092,7 @@ fn pointerFacts(
         .pressed = InputState.isHeld(mouse_pressed, "left"),
         .released = InputState.isHeld(mouse_released, "left"),
         .held = InputState.isHeld(&state.mouse_buttons_held, "left"),
-        .position = state.mouse_screen_position.toScreenPosition(),
+        .position = state.mouse_screen_position,
         .right_pressed = InputState.isHeld(mouse_pressed, "right"),
         .right_released = InputState.isHeld(mouse_released, "right"),
         .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),

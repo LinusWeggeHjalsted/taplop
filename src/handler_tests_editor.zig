@@ -2643,8 +2643,11 @@ test "editor right-click delete with an empty plan fires no event" {
 /// Screen position of tile (x,y)'s center for the paint-drag tests:
 /// camera at the origin, zoom 1, the 1280x720 viewport — screenToTile's
 /// reference mapping (center 640,360 = tile origin).
-fn tileCenter(x: i32, y: i32) types.ScreenPosition {
-    return .{ .x = 640 + x * 256 + 128, .y = 360 + y * 256 + 128 };
+fn tileCenter(x: i32, y: i32) input.PointerPosition {
+    return .{
+        .x = @floatFromInt(640 + x * 256 + 128),
+        .y = @floatFromInt(360 + y * 256 + 128),
+    };
 }
 
 test "tile-tool paint drag: press paints, held paints entered tiles, visited tiles never re-fire" {
@@ -2749,7 +2752,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     // onto the world paints nothing (the press wasn't a world press).
     const panel = ui.UiElement{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
-        .screen_position = tileCenter(5, 5),
+        .screen_position = tileCenter(5, 5).toScreenPosition(),
         .width = 10,
         .height = 10,
     } };
@@ -2814,7 +2817,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     // back over the world at the same unvisited tile it resumes.
     const panel_away = ui.UiElement{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
-        .screen_position = tileCenter(7, 5),
+        .screen_position = tileCenter(7, 5).toScreenPosition(),
         .width = 10,
         .height = 10,
     } };

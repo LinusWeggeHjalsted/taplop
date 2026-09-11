@@ -12480,3 +12480,32 @@ never a read or write location for them.
 - Also fixed: a copy-paste duplicate "Remaining layer-adjacent opens:"
   heading in TODO.md (the drag-painting prose under it was never a bullet
   list).
+
+## PointerInput.position precision — floatWorldPoint fix (cleanup session)
+
+`PointerInput.position` was `types.ScreenPosition` (i32), truncating the
+pointer's sub-pixel precision at the `pointerFacts` seam — so the camera-pan
+anchor (`floatWorldPoint`) grabbed the world at integer-pixel precision,
+which could jitter at low zoom even though `floatWorldPoint`'s float inverse
+was built for exactly that precision. Fix: `PointerInput.position` is now
+`input.PointerPosition` (f32) end-to-end:
+
+- `pointerFacts` passes `mouse_screen_position` through untruncated;
+  `floatWorldPoint` takes `PointerPosition` (the stale "NOTE: truncated" doc
+  gone).
+- The UI-grid seam: every hit-testing/threshold site truncates via
+  `.toScreenPosition()` at the use site (`handleDrag`, `handleSliderDrag`,
+  `handleCameraPan`/`handleRightClick*`/editor gestures' `blockingElementAt`
+  + `refAt`/`sliderAt` calls, the gesture structs' `press_position` fields
+  which stay i32 — the layout grid is their semantic home).
+- World/tile resolution uses the float directly: the pan anchor + press
+  record (`SessionState.camera_pan_press` → `?input.PointerPosition`), and
+  every gesture's `screenToTile` call (the seven `@floatFromInt` reconstruct
+  literals collapsed to plain `pointer.position`).
+- The camera-pan threshold compare runs in f32 against the i32
+  `drag_threshold_pixels` (hoisted `@floatFromInt`); the other gestures keep
+  i32 threshold math (press records are i32).
+- Tests: helper/local position fixtures (`tileCenter`, the
+  `tilePosition`/`at` closures, `center`/`name_click`/`sprite_click`) build
+  `PointerPosition` now; the two UI-grid `screen_position` uses convert via
+  `.toScreenPosition()`. Comptime int literals coerce unchanged.

@@ -97,7 +97,7 @@ fn update(
     // (button or not) consumes the world click so it doesn't also act on the
     // level/hub behind it (world/UI arbitration). See DESIGN → Input.
     if (player_input.pointer.pressed) {
-        const pointer_position = player_input.pointer.position;
+        const pointer_position = player_input.pointer.position.toScreenPosition();
         // Text-field focus arbitration (M2 — DESIGN → UI Framework → Text
         // input widget): a left press while a field is focused COMMITS it,
         // then either proceeds (the press is on a sibling inspector
@@ -164,7 +164,7 @@ fn update(
         }
     }
     if (player_input.pointer.released) {
-        const pointer_position = player_input.pointer.position;
+        const pointer_position = player_input.pointer.position.toScreenPosition();
         // An in-flight drag owns the release: the button-click model yields so
         // `handleDrag` can resolve the drop (or no-op for a drag-back-to-
         // source). `drag` still reflects the promoted state from the prior
@@ -339,7 +339,7 @@ fn update(
 
     // Always handle anytime input first (toggle_options_menu always works,
     // but other inputs are blocked when the options menu is open)
-    input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position, ui_elements);
+    input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position.toScreenPosition(), ui_elements);
 
     // Settings slider drag runs before the options-menu gate so sliders work
     // while the settings overlay is open on top of the options menu. See
@@ -2592,13 +2592,13 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         },
         else => {},
     };
-    const name_click = types.ScreenPosition{
-        .x = name_field.?.screen_position.x + 40,
-        .y = name_field.?.screen_position.y + 40,
+    const name_click = input.PointerPosition{
+        .x = @as(f32, @floatFromInt(name_field.?.screen_position.x)) + 40,
+        .y = @as(f32, @floatFromInt(name_field.?.screen_position.y)) + 40,
     };
-    const sprite_click = types.ScreenPosition{
-        .x = sprite_button.?.screen_position.x + 40,
-        .y = sprite_button.?.screen_position.y + 40,
+    const sprite_click = input.PointerPosition{
+        .x = @as(f32, @floatFromInt(sprite_button.?.screen_position.x)) + 40,
+        .y = @as(f32, @floatFromInt(sprite_button.?.screen_position.y)) + 40,
     };
 
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -2637,14 +2637,14 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         var player_input = input.PlayerInput{};
         player_input.pointer.pressed = true;
         player_input.pointer.position = .{
-            .x = name_field.?.text_position.x + 40,
+            .x = @as(f32, @floatFromInt(name_field.?.text_position.x)) + 40,
             .y = name_click.y,
         };
         update(&history, player_input, view_state, 0, camera, 1.0, viewport);
         player_input = .{};
         player_input.pointer.released = true;
         player_input.pointer.position = .{
-            .x = name_field.?.text_position.x + 40,
+            .x = @as(f32, @floatFromInt(name_field.?.text_position.x)) + 40,
             .y = name_click.y,
         };
         update(&history, player_input, view_state, 0, camera, 1.0, viewport);
