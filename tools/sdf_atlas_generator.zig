@@ -3,10 +3,10 @@
 //! glyph atlas via raylib's own `loadFontData(.sdf)` + `genImageFontAtlas`
 //! (the exact code path the runtime used previously — metrics can't drift),
 //! and serializes atlas pixels + per-glyph metrics into a binary blob that
-//! `src/raylib/backend.zig` parses at init (`initSdfTextOutline`). The SDF
+//! `src/raylib/text.zig` parses at init (`initSdfTextOutline`). The SDF
 //! encoding range (padding 22 / dist scale 6.0) comes from the
 //! `-DFONT_SDF_*` defines on this tool's raylib dependency; see
-//! src/raylib/backend.zig's `sdf_pixel_dist_scale` / `sdf_char_padding`.
+X / `sdf_char_padding`.
 //!
 //! Usage: sdf_atlas_generator <font.ttf> <output.blob>
 //! Invocation is positional because build.zig passes file args in order.
@@ -14,7 +14,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-/// Must match `font_base_size` in src/raylib/backend.zig — the atlas is baked at
+/// Must match `font_base_size` in src/raylib/text.zig — the atlas is baked at
 /// this size and the runtime scales from it. Validated at blob-parse time.
 const font_base_size: i32 = 128;
 
@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     for (atlas_bytes, 0..) |*byte, i| byte.* = gray_alpha[i * 2 + 1];
 
     // Serialize: header, glyph records, atlas bytes (all little-endian).
-    // Layout documented alongside the parser in src/raylib/backend.zig
+    // Layout documented alongside the parser in src/raylib/text.zig
     // (`initSdfTextOutline`).
     var blob: std.ArrayListUnmanaged(u8) = .empty;
     defer blob.deinit(allocator);

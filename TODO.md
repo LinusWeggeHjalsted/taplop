@@ -1232,8 +1232,15 @@ Open:
         loader; path building on fixed stack buffers. Draw sites go
         through `self.textures.*`; `entitySpriteBounds` keeps a pub
         wrapper (main.zig's RenderContext build).
-  - [ ] 5. `src/raylib/text.zig` — font loading + the SDF outline
-        pipeline + text drawing (`TextRenderer` sub-struct).
+  - [x] 5. `src/raylib/text.zig` — `TextRenderer` sub-struct: the TTF
+        load (premultiplied CPU atlas) + the SDF outline pipeline (shaders,
+        blob parse, comptime guard) + `drawOutlinedText`/`drawTextLabel`
+        (frame-arena scratch passed in) + `fontMetrics`; the
+        `text_outline_thickness` const is pub (the floating-number call
+        site reads it). Landed with a shared `src/raylib/conversions.zig`
+        (toRaylibColor/toPremultipliedColor/referenceRectangle — needed
+        by both text and the future draw file, so backend.zig aliases
+        them).
   - [ ] 6. `src/raylib/draw.zig` — world + UI element drawing (free fns
         over the backend, the handlers/ pattern); leaves backend.zig the
         thin driver.

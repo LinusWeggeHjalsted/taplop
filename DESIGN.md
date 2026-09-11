@@ -243,7 +243,7 @@ CPU raster, no dilation pass, no texture cache (the pre-SDF approach was
 an 8-direction drop-shadow ring: 9 draws, fuzzy at non-integer offsets,
 no antialiased outer edge; kept as the fallback).
 
-Key pieces (`src/raylib/backend.zig`):
+Key pieces (`src/raylib/text.zig`):
 
 - **Build-time atlas**: `tools/sdf_atlas_generator.zig` is a HOST tool
   linking raylib as a library (no window — SDF generation is pure CPU) that
@@ -1513,7 +1513,7 @@ std.Io` handle (kept separate because `std.Io` is broader than file I/O —
 callers that need the clock, e.g. `formatSessionTimestamp`, read it directly,
 not through the file abstraction). All call sites across `main.zig`,
 `event_handlers.zig`, `input_handlers.zig`, `parser.zig`, and
-`src/raylib/backend.zig` go through the source. Parser tests read `data/...` from
+`src/raylib/` (the texture + font loaders) go through the source. Parser tests read `data/...` from
 the embedded map, so the test build is hermetic. The VFS layer (layer 1 of
 the read order) is the only piece still outstanding — it lands with
 custom-mission support.
@@ -3923,8 +3923,8 @@ streamed at runtime but still downloaded).
 - Cooldown = semi-transparent overlay image + centered number TextLabel (not a fill fraction). Health globe = `FillSprite` (two sprites: empty drawn whole, full cropped to fraction)
 - `highlighted: bool` on Button/Image = reusable edge highlight (renderer outlines opaque pixels); used by the active turn-step icon, selected panel buttons, etc.
 - Standard gameplay button/slot is `slot_size` (256 at 4k reference); `ui_gap` (16) between top-level items
-- **Text coloring.** `ui.default_tint` (pure white) is the default `color` on every UI element. For sprites (Button/Slot/Image) it means "no tint" (show original art). For TEXT it's the "unset" sentinel: the renderer's `drawTextLabel` substitutes the active theme's `lightest` (the artist's offwhite) so uncolored text inherits the theme without builders needing a runtime color. Explicitly colored text (via `ui.colored(...)`) passes a non-`default_tint` color and is unaffected. Damage/heal numbers (`floating_text`) already pass `active_theme.lightest` explicitly at their call sites. The substitution is text-only — sprite tints keep `default_tint` = "no tint."
-- **Text measurement seam.** `ui.FontMetrics` (raylib-free value type: `base_size` + `[95]i32` per-ASCII-glyph advances) is the single layout-side authority for text width. The backend extracts it from the loaded `rl.Font` (`RaylibBackend.fontMetrics`) and threads it through `RenderContext.font_metrics` into the builders. Its contract: **mirror the renderer's cursor advance exactly.** `measureSpanWidth` reproduces `rl.drawTextEx`'s per-glyph step (`advanceX × font_size/base_size + spacing`, float-accumulated), so laid-out width == drawn width and multi-span emit (`x += measureSpanWidth`) flows like one continuous string. The shared `glyph_spacing_font_divisor` constant is the one source of truth for the spacing both read — any new draw parameter the layout needs to know (letter-spacing, kerning) must be added there, not re-derived in the seam. Vertical: **center on the `font_size` glyph cell, stack on `lineHeight`** — raylib draws a glyph from the top of a `font_size`-tall cell, so centering that cell (not the 1.2× `lineHeight` box) puts the visual mass on the element's center; `lineHeight` is for multi-line y-advance only.
+- **Text coloring.** `ui.default_tint` (pure white) is the default `color` on every UI element. For sprites (Button/Slot/Image) it means "no tint" (show original art). For TEXT it's the "unset" sentinel: the text renderer's `drawTextLabel` (src/raylib/text.zig) substitutes the active theme's `lightest` (the artist's offwhite) so uncolored text inherits the theme without builders needing a runtime color. Explicitly colored text (via `ui.colored(...)`) passes a non-`default_tint` color and is unaffected. Damage/heal numbers (`floating_text`) already pass `active_theme.lightest` explicitly at their call sites. The substitution is text-only — sprite tints keep `default_tint` = "no tint."
+- **Text measurement seam.** `ui.FontMetrics` (raylib-free value type: `base_size` + `[95]i32` per-ASCII-glyph advances) is the single layout-side authority for text width. The backend extracts it from the loaded `rl.Font` (`RaylibBackend.fontMetrics`, a thin wrapper over src/raylib/text.zig's `TextRenderer.fontMetrics`) and threads it through `RenderContext.font_metrics` into the builders. Its contract: **mirror the renderer's cursor advance exactly.** `measureSpanWidth` reproduces `rl.drawTextEx`'s per-glyph step (`advanceX × font_size/base_size + spacing`, float-accumulated), so laid-out width == drawn width and multi-span emit (`x += measureSpanWidth`) flows like one continuous string. The shared `glyph_spacing_font_divisor` constant is the one source of truth for the spacing both read — any new draw parameter the layout needs to know (letter-spacing, kerning) must be added there, not re-derived in the seam. Vertical: **center on the `font_size` glyph cell, stack on `lineHeight`** — raylib draws a glyph from the top of a `font_size`-tall cell, so centering that cell (not the 1.2× `lineHeight` box) puts the visual mass on the element's center; `lineHeight` is for multi-line y-advance only.
 
 ### Entity inspect
 
