@@ -440,9 +440,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/native.zig` — native exe entry (raylib); `src/web.zig` — web (emscripten)
   exe entry (IDBFS persistence + emscripten main-loop driver);
   `src/raylib/backend.zig` — the raylib platform backend (window/clock/
-  input polling/render target/render driver, the duck-typed `RaylibBackend`
-  interface). The ONLY directory whose files import raylib; the test-root
-  scan skips it wholesale (see DESIGN → Platform Seam)
+  render target/render driver, the duck-typed `RaylibBackend` interface) +
+  `src/raylib/input_poll.zig` (the key/mouse mapping tables + the per-frame
+  edge/position/char-queue read). The ONLY directory whose files import
+  raylib; the test-root scan skips it wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
   replay timeline: recordEvent/discardFutureTimeline/replayTo/
   reconstructFromEventLog/validatePlayerAction), Screen

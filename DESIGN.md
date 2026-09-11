@@ -1003,7 +1003,7 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - **New keybind wiring sites (five, easily forgotten).** A new keybind
   touches: (1) the binding entry in `data/default_settings.txt` (now
   including its `context` line), (2) the backend's key table
-  (`key_mappings` in src/raylib — only bound keys are mapped;
+  (`key_mappings` in src/raylib/input_poll.zig — only bound keys are mapped;
   unmapped keys never reach `translateInput`), (3) the `Action` enum + its
   `actionBindingContexts` case, (4) the `AnytimeInput`/`IdleInput` field +
   `applyAction` + the consumption site, (5) the `translateInput`
@@ -1015,7 +1015,7 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - **macOS: Command reports as the Control ids.** Mac convention is Command
   for app shortcuts, so on macos targets the backend key table maps
   `left_super`/`right_super` to `ControlLeft`/`ControlRight`
-  (`mac_key_mappings` in the backend, comptime-gated): every
+  (`mac_key_mappings` in src/raylib/input_poll.zig, comptime-gated): every
   `ControlLeft` binding fires on Cmd, and physical ctrl keys keep working.
   The ids flowing into `translateInput` stay platform-agnostic (one
   binding set ships for all platforms in `data/default_settings.txt`);

@@ -32,6 +32,7 @@ const input = @import("../input.zig");
 const types = @import("../types.zig");
 const ui = @import("../ui.zig");
 const transient_allocator = @import("../transient_allocator.zig");
+const input_poll = @import("input_poll.zig");
 
 const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
@@ -226,103 +227,10 @@ const sdf_outline_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.ar
 else
     sdf_outline_fs_glsl330;
 
-/// raylib keys mapped to the game's binding ids on macOS only. Mac
-/// convention is Command for app shortcuts, so the super keys report as the
-/// Control ids — every `ControlLeft` binding (undo, save, select-all, …)
-/// fires on Cmd, and the physical ctrl keys keep working too. The ids
-/// flowing into translateInput stay platform-agnostic (settings files ship
-/// one binding set for all platforms); the convention lives HERE, at the
-/// backend key table. Held-key tracking is per-id, so holding Cmd + left
-/// ctrl and releasing one drops the modifier early — an irrelevant corner.
-const mac_key_mappings = [_]KeyMapping{
-    .{ .key = .left_super, .id = "ControlLeft" },
-    .{ .key = .right_super, .id = "ControlRight" },
-};
-
-/// The full key table for this target: the shared mappings plus, on macOS,
-/// the Command-as-Control entries. `max_events_per_frame` sizes the event
-/// buffer off this length.
-const key_mappings = shared_key_mappings ++
-    if (@import("builtin").os.tag == .macos) mac_key_mappings else &[_]KeyMapping{};
-
-/// A raylib key mapped to the game's binding id (Web KeyboardEvent.code style,
-/// e.g. "KeyZ", "Escape", "Digit1"). Only the keys the game actually binds are
-/// listed; unmapped keys are ignored. Modifiers are included so getModifiers()
-/// can detect ctrl/shift/alt for chorded bindings (undo/redo).
-const KeyMapping = struct {
-    key: rl.KeyboardKey,
-    id: []const u8,
-};
-
-const shared_key_mappings = [_]KeyMapping{
-    // Modifiers (tracked as held keys so getModifiers can read them).
-    .{ .key = .left_control, .id = "ControlLeft" },
-    .{ .key = .right_control, .id = "ControlRight" },
-    .{ .key = .left_shift, .id = "ShiftLeft" },
-    .{ .key = .right_shift, .id = "ShiftRight" },
-    .{ .key = .left_alt, .id = "AltLeft" },
-    .{ .key = .right_alt, .id = "AltRight" },
-    // Action keys bound in data/default_settings.txt.
-    .{ .key = .z, .id = "KeyZ" },
-    .{ .key = .y, .id = "KeyY" },
-    .{ .key = .i, .id = "KeyI" },
-    .{ .key = .o, .id = "KeyO" },
-    .{ .key = .n, .id = "KeyN" },
-    .{ .key = .page_up, .id = "PageUp" },
-    .{ .key = .page_down, .id = "PageDown" },
-    .{ .key = .g, .id = "KeyG" },
-    .{ .key = .s, .id = "KeyS" },
-    .{ .key = .a, .id = "KeyA" },
-    .{ .key = .d, .id = "KeyD" },
-    .{ .key = .e, .id = "KeyE" },
-    .{ .key = .m, .id = "KeyM" },
-    .{ .key = .l, .id = "KeyL" },
-    .{ .key = .escape, .id = "Escape" },
-    .{ .key = .enter, .id = "Enter" },
-    .{ .key = .backspace, .id = "Backspace" },
-    .{ .key = .delete, .id = "Delete" },
-    .{ .key = .space, .id = "Space" },
-    .{ .key = .one, .id = "Digit1" },
-    .{ .key = .zero, .id = "Digit0" },
-    .{ .key = .two, .id = "Digit2" },
-    .{ .key = .three, .id = "Digit3" },
-    .{ .key = .four, .id = "Digit4" },
-    .{ .key = .five, .id = "Digit5" },
-    .{ .key = .six, .id = "Digit6" },
-    .{ .key = .seven, .id = "Digit7" },
-    .{ .key = .eight, .id = "Digit8" },
-    .{ .key = .up, .id = "ArrowUp" },
-    .{ .key = .down, .id = "ArrowDown" },
-    .{ .key = .left, .id = "ArrowLeft" },
-    .{ .key = .right, .id = "ArrowRight" },
-};
-
-const MouseMapping = struct {
-    button: rl.MouseButton,
-    id: []const u8,
-};
-
-const mouse_mappings = [_]MouseMapping{
-    .{ .button = .left, .id = "left" },
-    .{ .button = .right, .id = "right" },
-    .{ .button = .middle, .id = "middle" },
-};
-
-/// Upper bound on events emitted in a single frame. Each mapped key/button
-/// contributes at most ONE event per frame (down or up — never both, the
-/// pollInput loop uses `else if`), so `key_mappings.len + mouse_mappings.len`
-/// bounds the edge events. The non-edge events (always-one mouse-move, the
-/// mouse-scroll wheel delta) add `non_edge_events_per_frame`. Adding a new
-/// mapping array (gamepad, touch) only needs to be added to the sum below;
-/// adding a new non-edge event source bumps `non_edge_events_per_frame`.
-/// No manual bumping on per-source changes — the formula tracks the counts.
-const non_edge_events_per_frame: usize = 2; // mouse-move + mouse-scroll
-const max_events_per_frame = key_mappings.len + mouse_mappings.len + non_edge_events_per_frame;
-
 /// Maps reference-space content to the actual window: a uniform scale plus a
 /// centering offset (the letterbox bars). `render` uses it to blit; `pollInput`
 /// inverts it to bring the pointer back into reference space.
-const ViewTransform = struct {
+pub const ViewTransform = struct {
     scale: f32,
     offset_x: f32,
     offset_y: f32,
@@ -663,11 +571,11 @@ pub const RaylibBackend = struct {
     frame_arena: std.heap.ArenaAllocator,
     /// Scratch for the events emitted by pollInput each frame. Valid only until
     /// the next pollInput; translateInput consumes it synchronously.
-    event_buffer: [max_events_per_frame]input.PlatformInputEvent = undefined,
+    event_buffer: [input_poll.max_events_per_frame]input.PlatformInputEvent = undefined,
     /// Scratch for the UTF-8 text characters drained from the platform
     /// char queue each pollInput (see PlatformInput.text_characters). Same
     /// lifetime as `event_buffer`.
-    char_buffer: [64]u8 = undefined,
+    char_buffer: [input_poll.char_buffer_size]u8 = undefined,
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// The texture cache loads via loadImageFromMemory from this instead of
     /// touching the filesystem directly — see DESIGN → File System & IO.
@@ -1224,99 +1132,7 @@ pub const RaylibBackend = struct {
     }
 
     pub fn pollInput(self: *RaylibBackend) input.PlatformInput {
-        // Read input edges and position FIRST, before pumping.
-        //
-        // Why this order: raylib's PollInputEvents() copies previous = current
-        // (advancing the "previous" snapshot). IsMouseButtonPressed /
-        // IsKeyPressed check current vs previous. On native, PollInputEvents
-        // copies THEN calls glfwPollEvents() (which fires callbacks that update
-        // current) — so pumping-then-reading works (the copy sees the old
-        // state, game code sees the new state). But on web, events arrive
-        // asynchronously via JS callbacks BETWEEN frames (current is already
-        // set when we arrive). Pumping first would copy previous = current,
-        // erasing the edge (current == previous → no press detected). Reading
-        // first, then pumping, works on BOTH platforms: web sees current (from
-        // JS callbacks) vs previous (from last frame's copy); native sees
-        // current (from last iteration's glfwPollEvents) vs previous (from
-        // last iteration's copy), with ~1 iteration of latency at the uncapped
-        // loop speed (negligible).
-        var count: usize = 0;
-
-        // Mouse position, mapped from window pixels back into reference space
-        // through the inverse of the render letterbox transform.
-        const transform = viewTransform();
-        const mouse = rl.getMousePosition();
-        self.event_buffer[count] = .{ .mouse_move = .{
-            .x = if (transform.scale > 0) (mouse.x - transform.offset_x) / transform.scale else 0,
-            .y = if (transform.scale > 0) (mouse.y - transform.offset_y) / transform.scale else 0,
-        } };
-        count += 1;
-
-        // Keyboard edges.
-        for (key_mappings) |mapping| {
-            if (rl.isKeyPressed(mapping.key)) {
-                self.event_buffer[count] = .{ .key_down = mapping.id };
-                count += 1;
-            } else if (rl.isKeyReleased(mapping.key)) {
-                self.event_buffer[count] = .{ .key_up = mapping.id };
-                count += 1;
-            }
-        }
-
-        // Mouse button edges.
-        for (mouse_mappings) |mapping| {
-            if (rl.isMouseButtonPressed(mapping.button)) {
-                self.event_buffer[count] = .{ .mouse_button_down = mapping.id };
-                count += 1;
-            } else if (rl.isMouseButtonReleased(mapping.button)) {
-                self.event_buffer[count] = .{ .mouse_button_up = mapping.id };
-                count += 1;
-            }
-        }
-
-        // Mouse wheel: accumulated scroll delta since last frame (positive =
-        // scroll up = zoom in). Not an edge — raylib accumulates it internally
-        // and resets on pollInputEvents — so reading before the pump is fine
-        // (same as the mouse position read above).
-        const wheel = rl.getMouseWheelMove();
-        if (wheel != 0) {
-            self.event_buffer[count] = .{ .mouse_scroll = wheel };
-            count += 1;
-        }
-
-        // Text characters: drain the platform char queue (the text-input /
-        // IME path — distinct from key edges) into UTF-8. Drained
-        // unconditionally so the queue can't back up between frames;
-        // consumers only read it while a text field is focused. Read before
-        // the pump like the wheel (the queue accumulates between polls).
-        var char_count: usize = 0;
-        while (char_count < self.char_buffer.len) {
-            const codepoint = rl.getCharPressed();
-            if (codepoint <= 0) break;
-            // Out-of-range values (control junk from the platform) are
-            // skipped, not fatal — `@intCast` to u21 would panic otherwise.
-            if (codepoint > 0x10FFFF) continue;
-            var encoded: [4]u8 = undefined;
-            const length = std.unicode.utf8Encode(@intCast(codepoint), &encoded) catch continue;
-            if (char_count + length > self.char_buffer.len) break;
-            @memcpy(self.char_buffer[char_count .. char_count + length], encoded[0..length]);
-            char_count += length;
-        }
-
-        // Pump the OS event queue AFTER reading edges. On native this calls
-        // glfwPollEvents() (fires callbacks that update current for the next
-        // iteration) + copies previous = current. On web it just copies
-        // previous = current (events are async). Without this call on native,
-        // the window would hang between renders (OS events not processed).
-        rl.pollInputEvents();
-
-        return .{
-            .events = self.event_buffer[0..count],
-            // The game works entirely in reference space (the pointer above is
-            // mapped there), so report the reference resolution as the viewport.
-            .viewport = .{ .width = reference_width, .height = reference_height },
-            .text_characters = self.char_buffer[0..char_count],
-        };
+        return input_poll.poll(viewTransform(), &self.event_buffer, &self.char_buffer);
     }
 
     pub fn render(

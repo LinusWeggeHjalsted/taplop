@@ -101,7 +101,7 @@ Test by running `zig build run` and clicking through.
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):
   the binding in `data/default_settings.txt` (including its `context` line),
-  the backend's key table (`key_mappings` in src/raylib/backend.zig — only bound
+  the backend's key table (`key_mappings` in src/raylib/input_poll.zig — only bound
   keys are mapped; unmapped keys never reach `translateInput`), the Action
   enum + its `actionBindingContexts` case, the Action/input plumbing
   (`AnytimeInput`/`IdleInput` field + `applyAction` + the consumption site),
@@ -1214,8 +1214,10 @@ Open:
         import updates (native.zig/web.zig), directory-level exclusion,
         boundary assert in scripts/test.sh, doc sweep (AGENTS/DESIGN/TODO/
         build.zig + sdf_atlas_generator comments).
-  - [ ] 2. `src/raylib/input_poll.zig` — key/mouse mapping tables + the
-        pollInput body (free fn over the backend's scratch buffers).
+  - [x] 2. `src/raylib/input_poll.zig` — key/mouse mapping tables + the
+        pollInput body (free fn over the backend's scratch buffers;
+        ViewTransform stays in backend.zig — window math with the window
+        owner).
   - [ ] 3. `src/raylib/audio.zig` — `Audio` sub-struct owning the music
         stack + the four cue caches; RaylibBackend keeps thin pub
         wrappers (main.zig's `anytype` backend surface unchanged). Path
