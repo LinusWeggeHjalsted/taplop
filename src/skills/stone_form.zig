@@ -4,6 +4,8 @@ const state = @import("../state.zig");
 const events = @import("../events.zig");
 const skill_mod = @import("../skill.zig");
 const helpers = @import("../skill_helpers.zig");
+const ai_select = @import("../ai_select.zig");
+const lookups = @import("../generated_lookups.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -36,19 +38,58 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at 2 — offered once damaged (the stun
-/// resistance + heal-over-time pay below full health).
+/// AI options: rated against the casts the outgoing-stun +1 would enhance
+/// — the shared selection (ai_select): the planned ending cast if it
+/// applies a stun, plus any positive-rated stun CANTRIP (none ship yet;
+/// a future one slots in automatically). Rating = best such cast + 1, so
+/// stone form fires BEFORE them in the chain (the +1 ordering rule — see
+/// DESIGN → Architecture, AI rating scale). No live beneficiary → the
+/// end-of-turn-heal fallback: one unit, gated below full health.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
-    _: types.WeaponTypeDefinitions,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.stone_form) > 0) return &.{};
+
+    var best_beneficiary: u32 = 0;
+
+    // The planned turn-ending cast — counted only if it applies a stun
+    // the outgoing-stun +1 would lengthen.
+    if (ai_select.plannedEndingCast(caster_index, game_state, weapon_type_definitions, allocator)) |plan| {
+        if (lookups.getSkillDefinition(plan.skill_id)) |definition| {
+            if (definition.stun_duration != null and plan.priority > best_beneficiary) {
+                best_beneficiary = plan.priority;
+            }
+        }
+    }
+
+    // Stun CANTRIP beneficiaries: every positive-rated cantrip fires
+    // this turn, so each one's best option counts. Cantrips only (never
+    // another enchantment — the one-way edge rule, ai_select.zig).
+    const slots = caster.collectSkillSlots(weapon_type_definitions);
+    for (&slots) |maybe_skill_id| {
+        const skill_id = maybe_skill_id orelse continue;
+        if (caster.skill_cooldowns.get(skill_id) > 0) continue;
+        const definition = lookups.getSkillDefinition(skill_id) orelse continue;
+        if (definition.skill_type != .cantrip) continue;
+        if (definition.stun_duration == null) continue;
+        const options = definition.aiOptions(caster_index, game_state, weapon_type_definitions, allocator);
+        for (options) |option| {
+            if (option.priority > best_beneficiary) best_beneficiary = option.priority;
+        }
+    }
+
+    if (best_beneficiary > 0) {
+        return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
+    }
+
+    // Fallback: the 20%-max end-of-turn heal over the effect's duration.
     if (caster.current_health >= caster.getEffectiveMaxHealth()) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = 1 });
 }
 
 /// Self-cast — no meaningful target.

@@ -331,12 +331,19 @@ stale).
         work is Tier B (four small engine gaps) and Tier C (two design
         sessions).
 
-- [ ] **Non-ending pool rating audit.** The ported cantrips/enchantments
-      kept their pre-value-unit numbers without scrutiny (replenish 3,
-      focus 2, stone_form 2, lingers/blink/swap 1; the new ones were born
-      on the scale). Re-rate them against the value-unit semantic — e.g.
-      is a FULL heal really 3 while a 20% heal is 2? Cheap pass, do it
-      before playtesting skews on stale numbers.
+- [~] **Non-ending pool rating audit.** The ported cantrips/enchantments
+      kept their pre-value-unit numbers without scrutiny. SETTLED during
+      the audit (see DESIGN → Architecture, AI rating scale — the two new
+      bullets): the value-unit anchors (20% heal = 1, full heal = 2) and
+      the enhancement-enchantment rule — rate = best LIVE beneficiary + 1
+      (planned ending cast if it matches the field + positive-rated cantrip
+      beneficiaries), fallback gate otherwise, all via the extracted
+      `ai_select` selection. DONE so far: idol heal 1, replenish 2, focus
+      (rate = weapon-skill reset count, cantrips excluded — fixed a
+      wasted-cast gate bug), stone form (beneficiary rule, first consumer).
+      REMAINING: that_which_lingers / reaches / rushes (apply the
+      beneficiary rule), bull_form, blink, swap (rating sanity), howl +
+      burst/accelerate/meditate (born on the scale — sanity pass).
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,

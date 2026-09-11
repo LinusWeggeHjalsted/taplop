@@ -12509,3 +12509,50 @@ was built for exactly that precision. Fix: `PointerInput.position` is now
   `tilePosition`/`at` closures, `center`/`name_click`/`sprite_click`) build
   `PointerPosition` now; the two UI-grid `screen_position` uses convert via
   `.toScreenPosition()`. Comptime int literals coerce unchanged.
+
+## Rating audit: heal/replenish/focus + the enhancement-enchantment rule (cleanup session)
+
+The non-ending pool rating audit (TODO) opened into a design session. Settled
+design in DESIGN → Architecture (AI rating scale — two new bullets); the
+short version:
+
+- **Value-unit anchors (owner decisions):** a 20% heal = 1 (idol heal
+  2 → 1 — it now TIES a plain attack in the ending pool; slot order makes a
+  below-half enemy heal once then attack), a full heal = 2 (replenish
+  3 → 2, below-half gate unchanged).
+- **Focus gate bug fixed:** its gate fired on ANY ticking cooldown
+  (including cantrips) while the reset handler resolves slots 1-3 only — an
+  enemy with just a ticking cantrip would burn focus's 10-turn cooldown
+  resetting nothing. Now rated by the WEAPON-skill reset count
+  (`skillInSlot` slots 1-3, the handler's own resolution — the
+  meditate/adrenaline convention). New test pins cantrip-exclusion.
+- **Enhancement enchantments rate against their LIVE beneficiaries (+1
+  ordering rule, owner design):** rate = best live-beneficiary + 1, where
+  live = the PLANNED turn-ending cast if it matches the enhanced Skill
+  field, plus positive-rated cantrip beneficiaries (a future stun cantrip
+  slots into stone form's scan automatically — the future-proofing the
+  owner wanted). No live beneficiary → the enchantment's fallback (stone
+  form: the end-of-turn heal at 1, below full health). Ratings skip
+  0-rated beneficiaries so enchantments never fire "early" on a cast that
+  won't happen.
+- **`src/ai_select.zig` (new):** the ONE cast-selection algorithm, extracted
+  from `enemy_turn_attack` so enhancer predictions can't drift from the
+  real selection. `bestCasts` (both pools, the handler's exact partition +
+  strict-> + slot-order tiebreak) for the handler;
+  `plannedEndingCast` (weapon/spell slots only) for the enhancers. The
+  recursion analysis that shaped the split: an enhancer calling full
+  `bestCasts` re-enters its own aiOptions (infinite), and two equipped
+  enhancers recurse through each other — so the plan-facing API evaluates
+  only non-enhancer slots, and beneficiary scans filter to `.cantrip` types
+  (never another `.enchantment`). One-way edge rule documented in the file
+  header + DESIGN.
+- **Stone form (first consumer):** planned ending cast with
+  `stun_duration != null` → rate = plan + 1; stun cantrip scan
+  (future-proof, no stun cantrip ships yet — untestable until one exists);
+  fallback = the 20%-HoT unit at 1 below full health. Tests pin the plan
+  itself (cleave at 2), the +1, the fallback, and the no-beneficiary
+  no-cast. Notable faithful behavior: a full-health axe-carrier plans
+  CHOP (chop's above-half 2 ties cleave's 2, slot order wins) → no stun
+  planned → stone form waits — the plan-dependence is the point.
+- Cleanup in passing: two stale test names fixed ("idol heal: priority is
+  3" asserted 2; "cleave: priority is 3" asserted 2/1).

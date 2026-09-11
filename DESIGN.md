@@ -2138,6 +2138,30 @@ So a clone is a permanent, compounding material factory keyed by mission.
   spells (the cheaper slot, generally the shorter cooldown). This is what
   resolves "1-target Spinblade vs Charged Bolt": 1 < 2, the single-target
   skill wins.
+- **Enhancement enchantments rate against their LIVE beneficiaries
+  (+1 ordering rule).** An enchantment that enhances subsequent casts
+  rates itself = (best live-beneficiary rating) + 1, so it always fires
+  BEFORE the cast it enhances in the non-ending chain. A "live
+  beneficiary" is a cast that will actually happen this turn: the PLANNED
+  turn-ending cast (via `ai_select.plannedEndingCast`) if its Skill base
+  values carry the enhanced field (stone form: `stun_duration`; lingers:
+  durations; reaches: range/radius; bull form: distance), plus any
+  positive-rated `.cantrip` beneficiary (all positive cantrips fire this
+  turn — future stun cantrips slot in automatically). No live beneficiary
+  → the enchantment's own fallback gate (stone form: the end-of-turn heal,
+  rating 1 below full health; never cast early on a beneficiary that
+  rates 0). The plan is re-derived after every cast in the re-evaluation
+  loop, so an enchantment's rating self-corrects as the plan changes.
+- **AI cast selection lives in ONE place (`src/ai_select.zig`).**
+  `bestCasts` (both pools) is the exact selection `enemy_turn_attack`
+  applies — extracted from the handler so enhancer predictions can never
+  drift from the real selection. One-way edge rule (acyclicity by
+  construction): enhancers may read `plannedEndingCast` (which evaluates
+  only weapon/spel slots — never enhancers) and the options of
+  `.cantrip`-type beneficiaries only; an aiOptions must never consult
+  another `.enchantment`'s rating, and ending skills never consult the
+  plan. Without this, an enhancer's rating → bestCasts → (its own or
+  another enhancer's) aiOptions recurses infinitely.
 - **Utility skills deal spell damage — always.** Any damage a utility
   skill (spell / cantrip / enchantment / curse) deals — directly or via
   its effect's reactive attacks (That Which Explodes) — uses

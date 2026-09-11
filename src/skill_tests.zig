@@ -15,6 +15,8 @@ const bash_skill = @import("skills/bash.zig");
 const head_shot_skill = @import("skills/head_shot.zig");
 const heal_skill = @import("skills/heal.zig");
 const focus_skill = @import("skills/focus.zig");
+const stone_form_skill = @import("skills/stone_form.zig");
+const ai_select = @import("ai_select.zig");
 const cleave_skill = @import("skills/cleave.zig");
 const meteor_skill = @import("skills/meteor.zig");
 const threat_mod = @import("ai_threat.zig");
@@ -633,6 +635,78 @@ test "focus: options rate by ticking weapon-skill count, cantrips excluded" {
         focus_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
 }
 
+test "stone form: rates above the planned stun cast; HoT fallback without one" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // An axe-carrier BELOW half health with an unstunned hostile in
+    // cleave range: chop rates 1 (its above-half bonus is gone) and
+    // cleave rates 2, so the planned ending cast is cleave — stone form
+    // rates one above it, firing first in the chain (the +1 rule). Note
+    // at FULL health chop ties cleave at 2 and slot order plans the
+    // chop — no stun planned, so stone form waits; that's the plan-
+    // dependent rule working as settled.
+    const axe_caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 9,
+        .main_hand_weapon = .{ .weapon_type = .axe },
+        .equipped_utility_skills = .{ .stone_form, null, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ axe_caster, types.Entity{
+            .team = 1,
+            .position = .{ .x = 1, .y = 0 },
+            .max_health = 20,
+            .current_health = 20,
+        } },
+        &.{},
+    );
+
+    // The shared selection plans cleave at 2 (unstunned target).
+    const plan = ai_select.plannedEndingCast(0, game_state, definitions, arena.allocator());
+    try testing.expectEqual(types.SkillId.cleave, plan.?.skill_id);
+    try testing.expectEqual(@as(u32, 2), plan.?.priority);
+
+    {
+        const options = stone_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+
+    // Hostile far out of range: no planned ending cast, no stun cantrip
+    // ticking — the HoT fallback applies, and it offers 1 (below full).
+    @constCast(game_state.level.?.entities)[1].position = .{ .x = 30, .y = 30 };
+    try testing.expect(
+        ai_select.plannedEndingCast(0, game_state, definitions, arena.allocator()) == null,
+    );
+    {
+        const options = stone_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
+    }
+
+    // Full health with no beneficiary: nothing at all.
+    @constCast(game_state.level.?.entities)[0].current_health = 20;
+    try testing.expectEqual(@as(usize, 0),
+        stone_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
+    @constCast(game_state.level.?.entities)[0].current_health = 9;
+
+    // A sword-carrier (chop plans, but chops don't stun) below full
+    // health: no beneficiary, so the HoT fallback offers 1.
+    @constCast(game_state.level.?.entities)[0].main_hand_weapon = .{ .weapon_type = .sword };
+    @constCast(game_state.level.?.entities)[0].current_health = 9;
+    {
+        const options = stone_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
+    }
+}
+
 test "stunTarget: an unstunned target beats a weaker stunned one" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -672,7 +746,7 @@ test "stunTarget: all stunned falls back to the weakest" {
     try testing.expectEqual(wounded.position, picked.?);
 }
 
-test "cleave: priority is 3 with an unstunned target, 2 when all are stunned" {
+test "cleave: priority is 2 with an unstunned target, 1 when all are stunned" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
