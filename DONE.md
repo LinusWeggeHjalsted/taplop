@@ -12706,3 +12706,31 @@ re-deriving) so reaches and bull form share one implementation.
   2 + 1 = 3 over the base-value rule's 1 + 1 = 2.
 - Tests: the collision flip (bull form 3) and the no-distance-bar case
   (sword: nothing pushes, no beneficiary, no differential → no cast).
+
+## Non-ending pool rating audit — COMPLETE (rating audit, closing entry)
+
+The audit opened as a "cheap pass" over stale ported numbers and became a
+design session that produced four settled mechanisms (all in DESIGN →
+Architecture, AI rating scale): the value-unit anchors (20% heal = 1, full
+heal = 2 — owner decisions), the enhancement-enchantment LIVE-beneficiary
+rule (+1 ordering, only casts that will actually fire this turn count,
+fallback gates otherwise), the pass-scoped EvalFrame (memoized once per
+pass, mechanical cycle cut — replacing the structural pool-split guards),
+and the virtual-effect sim differential (gating modifiers: reaches'
+range/radius, bull form's push-collision flips). Every enhancer landed on
+the rule (stone form, lingers, reaches, rushes, bull form); three
+wasted-cast gate bugs were fixed in passing (focus counting cantrips,
+lingers/reaches/rushes/bull_form firing unconditionally into empty turns);
+idol heal 1 / replenish 2 / focus-by-reset-count re-anchored the heal
+family.
+
+Sanity pass (no changes needed): howl/burst/accelerate/meditate are
+already count-based and gated; blink/swap at rating 1 are honest for
+repositioning, with the re-evaluation loop providing the follow-through
+(blink closes the gap → the newly-possible attack plans next pass).
+One playtest-dependent flag stays in TODO: adjacent swaps/blinks can be
+pointless shuffles — gate from playtest texture, not blind (adjacent
+swaps might be deliberate displacement).
+
+Also retired here: the aiOptions-churn watch item (superseded by the
+frame's once-per-pass bound).

@@ -331,27 +331,23 @@ stale).
         work is Tier B (four small engine gaps) and Tier C (two design
         sessions).
 
-- [~] **Non-ending pool rating audit.** The ported cantrips/enchantments
-      kept their pre-value-unit numbers without scrutiny. SETTLED during
-      the audit (see DESIGN → Architecture, AI rating scale — the two new
-      bullets): the value-unit anchors (20% heal = 1, full heal = 2), the
-      enhancement-enchantment rule (rate = best LIVE beneficiary + 1,
-      fallback gate otherwise), and the pass-scoped EvalFrame
-      (`skill.zig` + `ai_select.optionsFor`) — memoized once per pass,
-      consultation cycles cut mechanically, no structural restrictions.
-      DONE so far: idol heal 1, replenish 2, focus (rate = weapon-skill
-      reset count — fixed a wasted-cast gate bug), stone form (beneficiary
-      rule, first consumer), that_which_lingers (beneficiary rule, no
-      fallback — mechanically self-excluded via the frame guard),
-      that_which_reaches (beneficiary rule + the VIRTUAL-EFFECT SIM
-      differential — see the new DESIGN bullet), that_which_rushes
-      (beneficiary rule on cooldown-bearing casts, no fallback — the speed
-      rider alone never justifies), bull_form (beneficiary rule + sim
-      differential — a short push flips into a collision).
-      REMAINING: blink, swap (rating sanity), howl +
-      burst/accelerate/meditate (born on the scale — sanity pass). Also
-      retire the aiOptions-churn watch item below (the frame bounds
-      evaluation at once per skill per pass).
+- [x] **Non-ending pool rating audit — COMPLETE.** SETTLED (see DESIGN →
+      Architecture, AI rating scale — the four new bullets): the value-unit
+      anchors (20% heal = 1, full heal = 2), the enhancement-enchantment
+      rule (rate = best LIVE beneficiary + 1 — live = only casts that will
+      actually fire this turn; fallback gate otherwise), the pass-scoped
+      EvalFrame (`skill.zig` + `ai_select.optionsFor` — memoized once per
+      pass, consultation cycles cut mechanically), and the virtual-effect
+      sim differential (reaches, bull form — gating modifiers). Landed:
+      idol heal 1, replenish 2, focus (weapon-skill reset count — fixed a
+      wasted-cast gate bug), stone form / lingers / reaches / rushes /
+      bull form (all on the beneficiary rule; reaches + bull form with
+      the sim differential), and the sanity pass (howl/burst/accelerate/
+      meditate coherent; blink/swap kept at 1). PLAYTEST-DEPENDENT
+      follow-up: swap (and blink) can fire a pointless ADJACENT
+      reposition — decide from playtest texture whether to gate
+      (chebyshev > 1 on the chosen target); adjacent swaps might be
+      deliberate displacement. History in DONE.md.
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,
@@ -1525,11 +1521,12 @@ Done items in DONE.md. Open:
       skill's composition is novel (shockwave's attack+knockback fan,
       drain's lifesteal), one runToIdle test through the real handler is
       the model — adrenaline's are the template.
-- **aiOptions allocation churn — watch item, no action.** enemy_turn_attack
-      calls aiOptions (allocating) for every off-cooldown skill on every
-      re-evaluation. Fine under the arena model (compacted at idle
-      points); if AI turns ever feel slow with full 8-slot bars, this is
-      the first place to look.
+- [x] **aiOptions allocation churn — RESOLVED by the EvalFrame** (the
+      rating audit's follow-through): every option evaluation goes through
+      `ai_select.optionsFor`, so each skill's aiOptions runs AT MOST ONCE
+      per re-evaluation pass regardless of how consultation-dense the bar
+      gets (enhancer scans + sim differentials consult freely). History in
+      DONE.md (the pass-scoped EvalFrame).
 - **Frame-level player actions — keep the exception list closed.** Exactly
   one exists (the text-field keyboard resolution; see DESIGN → Architecture
   → "Frame-level player actions" for the contract it breaks + the

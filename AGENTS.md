@@ -511,9 +511,13 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/tween.zig` — pure easing fns (`easeOutCubic`); read by `view()` for
   one-shot anim interpolation. See DESIGN → Animation.
 - `src/skill.zig` — the Skill interface (Skill struct, AiOption, the
-  priority_fn/ai_options_fn signatures, deals_damage + self_centered flags)
+  ai_options_fn signature + the pass-scoped EvalFrame, deals_damage +
+  self_centered flags). See DESIGN → Architecture (AI rating scale + AI
+  cast selection)
 - `src/skill_helpers.zig` — skill building blocks (targeting/lookup helpers
-  shared by most skill recipes)
+  shared by most skill recipes) + the enhancement-enchantment machinery
+  (`bestCastsWithVirtualEffect` + `simDifferentialGain`). See DESIGN →
+  Architecture (AI rating scale, the virtual-effect sim differential)
 - `src/ai_threat.zig` — AI range/threat math (shared by the enemy AI and
   defensive skills' rating fns). See DESIGN → Architecture (AI threat model)
 - `src/ai_select.zig` — the ONE enemy cast-selection algorithm
