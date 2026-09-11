@@ -1,5 +1,7 @@
-//! raylib platform backend. This is the ONLY file that imports raylib
-//! directly (native.zig and web.zig import it through the backend). It is
+//! raylib platform backend. `src/raylib/` is the ONLY directory whose files
+//! import raylib directly (native.zig and web.zig import it through
+//! `raylib/backend.zig`); every file in it is excluded from the headless
+//! test-root scan in build.zig (see DESIGN → Platform Seam). This file is
 //! compiled into both the native exe and the wasm32-emscripten exe. The shared
 //! game logic in main.zig never touches raylib; gameLoop drives this backend
 //! through a small duck-typed interface:
@@ -26,10 +28,10 @@
 
 const std = @import("std");
 const rl = @import("raylib");
-const input = @import("input.zig");
-const types = @import("types.zig");
-const ui = @import("ui.zig");
-const transient_allocator = @import("transient_allocator.zig");
+const input = @import("../input.zig");
+const types = @import("../types.zig");
+const ui = @import("../ui.zig");
+const transient_allocator = @import("../transient_allocator.zig");
 
 const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
@@ -383,7 +385,7 @@ fn blitTransform(target_width_int: i32, target_height_int: i32) ViewTransform {
 /// raylib-owned and can't be rebuilt on the CPU. Returns the font + whether
 /// it is the default (so deinit can skip unloading raylib-owned the
 /// default).
-fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
+fn loadFont(file_source: *const @import("../file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
     const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/freezilla.ttf") catch |err| {
         std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
         const fallback = rl.getFontDefault() catch @panic("failed to load default font");
@@ -669,7 +671,7 @@ pub const RaylibBackend = struct {
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// The texture cache loads via loadImageFromMemory from this instead of
     /// touching the filesystem directly — see DESIGN → File System & IO.
-    file_source: *const @import("file_source.zig").FileSource,
+    file_source: *const @import("../file_source.zig").FileSource,
 
     /// One-shot sound effects, one per `SoundId`, loaded via
     /// `loadWaveFromMemory` + `loadSoundFromWave` from the file source.
@@ -732,7 +734,7 @@ pub const RaylibBackend = struct {
         width: i32,
         height: i32,
         title: [:0]const u8,
-        file_source: *const @import("file_source.zig").FileSource,
+        file_source: *const @import("../file_source.zig").FileSource,
     ) RaylibBackend {
         // Vsync defaults on (matching Settings.vsync default); run() calls
         // applyVsync after loading settings to sync the window to the setting.
@@ -1196,7 +1198,7 @@ pub const RaylibBackend = struct {
     /// call); the browser already paces to the display refresh.
     pub fn renderIntervalMicroseconds(
         _: *RaylibBackend,
-        settings: @import("types.zig").Settings,
+        settings: @import("../types.zig").Settings,
     ) u64 {
         if (@import("builtin").os.tag == .emscripten) {
             // The browser paces rAF to the display refresh; render every call.

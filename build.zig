@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     // embedded and NO SDF code runs at game runtime, so these defines only
     // matter to the generator's raylib dependency below). The values MUST
     // match the `sdf_pixel_dist_scale` / `sdf_char_padding` constants in
-    // raylib_backend.zig (the shader decodes the field assuming this
+    // src/raylib (the shader decodes the field assuming this
     // encoding, and the runtime validates the blob's baked params against
     // them).
     const raylib_sdf_config_flags = "-DSUPPORT_CUSTOM_FRAME_CONTROL " ++
@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
     // raylib code path (loadFontData(.sdf) + genImageFontAtlas) the runtime
     // used previously — zero metric drift by construction. The blob is
     // embedded through the `generated_sdf_font` module (same shape as
-    // `generated_sprite_metadata`); raylib_backend.zig parses it and
+    // `generated_sprite_metadata`); the backend in src/raylib parses it and
     // assembles the rl.Font at init, so NO SDF computation runs at game
     // startup (it measured ~1.4s in a release build). Regenerates only when
     // the font file or generator changes (build cache).
@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) void {
     // below). The native root is src/native.zig (the raylib-driven entry
     // point); the shared game logic in src/main.zig stays raylib-free so the
     // web build and the headless test build can compile it. See
-    // raylib_backend.zig / native.zig for the platform seam.
+    // src/raylib/backend.zig / native.zig for the platform seam.
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
@@ -614,16 +614,24 @@ fn collectZigFiles(
             b.fmt("{s}/{s}", .{ rel_prefix, entry.name });
 
         switch (entry.kind) {
-            .directory => collectZigFiles(b, rel, list),
+            // The whole raylib/ directory compiles against raylib and is
+            // excluded from the headless scan wholesale — the platform seam
+            // is "raylib may only be imported from src/raylib/" (asserted by
+            // scripts/test.sh). See DESIGN → Platform Seam.
+            .directory => {
+                if (std.mem.eql(u8, entry.name, "raylib")) continue;
+                collectZigFiles(b, rel, list);
+            },
             .file => {
                 if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
                 // Skip the generated root itself to avoid a self-import.
                 if (std.mem.eql(u8, rel, "generated_test_root.zig")) continue;
-                // Skip the raylib-linked platform files: the test build is a
-                // headless logic compile and must not pull in raylib (see the
-                // native exe wiring above and the platform seam).
+                // Skip the raylib-linked platform entry files: the test build
+                // is a headless logic compile and must not pull in raylib (see
+                // the native exe wiring above and the platform seam; the rest
+                // of the seam lives in src/raylib/, skipped as a directory
+                // above).
                 if (std.mem.eql(u8, rel, "native.zig")) continue;
-                if (std.mem.eql(u8, rel, "raylib_backend.zig")) continue;
                 if (std.mem.eql(u8, rel, "web.zig")) continue;
                 list.append(b.allocator, rel) catch @panic("append failed");
             },

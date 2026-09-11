@@ -103,9 +103,9 @@ next session meets it as a surprise instead of a known.
   pumping before reading would erase the edge (current == previous → no
   press detected). Read-then-pump works on both platforms (native gets ~1
   iteration of latency at the uncapped speed, negligible).
-- `src/raylib_backend.zig` is the ONLY file that `@import("raylib")`
-  directly (`native.zig` and `web.zig` import the backend, not raylib). It
-  owns the window, the real-clock
+- Files under `src/raylib/` are the ONLY ones that `@import("raylib")`
+  directly (`native.zig` and `web.zig` import `raylib/backend.zig`, not
+  raylib). The directory owns the window, the real-clock
   (`rl.getTime` → microseconds for deltas + render gating), input polling
   (`pollInputEvents` each poll, independent of rendering), and rendering. Built
   with `SUPPORT_CUSTOM_FRAME_CONTROL` so `endDrawing()` only flushes the render
@@ -131,9 +131,12 @@ next session meets it as a surprise instead of a known.
   IDBFS at /ziglop for persistence and drives `frame()` via
   `emscripten_set_main_loop_arg` (the browser schedules rAFs; no sleep/yield,
   no asyncify). The patched-stdlib web-build workflow lives in AGENTS → Build & Test.
-- All three raylib-linked files (`native.zig`, `web.zig`, `raylib_backend.zig`)
-  are excluded from the test-root scan in `build.zig` (`collectZigFiles`). If
-  you add another raylib-linked file, exclude it too.
+- All raylib-linked files (`native.zig`, `web.zig`, everything under
+  `src/raylib/`)
+  are excluded from the test-root scan in `build.zig` (`collectZigFiles` —
+  the whole `src/raylib/` directory is skipped). If
+  you add another raylib-linked file, put it under `src/raylib/` (or exclude
+  it too).
 - raylib key ids are emitted in Web `KeyboardEvent.code` form (`KeyZ`, `Escape`,
   `Digit1`, `ControlLeft`, ...) to match `data/default_settings.txt` bindings.
 - Coordinate space: `pollInput` reports the viewport AS the reference
@@ -240,7 +243,7 @@ CPU raster, no dilation pass, no texture cache (the pre-SDF approach was
 an 8-direction drop-shadow ring: 9 draws, fuzzy at non-integer offsets,
 no antialiased outer edge; kept as the fallback).
 
-Key pieces (`raylib_backend.zig`):
+Key pieces (`src/raylib/backend.zig`):
 
 - **Build-time atlas**: `tools/sdf_atlas_generator.zig` is a HOST tool
   linking raylib as a library (no window — SDF generation is pure CPU) that
@@ -255,11 +258,11 @@ Key pieces (`raylib_backend.zig`):
   with `-DFONT_SDF_CHAR_PADDING=22 -DFONT_SDF_PIXEL_DIST_SCALE=6.0`
   (±21 atlas px, covering 8px at the smallest outlined size, 48px from the
   128px base atlas). `sdf_pixel_dist_scale`/`sdf_char_padding` in
-  raylib_backend.zig must stay in lockstep (a `@compileError` + blob
+  the backend's SDF constants must stay in lockstep (a `@compileError` + blob
   validation guard this; the blob carries its baked params and mismatches
   degrade to the fallback).
 - **Shader**: embedded GLSL (330 on desktop, ES 1.00 on web — both variants
-  in raylib_backend.zig, selected comptime). Thresholds the decoded field:
+  in the backend, selected comptime). Thresholds the decoded field:
   `d >= 0` fill, `[-outlineWidth, 0)` outline band, `fwidth`-sized
   antialiasing (fixed smoothing on GLSL ES 1.00, no `fwidth`). Straight
   alpha out (raylib blends premultiplied-input as straight; the old
@@ -303,7 +306,7 @@ hunt; extend only when a real incident asks for more.
 
 - **File + naming:** `src/diagnostics.zig`, a raylib-free `Diagnostics`
   type (values fed in by the backend — the GL-touching probe sites stay
-  in raylib_backend and only record values, so diagnostics.zig compiles
+  in the backend and only record values, so diagnostics.zig compiles
   in the headless test build). One instance owned by `RaylibBackend`:
   an append buffer + section policy + flush scheduling. NO
   abbreviations anywhere: `Diagnostics`, `diagnostics_enabled` — the
@@ -435,7 +438,7 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   play a plain up (no button was pressed; the commit IS the interaction).
   `pressed_button` is transient — cleared on screen transition alongside
   `ui_state`/`tile_cursor`/`camera_pan`.
-- **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
+- **Backend (`src/raylib/backend.zig`):** `initAudio(settings)` opens the audio
   device, loads all sfx bases via `loadWaveFromMemory` + `loadSoundFromWave`
   from the `FileSource` (never the filesystem — same seam as textures),
   loads + starts the music streams, then loads the sfx. The base cache
@@ -1000,7 +1003,7 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - **New keybind wiring sites (five, easily forgotten).** A new keybind
   touches: (1) the binding entry in `data/default_settings.txt` (now
   including its `context` line), (2) the backend's key table
-  (`raylib_backend.zig` `key_mappings` — only bound keys are mapped;
+  (`key_mappings` in src/raylib — only bound keys are mapped;
   unmapped keys never reach `translateInput`), (3) the `Action` enum + its
   `actionBindingContexts` case, (4) the `AnytimeInput`/`IdleInput` field +
   `applyAction` + the consumption site, (5) the `translateInput`
@@ -1012,7 +1015,7 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - **macOS: Command reports as the Control ids.** Mac convention is Command
   for app shortcuts, so on macos targets the backend key table maps
   `left_super`/`right_super` to `ControlLeft`/`ControlRight`
-  (`mac_key_mappings` in raylib_backend.zig, comptime-gated): every
+  (`mac_key_mappings` in the backend, comptime-gated): every
   `ControlLeft` binding fires on Cmd, and physical ctrl keys keep working.
   The ids flowing into `translateInput` stay platform-agnostic (one
   binding set ships for all platforms in `data/default_settings.txt`);
@@ -1410,7 +1413,7 @@ at the timestamped path); no PlayerData decode/encode, so it can't corrupt.
 
 ### Raylib seam
 
-`raylib_backend.zig` stays the ONLY file that `@import("raylib")`. The texture
+`src/raylib/` stays the ONLY directory that `@import("raylib")`. The texture
 cache switches from `rl.loadTexture("assets/{s}.png")` (filesystem) to
 `rl.loadImageFromMemory(".png", bytes)` from `FileSource.readFile` →
 `rl.loadTextureFromImage` → `rl.unloadImage`. The backend asks the source for
@@ -1510,7 +1513,7 @@ std.Io` handle (kept separate because `std.Io` is broader than file I/O —
 callers that need the clock, e.g. `formatSessionTimestamp`, read it directly,
 not through the file abstraction). All call sites across `main.zig`,
 `event_handlers.zig`, `input_handlers.zig`, `parser.zig`, and
-`raylib_backend.zig` go through the source. Parser tests read `data/...` from
+`src/raylib/backend.zig` go through the source. Parser tests read `data/...` from
 the embedded map, so the test build is hermetic. The VFS layer (layer 1 of
 the read order) is the only piece still outstanding — it lands with
 custom-mission support.

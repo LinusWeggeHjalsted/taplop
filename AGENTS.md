@@ -188,7 +188,7 @@ d  diff before running them across the tree.** Asserted replacements catch
   opens the page — the web build once sat broken for 136 commits this way
   (a `page_allocator` segfault landed with the TTF wiring and nothing
   surfaced it; see DONE.md, "Web black screen"). When a change touches the
-  platform seam (`raylib_backend.zig`, `web.zig`, build.zig wiring, anything
+  platform seam (`src/raylib/`, `web.zig`, build.zig wiring, anything
   shader- or allocation-adjacent), spend the 30 seconds: `scripts/web.sh
   emrun` and confirm the main menu loads. Runtime web bugs can be debugged
   WITHOUT a browser: `node zig-out/web/ziglop.js` runs the emcc output
@@ -217,7 +217,8 @@ d  diff before running them across the tree.** Asserted replacements catch
   (gitignored) importing every `src/**/*.zig`, and `addTest` uses it as root. Any
   `test` block in any src file is picked up with no manual wiring. Note this
   means the test build compiles the whole tree, including files main.zig may not
-  reach directly. EXCEPTION: `native.zig` and `raylib_backend.zig` are excluded
+  reach directly. EXCEPTION: `native.zig`, `web.zig`, and the whole
+  `src/raylib/` directory are excluded
   from the scan because they link raylib and the test build must stay headless.
   `web.zig` is also excluded (same reason).
 
@@ -252,7 +253,7 @@ back at the comment to update it.
   not a comment.
 - **File-level `//!` header** on every file with a distinct architectural
   role: one short paragraph — what the file owns, key invariants — plus an
-  `DESIGN → <section>` link where a settled design lives. `raylib_backend.zig`
+  `DESIGN → <section>` link where a settled design lives. `src/raylib/backend.zig`
   is the model. Skill/effect files are exempt: each is self-documenting via a
   `///` doc on its `pub const skill`/`pub const effect`.
 - **`///` doc comments** on public types/fns/fields with non-obvious meaning:
@@ -334,7 +335,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (ASSERTIONS, SAFE_HEAP, source maps) by default to speed up the emcc link
   (the dominant web-build cost). Pass `-Dweb-debug-runtime=true` to restore
   them for browser-devtools work (source maps, null-pointer checks, etc.).
-- **Dev diag log** (`raylib_backend.zig`, dev-mode builds, not on web):
+- **Dev diag log** (`src/raylib/backend.zig`, dev-mode builds, not on web):
   `logs/diag.txt` in the persistent dir, rewritten after each section. Holds
   boot-time GL context info (window points vs framebuffer pixels, GL
   vendor/renderer/version/GLSL via a direct `glGetString` call — the macos
@@ -350,7 +351,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   ReleaseFast) for faster clean builds; the SDF generation run is a few
   seconds slower but only runs once per clean build.
 - **Diagnostics log** — currently the dev diag log in
-  `raylib_backend.zig` (dev-mode builds, not on web): boot GL info +
+  `src/raylib/backend.zig` (dev-mode builds, not on web): boot GL info +
   one-shot draw probes + the render-target pixel readback, best-effort
   writes to `logs/diag.txt` in the persistent dir. A REDESIGN IS
   SETTLED — a raylib-free `src/diagnostics.zig` + a `--diagnostics`
@@ -438,7 +439,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   sprite/flag frame/pivot constants.
 - `src/native.zig` — native exe entry (raylib); `src/web.zig` — web (emscripten)
   exe entry (IDBFS persistence + emscripten main-loop driver);
-  `src/raylib_backend.zig` — raylib window/clock/input/render backend (see DESIGN → Platform Seam)
+  `src/raylib/backend.zig` — the raylib platform backend (window/clock/
+  input polling/render target/render driver, the duck-typed `RaylibBackend`
+  interface). The ONLY directory whose files import raylib; the test-root
+  scan skips it wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
   replay timeline: recordEvent/discardFutureTimeline/replayTo/
   reconstructFromEventLog/validatePlayerAction), Screen
@@ -545,7 +549,7 @@ stay here in AGENTS; this map is the seam between the two.
   driver split, budget-driven drain, render gating, letterbox, two-camera
   model, camera pan, render target resolution, SDF text outline, allocator
   rule for emscripten. Key:
-  `raylib_backend.zig`, `native.zig`, `web.zig`, `transient_allocator.zig`,
+  `src/raylib/` (backend.zig), `native.zig`, `web.zig`, `transient_allocator.zig`,
   `tools/sdf_atlas_generator.zig`.
 - **Audio** — DESIGN → Audio: sound as side effect, sfx queue + looping music
   stream, button press/release model, backend cache + init-order gotchas.

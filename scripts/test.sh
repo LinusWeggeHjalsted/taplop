@@ -30,6 +30,17 @@ fi
 # pollution.
 rm -rf crashes saves 2>/dev/null || true
 
+# Platform-seam boundary assert (machine-walked truth — see AGENTS →
+# Documentation): raylib may be imported ONLY from files under src/raylib/,
+# the directory the test-root scan excludes wholesale (build.zig
+# collectZigFiles). A stray import anywhere else would leak raylib into the
+# headless test build.
+violations="$(grep -rn '@import("raylib")' src --include='*.zig' | grep -v '^src/raylib/' || true)"
+if [ -n "$violations" ]; then
+    printf 'FAIL — raylib imported outside src/raylib/ (platform seam broken):\n%s\n' "$violations"
+    exit 1
+fi
+
 # Run the build, capturing stdout+stderr together and the exit code separately.
 output="$(zig build test 2>&1)"
 status=$?

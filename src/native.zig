@@ -1,5 +1,6 @@
-//! Native (desktop) entry point. Root source of the native exe. This is one of
-//! the two files that compile against raylib (via raylib_backend.zig); the
+//! Native (desktop) entry point. Root source of the native exe. This is one
+//! of the files that compile against raylib (via `raylib/backend.zig` — the
+//! only directory importing raylib); the
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
 //! IO, the persistent data directory (per-OS default — `$HOME/.ziglop` on
 //! Linux, `$HOME/Library/Application Support/ziglop` on macOS — overridable
@@ -12,7 +13,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const game = @import("main.zig");
 const session_setup = @import("session_setup.zig");
-const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
+const RaylibBackend = @import("raylib/backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
 const crash_dump = @import("crash_dump.zig");

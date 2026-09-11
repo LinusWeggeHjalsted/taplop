@@ -101,7 +101,7 @@ Test by running `zig build run` and clicking through.
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):
   the binding in `data/default_settings.txt` (including its `context` line),
-  the backend's key table (`raylib_backend.zig` `key_mappings` — only bound
+  the backend's key table (`key_mappings` in src/raylib/backend.zig — only bound
   keys are mapped; unmapped keys never reach `translateInput`), the Action
   enum + its `actionBindingContexts` case, the Action/input plumbing
   (`AnytimeInput`/`IdleInput` field + `applyAction` + the consumption site),
@@ -1198,25 +1198,49 @@ Open:
   it permanently. Rationale (two 0.16.0 bugs, both settled, both at
   platform edges): DONE.md "mac 9-slice panels — ROOT CAUSE FOUND" +
   AGENTS → Build & Test (patched stdlib).
-- **raylib_backend.zig split (deferred, another session):** the file
-  owns rendering + audio + input polling + texture cache + SDF text +
-  diagnostics and is the largest file in the tree (~2500 lines). The
-  single-seam design is right (one file to exclude from the headless
+- **raylib_backend.zig split — IN PROGRESS (this session):** the file
+  owned rendering + audio + input polling + texture cache + SDF text +
+  diagnostics and was the largest file in the tree (~2,700 lines). The
+  single-seam design is right (one place to exclude from the headless
   test build, one place raylib can be imported — it made the miscompile
-  hunt tractable); when it next grows (or when the diag redesign lands),
-  split it into a `raylib/` subdirectory behind the SAME module
-  boundary (same exclusion, same `rl` containment). Design constraint:
-  DESIGN → Platform Seam.
+  hunt tractable); the split keeps the SAME module boundary, stronger:
+  `src/raylib/` is a directory excluded WHOLESALE by the test-root scan
+  (build.zig collectZigFiles) + asserted by scripts/test.sh (raylib may
+  only be imported from src/raylib/). Design constraint: DESIGN →
+  Platform Seam. Slices (each a commit; validation = scripts/test.sh +
+  `zig build` + `zig build run` to the main menu, `scripts/web.sh`
+  compile per the platform-seam compiles-≠-runs rule):
+  - [x] 1. Pure move — `src/raylib_backend.zig` → `src/raylib/backend.zig`,
+        import updates (native.zig/web.zig), directory-level exclusion,
+        boundary assert in scripts/test.sh, doc sweep (AGENTS/DESIGN/TODO/
+        build.zig + sdf_atlas_generator comments).
+  - [ ] 2. `src/raylib/input_poll.zig` — key/mouse mapping tables + the
+        pollInput body (free fn over the backend's scratch buffers).
+  - [ ] 3. `src/raylib/audio.zig` — `Audio` sub-struct owning the music
+        stack + the four cue caches; RaylibBackend keeps thin pub
+        wrappers (main.zig's `anytype` backend surface unchanged). Path
+        building moves off the frame_arena onto fixed stack buffers.
+  - [ ] 4. `src/raylib/textures.zig` — `TextureStore` sub-struct owning
+        the texture/outline/inset/sprite-bounds caches + all
+        mask-generation math.
+  - [ ] 5. `src/raylib/text.zig` — font loading + the SDF outline
+        pipeline + text drawing (`TextRenderer` sub-struct).
+  - [ ] 6. `src/raylib/draw.zig` — world + UI element drawing (free fns
+        over the backend, the handlers/ pattern); leaves backend.zig the
+        thin driver.
+  - [ ] 7. `src/raylib/diag.zig` — dev diag buffer + probes moved as-is
+        (the pending diagnostics REDESIGN then has a clean landing spot).
 - **Diagnostics redesign — settled design, implementation pending**
   (DESIGN → Platform Seam → Diagnostics): create raylib-free
   `src/diagnostics.zig` (`Diagnostics` type: buffer + section policy +
   end-of-frame flush scheduling, renames every `diag_*` identifier);
   add the `--diagnostics` CLI flag (native.zig, like `--replay` — any
   build, release included; dev-mode defaults to active); migrate the
-  boot/probe/readback sections out of raylib_backend as thin
+  boot/probe/readback sections out of src/raylib/diag.zig as thin
   value-recording call sites; keep `logs/diag.txt` + whole-file-rewrite
-  semantics. Composes with the raylib_backend split item above — land
-  the split first if tackling both.
+  semantics. Composes with the raylib split item above — the split lands
+  first (its slice 7 moves the diag code into `src/raylib/diag.zig`, the
+  value-recording call sites the redesign then hollows out).
 - **macOS native port** — cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
