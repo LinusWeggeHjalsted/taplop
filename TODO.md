@@ -1503,9 +1503,15 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
-- **Style pass over the Tier A session's lines.** Some lines exceed the
-      ~95-char wrap convention (long `singleOption` calls, comments).
-      Mechanical cleanup, fold into the next skills slice.
+- **Style pass over the Tier A session's lines — DEFERRED (owner
+      undecided).** Scope discovery (cleanup session): the "~95-char wrap
+      convention" isn't an enforced convention — it's in no doc, ~2,000+
+      lines exceed 95 tree-wide (handler_tests_editor 344, input_handlers
+      192, state.zig 183...), the skills tree (~134 long lines) isn't the
+      densest offender, and zig fmt doesn't check line length so any
+      one-time wrap rots immediately. Options when revisiting: (a) drop the
+      item, (b) settle a going-forward wrap rule in AGENTS (no retroactive
+      churn), (c) fix only egregious >120-char lines. Decide then.
 - **New-skill handler-level integration coverage is thin.** The Tier A
       skills are contract-tested at the pure-fn level (useSkill/aiOptions
       asserted directly) and the verbs have handler coverage, but only
