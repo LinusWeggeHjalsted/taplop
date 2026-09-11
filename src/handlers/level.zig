@@ -14,6 +14,7 @@ const functions = @import("../functions.zig");
 const lookups = @import("../generated_lookups.zig");
 const threat = @import("../ai_threat.zig");
 const movement = @import("../ai_movement.zig");
+const ai_select = @import("../ai_select.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -520,61 +521,16 @@ pub fn handleLevelEvent(
                 return;
             }
 
-            const skill_ids = entity.collectSkillSlots(history.weapon_type_definitions);
-
-            // Evaluate all off-cooldown skills' AI OPTIONS (each option = one
-            // meaningful cast: target + rating — see skill.zig ai_options_fn),
-            // partitioned by turn-ending vs not. Options arrive best-first
-            // per skill; strict > below keeps the first option of the first
-            // (lowest-slot) skill at the top rating — the tiebreak
-            // convention, per turn-ending / non-ending bucket.
-            const SkillOption = struct {
-                skill_id: SkillId,
-                target: ?Vector2,
-                priority: u32,
-            };
-            var best_non_ending: ?SkillOption = null;
-            var best_ending: ?SkillOption = null;
-
-            for (&skill_ids) |maybe_skill_id| {
-                const skill_id = maybe_skill_id orelse continue;
-                if (entity.skill_cooldowns.get(skill_id) > 0) continue;
-                const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
-
-                const ends_turn = skill_definition.skill_type == .weapon_skill or
-                    skill_definition.skill_type == .spell;
-
-                const options = skill_definition.aiOptions(
-                    enemy_attack.entity_index,
-                    current.*,
-                    history.weapon_type_definitions,
-                    allocator,
-                );
-                for (options) |option| {
-                    if (option.priority == 0) continue;
-
-                    if (ends_turn) {
-                        if (best_ending == null or option.priority > best_ending.?.priority) {
-                            best_ending = .{
-                                .skill_id = skill_id,
-                                .target = option.target,
-                                .priority = option.priority,
-                            };
-                        }
-                    } else {
-                        if (best_non_ending == null or option.priority > best_non_ending.?.priority) {
-                            best_non_ending = .{
-                                .skill_id = skill_id,
-                                .target = option.target,
-                                .priority = option.priority,
-                            };
-                        }
-                    }
-                }
-            }
+            const casts = ai_select.bestCasts(
+                enemy_attack.entity_index,
+                current.*,
+                history.weapon_type_definitions,
+                allocator,
+            );
 
             // Use non-turn-ending skills first, then turn-ending
-            if (best_non_ending) |chosen| {
+            // (the shared selection — see ai_select.zig).
+            if (casts.non_ending) |chosen| {
                 // Push another enemy_turn_attack after use_skill to re-evaluate.
                 // Order (LIFO, last runs first): wait, then skill, then re-evaluate.
                 pushEvents(current, &.{
@@ -588,7 +544,7 @@ pub fn handleLevelEvent(
                     } } },
                     .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                 }, allocator);
-            } else if (best_ending) |chosen| {
+            } else if (casts.ending) |chosen| {
                 // Order (LIFO, last runs first): wait, then skill, then turn_end.
                 pushEvents(current, &.{
                     .{ .level_event = .{ .turn_end = .{
