@@ -1226,9 +1226,12 @@ Open:
         onto fixed stack buffers; the init-time music phase-lock warning
         flows through a diag-sink callback (the backend formats it into
         the dev diag log).
-  - [ ] 4. `src/raylib/textures.zig` — `TextureStore` sub-struct owning
+  - [x] 4. `src/raylib/textures.zig` — `TextureStore` sub-struct owning
         the texture/outline/inset/sprite-bounds caches + all
-        mask-generation math.
+        mask-generation math; `premultiplyAlpha` shared with the font
+        loader; path building on fixed stack buffers. Draw sites go
+        through `self.textures.*`; `entitySpriteBounds` keeps a pub
+        wrapper (main.zig's RenderContext build).
   - [ ] 5. `src/raylib/text.zig` — font loading + the SDF outline
         pipeline + text drawing (`TextRenderer` sub-struct).
   - [ ] 6. `src/raylib/draw.zig` — world + UI element drawing (free fns

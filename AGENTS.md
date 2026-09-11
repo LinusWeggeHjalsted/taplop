@@ -443,7 +443,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   render target/render driver, the duck-typed `RaylibBackend` interface) +
   `src/raylib/input_poll.zig` (the key/mouse mapping tables + the per-frame
   edge/position/char-queue read) + `src/raylib/audio.zig` (the layered-cue
-  sound caches + the ambient-music intensity stack). The ONLY directory
+  sound caches + the ambient-music intensity stack) +
+  `src/raylib/textures.zig` (the lazy sprite caches + outline/inset mask
+  generation + opaque-bounds scans). The ONLY directory
   whose files import raylib; the test-root scan skips it wholesale (see
   DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/

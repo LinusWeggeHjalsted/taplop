@@ -3745,7 +3745,8 @@ would otherwise leave a spurious internal edge). Stacks:
 `generateCompositeOutlineMask` decodes each sprite, ORs its alpha (alpha > 16)
 into a frame-sized opaque mask (honoring `flip_horizontal` +
 `source_rectangle`), then dilates. `OcclusionInsetDrawable` carries the
-`[]const StackSprite` + frame dims; the backend's `getCompositeInsetTexture`
+`[]const StackSprite` + frame dims; the texture store's `getCompositeInsetTexture`
+(src/raylib/textures.zig)
 builds the stack key and looks up / fills the cache.
 
 **Draw model (no scissor).** The inset mask is drawn over the occluded
@@ -3817,7 +3818,8 @@ from `displays_weapons true|false` in the enemy definition (default true).
 **Health bars** are always-on, drawn above the entity's actual art top (same
 opaque-bbox scan as the skill-icon anim — see DESIGN → Animation). The scan
 is a full `SpriteBounds { top, bottom, left, right }` (one decode per sprite,
-cached in the backend as `sprite_bounds_cache`, threaded through
+cached in the texture store — src/raylib/textures.zig — as
+`sprite_bounds_cache`, threaded through
 `RenderContext.sprite_bounds`), so the hit flash can center on the rendered
 art's real vertical center (top + bottom) and damage numbers can start at a
 corner (top/bottom + left/right). Frame-arena-backed lookup keyed by bare
