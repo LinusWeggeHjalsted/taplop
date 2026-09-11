@@ -50,7 +50,7 @@ fn aiOptions(
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.heal) > 0) return &.{};
     if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = 1 });
 }
 
 /// Self-cast — no meaningful target.

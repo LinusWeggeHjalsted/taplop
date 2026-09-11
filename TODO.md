@@ -260,10 +260,11 @@ stale).
   - [x] crossbow head shot (3, off, cd 4) — attack + stun, range 3 (cleave
         shape, off-hand damage). Priority 3 unstunned / 2 stunned-only;
         stunTarget selection (see the stun-rule interjection below).
-  - [x] idol heal (1, main, no cd) — heal 20% max health. Priority 3 below
+  - [x] idol heal (1, main, no cd) — heal 20% max health. Gated below
         half / 0 otherwise (the replenish threshold logic — a flat
-        below-full rating would tie attacks at 2 and slot order would make
-        it heal every turn).
+        below-full rating would make it heal every turn). Ratings were
+        re-anchored in the later value-unit retune (cleanup session — see
+        DONE.md).
   - [x] idol absorb (2, main, cd 5) — interceptor: incoming damage →
         healing (reflect shape). Priority on the threat model (0/2/4);
         effect_sprite null until art ships. Lands with the threat-model

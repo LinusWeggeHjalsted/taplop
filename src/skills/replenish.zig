@@ -35,9 +35,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at 3 — offered only below half health (a
-/// wounded enemy values the full heal highly; above that it has better
-/// things to do with the cantrip slot).
+/// AI options: one self-cast at 2 — offered only below half health (a
+/// FULL heal, one value unit above idol heal's 20% heal at 1; the
+/// wounded-threshold gate matches the lifesteal convention).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -48,7 +48,7 @@ fn aiOptions(
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.replenish) > 0) return &.{};
     if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 3 });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
 }
 
 /// Self-cast — no meaningful target.

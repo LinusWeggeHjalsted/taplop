@@ -14,6 +14,7 @@ const powerful_shot_skill = @import("skills/powerful_shot.zig");
 const bash_skill = @import("skills/bash.zig");
 const head_shot_skill = @import("skills/head_shot.zig");
 const heal_skill = @import("skills/heal.zig");
+const focus_skill = @import("skills/focus.zig");
 const cleave_skill = @import("skills/cleave.zig");
 const meteor_skill = @import("skills/meteor.zig");
 const threat_mod = @import("ai_threat.zig");
@@ -564,7 +565,7 @@ test "idol heal: useSkill emits a self-heal for a fifth of max health" {
     try testing.expectEqual(@as(u32, 4), heal.amount);
 }
 
-test "idol heal: priority is 3 only below half health" {
+test "idol heal: priority is 1 only below half health" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -582,18 +583,54 @@ test "idol heal: priority is 3 only below half health" {
         try testing.expectEqual(@as(usize, 0),
     heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
-    // Below half → 3.
+    // Below half → 1.
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
         const options = heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 2), options[0].priority);
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
         // Cooldown overrides (a swap can leave one on a no-cooldown skill).
         setCooldown(game_state, 0, .heal, 1);
         try testing.expectEqual(@as(usize, 0),
     heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
+}
+
+test "focus: options rate by ticking weapon-skill count, cantrips excluded" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // A sword-carrier (slots: slice, spinblade, flash_strike) with one
+    // weapon skill + one cantrip ticking: rate = 1 — the cantrip doesn't
+    // count (the reset handler resolves slots 1-3 only).
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_type = .sword },
+        .equipped_utility_skills = .{ .blink, null, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+    setCooldown(game_state, 0, .slice, 2);
+    setCooldown(game_state, 0, .blink, 3);
+    {
+        const options = focus_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
+    }
+    // Two weapon skills ticking → rate = 2.
+    setCooldown(game_state, 0, .spinblade, 2);
+    {
+        const options = focus_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+    // Only the cantrip ticking → nothing to reset, no option.
+    setCooldown(game_state, 0, .slice, 0);
+    setCooldown(game_state, 0, .spinblade, 0);
+    try testing.expectEqual(@as(usize, 0),
+        focus_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
 }
 
 test "stunTarget: an unstunned target beats a weaker stunned one" {

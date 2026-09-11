@@ -35,21 +35,27 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at 2 — offered only while some cooldown is
-/// ticking (nothing to reset otherwise).
+/// AI options: one self-cast rated by the RESET COUNT — the number of
+/// ticking cooldowns among slots 1-3 (the same skillInSlot resolution the
+/// reset_weapon_cooldowns handler resets; a ticking cantrip alone offers
+/// nothing). Rate = reset count mirrors the meditate/adrenaline convention.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
-    _: types.WeaponTypeDefinitions,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.focus) > 0) return &.{};
-    for (caster.skill_cooldowns.values) |cooldown| {
-        if (cooldown > 0) return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
+    var reset_count: u32 = 0;
+    var slot: u8 = 1;
+    while (slot <= 3) : (slot += 1) {
+        const skill_id = caster.skillInSlot(slot, weapon_type_definitions) orelse continue;
+        if (caster.skill_cooldowns.get(skill_id) > 0) reset_count += 1;
     }
-    return &.{};
+    if (reset_count == 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = null, .priority = reset_count });
 }
 
 /// Self-cast — no meaningful target.
