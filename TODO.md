@@ -1218,10 +1218,14 @@ Open:
         pollInput body (free fn over the backend's scratch buffers;
         ViewTransform stays in backend.zig — window math with the window
         owner).
-  - [ ] 3. `src/raylib/audio.zig` — `Audio` sub-struct owning the music
+  - [x] 3. `src/raylib/audio.zig` — `Audio` sub-struct owning the music
         stack + the four cue caches; RaylibBackend keeps thin pub
-        wrappers (main.zig's `anytype` backend surface unchanged). Path
-        building moves off the frame_arena onto fixed stack buffers.
+        wrappers (initAudio/playSounds/updateMusic — main.zig's `anytype`
+        backend surface unchanged; deinitAudio dropped, deinit calls
+        audio.deinit directly). Path building moved off the frame_arena
+        onto fixed stack buffers; the init-time music phase-lock warning
+        flows through a diag-sink callback (the backend formats it into
+        the dev diag log).
   - [ ] 4. `src/raylib/textures.zig` — `TextureStore` sub-struct owning
         the texture/outline/inset/sprite-bounds caches + all
         mask-generation math.

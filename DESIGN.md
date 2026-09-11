@@ -438,7 +438,7 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   play a plain up (no button was pressed; the commit IS the interaction).
   `pressed_button` is transient — cleared on screen transition alongside
   `ui_state`/`tile_cursor`/`camera_pan`.
-- **Backend (`src/raylib/backend.zig`):** `initAudio(settings)` opens the audio
+- **Backend (`src/raylib/audio.zig`):** `initAudio(settings)` opens the audio
   device, loads all sfx bases via `loadWaveFromMemory` + `loadSoundFromWave`
   from the `FileSource` (never the filesystem — same seam as textures),
   loads + starts the music streams, then loads the sfx. The base cache
