@@ -15,6 +15,7 @@ const lookups = @import("../generated_lookups.zig");
 const threat = @import("../ai_threat.zig");
 const movement = @import("../ai_movement.zig");
 const ai_select = @import("../ai_select.zig");
+const skill_mod = @import("../skill.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -521,11 +522,18 @@ pub fn handleLevelEvent(
                 return;
             }
 
+            // Fresh evaluation frame for this re-evaluation pass: the
+            // game state is frozen within a pass, so every skill's options
+            // memoize once (ai_select.optionsFor) and consultation cycles
+            // cut mechanically. See DESIGN → Architecture (AI cast
+            // selection).
+            var frame = skill_mod.EvalFrame.empty();
             const casts = ai_select.bestCasts(
                 enemy_attack.entity_index,
                 current.*,
                 history.weapon_type_definitions,
                 allocator,
+                &frame,
             );
 
             // Use non-turn-ending skills first, then turn-ending

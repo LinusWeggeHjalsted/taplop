@@ -12556,3 +12556,41 @@ short version:
   planned → stone form waits — the plan-dependence is the point.
 - Cleanup in passing: two stale test names fixed ("idol heal: priority is
   3" asserted 2; "cleave: priority is 3" asserted 2/1).
+
+## The pass-scoped EvalFrame — memoized + cycle-safe AI option evaluation (cleanup session)
+
+The structural recursion guard from the previous slice (ending-pool split +
+cantrip-only beneficiary filters + one-way-edge convention) was REPLACED by
+one mechanism, per design discussion: the pass-scoped evaluation frame
+(`skill_mod.EvalFrame`, skill.zig; `ai_select.optionsFor`).
+
+- **Why:** the structural rules excluded lingers' entire beneficiary set
+  (all enchantments — the duration meta-enhancer scans
+  `skill_duration != null` skills, which are all `.enchantment`), forcing a
+  "only lingers may scan enchantments" special case. Each new skill shape
+  would have needed new case analysis. The owner asked for the clean
+  general answer.
+- **The mechanism:** `EvalFrame` is a comptime-sized table (in-progress bitset
+  + results array, stack-allocated ~a few hundred bytes) opened fresh per
+  enemy_turn_attack re-evaluation pass. Every option evaluation goes through
+  `optionsFor(frame, skill_id, ...)`: memoized once per pass (the game state
+  is frozen within a pass — casts happen between passes), cycle-cut by the
+  in-progress guard (a skill whose aiOptions is transitively being computed
+  returns empty options — which is also the CORRECT consultation semantics:
+  an enhancer scanning beneficiaries must not count itself). Any skill may
+  consult any set of skills through the frame; no structural restrictions
+  remain. `plannedEndingCast` was REMOVED (one `bestCasts(frame)` again —
+  consulting the full plan is safe through the guard); stone form's
+  beneficiary scan widened from `.cantrip`-only to all non-ending types.
+- **Perf:** evaluation is bounded at once per skill per pass regardless of
+  consultation density — retires the "aiOptions allocation churn" watch
+  item's concern structurally.
+- **Churn:** `ai_options_fn` gained a `frame: *EvalFrame` param (44 skill
+  files, one line each — non-consulters take it as `_`; Zig 0.16 errors on
+  unused params), the handler opens the frame, and skill tests call through
+  a `freshOptions` helper (a FRESH frame per call — a shared frame would
+  serve stale memoized options across the state mutations test blocks make
+  between calls; a real pass never mutates mid-evaluation).
+- Replay-safety: the frame is pass-scoped scratch, never on GameState, never
+  serialized; the cut pattern is a pure function of the fixed slot-scan
+  order — live and replay compute identical ratings.

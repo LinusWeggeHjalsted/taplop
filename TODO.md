@@ -334,16 +334,20 @@ stale).
 - [~] **Non-ending pool rating audit.** The ported cantrips/enchantments
       kept their pre-value-unit numbers without scrutiny. SETTLED during
       the audit (see DESIGN → Architecture, AI rating scale — the two new
-      bullets): the value-unit anchors (20% heal = 1, full heal = 2) and
-      the enhancement-enchantment rule — rate = best LIVE beneficiary + 1
-      (planned ending cast if it matches the field + positive-rated cantrip
-      beneficiaries), fallback gate otherwise, all via the extracted
-      `ai_select` selection. DONE so far: idol heal 1, replenish 2, focus
-      (rate = weapon-skill reset count, cantrips excluded — fixed a
-      wasted-cast gate bug), stone form (beneficiary rule, first consumer).
-      REMAINING: that_which_lingers / reaches / rushes (apply the
-      beneficiary rule), bull_form, blink, swap (rating sanity), howl +
-      burst/accelerate/meditate (born on the scale — sanity pass).
+      bullets): the value-unit anchors (20% heal = 1, full heal = 2), the
+      enhancement-enchantment rule (rate = best LIVE beneficiary + 1,
+      fallback gate otherwise), and the pass-scoped EvalFrame
+      (`skill.zig` + `ai_select.optionsFor`) — memoized once per pass,
+      consultation cycles cut mechanically, no structural restrictions.
+      DONE so far: idol heal 1, replenish 2, focus (rate = weapon-skill
+      reset count — fixed a wasted-cast gate bug), stone form (beneficiary
+      rule, first consumer). REMAINING: that_which_lingers / reaches /
+      rushes (apply the beneficiary rule — lingers scans
+      `skill_duration != null` non-ending beneficiaries, no fallback),
+      bull_form, blink, swap (rating sanity), howl +
+      burst/accelerate/meditate (born on the scale — sanity pass). Also
+      retire the aiOptions-churn watch item below (the frame bounds
+      evaluation at once per skill per pass).
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,

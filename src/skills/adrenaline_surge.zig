@@ -70,6 +70,7 @@ fn aiOptions(
     game_state: GameState,
     weapon_type_definitions: WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
+    _: *skill_mod.EvalFrame,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];

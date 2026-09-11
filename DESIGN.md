@@ -2143,25 +2143,31 @@ So a clone is a permanent, compounding material factory keyed by mission.
   rates itself = (best live-beneficiary rating) + 1, so it always fires
   BEFORE the cast it enhances in the non-ending chain. A "live
   beneficiary" is a cast that will actually happen this turn: the PLANNED
-  turn-ending cast (via `ai_select.plannedEndingCast`) if its Skill base
-  values carry the enhanced field (stone form: `stun_duration`; lingers:
-  durations; reaches: range/radius; bull form: distance), plus any
-  positive-rated `.cantrip` beneficiary (all positive cantrips fire this
-  turn — future stun cantrips slot in automatically). No live beneficiary
-  → the enchantment's own fallback gate (stone form: the end-of-turn heal,
+  turn-ending cast (via `ai_select.bestCasts`'s `ending` field) if its
+  Skill base values carry the enhanced field (stone form: `stun_duration`;
+  lingers: durations; reaches: range/radius; bull form: distance), plus
+  any positive-rated NON-ending skill with the field (all positive
+  cantrips/enchantments fire this turn — a future stun cantrip or stun
+  enchantment slots in automatically). No live beneficiary → the
+  enchantment's own fallback gate (stone form: the end-of-turn heal,
   rating 1 below full health; never cast early on a beneficiary that
   rates 0). The plan is re-derived after every cast in the re-evaluation
   loop, so an enchantment's rating self-corrects as the plan changes.
-- **AI cast selection lives in ONE place (`src/ai_select.zig`).**
-  `bestCasts` (both pools) is the exact selection `enemy_turn_attack`
-  applies — extracted from the handler so enhancer predictions can never
-  drift from the real selection. One-way edge rule (acyclicity by
-  construction): enhancers may read `plannedEndingCast` (which evaluates
-  only weapon/spel slots — never enhancers) and the options of
-  `.cantrip`-type beneficiaries only; an aiOptions must never consult
-  another `.enchantment`'s rating, and ending skills never consult the
-  plan. Without this, an enhancer's rating → bestCasts → (its own or
-  another enhancer's) aiOptions recurses infinitely.
+- **AI cast selection lives in ONE place (`src/ai_select.zig`) behind the
+  pass-scoped `EvalFrame` (skill.zig).** `bestCasts` is the exact
+  selection `enemy_turn_attack` applies (partition by skill_type,
+  0-skip, strict-best with slot-order tiebreak). EVERY option evaluation
+  goes through `ai_select.optionsFor(frame, skill_id, ...)` — never call
+  a skill's aiOptions directly: within one re-evaluation pass the game
+  state is frozen, so options memoize once per pass, and the in-progress
+  guard cuts consultation cycles mechanically (a skill whose aiOptions is
+  transitively being computed returns empty options — also the correct
+  semantics: an enhancer scanning beneficiaries must not count itself).
+  No structural restrictions (pool separation, beneficiary-type
+  filters, one-way edge conventions) are needed — any skill may consult
+  any set of skills through the frame; the handler opens each pass with
+  a fresh frame (never on GameState, never serialized — replay-safe by
+  construction).
 - **Utility skills deal spell damage — always.** Any damage a utility
   skill (spell / cantrip / enchantment / curse) deals — directly or via
   its effect's reactive attacks (That Which Explodes) — uses

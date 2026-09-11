@@ -10,6 +10,32 @@ const Entity = types.Entity;
 const SkillId = types.SkillId;
 const SkillType = types.SkillType;
 
+const skill_id_count = @typeInfo(types.SkillId).@"enum".fields.len;
+
+/// The pass-scoped AI evaluation frame — the ONE mechanism behind
+/// consultation-safe rating and its performance: within one
+/// enemy_turn_attack re-evaluation pass the game state is frozen, so each
+/// skill's options are computed AT MOST ONCE (memoized in `results`) and
+/// every nested consultation reuses them. Recursion is cut by
+/// `in_progress`: a skill whose aiOptions is currently being computed
+/// (transitively) answers NOTHING to nested questions about it — which is
+/// also the correct semantics, e.g. an enhancer scanning beneficiaries
+/// must not count itself. Fresh frame per pass (never on GameState, never
+/// serialized — replay-safe by construction). Options slices are
+/// arena-owned (they outlive the frame). See DESIGN → Architecture
+/// (AI rating scale + AI cast selection).
+pub const EvalFrame = struct {
+    in_progress: std.enums.EnumSet(types.SkillId),
+    results: [skill_id_count]?[]const AiOption,
+
+    pub fn empty() EvalFrame {
+        return .{
+            .in_progress = std.enums.EnumSet(types.SkillId).initEmpty(),
+            .results = [_]?[]const AiOption{null} ** skill_id_count,
+        };
+    }
+};
+
 /// One AI candidate cast: `target` is what gets passed to useSkill (null =
 /// self-cast / self-centered), `priority` is its rating (higher = better).
 /// 0-rated casts are not emitted.
@@ -91,11 +117,18 @@ pub const Skill = struct {
     /// (enemy_turn_attack), so cantrip ratings only compete with each
     /// other; equal ratings keep bar order (the handler replaces only on
     /// strictly-greater).
+    ///
+    /// `frame` is the pass-scoped evaluation frame (EvalFrame above):
+    /// consult other skills' options THROUGH it
+    /// (ai_select.optionsFor) — never call another skill's aiOptions
+    /// directly — so evaluations are memoized per pass and cycles are cut
+    /// mechanically. A skill that doesn't consult others simply ignores it.
     ai_options_fn: *const fn (
         caster_index: u32,
         game_state: GameState,
         weapon_type_definitions: types.WeaponTypeDefinitions,
         allocator: std.mem.Allocator,
+        frame: *EvalFrame,
     ) []const AiOption,
 
     /// sets flags for targetable tiles to allow player input
@@ -130,8 +163,9 @@ pub const Skill = struct {
         game_state: GameState,
         weapon_type_definitions: types.WeaponTypeDefinitions,
         allocator: std.mem.Allocator,
+        frame: *EvalFrame,
     ) []const AiOption {
-        return self.ai_options_fn(caster_index, game_state, weapon_type_definitions, allocator);
+        return self.ai_options_fn(caster_index, game_state, weapon_type_definitions, allocator, frame);
     }
 
     pub fn playerPrepareSkill(

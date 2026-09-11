@@ -39,17 +39,22 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI options: rated against the casts the outgoing-stun +1 would enhance
-/// — the shared selection (ai_select): the planned ending cast if it
-/// applies a stun, plus any positive-rated stun CANTRIP (none ship yet;
-/// a future one slots in automatically). Rating = best such cast + 1, so
-/// stone form fires BEFORE them in the chain (the +1 ordering rule — see
-/// DESIGN → Architecture, AI rating scale). No live beneficiary → the
-/// end-of-turn-heal fallback: one unit, gated below full health.
+/// — the LIVE beneficiaries (casts that will actually fire this turn):
+/// the planned ending cast if it applies a stun, plus any off-cooldown
+/// NON-ENDING skill with a stun duration offering a positive cast (all
+/// positive cantrips/enchantments fire this turn; a future stun cantrip
+/// or stun enchantment slots in automatically). Everything evaluates
+/// through the shared frame (ai_select.optionsFor — self cut, memoized).
+/// Rating = best such cast + 1, so stone form fires BEFORE them in the
+/// chain (the +1 ordering rule — see DESIGN → Architecture, AI rating
+/// scale). No live beneficiary → the end-of-turn-heal fallback: one unit,
+/// gated below full health.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
     weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
+    frame: *skill_mod.EvalFrame,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
@@ -57,9 +62,11 @@ fn aiOptions(
 
     var best_beneficiary: u32 = 0;
 
-    // The planned turn-ending cast — counted only if it applies a stun
-    // the outgoing-stun +1 would lengthen.
-    if (ai_select.plannedEndingCast(caster_index, game_state, weapon_type_definitions, allocator)) |plan| {
+    // The planned turn-ending cast — the ONLY ending skill that fires this
+    // turn, so the only one a stun enhancement can ride. Counted only if
+    // it applies a stun the outgoing-stun +1 would lengthen.
+    const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
+    if (casts.ending) |plan| {
         if (lookups.getSkillDefinition(plan.skill_id)) |definition| {
             if (definition.stun_duration != null and plan.priority > best_beneficiary) {
                 best_beneficiary = plan.priority;
@@ -67,17 +74,18 @@ fn aiOptions(
         }
     }
 
-    // Stun CANTRIP beneficiaries: every positive-rated cantrip fires
-    // this turn, so each one's best option counts. Cantrips only (never
-    // another enchantment — the one-way edge rule, ai_select.zig).
+    // Non-ending beneficiaries (cantrips + enchantments): every
+    // positive-rated one fires this turn, so each one's best option
+    // counts. Ending skills are excluded here — they fire at most one,
+    // already counted above via the plan.
     const slots = caster.collectSkillSlots(weapon_type_definitions);
     for (&slots) |maybe_skill_id| {
         const skill_id = maybe_skill_id orelse continue;
         if (caster.skill_cooldowns.get(skill_id) > 0) continue;
         const definition = lookups.getSkillDefinition(skill_id) orelse continue;
-        if (definition.skill_type != .cantrip) continue;
+        if (definition.skill_type == .weapon_skill or definition.skill_type == .spell) continue;
         if (definition.stun_duration == null) continue;
-        const options = definition.aiOptions(caster_index, game_state, weapon_type_definitions, allocator);
+        const options = ai_select.optionsFor(frame, skill_id, caster_index, game_state, weapon_type_definitions, allocator);
         for (options) |option| {
             if (option.priority > best_beneficiary) best_beneficiary = option.priority;
         }
