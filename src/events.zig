@@ -366,11 +366,6 @@ pub const EditorEvent = union(enum) {
         level_index: u32,
         placement_index: u32,
     },
-    editor_move_entity_placement: struct {
-        level_index: u32,
-        placement_index: u32,
-        new_position: Vector2,
-    },
     // Retype an entity placement to another palette type in place (the
     // entity-tool click on an occupied tile): identity (index) and position
     // stay stable — nothing referencing the placement shifts. Preferred
@@ -379,16 +374,6 @@ pub const EditorEvent = union(enum) {
         level_index: u32,
         placement_index: u32,
         type_id: u32,
-    },
-    editor_move_decoration_placement: struct {
-        level_index: u32,
-        placement_index: u32,
-        new_position: Vector2,
-    },
-    editor_move_item_placement: struct {
-        level_index: u32,
-        placement_index: u32,
-        new_position: Vector2,
     },
     // Retype an item placement to another palette type in place (the
     // ground-item-tool click on an occupied tile): identity (index) and

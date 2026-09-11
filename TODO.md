@@ -659,18 +659,12 @@ paragraph). Remaining work:
   + the tab-row scroll window against the new corner bound. History in
   DONE.md; design in DESIGN → Level Editor → Editor UI layout (primary
   actions + tabs) + the exit guard + run-context UI.
-- Edit-verb events: every verb's struct exists in events.zig and almost
-  all are handled — the remaining unhandled three still `@panic` in
-  `handleEditorEvent` (fail-fast): the `editor_move_*_placement` events.
-  (`editor_delete_type` is DONE — the palette tool cells' delete
-  buttons; `editor_add_level` / `editor_delete_level` are DONE — the
-  add-level "+" + the tab × buttons + `data/default_level.txt`; see
-  DONE.md.) OPEN: those move events look superseded by the selection move's
-  chained `editor_commit_selection_move` (delete + re-place via the
-  placement planners — no per-placement move verb is ever pushed);
-  decide keep-or-remove — both revisiting slices (the selection-move
-  drag + the tile drag-paint) have landed and neither pushed a
-  per-placement move verb, so nothing else on the horizon touches them.
+- Edit-verb events: DONE — every verb's struct in events.zig is handled
+  (`handleEditorEvent` or the cache-needing inline cases in the dispatch);
+  the never-pushed `editor_move_*_placement` trio was REMOVED (superseded
+  by the selection move's chained `editor_commit_selection_move`; a future
+  identity-preserving single-placement move re-adds the verb WITH its
+  handler + planner in one slice). History in DONE.md.
 - Editor input/UI: the settled layout/interaction design (DESIGN →
   Architecture → Level Editor → Editor UI layout — four zones: tabs,
   left inspector, viewport, right metadata sidebar + bottom tool palette;

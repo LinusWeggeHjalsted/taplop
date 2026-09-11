@@ -3460,7 +3460,7 @@ struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 from the shipped defaults, data/editor_defaults.txt) /
 `editor_delete_type` (LANDED — the palette tool cells' delete buttons;
 see the tool-palette bullet) / `editor_place_entity` / `editor_place_decoration` /
-`editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
+`editor_place_item` / `editor_delete_*_placement`
 / `editor_set_entity_*` (the scalar field setters + the ONE unified
 `editor_set_entity_gear` equipped-slot commit — flattened item fields,
 the whole-definition shape) / `editor_set_decoration_def`
@@ -3488,11 +3488,14 @@ settings-sidebar metadata arms. `editor_set_active_level`,
 `editor_import_player`, the `editor_add_*_type` trio, and
 `editor_add_level` (the template read) are handled
 inline in `processEvent` (they need the reconstruction cache);
-`editor_delete_level` is in `handleEditorEvent`. The
-remaining three still `@panic` so an unhooked edit verb fails fast rather
-than silently no-op'ing: the three
-`editor_move_*_placement` events (superseded by the selection move's
-chained commit — keep-or-remove is an open TODO question). Remaining
+`editor_delete_level` is in `handleEditorEvent`. Every edit
+verb in the union has a handler; an unhooked future verb hits the
+switch's fail-fast `else => @panic("editor event handler not
+implemented")` arm rather than silently no-op'ing. Placement moves have
+no dedicated verb: they compose from the existing delete/place planners
+via the chained `editor_commit_selection_move` — the never-pushed
+`editor_move_*_placement` trio was removed (stable-index single-move
+verbs considered and rejected; history in DONE.md). Remaining
 handlers land with their UI slices.
 
 **Pending:** editor UI/input — the layout + active-tool + selection model

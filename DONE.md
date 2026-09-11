@@ -12418,3 +12418,27 @@ because the wheel isn't a binding, and the zoom keys must gate uniformly
 across existing installs whose user settings still carry the old
 `anytime`-context zoom bindings. Test: the new handler test pins
 wheel+keys no-op on main_menu + replay_viewer, zoom on hub.
+
+## editor_move_*_placement removal (cleanup session)
+
+The `editor_move_entity/decoration/item_placement` events — original
+scaffolding from the editor event-family design, never wired to a
+handler — were REMOVED (cleanup session, keep-or-remove question
+resolved). Evidence: zero producers (no planner, input path, or test
+ever pushed them; the selection move's chained `editor_commit_selection_move`
+delete + re-place covers the use case), and since they were never pushed no
+session log in existence can contain them — removal is free of
+format-compatibility cost. The comptime serializer, deep-copy, and the
+exhaustive-switch catch-all (`else => @panic("editor event handler not
+implemented")` — the fail-fast net for future unhooked verbs) all
+auto-tracked the removal.
+
+The settled reasoning (why delete + re-place won over stable-index moves):
+a stable-index single-placement move verb would preserve placement identity
+(same reasoning as the retype verbs' "identity stays stable" comment — it's
+why `reconcileSelectionAfterPlacementDelete` exists at all), but the
+index-shift repair cost is already sunk and solved, order churn in saved
+mission files is cosmetic, and the future gestures that might want
+identity-preserving moves (arrow-key nudge, drag-one-thing) are speculative.
+If one lands, the verb is ~5 lines to re-add WITH its handler + planner in
+the same slice — the discipline the original scaffolding skipped.
