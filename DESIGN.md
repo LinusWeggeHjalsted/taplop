@@ -3040,13 +3040,12 @@ session-log reader doesn't regroup nested non-u8 slices):
   prune; the selection is reconciled for the active level's removals.
   The same helper serves the future `editor_set_decoration_footprint`
   handler.
-- OPEN GAP: the LOAD-side dims resolution for `custom/<mission>/`
-  decoration stems is unwired (`resolveDecorationSpriteDimensions`
-  prefixes `decorations/` + falls back to `assets/...`, which misses
-  mission-local files) — a saved mission with a custom-sprite decoration
-  panics on reload until the custom-asset acquisition slice lands (see
-  TODO → Content Loading). Entity custom stems don't hit this (entities
-  carry no pixel_dims).
+- Load-side dims resolution for `custom/<mission>/` decoration stems is
+  WIRED: `resolveDecorationSpriteDimensions` takes the mission path from
+  `loadLevel` and reads `{mission_path}/{file-stem}.png` — the two-channel
+  rule (custom = mission-bundled, everything else = shipped table; no
+  assets/ fallback — see the Sprite id convention below). Entity custom
+  stems don't need it (entities carry no pixel_dims).
 Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
 (see the Inspector fields above) + the THEME PICKER (the metadata
@@ -3548,11 +3547,13 @@ keys on the entry (the base owns the footprint).
 BARE STEM (e.g. `tree_1`, `skeleton_1`, `player`), not the full asset path.
 The code prepends the asset folder (`entities/{s}` for entities,
 `decorations/{s}` for decorations, `weapons/{s}` for weapons, `skills/{s}`
-for skills). Custom decorations use a stem like `custom/<mission>/<name>`
-which lands at `decorations/custom/<mission>/<name>`. The comptime
-sprite-metadata table (dims) is keyed by the full asset-relative path, so
-the parser's `resolveDecorationSpriteDimensions` prepends `decorations/`
-before the dims lookup.
+for skills). The comptime sprite-metadata table (dims) is keyed by the full
+asset-relative path, so the parser's `resolveDecorationSpriteDimensions`
+prepends `decorations/` for the shipped-table lookup. Custom decoration
+stems (`custom/<mission-dir>/<name>`) are NOT assets/ paths — custom art is
+mission-bundled and resolves from the mission directory being loaded (dims
+at load today; rendering from the mission dir when the custom-asset
+rendering slice lands — the `decorations/` prefix never applies to them).
 
 **Derived, not stored:**
 - **bbox** = sprite pixel dimensions / 256 (tiles_w × tiles_h). A footprint

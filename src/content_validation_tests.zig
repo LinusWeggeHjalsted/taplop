@@ -65,7 +65,7 @@ fn validateConfigFile(
         _ = try loaders.loadPlayerLoadout(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_loadout_key_map, path, allocator, warnings);
     } else if (std.mem.indexOf(u8, path, "/level_") != null and std.mem.endsWith(u8, path, ".txt")) {
-        _ = try loaders.loadLevel(sections, file_source, allocator, path, warnings);
+        _ = try loaders.loadLevel(sections, file_source, allocator, path, "", warnings);
         parser.validateKeys(sections, parser.level_key_map, path, allocator, warnings);
     } else {
         // Not a recognized config file pattern (e.g. a .txt that isn't a

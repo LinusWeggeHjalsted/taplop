@@ -12442,3 +12442,41 @@ mission files is cosmetic, and the future gestures that might want
 identity-preserving moves (arrow-key nudge, drag-one-thing) are speculative.
 If one lands, the verb is ~5 lines to re-add WITH its handler + planner in
 the same slice — the discipline the original scaffolding skipped.
+
+## Custom decoration stems: load-side dims resolution (cleanup session)
+
+The reload panic is fixed: a saved mission with a `custom/<mission-dir>/<stem>`
+decoration sprite used to PANIC on reload — `resolveDecorationSpriteDimensions`
+prefixed `decorations/` and fell through a generic `assets/{id}.png` file-source
+read, a path nothing ever wrote. Design clarification settled first (owner
+decision): custom assets are ALWAYS mission-bundled — the mission directory is
+their only home; `assets/` (incl. any `assets/decorations/custom/` path) is
+never a read or write location for them.
+
+- `resolveDecorationSpriteDimensions` is now a two-channel switch, no third
+  channel: a `custom/`-prefixed stem reads `{mission_path}/{file-stem}.png`
+  via the file source (the mission being loaded — current-truth, so dir
+  renames and export→import re-uuids stay correct; the dir name EMBEDDED in
+  the stem is namespace-only, never a read path); anything else must hit the
+  shipped comptime table. Unknown stems fail fast. The generic
+  `resolveSpriteDimensions` fallback (read any `assets/{id}.png` through the
+  file source) was dead legacy — deleted; nothing could author a non-shipped
+  bare stem (the picker offers only registry/shipped or mission-local picks).
+- Plumbing: `loadLevel` gained an explicit `mission_path` param →
+  `parseDecorationDefinitions` → `parseDecorationEntry`/`finishLayer` → the
+  resolver (base + layer picks share it). Callers: start_level passes
+  `start.mission_path`; `buildEditorMission` passes its mission path (param
+  renamed `file_path` → `mission_path` — it always held the dir); loadHub,
+  the default-level template, the decoration REGISTRY + editor-defaults
+  readers, and all tests pass `""` (shipped/mission-agnostic content — a
+  custom stem there fails fast, which is the point).
+- A vanished/corrupt mission PNG at load time still fails fast (panic →
+  crash dump) rather than the recoverable popup — same posture as today's
+  missing-sprite panics; not expanded into error-plumbing here.
+- Test: "loadLevel resolves mission-bundled custom decoration stems" —
+  scratch-dir FileSource + minimal-PNG-header fixtures (parsePngDimensions
+  reads only signature + IHDR), base + layer dims asserted through the real
+  loadLevel path.
+- Also fixed: a copy-paste duplicate "Remaining layer-adjacent opens:"
+  heading in TODO.md (the drag-painting prose under it was never a bullet
+  list).

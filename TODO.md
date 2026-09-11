@@ -826,13 +826,10 @@ paragraph). Remaining work:
           bounds) at the pick commit + the footprint editor's open gate
           — currently any positive IHDR is accepted (base + layer picks)
           and sprites beyond the 8×8 draft grid don't open the editor;
-        - the LOAD-side dims resolution for `custom/<mission>/`
-          decoration stems, base AND layer (a saved custom-sprite
-          decoration panics on reload until the custom-asset acquisition
-          slice lands — see DESIGN → Level Editor → the centered sprite
-          picker, OPEN GAP);
         - picker scroll is a follow-up if real content overflows 4
-          columns.
+          columns. (The LOAD-side dims resolution for `custom/<mission>/`
+          decoration stems is DONE — see DESIGN → Level Editor → the
+          centered sprite picker.)
   - [x] **7 — inference: player as the fallback target:** DONE —
         `editorInspectorTarget` + `EditorInspectorTarget` (ui.zig), the
         player shell as the default inspector content, the commit-site +
@@ -964,7 +961,6 @@ paragraph). Remaining work:
               + `TextEditTarget.inventory_slot` (index rides the ref —
               the level-name pattern), the commit sites mirroring the
               item_def arms, tests. History in DONE.md.
-  - [ ] **Remaining layer-adjacent opens:**
   Drag-painting is DONE (tile tool — `handleEditorTileDrag`: press paints
   the tile under the cursor immediately, held + move paints each
   newly-visited tile; see DESIGN → Level Editor → Active-tool model +
