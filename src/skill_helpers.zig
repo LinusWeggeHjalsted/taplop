@@ -497,3 +497,38 @@ pub fn bestCastsWithVirtualEffect(
     sim_frame.in_progress.insert(skill_id);
     return ai_select.bestCasts(caster_index, sim_state, weapon_type_definitions, allocator, &sim_frame);
 }
+
+/// The virtual-effect sim differential's GAIN for an enhancement
+/// enchantment: the whole bar re-evaluated with the effect virtually
+/// applied (bestCastsWithVirtualEffect), and the best plan rating that
+/// DIFFERS from the real bar's plans (any difference — an enabled cast, a
+/// better cast, a different target — counts; see ai_select.plansDiffer).
+/// Both pools. 0 when the modifier changes nothing the bar would cast.
+/// `real` is the caller's own bestCasts result (already computed for the
+/// base-value rule) — the comparison needs it, so pass it rather than
+/// re-deriving. See DESIGN → Architecture, AI rating scale.
+pub fn simDifferentialGain(
+    frame: *skill_mod.EvalFrame,
+    skill_id: types.SkillId,
+    effect_id: types.EffectId,
+    caster_index: u32,
+    real: ai_select.BestCasts,
+    game_state: GameState,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) u32 {
+    const sim = bestCastsWithVirtualEffect(frame, skill_id, effect_id, caster_index, game_state, weapon_type_definitions, allocator);
+    var gain: u32 = 0;
+    // The gain is the SIM's plan when it differs — unwrap the sim side
+    // only (plansDiffer is also true when the real plan exists and the
+    // sim's doesn't; there is no would-be cast to gain from there).
+    if (sim.ending) |sim_plan| {
+        if (ai_select.plansDiffer(real.ending, sim_plan)) gain = sim_plan.priority;
+    }
+    if (sim.non_ending) |sim_plan| {
+        if (ai_select.plansDiffer(real.non_ending, sim_plan) and sim_plan.priority > gain) {
+            gain = sim_plan.priority;
+        }
+    }
+    return gain;
+}

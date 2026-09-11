@@ -12681,3 +12681,28 @@ whose only plan is a no-cooldown skill (slice) never casts rushes
 standalone. No sim (magnitude modifier, no gating). Tests: howl-beneficiary
 (cantrip cd 10 → rushes 2), spinblade-planned (two hostiles → spinblade 2,
 cd 2 → rushes 3), and the slice-only plan (no cooldown anywhere → nothing).
+
+## Bull Form on the beneficiary rule + sim differential (rating audit, continued)
+
+Bull form (+10 push distance) adopts reaches' exact shape — base-value
+beneficiaries (`distance != null`: the planned ending cast with a push, plus
+positive non-ending distance skills) max'd with the virtual-effect sim
+differential, no fallback. The shared sim+comparison piece was extracted
+(`helpers.simDifferentialGain`, taking the caller's real bestCasts to avoid
+re-deriving) so reaches and bull form share one implementation.
+
+- **A real bug found while probing** (fixed): `simDifferentialGain`'s first
+  version unwrapped `sim.ending.?` / `sim.non_ending.?` after
+  `plansDiffer` — but plansDiffer is ALSO true when the real plan exists and
+  the sim's doesn't (the modifier removed a cast) → null unwrap panic. The
+  sim side is now unwrapped only when it exists; a sim-null difference
+  yields no gain (nothing would-be to benefit from).
+- **Fixture lesson (the sim was right all along):** the first test fixture
+  showed slam's rating NOT flipping under +10 distance — because slam's
+  base push (2) already collided with the blocker; the sim correctly left it
+  unchanged while flipping BASH's short push (1 → 11). The final fixture
+  places the blocker past every base push distance, so the flip is a pure
+  rating upgrade (bash 1 → 2 via collision) — bull form rates the would-be
+  2 + 1 = 3 over the base-value rule's 1 + 1 = 2.
+- Tests: the collision flip (bull form 3) and the no-distance-bar case
+  (sword: nothing pushes, no beneficiary, no differential → no cast).

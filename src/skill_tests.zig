@@ -962,6 +962,67 @@ test "that which rushes: rates above cooldown-bearing casts, never standalone" {
     }
 }
 
+test "that which bull form: the sim differential flips a short push into a collision" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // A shield-carrier (bash push 1, slam push 2) with the target at
+    // distance 1 and a blocker at distance 4: nothing collides at base
+    // distances (the plan is bash @ 1 — a distance skill, so the
+    // base-value rule already rates bull form 2). With +10 distance
+    // virtually applied, bash's push reaches the blocker — the sim's
+    // plan rates 2 — so bull form rates 2 + 1 = 3 and fires first.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .main_hand_weapon = .{ .weapon_type = .shield },
+        .equipped_utility_skills = .{ .bull_form, null, null, null, null },
+    };
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 0 },
+    };
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{
+                caster,
+                types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 },
+                types.Entity{ .team = 1, .position = .{ .x = 4, .y = 0 }, .max_health = 20, .current_health = 20 },
+            },
+            &tiles,
+        );
+        const options = freshOptions(.bull_form, 0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+
+    // A sword-carrier (no distance skills at all) with an adjacent
+    // hostile: nothing on the bar pushes, no differential — pure
+    // modifiers with nothing to enhance, no cast.
+    {
+        const sword_caster = types.Entity{
+            .team = 0,
+            .position = .{ .x = 0, .y = 0 },
+            .max_health = 20,
+            .current_health = 20,
+            .main_hand_weapon = .{ .weapon_type = .sword },
+            .equipped_utility_skills = .{ .bull_form, null, null, null, null },
+        };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ sword_caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
+            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }},
+        );
+        try testing.expectEqual(@as(usize, 0),
+            freshOptions(.bull_form, 0, game_state, definitions, arena.allocator()).len);
+    }
+}
+
 test "stunTarget: an unstunned target beats a weaker stunned one" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();

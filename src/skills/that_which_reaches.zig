@@ -98,21 +98,17 @@ fn aiOptions(
     // Sim differential: the bar WITH the effect virtually applied. Any
     // plan difference is the +1's doing — the would-be cast (enabled,
     // upgraded, or re-targeted) is a live beneficiary at its rating.
-    const sim = helpers.bestCastsWithVirtualEffect(
+    const sim_gain = helpers.simDifferentialGain(
         frame,
         .that_which_reaches,
         .that_which_reaches,
         caster_index,
+        casts,
         game_state,
         weapon_type_definitions,
         allocator,
     );
-    if (ai_select.plansDiffer(casts.ending, sim.ending) and sim.ending.?.priority > best_beneficiary) {
-        best_beneficiary = sim.ending.?.priority;
-    }
-    if (ai_select.plansDiffer(casts.non_ending, sim.non_ending) and sim.non_ending.?.priority > best_beneficiary) {
-        best_beneficiary = sim.non_ending.?.priority;
-    }
+    if (sim_gain > best_beneficiary) best_beneficiary = sim_gain;
 
     if (best_beneficiary == 0) return &.{};
     return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });

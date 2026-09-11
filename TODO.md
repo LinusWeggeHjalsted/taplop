@@ -344,14 +344,14 @@ stale).
       rule, first consumer), that_which_lingers (beneficiary rule, no
       fallback — mechanically self-excluded via the frame guard),
       that_which_reaches (beneficiary rule + the VIRTUAL-EFFECT SIM
-      differential — see the new DESIGN bullet; bull form adopts the sim
-      when audited), that_which_rushes (beneficiary rule on
-      cooldown-bearing casts, no fallback — the speed rider alone never
-      justifies). REMAINING:
-      bull_form (beneficiary rule + sim), blink, swap (rating sanity),
-      howl + burst/accelerate/meditate (born on
-      the scale — sanity pass). Also retire the aiOptions-churn watch item
-      below (the frame bounds evaluation at once per skill per pass).
+      differential — see the new DESIGN bullet), that_which_rushes
+      (beneficiary rule on cooldown-bearing casts, no fallback — the speed
+      rider alone never justifies), bull_form (beneficiary rule + sim
+      differential — a short push flips into a collision).
+      REMAINING: blink, swap (rating sanity), howl +
+      burst/accelerate/meditate (born on the scale — sanity pass). Also
+      retire the aiOptions-churn watch item below (the frame bounds
+      evaluation at once per skill per pass).
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,

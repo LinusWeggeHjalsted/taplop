@@ -2155,8 +2155,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
   rating 1 below full health; never cast early on a beneficiary that
   rates 0). The plan is re-derived after every cast in the re-evaluation
   loop, so an enchantment's rating self-corrects as the plan changes.
-- **The virtual-effect sim differential (reaches; bull form when
-  audited).** When the enhanced field GATES whether casts are possible
+- **The virtual-effect sim differential (reaches, bull form).** When the enhanced field GATES whether casts are possible
   (range/radius gate target availability; distance gates collision
   ratings), the base-value rule isn't enough — the valuable case is the
   +1 FLIPPING an impossible cast into a possible one. The enhancer
