@@ -889,6 +889,79 @@ test "that which reaches: an in-range plan is the base-value beneficiary" {
     try testing.expectEqual(@as(u32, 2), options[0].priority);
 }
 
+test "that which rushes: rates above cooldown-bearing casts, never standalone" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // A cantrip beneficiary: howl (cd 10) counts the fresh hostile, so
+    // rushes rates howl's cast + 1 = 2 — firing first, so howl's newly-set
+    // cooldown comes out one less.
+    {
+        const caster = types.Entity{
+            .team = 0,
+            .position = .{ .x = 0, .y = 0 },
+            .max_health = 20,
+            .current_health = 20,
+            .equipped_utility_skills = .{ .that_which_rushes, .howl, null, null, null },
+        };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
+            &.{},
+        );
+        const options = freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+
+    // A planned ending beneficiary: two adjacent hostiles make spinblade
+    // (cd 2) the plan at 2, so rushes rates 2 + 1 = 3.
+    {
+        const caster = types.Entity{
+            .team = 0,
+            .position = .{ .x = 0, .y = 0 },
+            .max_health = 20,
+            .current_health = 20,
+            .main_hand_weapon = .{ .weapon_type = .sword },
+            .equipped_utility_skills = .{ .that_which_rushes, null, null, null, null },
+        };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{
+                caster,
+                types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 },
+                types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 }, .max_health = 20, .current_health = 20 },
+            },
+            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }},
+        );
+        const options = freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+
+    // Nothing cooldown-bearing fires (slice, the plan, has NO cooldown) —
+    // the speed rider alone never justifies the cast: no fallback.
+    {
+        const caster = types.Entity{
+            .team = 0,
+            .position = .{ .x = 0, .y = 0 },
+            .max_health = 20,
+            .current_health = 20,
+            .main_hand_weapon = .{ .weapon_type = .sword },
+            .equipped_utility_skills = .{ .that_which_rushes, null, null, null, null },
+        };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
+            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }},
+        );
+        try testing.expectEqual(@as(usize, 0),
+            freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator()).len);
+    }
+}
+
 test "stunTarget: an unstunned target beats a weaker stunned one" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();

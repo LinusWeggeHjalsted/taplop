@@ -4,6 +4,8 @@ const state = @import("../state.zig");
 const events = @import("../events.zig");
 const skill_mod = @import("../skill.zig");
 const helpers = @import("../skill_helpers.zig");
+const ai_select = @import("../ai_select.zig");
+const lookups = @import("../generated_lookups.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -37,20 +39,60 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at rating 1 (the enchantment pool only orders
-/// the non-ending skills — all worthwhile ones fire; a buff is always
-/// worth its slot while off cooldown).
+/// AI options: rated against the LIVE beneficiaries of the cooldown −1 —
+/// the casts that will actually fire this turn AND have a cooldown > 0
+/// (the modifier applies where cooldowns are set, in use_skill: each such
+/// cast's newly-set cooldown comes out one less): the planned ending
+/// cast when it carries a cooldown, plus every positive-rated off-cd
+/// non-ending skill with one (all positive cantrips/enchantments fire
+/// this turn). The speed +1 is a future-turn rider (the movement phase
+/// already ran) and never a standalone reason to cast — NO fallback: the
+/// speed bonus is not worth a full turn's duration on its own. Rating =
+/// best such cast + 1 (fires first in the chain). See DESIGN →
+/// Architecture, AI rating scale.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
-    _: types.WeaponTypeDefinitions,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
-    _: *skill_mod.EvalFrame,
+    frame: *skill_mod.EvalFrame,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.that_which_rushes) > 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 1 });
+
+    var best_beneficiary: u32 = 0;
+
+    // The planned turn-ending cast — the only ending skill that fires
+    // this turn. Counted only if its cooldown will actually tick down.
+    const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
+    if (casts.ending) |plan| {
+        if (lookups.getSkillDefinition(plan.skill_id)) |definition| {
+            if (definition.cooldown != null and definition.cooldown.? > 0 and plan.priority > best_beneficiary) {
+                best_beneficiary = plan.priority;
+            }
+        }
+    }
+
+    // Non-ending beneficiaries: every positive-rated one fires this
+    // turn, so each one's best option counts; ending skills fire at most
+    // one, already counted via the plan. A cooldown of 0 (or none) gains
+    // nothing from the −1.
+    const slots = caster.collectSkillSlots(weapon_type_definitions);
+    for (&slots) |maybe_skill_id| {
+        const skill_id = maybe_skill_id orelse continue;
+        if (caster.skill_cooldowns.get(skill_id) > 0) continue;
+        const definition = lookups.getSkillDefinition(skill_id) orelse continue;
+        if (definition.skill_type == .weapon_skill or definition.skill_type == .spell) continue;
+        if (definition.cooldown == null or definition.cooldown.? == 0) continue;
+        const options = ai_select.optionsFor(frame, skill_id, caster_index, game_state, weapon_type_definitions, allocator);
+        for (options) |option| {
+            if (option.priority > best_beneficiary) best_beneficiary = option.priority;
+        }
+    }
+
+    if (best_beneficiary == 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
 /// Self-cast — fires immediately.

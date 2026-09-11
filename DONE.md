@@ -12666,3 +12666,18 @@ sim bullet):
   the in-range base-value case, and reaches-nothing-when-nothing-applies.
   Fixture lesson en route: a main-hand sword puts only skill_1/skill_2 on
   the bar — slot 3 is the OFF-hand's (skillInSlot).
+
+## That Which Rushes on the beneficiary rule (rating audit, continued)
+
+Rushes' cooldown −1 applies where cooldowns are SET (use_skill), so its
+beneficiaries are precisely the casts that will fire this turn AND carry a
+cooldown > 0 — each such cast's newly-set cooldown comes out one less: the
+planned ending cast when it has a cooldown, plus every positive-rated
+off-cd non-ending skill with one (all positive cantrips/enchantments fire
+this turn). Rating = best + 1, NO fallback — the speed +1 is a future-turn
+rider (the movement phase already ran) and per owner decision "the speed
+bonus is not worth wasting a full turn's duration on its own": an enemy
+whose only plan is a no-cooldown skill (slice) never casts rushes
+standalone. No sim (magnitude modifier, no gating). Tests: howl-beneficiary
+(cantrip cd 10 → rushes 2), spinblade-planned (two hostiles → spinblade 2,
+cd 2 → rushes 3), and the slice-only plan (no cooldown anywhere → nothing).

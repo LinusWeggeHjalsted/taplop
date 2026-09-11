@@ -2145,7 +2145,9 @@ So a clone is a permanent, compounding material factory keyed by mission.
   beneficiary" is a cast that will actually happen this turn: the PLANNED
   turn-ending cast (via `ai_select.bestCasts`'s `ending` field) if its
   Skill base values carry the enhanced field (stone form: `stun_duration`;
-  lingers: durations; reaches: range/radius; bull form: distance), plus
+  lingers: durations; reaches: range/radius; rushes: a cooldown > 0
+  (the −1 applies to each cast's newly-set cooldown); bull form:
+  distance), plus
   any positive-rated NON-ending skill with the field (all positive
   cantrips/enchantments fire this turn — a future stun cantrip or stun
   enchantment slots in automatically). No live beneficiary → the
