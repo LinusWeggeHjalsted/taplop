@@ -19,11 +19,11 @@ const max_music_layers = types.max_music_layers;
 /// See DESIGN → Audio (layered music).
 const music_fade_microseconds: u64 = 1_000_000;
 
-/// Dev-diag sink for load-time warnings: the caller passes a function that
+/// Diagnostics sink for load-time warnings: the caller passes a function that
 /// appends the (already formatted, newline-terminated) message to its log
-/// — the backend wires this to `diagAppend` so the music phase-lock warning
-/// reaches logs/diag.txt. The context is the sink's receiver.
-pub const DiagSink = *const fn (context: ?*anyopaque, message: []const u8) void;
+/// — the backend wires this to its diagnostics append so the music phase-lock warning
+/// reaches logs/diagnostics.txt. The context is the sink's receiver.
+pub const DiagnosticsSink = *const fn (context: ?*anyopaque, message: []const u8) void;
 
 /// One ambient-music stream layer (see `Audio.music_layers`).
 /// `volume` is the lerped TIER-level volume (0..1); the music/master
@@ -84,7 +84,7 @@ pub const Audio = struct {
     /// are a pure asset drop — the stack extends without code changes.
     /// All layers must be IDENTICAL-LENGTH, sample-aligned loops (raylib
     /// loops each stream independently — only exact-equal lengths keep
-    /// them phase-locked; a mismatch is reported to the diag sink at
+    /// them phase-locked; a mismatch is reported to the diagnostics sink at
     /// load). Empty when audio isn't ready or the base asset is missing.
     music_layers: []MusicLayer = &.{},
     /// Whether `init` succeeded in opening the audio device. If false,
@@ -99,8 +99,8 @@ pub const Audio = struct {
     pub fn init(
         self: *Audio,
         settings: types.Settings,
-        diag_sink: ?DiagSink,
-        diag_context: ?*anyopaque,
+        diagnostics_sink: ?DiagnosticsSink,
+        diagnostics_context: ?*anyopaque,
     ) void {
         if (self.audio_ready) return;
         rl.initAudioDevice();
@@ -143,17 +143,17 @@ pub const Audio = struct {
             }) catch @panic("failed to append music layer");
             // Phase-lock check: stems must be identical-length loops or the
             // layers drift apart as they loop independently (best-effort
-            // report through the caller's diag sink — never let a diag
-            // write crash init).
+            // report through the caller's diagnostics sink — never let a
+            // diagnostics write crash init).
             if (layer_index > 0 and layers.items[0].stream.frameCount != music.frameCount) {
-                if (diag_sink) |sink| {
+                if (diagnostics_sink) |sink| {
                     var message_buffer: [160]u8 = undefined;
                     if (std.fmt.bufPrint(
                         &message_buffer,
                         "music layer {d} frame count {d} != base {d} (stems must be identical-length loops)\n",
                         .{ layer_index, music.frameCount, layers.items[0].stream.frameCount },
                     )) |message| {
-                        sink(diag_context, message);
+                        sink(diagnostics_context, message);
                     } else |_| {
                         // Best-effort: a format overflow (absurd frame
                         // counts) is skipped, never fatal.

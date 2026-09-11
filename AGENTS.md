@@ -335,8 +335,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (ASSERTIONS, SAFE_HEAP, source maps) by default to speed up the emcc link
   (the dominant web-build cost). Pass `-Dweb-debug-runtime=true` to restore
   them for browser-devtools work (source maps, null-pointer checks, etc.).
-- **Dev diag log** (`src/raylib/backend.zig`, dev-mode builds, not on web):
-  `logs/diag.txt` in the persistent dir, rewritten after each section. Holds
+- **Dev diagnostics log** (`src/raylib/diagnostics.zig`, dev-mode builds,
+  not on web):
+  `logs/diagnostics.txt` in the persistent dir, rewritten after each section. Holds
   boot-time GL context info (window points vs framebuffer pixels, GL
   vendor/renderer/version/GLSL via a direct `glGetString` call — the macos
   build links the OpenGL framework for this in build.zig) plus ONE-SHOT draw
@@ -344,16 +345,17 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   slots/health bars in-game) and the first 9-slice panel draw (full draw
   state: texture, tint, destination, all nine pieces). Purpose: hardware
   troubleshooting without a Terminal (the mac bring-up). Extend by adding a
-  probe site + a `diagAppend`/`diagFlush` section; never let a diag write
+  probe site + a `Diagnostics.append`/`flush` section; never let a
+  diagnostics write
   surface as a crash (best-effort `catch return` on every write).
   `-fsanitize=undefined` stays on regardless (raylib's C objects reference
   UBSan symbols). The sdf_atlas_generator also builds in Debug (not
   ReleaseFast) for faster clean builds; the SDF generation run is a few
   seconds slower but only runs once per clean build.
-- **Diagnostics log** — currently the dev diag log in
-  `src/raylib/backend.zig` (dev-mode builds, not on web): boot GL info +
+- **Diagnostics log** — currently the dev diagnostics log in
+  `src/raylib/diagnostics.zig` (dev-mode builds, not on web): boot GL info +
   one-shot draw probes + the render-target pixel readback, best-effort
-  writes to `logs/diag.txt` in the persistent dir. A REDESIGN IS
+  writes to `logs/diagnostics.txt` in the persistent dir. A REDESIGN IS
   SETTLED — a raylib-free `src/diagnostics.zig` + a `--diagnostics`
   runtime flag working in ANY build (release included), event-driven
   end-of-frame flushing (never mid-draw), the same proven section set:
@@ -447,7 +449,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `src/raylib/textures.zig` (the lazy sprite caches + outline/inset mask
   generation + opaque-bounds scans) + `src/raylib/text.zig` (the TTF font +
   the SDF text-outline pipeline + text drawing) +
-  `src/raylib/conversions.zig` (shared Color/rect raylib conversions). The
+  `src/raylib/conversions.zig` (shared Color/rect raylib conversions) +
+  `src/raylib/diagnostics.zig` (the dev boot/probe/readback log, dev-mode
+  builds, `logs/diagnostics.txt`). The
   ONLY directory whose files import raylib; the test-root scan skips it
   wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/

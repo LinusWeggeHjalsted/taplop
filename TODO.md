@@ -1241,11 +1241,17 @@ Open:
         (toRaylibColor/toPremultipliedColor/referenceRectangle — needed
         by both text and the future draw file, so backend.zig aliases
         them).
-  - [ ] 6. `src/raylib/draw.zig` — world + UI element drawing (free fns
+  - [x] 6. `src/raylib/diagnostics.zig` — `Diagnostics` sub-struct (the
+        boot/probe/readback log) moved as-is, ahead of draw so the draw
+        slice lands clean (done before slice 7; the pending diagnostics
+        REDESIGN now has its landing spot). The `diag_*` identifier +
+        `logs/diag.txt` filename renames the redesign had planned landed
+        here early (author request): everything is `diagnostics`/
+        `Diagnostics`/`logs/diagnostics.txt` already; the redesign keeps the
+        names and moves the type out of the raylib dir + re-gates it.
+  - [ ] 7. `src/raylib/draw.zig` — world + UI element drawing (free fns
         over the backend, the handlers/ pattern); leaves backend.zig the
         thin driver.
-  - [ ] 7. `src/raylib/diag.zig` — dev diag buffer + probes moved as-is
-        (the pending diagnostics REDESIGN then has a clean landing spot).
 - **Diagnostics redesign — settled design, implementation pending**
   (DESIGN → Platform Seam → Diagnostics): create raylib-free
   `src/diagnostics.zig` (`Diagnostics` type: buffer + section policy +
@@ -1253,7 +1259,7 @@ Open:
   add the `--diagnostics` CLI flag (native.zig, like `--replay` — any
   build, release included; dev-mode defaults to active); migrate the
   boot/probe/readback sections out of src/raylib/diag.zig as thin
-  value-recording call sites; keep `logs/diag.txt` + whole-file-rewrite
+  value-recording call sites; keep `logs/diagnostics.txt` + whole-file-rewrite
   semantics. Composes with the raylib split item above — the split lands
   first (its slice 7 moves the diag code into `src/raylib/diag.zig`, the
   value-recording call sites the redesign then hollows out).

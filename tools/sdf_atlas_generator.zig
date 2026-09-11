@@ -6,7 +6,7 @@
 //! `src/raylib/text.zig` parses at init (`initSdfTextOutline`). The SDF
 //! encoding range (padding 22 / dist scale 6.0) comes from the
 //! `-DFONT_SDF_*` defines on this tool's raylib dependency; see
-X / `sdf_char_padding`.
+//! src/raylib/text.zig's `sdf_pixel_dist_scale` / `sdf_char_padding`.
 //!
 //! Usage: sdf_atlas_generator <font.ttf> <output.blob>
 //! Invocation is positional because build.zig passes file args in order.

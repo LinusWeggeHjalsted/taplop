@@ -310,7 +310,10 @@ hunt; extend only when a real incident asks for more.
   in the headless test build). One instance owned by `RaylibBackend`:
   an append buffer + section policy + flush scheduling. NO
   abbreviations anywhere: `Diagnostics`, `diagnostics_enabled` — the
-  migration renames every `diag_*` identifier.
+  `diag_*` identifiers were already renamed during the src/raylib/
+  split (`src/raylib/diagnostics.zig`, the `Diagnostics` type,
+  `logs/diagnostics.txt`); the redesign moves the type out of the
+  raylib dir + re-gates it, keeping the names.
 - **Activation — a single toggle:** the `--diagnostics` runtime CLI
   flag, valid on ANY native build INCLUDING plain release (the hunt's
   structural catch-22 was "the broken build can't log" — dev-gated
@@ -480,7 +483,7 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   must be IDENTICAL-LENGTH, sample-aligned loops (export as stems from one
   DAW session) — raylib loops each stream independently, and only
   exact-equal lengths keep them phase-locked; a frameCount mismatch is
-  diag-warned at load in dev builds. One base track everywhere for now
+  reported to the diagnostics sink at load in dev builds. One base track everywhere for now
   (per-screen base tracks are a later extension); medal stingers for the
   mission-complete overlay are sfx one-shots, not layers (one per medal type
   when the medals work lands).

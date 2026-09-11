@@ -37,42 +37,12 @@ const audio_mod = @import("audio.zig");
 const textures_mod = @import("textures.zig");
 const text_mod = @import("text.zig");
 const conversions = @import("conversions.zig");
+const diagnostics_mod = @import("diagnostics.zig");
 
 const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
-
-// -- Dev diagnostics (dev-mode builds only) --
-// A best-effort diagnostic log flushed to "logs/diag.txt" in the persistent
-// dir after every section (see AGENTS → Dev Tools). Purpose: troubleshooting
-// on machines without a Terminal workflow (the mac port bring-up; TODO →
-// macOS native port) — the file lands next to the session logs where a
-// player can attach it. Sections: boot-time GL context info, a one-shot
-// probe of the first plain sprite draw (the known-WORKING control), and a
-// one-shot probe of the first 9-slice panel draw (the mac panels-don't-
-// render bug — same drawTexturePro path as sprites, so the probe dumps the
-// full draw state to diff against the control). Not on web: the browser
-// console + the node headless trick already cover it (AGENTS → Build &
-// Test). Comptime-gated; in non-dev builds the probe call sites compile out
-// and none of this is analyzed or linked.
-const diag_enabled = @import("build_info").dev_mode and
-    @import("builtin").os.tag != .emscripten;
-
-// GL context identity, for the diag boot section. raylib links GL on every
-// native target (framework on mac, libGL on Linux, opengl32 on Windows), so
-// the symbol resolves; only referenced from diag code (dev builds).
-extern "c" fn glGetString(name: c_int) ?[*:0]const u8;
-const gl_vendor: c_int = 0x1F00;
-const gl_renderer: c_int = 0x1F01;
-const gl_version: c_int = 0x1F02;
-const gl_shading_language_version: c_int = 0x8B8C;
-
-fn glString(name: c_int) []const u8 {
-    const string = glGetString(name) orelse return "(null)";
-    return std.mem.sliceTo(string, 0);
-}
-
 
 /// Text-field caret bar thickness (reference px) — matches the unified
 /// outline thickness so the caret reads at the same visual weight as the
@@ -161,19 +131,10 @@ pub const RaylibBackend = struct {
     /// music intensity stack (see audio.zig + DESIGN → Audio). Thin
     /// wrappers below keep the duck-typed interface unchanged.
     audio: audio_mod.Audio,
-    /// Dev diag log buffer (dev-mode builds; empty + unused otherwise).
-    /// Holds the accumulated "logs/diag.txt" content; rewritten whole on
-    /// every flush. Freed in deinit.
-    diag_buffer: std.ArrayListUnmanaged(u8) = .empty,
-    diag_boot_logged: bool = false,
-    diag_sprite_probe_logged: bool = false,
-    diag_panel_probe_logged: bool = false,
-    /// Reference-space destinations captured by the one-shot probes, read
-    /// back from the render target at the end of the same frame — the probes
-    /// fire mid-draw, the pixels only exist after `endTextureMode`.
-    diag_panel_destination: ?types.Rectangle = null,
-    diag_sprite_destination: ?types.Rectangle = null,
-    diag_readback_pending: bool = false,
+    /// Dev diagnostics: the boot/probe/readback log (see diag.zig; dev-mode
+    /// native builds only — call sites are comptime-gated by
+    /// `diagnostics_mod.enabled`, so none of it is analyzed or linked otherwise).
+    diagnostics: diagnostics_mod.Diagnostics,
 
     /// Last real-clock sample (microseconds) for delta computation. Updated
     /// each deltaMicroseconds() call. Real-clock based (rl.getTime), not
@@ -220,6 +181,7 @@ pub const RaylibBackend = struct {
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
             .textures = .{ .allocator = allocator, .file_source = file_source },
             .audio = .{ .allocator = allocator, .file_source = file_source },
+            .diagnostics = .{ .allocator = allocator, .file_source = file_source },
             .last_time_microseconds = @intFromFloat(rl.getTime() * std.time.us_per_s),
             .file_source = file_source,
         };
@@ -230,7 +192,7 @@ pub const RaylibBackend = struct {
         self.audio.deinit();
         self.text.deinit();
         self.frame_arena.deinit();
-        if (diag_enabled) self.diag_buffer.deinit(self.allocator);
+        if (diagnostics_mod.enabled) self.diagnostics.deinit();
         rl.unloadRenderTexture(self.render_target);
         rl.closeWindow();
     }
@@ -281,7 +243,7 @@ pub const RaylibBackend = struct {
     /// ready no-ops. If the audio device can't open, audio stays silent —
     /// the game runs, never crashes. See DESIGN → Audio.
     pub fn initAudio(self: *RaylibBackend, settings: types.Settings) void {
-        self.audio.init(settings, audioDiagSink, self);
+        self.audio.init(settings, audioDiagnosticsSink, self);
     }
 
     /// Play the drained sound cues at the sfx/master settings volume (the
@@ -386,7 +348,7 @@ pub const RaylibBackend = struct {
     ) void {
         _ = viewport;
         _ = self.frame_arena.reset(.retain_capacity);
-        if (diag_enabled and !self.diag_boot_logged) self.diagLogBoot();
+        if (diagnostics_mod.enabled and !self.diagnostics.boot_logged) self.diagnostics.logBoot(self.render_width, self.render_height);
 
         // Draw all reference-space content into the offscreen target. The
         // target may be smaller than the 4K reference (the render_resolution
@@ -424,7 +386,7 @@ pub const RaylibBackend = struct {
         rl.endMode2D();
         rl.endBlendMode();
         rl.endTextureMode();
-        if (diag_enabled and self.diag_readback_pending) self.diagLogTargetReadback();
+        if (diagnostics_mod.enabled and self.diagnostics.readback_pending) self.diagnostics.logTargetReadback(self.render_target, self.render_width, self.render_height, self.renderScale());
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
         // y-flipped, so the source height is negated. The blit uses the RENDER
@@ -932,8 +894,8 @@ pub const RaylibBackend = struct {
             .width = @floatFromInt(texture.width),
             .height = @floatFromInt(texture.height),
         };
-        if (diag_enabled and !self.diag_sprite_probe_logged) {
-            self.diagLogFirstSpriteDraw(sprite_id, texture, source orelse whole, destination, tint, alpha);
+        if (diagnostics_mod.enabled and !self.diagnostics.sprite_probe_logged) {
+            self.diagnostics.logFirstSpriteDraw(sprite_id, texture, source orelse whole, destination, tint, alpha);
         }
         rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
     }
@@ -968,8 +930,8 @@ pub const RaylibBackend = struct {
             .height = panel.height,
         };
         const pieces = ui.nineSlicePieces(texture.width, texture.height, destination);
-        if (diag_enabled and !self.diag_panel_probe_logged) {
-            self.diagLogFirstPanelDraw(panel, texture, tint, theme_darkest, destination, pieces);
+        if (diagnostics_mod.enabled and !self.diagnostics.panel_probe_logged) {
+            self.diagnostics.logFirstPanelDraw(panel, texture, tint, theme_darkest, destination, pieces);
         }
         for (pieces) |piece| {
             if (piece.destination.width <= 0 or piece.destination.height <= 0) continue;
@@ -986,158 +948,6 @@ pub const RaylibBackend = struct {
                 .height = @floatFromInt(piece.destination.height),
             };
             rl.drawTexturePro(texture, source, piece_destination, .{ .x = 0, .y = 0 }, 0, tint);
-        }
-    }
-
-    // -- Dev diagnostics methods (see the file-scope diag section) --
-
-    /// Append a line to the diag buffer. Best-effort: an OOM write is
-    /// dropped, never surfaced.
-    fn diagAppend(self: *RaylibBackend, comptime fmt: []const u8, args: anytype) void {
-        self.diag_buffer.print(self.allocator, fmt, args) catch return;
-    }
-
-    /// Rewrite "logs/diag.txt" from the diag buffer. Best-effort: a failed
-    /// write is silent (diagnostics must never crash the game).
-    fn diagFlush(self: *RaylibBackend) void {
-        self.file_source.writeFile("logs/diag.txt", self.diag_buffer.items) catch return;
-    }
-
-    /// Boot section: build identity + GL context info. Called once from the
-    /// first render, when the window + GL context are guaranteed live.
-    fn diagLogBoot(self: *RaylibBackend) void {
-        self.diag_boot_logged = true;
-        self.diagAppend("ziglop dev diag\n", .{});
-        self.diagAppend("game_version {s}\n", .{@import("build_info").game_version});
-        self.diagAppend("target {s}-{s}\n", .{
-            @tagName(@import("builtin").os.tag),
-            @tagName(@import("builtin").cpu.arch),
-        });
-        // Screen (window points) vs render (framebuffer pixels): a 2x gap
-        // here means a retina context without raylib's high-dpi flag — the
-        // letterbox/pointer math operates on points either way.
-        self.diagAppend("window {d}x{d} points, framebuffer {d}x{d} pixels\n", .{
-            rl.getScreenWidth(),
-            rl.getScreenHeight(),
-            rl.getRenderWidth(),
-            rl.getRenderHeight(),
-        });
-        self.diagAppend("render target {d}x{d}\n", .{ self.render_width, self.render_height });
-        self.diagAppend("GL_VENDOR {s}\n", .{glString(gl_vendor)});
-        self.diagAppend("GL_RENDERER {s}\n", .{glString(gl_renderer)});
-        self.diagAppend("GL_VERSION {s}\n", .{glString(gl_version)});
-        self.diagAppend("GL_SHADING_LANGUAGE_VERSION {s}\n", .{glString(gl_shading_language_version)});
-        self.diagFlush();
-    }
-
-    /// One-shot probe of the first plain sprite draw — the known-WORKING
-    /// control the first panel probe is diffed against.
-    fn diagLogFirstSpriteDraw(
-        self: *RaylibBackend,
-        sprite_id: []const u8,
-        texture: rl.Texture2D,
-        source: rl.Rectangle,
-        destination: rl.Rectangle,
-        tint: types.Color,
-        alpha: u8,
-    ) void {
-        self.diag_sprite_probe_logged = true;
-        self.diag_sprite_destination = .{
-            .x = @intFromFloat(destination.x),
-            .y = @intFromFloat(destination.y),
-            .width = @intFromFloat(destination.width),
-            .height = @intFromFloat(destination.height),
-        };
-        self.diag_readback_pending = true;
-        self.diagAppend("\n[control] first drawSprite\n", .{});
-        self.diagAppend("sprite_id {s}\n", .{sprite_id});
-        self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
-        self.diagAppend("source x {d} y {d} w {d} h {d}\n", .{ source.x, source.y, source.width, source.height });
-        self.diagAppend("destination x {d} y {d} w {d} h {d}\n", .{ destination.x, destination.y, destination.width, destination.height });
-        self.diagAppend("tint r {d} g {d} b {d} alpha {d}\n", .{ tint.r, tint.g, tint.b, alpha });
-        self.diagFlush();
-    }
-
-    /// One-shot probe of the first 9-slice panel draw — full draw state
-    /// (texture, tint before + after default_tint resolution, destination,
-    /// all nine source/destination rect pairs) to diff against the control.
-    fn diagLogFirstPanelDraw(
-        self: *RaylibBackend,
-        panel: ui.NineSlicePanel,
-        texture: rl.Texture2D,
-        resolved_tint: rl.Color,
-        theme_darkest: types.Color,
-        destination: types.Rectangle,
-        pieces: [9]ui.NineSlicePiece,
-    ) void {
-        self.diag_panel_probe_logged = true;
-        self.diag_panel_destination = destination;
-        self.diag_readback_pending = true;
-        self.diagAppend("\n[probe] first drawNineSlice\n", .{});
-        self.diagAppend("sprite_id {s}\n", .{panel.sprite_id});
-        self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
-        self.diagAppend("panel_color r {d} g {d} b {d}\n", .{ panel.color.r, panel.color.g, panel.color.b });
-        self.diagAppend("theme_darkest r {d} g {d} b {d}\n", .{ theme_darkest.r, theme_darkest.g, theme_darkest.b });
-        self.diagAppend("resolved_tint r {d} g {d} b {d} a {d}\n", .{ resolved_tint.r, resolved_tint.g, resolved_tint.b, resolved_tint.a });
-        self.diagAppend("destination x {d} y {d} w {d} h {d}\n", .{ destination.x, destination.y, destination.width, destination.height });
-        for (pieces, 0..) |piece, index| {
-            self.diagAppend(
-                "piece {d}: source x {d} y {d} w {d} h {d} destination x {d} y {d} w {d} h {d}\n",
-                .{ index, piece.source.x, piece.source.y, piece.source.width, piece.source.height, piece.destination.x, piece.destination.y, piece.destination.width, piece.destination.height },
-            );
-        }
-        self.diagFlush();
-    }
-
-    /// Read back the render target at the end of a frame where a probe fired
-    /// and log the pixels at the probed destinations. Splits the pipeline in
-    /// half: pixels PRESENT = the draw landed in the offscreen target, so a
-    /// missing panel on screen is the blit/present path (window/compositor);
-    /// pixels ABSENT = the batch draw itself failed. Samples are in TARGET
-    /// space (reference × the render camera zoom); RenderTextures are stored
-    /// y-flipped, so the sampled row is flipped back.
-    fn diagLogTargetReadback(self: *RaylibBackend) void {
-        self.diag_readback_pending = false;
-        const image = rl.loadImageFromTexture(self.render_target.texture) catch return;
-        defer rl.unloadImage(image);
-        const colors = rl.loadImageColors(image) catch return;
-        defer rl.unloadImageColors(colors);
-        self.diagAppend("\n[readback] render target {d}x{d}\n", .{ image.width, image.height });
-        if (self.diag_panel_destination) |rect| {
-            self.diagLogSampledPixels(colors, "panel", rect);
-        }
-        if (self.diag_sprite_destination) |rect| {
-            self.diagLogSampledPixels(colors, "control", rect);
-        }
-        self.diagFlush();
-    }
-
-    /// Log three pixels along the horizontal center line of a probed
-    /// destination (25/50/75% — inside the 9-slice corner band at both ends
-    /// for a typical panel, center in the stretched middle).
-    fn diagLogSampledPixels(
-        self: *RaylibBackend,
-        colors: []rl.Color,
-        label: []const u8,
-        rect: types.Rectangle,
-    ) void {
-        const scale = self.renderScale();
-        const target_width: i64 = self.render_width;
-        const target_height: i64 = self.render_height;
-        for ([_]f32{ 0.25, 0.5, 0.75 }) |fraction| {
-            const column: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.x)) +
-                @as(f32, @floatFromInt(rect.width)) * fraction) * scale);
-            const target_row: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.y)) +
-                @as(f32, @floatFromInt(rect.height)) * 0.5) * scale);
-            const stored_row: i64 = target_height - 1 - target_row;
-            if (column < 0 or stored_row < 0 or column >= target_width or stored_row >= target_height) continue;
-            const index: usize = @intCast(stored_row * target_width + column);
-            if (index >= colors.len) continue;
-            const color = colors[index];
-            self.diagAppend(
-                "readback {s} at {d} pixel({d},{d}) r {d} g {d} b {d} a {d}\n",
-                .{ label, fraction, column, target_row, color.r, color.g, color.b, color.a },
-            );
         }
     }
 
@@ -1185,11 +995,12 @@ pub const RaylibBackend = struct {
 
 /// The Audio subsystem's load-time warning sink (see audio.zig): routes its
 /// formatted messages — e.g. the music phase-lock mismatch — into the dev
-/// diag buffer. Wired unconditionally: the append is inert when diag is
-/// inactive (the buffer is simply never flushed in non-dev builds).
-fn audioDiagSink(context: ?*anyopaque, message: []const u8) void {
+/// diagnostics buffer. Wired unconditionally: the append is inert when
+/// diagnostics are inactive (the buffer is simply never flushed in non-dev
+/// builds).
+fn audioDiagnosticsSink(context: ?*anyopaque, message: []const u8) void {
     const self: *RaylibBackend = @ptrCast(@alignCast(context orelse return));
-    self.diagAppend("{s}", .{message});
+    self.diagnostics.append("{s}", .{message});
 }
 
 const toRaylibColor = conversions.toRaylibColor;
