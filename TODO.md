@@ -1503,15 +1503,6 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
-
-- **Effect interface field defaults** (surfaced in the Tier A session
-      reflection). Every effect file declares all 18 callbacks (~20 real
-      lines each, the rest `no_op`/`pass_incoming_damage` boilerplate).
-      Give the `on_*_fn` fields DEFAULTS in effect.zig (`= &noOp`,
-      interceptor `= pass_incoming_damage`) so effect files declare only
-      the hooks they use — reflect would drop from 62 to ~20 lines, and
-      new effects stop copying 18 lines of noise. Skill's 5 fns stay
-      required (deals_damage deliberately so).
 - **Style pass over the Tier A session's lines.** Some lines exceed the
       ~95-char wrap convention (long `singleOption` calls, comments).
       Mechanical cleanup, fold into the next skills slice.

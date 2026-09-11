@@ -468,6 +468,15 @@ Phase 4 plumbing: tile_size_pixels = 256 (matches assets; screenToTile +
 - setCheckpoint moved to AFTER the start_level/start_hub handler so it
   captures post-transition scope (was capturing pre-transition, panicking
   on undo across a level boundary).
+- **Effect interface field defaults** (the Tier A reflection item): every
+  `on_*_fn` field in `Effect` now defaults to `noOp` and
+  `intercept_incoming_damage_fn` defaults to `passIncomingDamage` (both
+  file-private in effect.zig); the `pub const no_op` / `pass_incoming_damage`
+  filler exports are REMOVED (nothing outside src/effects/ referenced them —
+  the minimize-pub rule held). All 9 effect files now declare only the hooks
+  they implement (−160 lines of boilerplate); pure-modifier effects (bull
+  form, the three that-which-*) are name/description/modifiers only. Skill's
+  5 fns stay required (deals_damage deliberately so).
 
 ### Platform layer (done)
 

@@ -33,6 +33,9 @@ pub const DamageInterception = struct {
 /// on_* family is REACTIVE (fires after the fact, returns ?[]const Event).
 /// All on_* callbacks share the pattern (entity_index, game_state, allocator)
 /// -> ?[]const Event.
+///
+/// Every callback field has a no-op DEFAULT (the interceptor passes damage
+/// through unchanged) — an effect file declares only the hooks it implements.
 pub const Effect = struct {
     name: []const u8,
     description: []const u8,
@@ -52,98 +55,98 @@ pub const Effect = struct {
         incoming_damage: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) DamageInterception,
+    ) DamageInterception = &passIncomingDamage,
 
     // --- lifecycle callbacks ---
     on_effect_creation_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_effect_end_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
 
     // --- turn callbacks ---
     on_start_turn_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_end_turn_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
 
     // --- combat callbacks ---
     on_attack_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_outgoing_damage_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_incoming_damage_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_outgoing_stun_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_incoming_stun_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_outgoing_effect_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_incoming_effect_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_outgoing_knockback_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_incoming_knockback_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_outgoing_collision_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_incoming_collision_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_retreat_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
     on_opponent_death_fn: *const fn (
         entity_index: u32,
         game_state: GameState,
         allocator: std.mem.Allocator,
-    ) ?[]const Event,
+    ) ?[]const Event = &noOp,
 
     // --- convenience methods ---
 
@@ -312,21 +315,18 @@ pub const Effect = struct {
     }
 };
 
-/// No-op callback for effects that don't need a particular hook.
+/// No-op callback; the default for every on_* field.
 fn noOp(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Event {
     return null;
 }
 
 /// Default interceptor: passes the damage through unchanged, emits nothing.
-fn passIncomingDamage(_: u32, _: u32, incoming_damage: u32, _: GameState, _: std.mem.Allocator) DamageInterception {
+fn passIncomingDamage(
+    _: u32,
+    _: u32,
+    incoming_damage: u32,
+    _: GameState,
+    _: std.mem.Allocator,
+) DamageInterception {
     return .{ .damage = incoming_damage };
 }
-
-/// Use this for intercept_incoming_damage_fn on effects that don't transform
-/// incoming damage (the common case).
-pub const pass_incoming_damage = &passIncomingDamage;
-
-/// Use this to fill all callback fields, then override the ones you need.
-/// Since Zig doesn't have struct update syntax for function pointers at
-/// comptime in all cases, this serves as documentation of the default.
-pub const no_op = &noOp;
