@@ -1537,18 +1537,11 @@ Done items in DONE.md. Open:
 
 - [x] **Split AGENTS.md → AGENTS.md + DESIGN.md** — done; history in DONE.md.
 
-- **`floatWorldPoint` precision loss.** `floatWorldPoint` (input.zig)
-  takes `types.ScreenPosition` (i32) but its doc claims sub-tile precision
-  for the camera-pan anchor. The precision is lost upstream: `translateInput`
-  truncates `mouse_screen_position` (`PointerPosition`, f32) to
-  `PointerInput.position` (`types.ScreenPosition`, i32) before
-  `floatWorldPoint` ever sees it. So the pan anchor is at integer-pixel
-  precision — may jitter at low zoom. Fix: make `PointerInput.position` a
-  `PointerPosition` (f32) so the raw pointer precision flows through to
-  `floatWorldPoint`; UI hit-testing sites that read `pointer.position`
-  (`handleDrag`, `handleIdleInput`, `handleCameraPan`'s `blockingElementAt`
-  check) call `.toScreenPosition()` at the UI seam. The rename made this
-  visible (the type name now clearly says i32 where f32 was intended).
+- [x] **`floatWorldPoint` precision loss — RESOLVED** (cleanup session):
+      `PointerInput.position` is a `PointerPosition` (f32) end-to-end; UI
+      hit-testing truncates via `.toScreenPosition()` at the seam; the
+      camera-pan anchor + tile resolution use the float directly. History
+      in DONE.md.
 
 - **Nested string fields in session-log payloads — RESOLVED.**
   `appendEventScalar` flattens nested struct/union fields as
