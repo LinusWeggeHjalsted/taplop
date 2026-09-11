@@ -2153,6 +2153,26 @@ So a clone is a permanent, compounding material factory keyed by mission.
   rating 1 below full health; never cast early on a beneficiary that
   rates 0). The plan is re-derived after every cast in the re-evaluation
   loop, so an enchantment's rating self-corrects as the plan changes.
+- **The virtual-effect sim differential (reaches; bull form when
+  audited).** When the enhanced field GATES whether casts are possible
+  (range/radius gate target availability; distance gates collision
+  ratings), the base-value rule isn't enough — the valuable case is the
+  +1 FLIPPING an impossible cast into a possible one. The enhancer
+  re-evaluates the whole bar with its own effect virtually applied
+  (`helpers.bestCastsWithVirtualEffect`: shallow-clone the entities,
+  append the effect to the cloned caster — the denormalized modifiers
+  copied from the effect definition — run `bestCasts` against the
+  simulated state) and compares plans (`ai_select.plansDiffer`: any
+  difference — different skill, target, or rating, or a plan appearing —
+  is the modifier's doing). A differing sim plan's rating counts as a
+  live beneficiary, max'd with the base-value rule. The sim frame is
+  FRESH (the pass frame's memos are for the real state — virtual-modifier
+  results must never leak into the real plan) and INHERITS the caller's
+  in-progress set plus the simulated skill — without the inheritance, two
+  sim-based enhancers equipped together would alternate through each
+  other's sims forever. Duration-type modifiers (lingers) do NOT use the
+  sim: they modulate magnitude, almost never flipping a rating — the
+  base-value rule carries them.
 - **AI cast selection lives in ONE place (`src/ai_select.zig`) behind the
   pass-scoped `EvalFrame` (skill.zig).** `bestCasts` is the exact
   selection `enemy_turn_attack` applies (partition by skill_type,

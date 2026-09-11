@@ -12624,3 +12624,45 @@ form's separate `outgoing_stun_duration` pipeline).
   bestCasts → optionsFor, where the guard + memo hold).
 - Test: lingers+reaches equipped → lingers offers reaches' rating + 1
   (fires first, so reaches' cast gains the +1 duration); alone → nothing.
+
+## That Which Reaches: the virtual-effect sim differential (rating audit, continued)
+
+The owner's extension of the beneficiary rule for GATING modifiers: when
++1 range would flip an impossible cast into a possible one (the enemy just
+out of range of every attack), the smart play is the enchantment. Settled
+per discussion (DESIGN → Architecture, AI rating scale — the virtual-effect
+sim bullet):
+
+- **Mechanism** (`helpers.bestCastsWithVirtualEffect`): shallow-clone the
+  entities slice, append the enhancer's own effect to the cloned caster
+  (the denormalized `additive_effect_modifiers` copied from the effect
+  definition — mirroring create_effect), run `bestCasts` against the
+  simulated state. "Evaluate the bar as if I were already active."
+- **Comparison** (`ai_select.plansDiffer`): the WHOLE bar, both pools (owner
+  decision — an enabled cantrip counts too); any plan difference —
+  different skill, different TARGET, different rating, or a plan appearing
+  — is the modifier's doing; the sim plan's rating counts as a live
+  beneficiary, max'd with the base-value rule, +1 ordering on top.
+- **The recursion subtlety found during design:** the sim frame is FRESH
+  (the pass frame's memos are for the real state — virtual-modifier results
+  must never leak into the real plan) AND INHERITS the caller's in-progress
+  set plus the simulated skill. Without the inheritance, two sim-based
+  enhancers equipped together (reaches + the future bull-form sim) would
+  alternate through each other's fresh sim frames forever — each sim cuts
+  only its own skill. The inherited stack excludes everything currently
+  being decided from the hypothetical.
+- **Reaches' full shape:** base-value rule (planned ending cast if it
+  carries range/radius + positive non-ending range/radius beneficiaries)
+  max'd with the sim differential; NO fallback — pure modifiers, nothing
+  to enhance + no differential → no cast (the old unconditional 1 fired
+  into empty turns).
+- **Scope note:** duration-type modifiers (lingers) do NOT adopt the sim —
+  they modulate magnitude, almost never flipping a rating; the sim would
+  burn cost for zero signal. Bull form (+10 distance flips collision
+  ratings) is flagged to adopt it when audited.
+- Tests: the enabling case (hostile at slice-range+1 → sim flips slice
+  from impossible to possible → reaches = would-be rating + 1; one tile
+  further → nothing), the enabled-CANTRIP case (burst's radius boundary),
+  the in-range base-value case, and reaches-nothing-when-nothing-applies.
+  Fixture lesson en route: a main-hand sword puts only skill_1/skill_2 on
+  the bar — slot 3 is the OFF-hand's (skillInSlot).

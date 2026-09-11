@@ -74,6 +74,22 @@ pub fn optionsFor(
     return options;
 }
 
+/// True when the two best-cast plans differ in any way — different skill,
+/// different target, different rating, or one exists and the other
+/// doesn't. The virtual-effect differential's improvement signal (see
+/// helpers.bestCastsWithVirtualEffect): a difference means the simulated
+/// modifier changed what the bar would cast.
+pub fn plansDiffer(a: ?CastPlan, b: ?CastPlan) bool {
+    if (a == null and b == null) return false;
+    if (a == null or b == null) return true;
+    const a_target = a.?.target;
+    const b_target = b.?.target;
+    if ((a_target == null) != (b_target == null)) return true;
+    if (a_target != null and !std.meta.eql(a_target.?, b_target.?)) return true;
+    return a.?.skill_id != b.?.skill_id or
+        a.?.priority != b.?.priority;
+}
+
 /// Evaluate all the caster's off-cooldown skill slots and pick the best
 /// cast per pool: partition by skill_type (weapon skill + spell =
 /// turn-ending), skip 0-rated options, keep the strictly-best rating with

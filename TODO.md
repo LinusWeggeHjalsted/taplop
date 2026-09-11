@@ -341,13 +341,16 @@ stale).
       consultation cycles cut mechanically, no structural restrictions.
       DONE so far: idol heal 1, replenish 2, focus (rate = weapon-skill
       reset count — fixed a wasted-cast gate bug), stone form (beneficiary
-      rule, first consumer). REMAINING: that_which_lingers / reaches /
-      rushes (apply the beneficiary rule — lingers scans
-      `skill_duration != null` non-ending beneficiaries, no fallback),
-      bull_form, blink, swap (rating sanity), howl +
-      burst/accelerate/meditate (born on the scale — sanity pass). Also
-      retire the aiOptions-churn watch item below (the frame bounds
-      evaluation at once per skill per pass).
+      rule, first consumer), that_which_lingers (beneficiary rule, no
+      fallback — mechanically self-excluded via the frame guard),
+      that_which_reaches (beneficiary rule + the VIRTUAL-EFFECT SIM
+      differential — see the new DESIGN bullet; bull form adopts the sim
+      when audited). REMAINING:
+      that_which_rushes (apply the beneficiary rule), bull_form (beneficiary
+      rule + sim), blink, swap (rating sanity), howl +
+      burst/accelerate/meditate (born on
+      the scale — sanity pass). Also retire the aiOptions-churn watch item
+      below (the frame bounds evaluation at once per skill per pass).
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,

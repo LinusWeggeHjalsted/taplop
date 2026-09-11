@@ -738,14 +738,28 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
     // firing FIRST in the chain so reaches' cast gains the +1 duration.
     // Lingers itself is cut from its own scan by the frame's in-progress
     // guard (it would otherwise count its own skill_duration).
+    // Howl (radius 16) gives reaches a live range/radius beneficiary:
+    // the fresh (inactive) hostile counts, so reaches rates howl's cast
+    // + 1 = 2, and lingers rates reaches' cast + 1 = 3 — the chain order
+    // is reaches -> howl... with lingers firing first of all so both
+    // gain the +1 duration.
     const caster = types.Entity{
         .team = 0,
         .position = .{ .x = 0, .y = 0 },
         .max_health = 20,
         .current_health = 20,
-        .equipped_utility_skills = .{ .that_which_lingers, .that_which_reaches, null, null, null },
+        .equipped_utility_skills = .{ .that_which_lingers, .that_which_reaches, .howl, null, null },
     };
-    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
+        &.{},
+    );
+    {
+        const options = freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
     {
         const options = freshOptions(
             .that_which_lingers,
@@ -755,7 +769,7 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
             arena.allocator(),
         );
         try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 2), options[0].priority);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
 
     // Lingers alone: extends nothing on its own (its recast is outside its
@@ -770,6 +784,109 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
     const lone_state = test_harness.levelStateWithEntities(arena.allocator(), &.{lone_caster}, &.{});
     try testing.expectEqual(@as(usize, 0),
         freshOptions(.that_which_lingers, 0, lone_state, definitions, arena.allocator()).len);
+}
+
+test "that which reaches: the sim differential enables an out-of-range attack" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // A sword-carrier (main hand: slice range 1, spinblade radius 1 —
+    // slot 3 is the off-hand) with a hostile at distance 2: both attacks
+    // are out of range — no plan at all. With the effect virtually
+    // applied, slice (range 2) reaches the hostile: the sim's ending
+    // plan differs, so reaches rates the would-be slice + 1 = 2 and
+    // fires; the re-evaluation then really casts it.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+        .equipped_utility_skills = .{ .that_which_reaches, null, null, null, null },
+    };
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 0 }, .{ .x = 5, .y = 0 },
+    };
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .max_health = 20, .current_health = 20 } },
+            &tiles,
+        );
+        const options = freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+
+    // Distance 3: even with +1 nothing reaches the hostile — no plan in
+    // either world, no differential, no cast.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .max_health = 20, .current_health = 20 } },
+            &tiles,
+        );
+        try testing.expectEqual(@as(usize, 0),
+            freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator()).len);
+    }
+}
+
+test "that which reaches: the sim differential enables a cantrip" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // No weapon at all — burst (radius 1) is the whole bar, with a hostile
+    // at distance 2: burst has nothing in radius. With +1 radius the
+    // hostile counts — the sim's non-ending plan differs, so reaches
+    // rates the would-be burst + 1 = 2.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .equipped_utility_skills = .{ .that_which_reaches, .burst, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .max_health = 20, .current_health = 20 } },
+        &.{},
+    );
+    const options = freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(@as(u32, 2), options[0].priority);
+}
+
+test "that which reaches: an in-range plan is the base-value beneficiary" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // Hostile adjacent: the planned ending cast is slice (1, range 1) —
+    // the base-value rule counts it, reaches rates 1 + 1 = 2 and fires
+    // first (the +1 range applies to the slice). The sim finds no
+    // improvement worth more (same target, same rating).
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 20,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+        .equipped_utility_skills = .{ .that_which_reaches, null, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
+        &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }},
+    );
+    const options = freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(@as(u32, 2), options[0].priority);
 }
 
 test "stunTarget: an unstunned target beats a weaker stunned one" {
@@ -1985,8 +2102,11 @@ test "modifier enchantments: reaching, bull, rushing apply their effects" {
         const modifiers = lookups.getEffectDefinition(.that_which_reaches).additive_effect_modifiers;
         try testing.expectEqual(@as(i32, 1), modifiers.range);
         try testing.expectEqual(@as(i32, 1), modifiers.radius);
-        const options = freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator());
-        try testing.expectEqual(@as(u32, 1), options[0].priority);
+        // No hostiles, nothing range-bearing on the bar: no live
+        // beneficiary and no sim differential — nothing to cast (the old
+        // unconditional rating 1 is gone).
+        try testing.expectEqual(@as(usize, 0),
+            freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator()).len);
     }
     // Bull Form: distance +10.
     {

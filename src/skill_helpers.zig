@@ -9,6 +9,8 @@ const state = @import("state.zig");
 const events = @import("events.zig");
 const functions = @import("functions.zig");
 const skill_mod = @import("skill.zig");
+const ai_select = @import("ai_select.zig");
+const lookups = @import("generated_lookups.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -443,4 +445,55 @@ pub fn ownedEvents(
     const owned = allocator.dupe(Event, events_in_execution_order) catch @panic("failed to allocate skill events");
     std.mem.reverse(Event, owned);
     return owned;
+}
+
+/// The caster's would-be best casts with one extra active effect virtually
+/// applied — an enhancement enchantment's DIFFERENTIAL evaluation: what
+/// would the bar cast if I were already active? (That Which Reaches: +1
+/// range can enable an out-of-range attack or upgrade the target choice;
+/// Bull Form: +10 distance can flip a knockback's collision rating. See
+/// DESIGN → Architecture, AI rating scale.)
+///
+/// Shallow-clones the entities slice (only the caster's effects array is
+/// replaced — the denormalized `additive_effect_modifiers` the modifier
+/// pipeline reads are copied from the effect definition, mirroring
+/// create_effect), then runs `ai_select.bestCasts` against the simulated
+/// state with a FRESH frame: the caller frame's option memos are for the
+/// real state and must not be poisoned with virtual-modifier results. The
+/// sim frame INHERITS the caller's in-progress set plus `skill_id` — the
+/// whole "currently being decided" stack is excluded from the
+/// hypothetical (without the inheritance, two sim-based enhancers
+/// equipped together would alternate through each other's sims forever).
+/// Transient arena memory, pass-scoped.
+pub fn bestCastsWithVirtualEffect(
+    frame: *skill_mod.EvalFrame,
+    skill_id: types.SkillId,
+    effect_id: types.EffectId,
+    caster_index: u32,
+    game_state: GameState,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) ai_select.BestCasts {
+    const level = game_state.level orelse return .{ .ending = null, .non_ending = null };
+
+    var sim_state = game_state;
+    const entities = allocator.dupe(types.Entity, level.entities) catch
+        @panic("failed to clone entities for virtual-effect simulation");
+    const effect_definition = lookups.getEffectDefinition(effect_id);
+    var updated_effects: std.ArrayList(types.Effect) = .empty;
+    updated_effects.appendSlice(allocator, entities[caster_index].active_effects) catch
+        @panic("failed to copy active effects for simulation");
+    updated_effects.append(allocator, .{
+        .effect_id = effect_id,
+        .duration = 1,
+        .additive_effect_modifiers = effect_definition.additive_effect_modifiers,
+    }) catch @panic("failed to append simulated effect");
+    entities[caster_index].active_effects = updated_effects.toOwnedSlice(allocator) catch
+        @panic("failed to allocate simulated effects");
+    sim_state.level.?.entities = entities;
+
+    var sim_frame = skill_mod.EvalFrame.empty();
+    sim_frame.in_progress = frame.in_progress;
+    sim_frame.in_progress.insert(skill_id);
+    return ai_select.bestCasts(caster_index, sim_state, weapon_type_definitions, allocator, &sim_frame);
 }

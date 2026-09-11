@@ -4,6 +4,8 @@ const state = @import("../state.zig");
 const events = @import("../events.zig");
 const skill_mod = @import("../skill.zig");
 const helpers = @import("../skill_helpers.zig");
+const ai_select = @import("../ai_select.zig");
+const lookups = @import("../generated_lookups.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -37,20 +39,83 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at rating 1 (the enchantment pool only orders
-/// the non-ending skills — all worthwhile ones fire; a buff is always
-/// worth its slot while off cooldown).
+/// AI options: rated against the LIVE beneficiaries of the +1 range/radius
+/// — the casts that will actually fire this turn and carry a range or
+/// radius (the base-value rule: the planned ending cast when it has the
+/// field, plus positive-rated non-ending skills with it — the +1 applies
+/// to whatever they cast), MAX'd with the SIM DIFFERENTIAL: the bar
+/// re-evaluated with the effect virtually applied
+/// (helpers.bestCastsWithVirtualEffect) — any plan difference (an
+/// enabled out-of-range cast, a better cast, a different target) is the
+/// +1's doing, and the would-be cast's rating counts as a beneficiary.
+/// Rating = best + 1 (fires first in the chain). No live beneficiary and
+/// no differential → NO cast, no fallback (pure modifiers, nothing to
+/// enhance). See DESIGN → Architecture, AI rating scale.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
-    _: types.WeaponTypeDefinitions,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
     allocator: std.mem.Allocator,
-    _: *skill_mod.EvalFrame,
+    frame: *skill_mod.EvalFrame,
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.that_which_reaches) > 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 1 });
+
+    var best_beneficiary: u32 = 0;
+
+    // The real bar (this frame — reaches itself is cut by the in-progress
+    // guard).
+    const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
+
+    // Base-value rule: the planned ending cast if it carries a range or
+    // radius (the +1 applies to it).
+    if (casts.ending) |plan| {
+        if (lookups.getSkillDefinition(plan.skill_id)) |definition| {
+            if ((definition.range != null or definition.radius != null) and plan.priority > best_beneficiary) {
+                best_beneficiary = plan.priority;
+            }
+        }
+    }
+
+    // ...plus every positive-rated non-ending skill with a range or radius
+    // (all positive cantrips/enchantments fire this turn, so each one's
+    // best option counts; ending skills fire at most one, already counted
+    // via the plan).
+    const slots = caster.collectSkillSlots(weapon_type_definitions);
+    for (&slots) |maybe_skill_id| {
+        const skill_id = maybe_skill_id orelse continue;
+        if (caster.skill_cooldowns.get(skill_id) > 0) continue;
+        const definition = lookups.getSkillDefinition(skill_id) orelse continue;
+        if (definition.skill_type == .weapon_skill or definition.skill_type == .spell) continue;
+        if (definition.range == null and definition.radius == null) continue;
+        const options = ai_select.optionsFor(frame, skill_id, caster_index, game_state, weapon_type_definitions, allocator);
+        for (options) |option| {
+            if (option.priority > best_beneficiary) best_beneficiary = option.priority;
+        }
+    }
+
+    // Sim differential: the bar WITH the effect virtually applied. Any
+    // plan difference is the +1's doing — the would-be cast (enabled,
+    // upgraded, or re-targeted) is a live beneficiary at its rating.
+    const sim = helpers.bestCastsWithVirtualEffect(
+        frame,
+        .that_which_reaches,
+        .that_which_reaches,
+        caster_index,
+        game_state,
+        weapon_type_definitions,
+        allocator,
+    );
+    if (ai_select.plansDiffer(casts.ending, sim.ending) and sim.ending.?.priority > best_beneficiary) {
+        best_beneficiary = sim.ending.?.priority;
+    }
+    if (ai_select.plansDiffer(casts.non_ending, sim.non_ending) and sim.non_ending.?.priority > best_beneficiary) {
+        best_beneficiary = sim.non_ending.?.priority;
+    }
+
+    if (best_beneficiary == 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
 /// Self-cast — fires immediately.
