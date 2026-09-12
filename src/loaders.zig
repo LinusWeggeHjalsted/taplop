@@ -464,6 +464,9 @@ pub fn parseEntityDefinition(
     if (findValue(pairs, "displays_weapons")) |value| {
         entity.displays_weapons = asBool(value) orelse true;
     }
+    if (findValue(pairs, "keep_original_colors")) |value| {
+        entity.keep_original_colors = asBool(value) orelse false;
+    }
     if (findValue(pairs, "max_health")) |value| {
         entity.max_health = asU32(value) orelse 20;
     }
@@ -659,6 +662,7 @@ pub fn entityDefinitionsEqual(a: types.Entity, b: types.Entity) bool {
     if (!optionalBootsEqual(a.boots, b.boots)) return false;
     if (a.color_index != b.color_index) return false;
     if (a.displays_weapons != b.displays_weapons) return false;
+    if (a.keep_original_colors != b.keep_original_colors) return false;
     if (!entityLayersEqual(a.layers, b.layers)) return false;
     return std.mem.eql(?types.SkillId, a.equipped_utility_skills[0..], b.equipped_utility_skills[0..]);
 }
@@ -714,6 +718,7 @@ pub fn decorationDefinitionsEqual(a: types.Decoration, b: types.Decoration) bool
         if (fa.x != fb.x or fa.y != fb.y) return false;
     }
     if (a.color_index != b.color_index) return false;
+    if (a.keep_original_colors != b.keep_original_colors) return false;
     return decorationLayersEqual(a.layers, b.layers);
 }
 
@@ -786,6 +791,7 @@ pub fn buildEditorMission(
                 if (std.mem.eql(u8, dt.sprite, decoration.name) and
                     decorationFootprintEqual(dt.footprint, decoration.footprint) and
                     dt.color_index == decoration.color_index and
+                    dt.keep_original_colors == decoration.keep_original_colors and
                     decorationLayersEqual(dt.layers, decoration.layers))
                 {
                     type_id = @intCast(dt_index);
@@ -802,6 +808,7 @@ pub fn buildEditorMission(
                     .footprint = fp,
                     .pixel_dims = decoration.pixel_dims,
                     .color_index = decoration.color_index,
+                    .keep_original_colors = decoration.keep_original_colors,
                     .layers = ly,
                 }) catch @panic("failed to append decoration type");
             }
@@ -977,6 +984,7 @@ pub fn instantiateEditorLevel(
             .footprint = dt.footprint,
             .pixel_dims = dt.pixel_dims,
             .color_index = dt.color_index,
+            .keep_original_colors = dt.keep_original_colors,
             .layers = dt.layers,
         }) catch @panic("failed to append decoration");
     }
@@ -1050,6 +1058,7 @@ const DecorationDefinition = struct {
     footprint: []const types.Vector2, // sprite-grid coords
     pixel_dims: types.Vector2,
     color_index: u32 = 0,
+    keep_original_colors: bool = false,
     layers: []const types.DecorationLayer = &.{},
 };
 
@@ -1159,6 +1168,7 @@ fn parseDecorationEntry(
 ) DecorationDefinition {
     const base_sprite = findValue(pairs, "sprite") orelse &.{};
     const base_color_index = asU32(findValue(pairs, "color_index") orelse "0") orelse 0;
+    const keep_original_colors = asBool(findValue(pairs, "keep_original_colors") orelse "false") orelse false;
     const base_pixel_dims = resolveDecorationSpriteDimensions(base_sprite, mission_path, file_source, allocator);
 
     // Collect base footprint + parse layer sub-groups. The pairs list is
@@ -1224,6 +1234,7 @@ fn parseDecorationEntry(
         .footprint = footprint.toOwnedSlice(allocator) catch @panic("failed to own footprint slice"),
         .pixel_dims = base_pixel_dims,
         .color_index = base_color_index,
+        .keep_original_colors = keep_original_colors,
         .layers = layers.toOwnedSlice(allocator) catch @panic("failed to own layers slice"),
     };
 }
@@ -1314,6 +1325,7 @@ pub fn loadDecorationRegistry(
                 .footprint = def.footprint,
                 .pixel_dims = def.pixel_dims,
                 .color_index = def.color_index,
+                .keep_original_colors = def.keep_original_colors,
                 .layers = def.layers,
             }) catch @panic("failed to append decoration registry entry");
         }
@@ -1382,6 +1394,7 @@ pub fn loadEditorDefaults(
             .footprint = decoration_definition.footprint,
             .pixel_dims = decoration_definition.pixel_dims,
             .color_index = decoration_definition.color_index,
+            .keep_original_colors = decoration_definition.keep_original_colors,
             .layers = decoration_definition.layers,
         },
         .item = .{ .id = itemDisplayName(item, allocator), .item = item },
@@ -1763,6 +1776,7 @@ pub fn loadLevel(
                                 .footprint = deco_def.footprint,
                                 .pixel_dims = deco_def.pixel_dims,
                                 .color_index = deco_def.color_index,
+                                .keep_original_colors = deco_def.keep_original_colors,
                                 .layers = deco_def.layers,
                             };
                             cloneDecorationOwned(&decoration, allocator);
@@ -1940,6 +1954,7 @@ pub fn loadHub(
                                 .footprint = deco_def.footprint,
                                 .pixel_dims = deco_def.pixel_dims,
                                 .color_index = deco_def.color_index,
+                                .keep_original_colors = deco_def.keep_original_colors,
                                 .layers = deco_def.layers,
                             };
                             cloneDecorationOwned(&decoration, allocator);
@@ -2718,6 +2733,61 @@ test "loadLevel multi-tile decoration footprint" {
     // 768x768 pixel dims from the comptime sprite-metadata table.
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.x);
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.y);
+}
+
+test "keep_original_colors: parses for entities + decorations, default false, dedup-distinct" {
+    const allocator = std.testing.allocator;
+    // An entity + a decoration carrying `keep_original_colors true`, plus
+    // a second decoration without the key (defaults false).
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Keep Colors Test
+        \\
+        \\Layout
+        \\1T2
+        \\!.
+        \\..=
+        \\
+        \\Entities
+        \\character_code 1
+        \\name Skeleton
+        \\sprite skeleton_1
+        \\keep_original_colors true
+        \\
+        \\Decorations
+        \\character_code T
+        \\sprite tree_1
+        \\color_index 4
+        \\keep_original_colors true
+        \\footprint 1 2
+        \\
+        \\character_code 2
+        \\sprite stone_1
+        \\footprint 0 0
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const level = try loadLevel(sections, null, allocator, "", "", null);
+    defer freeLevel(level, allocator);
+
+    // The authored flags parse; the absent key defaults false.
+    try std.testing.expect(level.entities[1].keep_original_colors);
+    try std.testing.expect(level.decorations[0].keep_original_colors);
+    try std.testing.expect(!level.decorations[1].keep_original_colors);
+
+    // Dedup equality: the flag is part of a definition's visual identity.
+    var flag_off_entity = level.entities[1];
+    flag_off_entity.keep_original_colors = false;
+    try std.testing.expect(entityDefinitionsEqual(level.entities[1], level.entities[1]));
+    try std.testing.expect(!entityDefinitionsEqual(level.entities[1], flag_off_entity));
+    var flag_off_decoration = level.decorations[0];
+    flag_off_decoration.keep_original_colors = false;
+    try std.testing.expect(decorationDefinitionsEqual(level.decorations[0], level.decorations[0]));
+    try std.testing.expect(!decorationDefinitionsEqual(level.decorations[0], flag_off_decoration));
 }
 
 test "loadLevel decoration with layers" {

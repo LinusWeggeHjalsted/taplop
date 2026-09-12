@@ -662,6 +662,9 @@ fn writeEditorLevel(
             try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
             try buffer.print(allocator, "sprite {s}\n", .{definition.sprite});
             try buffer.print(allocator, "color_index {d}\n", .{definition.color_index});
+            if (definition.keep_original_colors) {
+                try buffer.print(allocator, "keep_original_colors true\n", .{});
+            }
             for (definition.footprint) |footprint_tile| {
                 try buffer.print(allocator, "footprint {d} {d}\n", .{ footprint_tile.x, footprint_tile.y });
             }
@@ -704,6 +707,9 @@ fn writeEntityDefinition(
     }
     try buffer.print(allocator, "color_index {d}\n", .{template.color_index});
     try buffer.print(allocator, "displays_weapons {s}\n", .{if (template.displays_weapons) "true" else "false"});
+    if (template.keep_original_colors) {
+        try buffer.print(allocator, "keep_original_colors true\n", .{});
+    }
     try buffer.print(allocator, "max_health {d}\n", .{template.max_health});
     try buffer.print(allocator, "defense {d}\n", .{template.defense});
     try buffer.print(allocator, "speed {d}\n", .{template.speed});
@@ -1102,6 +1108,7 @@ const editor_write_fixture: types.Editor = .{
             .team = 1,
             .color_index = 2,
             .displays_weapons = false,
+            .keep_original_colors = true,
             .max_health = 30,
             .defense = 1,
             .speed = 2,
@@ -1124,7 +1131,13 @@ const editor_write_fixture: types.Editor = .{
         } },
     },
     .decoration_types = &[_]types.DecorationTypeDef{
-        .{ .id = "stone_1", .sprite = "stone_1", .color_index = 5, .footprint = &[_]types.Vector2{.{ .x = 0, .y = 0 }} },
+        .{
+            .id = "stone_1",
+            .sprite = "stone_1",
+            .color_index = 5,
+            .keep_original_colors = true,
+            .footprint = &[_]types.Vector2{.{ .x = 0, .y = 0 }},
+        },
     },
     .item_types = &[_]types.ItemTypeDef{
         .{ .id = "New Sword", .item = .{ .weapon = .{
@@ -1274,6 +1287,7 @@ test "writeEditorMission round-trips through the load path" {
         const reloaded_decoration = reloaded.decoration_types[level.decoration_placements[0].type_id];
         try std.testing.expectEqualStrings("stone_1", reloaded_decoration.sprite);
         try std.testing.expectEqual(@as(u32, 5), reloaded_decoration.color_index);
+        try std.testing.expect(reloaded_decoration.keep_original_colors);
         try std.testing.expect(loaders.decorationFootprintEqual(reloaded_decoration.footprint, editor.decoration_types[0].footprint));
         try std.testing.expectEqual(@as(usize, 1), level.item_placements.len);
         try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.item_placements[0].position);

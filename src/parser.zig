@@ -468,6 +468,7 @@ const level_entities_keys = [_][]const u8{
     "team",
     "color_index",
     "displays_weapons",
+    "keep_original_colors",
     "max_health",
     "defense",
     "speed",
@@ -500,6 +501,7 @@ const level_decorations_keys = [_][]const u8{
     "character_code",
     "sprite",
     "color_index",
+    "keep_original_colors",
     "footprint",
     "layer",
 };
@@ -509,6 +511,7 @@ const level_decorations_keys = [_][]const u8{
 const decoration_registry_decorations_keys = [_][]const u8{
     "sprite",
     "color_index",
+    "keep_original_colors",
     "footprint",
     "layer",
 };

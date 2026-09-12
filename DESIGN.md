@@ -3833,6 +3833,21 @@ color_index + layers for editor palette dedup. **Weapons** are team-gradient
 index 1 (player → player gradient, enemy → enemy gradient) and are suppressed
 when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed
 from `displays_weapons true|false` in the enemy definition (default true).
+**keep_original_colors** (`Entity` / `Decoration` / `DecorationTypeDef`,
+config key `keep_original_colors true|false`, default false): render the
+base sprite + ALL overlay layers UNTINTED — the art keeps its own colors
+(custom mission-bundled art is authored pre-colored; shipped art is
+authored grayscale for tinting, hence default-off). ONE flag per type —
+not per layer: the pre-colored-or-not decision is asset-level, and mixed
+stacks (untinted base under a tinted layer) read as mistakes. WEAPONS
+stay team-gradient index 1 and health bars / effect overlays stay themed
+(our art, not the asset's). The flag is part of a definition's visual
+identity: editor palette dedup compares it, and the level-file writer
+emits it only when true. Pick-time defaults follow the art source — an
+OFFICIAL pick sets it false, a mission-local pick sets it true (the pick
+event carries it — one undo step); the inspector's toggle is the
+override either way. Picker previews: the Mission tab renders custom
+art UNTINTED (its natural appearance); the Official tab ignores the flag.
 **Health bars** are always-on, drawn above the entity's actual art top (same
 opaque-bbox scan as the skill-icon anim — see DESIGN → Animation). The scan
 is a full `SpriteBounds { top, bottom, left, right }` (one decode per sprite,

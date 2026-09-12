@@ -874,6 +874,11 @@ pub const Decoration = struct {
     /// (lightest world color). Tiles use 1/3, background uses 2; decorations
     /// should use 0/4/5 for distinction.
     color_index: u32 = 0,
+    /// Render the base sprite + overlay layers UNTINTED — the art keeps
+    /// its own colors (custom mission-bundled art is authored pre-colored).
+    /// Default-off: shipped art is authored grayscale for gradient
+    /// tinting. See DESIGN → Entity & UI Coloring (keep_original_colors).
+    keep_original_colors: bool = false,
     /// Overlay layers (same pixel dims as the base), drawn over the base in
     /// declaration order, each colored independently.
     layers: []const DecorationLayer = &.{},
@@ -1341,6 +1346,13 @@ pub const Entity = struct {
     /// enemies like wolves set `displays_weapons false` to suppress weapon
     /// overlays. Parsed from the level file's enemy definition.
     displays_weapons: bool = true,
+    /// Render the base sprite + overlay layers UNTINTED — the art keeps
+    /// its own colors (custom mission-bundled art is authored
+    /// pre-colored). Weapons stay gradient-tinted (our art); health bars
+    /// + effect overlays unaffected. Default-off: shipped art is
+    /// authored grayscale for gradient tinting. See DESIGN → Entity &
+    /// UI Coloring (keep_original_colors).
+    keep_original_colors: bool = false,
     /// Color index into the team's gradient (enemy → enemy_gradient, player
     /// → player_gradient). The player's index is overridden by a settings
     /// field at render time; enemies read this directly. Default 0.
@@ -1746,6 +1758,9 @@ pub const DecorationTypeDef = struct {
     footprint: []const Vector2 = &.{},
     pixel_dims: Vector2 = .{ .x = 0, .y = 0 },
     color_index: u32 = 0,
+    /// Untinted rendering (base + layers keep the art's colors) — see
+    /// Decoration.keep_original_colors.
+    keep_original_colors: bool = false,
     layers: []const DecorationLayer = &.{},
 };
 

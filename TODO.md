@@ -1075,7 +1075,7 @@ paragraph). Remaining work:
         loading for `custom/<mission-dir>/<stem>` ids, mission-scan
         dims, picker Mission cells render, footprint editor draws
         custom art. History in DONE.md.
-  - [ ] **2 — data model + config:** `keep_original_colors` on
+  - [x] **2 — data model + config:** `keep_original_colors` on
         `Entity`, `Decoration`, `DecorationTypeDef`; parser whitelist
         keys + loaders + `writeEditorLevel` + dedup equality
         (`entityDefinitionsEqual`/`decorationDefinitionsEqual`) +
