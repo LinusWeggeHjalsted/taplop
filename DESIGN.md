@@ -2044,6 +2044,21 @@ So a clone is a permanent, compounding material factory keyed by mission.
   flash + number land together. Combat-log tier `.none` — the
   attack/collision entries already represent the hit (revisit when the
   detailed-log UI lands).
+  **Skill pacing (the generic rule).** Every skill that pushes more than one
+  event gets an `effect_step_wait_milliseconds` (125ms) wait between each
+  consecutive pair — interleaved MECHANICALLY by `helpers.ownedEvents` (the
+  one constructor every recipe's list goes through), in natural execution
+  order before the LIFO reversal. Skills never insert waits themselves;
+  pacing derives from the list length, so a new multi-event skill is paced
+  for free and forgetting one is structurally impossible. Scope: a skill's
+  OWN authored list only — effect-triggered lists (Reflect's counter-hit,
+  That-Which-Explodes' AoE) and handler-composed follow-ups (death, the
+  lifesteal heal) resolve immediately; those are causal consequences of one
+  event, not an authored sequence. Lists of 0/1 events pass through
+  unchanged. Accepted costs: recorded-log growth (+1 wait per gap) and
+  linear drain latency on large AoEs (125ms between each target — with the
+  spiral that reads as a deliberate outward ripple; retune via the one
+  constant).
   **Aggro + level-end are decoupled.** `aggro_check` (no payload) scans every
   inactive entity and activates it if it sees an opposing entity within ITS
   OWN `aggro_range` — self-centric, one event covers the whole level. Pushed

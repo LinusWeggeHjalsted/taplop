@@ -487,13 +487,29 @@ pub fn isOccupied(game_state: GameState, position: Vector2, exclude_index: ?u32)
 /// runs first. Reversing here lets skill authors list events in the order they
 /// should happen (e.g. attack, then stun).
 ///
+/// PACING (the generic rule — see DESIGN → Architecture → Skill pacing): a
+/// skill that pushes more than one event gets an `effect_step_wait_milliseconds`
+/// wait between each consecutive pair, interleaved in natural execution order
+/// before the reversal. Lists of 0 or 1 events pass through unchanged. Skills
+/// never insert waits themselves — the pacing derives from the list length.
+///
 /// The result lives in `allocator` (not a caller-frame temporary): pushEvents
 /// consumes it synchronously but it must be valid at that point.
 pub fn ownedEvents(
     allocator: std.mem.Allocator,
     events_in_execution_order: []const Event,
 ) []const Event {
-    const owned = allocator.dupe(Event, events_in_execution_order) catch @panic("failed to allocate skill events");
+    if (events_in_execution_order.len < 2) {
+        const owned = allocator.dupe(Event, events_in_execution_order) catch @panic("failed to allocate skill events");
+        return owned;
+    }
+
+    const paced_length = events_in_execution_order.len * 2 - 1;
+    const owned = allocator.alloc(Event, paced_length) catch @panic("failed to allocate skill events");
+    for (events_in_execution_order, 0..) |event, index| {
+        owned[index * 2] = event;
+        if (index > 0) owned[index * 2 - 1] = effectStepWait();
+    }
     std.mem.reverse(Event, owned);
     return owned;
 }
@@ -505,10 +521,11 @@ pub fn ownedEvents(
 /// See DESIGN → Architecture → Damage apply split + TODO → Effect pacing.
 pub const effect_step_wait_milliseconds: u32 = 125;
 
-/// A `wait` event carrying `effect_step_wait_milliseconds` — the constructor
-/// skill recipes interleave into their `ownedEvents` lists (natural
-/// execution order) to pace their individual effects.
-pub fn effectStepWait() Event {
+/// A `wait` event carrying `effect_step_wait_milliseconds` — the pacing wait
+/// `ownedEvents` interleaves between a skill's consecutive events. File-private:
+/// skills never construct waits themselves (the generic rule derives pacing
+/// from the list length).
+fn effectStepWait() Event {
     return .{ .meta_event = .{ .wait = .{
         .duration_milliseconds = effect_step_wait_milliseconds,
     } } };
@@ -664,4 +681,38 @@ test "hostileIndicesInRadius: spiral execution order + the living/hostile filter
     try std.testing.expectEqual(@as(usize, 2), indices.len);
     try std.testing.expectEqual(@as(u32, 1), indices[0]);
     try std.testing.expectEqual(@as(u32, 2), indices[1]);
+}
+
+test "ownedEvents: paces multi-event lists with waits between each pair, passes short lists through" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Single + zero events pass through unchanged (no pair to gap).
+    const single = [_]Event{
+        .{ .sub_level_event = .{ .heal = .{ .entity_index = 0, .amount = 3 } } },
+    };
+    const paced_single = ownedEvents(arena.allocator(), &single);
+    try std.testing.expectEqual(@as(usize, 1), paced_single.len);
+    const paced_empty = ownedEvents(arena.allocator(), &.{});
+    try std.testing.expectEqual(@as(usize, 0), paced_empty.len);
+
+    // Three events -> 5 slots: a wait between each consecutive pair. The
+    // returned slice is REVERSED (LIFO), so reading it forward gives the
+    // EXECUTION order back: attack, wait, stun, wait, knockback.
+    const recipe = [_]Event{
+        .{ .sub_level_event = .{ .attack = .{ .attacker_index = 0, .defender_index = 1, .outgoing_damage = 5 } } },
+        .{ .sub_level_event = .{ .stun = .{ .attacker_index = 0, .defender_index = 1, .stun_duration = 1 } } },
+        .{ .sub_level_event = .{ .knockback = .{ .attacker_index = 0, .defender_index = 1, .distance = 2, .knockback_damage = 1 } } },
+    };
+    const paced = ownedEvents(arena.allocator(), &recipe);
+    try std.testing.expectEqual(@as(usize, 5), paced.len);
+
+    // Even indices are the skill's events (execution order), odd indices
+    // are the pacing waits.
+    try std.testing.expect(paced[4].sub_level_event == .attack);
+    try std.testing.expect(paced[3].meta_event == .wait);
+    try std.testing.expectEqual(effect_step_wait_milliseconds, paced[3].meta_event.wait.duration_milliseconds);
+    try std.testing.expect(paced[2].sub_level_event == .stun);
+    try std.testing.expect(paced[1].meta_event == .wait);
+    try std.testing.expect(paced[0].sub_level_event == .knockback);
 }

@@ -13109,3 +13109,36 @@ Tests: the spiral geometry (ring-1 clockwise order, ring-2 continuation,
 result), and meteor's center-first execution (asserted on the REVERSED
 ownedEvents array — last element executes first). Convention: DESIGN →
 Determinism & Tiebreaking (AoE execution order).
+
+## Effect pacing 3 — the generic skill rule (ownedEvents interleaves the waits)
+
+Settled as a GENERIC RULE instead of the planned per-skill sweep: every
+skill that pushes more than one event gets a 125ms wait between each
+consecutive pair, interleaved mechanically in `helpers.ownedEvents` (the
+one constructor every recipe's list goes through) in natural execution
+order before the LIFO reversal. Skills never insert waits themselves —
+pacing derives from the list length, so new multi-event skills are paced
+for free and forgetting a wait is structurally impossible (the
+machine-walked-truth hygiene rule). Bash's manual wait was removed
+(subsumed — it would have doubled the gap); `effectStepWait` became
+file-private since only ownedEvents constructs waits now.
+
+Scope decisions (see DESIGN → Architecture → Skill pacing): the rule
+covers a skill's OWN authored list only. Effect-triggered lists
+(Reflect's counter-hit) and handler-composed follow-ups (death, the
+lifesteal heal, knockback's move→collision) resolve immediately — causal
+consequences, not an authored sequence. Accepted costs: +1 recorded wait
+per gap (session logs/crash dumps/validation replays grow ~2-3x per
+multi-event skill use) and linear drain latency on large AoEs (a packed
+meteor can run ~4s — deliberate ripple; escape hatches if it drags:
+shorten the constant, or a per-skill opt-out field when a real case
+appears).
+
+Test fallout was instructive: the membership loops that read
+`event.sub_level_event.attack` directly panicked on interleaved wait
+events (bad union access) — they now skip by TAG (`event == .meta_event`);
+length-pinned sites updated (n events → 2n-1 slots); a new ownedEvents
+unit test pins the interleave semantics. The follow-up idea (an
+accelerating variant — each skill use resets the gap to 125ms and the
+following waits shrink, so long chains wind up) is recorded as deferred
+in TODO → Effect pacing.

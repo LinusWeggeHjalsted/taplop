@@ -104,10 +104,6 @@ fn useSkill(
             .defender_index = defender_index,
             .outgoing_damage = damage,
         } } },
-        // Pacing gap between the skill's individual effects: the hit lands
-        // (its own attack → damage wait elapses first), then the shove
-        // begins. Natural execution order — ownedEvents reverses into LIFO.
-        helpers.effectStepWait(),
         .{ .sub_level_event = .{ .knockback = .{
             .attacker_index = caster_index,
             .defender_index = defender_index,

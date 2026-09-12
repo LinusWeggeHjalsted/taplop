@@ -52,12 +52,18 @@ Test by running `zig build run` and clicking through.
   - [x] **Slice 2 — core waits:** `effect_step_wait_milliseconds` (125,
         distinct from `turn_flow_wait_milliseconds = 500`) pushed between
         attack → damage and collision → damage. History in DONE.md.
-  - [ ] **Slice 3 — the sweep:** insert waits where they read well across
-        skills + generic chains: per-target gaps in AoE skills (worldfire's
-        attack, attack, attack …), bash's attack → knockback → collision
-        chain, attack → lifesteal heal. (The knockback → collision ordering
-        was fixed in the slice-2 hotfix — the collision event is pushed
-        before the forced move so the slide pops first; see DONE.md.)
+  - [x] **Slice 3 — per-skill waits:** superseded by the GENERIC RULE —
+        every skill that pushes more than one event gets a 125ms wait
+        between each consecutive pair, interleaved mechanically in
+        `helpers.ownedEvents` (one site; new skills paced for free). The
+        per-skill sweep is moot; bash's manual wait removed (subsumed).
+        Design: DESIGN → Architecture → Skill pacing; history in DONE.md.
+  - [ ] **Deferred — accelerating effect pacing:** a special wait event
+        (or per-wait payload) where each skill use RESETS the gap to 125ms
+        and the following waits within that skill decrease in length — an
+        accelerating feel for long chains (big AoEs wind up instead of
+        dragging). Needs: wait-event variant or a duration function, and a
+        per-skill-use reset point. Revisit after playtesting the flat rule.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

@@ -191,16 +191,19 @@ test "shoot: useSkill emits attack + retreat with main-hand damage" {
     );
 
     const result = shoot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqual(@as(usize, 3), result.len);
 
-    // ownedEvents returns LIFO order — the attack (listed first in
-    // execution order) sits LAST in the slice, retreat first.
+    // ownedEvents returns LIFO order — attack, wait, retreat in execution
+    // order → retreat, wait, attack in the slice (the wait is the pacing
+    // gap ownedEvents interleaves between the recipe's events).
     const retreat = result[0].sub_level_event.retreat;
     try testing.expectEqual(@as(u32, 0), retreat.entity_index);
     try testing.expectEqual(defender.position, retreat.target_position);
     try testing.expectEqual(@as(u32, 1), retreat.distance);
 
-    const attack = result[1].sub_level_event.attack;
+    try testing.expect(result[1].meta_event == .wait);
+
+    const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 0), attack.attacker_index);
     try testing.expectEqual(@as(u32, 1), attack.defender_index);
     try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
@@ -443,17 +446,19 @@ test "powerful shot: useSkill emits attack + knockback with half collision damag
     );
 
     const result = powerful_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqual(@as(usize, 3), result.len);
 
-    // ownedEvents returns LIFO order — attack (first in execution order)
-    // sits LAST in the slice.
+    // ownedEvents returns LIFO order — attack, wait, knockback in execution
+    // order → knockback, wait, attack in the slice.
     const knockback = result[0].sub_level_event.knockback;
     try testing.expectEqual(@as(u32, 0), knockback.attacker_index);
     try testing.expectEqual(@as(u32, 1), knockback.defender_index);
     try testing.expectEqual(@as(u32, 2), knockback.distance);
     try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
 
-    const attack = result[1].sub_level_event.attack;
+    try testing.expect(result[1].meta_event == .wait);
+
+    const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
     try testing.expectEqual(@as(u32, 1), attack.defender_index);
 }
@@ -519,15 +524,18 @@ test "head shot: useSkill emits attack + stun with off-hand damage" {
     );
 
     const result = head_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqual(@as(usize, 3), result.len);
 
-    // LIFO order — attack (first in execution order) sits LAST.
+    // LIFO order — attack, wait, stun in execution order → stun, wait,
+    // attack in the slice.
     const stun = result[0].sub_level_event.stun;
     try testing.expectEqual(@as(u32, 0), stun.attacker_index);
     try testing.expectEqual(@as(u32, 1), stun.defender_index);
     try testing.expectEqual(@as(u32, 1), stun.stun_duration);
 
-    const attack = result[1].sub_level_event.attack;
+    try testing.expect(result[1].meta_event == .wait);
+
+    const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 9), attack.outgoing_damage);
     try testing.expectEqual(@as(u32, 1), attack.defender_index);
 }
@@ -1187,9 +1195,11 @@ test "meteor: useSkill attacks each hostile within radius of the target tile" {
 
     const result = meteor_skill.skill.useSkill(0, .{ .x = 3, .y = 0 }, game_state, arena.allocator());
     // On-tile (distance 0) + neighbor (distance 1) hit at main-hand damage;
-    // beyond (distance 2) + the ally not.
-    try testing.expectEqual(@as(usize, 2), result.len);
+    // beyond (distance 2) + the ally not. With the pacing wait the slice is
+    // attack, wait, attack.
+    try testing.expectEqual(@as(usize, 3), result.len);
     for (result) |event| {
+        if (event == .meta_event) continue;
         const attack = event.sub_level_event.attack;
         try testing.expectEqual(@as(u32, 0), attack.attacker_index);
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
@@ -1198,7 +1208,7 @@ test "meteor: useSkill attacks each hostile within radius of the target tile" {
     // Meteor strikes the CENTER first, then the spiral — and useSkill
     // returns the REVERSED array (ownedEvents; the last element executes
     // first), so the center target (`on_tile`, index 1) is the LAST element.
-    try testing.expectEqual(@as(u32, 1), result[1].sub_level_event.attack.defender_index);
+    try testing.expectEqual(@as(u32, 1), result[2].sub_level_event.attack.defender_index);
 }
 
 test "computeMaxDamageRange: max reach over off-cooldown damaging skills" {
@@ -1595,10 +1605,11 @@ test "drain: useSkill attacks each hostile in radius with lifesteal" {
     );
 
     const result = drain_skill.skill.useSkill(0, null, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 2), result.len);
-    // ownedEvents reverses execution order; both events are attacks with
-    // the off-hand damage and lifesteal on.
+    try testing.expectEqual(@as(usize, 3), result.len); // 2 attacks + the pacing wait
+    // ownedEvents reverses execution order; both attacks carry the
+    // off-hand damage and lifesteal on (the pacing wait skips the checks).
     for (result) |event| {
+        if (event == .meta_event) continue;
         const attack = event.sub_level_event.attack;
         try testing.expectEqual(@as(u32, 0), attack.attacker_index);
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
@@ -1697,8 +1708,10 @@ test "worldfire: useSkill attacks each hostile within radius 5 for spell damage"
 
     const result = worldfire_skill.skill.useSkill(0, null, game_state, arena.allocator());
     // Both radius-5 hostiles hit (Chebyshev diagonal = 5); beyond + ally not.
-    try testing.expectEqual(@as(usize, 2), result.len);
+    // 2 attacks + the pacing wait between them.
+    try testing.expectEqual(@as(usize, 3), result.len);
     for (result) |event| {
+        if (event == .meta_event) continue;
         const attack = event.sub_level_event.attack;
         try testing.expectEqual(@as(u32, 0), attack.attacker_index);
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
@@ -1784,31 +1797,40 @@ test "shockwave: useSkill attacks then knockbacks each hostile in radius" {
     );
 
     const result = shockwave_skill.skill.useSkill(0, null, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 4), result.len); // 2 attacks + 2 knockbacks
+    try testing.expectEqual(@as(usize, 7), result.len); // 2 attacks + 2 knockbacks + 3 pacing waits
 
     var attacks: usize = 0;
     var knockbacks: usize = 0;
-    for (result) |event| switch (event.sub_level_event) {
-        .attack => |attack| {
-            attacks += 1;
-            try testing.expectEqual(@as(u32, 0), attack.attacker_index);
-            try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
-            try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    var waits: usize = 0;
+    for (result) |event| switch (event) {
+        .sub_level_event => |sub| switch (sub) {
+            .attack => |attack| {
+                attacks += 1;
+                try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+                try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
+                try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+            },
+            .knockback => |knockback| {
+                knockbacks += 1;
+                try testing.expectEqual(@as(u32, 2), knockback.distance);
+                try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
+                try testing.expect(knockback.defender_index == 1 or knockback.defender_index == 2);
+            },
+            else => try testing.expect(false),
         },
-        .knockback => |knockback| {
-            knockbacks += 1;
-            try testing.expectEqual(@as(u32, 2), knockback.distance);
-            try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
-            try testing.expect(knockback.defender_index == 1 or knockback.defender_index == 2);
+        .meta_event => |meta| switch (meta) {
+            .wait => waits += 1,
+            else => try testing.expect(false),
         },
         else => try testing.expect(false),
     };
     try testing.expectEqual(@as(usize, 2), attacks);
     try testing.expectEqual(@as(usize, 2), knockbacks);
+    try testing.expectEqual(@as(usize, 3), waits);
     // LIFO: the pair listed first (defender 1's attack) runs first — its
     // knockback sits at the BOTTOM of the reversed slice.
-    try testing.expectEqual(@as(u32, 1), result[3].sub_level_event.attack.defender_index);
-    try testing.expectEqual(@as(u32, 1), result[2].sub_level_event.knockback.defender_index);
+    try testing.expectEqual(@as(u32, 1), result[6].sub_level_event.attack.defender_index);
+    try testing.expectEqual(@as(u32, 1), result[4].sub_level_event.knockback.defender_index);
 }
 
 test "shockwave: options follow the stacked-bump ladder" {
@@ -2011,8 +2033,10 @@ test "chain lightning: useSkill arcs through the connected hostile component" {
     );
 
     const result = chain_lightning_skill.skill.useSkill(0, first.position, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 3), result.len);
+    // 3 attacks + the pacing waits between them.
+    try testing.expectEqual(@as(usize, 5), result.len);
     for (result) |event| {
+        if (event == .meta_event) continue;
         const attack = event.sub_level_event.attack;
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2 or attack.defender_index == 3);
@@ -2158,8 +2182,9 @@ test "burst: useSkill attacks each hostile in radius with spell damage" {
     );
 
     const result = burst_skill.skill.useSkill(0, null, game_state, arena.allocator());
-    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expectEqual(@as(usize, 3), result.len); // 2 attacks + the pacing wait
     for (result) |event| {
+        if (event == .meta_event) continue;
         const attack = event.sub_level_event.attack;
         try testing.expectEqual(@as(u32, 5), attack.outgoing_damage);
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
@@ -2185,9 +2210,11 @@ test "meditate: resets each OTHER equipped utility skill, itself excluded" {
     setCooldown(game_state, 0, .skewer, 4); // off-bar preserved: untouched
 
     const result = meditate_skill.skill.useSkill(0, null, game_state, arena.allocator());
-    // Blink + howl reset; meditate itself and the off-bar skewer excluded.
-    try testing.expectEqual(@as(usize, 2), result.len);
+    // Blink + howl reset (2 events + the pacing wait); meditate itself and
+    // the off-bar skewer excluded.
+    try testing.expectEqual(@as(usize, 3), result.len);
     for (result) |event| {
+        if (event == .meta_event) continue;
         const change = event.sub_level_event.change_cooldown;
         try testing.expect(change.skill_id == .blink or change.skill_id == .howl);
         try testing.expect(change.entity_index == 0);
