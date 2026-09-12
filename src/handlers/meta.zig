@@ -821,7 +821,7 @@ pub fn handleMetaEvent(
             // `wait` — see DESIGN → Architecture → Skill pacing). Duration is
             // COMPUTED from `wait_acceleration` (how many accelerating waits
             // have elapsed since `use_skill` reset the chain): 125ms decayed
-            // by 2/3 per prior gap, so a multi-hit skill winds up. The counter
+            // by 3/4 per prior gap, so a multi-hit skill winds up. The counter
             // increment is event-driven GameState, recomputed identically on
             // replay/undo — the derived durations stay deterministic.
             const duration_milliseconds = skill_helpers.acceleratedEffectStepWaitMilliseconds(

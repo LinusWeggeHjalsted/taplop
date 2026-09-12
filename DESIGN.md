@@ -2054,13 +2054,14 @@ So a clone is a permanent, compounding material factory keyed by mission.
   events pass through unchanged.
   The wait is `accelerating_wait` — an EMPTY-payload `wait` variant whose
   duration is COMPUTED at pop time: `effect_step_wait_milliseconds` (125ms)
-  decayed by 2/3 per prior gap in the chain (integer math, floored at 1ms —
-  125, 83, 55, 36, 24, 16, 10, 6, 4, 2, 1 — a long chain winds up instead of
+  decayed by 3/4 per prior gap in the chain (integer math, floored at 1ms —
+  125, 93, 69, 51, 38, 28, 21, 15, 11, 8, 6, 4, 3, 2, 1 — a long chain winds up
+  instead of
   dragging). ONE shared sequence per skill use: the attack/collision arms
   push the SAME variant for their hit-resolution → damage-landing gap, so
   a multi-hit skill's rhythm accelerates across its whole chain (spinblade
-  ×3: attack → 125 → damage → 83 → attack → 55 → damage → 36 → attack →
-  24 → damage). The counter is `GameState.wait_acceleration`, reset by the
+  ×3: attack → 125 → damage → 93 → attack → 69 → damage → 51 → attack →
+  38 → damage). The counter is `GameState.wait_acceleration`, reset by the
   ONE chain start — `use_skill` (every attack is skill-mediated: the
   player's attack step IS a weapon-skill use, enemies cast through
   bestCasts, and adrenaline_surge's handler-pushed attacks ride the

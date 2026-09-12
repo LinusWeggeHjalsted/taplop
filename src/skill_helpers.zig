@@ -522,16 +522,17 @@ pub fn ownedEvents(
 pub const effect_step_wait_milliseconds: u32 = 125;
 
 /// Duration of the `gap_count`-th accelerating wait in an effect chain:
-/// `effect_step_wait_milliseconds` multiplied by 2/3 per prior gap (integer
+/// `effect_step_wait_milliseconds` multiplied by 3/4 per prior gap (integer
 /// math), floored at 1ms — the tail of a long chain converges to
 /// near-simultaneous without producing zero-duration no-op events. The
 /// accelerating-wait arm computes this from `GameState.wait_acceleration`;
-/// the sequence for the first gaps is 125, 83, 55, 36, 24, 16, 10, 6, 4, 2, 1.
+/// the sequence for the first gaps is 125, 93, 69, 51, 38, 28, 21, 15, 11,
+/// 8, 6, 4, 3, 2, 1.
 pub fn acceleratedEffectStepWaitMilliseconds(gap_count: u32) u32 {
     var duration: u32 = effect_step_wait_milliseconds;
     for (0..gap_count) |_| {
         if (duration <= 1) break;
-        duration = duration * 2 / 3;
+        duration = duration * 3 / 4;
     }
     return @max(duration, 1);
 }
@@ -729,8 +730,8 @@ test "ownedEvents: paces multi-event lists with waits between each pair, passes 
     try std.testing.expect(paced[0].sub_level_event == .knockback);
 }
 
-test "acceleratedEffectStepWaitMilliseconds: decays by 2/3 per gap, floored at 1" {
-    const expected = [_]u32{ 125, 83, 55, 36, 24, 16, 10, 6, 4, 2, 1 };
+test "acceleratedEffectStepWaitMilliseconds: decays by 3/4 per gap, floored at 1" {
+    const expected = [_]u32{ 125, 93, 69, 51, 38, 28, 21, 15, 11, 8, 6, 4, 3, 2, 1 };
     for (expected, 0..) |want, gap_count| {
         try std.testing.expectEqual(want, acceleratedEffectStepWaitMilliseconds(@intCast(gap_count)));
     }

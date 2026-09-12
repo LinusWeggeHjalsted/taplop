@@ -61,7 +61,7 @@ pub const MetaEvent = union(enum) {
     },
     // The intra-effect pacing wait — same stall machinery as `wait`, but the
     // duration is COMPUTED at pop time: `effect_step_wait_milliseconds`
-    // decayed by 2/3 per prior accelerating wait in the chain
+    // decayed by 3/4 per prior accelerating wait in the chain
     // (`GameState.wait_acceleration`, reset by `use_skill`). Carries no
     // payload because the duration is a pure function of state — which is
     // what keeps it replay-safe (the counter is event-driven GameState,

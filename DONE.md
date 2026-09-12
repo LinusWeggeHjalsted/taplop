@@ -13148,14 +13148,15 @@ in TODO → Effect pacing.
 The flat rule's linear latency made big AoEs drag; the accelerating rule
 makes them wind up. All intra-effect waits now share ONE decay sequence
 per skill use, per the agreed example (spinblade ×3: attack → 125 →
-damage → 83 → attack → 55 → damage → 36 → attack → 24 → damage):
+damage → 93 → attack → 69 → damage → 51 → attack → 38 → damage):
 
 - `MetaEvent.accelerating_wait` — an EMPTY-payload wait variant. The
   duration is computed at POP time by the wait arm from
-  `GameState.wait_acceleration`: 125ms decayed by 2/3 per prior gap in
-  the chain (integer math, floored at 1ms — 125, 83, 55, 36, 24, 16, 10,
-  6, 4, 2, 1 — long tails converge to near-simultaneous without
-  zero-duration no-op events). `acceleratedEffectStepWaitMilliseconds`
+  `GameState.wait_acceleration`: 125ms decayed by 3/4 per prior gap in
+  the chain (integer math, floored at 1ms — 125, 93, 69, 51, 38, 28, 21,
+  15, 11, 8, 6, 4, 3, 2, 1 — long tails converge to near-simultaneous
+  without zero-duration no-op events; initially 2/3, retuned to 3/4 the
+  same session for a gentler ramp). `acceleratedEffectStepWaitMilliseconds`
   in skill_helpers.zig is the pure decay function.
 - Consumers: `ownedEvents`' interleave AND the attack/collision arms'
   hit-resolution → damage-landing gap — the same variant, the same
