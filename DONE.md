@@ -12983,3 +12983,26 @@ back). Windowed-test fallout: the Color row moved below the scroll-0
 window (the swatch block scrolls to 3 now) and the scroll-0 element
 count dropped with it. The custom-stems test now runs its fixture flag
 ON — covering the hidden-swatch rule for entity + decoration.
+
+## Double deltaMicroseconds() per frame — all waits/anims slowed ~20-60x (bug fix)
+
+Since the layered-music commit (`9a8ce2d`, "volume lerp"), `frame()`
+called the stateful `backend.deltaMicroseconds()` TWICE per frame: once
+inline in the `updateMusic(...)` call and once for the gameplay
+`delta_microseconds`. Each call returns time since the PREVIOUS call and
+resets `last_time_microseconds`, so the music call ate the whole
+inter-frame delta (e.g. 16.7ms at 60fps vsync) and handed the gameplay
+delta only the microseconds between the two call sites (the
+pollInput/computeCamera stretch, well under 1ms). Every clock driven by
+`delta_microseconds` — the turn-flow wait timer, `session_clock`,
+`animation_clock` (all one-shot + looping anims) — advanced at a small
+fraction of real time: every wait stretched enormously, all animations
+crawled. `session_clock` was slowed equally (debounced-write deadlines
+stretch too, harmlessly).
+
+Fix: read the delta ONCE at the top of `frame()` and pass it into both
+`updateMusic` and the wait/session/animation advancement; the hoist also
+documents the statefulness trap at the call site. The read moving a few
+lines earlier (before `pollInput`) is fine — pure wall-clock
+measurement, and slightly more accurate. `updateMusic`'s volume lerp
+still receives the same real delta it always consumed.

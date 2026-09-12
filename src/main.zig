@@ -504,6 +504,16 @@ fn countActiveEnemies(game_state: *const state.GameState) u32 {
 pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const history = &frame_state.history;
 
+    // Real-clock delta since the last frame (NOT frame-rate based), so the
+    // wait timer drains in real time regardless of how often frame() is called.
+    // Computed ONCE at the top of the frame and shared by every consumer
+    // (music lerp, wait timer, session/animation clocks) — deltaMicroseconds()
+    // is stateful (each call returns time since the previous call), so a
+    // second call would hand the gameplay clocks a near-zero delta. Also
+    // computed before translateInput so synthetic key-repeat cadence (see
+    // DESIGN → Input) is framerate-independent too.
+    const delta_microseconds = backend.deltaMicroseconds();
+
     // Music streams require a per-frame update call (raylib decodes in
     // chunks) + the intensity projection drives the layer volumes. No-op
     // when audio isn't initialized. The music/master volume scaling is
@@ -512,7 +522,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // DESIGN → Audio.
     backend.updateMusic(
         countActiveEnemies(&history.current_state),
-        backend.deltaMicroseconds(),
+        delta_microseconds,
         history.settings,
     );
 
@@ -535,11 +545,6 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // view. The render camera is recomputed post-update below so it tracks
     // the state being drawn (see the render gate).
     const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, view_region);
-    // Real-clock delta since the last frame (NOT frame-rate based), so the
-    // wait timer drains in real time regardless of how often frame() is called.
-    // Computed before translateInput so synthetic key-repeat cadence (see
-    // DESIGN → Input) is framerate-independent too.
-    const delta_microseconds = backend.deltaMicroseconds();
     // Which binding contexts are live this frame (see DESIGN → Input →
     // Binding contexts). The error popup is modal: while up, ONLY the
     // error_popup context is active (everything else — including `anytime`
