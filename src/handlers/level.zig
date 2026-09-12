@@ -37,6 +37,11 @@ const refreshMoveHighlights = shared.refreshMoveHighlights;
 // each skill) so enemy turns don't resolve instantly. Not skippable — see the
 // wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
+/// Pacing gap between a hit's resolution and its damage landing (the
+/// attack → damage / collision → damage waits — see TODO → Effect pacing).
+/// Distinct from `turn_flow_wait_milliseconds`: this is intra-hit pacing,
+/// not turn pacing.
+const effect_step_wait_milliseconds: u32 = 125;
 
 /// Sign of an i32: -1, 0, or 1. Used to normalize a position delta into a
 /// unit direction (one of 8) for the damage-number anim's travel vector.
@@ -993,8 +998,33 @@ pub fn handleSubLevelEvent(
             // Reflect. See DESIGN → Architecture.
             const incoming_damage = defender.getEffectiveIncomingDamage(collision.damage);
 
+            // Hand the resolved amount to the shared damage apply arm
+            // (attack/collision converge there; the `triggers_effects`
+            // default is true — collision damage callbacks were ungated),
+            // with an intra-hit pacing wait between resolve and apply (see
+            // TODO → Effect pacing). LIFO: the wait sits LAST so it pops
+            // FIRST.
+            pushEvents(current, &.{
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
+                .{ .sub_level_event = .{ .damage = .{
+                    .attacker_index = collision.attacker_index,
+                    .defender_index = collision.defender_index,
+                    .amount = incoming_damage,
+                } } },
+            }, allocator);
+        },
+        .damage => |damage_event| {
+            // Shared damage apply pipeline for `attack` and `collision` (the
+            // resolution differences stay at their pusher arms — see the
+            // event's doc comment in events.zig).
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
+            const attacker = getLevelEntity(current, damage_event.attacker_index);
+            const defender = getLevelEntity(current, damage_event.defender_index);
+
+            if (defender.current_health == 0) return;
+
             // Damage number always shows (even 0) so a connecting
-            // collision is observable — a fully-absorbed hit no longer
+            // hit is observable — a fully-absorbed attack no longer
             // looks like a whiff. The hit flash stays gated on > 0
             // (a flash reads as "damage was dealt"). See DESIGN →
             // Animation.
@@ -1002,27 +1032,28 @@ pub fn handleSubLevelEvent(
                 history.session.queueAnim(history.backing_allocator, .{
                     .event_index = history.current_event_index - 1,
                     .kind = .{ .damage_number = .{
-                        .entity_index = collision.defender_index,
-                        .value = incoming_damage,
+                        .entity_index = damage_event.defender_index,
+                        .value = damage_event.amount,
                         .direction = damageNumberDirection(attacker.position, defender.position),
                     } },
                     .duration_us = number_anim_duration_microseconds,
                 });
             }
 
-            if (incoming_damage > 0) {
-                if (incoming_damage >= defender.current_health) {
+            if (damage_event.amount > 0) {
+                // Apply damage
+                if (damage_event.amount >= defender.current_health) {
                     defender.current_health = 0;
                 } else {
-                    defender.current_health -= incoming_damage;
+                    defender.current_health -= damage_event.amount;
                 }
 
                 // Mission stats: damage dealt (player is attacker)
                 // / taken (player is defender). See DESIGN → Clones
                 // (clone system).
                 if (playerMissionPtr(current)) |mission| {
-                    if (collision.attacker_index == 0) mission.damage_dealt += incoming_damage;
-                    if (collision.defender_index == 0) mission.damage_taken += incoming_damage;
+                    if (damage_event.attacker_index == 0) mission.damage_dealt += damage_event.amount;
+                    if (damage_event.defender_index == 0) mission.damage_taken += damage_event.amount;
                 }
 
                 // One-shot hit flash on the defender (gated
@@ -1033,37 +1064,50 @@ pub fn handleSubLevelEvent(
                     history.session.queueAnim(history.backing_allocator, .{
                         .event_index = history.current_event_index - 1,
                         .kind = .{ .hit_flash = .{
-                            .entity_index = collision.defender_index,
+                            .entity_index = damage_event.defender_index,
                         } },
                         .duration_us = 250_000,
                     });
                 }
 
-                // Trigger on_outgoing_damage / on_incoming_damage
-                for (attacker.active_effects) |active_effect| {
-                    const definition = lookups.getEffectDefinition(active_effect.effect_id);
-                    if (definition.onOutgoingDamage(collision.attacker_index, current.*, allocator)) |effect_events| {
-                        pushEvents(current, effect_events, allocator);
+                // Trigger on_outgoing_damage / on_incoming_damage effect callbacks
+                if (damage_event.triggers_effects) {
+                    for (attacker.active_effects) |active_effect| {
+                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
+                        if (definition.onOutgoingDamage(damage_event.attacker_index, current.*, allocator)) |effect_events| {
+                            pushEvents(current, effect_events, allocator);
+                        }
                     }
-                }
-                for (defender.active_effects) |active_effect| {
-                    const definition = lookups.getEffectDefinition(active_effect.effect_id);
-                    if (definition.onIncomingDamage(collision.defender_index, current.*, allocator)) |effect_events| {
-                        pushEvents(current, effect_events, allocator);
+                    for (defender.active_effects) |active_effect| {
+                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
+                        if (definition.onIncomingDamage(damage_event.defender_index, current.*, allocator)) |effect_events| {
+                            pushEvents(current, effect_events, allocator);
+                        }
                     }
                 }
 
+                // Push death if defender health reached 0
                 if (defender.current_health == 0) {
                     pushEvents(current, &.{
                         .{ .sub_level_event = .{ .death = .{
-                            .entity_index = collision.defender_index,
+                            .entity_index = damage_event.defender_index,
+                        } } },
+                    }, allocator);
+                }
+
+                // Lifesteal: heal the attacker for the damage dealt
+                // (composes the generic heal primitive).
+                if (damage_event.heals_attacker) {
+                    pushEvents(current, &.{
+                        .{ .sub_level_event = .{ .heal = .{
+                            .entity_index = damage_event.attacker_index,
+                            .amount = damage_event.amount,
                         } } },
                     }, allocator);
                 }
             }
         },
         .attack => |attack| {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
             const attacker = getLevelEntity(current, attack.attacker_index);
             const defender = getLevelEntity(current, attack.defender_index);
 
@@ -1110,89 +1154,20 @@ pub fn handleSubLevelEvent(
             // Calculate effective incoming damage
             const incoming_damage = defender.getEffectiveIncomingDamage(effective_outgoing);
 
-            // Damage number always shows (even 0) so a connecting
-            // hit is observable — a fully-absorbed attack no longer
-            // looks like a whiff. The hit flash stays gated on > 0
-            // (a flash reads as "damage was dealt"). See DESIGN →
-            // Animation.
-            if (!history.replaying) {
-                history.session.queueAnim(history.backing_allocator, .{
-                    .event_index = history.current_event_index - 1,
-                    .kind = .{ .damage_number = .{
-                        .entity_index = attack.defender_index,
-                        .value = incoming_damage,
-                        .direction = damageNumberDirection(attacker.position, defender.position),
-                    } },
-                    .duration_us = number_anim_duration_microseconds,
-                });
-            }
-
-            if (incoming_damage > 0) {
-                // Apply damage
-                if (incoming_damage >= defender.current_health) {
-                    defender.current_health = 0;
-                } else {
-                    defender.current_health -= incoming_damage;
-                }
-
-                // Mission stats: damage dealt (player is attacker)
-                // / taken (player is defender). See DESIGN → Clones
-                // (clone system).
-                if (playerMissionPtr(current)) |mission| {
-                    if (attack.attacker_index == 0) mission.damage_dealt += incoming_damage;
-                    if (attack.defender_index == 0) mission.damage_taken += incoming_damage;
-                }
-
-                // One-shot hit flash on the defender (gated
-                // `!replaying`, same shape as the skill-icon anim).
-                // Only when damage is actually dealt. See DESIGN →
-                // Animation.
-                if (!history.replaying) {
-                    history.session.queueAnim(history.backing_allocator, .{
-                        .event_index = history.current_event_index - 1,
-                        .kind = .{ .hit_flash = .{
-                            .entity_index = attack.defender_index,
-                        } },
-                        .duration_us = 250_000,
-                    });
-                }
-
-                // Trigger on_outgoing_damage / on_incoming_damage effect callbacks
-                if (attack.triggers_effects) {
-                    for (attacker.active_effects) |active_effect| {
-                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
-                        if (definition.onOutgoingDamage(attack.attacker_index, current.*, allocator)) |effect_events| {
-                            pushEvents(current, effect_events, allocator);
-                        }
-                    }
-                    for (defender.active_effects) |active_effect| {
-                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
-                        if (definition.onIncomingDamage(attack.defender_index, current.*, allocator)) |effect_events| {
-                            pushEvents(current, effect_events, allocator);
-                        }
-                    }
-                }
-
-                // Push death if defender health reached 0
-                if (defender.current_health == 0) {
-                    pushEvents(current, &.{
-                        .{ .sub_level_event = .{ .death = .{
-                            .entity_index = attack.defender_index,
-                        } } },
-                    }, allocator);
-                }
-
-                // Lifesteal: heal the attacker for the damage dealt
-                // (composes the generic heal primitive).
-                if (attack.heals_attacker) {
-                    pushEvents(current, &.{
-                        .{ .sub_level_event = .{ .heal = .{
-                            .entity_index = attack.attacker_index,
-                            .amount = incoming_damage,
-                        } } },
-                    }, allocator);
-                }
-            }
+            // Hand the resolved amount to the shared damage apply arm, with
+            // an intra-hit pacing wait between resolve and apply (see TODO →
+            // Effect pacing). LIFO: the wait sits LAST in the array so it pops
+            // FIRST — the damage lands once it elapses.
+            pushEvents(current, &.{
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
+                .{ .sub_level_event = .{ .damage = .{
+                    .attacker_index = attack.attacker_index,
+                    .defender_index = attack.defender_index,
+                    .amount = incoming_damage,
+                    .triggers_effects = attack.triggers_effects,
+                    .heals_attacker = attack.heals_attacker,
+                } } },
+            }, allocator);
         },
         .create_effect => |create| {
             const caster = getLevelEntity(current, create.caster_index);

@@ -47,6 +47,11 @@ pub fn combatLogTier(event: Event) CombatLogTier {
             .create_effect => .fine,
             .end_effect => .fine,
             .collision => .fine,
+            // The attack/collision entries already represent the hit; a
+            // second entry per hit would double the log. Revisit when the
+            // detailed-log UI lands (the resolved amount is arguably the
+            // truer "X took N" record).
+            .damage => .none,
             .pickup_items => .fine,
             else => .none,
         },

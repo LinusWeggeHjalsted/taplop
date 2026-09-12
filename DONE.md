@@ -13006,3 +13006,52 @@ documents the statefulness trap at the call site. The read moving a few
 lines earlier (before `pollInput`) is fine — pure wall-clock
 measurement, and slightly more accurate. `updateMusic`'s volume lerp
 still receives the same real delta it always consumed.
+
+## Effect pacing 1+2 — the `damage` event + intra-hit waits
+
+Chained effect events fired back-to-back in one drain, stacking their
+sound cues (the muddiness) and skipping renders (the mid-drain render
+gate means intermediate states never draw). Design decision first: the
+options were a presentation-layer sound stagger (like the existing
+0.125s damage-number stagger) or waits on the EVENT TIMELINE. Chose the
+timeline — sound must stay in sync with the thing creating it, and a
+timeline wait also buys visible sequencing. The prerequisite: damage
+application was baked into the `attack`/`collision` arms, so there was
+no event boundary between a hit's resolution and its damage landing.
+
+**Slice 1 — the `damage` event** (`events.zig` SubLevelEvent +
+`handlers/level.zig`): `attack`/`collision` keep their RESOLUTION stages
+(aggro activation, their own callbacks, the intercept fold — attack only,
+collision deliberately skips it (Reflect counterplay) — + defense) and
+push the resolved post-defense amount onto one shared `damage` apply arm
+(health, mission stats, hit flash, damage number,
+onOutgoing/IncomingDamage gated `triggers_effects`, death push,
+lifesteal push). Dedupes the two near-identical apply blocks (the
+primitive-composition rule). The `SoundId.damage` impact cue moved into
+the apply arm (impact = when damage lands, sound + flash + number
+together); behavior change: a hit on an already-dead defender no longer
+sounds (was: crunch then early-return), and collision-sourced damage now
+also plays the impact cue alongside the wall crunch. Combat-log tier
+`.none` (attack/collision entries already represent the hit). LIFO note:
+the damage event is pushed last by its resolver arm, so it pops
+immediately after the resolver returns — identical timing to the old
+inline apply. Cross-version note: session logs / validation replays
+recorded before this change fail strict replay verification (handlers
+now push extra child events) — pre-release, re-record rather than
+migrate.
+
+**Slice 2 — intra-hit waits:** `effect_step_wait_milliseconds` (125) —
+distinct from `turn_flow_wait_milliseconds` (500, turn pacing not hit
+pacing) — pushed at both resolver arms as `[damage, wait]` (LIFO: the
+wait pops first, the damage lands when it elapses). During the wait the
+render gate draws, so the resolution state renders before the impact.
+Every hit (player + enemy, all skills composing `attack`/`collision`) is
+now paced; a 0-damage hit still waits + shows its "0". Full suite passes
+(the test harness clears `waiting` per event — waits are no-ops in
+tests, same as the turn-flow precedent).
+
+Remaining sweep (per-target AoE gaps, bash's chain, knockback →
+collision, attack → lifesteal) tracked in TODO → Effect pacing — note the
+knockback arm currently pushes the forced move BEFORE the collision
+event, and LIFO means the crunch resolves before the slide lands;
+slide-then-crunch presentation needs that push order revisited.

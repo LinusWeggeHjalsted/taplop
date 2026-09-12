@@ -26,6 +26,40 @@ Test by running `zig build run` and clicking through.
   DONE.md. This also unblocks the `toggle_options_menu` rename (a renamed
   action now self-heals to its new default on existing installs) — the
   rename itself is still pending, pick it up whenever.
+- **Effect pacing (wait injection between chained effects)** — soundscape/
+  readability sequencing: chained effect events currently fire back-to-back
+  in one drain, stacking their cues. Design settled: short `wait` events on
+  the EVENT TIMELINE (not a presentation-layer stagger) so sound stays in
+  sync with its source event; a new `damage` event splits damage application
+  out of the `attack`/`collision` arms so a wait can sit between a hit's
+  resolution and its damage landing. Slices:
+  - [x] **Slice 1 — the `damage` event:** attack/collision keep their
+        resolution stages (aggro activation, attack/collision callbacks,
+        the intercept stage + defense; attack's intercept / collision's
+        no-intercept policy stays at its site) and converge on ONE shared
+        apply arm (health, mission stats, hit flash, damage number,
+        onOutgoing/IncomingDamage callbacks gated `triggers_effects`,
+        death push, lifesteal push) — dedupes the two near-identical apply
+        blocks. The `.damage` sound cue moved into the apply arm (impact =
+        when damage lands, sound + flash + number together); a dead-defender
+        hit no longer sounds (was: crunch on an already-dead target).
+        Combat-log tier for `.damage`: `.none` (attack/collision entries
+        already represent the hit; revisit when the detailed-log UI lands).
+        Design: DESIGN → Architecture → Damage apply split. NOTE: old
+        session logs / validation replays recorded before this change will
+        fail strict replay verification (handlers now push extra child
+        events) — pre-release, re-record rather than migrate.
+  - [x] **Slice 2 — core waits:** `effect_step_wait_milliseconds` (125,
+        distinct from `turn_flow_wait_milliseconds = 500`) pushed between
+        attack → damage and collision → damage. History in DONE.md.
+  - [ ] **Slice 3 — the sweep:** insert waits where they read well across
+        skills + generic chains: per-target gaps in AoE skills (worldfire's
+        attack, attack, attack …), bash's attack → knockback → collision
+        chain, knockback → collision, attack → lifesteal heal. NOTE: the
+        knockback arm currently pushes the forced move BEFORE the collision
+        event, and LIFO means the collision (crunch + damage) resolves BEFORE
+        the move lands — presenting slide-then-crunch needs the push order
+        revisited as part of that site's wait work.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

@@ -416,8 +416,10 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   retreat, death, level_complete, aggro). Music is a stream stack, NOT a
   `SoundId`. **Sound names align with their trigger events where one
   exists** (move↔move, pickup↔pickup, collision↔collision, etc.).
-  The one-shot map: `move_entity`/`move_player`→move, `attack`→damage,
-  `collision`→collision, `heal`→heal, `stun`→stun,
+  The one-shot map: `move_entity`/`move_player`→move,
+  `damage`→damage (the impact cue — queued by the shared damage apply arm
+  so attack- and collision-sourced hits sound identically),
+  `collision`→collision (the wall crunch), `heal`→heal, `stun`→stun,
   `knockback`→knockback, `retreat`→retreat, `death`(enemy)→death,
   `death`(player)→defeat, `pickup_items`→pickup, `aggro` (every
   newly-aggroed enemy, via `activateEntity` — the one queue site all
@@ -425,10 +427,12 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   level_complete, final `end_level`→mission_completion. The item actions
   (equip_item/salvage_item/learn_skill) are layered CUES, not plain
   one-shots — their layer keys live on `ItemActionSound`, not `SoundId`.
-  Multi-hit skills fire one damage
-  sound per `attack` (N hits → N impacts); if that becomes an audio mess,
-  throttle in the backend's `playSounds` (per-sfx cooldown), NOT at trigger
-  sites.
+  Multi-hit sounds are paced on the event timeline, not by backend
+  throttling: every `attack`/`collision` → `damage` pair is separated by an
+  intra-hit pacing wait (see Architecture — Damage apply split), and the
+  cross-chain spacing sweep lives at the push sites (TODO → Effect pacing).
+  A backend per-sfx cooldown (`playSounds`) stays a last resort — never at
+  trigger sites.
 - **Button press/release model.** Button actions fire on mouse RELEASE, not
   press (standard UI behavior; drag-off cancels). `SessionState.pressed_button:
   ?Action` records the button under the press; release fires the action only
@@ -563,7 +567,9 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     (entities are always horizontally centered) + vertical center of the
     opaque art bbox (midpoint of the `top` and `bottom` edges from
     `sprite_bounds`). Tinted with the active theme's `lightest` color (the
-    artist's offwhite). Triggered by the `attack` and `collision` handlers
+    artist's offwhite). Triggered by the `damage` apply arm (attack- and
+    collision-sourced hits converge there — see Architecture → Damage apply
+    split)
     **only when the defender takes nonzero damage** (a Reflect-zeroed or
     0-damage hit does not flash — the damage number still shows a "0"),
     inside the `if (incoming_damage > 0)` block right after the health
@@ -580,8 +586,8 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     (resolved from the live level each frame, like the skill icon). Tinted
     with `active_theme.lightest` + a black edge-outline via the SDF
     text-outline pipeline (see below). Triggered
-    by the `attack` and `collision`
-    handlers; unlike the hit flash it shows even on a 0-damage hit (a
+    by the `damage` apply arm
+    (same convergence); unlike the hit flash it shows even on a 0-damage hit (a
     fully-absorbed collision/attack renders a "0") so a connecting hit is
     observable — only the hit flash is gated on `incoming_damage > 0`.
   - **Heal number** (500ms): `heal_number` kind, floats `+value` up-right
@@ -2008,6 +2014,22 @@ So a clone is a permanent, compounding material factory keyed by mission.
   damage through a Reflect shield, so the skill/effect descriptions say
   "incoming ATTACK damage". Any future interceptor inherits the same
   attack-only scope.
+  **Damage apply is split from hit resolution (the `damage` event).**
+  `attack` and `collision` are RESOLUTION stages (aggro activation, their
+  own effect callbacks, the intercept fold — attack only — + defense) that
+  hand the resolved post-defense amount to one shared `damage` apply arm:
+  health, mission stats, hit flash, damage number, the damage callbacks,
+  death push, lifesteal. Two reasons: the apply pipeline existed as two
+  near-identical blocks in the attack/collision arms (composition removes
+  the seam — the primitive-composition rule below), and the event boundary
+  puts a place for pacing between a hit's resolution and its damage landing
+  — an intra-hit `effect_step_wait_milliseconds` wait is pushed at both
+  push sites (sound stays in sync with its source event; a
+  presentation-layer stagger was rejected for exactly that reason). The
+  impact sound (`SoundId.damage`) is queued by the apply arm, so sound +
+  flash + number land together. Combat-log tier `.none` — the
+  attack/collision entries already represent the hit (revisit when the
+  detailed-log UI lands).
   **Aggro + level-end are decoupled.** `aggro_check` (no payload) scans every
   inactive entity and activates it if it sees an opposing entity within ITS
   OWN `aggro_range` — self-centric, one event covers the whole level. Pushed

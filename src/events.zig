@@ -1415,6 +1415,29 @@ pub const SubLevelEvent = union(enum) {
         defender_index: u32,
         damage: u32,
     },
+    // Applied damage from a resolved `attack` or `collision`. The pusher
+    // arm owns the RESOLUTION differences (attack runs the damage-intercept
+    // stage + defense; collision applies defense only — no intercepts, the
+    // deliberate Reflect counterplay) and pushes the resolved post-defense
+    // amount here; this arm owns the shared apply pipeline (health, mission
+    // stats, hit flash, damage number, damage callbacks, death, lifesteal).
+    // Splitting apply from resolve puts an event boundary between a hit's
+    // resolution and its damage landing, so pacing waits can be inserted
+    // between them (see TODO → Effect pacing). Combat-log tier `.none`: the
+    // attack/collision entries already represent the hit.
+    damage: struct {
+        attacker_index: u32,
+        defender_index: u32,
+        // Resolved post-defense amount (intercepts + defense already applied
+        // by the pusher arm).
+        amount: u32,
+        // Mirrors `attack.triggers_effects` at the push site: gates the
+        // damage-stage effect callbacks (a reflected attack does not
+        // re-trigger). Collisions pass the default (true) — their damage
+        // callbacks were ungated.
+        triggers_effects: bool = true,
+        heals_attacker: bool = false,
+    },
     // --- generic scalar-field mutation primitives (composed by skills) ---
     // Heal an entity, clamped to max_health.
     heal: struct {
