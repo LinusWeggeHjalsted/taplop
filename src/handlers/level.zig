@@ -16,6 +16,7 @@ const threat = @import("../ai_threat.zig");
 const movement = @import("../ai_movement.zig");
 const ai_select = @import("../ai_select.zig");
 const skill_mod = @import("../skill.zig");
+const skill_helpers = @import("../skill_helpers.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -37,11 +38,6 @@ const refreshMoveHighlights = shared.refreshMoveHighlights;
 // each skill) so enemy turns don't resolve instantly. Not skippable — see the
 // wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
-/// Pacing gap between a hit's resolution and its damage landing (the
-/// attack → damage / collision → damage waits — see TODO → Effect pacing).
-/// Distinct from `turn_flow_wait_milliseconds`: this is intra-hit pacing,
-/// not turn pacing.
-const effect_step_wait_milliseconds: u32 = 125;
 
 /// Sign of an i32: -1, 0, or 1. Used to normalize a position delta into a
 /// unit direction (one of 8) for the damage-number anim's travel vector.
@@ -1012,7 +1008,7 @@ pub fn handleSubLevelEvent(
                     .defender_index = collision.defender_index,
                     .amount = incoming_damage,
                 } } },
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = skill_helpers.effect_step_wait_milliseconds } } },
             }, allocator);
         },
         .damage => |damage_event| {
@@ -1168,7 +1164,7 @@ pub fn handleSubLevelEvent(
                     .triggers_effects = attack.triggers_effects,
                     .heals_attacker = attack.heals_attacker,
                 } } },
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = skill_helpers.effect_step_wait_milliseconds } } },
             }, allocator);
         },
         .create_effect => |create| {

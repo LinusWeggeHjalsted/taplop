@@ -447,6 +447,22 @@ pub fn ownedEvents(
     return owned;
 }
 
+/// Intra-effect pacing gap between the individual effects of one skill
+/// (and between a hit's resolution and its damage — the attack/collision
+/// arms push it too). Distinct from turn-flow pacing (500ms between turn
+/// steps). Shared here because both skills and the handlers construct it.
+/// See DESIGN → Architecture → Damage apply split + TODO → Effect pacing.
+pub const effect_step_wait_milliseconds: u32 = 125;
+
+/// A `wait` event carrying `effect_step_wait_milliseconds` — the constructor
+/// skill recipes interleave into their `ownedEvents` lists (natural
+/// execution order) to pace their individual effects.
+pub fn effectStepWait() Event {
+    return .{ .meta_event = .{ .wait = .{
+        .duration_milliseconds = effect_step_wait_milliseconds,
+    } } };
+}
+
 /// The caster's would-be best casts with one extra active effect virtually
 /// applied — an enhancement enchantment's DIFFERENTIAL evaluation: what
 /// would the bar cast if I were already active? (That Which Reaches: +1
