@@ -12933,3 +12933,28 @@ entry for rendering; the field + config landed in slice 2):
   for the new Identity rows (scroll offsets +2 units; the decoration
   footprint row moved below the scroll-0 window — its picker test now
   scrolls).
+
+## keep_original_colors — rendering (slice 4 of 4, feature complete)
+
+The untinted-render flag now draws everywhere the art draws:
+
+- **`entityDrawable`** (view.zig): base + overlay layers use pure white
+  (a `no_tint_color` const — the multiply identity) when
+  `keep_original_colors` is set, in BOTH the player-team and enemy-team
+  branches. Weapons keep team gradient index 1 (our art, always themed);
+  health bars + effect overlays untouched (same).
+- **`buildDecorationPieces`**: base + layer chunks untinted when the
+  decoration's flag is set (levels AND hubs — the same pass).
+- **Palette cells** (editor_shell): both composed-cell emitters honor the
+  flag — base + layers default_tint, weapons still gradient index 1 —
+  keeping the preview-matches-scene invariant.
+- **Picker cells**: already settled by construction — Mission-tab cells
+  are always untinted (slice 1), Official-tab cells ignore the flag (the
+  edited-target tint, unchanged).
+- Tests: the view coloring test gained a keep_original_colors entity
+  (base + layer white, weapon still gradient index 1) + a decoration
+  pieces test (base + layer white, flag-off world-gradient control); the
+  palette composed-cell test gained a flag-on entity + decoration (base +
+  layer default_tint, the fighter's spear weapon still themed — spear
+  chosen so it can't collide with the skeleton's sword/dagger or the
+  wolf's suppressed axe).

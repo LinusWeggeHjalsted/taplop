@@ -1063,34 +1063,7 @@ paragraph). Remaining work:
   Services → Validation replay + DESIGN → Level Editor
   (playtest/validate framing + exit guard).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
-- **`keep_original_colors` (custom art keeps its own colors) — in
-      progress.** A per-type bool on entities + decorations: base +
-      layers render UNTINTED (weapons stay team-gradient index 1 —
-      they're our art; health bars/effect overlays unchanged).
-      Settled semantics: authorable on any type; official picks set it
-      false, mission-local picks set it true (the pick events carry it —
-      one undo step); picker Mission cells always render untinted,
-      Official cells ignore the flag. Slices:
-  - [x] **1 — custom-asset rendering (prerequisite):** DONE — texture
-        loading for `custom/<mission-dir>/<stem>` ids, mission-scan
-        dims, picker Mission cells render, footprint editor draws
-        custom art. History in DONE.md.
-  - [x] **2 — data model + config:** `keep_original_colors` on
-        `Entity`, `Decoration`, `DecorationTypeDef`; parser whitelist
-        keys + loaders + `writeEditorLevel` + dedup equality
-        (`entityDefinitionsEqual`/`decorationDefinitionsEqual`) +
-        `instantiateEditorLevel` propagation.
-  - [x] **3 — editor events + inspector + pick defaults:** entity
-        toggle (the `displays_weapons` pattern: `editor_set_entity_...`
-        + player wrapper + toggle action), decoration toggle (the
-        `editor_set_decoration_color_index` granular pattern),
-        `validatePlayerAction` arms, inspector toggle strips (both),
-        and the pick-commit defaults riding the pick events
-        (`editor_set_entity_sprite` payload grows the bool;
-        `editor_set_decoration_def` carries it).
-  - [ ] **4 — rendering:** `entityDrawable` + the decoration-piece
-        pass + both palette-cell emitters honor the flag (untinted base
-        + layers); picker cells per the settled semantics.
+- [x] **`keep_original_colors` (custom art keeps its own colors)** — DONE, all four slices (custom-asset rendering prerequisite, data model + config, authoring events + inspector + pick defaults, rendering). Settled design: DESIGN → Entity & UI Coloring (keep_original_colors) + the sprite id convention; history in DONE.md.
 - **Editor save-to-disk + export — DONE.** The mission writer
   (writers.writeEditorMission — the pure projection), the save
   (input_handlers.saveEditorMission: uuid resolution — opened-from-disk →

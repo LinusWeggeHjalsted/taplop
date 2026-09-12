@@ -1203,6 +1203,11 @@ fn tileToScreen(tile: types.Vector2, camera: types.Camera, zoom: f32) types.Scre
     return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
 }
 
+/// Pure white — the "no tint" color for `keep_original_colors` rendering
+/// (the multiply identity: the art keeps its own colors). See DESIGN →
+/// Entity & UI Coloring.
+const no_tint_color: types.Color = .{ .r = 255, .g = 255, .b = 255 };
+
 /// Entity sprite frame: all entities/weapons share one 512x640 frame (2 tiles
 /// wide x 2.5 tall) authored at tile_size_pixels, with one normalized pivot
 /// (horizontal center, at the feet with 0.5 tile of foot/shadow overflow).
@@ -1746,20 +1751,27 @@ fn entityDrawable(
     // Body color: the gradient by team (player team → player gradient,
     // enemy teams → enemy gradient); the INDEX — the player entity uses
     // the settings-driven player_color_index, every other entity (enemy-
-    // authored team-0 helpers included) its own color_index. See DESIGN →
-    // Entity & UI Coloring.
-    const body_color = if (entity.team == 0)
+    // authored team-0 helpers included) its own color_index. Untinted
+    // (pure white) instead when keep_original_colors is set — the art
+    // keeps its own colors (weapons + health bar stay themed; see DESIGN
+    // → Entity & UI Coloring).
+    const body_color = if (entity.keep_original_colors)
+        no_tint_color
+    else if (entity.team == 0)
         playerColor(active_theme, if (is_player) player_color_index else entity.color_index)
     else
         enemyColor(active_theme, entity.color_index);
 
     // Overlay layers: same frame + pivot as the base, drawn after base and
-    // before weapons. Each colored by its own index into the team gradient.
+    // before weapons. Each colored by its own index into the team gradient
+    // (untinted with the base when keep_original_colors is set).
     var layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
     for (entity.layers) |layer| {
         const layer_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{layer.sprite}) catch
             @panic("failed to build entity layer sprite id");
-        const layer_color = if (entity.team == 0)
+        const layer_color = if (entity.keep_original_colors)
+            no_tint_color
+        else if (entity.team == 0)
             playerColor(active_theme, layer.color_index)
         else
             enemyColor(active_theme, layer.color_index);
@@ -2198,7 +2210,13 @@ fn buildDecorationPieces(
     const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, tile_size_pixels);
     const anchor = decorationAnchor(decoration.footprint) orelse
         @panic("decoration has no anchor in view");
-    const base_color = worldGradientColor(active_theme, decoration.color_index);
+    // Untinted (pure white) when keep_original_colors is set — the art
+    // keeps its own colors, base + layers together (see DESIGN → Entity
+    // & UI Coloring).
+    const base_color = if (decoration.keep_original_colors)
+        no_tint_color
+    else
+        worldGradientColor(active_theme, decoration.color_index);
 
     // Build a set of footprint sprite-grid coords for O(1) membership.
     var footprint_set = std.AutoHashMap(types.Vector2, void).init(allocator);
@@ -2245,7 +2263,10 @@ fn buildDecorationPieces(
                     .screen_position = screen_top_left,
                     .draw_offset = .{ .x = 0, .y = 0 },
                     .source_rectangle = source_rect,
-                    .color = worldGradientColor(active_theme, layer.color_index),
+                    .color = if (decoration.keep_original_colors)
+                        no_tint_color
+                    else
+                        worldGradientColor(active_theme, layer.color_index),
                 }) catch @panic("failed to append layer sprite");
             }
             const layer_slice = layer_sprites.toOwnedSlice(allocator) catch
@@ -3687,6 +3708,7 @@ test "entity body color: gradient by team, index by player-vs-helper" {
 
     const player_four: types.Color = .{ .r = 44, .g = 44, .b = 44 };
     const enemy_four: types.Color = .{ .r = 55, .g = 55, .b = 55 };
+    const enemy_one: types.Color = .{ .r = 66, .g = 66, .b = 66 };
     const player_two: types.Color = .{ .r = 22, .g = 22, .b = 22 };
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
     var player_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
@@ -3694,6 +3716,9 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     player_gradient[4] = player_four;
     var enemy_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
     enemy_gradient[4] = enemy_four;
+    // The weapon color (gradient index 1) — needed by the
+    // keep_original_colors block below; set BEFORE the theme copy.
+    enemy_gradient[1] = enemy_one;
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
@@ -3721,6 +3746,78 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     try std.testing.expect(std.meta.eql(player_four, helper_drawable.base_sprite.color));
     // The team-2 enemy: enemy gradient at its own color_index.
     try std.testing.expect(std.meta.eql(enemy_four, enemy_drawable.base_sprite.color));
+
+    // keep_original_colors: base + layers UNTINTED (pure white); the
+    // WEAPONS stay themed (enemy gradient index 1 — our art, not the
+    // asset's).
+    {
+        const layers = [_]types.EntityLayer{.{ .sprite = "bear", .color_index = 4 }};
+        const custom_entity = types.Entity{
+            .team = 2,
+            .color_index = 4,
+            .keep_original_colors = true,
+            .layers = &layers,
+            .main_hand_weapon = .{ .weapon_type = .sword },
+        };
+        const drawable = entityDrawable(&custom_entity, theme, 2, false, camera, 1.0, arena, sprite_bounds, false);
+        try std.testing.expect(std.meta.eql(no_tint_color, drawable.base_sprite.color));
+        try std.testing.expectEqual(@as(usize, 1), drawable.layer_sprites.len);
+        try std.testing.expect(std.meta.eql(no_tint_color, drawable.layer_sprites[0].color));
+        try std.testing.expect(std.meta.eql(enemy_one, drawable.weapon_sprites[0].?.color));
+    }
+}
+
+test "decoration pieces: keep_original_colors untints base + layers" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const world_four: types.Color = .{ .r = 77, .g = 77, .b = 77 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    var world_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    world_gradient[4] = world_four;
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = world_gradient },
+        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+    };
+    const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const layers = [_]types.DecorationLayer{.{
+        .sprite = "tree_1_canopy",
+        .color_index = 4,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+    }};
+
+    const pieces = buildDecorationPieces(.{
+        .name = "tree_1",
+        .position = .{ .x = 0, .y = 0 },
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+        .color_index = 4,
+        .keep_original_colors = true,
+        .layers = &layers,
+    }, theme, camera, 1.0, arena);
+    try std.testing.expectEqual(@as(usize, 1), pieces.len);
+    const piece = pieces[0].drawable.decoration_piece;
+    try std.testing.expect(std.meta.eql(no_tint_color, piece.color));
+    try std.testing.expectEqual(@as(usize, 1), piece.layers.len);
+    try std.testing.expect(std.meta.eql(no_tint_color, piece.layers[0].color));
+
+    // Flag off: the world gradient at the authored indices.
+    const tinted = buildDecorationPieces(.{
+        .name = "tree_1",
+        .position = .{ .x = 0, .y = 0 },
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+        .color_index = 4,
+        .layers = &layers,
+    }, theme, camera, 1.0, arena);
+    const tinted_piece = tinted[0].drawable.decoration_piece;
+    try std.testing.expect(std.meta.eql(world_four, tinted_piece.color));
+    try std.testing.expect(std.meta.eql(world_four, tinted_piece.layers[0].color));
 }
 
 // ============================================================

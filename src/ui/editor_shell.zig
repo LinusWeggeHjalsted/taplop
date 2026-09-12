@@ -267,8 +267,10 @@ fn appendCellGraphicImage(
 /// weapons (main hand as-authored, off hand mirrored), all sharing one
 /// fitted rect because entity art shares the 512x640 frame + pivot. Tints
 /// follow `entityDrawable` (view.zig): base + layers at their own
-/// color_index into the team gradient, weapons at team gradient index 1;
-/// weapons are suppressed when `displays_weapons` is false (e.g. wolves).
+/// color_index into the team gradient — or UNTINTED when
+/// `keep_original_colors` is set — and weapons at team gradient index 1
+/// (our art, always themed); weapons are suppressed when
+/// `displays_weapons` is false (e.g. wolves).
 fn emitEditorEntityToolCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -291,26 +293,36 @@ fn emitEditorEntityToolCell(
     );
     const fitted = scaleToFit(cell, editor_entity_frame_width, editor_entity_frame_height);
 
+    // Base + layers untinted (pure white) when keep_original_colors is
+    // set — the art keeps its own colors; weapons below stay themed.
     const base_sprite_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{template.sprite});
     const base_color_index = @min(template.color_index, types.gradient_color_count - 1);
+    const base_color = if (template.keep_original_colors)
+        default_tint
+    else
+        team_gradient[base_color_index];
     try appendCellGraphicImage(
         elements,
         allocator,
         base_sprite_id,
         fitted,
-        team_gradient[base_color_index],
+        base_color,
         false,
     );
 
     for (template.layers) |layer| {
         const layer_sprite_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{layer.sprite});
         const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+        const layer_color = if (template.keep_original_colors)
+            default_tint
+        else
+            team_gradient[layer_color_index];
         try appendCellGraphicImage(
             elements,
             allocator,
             layer_sprite_id,
             fitted,
-            team_gradient[layer_color_index],
+            layer_color,
             false,
         );
     }
@@ -344,7 +356,7 @@ fn emitEditorEntityToolCell(
 /// sharing one fitted rect (layers are validated to match the base's pixel
 /// dims, so one fit covers the whole stack). Tints follow the scene's
 /// decoration pass: base + layers at their own color_index into the world
-/// gradient.
+/// gradient — or UNTINTED when `keep_original_colors` is set.
 fn emitEditorDecorationToolCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -367,26 +379,36 @@ fn emitEditorDecorationToolCell(
     );
     const fitted = scaleToFit(cell, type_definition.pixel_dims.x, type_definition.pixel_dims.y);
 
+    // Base + layers untinted (pure white) when keep_original_colors is
+    // set — the art keeps its own colors.
     const base_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
     const base_color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
+    const base_color = if (type_definition.keep_original_colors)
+        default_tint
+    else
+        world_gradient[base_color_index];
     try appendCellGraphicImage(
         elements,
         allocator,
         base_sprite_id,
         fitted,
-        world_gradient[base_color_index],
+        base_color,
         false,
     );
 
     for (type_definition.layers) |layer| {
         const layer_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{layer.sprite});
         const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+        const layer_color = if (type_definition.keep_original_colors)
+            default_tint
+        else
+            world_gradient[layer_color_index];
         try appendCellGraphicImage(
             elements,
             allocator,
             layer_sprite_id,
             fitted,
-            world_gradient[layer_color_index],
+            layer_color,
             false,
         );
     }
@@ -1614,17 +1636,38 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     wolf.sprite = "wolf";
     wolf.team = 1;
     wolf.displays_weapons = false;
-    wolf.main_hand_weapon = .{ .weapon_type = .spear };
+    wolf.main_hand_weapon = .{ .weapon_type = .axe };
+
+    // A keep_original_colors enemy — base + layers UNTINTED, weapons
+    // still themed (our art).
+    var custom_fighter: types.Entity = .{};
+    custom_fighter.sprite = "custom_fighter";
+    custom_fighter.team = 1;
+    custom_fighter.color_index = 2;
+    custom_fighter.keep_original_colors = true;
+    const fighter_layers = [_]types.EntityLayer{.{ .sprite = "custom_helmet", .color_index = 4 }};
+    custom_fighter.layers = &fighter_layers;
+    // A spear: distinct from the skeleton's sword/dagger and the wolf's
+    // suppressed axe, so the themed weapon image below is unambiguously
+    // the fighter's.
+    custom_fighter.main_hand_weapon = .{ .weapon_type = .spear };
 
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton Warrior", .template = skeleton },
         .{ .id = "Wolf", .template = wolf },
+        .{ .id = "Custom Fighter", .template = custom_fighter },
     };
     const ruin_layers = [_]types.DecorationLayer{.{
         .sprite = "ruin_1_moss",
         .color_index = 3,
         .pixel_dims = .{ .x = 512, .y = 512 },
     }};
+    const moss_layers = [_]types.DecorationLayer{.{
+        .sprite = "moss_vine",
+        .color_index = 4,
+        .pixel_dims = .{ .x = 512, .y = 512 },
+    }};
+
     const decoration_types = [_]types.DecorationTypeDef{
         .{
             .id = "Ruin",
@@ -1632,6 +1675,16 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
             .pixel_dims = .{ .x = 512, .y = 512 },
             .color_index = 1,
             .layers = &ruin_layers,
+        },
+        // keep_original_colors: base + layers UNTINTED (the authored
+        // world-three index is overridden).
+        .{
+            .id = "Moss",
+            .sprite = "moss_1",
+            .pixel_dims = .{ .x = 512, .y = 512 },
+            .color_index = 3,
+            .keep_original_colors = true,
+            .layers = &moss_layers,
         },
     };
     const editor: types.Editor = .{
@@ -1660,7 +1713,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     var main_weapon_image: ?Image = null;
     var off_weapon_image: ?Image = null;
     var wolf_image: ?Image = null;
-    var spear_seen = false;
+    var axe_seen = false;
     var decoration_base_image: ?Image = null;
     var decoration_layer_image: ?Image = null;
     for (elements.items) |element| switch (element) {
@@ -1676,8 +1729,8 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
                 off_weapon_image = image;
             } else if (std.mem.eql(u8, image.sprite_id, "entities/wolf")) {
                 wolf_image = image;
-            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_spear")) {
-                spear_seen = true;
+            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_axe")) {
+                axe_seen = true;
             } else if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
                 decoration_base_image = image;
             } else if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1_moss")) {
@@ -1710,9 +1763,9 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
         try std.testing.expectEqual(base_image.?.height, image.height);
     }
 
-    // displays_weapons false: the wolf's base shows, its spear does not.
+    // displays_weapons false: the wolf's base shows, its axe does not.
     try std.testing.expect(wolf_image != null);
-    try std.testing.expect(!spear_seen);
+    try std.testing.expect(!axe_seen);
 
     // Decoration stack: base + layer at their own color indices into the
     // world gradient, sharing one fitted rect.
@@ -1730,6 +1783,38 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     );
     try std.testing.expectEqual(decoration_base_image.?.width, decoration_layer_image.?.width);
     try std.testing.expectEqual(decoration_base_image.?.height, decoration_layer_image.?.height);
+
+    // keep_original_colors cells: base + layers UNTINTED (the entity's
+    // weapons stay gradient index 1 — our art, always themed).
+    var fighter_base_untinted = false;
+    var fighter_layer_untinted = false;
+    var fighter_weapons_themed = false;
+    var moss_untinted = false;
+    var moss_layer_untinted = false;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, "entities/custom_fighter")) {
+                fighter_base_untinted = std.meta.eql(image.color, default_tint);
+            } else if (std.mem.eql(u8, image.sprite_id, "entities/custom_helmet")) {
+                fighter_layer_untinted = std.meta.eql(image.color, default_tint);
+            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_spear")) {
+                // The fighter's weapon stays gradient index 1 — the flag
+                // untints the asset's art, not ours (the wolf's spear is
+                // suppressed, so this image is the fighter's).
+                fighter_weapons_themed = std.meta.eql(image.color, enemy_one);
+            } else if (std.mem.eql(u8, image.sprite_id, "decorations/moss_1")) {
+                moss_untinted = std.meta.eql(image.color, default_tint);
+            } else if (std.mem.eql(u8, image.sprite_id, "decorations/moss_vine")) {
+                moss_layer_untinted = std.meta.eql(image.color, default_tint);
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(fighter_base_untinted);
+    try std.testing.expect(fighter_layer_untinted);
+    try std.testing.expect(fighter_weapons_themed);
+    try std.testing.expect(moss_untinted);
+    try std.testing.expect(moss_layer_untinted);
 }
 
 test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover above" {
