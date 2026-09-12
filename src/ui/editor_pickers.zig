@@ -1682,10 +1682,11 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
     }
 
     // The inspector's Footprint row: a "<N> tiles" button that opens the
-    // editor.
+    // editor. Scrolled 2 so the row lands fully inside the window (the
+    // decoration Identity section's Keep colors row added two units).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 2, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         var saw_footprint_button = false;
         for (elements.items) |element| switch (element) {

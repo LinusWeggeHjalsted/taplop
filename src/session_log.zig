@@ -807,7 +807,7 @@ test "writeEventLog serializes representative event shapes" {
     // The def's layers slice: the INDEXED encoding — one line per element
     // field, each string on its own line (the footprint slice stays a
     // single flattened line — no strings inside).
-    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_pixel_dims 512 768\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nkeep_original_colors false\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_pixel_dims 512 768\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.

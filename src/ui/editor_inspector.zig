@@ -790,8 +790,11 @@ const EditorInspectorControl = union(enum) {
     /// The color_index swatch row (the enemy gradient, one swatch per
     /// index — the settings screen's player-color row is the precedent).
     swatches,
-    /// The displays_weapons true/false toggle.
-    toggle,
+    /// A true/false toggle strip (the FORMAT's "true"/"false" vocabulary).
+    /// The plan builder resolves the current value + the flip action — the
+    /// same emitter serves the entity (displays_weapons, keep colors) and
+    /// decoration (keep colors) toggles.
+    toggle: struct { current: bool, action: types.Action },
     /// The decoration content's sprite row — same button look as the
     /// entity `sprite_button`, reading the decoration context instead.
     decoration_sprite_button: void,
@@ -1043,7 +1046,14 @@ fn editorInspectorEntityEntries(
             .{ .field = .{ .label = "Team", .control = .{ .text = .{ .entity_stat = .team } } } },
             .{ .field = .{ .label = "Sprite", .control = .sprite_button } },
             .{ .field = .{ .label = "Color", .control = .swatches } },
-            .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
+            .{ .field = .{ .label = "Displays weapons", .control = .{ .toggle = .{
+                .current = template.displays_weapons,
+                .action = .toggle_editor_entity_displays_weapons,
+            } } } },
+            .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
+                .current = template.keep_original_colors,
+                .action = .toggle_editor_entity_keep_original_colors,
+            } } } },
         });
         // The section-break spacer belongs to the section ABOVE it — a
         // collapsed section takes no gap after it (headers stack flush).
@@ -1186,6 +1196,10 @@ fn editorInspectorDecorationEntries(
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Sprite", .control = .decoration_sprite_button } },
             .{ .field = .{ .label = "Color", .control = .decoration_swatches } },
+            .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
+                .current = definition.keep_original_colors,
+                .action = .toggle_editor_decoration_keep_original_colors,
+            } } } },
         });
         try entries.append(allocator, .spacer);
     }
@@ -1593,11 +1607,13 @@ fn buildEditorInspectorContent(
                             active_theme,
                         );
                     },
-                    .toggle => try emitInspectorToggle(
+                    .toggle => |toggle| try emitInspectorToggle(
                         elements,
                         allocator,
                         font_metrics,
-                        entity_context.?,
+                        toggle.current,
+                        toggle.action,
+                        button_color,
                         control_rect,
                         active_theme,
                     ),
@@ -2335,20 +2351,20 @@ fn emitInspectorColorSwatches(
     }
 }
 
-/// The displays_weapons control: a panel-backed strip showing the current
+/// A true/false toggle strip: a panel-backed button showing the current
 /// value in the FORMAT's vocabulary ("true"/"false" — the exact tokens
-/// `asBool` parses), highlighted while true; clicking flips it via
-/// `.toggle_editor_entity_displays_weapons`.
+/// `asBool` parses); clicking flips it via `action`. Shared by the entity
+/// + decoration toggle rows (the plan resolves current + action).
 fn emitInspectorToggle(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    context: InspectorEntityContext,
+    current: bool,
+    action: types.Action,
+    button_color: Color,
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const current = context.template.displays_weapons;
-    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const label: []const u8 = if (current) "true" else "false";
     // Half the panel width — full-width reads as a section header; the
     // value vocabulary ("true"/"false") carries the state, no highlight.
@@ -2370,7 +2386,7 @@ fn emitInspectorToggle(
         .screen_position = rect.position(),
         .width = rect.width,
         .height = rect.height,
-        .action = .toggle_editor_entity_displays_weapons,
+        .action = action,
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
@@ -3117,11 +3133,12 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Scroll 12 — the Stats section's four numeric fields are the window
+    // Scroll 14 — the Stats section's four numeric fields are the window
     // (the section-break spacer fills the tail): decimal-formatted values.
+    // (The Keep colors row added two Identity units; Stats starts at 14.)
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 12, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 14, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Stats", "Max health", "Defense", "Speed", "Aggro range" });
         try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
@@ -3231,11 +3248,13 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
     var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
     try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
 
-    // Identity (Sprite + Color — a decoration's name IS its sprite path, no
-    // name row) + Footprint (the read-only tile-count placeholder).
+    // Identity (Sprite + Color + Keep colors — a decoration's name IS its
+    // sprite path, no name row) + the Footprint header; the footprint
+    // row itself sits below the 10-unit window (the Keep colors row
+    // pushed it out — its own tests reach it scrolled).
     try expectInspectorLabels(
         &elements,
-        &.{ "- Identity", "Sprite", "stone_2", "Color", "- Footprint", "Footprint", "2 tiles" },
+        &.{ "- Identity", "Sprite", "stone_2", "Color", "Keep colors", "false", "- Footprint" },
     );
 
     // The sprite button opens the shared picker (the input site routes the
@@ -3297,13 +3316,14 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Units: Identity 11 (the Team field included) + spacer, Stats 9 +
-    // spacer → Weapons header at 22. Scroll 22 shows: the Weapons header,
+    // Units: Identity 13 (the Team field + the Keep colors toggle
+    // included) + spacer, Stats 9 +
+    // spacer → Weapons header at 24. Scroll 24 shows: the Weapons header,
     // Main hand (equipped: type row + Delete + its fields), Off hand
     // (empty: type row, no Delete).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 22, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 24, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand" });
 
@@ -3343,12 +3363,13 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         try std.testing.expectEqual(@as(usize, 1), deletes);
     }
 
-    // The Gear section's items (scroll 32 — the window opens at the Gear
-    // header): coat equipped → Delete + its fields; amulet empty → Add.
+    // The Gear section's items (scroll 34 — the window opens at the Gear
+    // header; +2 from the Identity Keep colors row): coat equipped →
+    // Delete + its fields; amulet empty → Add.
     // The coat's defense field doesn't fully fit the window.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 32, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 34, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus" });
 
@@ -3952,10 +3973,11 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 47 row units (6 sections × 1 + 18 two-unit entries — 5 identity
-    // fields (Team included), 4 stats, 2 weapon slots, 5 gear slots, the
+    // 49 row units (6 sections × 1 + 19 two-unit entries — 6 identity
+    // fields (Team + Keep colors included), 4 stats, 2 weapon slots, 5 gear
+    // slots, the
     // utility-skill row, the add-layer row — + 5 spacers); the panel fits
-    // 10 units, so 37 units scroll + the scrollbar shows.
+    // 10 units, so 39 units scroll + the scrollbar shows.
     const visible_rows = @divFloor(
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
@@ -3980,23 +4002,23 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     }
 
     // Scroll 5 (the Team field pushes everything two units down): the
-    // window opens at Sprite and runs through the spacer + the Stats
-    // header + Max health (Defense doesn't fully fit).
+    // window opens at Sprite and runs through the Keep colors toggle + the
+    // spacer + the Stats header (Max health doesn't fully fit).
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 5, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "- Stats", "Max health" });
+        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "Keep colors", "false", "- Stats" });
     }
 
-    // Out-of-range scroll clamps to max (47 − 10 = 37, the five spacers
+    // Out-of-range scroll clamps to max (49 − 10 = 39, the five spacers
     // included): the window is the last gear slot + the utility section +
     // the skill row + the Layers tail.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 37), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 39), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{
             "Boots", "Add", "- Utility skills", "Skill bar", "- Layers", "Add layer", "Pick sprite",
         });

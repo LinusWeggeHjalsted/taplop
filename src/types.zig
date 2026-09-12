@@ -372,6 +372,8 @@ pub const Action = enum {
     // The inspector's displays-weapons toggle (flip the edited entity
     // type's flag). No payload — the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,
+    toggle_editor_entity_keep_original_colors,
+    toggle_editor_decoration_keep_original_colors,
     // An inspector weapon-type cell was clicked (create the slot's weapon
     // while empty, or retype in place keeping name/damage). The hand
     // (`GearSlot`, main/off) rides in `AnytimeInput.clicked_editor_gear_slot`
@@ -708,6 +710,8 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .toggle_editor_footprint_tile,
         .confirm_editor_footprint,
         .toggle_editor_entity_displays_weapons,
+        .toggle_editor_entity_keep_original_colors,
+        .toggle_editor_decoration_keep_original_colors,
         .select_editor_weapon_type,
         .add_editor_item,
         .delete_editor_item,

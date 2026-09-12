@@ -1431,6 +1431,12 @@ pub fn handleAnytimeInput(
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (std.mem.eql(u8, template.sprite, sprite)) return;
+                // Pick-time default follows the art source: official stems
+                // tint (false), mission-local custom art keeps its own
+                // colors (true) — see DESIGN → Entity & UI Coloring,
+                // keep_original_colors. The same-sprite gate above keeps a
+                // manual override intact on a re-pick.
+                const keep_original_colors = std.mem.startsWith(u8, sprite, "custom/");
                 // Dupe into the current arena BEFORE pushing — the payload
                 // slice must not point into the view's frame allocation
                 // (the text-commit path's ordering rule).
@@ -1439,6 +1445,7 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_sprite = .{
                     .target = target,
                     .value = value,
+                    .keep_original_colors = keep_original_colors,
                 } });
             },
             // A DECORATION picker cell: adopt the picked sprite into the
@@ -1489,6 +1496,9 @@ pub fn handleAnytimeInput(
                     .footprint = definition.footprint,
                     .pixel_dims = definition.pixel_dims,
                     .color_index = definition.color_index,
+                    // Prefabs are shipped (grayscale) art — an official
+                    // pick adopts the prefab's flag (false).
+                    .keep_original_colors = definition.keep_original_colors,
                     .layers = definition.layers,
                 } else blk: {
                     const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return;
@@ -1514,19 +1524,24 @@ pub fn handleAnytimeInput(
                         .pixel_dims = pixel_dims,
                         // A custom stem has no authored values — the type's
                         // current color + layers stay (the swatch adjusts
-                        // color; layer editing is deferred).
+                        // color; layer editing is deferred). The custom
+                        // art IS pre-colored — the pick-time default flips
+                        // the untinted-render flag on (see DESIGN → Entity
+                        // & UI Coloring, keep_original_colors).
                         .color_index = current_definition.color_index,
+                        .keep_original_colors = true,
                         .layers = current_definition.layers,
                     };
                 };
 
                 // Same-definition picks never fire (the FULL definition —
-                // sprite, footprint, dims, color, layers).
+                // sprite, footprint, dims, color, layers, the untinted flag).
                 const unchanged = std.mem.eql(u8, current_definition.sprite, new_definition.sprite) and
                     loaders.decorationFootprintEqual(current_definition.footprint, new_definition.footprint) and
                     current_definition.pixel_dims.x == new_definition.pixel_dims.x and
                     current_definition.pixel_dims.y == new_definition.pixel_dims.y and
                     current_definition.color_index == new_definition.color_index and
+                    current_definition.keep_original_colors == new_definition.keep_original_colors and
                     loaders.decorationLayersEqual(current_definition.layers, new_definition.layers);
                 if (unchanged) return;
 
@@ -1547,6 +1562,7 @@ pub fn handleAnytimeInput(
                     .footprint = footprint_value,
                     .pixel_dims = new_definition.pixel_dims,
                     .color_index = new_definition.color_index,
+                    .keep_original_colors = new_definition.keep_original_colors,
                     .layers = layers_value,
                 } });
             },
@@ -1880,6 +1896,30 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_displays_weapons = .{
                     .target = target,
                     .value = !template.displays_weapons,
+                } });
+            },
+            // Inspector keep-original-colors toggles (entity + decoration):
+            // flip the edited type's flag — always changes (a flip), so no
+            // would-change gate. Same shape as the displays-weapons toggle.
+            .toggle_editor_entity_keep_original_colors => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const target = editorEntityEditTarget(editor.*) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_keep_original_colors = .{
+                    .target = target,
+                    .value = !template.keep_original_colors,
+                } });
+            },
+            .toggle_editor_decoration_keep_original_colors => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .item_type, .player => return,
+                };
+                if (type_id >= editor.decoration_types.len) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_keep_original_colors = .{
+                    .type_id = type_id,
+                    .value = !editor.decoration_types[type_id].keep_original_colors,
                 } });
             },
             // Weapon-type cell: CREATE a default weapon while the hand is

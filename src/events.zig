@@ -393,15 +393,27 @@ pub const EditorEvent = union(enum) {
         target: EntityEditTarget,
         value: []const u8,
     },
+    // Base-sprite pick commit. `keep_original_colors` rides the pick — the
+    // pick-time default follows the art source (official stem → false,
+    // mission-local custom art → true; see DESIGN → Entity & UI Coloring,
+    // keep_original_colors). One event = one undo step. Defaults false so
+    // pre-field session logs replay unchanged.
     editor_set_entity_sprite: struct {
         target: EntityEditTarget,
         value: []const u8,
+        keep_original_colors: bool = false,
     },
     editor_set_entity_color_index: struct {
         target: EntityEditTarget,
         value: u32,
     },
     editor_set_entity_displays_weapons: struct {
+        target: EntityEditTarget,
+        value: bool,
+    },
+    // The untinted-render toggle (see DESIGN → Entity & UI Coloring,
+    // keep_original_colors) — the displays_weapons toggle's shape.
+    editor_set_entity_keep_original_colors: struct {
         target: EntityEditTarget,
         value: bool,
     },
@@ -486,11 +498,24 @@ pub const EditorEvent = union(enum) {
         footprint: []const Vector2,
         pixel_dims: Vector2,
         color_index: u32,
+        // Whole-def commits carry the full visual identity incl. the
+        // untinted-render flag (official picks adopt the prefab's false;
+        // mission-local picks carry true — see DESIGN → Entity & UI
+        // Coloring, keep_original_colors). Defaults false for pre-field
+        // logs.
+        keep_original_colors: bool = false,
         layers: []const DecorationLayer,
     },
     editor_set_decoration_color_index: struct {
         type_id: u32,
         value: u32,
+    },
+    // The decoration content's untinted-render toggle (the displays_weapons
+    // toggle's decoration counterpart; granular like the color_index event —
+    // the flag never affects placement validity, no prune).
+    editor_set_decoration_keep_original_colors: struct {
+        type_id: u32,
+        value: bool,
     },
     editor_set_decoration_footprint: struct {
         type_id: u32,
@@ -965,12 +990,17 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_entity_sprite: struct {
         target: EntityEditTarget,
         value: []const u8,
+        keep_original_colors: bool = false,
     },
     player_set_editor_entity_color_index: struct {
         target: EntityEditTarget,
         value: u32,
     },
     player_set_editor_entity_displays_weapons: struct {
+        target: EntityEditTarget,
+        value: bool,
+    },
+    player_set_editor_entity_keep_original_colors: struct {
         target: EntityEditTarget,
         value: bool,
     },
@@ -1021,11 +1051,16 @@ pub const PlayerInputEvent = union(enum) {
         footprint: []const Vector2,
         pixel_dims: Vector2,
         color_index: u32,
+        keep_original_colors: bool = false,
         layers: []const DecorationLayer,
     },
     player_set_editor_decoration_color_index: struct {
         type_id: u32,
         value: u32,
+    },
+    player_set_editor_decoration_keep_original_colors: struct {
+        type_id: u32,
+        value: bool,
     },
     // Inspector item-type commits (the Items palette group's content —
     // see the editor_set_item_def block for the flattened shape + why).

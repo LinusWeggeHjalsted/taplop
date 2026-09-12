@@ -1407,6 +1407,7 @@ fn pushDecorationDef(
             .footprint = history.current_arena.allocator().dupe(types.Vector2, footprint) catch unreachable,
             .pixel_dims = .{ .x = 512, .y = 768 },
             .color_index = 4,
+            .keep_original_colors = true,
             .layers = history.current_arena.allocator().dupe(types.DecorationLayer, &layers) catch unreachable,
         } } }},
         history.current_arena.allocator(),
@@ -1433,6 +1434,8 @@ test "player_set_editor_decoration_def: adopts the whole definition, id tracks t
     try testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, adopted.footprint[0]);
     try testing.expectEqual(types.Vector2{ .x = 512, .y = 768 }, adopted.pixel_dims);
     try testing.expectEqual(@as(u32, 4), adopted.color_index);
+    // The whole-definition commit carries the untinted-render flag too.
+    try testing.expect(adopted.keep_original_colors);
     try testing.expectEqual(@as(usize, 1), adopted.layers.len);
     try testing.expectEqualStrings("tree_1_canopy", adopted.layers[0].sprite);
 
@@ -3468,13 +3471,17 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
         "custom/artists_den/boss",
         history.current_state.editor.?.entity_types[0].template.sprite,
     );
+    // The pick-time default follows the art source: a mission-local pick
+    // flips the untinted-render flag on.
+    try testing.expect(history.current_state.editor.?.entity_types[0].template.keep_original_colors);
 
-    // One undo reverts the sprite.
+    // One undo reverts the sprite (and the flag with it).
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqualStrings(
         "skeleton_1",
         history.current_state.editor.?.entity_types[0].template.sprite,
     );
+    try testing.expect(!history.current_state.editor.?.entity_types[0].template.keep_original_colors);
 
     // Same-value pick closes without recording (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
@@ -3486,6 +3493,22 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // An OFFICIAL pick commits with the flag off (official art is
+    // authored grayscale for gradient tinting).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_sprite,
+        .clicked_editor_sprite = "wolf",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqualStrings(
+        "wolf",
+        history.current_state.editor.?.entity_types[0].template.sprite,
+    );
+    try testing.expect(!history.current_state.editor.?.entity_types[0].template.keep_original_colors);
 
     // Tab switch: a direct UiState write.
     input_handlers.handleAnytimeInput(&history, .{
@@ -4223,6 +4246,76 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.color_index);
+}
+
+test "keep_original_colors toggles: entity + decoration flips ride the timeline; wrong-tool no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Entity: the toggle flips the active entity tool's flag.
+    {
+        const entity_types = [_]types.EntityTypeDef{.{
+            .id = "Skeleton",
+            .template = .{ .name = "Skeleton", .team = 1 },
+        }};
+        const levels = [_]types.EditorLevel{.{}};
+        var history = harness.newHistory(editorStateWith(.{
+            .levels = &levels,
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+        }));
+        runToIdle(&history);
+
+        input_handlers.handleAnytimeInput(&history, .{
+            .options_action = .toggle_editor_entity_keep_original_colors,
+        }, .{ .x = 0, .y = 0 }, &.{});
+        runToIdle(&history);
+        try testing.expect(history.current_state.editor.?.entity_types[0].template.keep_original_colors);
+
+        // One undo reverts the flip.
+        try testing.expect(history.undo(event_handlers.processEvent));
+        try testing.expect(!history.current_state.editor.?.entity_types[0].template.keep_original_colors);
+
+        // No entity tool active (select tool): the toggle no-ops.
+        history.current_state.editor.?.active_tool = .select;
+        input_handlers.handleAnytimeInput(&history, .{
+            .options_action = .toggle_editor_entity_keep_original_colors,
+        }, .{ .x = 0, .y = 0 }, &.{});
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        try testing.expect(!history.current_state.editor.?.entity_types[0].template.keep_original_colors);
+    }
+
+    // Decoration: the toggle flips the active decoration tool's flag; a
+    // crafted out-of-range type id records nothing (the handler's guard).
+    {
+        const levels = [_]types.EditorLevel{.{}};
+        var decoration_editor = decorationTestEditor(&levels);
+        decoration_editor.active_tool = .{ .decoration_type = 0 };
+        var history = harness.newHistory(editorStateWith(decoration_editor));
+        runToIdle(&history);
+
+        input_handlers.handleAnytimeInput(&history, .{
+            .options_action = .toggle_editor_decoration_keep_original_colors,
+        }, .{ .x = 0, .y = 0 }, &.{});
+        runToIdle(&history);
+        try testing.expect(history.current_state.editor.?.decoration_types[0].keep_original_colors);
+
+        try testing.expect(history.undo(event_handlers.processEvent));
+        try testing.expect(!history.current_state.editor.?.decoration_types[0].keep_original_colors);
+
+        event_push.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_set_editor_decoration_keep_original_colors = .{
+                .type_id = 99,
+                .value = true,
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        try testing.expect(!history.current_state.editor.?.decoration_types[0].keep_original_colors);
+    }
 }
 
 test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leading-zero no-op" {

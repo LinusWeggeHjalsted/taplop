@@ -12890,3 +12890,46 @@ invisible without art):
 - Tests: picker mission blocks (entity + decoration) assert the rendered
   ids + untinted colors; the footprint custom block asserts the image
   branch; handler tests assert the scan's `.file_name`.
+
+## keep_original_colors — events + inspector + pick defaults (slice 3 of 4)
+
+The authoring pipeline for the untinted-render flag (see the slice-4
+entry for rendering; the field + config landed in slice 2):
+
+- **Entity**: `editor_set_entity_keep_original_colors` +
+  `player_set_editor_entity_keep_original_colors` (the displays_weapons
+  pattern) + the `toggle_editor_entity_keep_original_colors` action,
+  consumed in the options_action switch (flip, always changes — no
+  would-change gate). The inspector's Identity section gains a "Keep
+  colors" row below "Displays weapons".
+- **Decoration**: granular `editor_set_decoration_keep_original_colors`
+  (the `editor_set_decoration_color_index` pattern — the flag never
+  affects placement validity, so no prune) + player wrapper + the
+  `toggle_editor_decoration_keep_original_colors` action; a "Keep
+  colors" row in the Identity section. The whole-def event
+  (`editor_set_decoration_def`) also carries the field — an official
+  prefab pick adopts the prefab's (false).
+- **Pick-time defaults follow the art source** (the user-facing rule):
+  `editor_set_entity_sprite`'s payload grew `keep_original_colors` —
+  the input site sets it from the pick (`custom/` stem → true, official
+  → false), so one event = one undo step. The decoration mission-local
+  pick sets it true in the same def event; same-sprite picks still
+  no-op (a manual override survives a re-pick). New payload fields
+  default false so pre-field session logs replay unchanged.
+- **`emitInspectorToggle` generalized**: the toggle control now carries
+  `{current, action}` (resolved by the plan builder) instead of
+  hardcoding displays_weapons + the entity context — one emitter serves
+  all three toggle rows (displays_weapons + entity/decoration keep
+  colors), decoration content tinted via the shared per-target
+  button_color.
+- validatePlayerAction arms for both wrappers (the
+  validateInspector*Edit helpers); `applyAction` routes the two new
+  actions through options_action (the input dispatch convergence's one
+  bridge).
+- Tests: entity pick (custom → true, official → false, undo reverts,
+  same-value no-op keeps the override), def-adoption carries the flag,
+  the toggle test (entity + decoration flips, undo, wrong-tool +
+  out-of-range no-ops), and the windowed-inspector label tests shifted
+  for the new Identity rows (scroll offsets +2 units; the decoration
+  footprint row moved below the scroll-0 window — its picker test now
+  scrolls).

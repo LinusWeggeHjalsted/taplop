@@ -1737,6 +1737,7 @@ pub const GameStateHistory = struct {
                 // multi-case capture): the payloads are distinct types.
                 .player_set_editor_entity_color_index => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_displays_weapons => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_keep_original_colors => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_max_health => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
@@ -1773,6 +1774,8 @@ pub const GameStateHistory = struct {
                 .player_set_editor_decoration_def => |set|
                     self.validateInspectorDecorationEdit(set.type_id),
                 .player_set_editor_decoration_color_index => |set|
+                    self.validateInspectorDecorationEdit(set.type_id),
+                .player_set_editor_decoration_keep_original_colors => |set|
                     self.validateInspectorDecorationEdit(set.type_id),
                 .player_set_editor_decoration_footprint => |set|
                     self.validateInspectorDecorationEdit(set.type_id),

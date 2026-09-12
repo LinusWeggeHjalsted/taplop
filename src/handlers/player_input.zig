@@ -546,6 +546,7 @@ pub fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_sprite = .{
                 .target = set.target,
                 .value = set.value,
+                .keep_original_colors = set.keep_original_colors,
             } } }}, allocator);
         },
         // Inspector scalar commits (swatch pick, toggle flip, stat fields):
@@ -558,6 +559,12 @@ pub fn handlePlayerInputEvent(
         },
         .player_set_editor_entity_displays_weapons => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_displays_weapons = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_keep_original_colors => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_keep_original_colors = .{
                 .target = set.target,
                 .value = set.value,
             } } }}, allocator);
@@ -615,11 +622,18 @@ pub fn handlePlayerInputEvent(
                 .footprint = set.footprint,
                 .pixel_dims = set.pixel_dims,
                 .color_index = set.color_index,
+                .keep_original_colors = set.keep_original_colors,
                 .layers = set.layers,
             } } }}, allocator);
         },
         .player_set_editor_decoration_color_index => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_color_index = .{
+                .type_id = set.type_id,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_decoration_keep_original_colors => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_keep_original_colors = .{
                 .type_id = set.type_id,
                 .value = set.value,
             } } }}, allocator);

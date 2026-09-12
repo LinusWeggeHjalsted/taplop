@@ -1080,7 +1080,7 @@ paragraph). Remaining work:
         keys + loaders + `writeEditorLevel` + dedup equality
         (`entityDefinitionsEqual`/`decorationDefinitionsEqual`) +
         `instantiateEditorLevel` propagation.
-  - [ ] **3 — editor events + inspector + pick defaults:** entity
+  - [x] **3 — editor events + inspector + pick defaults:** entity
         toggle (the `displays_weapons` pattern: `editor_set_entity_...`
         + player wrapper + toggle action), decoration toggle (the
         `editor_set_decoration_color_index` granular pattern),

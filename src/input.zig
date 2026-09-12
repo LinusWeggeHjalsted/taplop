@@ -557,6 +557,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_level_gradient => player_input.anytime.options_action = action,
         .toggle_editor_level_gradient_auto => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
+        .toggle_editor_entity_keep_original_colors => player_input.anytime.options_action = action,
+        .toggle_editor_decoration_keep_original_colors => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,
         .select_editor_item_type => player_input.anytime.options_action = action,
         .select_editor_inventory_slot => player_input.anytime.options_action = action,

@@ -609,6 +609,9 @@ pub fn handleEditorEvent(
         .editor_set_entity_sprite => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.sprite = set.value;
+            // The pick-time default rides the pick event (one undo step —
+            // see DESIGN → Entity & UI Coloring, keep_original_colors).
+            template.keep_original_colors = set.keep_original_colors;
         },
         .editor_set_entity_color_index => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
@@ -617,6 +620,10 @@ pub fn handleEditorEvent(
         .editor_set_entity_displays_weapons => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.displays_weapons = set.value;
+        },
+        .editor_set_entity_keep_original_colors => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.keep_original_colors = set.value;
         },
         .editor_set_entity_max_health => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
@@ -733,8 +740,15 @@ pub fn handleEditorEvent(
             definition.footprint = set.footprint;
             definition.pixel_dims = set.pixel_dims;
             definition.color_index = set.color_index;
+            definition.keep_original_colors = set.keep_original_colors;
             definition.layers = set.layers;
             pruneDecorationPlacementsForType(editor, set.type_id, allocator);
+        },
+        // Decoration keep_original_colors toggle (the flag never affects
+        // placement validity — no prune).
+        .editor_set_decoration_keep_original_colors => |set| {
+            if (set.type_id >= editor.decoration_types.len) return;
+            @constCast(editor.decoration_types)[set.type_id].keep_original_colors = set.value;
         },
         // Decoration color swatch commit (color never affects placement
         // validity — no prune).
