@@ -383,6 +383,13 @@ pub fn buildEditorSpritePicker(
         graphic_id: ?[]const u8,
         frame_width: i32,
         frame_height: i32,
+        /// Registry-prefab decoration cells render the prefab's authored
+        /// composition — base tinted at the prefab's own color_index, its
+        /// layers at theirs — previewing exactly what an official pick
+        /// adopts (the whole prefab, colors included). Other cells keep
+        /// the shared edited-target tint and no layers.
+        base_color_index: ?u32 = null,
+        layers: []const types.DecorationLayer = &.{},
     };
     var cells: std.ArrayList(PickerCell) = .empty;
     const mission_directory = missionDirectoryName(editor.mission.path);
@@ -427,6 +434,8 @@ pub fn buildEditorSpritePicker(
                         ),
                         .frame_width = definition.pixel_dims.x,
                         .frame_height = definition.pixel_dims.y,
+                        .base_color_index = definition.color_index,
+                        .layers = definition.layers,
                     });
                 }
             },
@@ -530,7 +539,9 @@ pub fn buildEditorSpritePicker(
     };
 
     // The edited template's colors were resolved above (the target's
-    // single seam) — nothing further to derive here. The grid is centered
+    // single seam); a registry-prefab cell overrides the base tint with
+    // the prefab's own — the only per-cell color derivation.
+    // The grid is centered
     // horizontally (fixed 6-column width), top-anchored below the header
     // with the vertical centering clamp.
     const grid_width = columns * cell + (columns - 1) * ui_gap;
@@ -574,7 +585,12 @@ pub fn buildEditorSpritePicker(
             picker_cell.stored_id,
             picker_cell.label,
             picker_cell.graphic_id,
-            graphic_color,
+            if (picker_cell.base_color_index) |color_index|
+                gradient[@min(color_index, types.gradient_color_count - 1)]
+            else
+                graphic_color,
+            picker_cell.layers,
+            gradient,
             button_color,
             highlighted,
             active_theme.lightest,
@@ -950,6 +966,8 @@ fn emitPickerSpriteCell(
     label: []const u8,
     graphic_sprite_id: ?[]const u8,
     graphic_color: Color,
+    layers: []const types.DecorationLayer,
+    layers_gradient: [types.gradient_color_count]types.Color,
     button_color: Color,
     highlighted: bool,
     label_color: Color,
@@ -978,6 +996,25 @@ fn emitPickerSpriteCell(
             .color = graphic_color,
             .blocks_input = false,
         } });
+        // Registry-prefab layers: same fitted rect (layer dims are
+        // validated equal to the base's at load), each tinted at its own
+        // index — the scene's decoration composition.
+        for (layers) |layer| {
+            const layer_sprite_id = try std.fmt.allocPrint(
+                allocator,
+                "decorations/{s}",
+                .{layer.sprite},
+            );
+            const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = layer_sprite_id,
+                .screen_position = fitted.position(),
+                .width = fitted.width,
+                .height = fitted.height,
+                .color = layers_gradient[layer_color_index],
+                .blocks_input = false,
+            } });
+        }
     } else {
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -1263,11 +1300,13 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
     defer arena.deinit();
 
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const world_two: types.Color = .{ .r = 21, .g = 21, .b = 21 };
+    const world_three: types.Color = .{ .r = 22, .g = 22, .b = 22 };
     const world_four: types.Color = .{ .r = 20, .g = 20, .b = 20 };
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{ black, black, black, black, world_four, black } },
+        .world_gradient = .{ .colors = .{ black, black, world_two, world_three, world_four, black } },
         .enemy_gradient = .{ .colors = .{black} ** 6 },
         .player_gradient = .{ .colors = .{black} ** 6 },
     };
@@ -1296,7 +1335,10 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         .sprite = "stone_2",
         .footprint = &stone_footprint,
         .pixel_dims = .{ .x = 512, .y = 256 },
-        .color_index = 4,
+        // Deliberately different from the tree prefab's index — the
+        // official cells must show the PREFABS' colors, not the edited
+        // type's.
+        .color_index = 3,
     }};
     const editor: types.Editor = .{
         .decoration_types = &decoration_types,
@@ -1305,8 +1347,10 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
     };
 
     // Official tab: one cell per registry prefab — the decoration pick
-    // action, the shipped `decorations/<stem>` graphic, the current sprite
-    // (stone_2) highlighted, world-gradient tint at the type's color.
+    // action, the current sprite (stone_2) highlighted, and the prefab's
+    // authored composition: the tree's base at its own color_index 4
+    // (world_four, NOT the edited type's index 3) with its canopy layer
+    // at index 2 over the same fitted rect.
     {
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
@@ -1322,23 +1366,36 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         );
         var pick_buttons: usize = 0;
         var highlighted: ?[]const u8 = null;
-        var saw_tree_graphic = false;
-        var saw_world_tint = false;
+        var tree_base_image: ?Image = null;
+        var canopy_image: ?Image = null;
+        var saw_edited_type_tint = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_decoration_sprite) {
                 pick_buttons += 1;
                 if (button.highlighted) highlighted = button.editor_sprite;
             },
             .image => |image| {
-                if (std.mem.eql(u8, image.sprite_id, "decorations/tree_1")) saw_tree_graphic = true;
-                if (std.meta.eql(image.color, world_four)) saw_world_tint = true;
+                if (std.mem.eql(u8, image.sprite_id, "decorations/tree_1")) tree_base_image = image;
+                if (std.mem.eql(u8, image.sprite_id, "decorations/tree_1_canopy")) canopy_image = image;
+                if (std.meta.eql(image.color, world_three)) saw_edited_type_tint = true;
             },
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 2), pick_buttons);
         try std.testing.expectEqualStrings("stone_2", highlighted.?);
-        try std.testing.expect(saw_tree_graphic);
-        try std.testing.expect(saw_world_tint);
+        // Base + layer at the prefab's own color indices.
+        try std.testing.expect(tree_base_image != null);
+        try std.testing.expect(std.meta.eql(tree_base_image.?.color, world_four));
+        try std.testing.expect(canopy_image != null);
+        try std.testing.expect(std.meta.eql(canopy_image.?.color, world_two));
+        // The layer sits over the base at the SAME fitted rect (the
+        // dims-match invariant makes one fit cover the stack).
+        try std.testing.expectEqual(tree_base_image.?.screen_position.x, canopy_image.?.screen_position.x);
+        try std.testing.expectEqual(tree_base_image.?.screen_position.y, canopy_image.?.screen_position.y);
+        try std.testing.expectEqual(tree_base_image.?.width, canopy_image.?.width);
+        try std.testing.expectEqual(tree_base_image.?.height, canopy_image.?.height);
+        // The edited type's tint (world_three) appears on NO cell.
+        try std.testing.expect(!saw_edited_type_tint);
     }
 
     // Mission tab: same namespacing as the entity picker; text cells (the

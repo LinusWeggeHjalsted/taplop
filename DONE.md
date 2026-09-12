@@ -12830,3 +12830,28 @@ viewport. The cells now compose exactly what the scene draws:
   weapon-suppressed wolf with a spear, a layered ruin) asserting sprite
   ids, per-layer tints, the shared fitted rect, and the off-hand flip;
   the displays_weapons gate asserts the equipped spear stays hidden.
+
+## Decoration sprite picker: official cells render the prefab's authored composition
+
+The decoration base-sprite picker's Official tab lists the registry
+prefabs, but its cells rendered the base sprite only, tinted with the
+EDITED type's color index — not what a pick adopts (an official pick
+takes the whole prefab: sprite, footprint, color_index, layers). The
+cells now preview the adoption result:
+
+- `PickerCell` (buildEditorSpritePicker, src/ui/editor_pickers.zig)
+  gained `base_color_index` + `layers`, populated only by the
+  decoration_base registry branch; a prefab cell tints its base with the
+  world gradient at the PREFAB's own color_index and draws each prefab
+  layer over the base at the layer's own index, all at one shared
+  fitted rect (`emitPickerSpriteCell` grew the layer-stack params —
+  single caller).
+- All other cells (entity base/layer, decoration layer/mission-local)
+  are unchanged: they keep the edited-target tint and no layers — a
+  layer pick only changes the stem; its color is authored separately.
+- The picker's dims-filter story is untouched: prefab layer dims are
+  load-validated equal to their base, so one fit covers the stack.
+- Tests: the registry-cell test's edited type now deliberately carries a
+  DIFFERENT color index than the tree prefab — the assertions prove the
+  prefab's own indices win (tree base at 4, canopy at 2, shared rect)
+  and the edited type's tint appears on NO cell.

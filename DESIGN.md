@@ -3082,9 +3082,11 @@ session-log reader doesn't regroup nested non-u8 slices):
   stays usable). A pick ADOPTS THE WHOLE PREFAB — sprite, authored
   footprint, pixel dims, color_index, layers ("loading a prefab"); the
   palette label (`id`) always tracks the sprite (a decoration's name IS
-  its sprite path). Cells render the shipped `decorations/{stem}` art
-  aspect-fit at the prefab's own pixel dims, world-gradient tint at the
-  type's color_index.
+  its sprite path). Cells render the prefab's AUTHORED composition —
+  the shipped `decorations/{stem}` art aspect-fit at the prefab's own
+  pixel dims, base tinted with the world gradient at the prefab's own
+  color_index, its layers over the base at their own indices (one
+  shared fitted rect) — previewing exactly what the pick adopts.
 - **Mission tab** — same scan + namespacing as entities. A custom pick
   stores the namespaced stem, resolves pixel dims from the PNG bytes at
   the commit site (`loaders.resolveMissionSpriteDimensions` — a
