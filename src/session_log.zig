@@ -639,6 +639,9 @@ test "writeEventLog serializes representative event shapes" {
     const history = [_]Event{
         // void payload
         .{ .meta_event = .open_main_menu },
+        // empty struct payload (zero fields — the accelerating pacing wait;
+        // the group serializes as just the `event` discriminator line)
+        .{ .meta_event = .{ .accelerating_wait = .{} } },
         // struct with a Vector2
         .{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 3, .y = 4 } } } },
         // optional present (target) + enum
@@ -764,6 +767,7 @@ test "writeEventLog serializes representative event shapes" {
 
     // Discriminators + field shapes
     try std.testing.expect(std.mem.indexOf(u8, output, "event meta_event open_main_menu\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event meta_event accelerating_wait\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event move_player\ndestination 3 4\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event use_skill\ncaster_index 0\nskill_id slice\ntarget 2 5\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "outgoing_damage 12\ntriggers_effects true\nheals_attacker false\n") != null);
@@ -834,6 +838,9 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
+        for (0..2) |index| {
+            try std.testing.expectEqualDeep(history[index], log.events[index]);
+        }
         for (0..13) |offset| {
             try std.testing.expectEqualDeep(history[history.len - 13 + offset], log.events[log.events.len - 13 + offset]);
         }

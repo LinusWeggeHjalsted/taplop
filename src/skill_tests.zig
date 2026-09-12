@@ -201,7 +201,7 @@ test "shoot: useSkill emits attack + retreat with main-hand damage" {
     try testing.expectEqual(defender.position, retreat.target_position);
     try testing.expectEqual(@as(u32, 1), retreat.distance);
 
-    try testing.expect(result[1].meta_event == .wait);
+    try testing.expect(result[1].meta_event == .accelerating_wait);
 
     const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 0), attack.attacker_index);
@@ -456,7 +456,7 @@ test "powerful shot: useSkill emits attack + knockback with half collision damag
     try testing.expectEqual(@as(u32, 2), knockback.distance);
     try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
 
-    try testing.expect(result[1].meta_event == .wait);
+    try testing.expect(result[1].meta_event == .accelerating_wait);
 
     const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
@@ -533,7 +533,7 @@ test "head shot: useSkill emits attack + stun with off-hand damage" {
     try testing.expectEqual(@as(u32, 1), stun.defender_index);
     try testing.expectEqual(@as(u32, 1), stun.stun_duration);
 
-    try testing.expect(result[1].meta_event == .wait);
+    try testing.expect(result[1].meta_event == .accelerating_wait);
 
     const attack = result[2].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 9), attack.outgoing_damage);
@@ -1819,7 +1819,7 @@ test "shockwave: useSkill attacks then knockbacks each hostile in radius" {
             else => try testing.expect(false),
         },
         .meta_event => |meta| switch (meta) {
-            .wait => waits += 1,
+            .accelerating_wait => waits += 1,
             else => try testing.expect(false),
         },
         else => try testing.expect(false),

@@ -58,12 +58,14 @@ Test by running `zig build run` and clicking through.
         `helpers.ownedEvents` (one site; new skills paced for free). The
         per-skill sweep is moot; bash's manual wait removed (subsumed).
         Design: DESIGN → Architecture → Skill pacing; history in DONE.md.
-  - [ ] **Deferred — accelerating effect pacing:** a special wait event
-        (or per-wait payload) where each skill use RESETS the gap to 125ms
-        and the following waits within that skill decrease in length — an
-        accelerating feel for long chains (big AoEs wind up instead of
-        dragging). Needs: wait-event variant or a duration function, and a
-        per-skill-use reset point. Revisit after playtesting the flat rule.
+  - [x] **Accelerating effect pacing — DONE.** All the 0.125s waits share
+        ONE acceleration sequence per skill use: `MetaEvent.accelerating_wait`
+        (empty payload; duration computed at pop time from
+        `GameState.wait_acceleration`, 125ms × ⅔ per prior gap, floored at
+        1ms) pushed by ownedEvents' interleave AND the attack/collision
+        hit-landing gaps; reset in `use_skill` (the one chain start — every
+        attack is skill-mediated). Design: DESIGN → Architecture → Skill
+        pacing; history in DONE.md.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

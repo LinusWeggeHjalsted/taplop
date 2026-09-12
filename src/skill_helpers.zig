@@ -521,14 +521,27 @@ pub fn ownedEvents(
 /// See DESIGN → Architecture → Damage apply split + TODO → Effect pacing.
 pub const effect_step_wait_milliseconds: u32 = 125;
 
-/// A `wait` event carrying `effect_step_wait_milliseconds` — the pacing wait
-/// `ownedEvents` interleaves between a skill's consecutive events. File-private:
-/// skills never construct waits themselves (the generic rule derives pacing
-/// from the list length).
+/// Duration of the `gap_count`-th accelerating wait in an effect chain:
+/// `effect_step_wait_milliseconds` multiplied by 2/3 per prior gap (integer
+/// math), floored at 1ms — the tail of a long chain converges to
+/// near-simultaneous without producing zero-duration no-op events. The
+/// accelerating-wait arm computes this from `GameState.wait_acceleration`;
+/// the sequence for the first gaps is 125, 83, 55, 36, 24, 16, 10, 6, 4, 2, 1.
+pub fn acceleratedEffectStepWaitMilliseconds(gap_count: u32) u32 {
+    var duration: u32 = effect_step_wait_milliseconds;
+    for (0..gap_count) |_| {
+        if (duration <= 1) break;
+        duration = duration * 2 / 3;
+    }
+    return @max(duration, 1);
+}
+
+/// An `accelerating_wait` event — the pacing wait `ownedEvents` interleaves
+/// between a skill's consecutive events. File-private: skills never construct
+/// waits themselves (the generic rule derives pacing from the list length),
+/// and the duration is computed by the wait arm from GameState, not carried.
 fn effectStepWait() Event {
-    return .{ .meta_event = .{ .wait = .{
-        .duration_milliseconds = effect_step_wait_milliseconds,
-    } } };
+    return .{ .meta_event = .{ .accelerating_wait = .{} } };
 }
 
 /// The caster's would-be best casts with one extra active effect virtually
@@ -710,9 +723,18 @@ test "ownedEvents: paces multi-event lists with waits between each pair, passes 
     // Even indices are the skill's events (execution order), odd indices
     // are the pacing waits.
     try std.testing.expect(paced[4].sub_level_event == .attack);
-    try std.testing.expect(paced[3].meta_event == .wait);
-    try std.testing.expectEqual(effect_step_wait_milliseconds, paced[3].meta_event.wait.duration_milliseconds);
+    try std.testing.expect(paced[3].meta_event == .accelerating_wait);
     try std.testing.expect(paced[2].sub_level_event == .stun);
-    try std.testing.expect(paced[1].meta_event == .wait);
+    try std.testing.expect(paced[1].meta_event == .accelerating_wait);
     try std.testing.expect(paced[0].sub_level_event == .knockback);
+}
+
+test "acceleratedEffectStepWaitMilliseconds: decays by 2/3 per gap, floored at 1" {
+    const expected = [_]u32{ 125, 83, 55, 36, 24, 16, 10, 6, 4, 2, 1 };
+    for (expected, 0..) |want, gap_count| {
+        try std.testing.expectEqual(want, acceleratedEffectStepWaitMilliseconds(@intCast(gap_count)));
+    }
+    // The floor holds indefinitely — no zero-duration waits.
+    try std.testing.expectEqual(@as(u32, 1), acceleratedEffectStepWaitMilliseconds(50));
+    try std.testing.expectEqual(@as(u32, 1), acceleratedEffectStepWaitMilliseconds(1000));
 }

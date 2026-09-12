@@ -59,6 +59,15 @@ pub const MetaEvent = union(enum) {
     wait: struct {
         duration_milliseconds: u32,
     },
+    // The intra-effect pacing wait — same stall machinery as `wait`, but the
+    // duration is COMPUTED at pop time: `effect_step_wait_milliseconds`
+    // decayed by 2/3 per prior accelerating wait in the chain
+    // (`GameState.wait_acceleration`, reset by `use_skill`). Carries no
+    // payload because the duration is a pure function of state — which is
+    // what keeps it replay-safe (the counter is event-driven GameState,
+    // recomputed identically on replay/undo). See DESIGN → Architecture →
+    // Skill pacing.
+    accelerating_wait: struct {},
     open_main_menu: void,
     close_main_menu: void,
     load_save: struct {

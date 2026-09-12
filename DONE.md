@@ -13142,3 +13142,42 @@ unit test pins the interleave semantics. The follow-up idea (an
 accelerating variant — each skill use resets the gap to 125ms and the
 following waits shrink, so long chains wind up) is recorded as deferred
 in TODO → Effect pacing.
+
+## Accelerating effect pacing — one decay sequence shared by all the 0.125s waits
+
+The flat rule's linear latency made big AoEs drag; the accelerating rule
+makes them wind up. All intra-effect waits now share ONE decay sequence
+per skill use, per the agreed example (spinblade ×3: attack → 125 →
+damage → 83 → attack → 55 → damage → 36 → attack → 24 → damage):
+
+- `MetaEvent.accelerating_wait` — an EMPTY-payload wait variant. The
+  duration is computed at POP time by the wait arm from
+  `GameState.wait_acceleration`: 125ms decayed by 2/3 per prior gap in
+  the chain (integer math, floored at 1ms — 125, 83, 55, 36, 24, 16, 10,
+  6, 4, 2, 1 — long tails converge to near-simultaneous without
+  zero-duration no-op events). `acceleratedEffectStepWaitMilliseconds`
+  in skill_helpers.zig is the pure decay function.
+- Consumers: `ownedEvents`' interleave AND the attack/collision arms'
+  hit-resolution → damage-landing gap — the same variant, the same
+  counter, so a skill's whole chain accelerates together (the flat-rule
+  alternative where only the interleave gaps decay would leave the
+  125ms damage beats dominating — the acceleration would barely read).
+- Reset: ONE site — the `use_skill` arm. The feared stale-counter
+  problem doesn't exist: every attack is skill-mediated (the player's
+  attack step IS a weapon-skill use; enemies only cast via bestCasts —
+  no bare attack pushes outside skills except adrenaline_surge's
+  handler expansion, which rides the use_skill reset upstream).
+- Replay-safety (the design crux): the counter is event-driven
+  GameState — reset + increments are handler transforms, carried in
+  snapshots, recomputed identically on replay/undo. The derived
+  durations need nothing in the payload, which is exactly why a
+  SessionState counter would have broken (unreplayed state → divergent
+  durations on undo). Session-log: the empty payload round-trips (a
+  zero-field struct serializes as just the `event` discriminator line —
+  pinned in the serializer round-trip test).
+
+Tests: the decay sequence + 1ms floor (skill_helpers), the empty-payload
+round-trip (session_log), and an end-to-end harness test (spinblade on
+two targets leaves wait_acceleration == 3; a follow-up single-hit skill
+resets — exactly 1 wait, proving the per-skill reset). Design: DESIGN →
+Architecture → Skill pacing.

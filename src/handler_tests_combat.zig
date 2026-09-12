@@ -1010,3 +1010,38 @@ test "adrenaline_surge: nothing ticking is a no-op" {
     pushAndRunSub(&history, .{ .adrenaline_surge = .{ .attacker_index = 0, .defender_index = 1 } });
     try testing.expectEqual(@as(u32, 10), levelEntity(&history, 1).current_health);
 }
+
+test "accelerating waits: one shared counter per skill use, reset on use_skill" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 1, .y = 1 }, .main_hand_weapon = .{ .weapon_type = .sword, .weapon_damage = 1 } },
+            .{ .team = 1, .position = .{ .x = 2, .y = 1 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 0, .y = 1 }, .current_health = 10, .max_health = 10 },
+        },
+        &three_by_three,
+    ));
+
+    // Spinblade hits both adjacent hostiles: attack → wait → damage → wait →
+    // attack → wait → damage — ONE shared acceleration sequence (the
+    // inter-event gaps and the hit-landing gaps are the same wait kind,
+    // sharing the counter). 3 waits elapsed.
+    pushAndRunLevel(&history, .{ .use_skill = .{
+        .caster_index = 0,
+        .skill_id = .spinblade,
+        .target = null,
+    } });
+    try testing.expectEqual(@as(u32, 3), history.current_state.wait_acceleration);
+
+    // A follow-up single-hit skill RESETS the chain: exactly one wait
+    // (without the reset it would inherit the decayed position — 4).
+    pushAndRunLevel(&history, .{ .use_skill = .{
+        .caster_index = 0,
+        .skill_id = .slice,
+        .target = .{ .x = 2, .y = 1 },
+    } });
+    try testing.expectEqual(@as(u32, 1), history.current_state.wait_acceleration);
+}

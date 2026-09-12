@@ -612,6 +612,13 @@ pub const GameState = struct {
     event_stack: []const Event,
     // Non-null while turn flow is paused (see WaitState).
     waiting: ?WaitState = null,
+    /// The ACCELERATING-WAIT gap counter: how many `accelerating_wait` events
+    /// have elapsed since the current effect chain began (reset by `use_skill`
+    /// — every attack is skill-mediated). The wait arm computes its duration
+    /// from this (125ms decayed by 2/3 per prior gap). Event-driven GameState —
+    /// carried in snapshots, recomputed identically on replay — so the derived
+    /// durations stay deterministic. See DESIGN → Architecture → Skill pacing.
+    wait_acceleration: u32 = 0,
     player_data: PlayerData,
     camera: ?Camera,
     editor: ?Editor,

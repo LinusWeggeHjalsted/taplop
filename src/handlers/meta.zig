@@ -15,6 +15,7 @@ const writers = @import("../writers.zig");
 const file_source_mod = @import("../file_source.zig");
 const deep_copy = @import("../deep_copy.zig");
 const event_push = @import("../event_push.zig");
+const skill_helpers = @import("../skill_helpers.zig");
 const shared = @import("shared.zig");
 const player_handlers = @import("player.zig");
 const editor_handlers = @import("../editor/handlers.zig");
@@ -812,6 +813,23 @@ pub fn handleMetaEvent(
             // the depth of the remaining enemy-turn events.
             current.waiting = .{
                 .remaining_microseconds = @as(u64, wait_event.duration_milliseconds) * 1000,
+                .baseline_stack_depth = current.event_stack.len,
+            };
+        },
+        .accelerating_wait => {
+            // The intra-effect pacing wait (the accelerating counterpart of
+            // `wait` — see DESIGN → Architecture → Skill pacing). Duration is
+            // COMPUTED from `wait_acceleration` (how many accelerating waits
+            // have elapsed since `use_skill` reset the chain): 125ms decayed
+            // by 2/3 per prior gap, so a multi-hit skill winds up. The counter
+            // increment is event-driven GameState, recomputed identically on
+            // replay/undo — the derived durations stay deterministic.
+            const duration_milliseconds = skill_helpers.acceleratedEffectStepWaitMilliseconds(
+                current.wait_acceleration,
+            );
+            current.wait_acceleration += 1;
+            current.waiting = .{
+                .remaining_microseconds = @as(u64, duration_milliseconds) * 1000,
                 .baseline_stack_depth = current.event_stack.len,
             };
         },

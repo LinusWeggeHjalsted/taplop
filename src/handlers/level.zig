@@ -16,7 +16,6 @@ const threat = @import("../ai_threat.zig");
 const movement = @import("../ai_movement.zig");
 const ai_select = @import("../ai_select.zig");
 const skill_mod = @import("../skill.zig");
-const skill_helpers = @import("../skill_helpers.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -577,6 +576,12 @@ pub fn handleLevelEvent(
             const entity = getLevelEntity(current, use.caster_index);
             entity.momentum += 1;
 
+            // Every attack is skill-mediated (the player's attack step IS a
+            // weapon-skill use; enemies cast through bestCasts), so this is
+            // the ONE chain start — the accelerating-wait counter resets
+            // here. See DESIGN → Architecture → Skill pacing.
+            current.wait_acceleration = 0;
+
             // Mission stat: skills used by the player. See DESIGN
             // → Clones (clone system).
             if (use.caster_index == 0) {
@@ -1000,15 +1005,15 @@ pub fn handleSubLevelEvent(
             // (attack/collision converge there; the `triggers_effects`
             // default is true — collision damage callbacks were ungated),
             // with an intra-hit pacing wait between resolve and apply (see
-            // TODO → Effect pacing). LIFO: the wait sits LAST so it pops
-            // FIRST.
+            // DESIGN → Architecture → Skill pacing). LIFO: the wait sits
+            // LAST so it pops FIRST — the damage lands once it elapses.
             pushEvents(current, &.{
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = collision.attacker_index,
                     .defender_index = collision.defender_index,
                     .amount = incoming_damage,
                 } } },
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = skill_helpers.effect_step_wait_milliseconds } } },
+                .{ .meta_event = .{ .accelerating_wait = .{} } },
             }, allocator);
         },
         .damage => |damage_event| {
@@ -1153,9 +1158,9 @@ pub fn handleSubLevelEvent(
             const incoming_damage = defender.getEffectiveIncomingDamage(effective_outgoing);
 
             // Hand the resolved amount to the shared damage apply arm, with
-            // an intra-hit pacing wait between resolve and apply (see TODO →
-            // Effect pacing). LIFO: the wait sits LAST in the array so it pops
-            // FIRST — the damage lands once it elapses.
+            // an intra-hit pacing wait between resolve and apply (see DESIGN →
+            // Architecture → Skill pacing). LIFO: the wait sits LAST in the
+            // array so it pops FIRST — the damage lands once it elapses.
             pushEvents(current, &.{
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = attack.attacker_index,
@@ -1164,7 +1169,7 @@ pub fn handleSubLevelEvent(
                     .triggers_effects = attack.triggers_effects,
                     .heals_attacker = attack.heals_attacker,
                 } } },
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = skill_helpers.effect_step_wait_milliseconds } } },
+                .{ .meta_event = .{ .accelerating_wait = .{} } },
             }, allocator);
         },
         .create_effect => |create| {
