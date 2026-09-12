@@ -12797,3 +12797,36 @@ not-cached layers), the aarch64 tint pre-selection shape in drawNineSlice,
 the comptime-out diagnostics gating in non-dev builds. The two-runtime
 checks each slice: native boot to main menu + the diagnostics file written
 with the new name on both the default and $ZIGLOP_DATA paths.
+
+## Editor palette cells render the full scene composition (entity + decoration tools)
+
+The palette's entity + decoration tool cells previously showed the base
+sprite only, tinted at the type's color index — a placed, dual-wielding
+enemy or a layered decoration looked different in the cell than in the
+viewport. The cells now compose exactly what the scene draws:
+
+- **Entity cells** (`emitEditorEntityToolCell`, src/ui/editor_shell.zig):
+  base sprite, then overlay layers, then weapons — all at ONE shared
+  fitted rect (entity art shares the 512×640 frame + pivot, so a
+  per-image fit would be identical anyway, and one fit makes the
+  same-rect invariant testable). Tint rules copied from `entityDrawable`
+  (view.zig): base + layers at their own color_index into the team
+  gradient (player gradient for team 0, enemy gradient otherwise),
+  weapons at team gradient index 1; main hand as-authored, off hand
+  MIRRORED; weapons suppressed when `displays_weapons` is false.
+- **Decoration cells** (`emitEditorDecorationToolCell`): base + layers at
+  their own color_index into the world gradient, same shared fitted
+  rect (layer dims are validated equal to the base's at load, so one fit
+  covers the stack) — the scene's decoration-piece composition.
+- **`Image.flip_horizontal`** (src/ui/element.zig) — the UI image element
+  had no mirror, so the off-hand preview needed it. `drawSprite`
+  (src/raylib/draw.zig) gained a `flip_horizontal` param applying the
+  negative-source-width trick already used by `drawSpriteDrawable`; the
+  other five call sites pass false.
+- `emitEditorToolCell` split: the button layer extracted into
+  `emitEditorToolCellButton` (shared by all cell emitters); the
+  single-graphic emitter keeps serving Select/Tile/item cells.
+- Tests: a composed-cell test (layered dual-wielding skeleton, a
+  weapon-suppressed wolf with a spear, a layered ruin) asserting sprite
+  ids, per-layer tints, the shared fitted rect, and the off-hand flip;
+  the displays_weapons gate asserts the equipped spear stays hidden.

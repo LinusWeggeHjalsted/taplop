@@ -753,6 +753,10 @@ pub const Image = struct {
     /// spritesheet frames (e.g. the editor Select tool's
     /// `world/tile_highlight` frame 0).
     source_rectangle: ?Rectangle = null,
+    /// Mirror horizontally (negative source width at the render seam, the
+    /// world sprite path's flip trick). Used for off-hand weapon previews
+    /// in editor cells — they must mirror like the scene does.
+    flip_horizontal: bool = false,
     /// Renderer draws a programmatic edge highlight around the sprite's
     /// opaque pixels when set (e.g. the active turn-step indicator).
     highlighted: bool = false,

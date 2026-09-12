@@ -160,6 +160,35 @@ pub fn scaleToFit(cell: Rectangle, sprite_width: i32, sprite_height: i32) Rectan
     return cell.placeCenter(fitted_width, fitted_height);
 }
 
+/// The button layer of an editor tool cell: a `ui/button_background`
+/// Button tinted as a button (player gradient index 5) carrying the tool's
+/// action + payload + tooltip. Selecting the tool makes it active; the
+/// ACTIVE tool's button is highlighted (lightest edge outline), as is the
+/// hovered one via the generic hover pass in `view()`. The cell's graphic
+/// (one image or a composed stack) is emitted on top by the caller —
+/// graphics pass hover through to the button (`blocks_input = false`).
+fn emitEditorToolCellButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    button_color: Color,
+    tooltip_header: []const u8,
+    active_tool: types.EditorToolId,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .select_editor_tool,
+        .editor_tool = tool,
+        .color = button_color,
+        .highlighted = std.meta.eql(tool, active_tool),
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
+    } });
+}
+
 /// Emit one editor tool cell: a `ui/button_background` Button tinted as a
 /// button (player gradient index 5) carrying the tool's action + payload +
 /// tooltip + input, with the tool's graphic scaled to fit (aspect-preserved,
@@ -182,17 +211,15 @@ fn emitEditorToolCell(
     tooltip_header: []const u8,
     active_tool: types.EditorToolId,
 ) !void {
-    try elements.append(allocator, .{ .button = .{
-        .sprite_id = button_background_sprite_id,
-        .screen_position = cell.position(),
-        .width = cell.width,
-        .height = cell.height,
-        .action = .select_editor_tool,
-        .editor_tool = tool,
-        .color = button_color,
-        .highlighted = std.meta.eql(tool, active_tool),
-        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
-    } });
+    try emitEditorToolCellButton(
+        elements,
+        allocator,
+        cell,
+        tool,
+        button_color,
+        tooltip_header,
+        active_tool,
+    );
     // Fit the graphic at native dims, then shrink the fitted rect by
     // `graphic_scale`. (Scaling the INPUT dims is a no-op — scaleToFit
     // grows or shrinks to fill the cell, so the aspect ratio erases any
@@ -210,6 +237,159 @@ fn emitEditorToolCell(
         .source_rectangle = graphic_source_rectangle,
         .blocks_input = false,
     } });
+}
+
+/// One non-blocking image of a composed palette-cell graphic, drawn at the
+/// precomputed fitted rect (all images of one cell share it — entity +
+/// decoration art stacks are same-frame overlays, so they must land
+/// pixel-identical to each other like they do in the scene).
+fn appendCellGraphicImage(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    sprite_id: []const u8,
+    fitted: Rectangle,
+    color: Color,
+    flip_horizontal: bool,
+) !void {
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = sprite_id,
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = color,
+        .flip_horizontal = flip_horizontal,
+        .blocks_input = false,
+    } });
+}
+
+/// Emit an ENTITY palette tool cell: the tool button + the entity's scene
+/// composition at cell scale — base sprite, then overlay layers, then
+/// weapons (main hand as-authored, off hand mirrored), all sharing one
+/// fitted rect because entity art shares the 512x640 frame + pivot. Tints
+/// follow `entityDrawable` (view.zig): base + layers at their own
+/// color_index into the team gradient, weapons at team gradient index 1;
+/// weapons are suppressed when `displays_weapons` is false (e.g. wolves).
+fn emitEditorEntityToolCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    template: types.Entity,
+    team_gradient: [types.gradient_color_count]types.Color,
+    button_color: Color,
+    tooltip_header: []const u8,
+    active_tool: types.EditorToolId,
+) !void {
+    try emitEditorToolCellButton(
+        elements,
+        allocator,
+        cell,
+        tool,
+        button_color,
+        tooltip_header,
+        active_tool,
+    );
+    const fitted = scaleToFit(cell, editor_entity_frame_width, editor_entity_frame_height);
+
+    const base_sprite_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{template.sprite});
+    const base_color_index = @min(template.color_index, types.gradient_color_count - 1);
+    try appendCellGraphicImage(
+        elements,
+        allocator,
+        base_sprite_id,
+        fitted,
+        team_gradient[base_color_index],
+        false,
+    );
+
+    for (template.layers) |layer| {
+        const layer_sprite_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{layer.sprite});
+        const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+        try appendCellGraphicImage(
+            elements,
+            allocator,
+            layer_sprite_id,
+            fitted,
+            team_gradient[layer_color_index],
+            false,
+        );
+    }
+
+    if (template.displays_weapons) {
+        // Team 0 bodies wield the plain weapon art; enemy silhouettes the
+        // enemy_ variant — the scene's weaponSprite rule.
+        const variant_prefix = if (template.team == 0) "" else "enemy_";
+        const weapon_color = team_gradient[1];
+        if (template.main_hand_weapon) |weapon| {
+            const sprite_id = try std.fmt.allocPrint(
+                allocator,
+                "weapons/{s}{s}",
+                .{ variant_prefix, @tagName(weapon.weapon_type) },
+            );
+            try appendCellGraphicImage(elements, allocator, sprite_id, fitted, weapon_color, false);
+        }
+        if (template.off_hand_weapon) |weapon| {
+            const sprite_id = try std.fmt.allocPrint(
+                allocator,
+                "weapons/{s}{s}",
+                .{ variant_prefix, @tagName(weapon.weapon_type) },
+            );
+            try appendCellGraphicImage(elements, allocator, sprite_id, fitted, weapon_color, true);
+        }
+    }
+}
+
+/// Emit a DECORATION palette tool cell: the tool button + the decoration's
+/// scene composition at cell scale — base sprite, then overlay layers, all
+/// sharing one fitted rect (layers are validated to match the base's pixel
+/// dims, so one fit covers the whole stack). Tints follow the scene's
+/// decoration pass: base + layers at their own color_index into the world
+/// gradient.
+fn emitEditorDecorationToolCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    type_definition: types.DecorationTypeDef,
+    world_gradient: [types.gradient_color_count]types.Color,
+    button_color: Color,
+    tooltip_header: []const u8,
+    active_tool: types.EditorToolId,
+) !void {
+    try emitEditorToolCellButton(
+        elements,
+        allocator,
+        cell,
+        tool,
+        button_color,
+        tooltip_header,
+        active_tool,
+    );
+    const fitted = scaleToFit(cell, type_definition.pixel_dims.x, type_definition.pixel_dims.y);
+
+    const base_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
+    const base_color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
+    try appendCellGraphicImage(
+        elements,
+        allocator,
+        base_sprite_id,
+        fitted,
+        world_gradient[base_color_index],
+        false,
+    );
+
+    for (type_definition.layers) |layer| {
+        const layer_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{layer.sprite});
+        const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+        try appendCellGraphicImage(
+            elements,
+            allocator,
+            layer_sprite_id,
+            fitted,
+            world_gradient[layer_color_index],
+            false,
+        );
+    }
 }
 
 /// The small delete button flush in a palette tool cell's top-right corner
@@ -557,9 +737,12 @@ pub fn buildEditorPrimaryActions(
 /// the bar; collapsed (or empty) groups put them flush against the bottom
 /// of the screen. Every tool renders the shared button background plus a
 /// distinguishing graphic: Select = `world/tile_highlight` frame 0, Tile =
-/// `world/tile`, entities = entity base sprite (team gradient at the
-/// template's color_index), decorations = base sprite (world gradient at
-/// the type's color_index), ground items = the item icon (ground items
+/// `world/tile`, entities + decorations = their FULL scene composition
+/// (base + layers, plus weapons for entities — off-hand mirrored,
+/// suppressed when `displays_weapons` is false), each layer tinted exactly
+/// as `entityDrawable` / the decoration pass tints them (see DESIGN →
+/// Entity & UI Coloring), so the palette preview matches what a placement
+/// looks like in the viewport; ground items = the item icon (ground items
 /// always render as the shared ground bag in-world, so the palette shows
 /// the ITEM's icon for authoring distinction). Interaction is wired: tool
 /// cells make themselves the active tool (`player_set_editor_tool`),
@@ -755,27 +938,17 @@ pub fn buildEditorBottomBar(
 
             switch (group_index) {
                 0 => for (editor.entity_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
-                    const sprite_id = try std.fmt.allocPrint(
-                        allocator,
-                        "entities/{s}",
-                        .{type_definition.template.sprite},
-                    );
-                    const color_index = @min(type_definition.template.color_index, types.gradient_color_count - 1);
                     // The team gradient at the template's color_index — a
                     // team-0 type is a player-team helper and tints with the
                     // player gradient (DESIGN → Entity & UI Coloring).
                     const team_gradient = if (type_definition.template.team == 0) p else enemy;
-                    try emitEditorToolCell(
+                    try emitEditorEntityToolCell(
                         elements,
                         allocator,
                         cellAt(bar.y, group_left, ordinal),
                         .{ .entity_type = @intCast(first_visible + ordinal) },
-                        sprite_id,
-                        null,
-                        editor_entity_frame_width,
-                        editor_entity_frame_height,
-                        1.0,
-                        team_gradient[color_index],
+                        type_definition.template,
+                        team_gradient,
                         button_color,
                         type_definition.id,
                         active_tool,
@@ -789,23 +962,13 @@ pub fn buildEditorBottomBar(
                     );
                 },
                 1 => for (editor.decoration_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
-                    const sprite_id = try std.fmt.allocPrint(
-                        allocator,
-                        "decorations/{s}",
-                        .{type_definition.sprite},
-                    );
-                    const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
-                    try emitEditorToolCell(
+                    try emitEditorDecorationToolCell(
                         elements,
                         allocator,
                         cellAt(bar.y, group_left, ordinal),
                         .{ .decoration_type = @intCast(first_visible + ordinal) },
-                        sprite_id,
-                        null,
-                        type_definition.pixel_dims.x,
-                        type_definition.pixel_dims.y,
-                        1.0,
-                        world[color_index],
+                        type_definition,
+                        world,
                         button_color,
                         type_definition.id,
                         active_tool,
@@ -1414,6 +1577,159 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         enemies_plus_button.?.x + editor_plus_size + ui_gap,
         decorations_header_button.?.x,
     );
+}
+
+test "buildEditorBottomBar: entity + decoration cells render the full scene composition" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const world_one: types.Color = .{ .r = 10, .g = 10, .b = 10 };
+    const world_three: types.Color = .{ .r = 11, .g = 11, .b = 11 };
+    const enemy_one: types.Color = .{ .r = 20, .g = 20, .b = 20 };
+    const enemy_two: types.Color = .{ .r = 21, .g = 21, .b = 21 };
+    const enemy_four: types.Color = .{ .r = 22, .g = 22, .b = 22 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{ black, world_one, black, world_three, black, black } },
+        .enemy_gradient = .{ .colors = .{ black, enemy_one, enemy_two, black, enemy_four, black } },
+        .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // A layered, dual-wielding enemy — the composed case.
+    var skeleton: types.Entity = .{};
+    skeleton.sprite = "skeleton";
+    skeleton.team = 1;
+    skeleton.color_index = 2;
+    const skeleton_layers = [_]types.EntityLayer{.{ .sprite = "skeleton_armor", .color_index = 4 }};
+    skeleton.layers = &skeleton_layers;
+    skeleton.main_hand_weapon = .{ .weapon_type = .sword };
+    skeleton.off_hand_weapon = .{ .weapon_type = .dagger };
+
+    // A weapon-suppressed enemy — weapons stay hidden even when equipped.
+    var wolf: types.Entity = .{};
+    wolf.sprite = "wolf";
+    wolf.team = 1;
+    wolf.displays_weapons = false;
+    wolf.main_hand_weapon = .{ .weapon_type = .spear };
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton Warrior", .template = skeleton },
+        .{ .id = "Wolf", .template = wolf },
+    };
+    const ruin_layers = [_]types.DecorationLayer{.{
+        .sprite = "ruin_1_moss",
+        .color_index = 3,
+        .pixel_dims = .{ .x = 512, .y = 512 },
+    }};
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{
+            .id = "Ruin",
+            .sprite = "ruin_1",
+            .pixel_dims = .{ .x = 512, .y = 512 },
+            .color_index = 1,
+            .layers = &ruin_layers,
+        },
+    };
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .decoration_types = &decoration_types,
+    };
+
+    var elements: UiElementList = .empty;
+    var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
+    var collapsed: [3]bool = .{ false, false, false };
+    try buildEditorBottomBar(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        editor,
+        theme,
+        &scroll_offsets,
+        &collapsed,
+        .select,
+    );
+
+    // Collect the composed-cell images by sprite id.
+    var base_image: ?Image = null;
+    var layer_image: ?Image = null;
+    var main_weapon_image: ?Image = null;
+    var off_weapon_image: ?Image = null;
+    var wolf_image: ?Image = null;
+    var spear_seen = false;
+    var decoration_base_image: ?Image = null;
+    var decoration_layer_image: ?Image = null;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            try std.testing.expect(!image.blocks_input);
+            if (std.mem.eql(u8, image.sprite_id, "entities/skeleton")) {
+                base_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "entities/skeleton_armor")) {
+                layer_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_sword")) {
+                main_weapon_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_dagger")) {
+                off_weapon_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "entities/wolf")) {
+                wolf_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_spear")) {
+                spear_seen = true;
+            } else if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
+                decoration_base_image = image;
+            } else if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1_moss")) {
+                decoration_layer_image = image;
+            }
+        },
+        else => {},
+    };
+
+    // Entity stack: base at the template's color_index, layer at its own,
+    // weapons at gradient index 1 — the entityDrawable tint rules.
+    try std.testing.expect(base_image != null);
+    try std.testing.expect(layer_image != null);
+    try std.testing.expect(main_weapon_image != null);
+    try std.testing.expect(off_weapon_image != null);
+    try std.testing.expect(std.meta.eql(base_image.?.color, enemy_two));
+    try std.testing.expect(std.meta.eql(layer_image.?.color, enemy_four));
+    try std.testing.expect(std.meta.eql(main_weapon_image.?.color, enemy_one));
+    try std.testing.expect(std.meta.eql(off_weapon_image.?.color, enemy_one));
+
+    // The whole stack shares one fitted rect (entity art shares the
+    // 512x640 frame + pivot) — the off-hand mirrors instead of moving.
+    try std.testing.expect(!main_weapon_image.?.flip_horizontal);
+    try std.testing.expect(off_weapon_image.?.flip_horizontal);
+    for ([_]?Image{ layer_image, main_weapon_image, off_weapon_image }) |maybe_image| {
+        const image = maybe_image.?;
+        try std.testing.expectEqual(base_image.?.screen_position.x, image.screen_position.x);
+        try std.testing.expectEqual(base_image.?.screen_position.y, image.screen_position.y);
+        try std.testing.expectEqual(base_image.?.width, image.width);
+        try std.testing.expectEqual(base_image.?.height, image.height);
+    }
+
+    // displays_weapons false: the wolf's base shows, its spear does not.
+    try std.testing.expect(wolf_image != null);
+    try std.testing.expect(!spear_seen);
+
+    // Decoration stack: base + layer at their own color indices into the
+    // world gradient, sharing one fitted rect.
+    try std.testing.expect(decoration_base_image != null);
+    try std.testing.expect(decoration_layer_image != null);
+    try std.testing.expect(std.meta.eql(decoration_base_image.?.color, world_one));
+    try std.testing.expect(std.meta.eql(decoration_layer_image.?.color, world_three));
+    try std.testing.expectEqual(
+        decoration_base_image.?.screen_position.x,
+        decoration_layer_image.?.screen_position.x,
+    );
+    try std.testing.expectEqual(
+        decoration_base_image.?.screen_position.y,
+        decoration_layer_image.?.screen_position.y,
+    );
+    try std.testing.expectEqual(decoration_base_image.?.width, decoration_layer_image.?.width);
+    try std.testing.expectEqual(decoration_base_image.?.height, decoration_layer_image.?.height);
 }
 
 test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover above" {

@@ -2803,7 +2803,13 @@ layout + a left inspector + a right metadata sidebar:
   group shifts its window left/right (one cell per notch; state on
   `UiState.editor_palette_scroll`, clamped in the builder). Each slot
   renders the type's graphic on the shared `ui/button_background`
-  (aspect-preserved, centered), with a small close-button
+  (aspect-preserved, centered) — entity + decoration cells render the
+  type's FULL scene composition (entities: base + layers + weapons, the
+  off-hand mirrored, weapons suppressed when `displays_weapons` is
+  false; decorations: base + layers), every stack member at the SAME
+  fitted rect and tinted exactly as the scene composes it (see DESIGN →
+  Entity & UI Coloring), so the palette preview matches what a placement
+  looks like in the viewport, with a small close-button
   (`ui/close_button`, the shared close class) flush in the cell's
   top-right corner: clicking it deletes the type AND every placement
   referencing it across ALL levels (`player_delete_editor_type` →

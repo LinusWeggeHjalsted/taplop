@@ -292,7 +292,7 @@ fn drawHealthBar(
         .height = @as(f32, @floatFromInt(bar.height)) * world_scale,
     };
     // Depleted background (drawn full).
-    drawSprite(backend, "world/entity_health_bar_background", destination, null, bar.depleted_color, 255);
+    drawSprite(backend, "world/entity_health_bar_background", destination, null, bar.depleted_color, 255, false);
     // Fill (cropped to fraction from the left — `.right` keeps the left
     // portion, matching a health bar that depletes from the right).
     const fill_texture = backend.textures.getTexture("world/entity_health_bar_background") orelse return;
@@ -304,7 +304,7 @@ fn drawHealthBar(
     rl.drawTexturePro(fill_texture, fill_source, fill_dest, .{ .x = 0, .y = 0 }, 0, toRaylibColor(bar.fill_color, 255));
     // Outline frame on top (same rect), tinted with the fill color so the
     // bar's border matches the entity's team gradient index 1.
-    drawSprite(backend, "world/entity_health_bar_outline", destination, null, bar.fill_color, 255);
+    drawSprite(backend, "world/entity_health_bar_outline", destination, null, bar.fill_color, 255, false);
 }
 
 // -- UI element drawing --
@@ -314,7 +314,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         .nine_slice_panel => |panel| drawNineSlice(backend, panel, theme_darkest),
         .slot => |slot| {
             if (slot.icon_sprite_id) |sprite_id| {
-                drawSprite(backend, sprite_id, referenceRectangle(slot.screen_position, slot.size, slot.size), null, slot.icon_color, 255);
+                drawSprite(backend, sprite_id, referenceRectangle(slot.screen_position, slot.size, slot.size), null, slot.icon_color, 255, false);
             }
         },
         .button => |button| {
@@ -325,7 +325,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             // settings choice, or a hovered clickable).
             if (button.sprite_id) |sprite_id| {
                 const dest = referenceRectangle(button.screen_position, button.width, button.height);
-                drawSprite(backend, sprite_id, dest, null, button.color, 255);
+                drawSprite(backend, sprite_id, dest, null, button.color, 255, false);
                 if (button.highlighted) drawHighlightOutline(backend, sprite_id, dest, highlight_color);
             } else if (button.highlighted) {
                 // Stroked rect OUTSIDE the bounds: inflate by the outline
@@ -389,7 +389,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 referenceRectangle(rectangle.position(), rectangle.width, rectangle.height)
             else
                 null;
-            drawSprite(backend, image.sprite_id, dest, source, image.color, image.alpha);
+            drawSprite(backend, image.sprite_id, dest, source, image.color, image.alpha, image.flip_horizontal);
             if (image.highlighted) drawHighlightOutline(backend, image.sprite_id, dest, highlight_color);
         },
         .solid_rect => |rect| {
@@ -490,6 +490,7 @@ fn drawSprite(
     source: ?rl.Rectangle,
     tint: types.Color,
     alpha: u8,
+    flip_horizontal: bool,
 ) void {
     const texture = backend.textures.getTexture(sprite_id) orelse {
         rl.drawRectangleRec(destination, rl.Color.magenta);
@@ -501,10 +502,14 @@ fn drawSprite(
         .width = @floatFromInt(texture.width),
         .height = @floatFromInt(texture.height),
     };
+    var effective = source orelse whole;
+    // A negative source width tells DrawTexturePro to mirror horizontally
+    // (the same trick as drawSpriteDrawable).
+    if (flip_horizontal) effective.width = -effective.width;
     if (diagnostics_mod.enabled and !backend.diagnostics.sprite_probe_logged) {
         backend.diagnostics.logFirstSpriteDraw(sprite_id, texture, source orelse whole, destination, tint, alpha);
     }
-    rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
+    rl.drawTexturePro(texture, effective, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
 }
 
 /// 9-slice: every corner is drawn square (aspect-true 1:1) and the edges
@@ -561,7 +566,7 @@ fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkes
 fn drawFillSprite(backend: *RaylibBackend, fill: ui.FillSprite) void {
     const destination = referenceRectangle(fill.screen_position, fill.width, fill.height);
     // Background (e.g. depleted health) drawn whole.
-    drawSprite(backend, fill.background_sprite_id, destination, null, fill.background_color, 255);
+    drawSprite(backend, fill.background_sprite_id, destination, null, fill.background_color, 255, false);
 
     const texture = backend.textures.getTexture(fill.fill_sprite_id) orelse return;
     const fraction = std.math.clamp(fill.fill_fraction, 0, 1);
