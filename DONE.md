@@ -12958,3 +12958,16 @@ The untinted-render flag now draws everywhere the art draws:
   layer default_tint, the fighter's spear weapon still themed — spear
   chosen so it can't collide with the skeleton's sword/dagger or the
   wolf's suppressed axe).
+
+## Inspector sprite rows show custom stems as their file name (polish)
+
+The inspector's base-sprite button (entity + decoration) and the Layers
+rows' sprite buttons displayed the raw stem — for custom mission-bundled
+art that's the full namespaced path (`custom/<mission-dir>/<file>`),
+readable in the level file but noise for the author. Both rows now show
+the last path segment via `spriteDisplayName` (a suffix slice, no
+allocation); official stems are already bare and unchanged. Display is
+a pure projection — the state, pick payloads, and level files keep the
+full namespaced stem. Test: a custom-sprite entity with a custom layer
+("boss" / "hood" displayed while the state keeps
+`custom/artists_den/...`).

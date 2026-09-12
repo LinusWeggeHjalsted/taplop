@@ -1992,9 +1992,10 @@ fn buildEditorInspectorContent(
 /// frames, and the previous frame's elements are hit-tested a frame
 /// later).
 /// The base-sprite row's control (entity + decoration content): a
-/// half-width panel-backed button showing the current stem — clicking
-/// opens the centered sprite picker (the input site routes entity vs
-/// decoration by the inspector target).
+/// half-width panel-backed button showing the current stem's FILE NAME
+/// (a custom namespaced stem displays as its last path segment — see
+/// `spriteDisplayName`) — clicking opens the centered sprite picker (the
+/// input site routes entity vs decoration by the inspector target).
 fn emitInspectorSpriteButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2024,7 +2025,7 @@ fn emitInspectorSpriteButton(
         .action = .open_editor_sprite_picker,
         .tooltip = .{ .header = try spanRow(allocator, text("Pick sprite")) },
     } });
-    const label = if (sprite.len > 0) sprite else "(none)";
+    const label = if (sprite.len > 0) spriteDisplayName(sprite) else "(none)";
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -2739,6 +2740,16 @@ fn emitInspectorFootprintButton(
     } });
 }
 
+/// The display form of a sprite stem: the FILE STEM only. Official stems
+/// are already bare (`skeleton_1`); custom mission-bundled stems are
+/// namespaced `custom/<mission-dir>/<stem>` — the path is identity for
+/// the config + the pick payloads, noise for the author. A suffix slice
+/// of the input (no allocation).
+fn spriteDisplayName(sprite: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, sprite, '/')) |slash| return sprite[slash + 1 ..];
+    return sprite;
+}
+
 /// A layer row's label (1-based for display): "Layer N" / "Layer N color".
 fn inspectorLayerLabel(
     allocator: std.mem.Allocator,
@@ -2753,7 +2764,8 @@ fn inspectorLayerLabel(
 }
 
 /// One layer's slot row (the Layers section): the control line holds the
-/// sprite-stem button (a re-pick opens the layer picker for this index) +
+/// sprite-stem button (showing the stem's FILE NAME — `spriteDisplayName`
+/// — a re-pick opens the layer picker for this index) +
 /// a Delete button — the weapon-slot row's layout, entity + decoration
 /// content alike (the actions + button color differ per kind).
 fn emitInspectorLayerRow(
@@ -2790,7 +2802,7 @@ fn emitInspectorLayerRow(
         .editor_layer = layer_index,
         .tooltip = .{ .header = try spanRow(allocator, text("Pick sprite")) },
     } });
-    const label = if (sprite.len > 0) sprite else "(none)";
+    const label = if (sprite.len > 0) spriteDisplayName(sprite) else "(none)";
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -3213,6 +3225,75 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         );
         try std.testing.expect(!toggle_button.?.highlighted);
         try std.testing.expect(saw_true_label);
+    }
+}
+
+test "inspector sprite rows display custom namespaced stems as their file name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const entity_layers = [_]types.EntityLayer{.{
+        .sprite = "custom/artists_den/hood",
+        .color_index = 2,
+    }};
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Boss",
+        .template = .{
+            .name = "Boss",
+            .sprite = "custom/artists_den/boss",
+            .team = 1,
+            .layers = &entity_layers,
+        },
+    }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    var elements: UiElementList = .empty;
+    var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+
+    // The base-sprite row shows the FILE NAME (the Keep colors row sits
+    // below the 10-unit window, as ever); the state keeps the full
+    // namespaced stem (the display is a pure projection — pick payloads
+    // + the level file carry the path).
+    try expectInspectorLabels(
+        &elements,
+        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Color" },
+    );
+    try std.testing.expectEqualStrings(
+        "custom/artists_den/boss",
+        editor.entity_types[0].template.sprite,
+    );
+
+    // The layer row (the Layers section at the plan's tail — max scroll)
+    // shows the layer's file name too.
+    {
+        var tail_elements: UiElementList = .empty;
+        var tail_ui_state: UiState = .{
+            .editor_inspector_scroll = 999,
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        };
+        try buildEditorInspectorPanel(&tail_elements, arena.allocator(), metrics, editor, theme, true, &tail_ui_state);
+        var saw_hood_label = false;
+        for (tail_elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "hood")) saw_hood_label = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(saw_hood_label);
     }
 }
 
