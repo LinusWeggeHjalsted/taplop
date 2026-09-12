@@ -3845,8 +3845,10 @@ stay team-gradient index 1 and health bars / effect overlays stay themed
 identity: editor palette dedup compares it, and the level-file writer
 emits it only when true. Pick-time defaults follow the art source — an
 OFFICIAL pick sets it false, a mission-local pick sets it true (the pick
-event carries it — one undo step); the inspector's toggle is the
-override either way. Picker previews: the Mission tab renders custom
+event carries it — one undo step); the inspector's toggle sits ABOVE the
+Color row and is the override either way, and the Color row is HIDDEN
+while the flag is on (a tint row under an untinted type is a dead
+control). Picker previews: the Mission tab renders custom
 art UNTINTED (its natural appearance); the Official tab ignores the flag.
 **Health bars** are always-on, drawn above the entity's actual art top (same
 opaque-bbox scan as the skill-icon anim — see DESIGN → Animation). The scan

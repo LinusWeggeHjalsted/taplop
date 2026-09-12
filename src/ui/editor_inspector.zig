@@ -1045,16 +1045,22 @@ fn editorInspectorEntityEntries(
             .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
             .{ .field = .{ .label = "Team", .control = .{ .text = .{ .entity_stat = .team } } } },
             .{ .field = .{ .label = "Sprite", .control = .sprite_button } },
-            .{ .field = .{ .label = "Color", .control = .swatches } },
-            .{ .field = .{ .label = "Displays weapons", .control = .{ .toggle = .{
-                .current = template.displays_weapons,
-                .action = .toggle_editor_entity_displays_weapons,
-            } } } },
+            // The Keep colors toggle sits ABOVE the swatches (it decides
+            // whether they apply), and the Color row is HIDDEN while the
+            // flag is on — a tint row under an untinted type is a dead,
+            // confusing control (the swatches do nothing).
             .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
                 .current = template.keep_original_colors,
                 .action = .toggle_editor_entity_keep_original_colors,
             } } } },
         });
+        if (!template.keep_original_colors) {
+            try entries.append(allocator, .{ .field = .{ .label = "Color", .control = .swatches } });
+        }
+        try entries.append(allocator, .{ .field = .{ .label = "Displays weapons", .control = .{ .toggle = .{
+            .current = template.displays_weapons,
+            .action = .toggle_editor_entity_displays_weapons,
+        } } } });
         // The section-break spacer belongs to the section ABOVE it — a
         // collapsed section takes no gap after it (headers stack flush).
         try entries.append(allocator, .spacer);
@@ -1195,12 +1201,17 @@ fn editorInspectorDecorationEntries(
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.identity)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Sprite", .control = .decoration_sprite_button } },
-            .{ .field = .{ .label = "Color", .control = .decoration_swatches } },
+            // Above the swatches; the Color row is hidden while the flag
+            // is on (the entity plan's rule — a dead tint control under an
+            // untinted type confuses more than it informs).
             .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
                 .current = definition.keep_original_colors,
                 .action = .toggle_editor_decoration_keep_original_colors,
             } } } },
         });
+        if (!definition.keep_original_colors) {
+            try entries.append(allocator, .{ .field = .{ .label = "Color", .control = .decoration_swatches } });
+        }
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .footprint });
@@ -3165,15 +3176,17 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Color" });
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Keep colors", "false" });
         try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .team }).?.text);
     }
 
-    // The Color control (scroll 0 window): six swatch fills in the ENEMY
-    // gradient + six payload buttons, the current index (2) highlighted.
+    // The Color control (scroll 3 — the Keep colors row sits above the
+    // swatches now and pushed them out of the scroll-0 window): six
+    // swatch fills in the ENEMY gradient + six payload buttons, the
+    // current index (2) highlighted.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         var swatch_count: usize = 0;
         var highlighted_count: usize = 0;
@@ -3252,6 +3265,9 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
             .name = "Boss",
             .sprite = "custom/artists_den/boss",
             .team = 1,
+            // Flag ON: custom art keeps its own colors — and the Color
+            // row is hidden while it is (no dead tint control).
+            .keep_original_colors = true,
             .layers = &entity_layers,
         },
     }};
@@ -3264,18 +3280,32 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
     var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
     try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
 
-    // The base-sprite row shows the FILE NAME (the Keep colors row sits
-    // below the 10-unit window, as ever); the state keeps the full
+    // The base-sprite row shows the FILE NAME; the state keeps the full
     // namespaced stem (the display is a pure projection — pick payloads
     // + the level file carry the path).
     try expectInspectorLabels(
         &elements,
-        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Color" },
+        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Keep colors", "true" },
     );
     try std.testing.expectEqualStrings(
         "custom/artists_den/boss",
         editor.entity_types[0].template.sprite,
     );
+
+    // Flag ON: no Color row + no swatch buttons anywhere.
+    var saw_color_label = false;
+    var saw_swatch_button = false;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "Color")) saw_color_label = true;
+        },
+        .button => |button| {
+            if (button.action == .select_editor_entity_color) saw_swatch_button = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(!saw_color_label);
+    try std.testing.expect(!saw_swatch_button);
 
     // The layer row (the Layers section at the plan's tail — max scroll)
     // shows the layer's file name too.
@@ -3294,6 +3324,41 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
             else => {},
         };
         try std.testing.expect(saw_hood_label);
+    }
+
+    // Same rule for a decoration: flag ON hides the Color row + the
+    // world-gradient swatch buttons.
+    {
+        const decoration_types = [_]types.DecorationTypeDef{.{
+            .id = "custom/artists_den/banner",
+            .sprite = "custom/artists_den/banner",
+            .pixel_dims = .{ .x = 512, .y = 512 },
+            .keep_original_colors = true,
+        }};
+        const decoration_editor: types.Editor = .{
+            .decoration_types = &decoration_types,
+            .active_tool = .{ .decoration_type = 0 },
+        };
+        var decoration_elements: UiElementList = .empty;
+        try buildEditorInspectorPanel(
+            &decoration_elements,
+            arena.allocator(),
+            metrics,
+            decoration_editor,
+            theme,
+            true,
+            &ui_state,
+        );
+        try expectInspectorLabels(
+            &decoration_elements,
+            &.{ "- Identity", "Sprite", "banner", "Keep colors", "true", "- Footprint", "Footprint", "0 tiles" },
+        );
+        for (decoration_elements.items) |element| switch (element) {
+            .button => |button| {
+                try std.testing.expect(button.action != .select_editor_decoration_color);
+            },
+            else => {},
+        };
     }
 }
 
@@ -3329,13 +3394,13 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
     var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
     try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
 
-    // Identity (Sprite + Color + Keep colors — a decoration's name IS its
-    // sprite path, no name row) + the Footprint header; the footprint
-    // row itself sits below the 10-unit window (the Keep colors row
-    // pushed it out — its own tests reach it scrolled).
+    // Identity (Sprite + Keep colors + Color — a decoration's name IS
+    // its sprite path, no name row) + the Footprint header; the footprint
+    // row itself sits below the 10-unit window (its own tests reach it
+    // scrolled).
     try expectInspectorLabels(
         &elements,
-        &.{ "- Identity", "Sprite", "stone_2", "Color", "Keep colors", "false", "- Footprint" },
+        &.{ "- Identity", "Sprite", "stone_2", "Keep colors", "false", "Color", "- Footprint" },
     );
 
     // The sprite button opens the shared picker (the input site routes the
@@ -4065,31 +4130,32 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     );
     try std.testing.expectEqual(@as(i32, 10), visible_rows);
 
-    // Scroll 0: units 0..10 — Identity, Name, Team, Sprite, Color (the
-    // Displays-weapons row needs units 9..11 → doesn't fully fit; one
-    // stat text field swaps in for the toggle row's four elements).
-    // Elements: toggle 3 + bg 1 + Identity 3 (panel + button + label) +
+    // Scroll 0: units 0..10 — Identity, Name, Team, Sprite, Keep colors
+    // (the Color row moved below the toggle — units 9..11 → doesn't
+    // fully fit).
+    // Elements: bg 1 + Identity 3 (panel + button + label) +
     // Name + Team (two stat text fields) + Sprite 3 (panel + picker
-    // button + label) + Color
-    // (label + 6 swatch fills + 6 swatch buttons = 13) + scrollbar 2 = 30.
+    // button + label) + Keep colors 4 (row label + panel + button +
+    // value label) + scrollbar 2 = 21.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 30), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Color" });
-        // 6 swatch fills + the 2 scrollbar rects.
-        try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
+        try std.testing.expectEqual(@as(usize, 21), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Keep colors", "false" });
+        // Only the 2 scrollbar rects (no swatch fills in the window).
+        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
     }
 
     // Scroll 5 (the Team field pushes everything two units down): the
-    // window opens at Sprite and runs through the Keep colors toggle + the
-    // spacer + the Stats header (Max health doesn't fully fit).
+    // window opens at Sprite and runs through the Keep colors toggle, the
+    // Color swatches, the Displays weapons toggle + the spacer + the
+    // Stats header (Max health doesn't fully fit).
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 5, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "Keep colors", "false", "- Stats" });
+        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Keep colors", "false", "Color", "Displays weapons", "true", "- Stats" });
     }
 
     // Out-of-range scroll clamps to max (49 − 10 = 39, the five spacers

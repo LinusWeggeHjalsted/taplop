@@ -12971,3 +12971,15 @@ a pure projection — the state, pick payloads, and level files keep the
 full namespaced stem. Test: a custom-sprite entity with a custom layer
 ("boss" / "hood" displayed while the state keeps
 `custom/artists_den/...`).
+
+## Inspector: Keep colors above the swatches; Color row hidden while on (polish)
+
+The "Keep colors" toggle moved ABOVE the "Color" swatch row in both
+inspectors (it decides whether the swatches apply, so it reads first),
+and the Color row is now OMITTED entirely while the flag is true — a
+tint row under an untinted type is a dead control that only confuses
+(the value stays in the state; flipping the toggle brings the row
+back). Windowed-test fallout: the Color row moved below the scroll-0
+window (the swatch block scrolls to 3 now) and the scroll-0 element
+count dropped with it. The custom-stems test now runs its fixture flag
+ON — covering the hidden-swatch rule for entity + decoration.
