@@ -940,6 +940,22 @@ pub fn handleSubLevelEvent(
                 destination = next_position;
             }
 
+            // Collision event FIRST, forced move SECOND — LIFO pops the
+            // move first, so the slide lands BEFORE the crunch resolves
+            // (with the collision → damage wait, the impact visuals land
+            // after the push is visible). Pushing the move first would
+            // apply collision damage + anims while the defender is still at
+            // its origin tile.
+            if (collided) {
+                pushEvents(current, &.{
+                    .{ .sub_level_event = .{ .collision = .{
+                        .attacker_index = knockback.attacker_index,
+                        .defender_index = knockback.defender_index,
+                        .damage = knockback.knockback_damage,
+                    } } },
+                }, allocator);
+            }
+
             // Move entity if position changed
             if (destination.x != defender.position.x or destination.y != defender.position.y) {
                 pushEvents(current, &.{
@@ -947,20 +963,6 @@ pub fn handleSubLevelEvent(
                         .entity_index = knockback.defender_index,
                         .destination = destination,
                         .is_forced = true,
-                    } } },
-                }, allocator);
-            }
-
-            // Collision: push a collision event that applies the
-            // knockback_damage (with defender incoming modifiers) and
-            // fires the collision/damage callbacks. Kept as an event
-            // so the combat-log projection can see it.
-            if (collided) {
-                pushEvents(current, &.{
-                    .{ .sub_level_event = .{ .collision = .{
-                        .attacker_index = knockback.attacker_index,
-                        .defender_index = knockback.defender_index,
-                        .damage = knockback.knockback_damage,
                     } } },
                 }, allocator);
             }
@@ -1005,12 +1007,12 @@ pub fn handleSubLevelEvent(
             // TODO → Effect pacing). LIFO: the wait sits LAST so it pops
             // FIRST.
             pushEvents(current, &.{
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = collision.attacker_index,
                     .defender_index = collision.defender_index,
                     .amount = incoming_damage,
                 } } },
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
             }, allocator);
         },
         .damage => |damage_event| {
@@ -1159,7 +1161,6 @@ pub fn handleSubLevelEvent(
             // Effect pacing). LIFO: the wait sits LAST in the array so it pops
             // FIRST — the damage lands once it elapses.
             pushEvents(current, &.{
-                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = attack.attacker_index,
                     .defender_index = attack.defender_index,
@@ -1167,6 +1168,7 @@ pub fn handleSubLevelEvent(
                     .triggers_effects = attack.triggers_effects,
                     .heals_attacker = attack.heals_attacker,
                 } } },
+                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = effect_step_wait_milliseconds } } },
             }, allocator);
         },
         .create_effect => |create| {

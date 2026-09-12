@@ -55,11 +55,9 @@ Test by running `zig build run` and clicking through.
   - [ ] **Slice 3 — the sweep:** insert waits where they read well across
         skills + generic chains: per-target gaps in AoE skills (worldfire's
         attack, attack, attack …), bash's attack → knockback → collision
-        chain, knockback → collision, attack → lifesteal heal. NOTE: the
-        knockback arm currently pushes the forced move BEFORE the collision
-        event, and LIFO means the collision (crunch + damage) resolves BEFORE
-        the move lands — presenting slide-then-crunch needs the push order
-        revisited as part of that site's wait work.
+        chain, attack → lifesteal heal. (The knockback → collision ordering
+        was fixed in the slice-2 hotfix — the collision event is pushed
+        before the forced move so the slide pops first; see DONE.md.)
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

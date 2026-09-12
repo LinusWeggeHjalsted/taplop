@@ -13055,3 +13055,29 @@ collision, attack → lifesteal) tracked in TODO → Effect pacing — note the
 knockback arm currently pushes the forced move BEFORE the collision
 event, and LIFO means the crunch resolves before the slide lands;
 slide-then-crunch presentation needs that push order revisited.
+
+## Effect pacing hotfix — the wait array order + knockback push order
+
+Two ordering bugs from the slice-2 commit, both LIFO mistakes in
+opposite directions:
+
+1. **The wait array was inverted at both resolver arms.** pushEvents
+   APPENDS in array order and the dispatch pops from the back, so the
+   LAST array element pops first. I pushed `[wait, damage]` while the
+   comment said "the wait sits last so it pops first" — the damage sat
+   on top and landed immediately, and the wait paced the gap before the
+   NEXT attack instead (playtest symptom: attack → damage instant,
+   multi-attacks staggered). Fix: `[damage, wait]`. The comment was
+   right; the array was wrong.
+
+2. **Knockback pushed the forced move before the collision event**, so
+   LIFO resolved the crunch (flash + damage number + damage) while the
+   defender was still at its origin tile, then the slide landed
+   (playtest symptom: impact visuals before the push). Fix: push the
+   collision first, the move second — the slide pops first, then the
+   crunch, and the collision → damage wait gives the impact visuals a
+   beat after the push is visible. Bonus correctness: a
+   collision-killed entity now dies at its landing tile instead of
+   sliding after death. The damage-number direction is unaffected — the
+   destination lies on the push ray, so the axis-normalized
+   attacker→defender delta is identical.
