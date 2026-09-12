@@ -256,7 +256,7 @@ pub fn buildEditorSpritePicker(
     font_metrics: FontMetrics,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
-    mission_sprites: []const []const u8,
+    mission_sprites: []const state.MissionSprite,
     decoration_registry: []const types.DecorationTypeDef,
     picker_target: EditorPickerTarget,
     tab: types.EditorSpritePickerTab,
@@ -367,8 +367,8 @@ pub fn buildEditorSpritePicker(
 
     // One cell per offered sprite, built per frame into the frame arena:
     // the stored id (a bare stem or a namespaced `custom/<mission>/<stem>`),
-    // the cell label, the renderable graphic (null = a text-only cell —
-    // custom art isn't renderable yet), and the graphic's aspect-fit
+    // the cell label, the renderable graphic (null = a text-only cell,
+    // the degenerate-dims fallback), and the graphic's aspect-fit
     // frame. The Official tab's list differs per kind: the shipped entity
     // sprites (base + layer — a layer may be any entity art, the fixed
     // 512×640 frame), the registry prefabs (decoration base — each pick
@@ -390,23 +390,50 @@ pub fn buildEditorSpritePicker(
         /// the shared edited-target tint and no layers.
         base_color_index: ?u32 = null,
         layers: []const types.DecorationLayer = &.{},
+        /// Untinted rendering — custom mission-bundled art keeps its own
+        /// colors (the settle `keep_original_colors` semantics' pick-side
+        /// counterpart: the picker shows each option in its natural
+        /// appearance, and custom art is authored pre-colored).
+        untinted: bool = false,
     };
     var cells: std.ArrayList(PickerCell) = .empty;
     const mission_directory = missionDirectoryName(editor.mission.path);
+    // Custom mission-bundled art renders under the kind's folder prefix
+    // (the same id view() builds — the texture store resolves
+    // `custom/<mission-dir>/<stem>` ids to the mission directory; see
+    // assetPathFor in src/raylib/textures.zig).
+    const mission_kind_prefix: []const u8 = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
+        "decorations/"
+    else
+        "entities/";
     switch (tab) {
         .mission_local => {
-            for (mission_sprites) |file_name| {
+            for (mission_sprites) |mission_sprite| {
+                const file_name = mission_sprite.file_name;
                 const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+                const stored_id = try std.fmt.allocPrint(
+                    allocator,
+                    "custom/{s}/{s}",
+                    .{ mission_directory, stem },
+                );
+                // Entity art follows the fixed 512x640 frame
+                // convention; decoration art's dims come from the scan's
+                // IHDR read.
+                const frame = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
+                    mission_sprite.pixel_dims
+                else
+                    types.Vector2{ .x = editor_entity_frame_width, .y = editor_entity_frame_height };
                 try cells.append(allocator, .{
-                    .stored_id = try std.fmt.allocPrint(
-                        allocator,
-                        "custom/{s}/{s}",
-                        .{ mission_directory, stem },
-                    ),
+                    .stored_id = stored_id,
                     .label = stem,
-                    .graphic_id = null,
-                    .frame_width = editor_entity_frame_width,
-                    .frame_height = editor_entity_frame_height,
+                    .graphic_id = try std.fmt.allocPrint(
+                        allocator,
+                        "{s}{s}",
+                        .{ mission_kind_prefix, stored_id },
+                    ),
+                    .frame_width = frame.x,
+                    .frame_height = frame.y,
+                    .untinted = true,
                 });
             }
         },
@@ -587,6 +614,8 @@ pub fn buildEditorSpritePicker(
             picker_cell.graphic_id,
             if (picker_cell.base_color_index) |color_index|
                 gradient[@min(color_index, types.gradient_color_count - 1)]
+            else if (picker_cell.untinted)
+                default_tint
             else
                 graphic_color,
             picker_cell.layers,
@@ -609,8 +638,8 @@ pub fn buildEditorSpritePicker(
 /// boundary, seamless at corners), a close button top-right (discard),
 /// and a Confirm button bottom-center. The draft rides
 /// `UiState.editor_footprint_draft`; the type id rides the picker target
-/// (see the union). Custom-stem art isn't renderable yet — its cells get
-/// a dark fill so the grid stays visible.
+/// (see the union). Custom-stem art renders too — its ids resolve to the
+/// mission dir at the texture store (see assetPathFor).
 /// The metadata sidebar's THEME PICKER (the `.level_gradient` target):
 /// a centered panel listing every gradient in `color_themes.txt` as a
 /// full-width swatch strip — one row per gradient, bare strips (no
@@ -808,28 +837,15 @@ pub fn buildEditorFootprintEditor(
     } });
 
     // The sprite grid: the art SCALED, centered in the area between the
-    // header and the Confirm button; custom stems get a dark fill per
-    // cell so the grid stays visible without art.
+    // header and the Confirm button (custom mission-bundled stems
+    // included — their ids resolve to the mission dir at the texture
+    // store, see assetPathFor).
     const grid_origin: ScreenPosition = .{
         .x = origin.x + @divFloor(bounds.width - grid_width_pixels, 2),
         .y = origin.y + header_height + ui_gap +
             @divFloor(avail_height - grid_height_pixels, 2),
     };
-    if (std.mem.startsWith(u8, definition.sprite, "custom/")) {
-        for (0..cell_count) |cell_index| {
-            const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
-            const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
-            try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{
-                    .x = grid_origin.x + column * tile,
-                    .y = grid_origin.y + row * tile,
-                },
-                .width = tile,
-                .height = tile,
-                .color = .{ .r = 40, .g = 40, .b = 40 },
-            } });
-        }
-    } else {
+    {
         const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{definition.sprite});
         const scaled_width: i32 = @max(1, @as(i32, @intFromFloat(
             @as(f32, @floatFromInt(definition.pixel_dims.x)) * scale,
@@ -954,9 +970,9 @@ fn missionDirectoryName(mission_path: []const u8) []const u8 {
 }
 
 /// One sprite-picker cell: the button background (carrying the pick + the
-/// stored-id payload) + the option's graphic. Official options draw the
-/// sprite; mission-local options carry a text label (their art isn't
-/// renderable until custom-asset rendering lands).
+/// stored-id payload) + the option's graphic — the shipped/prefab/mission
+/// art aspect-fit at the cell's frame (custom mission art UNTINTED —
+/// see `PickerCell.untinted`).
 fn emitPickerSpriteCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1261,11 +1277,16 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         try std.testing.expect(saw_bear_graphic);
     }
 
-    // Mission tab: the scanned file names become namespaced
-    // `custom/<mission-dir>/<stem>` payloads, shown as TEXT cells (the art
-    // isn't renderable until custom-asset rendering lands).
+    // Mission tab: the scanned files become namespaced
+    // `custom/<mission-dir>/<stem>` payloads with RENDERABLE graphics —
+    // the kind's folder-prefixed id (`entities/custom/...`, resolved to
+    // the mission dir at the texture store) UNTINTED (custom art keeps
+    // its own colors) at the 512x640 entity-frame convention.
     {
-        const mission_sprites = [_][]const u8{ "boss.png", "minion.png" };
+        const mission_sprites = [_]state.MissionSprite{
+            .{ .file_name = "boss.png", .pixel_dims = .{ .x = 512, .y = 640 } },
+            .{ .file_name = "minion.png", .pixel_dims = .{ .x = 512, .y = 640 } },
+        };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
             &elements,
@@ -1280,18 +1301,28 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         );
         var payloads: [2][]const u8 = .{ "", "" };
         var pick_buttons: usize = 0;
+        var saw_boss_graphic = false;
+        var saw_minion_graphic = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_sprite) {
                 payloads[pick_buttons] = button.editor_sprite.?;
                 pick_buttons += 1;
+            },
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, "entities/custom/artists_den/boss")) {
+                    saw_boss_graphic = std.meta.eql(image.color, default_tint);
+                }
+                if (std.mem.eql(u8, image.sprite_id, "entities/custom/artists_den/minion")) {
+                    saw_minion_graphic = std.meta.eql(image.color, default_tint);
+                }
             },
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 2), pick_buttons);
         try std.testing.expectEqualStrings("custom/artists_den/boss", payloads[0]);
         try std.testing.expectEqualStrings("custom/artists_den/minion", payloads[1]);
-        // The mission tab's cells carry text labels, no sprite graphics.
-        try std.testing.expectEqualStrings("boss", findLabel(&elements, "boss").text);
+        try std.testing.expect(saw_boss_graphic);
+        try std.testing.expect(saw_minion_graphic);
     }
 }
 
@@ -1398,10 +1429,14 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         try std.testing.expect(!saw_edited_type_tint);
     }
 
-    // Mission tab: same namespacing as the entity picker; text cells (the
-    // art isn't renderable until custom-asset rendering lands).
+    // Mission tab: same namespacing as the entity picker; the decoration
+    // kind prefixes `decorations/` and aspect-fits at the SCAN's dims
+    // (IHDR), UNTINTED.
     {
-        const mission_sprites = [_][]const u8{"banner.png"};
+        const mission_sprites = [_]state.MissionSprite{.{
+            .file_name = "banner.png",
+            .pixel_dims = .{ .x = 512, .y = 512 },
+        }};
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
             &elements,
@@ -1416,15 +1451,22 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         );
         var pick_buttons: usize = 0;
         var payload: ?[]const u8 = null;
+        var saw_graphic = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_decoration_sprite) {
                 pick_buttons += 1;
                 payload = button.editor_sprite;
             },
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, "decorations/custom/artists_den/banner")) {
+                    saw_graphic = std.meta.eql(image.color, default_tint);
+                }
+            },
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 1), pick_buttons);
         try std.testing.expectEqualStrings("custom/artists_den/banner", payload.?);
+        try std.testing.expect(saw_graphic);
     }
 }
 
@@ -1599,8 +1641,9 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         try std.testing.expectEqual(@as(usize, 4), white_bars);
     }
 
-    // A custom-stem type: no renderable art — the cells get dark fills so
-    // the grid stays visible (2 fills, no image).
+    // A custom-stem type: the art renders (the id resolves to the
+    // mission dir at the texture store) — the image branch, same as
+    // shipped stems; no dark fills.
     {
         const custom_types = [_]types.DecorationTypeDef{.{
             .id = "custom/x/banner",
@@ -1622,15 +1665,17 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         var dark_fills: usize = 0;
         var white_bars: usize = 0;
         for (elements.items) |element| switch (element) {
-            .image => saw_image = true,
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, "decorations/custom/x/banner")) saw_image = true;
+            },
             .solid_rect => |rect| {
                 if (std.meta.eql(rect.color, .{ .r = 40, .g = 40, .b = 40 })) dark_fills += 1;
                 if (std.meta.eql(rect.color, default_tint)) white_bars += 1;
             },
             else => {},
         };
-        try std.testing.expect(!saw_image);
-        try std.testing.expectEqual(@as(usize, 2), dark_fills);
+        try std.testing.expect(saw_image);
+        try std.testing.expectEqual(@as(usize, 0), dark_fills);
         // Both cells selected: the region's boundary is the 2x1 block's
         // outer rectangle — 6 bars (2 top + 2 bottom + 1 left + 1 right).
         try std.testing.expectEqual(@as(usize, 6), white_bars);
@@ -1801,13 +1846,4 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         try std.testing.expect(current_button != null);
         try std.testing.expectEqual(@as(?u32, 0), current_button.?.editor_gradient);
     }
-}
-
-/// Find the first text label with exactly `label_text` (test helper).
-fn findLabel(elements: *const UiElementList, label_text: []const u8) TextLabel {
-    for (elements.items) |element| switch (element) {
-        .text_label => |label| if (std.mem.eql(u8, label.text, label_text)) return label,
-        else => {},
-    };
-    @panic("label not found");
 }

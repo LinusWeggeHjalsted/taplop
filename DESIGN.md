@@ -2964,8 +2964,9 @@ layout + a left inspector + a right metadata sidebar:
   palette group).
 - **The footprint editor (LANDED):** a centered picker panel (the
   `.decoration_footprint` picker kind) showing the type's sprite
-  FULL-SIZE (1:1 — 256 screen px per sprite-grid tile; custom stems get
-  a dark cell fill until custom-asset rendering lands) with one
+  FULL-SIZE (1:1 — 256 screen px per sprite-grid tile; custom stems
+  included — their ids resolve to the mission dir at the texture store)
+  with one
   toggleable cell per grid tile. The DRAFT — a bool grid on UiState
   (`editor_footprint_draft`, a fixed 64-cell capacity = 8×8 tiles;
   larger custom sprites don't open) — seeds from the current footprint
@@ -3055,9 +3056,12 @@ highlight targets).
   namespaced (no collision with official stems) + self-describing in
   the level file. Resolution rule: a stem starting `custom/<mission>/`
   → `{mission_path}/<name>.png` (the mission being played/edited);
-  anything else → `entities/{stem}.png` embedded. The art isn't
-  RENDERABLE yet (custom-asset rendering is unwired) — those cells show
-  the stem as a text label until it lands.
+  anything else → `entities/{stem}.png` embedded. Mission-local cells
+  render the art UNTINTED — custom art keeps its own colors (the
+  `keep_original_colors` semantics; see the coloring section) — at the
+  entity-frame convention (512×640); decoration kinds aspect-fit at
+  the SCAN's IHDR dims (`SessionState.editor_mission_sprites`,
+  extended from bare file names to `{file_name, pixel_dims}` entries).
 - **Official** — the shipped `assets/entities/*.png` (comptime from
   the sprite-metadata table), the player body EXCLUDED. Cells draw the
   sprite aspect-fit at the 512×640 entity-frame convention, tinted with
@@ -3616,9 +3620,12 @@ for skills). The comptime sprite-metadata table (dims) is keyed by the full
 asset-relative path, so the parser's `resolveDecorationSpriteDimensions`
 prepends `decorations/` for the shipped-table lookup. Custom decoration
 stems (`custom/<mission-dir>/<name>`) are NOT assets/ paths — custom art is
-mission-bundled and resolves from the mission directory being loaded (dims
-at load today; rendering from the mission dir when the custom-asset
-rendering slice lands — the `decorations/` prefix never applies to them).
+mission-bundled and resolves from the mission directory being loaded:
+dims at load time, and RENDERING through the texture store — a sprite id
+`<kind>/custom/<mission-dir>/<file-stem>` reads
+`missions/<mission-dir>/<file-stem>.png` (`assetPathFor` in
+src/raylib/textures.zig; the id's folder prefix is dropped — the code
+convention never maps custom ids onto `assets/`).
 
 **Derived, not stored:**
 - **bbox** = sprite pixel dimensions / 256 (tiles_w × tiles_h). A footprint

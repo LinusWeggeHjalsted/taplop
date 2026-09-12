@@ -112,6 +112,16 @@ pub const EditorSavedMission = struct {
     dir_path: []const u8,
 };
 
+/// One mission-local `.png` scanned for the editor sprite picker's Mission
+/// tab (owned by `SessionState.editor_mission_sprites`). `pixel_dims` is
+/// the PNG's IHDR dims, resolved at scan time so `view()` stays
+/// file-free; (0, 0) when the file isn't a readable PNG (the cell
+/// aspect-fit degrades to the full cell — `scaleToFit`'s fallback).
+pub const MissionSprite = struct {
+    file_name: []const u8,
+    pixel_dims: types.Vector2,
+};
+
 pub const SessionState = struct {
     /// Sentinel for `save_files_last_scan_us` — no scan has run yet this
     /// session.
@@ -169,15 +179,17 @@ pub const SessionState = struct {
     editor_official_missions: []file_source_mod.FileSource.MissionEntry = &.{},
     editor_official_missions_scanned: bool = false,
 
-    /// The mission-local `.png` file names for the editor sprite picker's
-    /// Mission tab (see DESIGN → Architecture → Level Editor → Editor UI
-    /// layout — the centered sprite picker). Scanned from the input path
-    /// when the picker OPENS (never `view()`, which stays file-free);
-    /// re-scanned on every open, so a png dropped into the mission dir
-    /// appears on the next open. Owned by `backing_allocator`; each scan
-    /// frees the previous list, so the only leak is the FINAL list at
-    /// process exit (bounded, one slice).
-    editor_mission_sprites: []const []const u8 = &.{},
+    /// The mission-local `.png`s for the editor sprite picker's Mission
+    /// tab (see DESIGN → Architecture → Level Editor → Editor UI layout —
+    /// the centered sprite picker). Scanned from the input path when the
+    /// picker OPENS (never `view()`, which stays file-free); re-scanned on
+    /// every open, so a png dropped into the mission dir appears on the
+    /// next open. Each entry carries the file's pixel dims (IHDR,
+    /// resolved at scan time — the decoration cells' aspect-fit needs
+    /// them and view() must stay file-free). Owned by
+    /// `backing_allocator`; each scan frees the previous list, so the only
+    /// leak is the FINAL list at process exit (bounded, one slice).
+    editor_mission_sprites: []MissionSprite = &.{},
 
     /// The decoration registry (`data/decorations.txt` prefabs — the
     /// decoration sprite picker's Official tab + the commit site's

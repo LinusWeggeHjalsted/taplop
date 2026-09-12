@@ -12855,3 +12855,38 @@ cells now preview the adoption result:
   DIFFERENT color index than the tree prefab — the assertions prove the
   prefab's own indices win (tree base at 4, canopy at 2, shared rect)
   and the edited type's tint appears on NO cell.
+
+## Custom-asset rendering (keep_original_colors, slice 1 of 4)
+
+Custom mission-bundled art (`custom/<mission-dir>/<stem>` stems) resolved
+its DIMS from the mission dir but never RENDERED — the texture store built
+`assets/<kind>/custom/....png` paths that exist nowhere, so custom sprites
+drew the magenta fallback in-world, the sprite picker's Mission cells were
+text-only, and the footprint editor filled custom grids with dark cells.
+This slice wires rendering end to end (prerequisite for the
+`keep_original_colors` feature — an "art keeps its own colors" toggle is
+invisible without art):
+
+- **`assetPathFor`** (src/raylib/textures.zig): the file-source path for a
+  sprite id — shipped ids read `assets/{id}.png`; ids matching
+  `<kind>/custom/<mission-dir>/<file-stem>` read
+  `missions/<mission-dir>/<file-stem>.png` from the persistent dir (the
+  stem embeds the mission dir, so the path derives from the id alone).
+  Used by all four decode paths: texture load, outline mask, composite
+  inset, sprite-bounds scan — so health bars / occlusion insets / hover
+  outlines work on custom art too.
+- **The mission scan carries dims**: `SessionState.editor_mission_sprites`
+  is `[]MissionSprite` (`{file_name, pixel_dims}` — state.zig); the scan
+  (mission_io.rescanEditorMissionSprites) reads each PNG's IHDR at scan
+  time (an input-site IO, keeping view() file-free; unreadable files
+  degrade to (0,0) = scaleToFit's full-cell fallback).
+- **Sprite-picker Mission cells render**: image cells under the kind's
+  folder prefix (`entities/custom/...` / `decorations/custom/...` — the
+  same ids view() builds), UNTINTED (custom art keeps its own colors —
+  the settled `keep_original_colors` pick-side semantics), entity kinds
+  at the fixed 512×640 frame, decoration kinds at the scanned dims.
+- **Footprint editor**: the custom-stem dark-fill branch removed — custom
+  art draws full-size like shipped stems.
+- Tests: picker mission blocks (entity + decoration) assert the rendered
+  ids + untinted colors; the footprint custom block asserts the image
+  branch; handler tests assert the scan's `.file_name`.

@@ -25,21 +25,42 @@ const content_hash = @import("../content_hash.zig");
 const GameStateHistory = state.GameStateHistory;
 
 /// Scan the mission directory's .pngs into `session.editor_mission_sprites`
-/// (the sprite picker's mission-local tab). Frees the previous scan — the
-/// list is session-owned (backing allocator); the final list's leak at
-/// process exit is bounded (the save_files pattern). An IO failure degrades
-/// to an empty list — the Mission tab shows "No sprites" while the
-/// Official tab stays usable (recoverable-degrade; a popup would interrupt
-/// the click flow for a dev tool).
+/// (the sprite picker's mission-local tab): one entry per file, each
+/// carrying the PNG's pixel dims (IHDR read at scan time — the decoration
+/// cells' aspect-fit needs them; an unreadable/non-PNG file degrades to
+/// (0, 0), `scaleToFit`'s fallback). Frees the previous scan — the list is
+/// session-owned (backing allocator); the final list's leak at process
+/// exit is bounded (the save_files pattern). An IO failure degrades to an
+/// empty list — the Mission tab shows "No sprites" while the Official tab
+/// stays usable (recoverable-degrade; a popup would interrupt the click
+/// flow for a dev tool).
 pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) void {
     const allocator = history.backing_allocator;
     const session = &history.session;
-    for (session.editor_mission_sprites) |name| allocator.free(name);
+    for (session.editor_mission_sprites) |entry| allocator.free(entry.file_name);
     allocator.free(session.editor_mission_sprites);
-    session.editor_mission_sprites = history.file_source.listPersistentPngFiles(
+    const names = history.file_source.listPersistentPngFiles(
         allocator,
         editor.mission.path,
     ) catch &[_][]const u8{};
+    defer allocator.free(names);
+
+    var sprites: std.ArrayList(state.MissionSprite) = .empty;
+    for (names) |file_name| {
+        const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+        const pixel_dims = loaders.resolveMissionSpriteDimensions(
+            history.file_source,
+            editor.mission.path,
+            stem,
+            allocator,
+        ) orelse types.Vector2{ .x = 0, .y = 0 };
+        sprites.append(allocator, .{
+            .file_name = file_name,
+            .pixel_dims = pixel_dims,
+        }) catch @panic("failed to scan mission sprites");
+    }
+    session.editor_mission_sprites = sprites.toOwnedSlice(allocator) catch
+        @panic("failed to own mission sprite scan");
 }
 
 /// A random v4-format uuid (the shipped mission.txt format: 8-4-4-4-12

@@ -3453,7 +3453,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     try testing.expectEqual(ui.EditorPickerTarget.entity_sprite, history.session.ui_state.editor_picker.?);
     try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
-    try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0]);
+    try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0].file_name);
 
     // Pick the mission-local sprite: the namespaced id
     // (`custom/<mission-dir>/<stem>`) commits through the existing
