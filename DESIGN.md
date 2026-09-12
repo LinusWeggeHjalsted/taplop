@@ -949,6 +949,20 @@ combat-log UI rendering + replay-viewer UI still TODO)
   - Entities: ascending `entity_index`.
   - Tiles: ascending `(x, y)` (A* `comparePathNodes` already does this).
   - Skills: slot order.
+  - **AoE multi-target execution: the spiral** (`skill_helpers.spiralTilesInRadius`,
+    walked by `hostileIndicesInRadius` — the one enumeration every radius AoE
+    uses). Targets enumerate by TILE, not entity scan order: the innermost
+    ring (Chebyshev 1) first, starting at the ring's top-left tile, walking
+    CLOCKWISE (top edge left→right, right edge top→bottom, bottom edge
+    right→left, left edge bottom→top), then each next ring the same way —
+    the impact visibly ripples outward. The CENTER tile is not part of the
+    spiral (self-centered AoEs exclude it anyway — the caster stands there;
+    meteor is the one exception and strikes the center FIRST, before the
+    spiral). Ring n has exactly 8n tiles; one entity per tile makes the
+    tile→entity mapping unique. Multi-effect AoE skills group per target
+    (all of a target's events before the next target — shockwave's attack +
+    knockback, slam's knockback + stun, blitz's attack + stun), so with the
+    pacing waits the presentation is one target at a time.
 - `std.mem.sort` is UNSTABLE: a distance/priority-only comparator leaves equal
   elements in an arbitrary order — always add the secondary key (e.g. `turn_end`
   enemy ordering breaks distance ties by `entity_index`). A strict `<`/`>`

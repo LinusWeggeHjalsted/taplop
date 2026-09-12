@@ -101,6 +101,12 @@ pub fn hostileEntityAt(
 /// Indices of living hostile entities within `radius` (Chebyshev) of `center`.
 /// For radius/AoE skills that hit every hostile around a point. Empty slice if
 /// none.
+///
+/// EXECUTION ORDER — the AoE spiral (see DESIGN → Determinism & Tiebreaking):
+/// targets enumerate by TILE, walking `spiralTilesInRadius` — the innermost
+/// ring first from its top-left tile clockwise, then each next ring the same
+/// way. The center tile is NOT included (meteor is the one exception — it
+/// strikes the center first, then the spiral).
 pub fn hostileIndicesInRadius(
     caster_index: u32,
     game_state: GameState,
@@ -108,20 +114,65 @@ pub fn hostileIndicesInRadius(
     radius: i32,
     allocator: std.mem.Allocator,
 ) []const u32 {
-    const level = game_state.level orelse return &.{};
-    const caster = level.entities[caster_index];
-
     var indices: std.ArrayList(u32) = .empty;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(center, entity.position) <= radius) {
-            indices.append(allocator, @intCast(entity_index)) catch @panic("failed to append target index");
+    const tiles = spiralTilesInRadius(allocator, center, radius);
+    for (tiles) |tile| {
+        // Same filter as always (living, hostile, not the caster) — the
+        // per-tile lookup IS the filter, and one entity per tile makes the
+        // mapping unique.
+        if (hostileEntityAt(caster_index, tile, game_state)) |entity_index| {
+            indices.append(allocator, entity_index) catch @panic("failed to append target index");
         }
     }
     return indices.items;
 }
+
+/// The tiles within `radius` (Chebyshev) of `center`, EXCLUDING the center
+/// tile, in spiral order: ring 1 first, starting at the ring's top-left
+/// `(center.x - 1, center.y - 1)` and walking CLOCKWISE (screen coords, +y
+/// is down: top edge left→right, right edge top→bottom, bottom edge
+/// right→left, left edge bottom→top), then ring 2 the same way, and so on
+/// outward. Ring n has exactly 8n tiles. The shared AoE execution order —
+/// see DESIGN → Determinism & Tiebreaking (AoE execution order).
+pub fn spiralTilesInRadius(
+    allocator: std.mem.Allocator,
+    center: Vector2,
+    radius: i32,
+) []const Vector2 {
+    var tiles: std.ArrayList(Vector2) = .empty;
+    var ring: i32 = 1;
+    while (ring <= radius) : (ring += 1) {
+        const cx = center.x;
+        const cy = center.y;
+        // Top edge, left → right (includes both top corners).
+        var i: i32 = 0;
+        while (i <= 2 * ring) : (i += 1) {
+            tiles.append(allocator, .{ .x = cx - ring + i, .y = cy - ring }) catch
+                @panic("failed to append spiral tile");
+        }
+        // Right edge, top → bottom (excludes the top-right corner).
+        i = 1;
+        while (i <= 2 * ring) : (i += 1) {
+            tiles.append(allocator, .{ .x = cx + ring, .y = cy - ring + i }) catch
+                @panic("failed to append spiral tile");
+        }
+        // Bottom edge, right → left (excludes the bottom-right corner).
+        i = 1;
+        while (i <= 2 * ring) : (i += 1) {
+            tiles.append(allocator, .{ .x = cx + ring - i, .y = cy + ring }) catch
+                @panic("failed to append spiral tile");
+        }
+        // Left edge, bottom → top (excludes both left corners).
+        i = 1;
+        while (i <= 2 * ring - 1) : (i += 1) {
+            tiles.append(allocator, .{ .x = cx - ring, .y = cy + ring - i }) catch
+                @panic("failed to append spiral tile");
+        }
+    }
+    return tiles.items;
+}
+
+/// A resolved valid-target for the selection scans. `preferred` is the
 
 /// A resolved valid-target for the selection scans. `preferred` is the
 /// leading key of the keyed selections (knockback: the push collides;
@@ -547,4 +598,70 @@ pub fn simDifferentialGain(
         }
     }
     return gain;
+}
+
+test "spiralTilesInRadius: ring 1 from the top-left, clockwise, center excluded" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const tiles = spiralTilesInRadius(arena.allocator(), .{ .x = 2, .y = 2 }, 1);
+    try std.testing.expectEqual(@as(usize, 8), tiles.len);
+    const expected = [_]types.Vector2{
+        .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 3, .y = 1 },
+        .{ .x = 3, .y = 2 }, .{ .x = 3, .y = 3 }, .{ .x = 2, .y = 3 },
+        .{ .x = 1, .y = 3 }, .{ .x = 1, .y = 2 },
+    };
+    for (tiles, expected) |tile, want| try std.testing.expectEqual(want, tile);
+}
+
+test "spiralTilesInRadius: ring 2 follows ring 1, 8n tiles per ring" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const tiles = spiralTilesInRadius(arena.allocator(), .{ .x = 2, .y = 2 }, 2);
+    try std.testing.expectEqual(@as(usize, 24), tiles.len); // 8 + 16
+
+    // Ring 2 starts at ITS top-left (0, 0), directly after ring 1.
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, tiles[8]);
+    // Ring 2's top edge runs left → right ...
+    try std.testing.expectEqual(types.Vector2{ .x = 4, .y = 0 }, tiles[12]);
+    // ... then the right edge top → bottom ...
+    try std.testing.expectEqual(types.Vector2{ .x = 4, .y = 1 }, tiles[13]);
+    // ... and the walk ends on the left edge, second tile from the top.
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 1 }, tiles[23]);
+}
+
+test "hostileIndicesInRadius: spiral execution order + the living/hostile filter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Caster at the center; a hostile on ring 1 (bottom edge), one on
+    // ring 2 (top-left), a DEAD hostile on ring 1, and an ally on ring 1.
+    var entities = [_]types.Entity{
+        .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .current_health = 10 }, // caster
+        .{ .team = 1, .position = .{ .x = 2, .y = 3 }, .current_health = 10 }, // ring 1
+        .{ .team = 1, .position = .{ .x = 0, .y = 0 }, .current_health = 10 }, // ring 2
+        .{ .team = 1, .position = .{ .x = 1, .y = 1 }, .current_health = 0 }, // dead, ring 1
+        .{ .team = 0, .position = .{ .x = 3, .y = 3 }, .current_health = 10 }, // ally, ring 1
+    };
+    var level: types.Level = .{};
+    level.entities = &entities;
+    const game_state = state.GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = level,
+        .hub = null,
+    };
+
+    const indices = hostileIndicesInRadius(0, game_state, .{ .x = 2, .y = 2 }, 2, arena.allocator());
+    // Ring 1 before ring 2; dead + same-team filtered out.
+    try std.testing.expectEqual(@as(usize, 2), indices.len);
+    try std.testing.expectEqual(@as(u32, 1), indices[0]);
+    try std.testing.expectEqual(@as(u32, 2), indices[1]);
 }

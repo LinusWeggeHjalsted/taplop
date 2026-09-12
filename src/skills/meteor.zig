@@ -123,12 +123,21 @@ fn useSkill(
 
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
     const target_indices = helpers.hostileIndicesInRadius(caster_index, game_state, center, radius, allocator);
-    if (target_indices.len == 0) return &.{};
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     const damage = caster.getEffectiveOutgoingDamage(main_hand_damage);
 
     var skill_events: std.ArrayList(Event) = .empty;
+    // Meteor is the one AoE that ALSO strikes the center tile — the direct
+    // hit lands FIRST, then the splash spirals outward (see the spiral
+    // order on hostileIndicesInRadius).
+    if (helpers.hostileEntityAt(caster_index, center, game_state)) |defender_index| {
+        skill_events.append(allocator, .{ .sub_level_event = .{ .attack = .{
+            .attacker_index = caster_index,
+            .defender_index = defender_index,
+            .outgoing_damage = damage,
+        } } }) catch @panic("failed to append attack event");
+    }
     for (target_indices) |defender_index| {
         skill_events.append(allocator, .{ .sub_level_event = .{ .attack = .{
             .attacker_index = caster_index,

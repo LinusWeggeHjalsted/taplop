@@ -13081,3 +13081,31 @@ opposite directions:
    sliding after death. The damage-number direction is unaffected — the
    destination lies on the push ray, so the axis-normalized
    attacker→defender delta is identical.
+
+## AoE spiral execution order (+ meteor center strike)
+
+All radius AoE skills enumerated targets by walking `level.entities` in
+spawn order (reads top-left row-by-row). Replaced with the SPIRAL:
+`skill_helpers.spiralTilesInRadius` walks the rings around the center —
+innermost first, each ring from its top-left tile CLOCKWISE (top edge
+left→right, right edge top→bottom, bottom edge right→left, left edge
+bottom→top; ring n has exactly 8n tiles) — and `hostileIndicesInRadius`
+(the one enumeration all 9 radius AoE skills use) now maps hostile
+entities through that tile walk (`hostileEntityAt` per tile, preserving
+the living/hostile/not-caster filter). The center tile is NOT part of
+the spiral; meteor — the only AoE that strikes the center — prepends the
+center attack so the direct hit lands FIRST, then the splash ripples
+outward. (Behavior-preserving note: the old distance filter included
+distance-0, so meteor always hit the center; the spiral excludes it and
+meteor re-adds it explicitly. Every other AoE is self-centered, where
+the center is the caster's own tile — excluded by the same filter both
+before and after.) Per-target grouping confirmed already true for every
+multi-effect AoE (shockwave attack+knockback, slam knockback+stun, blitz
+attack+stun — one target's full effect list before the next), so the
+pacing sweep will present one target at a time with no recipe changes.
+
+Tests: the spiral geometry (ring-1 clockwise order, ring-2 continuation,
+8n per ring), the filter (dead + same-team skipped, ring order in the
+result), and meteor's center-first execution (asserted on the REVERSED
+ownedEvents array — last element executes first). Convention: DESIGN →
+Determinism & Tiebreaking (AoE execution order).

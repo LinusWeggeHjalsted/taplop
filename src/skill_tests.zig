@@ -1195,6 +1195,10 @@ test "meteor: useSkill attacks each hostile within radius of the target tile" {
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
     }
+    // Meteor strikes the CENTER first, then the spiral — and useSkill
+    // returns the REVERSED array (ownedEvents; the last element executes
+    // first), so the center target (`on_tile`, index 1) is the LAST element.
+    try testing.expectEqual(@as(u32, 1), result[1].sub_level_event.attack.defender_index);
 }
 
 test "computeMaxDamageRange: max reach over off-cooldown damaging skills" {
