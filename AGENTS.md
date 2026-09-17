@@ -597,6 +597,12 @@ stay here in AGENTS; this map is the seam between the two.
   table, drops-as-pre-bought-rungs, the tier frontier), the hub vendor
   panel. Builds on DESIGN → Clones; implementation deferred (TODO →
   Gear Upgrading).
+- **Post-game rewards & cosmetics** — DESIGN → Post-game Rewards &
+  Cosmetics: the post-campaign material sink — central-hub decoration
+  customization (buy-once-place-freely), weapon skins (per-type registry,
+  item-flag unlocks incl. custom-mission-shipped art), the static tier
+  price ladder, the saturating material-add guard. Low priority (TODO →
+  Post-game Rewards & Cosmetics).
 - **Architecture** — DESIGN → Architecture: Elm-like update/view, event
   stack, generic verbs vs skill recipes, orchestrator convention, arenas,
   PlayerData/Entity sync, level editor.

@@ -2005,6 +2005,9 @@ So a clone is a permanent, compounding material factory keyed by mission.
   before one truncating divide, so the loss is `< 1 per material per
   harvest` (the fractional remainder) instead of possibly 100%. All gameplay
   logic stays integer (AGENTS → Code Style); no fixed-point state needed.
+- **Saturation.** Material wallet ADDS clamp at u32 max, never wrap
+  (silent wraparound would destroy wealth) — see Post-game Rewards &
+  Cosmetics → Overflow guard.
 
 ## Gear Upgrading (the upgrade economy + hub vendor panel)
 
@@ -2202,13 +2205,110 @@ power — starter + drops + purchases — however the points got there.
 - The full-loadout demand curve is diffable against W(m) at every m —
   starvation/swimming is visible before content is authored.
 
-### Post-game (parked)
+### Post-game
 
-A cosmetic base-builder + player-customization system is the intended
-post-completion material sink (to be designed separately). It composes
-cleanly: the campaign ends wallets-empty, so the post-game economy
-starts fresh — plateau harvest (~1,782 per wallet per mission) flows
-into cosmetics with zero interference with the upgrade calibration.
+The post-completion material sink is designed — see Post-game Rewards &
+Cosmetics. The compositional fact stands: the campaign ends
+wallets-empty, so the post-game economy starts fresh.
+
+## Post-game Rewards & Cosmetics (decoration base-builder + weapon skins)
+
+The post-completion material sink. LOW PRIORITY — the official campaign
+comes first (TODO notes the same); this section is the settled design so
+the economy work above stays coherent with it. The income it absorbs
+scales indefinitely: dreams run the official mission lifecycle (DESIGN
+→ Custom Missions & Online Services → Dreams), so custom missions clone
+and harvest exactly like official ones — **every mission ever completed
+adds ~R = 27 materials per wallet to every future mission's paycheck,
+permanently** (a portfolio of K missions pays 27·K per wallet per
+replayed mission). The sink's job is to give that scaling a destination.
+
+### Overflow guard (saturating material adds)
+
+Materials are u32 per wallet; the harvest payout's u64 intermediate
+already prevents per-clone overflow — the exposure is the cumulative
+wallet add. Honest-play numbers put overflow far out of reach
+(~17,800 distinct missions completed, or ~2.4 million replays of the
+official portfolio, to hit u32 max cumulatively), but custom content has
+no bound on clone count or pickup density, so a crafted "farm" mission
+is the real worst case (~10×, still thousands of completions). The
+failure mode is silent wraparound destroying wealth, so the rule:
+**material adds saturate** (the harvest + salvage add sites clamp at u32
+max rather than wrap). The shop ladder's top tier (below) doubles as
+the drain valve toward that ceiling. Save size is a non-issue
+(~100–200 bytes per clone).
+
+### Hub decoration customization (central hub only)
+
+- **Scope**: the central hub only — one persistent home-base surface;
+  every other hub stays authored. One save surface, one hub's fixtures
+  for the placement rules.
+- **Persistence**: a placement list on PlayerData — {decoration type
+  id, tile position, color index} — applied as an overlay when the
+  central hub builds. The hub definition itself stays embedded and
+  untouched; replay-safe because it rides PlayerData exactly like
+  gear.
+- **Placement machinery reuses the editor's decoration tooling**:
+  footprint overlap + occupant-conflict checks (never cover mission
+  exits, NPC tiles, or the player start), the decoration registry
+  (data/decorations.txt) as the catalog, per-bbox-tile split rendering,
+  cursor footprint previews. A hub build mode is the editor's decoration
+  planner consumed by a hub screen, minus the editor chrome.
+- **Ownership is buy-once-place-freely**: purchasing a decoration type
+  is a permanent unlock; place/move/remove freely from the owned set.
+  No refunds to design — placement is free, purchase is the cost.
+- **Build-mode entry is UNDECIDED** (TODO) — how placement mode is
+  reached (an NPC flow, a button, a shop segue). The dreamguide is its
+  own separate NPC in every hub either way (DESIGN → Browser).
+
+### Weapon skins (weapons only, for now)
+
+- **Registry per weapon type** — alternate sprite ids for the
+  player-team rendering path (`weaponSprite` in view.zig is the single
+  insertion point); the `enemy_` path is unchanged; off-hand mirroring
+  comes free (`flip_horizontal` on the resolved sprite). Other gear
+  slots don't render as sprites today, so "skins" means weapon skins
+  until that changes.
+- **Selection is per weapon TYPE, not per item**: PlayerData carries
+  the unlocked set + a selected skin per type. Stable across the
+  equip/drop/salvage flow, tiny, replay-safe (cosmetic — rendering
+  only).
+- **One unlock mechanism, both sources**: picking up an item flagged
+  with a skin id grants that skin permanently. Official content: boss
+  weapons carry unique skins (the 9-damage flex drop is power AND
+  bling). Custom missions: authors flag their own drops the same way.
+- **Custom missions ship skin art from the first version**: the skin's
+  PNG lives in its source mission's directory under the existing
+  namespaced id (`custom/<mission-dir>/<stem>`) — resolvable from the
+  persistent missions/ dir at any time, not just while that mission
+  plays. Fallback rule: a skin whose art cannot be resolved (source
+  mission deleted) renders the type's DEFAULT sprite and the picker
+  greys it out — no magenta swords for a deleted cosmetic (the
+  missing-art convention applies to shipped content, not to
+  player-optional cosmetics).
+- Skins are cosmetic: no balance bounds involved; custom art follows
+  the existing custom-sprite rules (dims resolution, no gameplay
+  effect).
+
+### Pricing: a static tier ladder (the "keeps up" design)
+
+Postgame income is a function of each player's own content
+consumption, so wealth scales differ by orders of magnitude across
+players — and the ladder absorbs that structurally, WITHOUT the dynamic
+pricing rejected for upgrades (it would punish grinders and read as
+the game cheating):
+
+- **A deep catalog with tiers ~×10 apart**, spanning ~6 orders of
+  magnitude: ~100–1,000-part decorations (mid-campaign cozy tier),
+  ~10k–100k (early postgame), ~1M, ~10M–100M, and a top flex tier in
+  the hundreds of millions / low billions — deliberately near the
+  wallet ceiling, so the deepest grinders drain toward safe territory.
+- **Evergreen catalog growth**: new decoration + skin sets ship with
+  game updates, priced at the then-current meta scale — the catalog
+  keeps up with the ecosystem by growing with it.
+- **Self-gating, no completion flag**: the shops exist anytime; prices
+  gate. A new player seeing the ladder understands instantly what
+  endgame wealth is for.
 
 ## Architecture
 

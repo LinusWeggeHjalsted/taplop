@@ -703,6 +703,32 @@ panel). Implementation deferred; slices when it lands:
 - [ ] tuning follow-ups: re-measure R when enemy-gear richness or
       utility-skill density changes; playtest the drip feel (the α dials).
 
+## Post-game Rewards & Cosmetics
+
+Design SETTLED — see DESIGN → Post-game Rewards & Cosmetics (the
+saturating overflow guard, central-hub decoration customization, weapon
+skins incl. custom-mission-shipped art, the static tier pricing ladder).
+LOW PRIORITY — the official campaign comes first; slices when it lands:
+
+- [ ] saturating material adds (harvest + salvage clamp at u32 max) —
+      small + independent of the rest; could land early.
+- [ ] skin registry + PlayerData unlock/selection fields + `weaponSprite`
+      resolution + the default-sprite fallback + save round-trip.
+- [ ] the item skin-id flag + pickup-unlock event + unique boss-weapon
+      skins (official content) + the custom-mission flag path (art under
+      `custom/<mission-dir>/<stem>`, resolvable from missions/ anytime).
+- [ ] decoration placement overlay on PlayerData + the hub build mode
+      (the editor's decoration planner reused, placement rules: never
+      cover mission exits / NPC tiles / player start).
+- [ ] the shops (decoration + skin, central hub) + the tier price
+      ladder config.
+- [ ] OPEN: build-mode entry — NPC flow vs button vs shop segue; decide
+      at implementation.
+- Note: the dreamguide NPC (dreams browser entry, every hub) is already
+      designed — DESIGN → Custom Missions & Online Services → Browser.
+- Note: the Gear Upgrading tail-price script stays blocked on the boss
+      drop table; boss weapon skins ride the same content work.
+
 ## Level Editor
 
 A custom-mission editor: mission + per-level tabs (quick swap to edit each

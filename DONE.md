@@ -13221,3 +13221,42 @@ the map line in AGENTS → Subsystem Map. The shape, in brief:
 All numbers are tuning starting points; the anchors + the audit
 identities (wallet-binding at m=3, the end-state identity, the
 demand-vs-W diff) are the invariants.
+
+## Post-game rewards & cosmetics — design settled (low priority, deferred)
+
+Design session settling the post-completion material sink (builds on the
+Gear Upgrading session's parked note). Prose in DESIGN → Post-game
+Rewards & Cosmetics, slices in TODO → Post-game Rewards & Cosmetics, map
+line in AGENTS → Subsystem Map. The shape, in brief:
+
+- Premise confirmed from existing design, not new work: dreams run the
+  official mission lifecycle, so custom missions clone + harvest exactly
+  like official ones — every mission ever completed adds ~27/wallet to
+  every future mission's paycheck, permanently (the indefinite-scaling
+  engine the sink absorbs).
+- Overflow guard: u32 wallets + u64 per-clone intermediates put honest
+  overflow at ~17,800 distinct missions / ~2.4M replays; a crafted
+  "farm" custom mission is the real worst case (~10x). Rule: material
+  adds saturate (clamp at u32 max, never wrap). The shop ladder's top
+  tier doubles as the drain valve toward that ceiling.
+- Hub decoration customization, central hub only: a placement list on
+  PlayerData applied as an overlay at hub build (replay-safe, rides
+  PlayerData like gear); the editor's decoration planner/rules/registry
+  reused for a hub build mode; buy-once-place-freely ownership; the
+  dreamguide stays a separate NPC in every hub. Build-mode entry
+  UNDECIDED (open in TODO).
+- Weapon skins (weapons only, for now): per-type registry + per-type
+  selection on PlayerData (`weaponSprite` is the single insertion
+  point); ONE unlock mechanism covering both sources — an item skin-id
+  flag grants the skin on pickup (unique boss weapons in official
+  content, authored drops in custom missions); custom missions ship
+  skin art from v1 under the existing `custom/<mission-dir>/<stem>` id
+  (resolvable from missions/ anytime; deleted-source fallback renders
+  the default sprite + greys the picker entry).
+- Pricing: static tier ladder (~x10 tiers, hundreds of parts to a
+  near-ceiling flex tier) + evergreen catalog growth + self-gating
+  shops (no completion flag); dynamic/wealth-indexed pricing rejected
+  again (same reasoning as upgrades).
+
+User note recorded in TODO: cosmetic systems are NOT a priority for a
+while — the official campaign comes first.
