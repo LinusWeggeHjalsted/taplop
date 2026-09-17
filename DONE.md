@@ -13260,3 +13260,24 @@ line in AGENTS → Subsystem Map. The shape, in brief:
 
 User note recorded in TODO: cosmetic systems are NOT a priority for a
 while — the official campaign comes first.
+
+## TODO sweep — finished tasks removed (DONE.md is the archive)
+
+The first cleanup of TODO.md against its own lifecycle rule ("active +
+deferred tasks + open questions ONLY — completed history lives in DONE.md"):
+the file had accumulated ~98 completed [x] items carrying their full design
+prose inline, 1,776 lines against a "scannable" mandate. Swept to 838 lines,
+zero [x]; open fragments inside completed items were preserved as their own
+items (the toggle_options_menu rename, palette shortcut surfacing, the
+playtest-dependent swap/blink gate, the editor layer-adjacent opens, the
+revalidate/notification follow-ups, the pre-release replay-compat policy,
+the editor_inspector optional split). The Determinism & Tiebreaking TODO
+section was removed entirely (convention-only, lives in DESIGN). Two new
+items recorded from the session's discussion: the art report
+(sound_report.sh pattern — the artist's machine-derived shopping list) and
+the mac CI candidate (GitHub Actions macOS runners post-migration, free
+for public repos — the structural answer to the runtime-validation
+cadence). Method note: swept structurally (items bounded by the next
+top-level bullet/section header) after a regex-to-blank-line approach
+over-deleted open items in blankless regions — diagnosed via keep-list
+grep against HEAD, repaired from git, redone safely.
