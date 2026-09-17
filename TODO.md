@@ -674,7 +674,34 @@ are DONE — see DONE.md (inventory click+drag slice). Multi-salvage
   the click→push site is marked in handleIdleInput's hub branch). When the
   handler lands, re-wire that site and drop the move-blocker comment.
 - NPC dialogue system
-- NPC types (shopkeeper, quest giver, etc.)
+- NPC types (shopkeeper, quest giver, etc.). The upgrade vendor (see
+  "Gear Upgrading" below) is `interact_with_npc`'s first real consumer.
+
+## Gear Upgrading
+
+Design SETTLED — see DESIGN → Gear Upgrading (the income model extracted
+from the clone economy, the two anchors, the starter-anchored cost ladder
++ α table, drops-as-pre-bought-rungs, the tier frontier, the vendor
+panel). Implementation deferred; slices when it lands:
+
+- [ ] events + legality + handler: `player_upgrade_item` (PlayerInputEvent
+      orchestrator + `validatePlayerAction` arm over a bool legality
+      helper) → `upgrade_item` (PlayerEvent machinery; PlayerData mutation
+      + equipped-entity gear re-sync), tests.
+- [ ] config + loader + the derived mid-ladder price table (model constants;
+      `s_stat` derived from new_player.txt; the floor + largest-remainder
+      split rule), tests.
+- [ ] vendor NPC authoring (a hub-format marker — shape decided at
+      implementation) + `interact_with_npc` wiring: re-wire the hub click
+      site + drop the move-blocker comment (see NPC Interaction above).
+- [ ] panel builder (two-column: item list = every item with a nonempty
+      `itemStatSet`, no skill tomes; per-stat rows with cost + button) +
+      selection UiState + panel toggle on the unified GameState convention
+      (see Tech Debt → Unify the panel-toggle convention).
+- [ ] tail-price generation script (the sound_report.sh pattern) — BLOCKED
+      on the boss drop table (content not yet authored).
+- [ ] tuning follow-ups: re-measure R when enemy-gear richness or
+      utility-skill density changes; playtest the drip feel (the α dials).
 
 ## Level Editor
 

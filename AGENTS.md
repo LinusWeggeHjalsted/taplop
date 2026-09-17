@@ -588,6 +588,15 @@ stay here in AGENTS; this map is the seam between the two.
 - **Custom missions & online services** — DESIGN → Custom Missions & Online
   Services: dreams, browser, content identity/hash, balance bounds, turn
   counters + author medals, auth/server seam.
+- **Clones (clone system)** — DESIGN → Clones: mission-completion material
+  harvesting, the pickup accumulator, clone keying + overwrite rule.
+  Key: `src/handlers/level.zig` (end_level completion flow),
+  `src/handlers/player.zig` (clone harvest math).
+- **Gear upgrading** — DESIGN → Gear Upgrading: the upgrade economy
+  (clone-derived income model, the two anchors, the cost ladder + α
+  table, drops-as-pre-bought-rungs, the tier frontier), the hub vendor
+  panel. Builds on DESIGN → Clones; implementation deferred (TODO →
+  Gear Upgrading).
 - **Architecture** — DESIGN → Architecture: Elm-like update/view, event
   stack, generic verbs vs skill recipes, orchestrator convention, arenas,
   PlayerData/Entity sync, level editor.

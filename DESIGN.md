@@ -2006,6 +2006,210 @@ So a clone is a permanent, compounding material factory keyed by mission.
   harvest` (the fractional remainder) instead of possibly 100%. All gameplay
   logic stays integer (AGENTS → Code Style); no fixed-point state needed.
 
+## Gear Upgrading (the upgrade economy + hub vendor panel)
+
+Gear upgrading is the player's POWER progression: materials earned through
+the clone economy are spent at a hub vendor NPC to raise the stats of
+equipped or carried gear. Found loot provides variety and materials, not
+power; authored boss gear provides the big jumps; an on-pace player who
+completes the campaign ends it exactly fully maxed with empty wallets.
+Implementation is deferred (TODO → Gear Upgrading) — this section is the
+settled design. All prices are tuning starting points; the anchors and
+audit identities at the end are the invariants.
+
+### The income model (extracted from the clone design)
+
+Two measured constants describe the economy, and only their product is
+used:
+
+- **N = 0.6** materials per turn per wallet (material type) — the measured
+  clone/pickup rate, assumed uniform across the five wallets (a smoothing
+  assumption; measured flows are lopsided per mission — Beginnings is
+  wood-only).
+- **T = 45** — average mission turns.
+- **R = N·T = 27** — materials per wallet per mission of progression.
+  The current mission's own pickups flow at the same rate as the clones
+  (the clone rate IS the pickup rate; kept gear and learned tomes are
+  one-time differences that amortize to nothing), so direct income and
+  harvest merge into the one constant:
+
+```
+I(m) = R·m                paycheck per wallet after completing mission m
+W(m) = R·m(m+1)/2         cumulative wealth per wallet
+```
+
+Anchor values: **W(3) = 162** (the b-line), **W(66) = 59,697** (campaign
+completion), plateau paycheck **I(66) = 1,782** per replayed mission. All
+design math is real; prices are integers derived from it (rounding rule
+below).
+
+**The enemy drop stream is inside R, not beside it.** Dead non-player
+entities drop their equipped gear, inventory contents, and a skill tome
+per equipped utility skill (the uniform death rule); salvage value counts
+at pickup, so all of it is part of the measured rate. Consequences:
+
+- R is a MEASURED aggregate — enemy gear richness and utility-skill
+  density are content dials that move it. The sparse-enemy-gear rule for
+  official missions (most enemies have unpopulated slots) is balance +
+  inventory management + **R stability**. Re-measure when that content
+  changes.
+- The pickup accumulator only counts items that fit; overflow stays on
+  the ground and silently depresses the measured rate — absorbed into
+  the measurement, but a content lever to know about.
+- Knowledge's real sources are amulets/staves/idols plus enemy utility
+  tomes — the uniform-0.6 knowledge assumption is softened by the tome
+  stream but stays content-dependent (spell upgrades are the de-facto
+  premium; the α table leans the same way).
+
+### The anchors
+
+- **T(3) = 75% tier** — a b-lining player (3 missions completed before
+  the arm's boss; no central starter mission) holds gear at 75% of every
+  stat's max, rounding down: weapons/spell 7 of 10, health 7, defense /
+  damage / pickup 3 of 5, speed 1 of 2. Bosses are tuned to this tier
+  ("challenging but possible from a new game").
+- **T(66) = 100%** — the main campaign is 66 missions; the on-path player
+  (every mission, every boss, spends everything) completes it exactly
+  fully maxed with empty wallets. Skipped bosses and optional missions
+  are slack in both directions.
+- Between the anchors the tier frontier climbs linearly (below); drops
+  make it a staircase (jumps at bosses).
+
+### The cost ladder (the mid-game segment)
+
+Every price is a pure function of (stat, current value) plus config —
+static, deterministic, replay-trivial. The ladder is anchored at the
+standard starting stats, so the first point above starter gear costs
+~one early paycheck:
+
+```
+cost(stat, v → v+1) = α_stat · K · R · (1 + (v − s_stat) · d_stat)   [parts]
+```
+
+- **s_stat** — the standard starting value per stat (weapons/spell 3,
+  health 1, minors/speed 0), DERIVED from `data/new_player.txt` at load —
+  no hand-maintained constant.
+- **K** — the number of materials in the item kind's salvage split
+  (weapons use their weapon-type salvage definition). The cost splits
+  across those materials in the salvage ratio — upgrading a sword is
+  metal-heavy, a staff knowledge+wood, boots cloth+leather — mirroring
+  what salvaging that item yields. Integer rounding: floor each
+  material, distribute the remainder by largest fraction (deterministic).
+- **d_stat** — missions of progression between points: 1 for 10-max
+  stats, 2 for 5-max stats.
+- **α_stat** — the wallet-binding solve at the b-line anchor: demand
+  from starter gear to the 75% tier (all equipped items) is distributed
+  so every wallet drains to exactly zero at the tier. The ranking is
+  forced by the wallet mix (four armor pieces draw cloth+leather vs two
+  weapons on wood+metal vs one amulet on knowledge, against uniform
+  income) and independently reads as design intent — survivability is a
+  cheap drip, weapon points are weighty, spell points are premium.
+  Per-stat α is the wallet-mix balancer.
+
+| stat group | α | first purchase | tier-completing purchase |
+|---|---|---|---|
+| armor (health/defense/damage/pickup) | 0.054 | health 1→2 ≈ 3 parts | health 6→7 ≈ 17 parts |
+| weapon_damage | 0.30 | 3→4 ≈ 16 parts (sword ≈ 4 wood + 12 metal) | 6→7 ≈ 65 parts (≈ 16 wood + 49 metal) |
+| spell_damage | 0.60 | 3→4 ≈ 16 knowledge | 6→7 ≈ 65 knowledge |
+
+- **Ladders are keyed by stat, shared across item kinds** — health_bonus
+  prices identically on coat/gloves/pants/boots; weapon_damage prices
+  identically across weapon types (only the split varies). A stat the
+  kind doesn't carry never appears; skill tomes carry none and are
+  excluded from the panel by construction.
+- **Speed is the deliberate outlier**: 0→1 costs ~3 parts (trivial);
+  1→2 is a TAIL purchase (below) — the single biggest purchase in the
+  game, and never on dropped boots in the official campaign (custom
+  missions are unrestricted; `itemStatMax` still bounds them).
+
+### The tail + tier frontier (75% → 100%)
+
+The frontier T(m) climbs linearly from 75% at m=3 to 100% at m=66: a
+10-stat's value-8 rungs land around m ≈ 16, value-9 around m ≈ 41,
+value-10 at m = 66. Each rung's price is its wallets' share of the
+WEALTH GAP between frontier crossings — and because W is quadratic, the
+escalation is automatic: the gaps are ≈ 3.5k (m 3→16), ≈ 19.6k (16→41),
+≈ 36.5k (41→66) parts per wallet, so late rungs cost thousands of parts
+each (multiple plateau paychecks) while mid rungs cost tens. "Stats
+closer to max cost significantly more" falls out of the income curve,
+not a ratio knob.
+
+The tail's exact integer prices depend on the boss drop table (drops
+pre-pay tail rungs — see below), so they are GENERATED, not hand-set: a
+design-time script (the sound_report.sh pattern) regenerates the tail
+price table from the model constants + the drop schedule whenever
+either changes. The mid-ladder derives at load from config constants;
+the doc ships the solve machinery + the audit identities.
+
+### Drops: found gear is pre-bought rungs
+
+The model tracks stat points, never items: prices are keyed by current
+value, so a found item has simply skipped the rungs below its value and
+prices identically from wherever it sits. The anchors pin TOTAL gear
+power — starter + drops + purchases — however the points got there.
+
+- **Regular drops are variety + materials, not power.** Enemy gear drops
+  with low/flat rolls; the invested-item-stays-ahead rule makes spending
+  rational (no hoarding pathology: an invested item is never strictly
+  superseded by an uninvested drop).
+- **Boss drops are authored gear, not a mechanic.** The uniform death
+  rule already drops whatever the boss carries — the "cool 9-damage
+  weapon" is high-stat equipment authored on the boss entity. 9-of-10
+  deliberately leaves the final rung purchasable. Twelve bosses vs seven
+  gear slots: spread drops across slots and weapon types (content rule);
+  redundant drops salvage — negligible money (salvage values are flat per
+  item type against a 59k/wallet economy). Boss gear pre-pays the
+  expensive tail rungs: richer drops trade directly against grind.
+- **Player-knowledge texture**: once players learn bosses drop
+  high-value gear, deferring tail purchases on a covered slot is the
+  smart play — economy skill, a feature.
+- **L(3) = 0** — the b-liner has beaten no bosses when they arrive at
+  the first one; the 75% anchor is unaffected by drops.
+
+### The surface: vendor NPC + two-column panel (wiring deferred)
+
+- Each hub has an upgrade-vendor NPC — the first real consumer of the
+  `interact_with_npc` handler (currently a `{}` stub; the hub click site
+  is marked in handleIdleInput). The hub format gains a way to mark an
+  NPC as the vendor (exact authoring shape decided at implementation).
+- The panel is a middle panel, two columns: an ITEM LIST of all
+  upgradeable items (equipped or in inventory — every item with a
+  nonempty `itemStatSet`; skill tomes excluded by construction), and the
+  UPGRADE VIEW for the selected item — per stat: current value / max,
+  cost in materials, an upgrade button (disabled when unaffordable,
+  "MAX" when maxed).
+- Panel open/close lands on the TARGET convention of the panel-toggle
+  unification (TODO → Tech Debt): a GameState event on the undo
+  timeline. Item selection within the panel is pure UiState (the
+  inventory-slot-selection pattern).
+- **Events** follow the equip/salvage shape: a `player_upgrade_item`
+  PlayerInputEvent orchestrator (item reference — gear slot or inventory
+  index — plus ItemStatField) whitelisted in `isPlayerAction`, with a
+  `validatePlayerAction` arm over a bool legality helper (item exists,
+  stat applicable, not maxed, materials sufficient — computed from the
+  same derived price table); the machinery `upgrade_item` PlayerEvent
+  mutates PlayerData and re-syncs the equipped entity's gear stats (the
+  entity↔PlayerData sync machinery). Pure state transform + queued sound
+  gated `!replaying`; no turn cost (hub activity); commits clamp to
+  `itemStatMax` (the existing single source of balance bounds).
+
+### Audit identities (the tuning tools)
+
+- **Wallet-binding at m=3**: cumulative demand from starter gear to the
+  75% tier drains all five wallets to zero simultaneously (the α solve).
+- **End-state identity**: starter + 12 boss drops + purchases = the 100%
+  tier at m=66, purchased demand ≈ W(66) − drop-covered rung shares.
+- The full-loadout demand curve is diffable against W(m) at every m —
+  starvation/swimming is visible before content is authored.
+
+### Post-game (parked)
+
+A cosmetic base-builder + player-customization system is the intended
+post-completion material sink (to be designed separately). It composes
+cleanly: the campaign ends wallets-empty, so the post-game economy
+starts fresh — plateau harvest (~1,782 per wallet per mission) flows
+into cosmetics with zero interference with the upgrade calibration.
+
 ## Architecture
 
 - Elm-like: main (init), update (state transform), view (render)

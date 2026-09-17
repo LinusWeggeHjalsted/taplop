@@ -13182,3 +13182,42 @@ round-trip (session_log), and an end-to-end harness test (spinblade on
 two targets leaves wait_acceleration == 3; a follow-up single-hit skill
 resets — exactly 1 wait, proving the per-skill reset). Design: DESIGN →
 Architecture → Skill pacing.
+
+## Gear upgrading — design settled (implementation deferred)
+
+Design session settling the upgrade economy + hub vendor panel. The prose
+lives in DESIGN → Gear Upgrading, the slices in TODO → Gear Upgrading,
+the map line in AGENTS → Subsystem Map. The shape, in brief:
+
+- Income model extracted from the clone design: I(m) = R·m and
+  W(m) = R·m(m+1)/2 per wallet, R = N·T = 27 (N = 0.6 materials/turn/
+  wallet measured, T = 45 turns; direct pickups and clone harvest merge
+  because the clone rate IS the pickup rate). The enemy drop stream
+  (gear + inventory + a tome per equipped utility skill on death) is
+  inside the measured R, not beside it — sparse enemy gear slots are
+  balance + inventory management + R stability.
+- Two anchors: 75% tier at m=3 (the b-line boss attempt — 3 completions,
+  no central starter mission, wallets drain to zero exactly at the tier
+  via the α solve) and 100% at the 66-mission campaign end (on-path
+  player ends exactly maxed, wallets empty).
+- The starter-anchored cost ladder cost = α·K·R·(1 + (v−s)·d) with
+  s derived from new_player.txt and the split mirroring the item kind's
+  salvage definition; wallet-binding α solve: armor 0.054 / weapon 0.30 /
+  spell 0.60 — the ranking forced by the wallet mix and matching design
+  intent (survivability drip, weighty weapons, premium spells). Speed
+  0→1 trivial, 1→2 the single biggest purchase, never on dropped boots
+  in the official campaign.
+- Drops are pre-bought rungs (the model tracks stat points, never
+  items): regular drops low-roll variety + materials; boss drops are
+  authored high-stat gear riding the uniform death-drop rule (no special
+  mechanic), 9-of-10 leaving the final rung purchasable.
+- The tail (75→100%) is priced by the tier frontier's wealth gaps
+  (≈3.5k / 19.6k / 36.5k parts per wallet) — escalation automatic from
+  quadratic income; integer tail prices script-generated once the boss
+  drop table exists (the sound_report.sh pattern).
+- Post-game: cosmetic base-builder + player customization parked as the
+  next design session; composes cleanly (campaign ends wallets-empty).
+
+All numbers are tuning starting points; the anchors + the audit
+identities (wallet-binding at m=3, the end-state identity, the
+demand-vs-W diff) are the invariants.
