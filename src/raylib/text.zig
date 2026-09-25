@@ -1,7 +1,9 @@
-//! Text subsystem of the raylib backend: the TTF font load (with the
-//! CPU-side premultiplied atlas), the SDF text-outline pipeline (build-time
-//! blob + shader; shadow-ring fallback), and text drawing (plain, outlined,
-//! text labels). The backend keeps `fontMetrics` as a thin wrapper
+//! Text subsystem of the raylib backend: ALL text draws through the SDF
+//! pipeline (plain fill = the same shader with a zero outline width — see
+//! `drawSdfText`), with the runtime coverage-atlas font (the pre-SDF text
+//! path) kept ONLY as the fallback when the SDF pipeline fails to init, and
+//! the SDF text-outline blob+shader (build-time blob; shadow-ring fallback
+//! on the fallback font). The backend keeps `fontMetrics` as a thin wrapper
 //! (main.zig's RenderContext seam) and passes its frame arena as the
 //! per-frame scratch to the draw fns. See DESIGN → Platform Seam → SDF text
 //! outline.
@@ -16,12 +18,13 @@ const textures_mod = @import("textures.zig");
 
 const toRaylibColor = conversions.toRaylibColor;
 
-/// Base rasterization size for the TTF font. raylib bakes glyphs into an
-/// atlas at this fixed size; `drawTextEx` scales from it. Sized to cover the
-/// largest `font_size` in use (96, menu buttons) with a modest supersample,
-/// so all current sizes render crisp; the atlas texture is bilinear-filtered
-/// so downscaling to smaller sizes stays smooth. This is a runtime GPU/texture
-/// memory cost, not binary size (only the raw ~12 KB TTF bytes are embedded).
+/// Base rasterization size for the TTF font. Both the build-time SDF blob
+/// and the runtime coverage-atlas fallback bake glyphs at this size;
+/// `drawTextEx` scales from it. Sized to cover the largest `font_size` in
+/// use (96, menu buttons); the fallback atlas is bilinear-filtered so its
+/// downscaled draws stay smooth (the SDF pipeline needs no such raster —
+/// its AA is analytic). This is a runtime GPU/texture memory cost, not
+/// binary size (only the raw ~12 KB TTF bytes are embedded).
 const font_base_size: i32 = 128;
 
 /// Outline thickness for floating TEXT overlays (damage/heal numbers) and
@@ -39,8 +42,9 @@ pub const text_outline_thickness: i32 = 8;
 /// in build.zig — the fragment shader decodes the field assuming this value,
 /// and `initSdfTextOutline` validates the blob's baked params against it
 /// (mismatch → warning + shadow-ring fallback). 128/6 ≈ ±21 atlas px of
-/// range, covering an 8px outline at the smallest outlined font size
-/// (48 drawn from the 128px base atlas: 8 * 128/48 ≈ 21.3 atlas px).
+/// range. The range is NOT sufficient for every requested outline — see
+/// `sdf_max_outline_atlas_pixels` (drawSdfText clamps) — it covers an 8px
+/// outline at 56px+ (8*128/56 ≈ 18 atlas px, clear of the clamp floor).
 const sdf_pixel_dist_scale: f32 = 6.0;
 
 /// SDF glyph raster margin around each glyph bbox, in atlas pixels. MUST
@@ -49,6 +53,20 @@ const sdf_pixel_dist_scale: f32 = 6.0;
 /// encoding range (±21 px) so the distance field isn't cropped at the glyph
 /// rect edge — the outline band would clamp there otherwise.
 const sdf_char_padding: i32 = 22;
+
+/// Maximum outline width the atlas can actually encode, in atlas px.
+/// `drawSdfText` clamps the requested width to this. WHY: the field clamps
+/// at −(128/scale) ≈ −21.3, and the shader fades the band over the window
+/// [−W−aa, −W+aa] — a request whose window dips to the clamp floor makes
+/// every clamped texel evaluate band ≈ 0.5. Clamped texels are exactly the
+/// rect-CORNER diagonals (true distance to the ink runs ~30px there while
+/// the rect is only 22px padded per axis), so the result is ghost squares
+/// at each glyph quad's corners — seen on the 48px material-count labels
+/// (8*128/48 ≈ 21.3, right AT the floor). The −2 margin covers the fwidth
+/// window at the smallest outlined size on the smallest render target
+/// (~1.1 d-units at 48px on a 720p target); clamped requests draw a
+/// marginally thinner outline (7.2px instead of 8 at 48px) — never squares.
+const sdf_max_outline_atlas_pixels: f32 = 128.0 / sdf_pixel_dist_scale - 2.0;
 
 comptime {
     if (sdf_pixel_dist_scale != 6.0 or sdf_char_padding != 22) {
@@ -123,8 +141,10 @@ const sdf_outline_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.ar
 else
     sdf_outline_fs_glsl330;
 
-/// Load the game font. Reads the embedded TTF (`assets/fonts/freezilla.ttf`)
-/// through the FileSource and rasterizes a glyph atlas at `font_base_size`.
+/// Load the FALLBACK font — only called when the SDF pipeline failed to
+/// init (see `TextRenderer.init`); the normal path never builds this
+/// atlas. Reads the embedded TTF (`assets/fonts/freezilla.ttf`) through
+/// the FileSource and rasterizes a glyph atlas at `font_base_size`.
 /// The atlas is built ENTIRELY ON THE CPU (`loadFontData` →
 /// `genImageFontAtlas`) so it can be PREMULTIPLIED before upload — text
 /// composites correctly under the render pass's `BLEND_ALPHA_PREMULTIPLY`
@@ -218,15 +238,17 @@ fn loadFont(file_source: *const @import("../file_source.zig").FileSource) struct
     }, .is_default = false };
 }
 
-/// The SDF text-outline pipeline (see `drawOutlinedText`): a glyph atlas
-/// whose texels encode signed distance-to-glyph-edge (instead of coverage)
-/// plus the fragment shader that thresholds the field into fill + outline
-/// band. Built once at init from the build-time blob (see
+/// The SDF text pipeline (see `drawSdfText`): a glyph atlas whose texels
+/// encode signed distance-to-glyph-edge (instead of coverage) plus the
+/// fragment shader that thresholds the field into fill + outline band —
+/// the ONE font every text draw uses (plain fill included, at outline
+/// width 0). Built once at init from the build-time blob (see
 /// `initSdfTextOutline`); null means unavailable (blob invalid, texture
-/// upload, or shader compile failed) and outlined text falls back to the
-/// offset-shadow ring. All-or-nothing by construction: an SDF atlas drawn
-/// without the shader renders raw distances (garbage), a shader without the
-/// atlas is useless.
+/// upload, or shader compile failed) and ALL text falls back to the
+/// coverage-atlas font (outlined text additionally to the offset-shadow
+/// ring). All-or-nothing by construction: an SDF atlas drawn without the
+/// shader renders raw distances (garbage), a shader without the atlas is
+/// useless.
 ///
 /// Ownership: `recs`/`glyphs` are Zig-allocator slices that the assembled
 /// `font`'s C pointers alias — deinit frees them directly and must NOT call
@@ -374,30 +396,43 @@ fn readLe(comptime T: type, bytes: []const u8) T {
 }
 
 pub const TextRenderer = struct {
-    /// Text-label font. Normally the embedded TTF (loaded from
-    /// `assets/fonts/freezilla.ttf` via the FileSource); falls back to
-    /// raylib's default bitmap font if the TTF is missing or fails to load
-    /// (e.g. a broken persistent-dir shadow). `font_is_default` tracks the
-    /// fallback so deinit skips unloading raylib-owned the default.
-    font: rl.Font,
-    font_is_default: bool,
-    /// SDF text-outline pipeline for outlined text (see `drawOutlinedText`).
-    /// null → the 8-direction offset-shadow ring fallback, decided once at
-    /// init and fixed for the session.
+    /// FALLBACK font, built ONLY when the SDF pipeline failed to init (see
+    /// `sdf`): the embedded TTF as a runtime coverage atlas — the pre-SDF
+    /// text path, kept for the failure case (broken blob / texture upload /
+    /// shader compile). null in the normal path, which never pays its build
+    /// or VRAM. Normally the embedded TTF; falls back to raylib's default
+    /// bitmap font if the TTF is missing or fails to load (e.g. a broken
+    /// persistent-dir shadow). `font_is_default` tracks that fallback so
+    /// deinit skips unloading raylib-owned memory.
+    font: ?rl.Font = null,
+    font_is_default: bool = false,
+    /// The SDF text pipeline — the font EVERY text draw uses when available
+    /// (plain fill included; see `drawSdfText`). null → the coverage-atlas
+    /// fallback font above (outlined text additionally degrades to the
+    /// 8-direction offset-shadow ring), decided once at init and fixed for
+    /// the session.
     sdf: ?SdfTextOutline = null,
 
-    /// Load the font + try to assemble the SDF outline pipeline. Neither
-    /// fails hard: a broken font falls back to raylib's default, a broken
-    /// SDF pipeline falls back to the shadow ring.
+    /// Assemble the SDF pipeline first; the coverage-atlas fallback font is
+    /// built ONLY when that fails. Neither failure is hard: a broken SDF
+    /// pipeline falls back to the coverage font (plus the shadow ring for
+    /// outlined text), a broken TTF below that falls back to raylib's
+    /// default — the game stays playable.
     pub fn init(
         allocator: std.mem.Allocator,
         file_source: *const @import("../file_source.zig").FileSource,
     ) TextRenderer {
-        const font = loadFont(file_source);
         const sdf = initSdfTextOutline(allocator);
+        var font: ?rl.Font = null;
+        var font_is_default = false;
+        if (sdf == null) {
+            const loaded = loadFont(file_source);
+            font = loaded.font;
+            font_is_default = loaded.is_default;
+        }
         return .{
-            .font = font.font,
-            .font_is_default = font.is_default,
+            .font = font,
+            .font_is_default = font_is_default,
             .sdf = sdf,
         };
     }
@@ -409,25 +444,38 @@ pub const TextRenderer = struct {
             rl.unloadShader(sdf.shader);
             rl.unloadTexture(sdf.font.texture);
         }
-        if (!self.font_is_default) rl.unloadFont(self.font);
+        if (self.font) |font| {
+            if (!self.font_is_default) rl.unloadFont(font);
+        }
     }
 
-    /// Extract per-glyph advance widths from the loaded font into a
-    /// raylib-free `ui.FontMetrics` value, so the layout seam (`view()` +
-    /// UI builders) measures text with the same advances the renderer draws
-    /// with. ASCII codepoints 32..126 index `font.glyphs`; missing glyphs
-    /// keep the zero-init advance (the 0.5em fallback handles them in
-    /// `measureSpanWidth`). Uniform for the TTF and the default-font
-    /// fallback, so layout matches whichever font is active.
+    /// The font every draw actually uses: the SDF font when the pipeline is
+    /// available, else the coverage-atlas fallback. `fontMetrics` reads from
+    /// it so layout always measures with the advances the renderer draws
+    /// with — whichever path is active.
+    fn activeFont(self: *const TextRenderer) rl.Font {
+        if (self.sdf) |sdf| return sdf.font;
+        return self.font.?;
+    }
+
+    /// Extract per-glyph advance widths from the ACTIVE font (see
+    /// `activeFont`) into a raylib-free `ui.FontMetrics` value, so the layout
+    /// seam (`view()` + UI builders) measures text with the same advances
+    /// the renderer draws with. ASCII codepoints 32..126 index `font.glyphs`;
+    /// missing glyphs keep the zero-init advance (the 0.5em fallback handles
+    /// them in `measureSpanWidth`). Uniform across the SDF font, the TTF
+    /// fallback, and the default-font fallback, so layout matches whichever
+    /// font is active.
     pub fn fontMetrics(self: *TextRenderer) ui.FontMetrics {
+        const font = self.activeFont();
         var metrics = ui.FontMetrics{
-            .base_size = @intCast(self.font.baseSize),
+            .base_size = @intCast(font.baseSize),
             .advances = [_]i32{0} ** 95,
         };
-        const count: usize = @intCast(self.font.glyphCount);
+        const count: usize = @intCast(font.glyphCount);
         var i: usize = 0;
         while (i < count) : (i += 1) {
-            const glyph = self.font.glyphs[i];
+            const glyph = font.glyphs[i];
             const value: i32 = @intCast(glyph.value);
             if (value >= 32 and value <= 126) {
                 metrics.advances[@intCast(value - 32)] = @intCast(glyph.advanceX);
@@ -436,13 +484,50 @@ pub const TextRenderer = struct {
         return metrics;
     }
 
+    /// Draw one string through the SDF pipeline: set the outline uniforms,
+    /// then draw under the SDF shader. `outline_width` is in the drawn text's
+    /// own pixel space; 0 is the PLAIN-TEXT path — the outline band
+    /// collapses to nothing (with the transparent outline color the band
+    /// contributes zero alpha), leaving the `fwidth`-antialiased fill, so
+    /// every string in the game is resolution-independent. Never draw the
+    /// SDF font without the shader: its texels are distances, not coverage,
+    /// so it renders garbage raw.
+    fn drawSdfText(
+        sdf: SdfTextOutline,
+        text: [:0]const u8,
+        position: rl.Vector2,
+        font_size: f32,
+        spacing: f32,
+        fill: rl.Color,
+        outline_width: f32,
+    ) void {
+        // The field's distances are in BASE-atlas pixels; convert the
+        // drawn-pixel width (font_size/baseSize = atlas→screen scale),
+        // CLAMPED to the encodable range — see `sdf_max_outline_atlas_pixels`
+        // (a request past the clamp floor renders ghost squares at the glyph
+        // quad corners; a clamped request just draws a thinner outline).
+        const requested_width_in_atlas_pixels = outline_width * @as(f32, @floatFromInt(sdf.font.baseSize)) / font_size;
+        const width_in_atlas_pixels = @min(requested_width_in_atlas_pixels, sdf_max_outline_atlas_pixels);
+        rl.setShaderValue(sdf.shader, sdf.width_location, &width_in_atlas_pixels, .float);
+        // A zero width MUST pair with a transparent outline color: the band
+        // collapses exactly onto the fill edge (band == fill), and an opaque
+        // one would source-over-composite black into the antialiased fringe
+        // (outA = 2fa - fa² — a dark, over-bright edge on every glyph).
+        const outline_color = if (outline_width == 0)
+            [4]f32{ 0, 0, 0, 0 }
+        else
+            [4]f32{ 0, 0, 0, 1 };
+        rl.setShaderValue(sdf.shader, sdf.color_location, &outline_color, .vec4);
+        rl.beginShaderMode(sdf.shader);
+        rl.drawTextEx(sdf.font, text, position, font_size, spacing, fill);
+        rl.endShaderMode();
+    }
+
     /// Draw text with a black edge-outline of `outline_width` px (in the drawn
-    /// text's own pixel space). Uses the SDF pipeline when available — ONE
-    /// shader-driven draw where the fragment shader thresholds the distance
-    /// field into fill + outline band — with the 8-direction offset-shadow
-    /// ring (9 draws) as the fallback for environments where the SDF
-    /// pipeline failed to init. Never draw the SDF font without the shader:
-    /// its texels are distances, not coverage, so it renders garbage raw.
+    /// text's own pixel space) — the SDF pipeline's fill + outline band in
+    /// ONE shader-driven draw. The 8-direction offset-shadow ring (9 draws,
+    /// on the coverage-atlas fallback font) remains the fallback for
+    /// environments where the SDF pipeline failed to init.
     pub fn drawOutlinedText(
         self: *TextRenderer,
         text: [:0]const u8,
@@ -453,18 +538,11 @@ pub const TextRenderer = struct {
         outline_width: f32,
     ) void {
         if (self.sdf) |sdf| {
-            // The field's distances are in BASE-atlas pixels; convert the
-            // drawn-pixel width (font_size/baseSize = atlas→screen scale).
-            const width_in_atlas_pixels = outline_width * @as(f32, @floatFromInt(sdf.font.baseSize)) / font_size;
-            rl.setShaderValue(sdf.shader, sdf.width_location, &width_in_atlas_pixels, .float);
-            const outline_color = [4]f32{ 0, 0, 0, 1 };
-            rl.setShaderValue(sdf.shader, sdf.color_location, &outline_color, .vec4);
-            rl.beginShaderMode(sdf.shader);
-            rl.drawTextEx(sdf.font, text, position, font_size, spacing, fill);
-            rl.endShaderMode();
+            drawSdfText(sdf, text, position, font_size, spacing, fill, outline_width);
             return;
         }
         // Fallback ring: 8 black copies offset in a square ring, fill on top.
+        const font = self.font.?;
         const black = toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, 255);
         const dirs = [_]struct { dx: f32, dy: f32 }{
             .{ .dx = -outline_width, .dy = -outline_width }, .{ .dx = 0, .dy = -outline_width }, .{ .dx = outline_width, .dy = -outline_width },
@@ -472,9 +550,9 @@ pub const TextRenderer = struct {
             .{ .dx = -outline_width, .dy = outline_width }, .{ .dx = 0, .dy = outline_width }, .{ .dx = outline_width, .dy = outline_width },
         };
         for (dirs) |d| {
-            rl.drawTextEx(self.font, text, .{ .x = position.x + d.dx, .y = position.y + d.dy }, font_size, spacing, black);
+            rl.drawTextEx(font, text, .{ .x = position.x + d.dx, .y = position.y + d.dy }, font_size, spacing, black);
         }
-        rl.drawTextEx(self.font, text, position, font_size, spacing, fill);
+        rl.drawTextEx(font, text, position, font_size, spacing, fill);
     }
 
     /// Draw a UI text label. `scratch` is the caller's per-frame arena
@@ -498,14 +576,17 @@ pub const TextRenderer = struct {
         const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
         const color = if (std.meta.eql(label.color, ui.default_tint)) theme_lightest else label.color;
         const pos = rl.Vector2{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) };
-        // Outlined text: black edge-outline under the fill via the SDF
-        // pipeline (shadow-ring fallback) — see `drawOutlinedText`. UI is
+        // Plain = the SAME SDF shader with a zero outline width — one text
+        // path for everything (see `drawSdfText`); outlined = width 8 (UI is
         // drawn 1:1 at reference resolution into the render target, so the
-        // outline width needs no world_scale.
+        // width needs no world_scale). Fallback (SDF init failed): the
+        // coverage-atlas font, plain drawTextEx / shadow ring respectively.
         if (label.outlined) {
             self.drawOutlinedText(text, pos, font_size, spacing, toRaylibColor(color, 255), @floatFromInt(text_outline_thickness));
+        } else if (self.sdf) |sdf| {
+            drawSdfText(sdf, text, pos, font_size, spacing, toRaylibColor(color, 255), 0);
         } else {
-            rl.drawTextEx(self.font, text, pos, font_size, spacing, toRaylibColor(color, 255));
+            rl.drawTextEx(self.font.?, text, pos, font_size, spacing, toRaylibColor(color, 255));
         }
     }
 };

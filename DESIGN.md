@@ -262,13 +262,17 @@ next session meets it as a surprise instead of a known.
   shipped `assets/**/*.png`, keyed by sprite id) and `generated_assets.zig`
   (embedded content map). All are gitignored.
 
-### SDF text outline (outlined text rendering)
+### SDF text outline (ALL text — plain and outlined)
 
-Outlined text (damage/heal numbers, outlined UI labels) renders via a
-**signed distance field** pipeline: a glyph atlas whose texels encode
-distance-to-glyph-edge (positive inside, edge at alpha 128) instead of
-coverage, plus a fragment shader that thresholds the field into fill +
-outline band. One shader-driven `drawTextEx` per string — no per-string
+ALL text renders via a **signed distance field** pipeline: a glyph atlas
+whose texels encode distance-to-glyph-edge (positive inside, edge at alpha
+128) instead of coverage, plus a fragment shader that thresholds the field
+into fill + outline band. Plain text is the SAME shader with a zero
+outline width (the band collapses; a transparent outline color makes it
+contribute nothing), so every string is resolution-independent — the
+pre-unification plain path (runtime coverage atlas, bilinear-sampled from
+a fixed 128px base, undersampled 2.5–5:1 at a 1080p target) is gone from
+the normal path. One shader-driven `drawTextEx` per string — no per-string
 CPU raster, no dilation pass, no texture cache (the pre-SDF approach was
 an 8-direction drop-shadow ring: 9 draws, fuzzy at non-integer offsets,
 no antialiased outer edge; kept as the fallback).
@@ -286,28 +290,50 @@ Key pieces (`src/raylib/text.zig`):
 - **Encoding range**: raylib's SDF defaults encode only ±2px of distance —
   far too little for 8px outlines. The generator's raylib dep is compiled
   with `-DFONT_SDF_CHAR_PADDING=22 -DFONT_SDF_PIXEL_DIST_SCALE=6.0`
-  (±21 atlas px, covering 8px at the smallest outlined size, 48px from the
-  128px base atlas). `sdf_pixel_dist_scale`/`sdf_char_padding` in
+  (±21 atlas px — covers an 8px outline at 56px+, clear of the clamp
+  floor). `sdf_pixel_dist_scale`/`sdf_char_padding` in
   the backend's SDF constants must stay in lockstep (a `@compileError` + blob
   validation guard this; the blob carries its baked params and mismatches
   degrade to the fallback).
+- **Outline-width clamp** (`sdf_max_outline_atlas_pixels`): `drawSdfText`
+  clamps the requested atlas-px width to the encodable range (floor −2
+  for the fwidth window). WHY: a request whose shader fade window
+  `[−W−aa, −W+aa]` dips to the field's clamp floor makes every clamped
+  texel evaluate band ≈ 0.5 — and clamped texels are exactly the rect-
+  CORNER diagonals (true ink distance ~30px where the rect is only 22px
+  padded per axis), so the result was ghost squares at each glyph quad's
+  corners (seen on the 48px material-count labels: 8·128/48 ≈ 21.3, right
+  at the floor). A clamped request draws a marginally thinner outline
+  (7.2px instead of 8 at 48px) — never squares. Outlined text below
+  ~44px would need the range widened instead (generator constants + blob
+  regen); nothing demands that today.
 - **Shader**: embedded GLSL (3.30 on desktop, 3.00 es on web — both
   variants in the backend, selected comptime; both use `fwidth`, since the
   web context is WebGL 2). Thresholds the decoded field:
   `d >= 0` fill, `[-outlineWidth, 0)` outline band, `fwidth`-sized
   antialiasing. Straight
   alpha out (raylib blends premultiplied-input as straight; the old
-  raylib SDF example's shader outputs the same shape).
+  raylib SDF example's shader outputs the same shape). A zero outline
+  width MUST pair with a transparent outline color: the collapsed band
+  sits exactly on the fill edge (band == fill), and an opaque one would
+  source-over-composite black into the antialiased fringe
+  (outA = 2fa − fa² — a dark, over-bright edge on every glyph).
 - **GRAY_ALPHA, not GRAYSCALE**: the runtime texture is reconstructed as
   GRAY_ALPHA (gray=255, alpha=SDF) because raylib swizzles GRAY_ALPHA to
   `(r,r,r,g)` on desktop GL — a grayscale texture samples `.a` as constant
   1.0 and renders solid boxes (this bit us once; the blob stores only the
   alpha channel and the runtime interleaves).
-- **Fallback policy**: any init failure (blob invalid, texture upload,
-  shader compile) logs a warning and flips to the 8-direction shadow ring
-  — decided ONCE at init, fixed for the session. An SDF font must never be
-  drawn without its shader (texels are distances, not coverage). A
-  persistent-dir font shadow does NOT affect outlined text (the blob is
+- **Fallback policy**: init tries the SDF pipeline FIRST; the coverage-
+  atlas font (the pre-unification plain path: runtime TTF raster at
+  `font_base_size`, premultiplied, bilinear) is built ONLY when SDF init
+  fails (blob invalid, texture upload, shader compile) — decided ONCE at
+  init, fixed for the session; the normal path never builds it. On that
+  fallback, plain text draws plain `drawTextEx` and outlined text the
+  8-direction shadow ring (a broken TTF below that falls to raylib's
+  default font). `fontMetrics` reads from the ACTIVE font so layout always
+  measures with the advances the renderer draws with. An SDF font must
+  never be drawn without its shader (texels are distances, not coverage).
+  A persistent-dir font shadow does NOT affect SDF text (the blob is
   baked from the shipped TTF at build time — accepted; shadowing is a
   side-effect seam, not a designed feature).
 

@@ -451,9 +451,10 @@ Open:
     two `TextureStore` upload sites (sprites + generated masks; covers
     shipped + custom art at the one choke point). SDF atlas stays mip-free.
     DONE — see DONE.md.
-  - [ ] Slice 2: text unification — route ALL text through the SDF pipeline
-    (`outlineWidth = 0` for plain fill); retire the runtime coverage atlas
-    (fallback policy to be decided when the plain font goes away).
+  - [x] Slice 2: text unification — ALL text draws through the SDF pipeline
+    (plain fill = outlineWidth 0 with a transparent outline color); the
+    coverage atlas is demoted to a fallback-only load (built only when SDF
+    init fails). DONE — see DONE.md.
 - **Render-resolution live swap — runtime confirmation open** (browser +
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target

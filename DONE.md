@@ -13344,3 +13344,52 @@ pipeline, plain fill at outlineWidth = 0).
 Verified: native (zoom 25% — soft stable edges while panning, no new blur at
 100%) and the web compile; WebGL2 (slice 0) makes NPOT art (512x640 entities,
 arbitrary custom dims) mipmap-legal on web.
+
+## Text unified through the SDF pipeline + outline-width clamp (render smoothing slice 2)
+
+Slice 2 of the render-smoothing work (slice 0 WebGL 2 / slice 1 sprite
+mipmaps: entries above; settled plan: DESIGN → Platform Seam → SDF text
+outline, TODO → Platform Layer). Two related landings:
+
+**Unification.** ALL text now draws through the SDF pipeline — plain text is
+the same shader with a zero outline width, so every string is
+resolution-independent (the pre-unification plain path sampled a runtime
+128px coverage atlas bilinearly, undersampled 2.5–5:1 at a 1080p target —
+the font half of the "native 1080p looks harsh" report). Two subtleties
+handled:
+
+- A zero outline width MUST pass a transparent outline color: the collapsed
+  band sits exactly on the fill edge, and an opaque one source-over-composites
+  black into the antialiased fringe (outA = 2fa − fa² — a dark, over-bright
+  edge on every glyph).
+- The coverage-atlas font is demoted to a fallback-only load: init tries the
+  SDF pipeline first and builds the coverage font only when that fails (below
+  that, raylib's default font for a broken TTF, as before). The normal path
+  never builds the atlas (drops its startup raster + ~2MB VRAM; the runtime
+  "76/95 glyphs" warning disappeared with it). `fontMetrics` reads from the
+  ACTIVE font so layout always measures with the advances drawn with.
+- Batching note: every label now toggles beginShaderMode (as outlined labels
+  already did), so runs of consecutive labels flush the render batch slightly
+  more often. Labels already force texture-change flushes when interleaved
+  with sprites; hoist to a scoped pass only if it ever shows.
+
+**Outline-width clamp** (a long-standing bug surfaced while verifying):
+the 48px material-count labels showed ghost squares at the outline corners.
+Root cause: the atlas encodes distance only to −21.33 atlas px (alpha 0 at
+scale 6), and the 48px request (8·128/48 ≈ 21.3) lands exactly on the clamp
+floor — the shader's fade window straddles it, so every clamped texel
+evaluates band ≈ 0.5, and clamped texels are exactly the glyph-rect CORNER
+diagonals (true ink distance ~30px where the rect is only 22px padded per
+axis) → fixed-size dark squares at each glyph quad's corner. Larger sizes
+(56px+ → 18.3 atlas px and below) stay clear of the floor, which is why only
+small outlined text squared. Fix: `drawSdfText` clamps the requested
+atlas-px width to `sdf_max_outline_atlas_pixels` (floor −2 for the fwidth
+window) — an oversized request draws a marginally thinner outline (7.2px
+instead of 8 at 48px, imperceptible), never squares. Diagnosed by parsing the
+generated blob (glyph rects confirmed to include the 22px padding — not a
+quad-clipping issue; a corner-diagonal range issue).
+
+Design: DESIGN → Platform Seam → SDF text outline (unification, clamp, the
+transparent-outline-color rule, fallback policy). Verified: native (plain +
+outlined text at all sizes, inventory material counts clean), web compile +
+browser run.
