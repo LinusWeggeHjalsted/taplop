@@ -16,23 +16,6 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered — pick what progresses)
 
-- **Census-test sweep (the next session's task)** — apply the settled
-  test design (DESIGN → Testing) to the brittle census tier, file by
-  file: derive windows/counts where the constants exist, replace pinned
-  windows with exhaustiveness properties, DELETE the subsumed tests
-  (strength is the criterion, not count), and hoist the
-  mismatch-printing census helper (`expectInspectorLabels` is the
-  pattern). Motivated by the 128px top-bar change breaking ~15
-  window-census tests whose semantics were unchanged (DONE.md, "Top
-  bar shrunk to 128px"). The design landed this session; the sweep is
-  the implementation.
-  Progress: slices 1–3 DONE (DONE.md) — the shared helper +
-  editor_inspector; shell/pickers/menus/panels/screens triaged +
-  converted; handler_tests_editor triaged clean (drain tests, no census
-  tier). Remaining: view.zig — the camera-clamp + editor-viewport
-  tests assert exact hand-computed pixel positions (encoding band
-  geometry); convert to the relative form (camera offset vs the region
-  edge, player-relative centering) so band changes don't re-break them.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

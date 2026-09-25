@@ -13649,3 +13649,36 @@ with them); the conversion surgically fixed the stragglers:
   triaged clean — drain tests and semantic assertions, no census tier.
 
 Remaining sweep work: view.zig (camera clamp + editor viewport tests).
+
+## Census sweep slice 4 — view.zig camera tests; SWEEP COMPLETE
+
+The final sweep file: `view.zig`'s camera-clamp + editor-viewport tests
+asserted exact hand-computed pixel positions (1536, 568, 9800, ...) that
+encode the band geometry — every literal had to be re-derived by hand on
+the 128px top-bar pass, and that hand pass left comments lying ("region
+y0 = 256" for a region that starts at 128). Converted to the derived form:
+
+- Five semantic camera helpers next to the tests — `playerCenter`,
+  `gridCenterPx`, `marginCameraLow`/`marginCameraHigh`,
+  `wholeLevelCenteredCamera` — each an expression over the SAME constants
+  `computeCamera` uses (`camera_edge_margin_tiles`,
+  `camera_pan_void_tiles`, `tile_size_pixels`, reference dims, the
+  region rect). The tests now read as the clamp contracts ("the margin
+  band pins the player 2 tiles inside the region's edge", "a fitting
+  level centers as a whole", "the plain player-centered position") and
+  derive the pixels.
+- The duplicate-per-fact assertions dropped: the old tests pinned BOTH
+  the absolute camera position AND the player's relative screen offset
+  (the same fact twice — the relative form was the semantic one).
+- The view-region feasibility test derives its margin band from
+  `camera_edge_margin_tiles` (the same constant `cameraViewRegionFor`
+  uses) instead of the literal 1024/512.
+- `fullBandRegion`'s doc comment fixed (the stale "y [256, 1904)").
+- The flag-banner frame literals kept: they're the shipped sprite sheet's
+  frame structure (the animation contract), not layout geometry.
+
+With this, the census-test sweep is COMPLETE (TODO item removed): every
+census-tier file is either converted (editor_inspector exhaustiveness
+shape; shell/pickers/menus/panels/screens stragglers; view.zig camera
+derived form) or triaged clean (handler_tests_editor, tooltip, element —
+drain/semantic tests, no pinned windows).
