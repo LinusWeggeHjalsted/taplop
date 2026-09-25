@@ -13312,3 +13312,35 @@ WebGL2 also refuses mipmaps on the SDF atlas's unsized LUMINANCE_ALPHA
 format — that atlas stays mip-free by design, so the refusal is
 self-enforcing. Custom-asset dimension rule (entities 512x640, decoration
 art whole 256x256-tile rectangles) recorded in TODO → Content Loading.
+
+## Sprite mipmaps — trilinear sprite filtering (render smoothing slice 1)
+
+Slice 1 of the render-smoothing work (slice 0: WebGL 2, entry above; settled
+plan: DESIGN → Platform Seam → Sprite-mipmap smoothing). The harsh world-asset
+edges at zooms below 1:1 were undersampled bilinear minification — bilinear
+reads only the 2x2 texels nearest each sample point, which is exactly right
+at an aligned 2:1 (box filter) and increasingly wrong past it (default camera
+zoom 50% x the 0.5 renderScale = 1/4 source scale on a 1080p target; each
+destination pixel covers ~4x4 texels but only 4 are read, and which ones
+shifts per frame while panning).
+
+`textures.zig` gains `enableTrilinearMipmaps` — `genTextureMipmaps` +
+`.trilinear` — applied at the two TextureStore upload sites: the main sprite
+load (`ensureSpriteLoaded`) and the generated outline/inset mask upload
+(`rgbaBufToTexture`). One choke point, so shipped, persistent-dir shadowed,
+and custom-mission art all get the mip chain at load (GPU-side build, +33%
+VRAM, no per-frame cost; premultiplied RGBA box-filters correctly, which is
+why the existing premultiply prep made this a clean drop-in). Mip-averaging
+also turns the binary mask edges into fractional coverage. Magnified and 1:1
+draws sample the base level, so nothing sharp got blurred.
+
+Deliberately NOT mipmapped: the SDF font atlas (a distance field box-filtered
+between levels would move glyph edges — stays bilinear) and the render-target
+blit texture (a <=2:1 box-filtered downscale per frame; per-frame mip
+generation would cost for no visible gain). The plain coverage font atlas is
+untouched here — it is slice 2's removal target (all text moves to the SDF
+pipeline, plain fill at outlineWidth = 0).
+
+Verified: native (zoom 25% — soft stable edges while panning, no new blur at
+100%) and the web compile; WebGL2 (slice 0) makes NPOT art (512x640 entities,
+arbitrary custom dims) mipmap-legal on web.

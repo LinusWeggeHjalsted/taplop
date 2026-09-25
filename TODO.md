@@ -447,9 +447,10 @@ Open:
   - [x] Slice 0: switch the web build to WebGL2 (`opengl_version = .gles_3`;
     SDF shader ES 3.00 variant replaces the ES 1.00 one) — DONE, see
     DONE.md.
-  - [ ] Slice 1: sprite mipmaps — `genTextureMipmaps` + `.trilinear` at every
-    sprite-texture load in `textures.zig` (covers shipped + custom art at
-    the one choke point). SDF atlas stays mip-free.
+  - [x] Slice 1: sprite mipmaps — `genTextureMipmaps` + `.trilinear` at the
+    two `TextureStore` upload sites (sprites + generated masks; covers
+    shipped + custom art at the one choke point). SDF atlas stays mip-free.
+    DONE — see DONE.md.
   - [ ] Slice 2: text unification — route ALL text through the SDF pipeline
     (`outlineWidth = 0` for plain fill); retire the runtime coverage atlas
     (fallback policy to be decided when the plain font goes away).

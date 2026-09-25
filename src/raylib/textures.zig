@@ -315,13 +315,11 @@ pub const TextureStore = struct {
             // EVERY composited texture must be premultiplied. See DESIGN →
             // Platform Seam → Render target resolution (premultiplied alpha).
             premultiplyAlpha(&image);
-            const tex = rl.loadTextureFromImage(image) catch break :blk null;
-            // Bilinear so downscaled draws sample smoothly instead of with
-            // hard nearest-neighbor edges. At a 1:1 render target this is a
-            // no-op visually; it only matters when the target is smaller
-            // than the design space. See DESIGN → Platform Seam → Render
-            // target resolution.
-            rl.setTextureFilter(tex, .bilinear);
+            var tex = rl.loadTextureFromImage(image) catch break :blk null;
+            // Mipmapped trilinear filtering: sprite textures are minified
+            // by world zoom x the render camera zoom, and bilinear-only
+            // sampling hardens edges past 2:1 (see `enableTrilinearMipmaps`).
+            enableTrilinearMipmaps(&tex);
             break :blk tex;
         };
 
@@ -553,13 +551,39 @@ pub const TextureStore = struct {
             .mipmaps = 1,
             .format = .uncompressed_r8g8b8a8,
         };
-        const tex = rl.loadTextureFromImage(mask_image) catch return error.LoadTexture;
-        // Bilinear: outline masks are drawn scaled (by world_scale + the
-        // render camera zoom), so nearest-neighbor would show hard edges.
-        rl.setTextureFilter(tex, .bilinear);
+        var tex = rl.loadTextureFromImage(mask_image) catch return error.LoadTexture;
+        // Mipmapped trilinear filtering: masks are drawn scaled (world zoom
+        // x the render camera zoom) and their binary edges minify harshly
+        // past 2:1 (see `enableTrilinearMipmaps`). Mip-averaging turns the
+        // binary edge into proper fractional coverage.
+        enableTrilinearMipmaps(&tex);
         return tex;
     }
 };
+
+/// Generate a texture's mip chain and switch it to trilinear filtering —
+/// the fix for harsh sprite edges at zooms below 1:1. Bilinear-only
+/// minification reads just the 2x2 texels nearest each sample point:
+/// correct at an aligned 2:1 (it degrades into a box filter), but past
+/// that it skips the texels each destination pixel covers (default camera
+/// zoom 50% x the 0.5 renderScale = 1/4 source scale on a 1080p target),
+/// which reads as hard, shimmering edges. The mip chain gives the GPU
+/// pre-box-filtered levels to sample at any scale, so every source texel
+/// contributes; averaging premultiplied RGBA is correct by construction.
+/// Trilinear = bilinear within a level + a linear blend between adjacent
+/// levels, so zooming is continuous. Cost: ~33% extra VRAM per texture,
+/// built GPU-side once at load; magnified/1:1 draws still sample the base
+/// level, so nothing sharp gets blurred. Apply to EVERY sprite-side
+/// texture (the TextureStore load sites cover shipped, shadowed, and
+/// custom-mission art uniformly) — NOT to the SDF font atlas (a distance
+/// field box-filtered between levels would move glyph edges; it stays
+/// bilinear) or the render-target blit texture (a <=2:1 downscale per
+/// frame; per-frame mip generation would cost for no visible gain — it
+/// stays bilinear). See DESIGN → Platform Seam → Sprite-mipmap smoothing.
+fn enableTrilinearMipmaps(texture: *rl.Texture2D) void {
+    rl.genTextureMipmaps(texture);
+    rl.setTextureFilter(texture.*, .trilinear);
+}
 
 /// Premultiply RGB by alpha in-place (for `BLEND_ALPHA_PREMULTIPLY`).
 /// For each pixel: r = r*a/255, g = g*a/255, b = b*a/255 (alpha

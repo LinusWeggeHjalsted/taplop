@@ -147,15 +147,16 @@ next session meets it as a surprise instead of a known.
   game's web audience is desktop browsers. WebGL2 refuses mipmaps on the
   SDF atlas's LUMINANCE_ALPHA format (unsized, not color-renderable) — that
   atlas stays mip-free by design, so the refusal is self-enforcing.
-- **Sprite-mipmap smoothing (settled plan, implementation pending)** — the
-  harsh world-asset edges below 1:1 zoom are undersampled bilinear
-  minification: bilinear only reads the 2x2 texels nearest the sample
-  point, correct at 2:1 (aligned box filter) and increasingly lossy past
-  it (default zoom 50% x 0.5 renderScale = 1/4 source scale on a 1080p
-  target). Fix: `genTextureMipmaps` + `.trilinear` at every sprite-texture
-  load (the `TextureStore` choke point covers shipped + shadowed +
-  custom-mission art uniformly; mip chains are +33% VRAM, GPU-side build,
-  premultiplied alpha box-filters correctly). The render-target blit stays
+- **Sprite-mipmap smoothing (DONE)** — the harsh world-asset edges below
+  1:1 zoom were undersampled bilinear minification: bilinear only reads
+  the 2x2 texels nearest the sample point, correct at 2:1 (aligned box
+  filter) and increasingly lossy past it (default zoom 50% x 0.5 renderScale
+  = 1/4 source scale on a 1080p target). Fix (landed): `enableTrilinearMipmaps`
+  (`genTextureMipmaps` + `.trilinear`) at the two `TextureStore` upload sites —
+  sprite textures + generated outline/inset masks — covering shipped +
+  shadowed + custom-mission art uniformly at the one choke point (+33% VRAM,
+  GPU-side build, premultiplied alpha box-filters correctly; magnified/1:1
+  draws still sample the base level). The render-target blit stays
   bilinear; `render_resolution` above the window remains the explicit
   supersampling option. SDF-for-art (alpha-channel distance fields) was
   considered and rejected: silhouette-only, breaks soft-alpha art, and its
