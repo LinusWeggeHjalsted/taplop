@@ -16,6 +16,19 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered — pick what progresses)
 
+- **Test design session (start the next session here)** — a coherent,
+  structured pass over the test suite's brittle shape, motivated by the
+  128px top-bar geometry change breaking ~15 window-census tests
+  (hand-pinned snapshots of DERIVED facts: element counts, visible-row
+  windows, pixel positions — see DONE.md, "Top bar shrunk to 128px").
+  The shape rule is already written (AGENTS → Testing discipline:
+  derive expectations from the same constants the code iterates; assert
+  semantics over snapshots); the pass applies it systematically: derive
+  windows/counts where the constants exist, keep semantic lists where
+  they're genuinely semantic, and keep the census-mismatch printing that
+  landed this session (expectInspectorLabels' found-window printout —
+  make it the pattern for census helpers). Not a spot fix: do it as one
+  designed sweep, file by file.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
@@ -478,11 +491,17 @@ Open:
   platform edges): DONE.md "mac 9-slice panels — ROOT CAUSE FOUND" +
   AGENTS → Build & Test (patched stdlib).
 - **Diagnostics redesign — settled design, implementation pending**
-  (DESIGN → Platform Seam → Diagnostics): create raylib-free
-  `src/diagnostics.zig` (`Diagnostics` type: buffer + section policy +
-  end-of-frame flush scheduling, renames every `diag_*` identifier);
-  add the `--diagnostics` CLI flag (native.zig, like `--replay` — any
-  build, release included; dev-mode defaults to active); migrate the
+  (DESIGN → Platform Seam → Diagnostics): priority-bumped — the rendering
+  session (mipmaps, SDF text, WebGL2, LOD snap) landed four platform-seam
+  changes with ZERO automated coverage (src/raylib is headless-excluded by
+  necessity), and the only thing that caught the WebGL2 black screen was a
+  manual browser run. A release-build `--diagnostics` flag is the structural
+  answer to "verify the seam without being at the machine". Scope below:
+  create raylib-free `src/diagnostics.zig` (`Diagnostics` type: buffer +
+  section policy + end-of-frame flush scheduling, renames every `diag_*`
+  identifier); add the `--diagnostics` CLI flag (native.zig, like
+  `--replay` — any build, release included; dev-mode defaults to active);
+  migrate the
   boot/probe/readback sections out of src/raylib/diag.zig as thin
   value-recording call sites; keep `logs/diagnostics.txt` + whole-file-rewrite
   semantics. Composes with the raylib split item above — the split lands
