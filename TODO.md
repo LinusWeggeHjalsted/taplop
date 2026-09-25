@@ -71,8 +71,10 @@ Test by running `zig build run` and clicking through.
   (load-time warn + drop — DESIGN → Input → Action↔context validity).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
   aspect-true — DONE.md), `highlighted` edge outlines, missing art
-  (ui/icon_swap, ui/momentum draw magenta; skills/meteor icon is the
-  renamed daze.png placeholder — artist to draw a real meteor icon), and
+  (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global
+  top bar's redo button flips icon_undo as its glyph until icon_redo
+  lands; skills/meteor icon is the renamed daze.png placeholder — artist
+  to draw a real meteor icon), and
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons and combat damage/heal numbers).
@@ -536,9 +538,13 @@ Open:
   regular face is loaded); honoring TextLabel bold/italic + color needs
   separate faces. (TTF + metrics DONE — DONE.md.)
 - Missing-art audit: some sprite ids are still placeholders
-  (ui/icon_swap, ui/momentum, and the editor's ui/icon_playtest /
-  ui/icon_validate) and will draw magenta until
-  real assets land.
+  (ui/icon_swap, ui/momentum, ui/icon_undo, and the editor's
+  ui/icon_playtest / ui/icon_validate) and will draw magenta until
+  real assets land. WRINKLE for the planned art_report: the redo button
+  consumes ui/icon_undo (flipped) — icon_redo is not a code-referenced
+  sprite id, so a scan of consumed ids won't surface it; the report
+  needs this aliasing (or a manual note) until the dedicated icon lands
+  and the button switches to it.
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
   → Asset memory levers matter more for web than native); emrun polish.
   (The WebGL1/WebGL2 build option is DONE — the web build is WebGL2-only;
