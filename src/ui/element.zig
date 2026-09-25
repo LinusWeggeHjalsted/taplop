@@ -235,8 +235,16 @@ test "measurement seam: row width sums spans, bold equals plain" {
 // Layout constants — fixed sizes in reference resolution
 // ============================================================
 
-pub const top_bar_height: i32 = 256;
+/// The global top bar's height — matches its buttons (`top_bar_slot_size`;
+/// the bar is a plain layout region, no background). Smaller than the
+/// bottom bar on purpose: the top bar carries secondary controls
+/// (options / undo / redo) and shouldn't compete with the bottom bar's
+/// gameplay slots for screen space.
+pub const top_bar_height: i32 = 128;
 pub const bottom_bar_height: i32 = 256;
+/// Global-top-bar button cell size (options / undo / redo). Distinct from
+/// `slot_size` (the bottom bar's 256×256 gameplay slots stay that size).
+pub const top_bar_slot_size: i32 = 128;
 /// Standard gameplay button/slot size (128×128 at 1080p → 256×256 at the
 /// 2160p reference resolution).
 pub const slot_size: i32 = 256;
@@ -288,11 +296,12 @@ pub const inventory_slot_size: i32 = 128;
 /// Content height = 16 + 1536 + 16 = 1568 = middle_panel_height − header_height.
 pub const inventory_panel_width: i32 = 1200;
 /// Middle panels fill the full middle section height (reference_height −
-/// top_bar_height − bottom_bar_height = 1648). The header strip
-/// (`header_height`) sits at the top of each panel; the content area below
-/// is `middle_panel_height − header_height` = 1568, which fits the
-/// inventory grid (16 + 12×128 + 16) exactly. See `emitPanelHeader`.
-pub const middle_panel_height: i32 = 1648;
+/// top_bar_height − bottom_bar_height — derived, so a bar-size change
+/// can't leave it stale). The header strip (`header_height`) sits at the
+/// top of each panel; the content area below is
+/// `middle_panel_height − header_height` = 1568, which fits the inventory
+/// grid (16 + 12×128 + 16) exactly. See `emitPanelHeader`.
+pub const middle_panel_height: i32 = types.reference_height - top_bar_height - bottom_bar_height;
 /// Height of the title + close-button strip at the top of every middle
 /// panel. Sized so the inventory grid fits exactly below it (1648 − 80 −
 /// 1568 = 0 slack). The close button matches this height.

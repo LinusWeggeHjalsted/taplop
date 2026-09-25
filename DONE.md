@@ -13475,3 +13475,23 @@ Buttons emit the same anytime actions as the keybinds — no handler changes,
 replay-safe by construction, undo/redo reachable from any screen including
 over the mission-complete overlay (undoing the completing move dismisses
 it; it's on the timeline).
+
+## Top bar shrunk to 128px buttons + editor primary actions matched
+
+Follow-up to the global top bar (entry above): the top bar's buttons
+(options / undo / redo) went 256x256 → 128x128 (`top_bar_slot_size`,
+new; `top_bar_height` 256 → 128). The bottom bar's 256 slots are
+deliberately untouched — `slot_size` is the bottom bar's / pickers'
+constant, the top bar now has its own. The editor's Test + Validate
+buttons match (`editor_primary_actions_width` derives from the new
+constant; level-tab clamps follow).
+
+Everything downstream derives, so the cascade was automatic —
+`middle_panel_height` went 1648 → 1776 (and is now a DERIVED constant,
+reference_height − bars, instead of a hand-maintained literal), the
+editor inspector/metadata windows fit one more row, the pickers grew
+128 taller, the camera band +128 at the top, the FPS overlay moved
+below the bar. The window-census tests pinned to the old geometry were
+updated from the builder's (unchanged) semantics; the inspector's
+label-census helper now prints the found window on mismatch, which
+made the sweep mechanical.

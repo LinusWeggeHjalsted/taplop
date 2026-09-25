@@ -30,6 +30,7 @@ const Button = ui_element.Button;
 const Image = ui_element.Image;
 const Slot = ui_element.Slot;
 const slot_size = ui_element.slot_size;
+const top_bar_slot_size = ui_element.top_bar_slot_size;
 const ui_gap = ui_element.ui_gap;
 const slot_padding = ui_element.slot_padding;
 const small_icon_size = ui_element.small_icon_size;
@@ -480,7 +481,7 @@ pub fn buildEditorLevelTabs(
     // separates the tabs), flush against the top of the screen, and end at
     // the pinned add-level "+" — one ui_gap clear of it, one clear of the
     // primary-actions block.
-    const region_left: i32 = 3 * (slot_size + ui_gap);
+    const region_left: i32 = 3 * (top_bar_slot_size + ui_gap);
     const plus_cell: Rectangle = .{
         .x = types.reference_width - editor_primary_actions_width - ui_gap -
             editor_header_strip_height,
@@ -674,10 +675,10 @@ pub fn buildEditorLevelTabs(
 /// two `slot_size` cells + the separating gap). Shared by the buttons
 /// builder, the level-tab row's right bound, and the tab wheel-scroll
 /// region so the three can't drift.
-pub const editor_primary_actions_width: i32 = 2 * slot_size + ui_gap;
+pub const editor_primary_actions_width: i32 = 2 * top_bar_slot_size + ui_gap;
 
 /// The level-tab strip's wheel-scroll region: from the tab row's left
-/// edge (right of the top bar's options + undo cells) to the
+/// edge (right of the global top bar's options + undo + redo cells) to the
 /// primary-actions block, top-aligned with the tabs. One wheel notch over
 /// it scrolls the tab window by one tab (`UiState.editor_level_tab_scroll`).
 pub fn editorLevelTabScrollRegion() Rectangle {
@@ -714,16 +715,16 @@ pub fn buildEditorPrimaryActions(
     // block's total width is `editor_primary_actions_width` — the shared
     // bound the level-tab row clamps against.
     const validate_cell: Rectangle = .{
-        .x = types.reference_width - slot_size,
+        .x = types.reference_width - top_bar_slot_size,
         .y = 0,
-        .width = slot_size,
-        .height = slot_size,
+        .width = top_bar_slot_size,
+        .height = top_bar_slot_size,
     };
     const test_cell: Rectangle = .{
-        .x = validate_cell.x - slot_size - ui_gap,
+        .x = validate_cell.x - top_bar_slot_size - ui_gap,
         .y = 0,
-        .width = slot_size,
-        .height = slot_size,
+        .width = top_bar_slot_size,
+        .height = top_bar_slot_size,
     };
 
     try emitIconButton(
@@ -1154,7 +1155,7 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
 
     // Tabs sit right of the global top bar's options + undo + redo cells,
     // 128 high, flush against the top of the screen.
-    const start_x = 3 * (slot_size + ui_gap);
+    const start_x = 3 * (top_bar_slot_size + ui_gap);
     try std.testing.expectEqual(@as(i32, start_x), elements.items[0].nine_slice_panel.screen_position.x);
     try std.testing.expectEqual(@as(i32, 0), elements.items[0].nine_slice_panel.screen_position.y);
     try std.testing.expectEqual(@as(i32, 128), elements.items[0].nine_slice_panel.height);
@@ -1268,26 +1269,26 @@ test "buildEditorPrimaryActions: Test + Validate icon buttons flush top-right" {
     // Two icon buttons, each a button + overlaying image = 4 elements.
     try std.testing.expectEqual(@as(usize, 4), elements.items.len);
 
-    // Test first (elements 0-1), Validate right of it (2-3): the
-    // options/undo visual class (slot_size square, top bar height) flush
-    // against the right screen edge.
+    // Test first (elements 0-1), Validate right of it (2-3): the top-bar
+    // icon-button visual class (top_bar_slot_size square, bar height)
+    // flush against the right screen edge.
     const test_button = elements.items[0].button;
     try std.testing.expectEqual(Action.test_editor_level, test_button.action);
     try std.testing.expectEqualStrings(button_background_sprite_id, test_button.sprite_id.?);
     try std.testing.expectEqualStrings("ui/icon_playtest", elements.items[1].image.sprite_id);
-    try std.testing.expectEqual(@as(i32, types.reference_width - 2 * slot_size - ui_gap), test_button.screen_position.x);
+    try std.testing.expectEqual(@as(i32, types.reference_width - 2 * top_bar_slot_size - ui_gap), test_button.screen_position.x);
     try std.testing.expectEqual(@as(i32, 0), test_button.screen_position.y);
-    try std.testing.expectEqual(slot_size, test_button.width);
-    try std.testing.expectEqual(slot_size, test_button.height);
+    try std.testing.expectEqual(top_bar_slot_size, test_button.width);
+    try std.testing.expectEqual(top_bar_slot_size, test_button.height);
     try std.testing.expect(!elements.items[1].image.blocks_input); // button wins hit-test
 
     const validate_button = elements.items[2].button;
     try std.testing.expectEqual(Action.validate_editor_mission, validate_button.action);
     try std.testing.expectEqualStrings("ui/icon_validate", elements.items[3].image.sprite_id);
-    try std.testing.expectEqual(@as(i32, types.reference_width - slot_size), validate_button.screen_position.x);
+    try std.testing.expectEqual(@as(i32, types.reference_width - top_bar_slot_size), validate_button.screen_position.x);
     try std.testing.expectEqual(@as(i32, 0), validate_button.screen_position.y);
-    try std.testing.expectEqual(slot_size, validate_button.width);
-    try std.testing.expectEqual(slot_size, validate_button.height);
+    try std.testing.expectEqual(top_bar_slot_size, validate_button.width);
+    try std.testing.expectEqual(top_bar_slot_size, validate_button.height);
 }
 
 test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the active tab" {

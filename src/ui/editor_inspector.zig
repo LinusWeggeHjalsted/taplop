@@ -3003,6 +3003,25 @@ fn expectInspectorLabels(elements: *const UiElementList, expected: []const []con
         .text_label => |label| try labels.append(std.testing.allocator, label.text),
         else => {},
     };
+    var matches = expected.len == labels.items.len;
+    if (matches) {
+        for (expected, labels.items) |want, got| {
+            if (!std.mem.eql(u8, want, got)) {
+                matches = false;
+                break;
+            }
+        }
+    }
+    if (!matches) {
+        // The census prints the found window on mismatch — the panel's
+        // visible-row count derives from its height, so geometry changes
+        // shift which entries fit.
+        std.debug.print("inspector label census mismatch — expected:", .{});
+        for (expected) |want| std.debug.print(" {s}", .{want});
+        std.debug.print("\n                              found:", .{});
+        for (labels.items) |got| std.debug.print(" {s}", .{got});
+        std.debug.print("\n", .{});
+    }
     try std.testing.expectEqual(expected.len, labels.items.len);
     for (expected, labels.items) |want, got| {
         try std.testing.expectEqualStrings(want, got);
@@ -3156,14 +3175,15 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Scroll 14 — the Stats section's four numeric fields are the window
-    // (the section-break spacer fills the tail): decimal-formatted values.
+    // Scroll 14 — the Stats section's four numeric fields fill the window
+    // (the taller panel fits one more unit: the Weapons header peeks in at
+    // the tail): decimal-formatted values.
     // (The Keep colors row added two Identity units; Stats starts at 14.)
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 14, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Stats", "Max health", "Defense", "Speed", "Aggro range" });
+        try expectInspectorLabels(&elements, &.{ "- Stats", "Max health", "Defense", "Speed", "Aggro range", "- Weapons" });
         try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
         try std.testing.expectEqualStrings("0", findTextField(&elements, .{ .entity_stat = .defense }).?.text);
         try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .speed }).?.text);
@@ -3176,7 +3196,7 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Keep colors", "false" });
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Keep colors", "false", "Color" });
         try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .team }).?.text);
     }
 
@@ -3285,7 +3305,7 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
     // + the level file carry the path).
     try expectInspectorLabels(
         &elements,
-        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Keep colors", "true" },
+        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Keep colors", "true", "Displays weapons", "true" },
     );
     try std.testing.expectEqualStrings(
         "custom/artists_den/boss",
@@ -3351,7 +3371,7 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
         );
         try expectInspectorLabels(
             &decoration_elements,
-            &.{ "- Identity", "Sprite", "banner", "Keep colors", "true", "- Footprint", "Footprint", "0 tiles" },
+            &.{ "- Identity", "Sprite", "banner", "Keep colors", "true", "- Footprint", "Footprint", "0 tiles", "- Layers" },
         );
         for (decoration_elements.items) |element| switch (element) {
             .button => |button| {
@@ -3395,12 +3415,12 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
     try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
 
     // Identity (Sprite + Keep colors + Color — a decoration's name IS
-    // its sprite path, no name row) + the Footprint header; the footprint
-    // row itself sits below the 10-unit window (its own tests reach it
-    // scrolled).
+    // its sprite path, no name row) + the Footprint header; the taller
+    // panel also fits the footprint row's first two labels (its own tests
+    // reach the full row scrolled).
     try expectInspectorLabels(
         &elements,
-        &.{ "- Identity", "Sprite", "stone_2", "Keep colors", "false", "Color", "- Footprint" },
+        &.{ "- Identity", "Sprite", "stone_2", "Keep colors", "false", "Color", "- Footprint", "Footprint", "2 tiles" },
     );
 
     // The sprite button opens the shared picker (the input site routes the
@@ -3471,7 +3491,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 24, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand" });
+        try expectInspectorLabels(&elements, &.{ "- Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "- Gear" });
 
         // The equipped weapon's fields carry its values.
         try std.testing.expectEqualStrings(
@@ -3512,12 +3532,12 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     // The Gear section's items (scroll 34 — the window opens at the Gear
     // header; +2 from the Identity Keep colors row): coat equipped →
     // Delete + its fields; amulet empty → Add.
-    // The coat's defense field doesn't fully fit the window.
+    // The taller panel now also fits the coat's defense field.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 34, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus" });
+        try expectInspectorLabels(&elements, &.{ "- Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus", "Coat defense bonus" });
 
         var adds: usize = 0;
         var coat_deletes: usize = 0;
@@ -4128,23 +4148,24 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
     );
-    try std.testing.expectEqual(@as(i32, 10), visible_rows);
+    try std.testing.expectEqual(@as(i32, 11), visible_rows);
 
-    // Scroll 0: units 0..10 — Identity, Name, Team, Sprite, Keep colors
-    // (the Color row moved below the toggle — units 9..11 → doesn't
-    // fully fit).
+    // Scroll 0: units 0..11 — Identity, Name, Team, Sprite, Keep colors,
+    // and the Color swatch row (the taller panel fits it now — the
+    // Displays weapons toggle below it still doesn't fully fit).
     // Elements: bg 1 + Identity 3 (panel + button + label) +
     // Name + Team (two stat text fields) + Sprite 3 (panel + picker
     // button + label) + Keep colors 4 (row label + panel + button +
-    // value label) + scrollbar 2 = 21.
+    // value label) + Color 13 (label + 6 swatch buttons + 6 swatch
+    // fills) + scrollbar 2 = 34.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 21), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Keep colors", "false" });
-        // Only the 2 scrollbar rects (no swatch fills in the window).
-        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
+        try std.testing.expectEqual(@as(usize, 34), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Keep colors", "false", "Color" });
+        // The scrollbar rects + the Color row's six swatch fills.
+        try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
     }
 
     // Scroll 5 (the Team field pushes everything two units down): the
@@ -4158,14 +4179,14 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Keep colors", "false", "Color", "Displays weapons", "true", "- Stats" });
     }
 
-    // Out-of-range scroll clamps to max (49 − 10 = 39, the five spacers
+    // Out-of-range scroll clamps to max (49 − 11 = 38, the five spacers
     // included): the window is the last gear slot + the utility section +
     // the skill row + the Layers tail.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 39), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 38), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{
             "Boots", "Add", "- Utility skills", "Skill bar", "- Layers", "Add layer", "Pick sprite",
         });
@@ -4192,9 +4213,9 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     }
 
     // A stale tool id (the type deleted mid-edit) falls back to the PLAYER
-    // content — its scroll CLAMPS (45 units − 10 visible = 35: the summary
+    // content — its scroll CLAMPS (45 units − 11 visible = 34: the summary
     // grew into the 16-row slot grid), no reset; the bottom window lands on
-    // the grid's last ten rows (pure slot cells — no text labels).
+    // the grid's last eleven rows (pure slot cells — no text labels).
     {
         const stale_editor: types.Editor = .{
             .entity_types = &entity_types,
@@ -4203,9 +4224,9 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 34), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{});
-        // Ten visible rows × six cells; the window ends at the grid's end
+        // Eleven visible rows × six cells; the window ends at the grid's end
         // (slot 95) and nothing is selected.
         var slot_buttons: usize = 0;
         var highest_slot: u32 = 0;
@@ -4217,7 +4238,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 60), slot_buttons);
+        try std.testing.expectEqual(@as(usize, 66), slot_buttons);
         try std.testing.expectEqual(@as(u32, 95), highest_slot);
         // No swatches in the window — only the scrollbar rects are solid.
         try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
@@ -4400,7 +4421,7 @@ test "inspector player content: gear + skills + inventory over player_def, commi
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 1), occupied_slots);
-        // The grid's first two rows: 12 cells, two carrying item icons.
+        // The grid's first three rows: 18 cells, two carrying item icons.
         var slot_buttons: usize = 0;
         var icon_overlays: usize = 0;
         for (elements.items) |element| switch (element) {
@@ -4412,7 +4433,7 @@ test "inspector player content: gear + skills + inventory over player_def, commi
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 12), slot_buttons);
+        try std.testing.expectEqual(@as(usize, 18), slot_buttons);
         try std.testing.expectEqual(@as(usize, 2), icon_overlays);
     }
 }
@@ -4455,7 +4476,7 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
         };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{
-            "Skill bar", "- Layers", "Layer 1", "hood", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
+            "- Utility skills", "Skill bar", "- Layers", "Layer 1", "hood", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
         });
 
         // The layer slot row: the stem button opens the ENTITY layer
@@ -4519,7 +4540,7 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
         };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{
-            "Footprint", "2 tiles", "- Layers", "Layer 1", "tree_1_canopy", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
+            "- Footprint", "Footprint", "2 tiles", "- Layers", "Layer 1", "tree_1_canopy", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
         });
 
         var swatch_count: usize = 0;
@@ -4610,9 +4631,9 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     }
 
     // Open + EXPANDED: the entries window like the inspector's (13 units
-    // of content, 10 visible) — at scroll 0 the mission + level name
-    // fields and the WORLD row are visible, the enemy/player rows are
-    // not (they don't fully fit); the scrollbar appears.
+    // of content, 11 visible) — at scroll 0 the mission + level name
+    // fields, the WORLD row, and the ENEMY row are visible, the player
+    // row is not (it doesn't fully fit); the scrollbar appears.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{
@@ -4655,7 +4676,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expectEqualStrings("Second", level_field.?.text);
         try std.testing.expectEqual(types.TextEditTarget{ .level = 1 }, level_field.?.ref.target);
         try std.testing.expect(open_buttons[0] != null);
-        try std.testing.expect(open_buttons[1] == null);
+        try std.testing.expect(open_buttons[1] != null);
         try std.testing.expect(open_buttons[2] == null);
         // The WORLD swatch is ALWAYS outlined (its index is always an
         // explicit pick — no Auto state to carry the outline instead).
@@ -4669,7 +4690,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{
             .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
-            .editor_metadata_scroll = 99, // clamped to 3 by the builder
+            .editor_metadata_scroll = 99, // clamped to 2 by the builder
         };
         try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         var mission_field_seen = false;
@@ -4705,8 +4726,8 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expect(!enemy_swatch_button.?.highlighted);
         try std.testing.expect(!player_auto_button.?.highlighted);
         try std.testing.expect(player_button.?.highlighted);
-        // The scroll CLAMPED to the content max (13 units - 10 visible).
-        try std.testing.expectEqual(@as(i32, 3), ui_state.editor_metadata_scroll);
+        // The scroll CLAMPED to the content max (13 units - 11 visible).
+        try std.testing.expectEqual(@as(i32, 2), ui_state.editor_metadata_scroll);
     }
 }
 

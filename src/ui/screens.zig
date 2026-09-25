@@ -23,13 +23,13 @@ const Button = ui_element.Button;
 const screenRect = ui_element.screenRect;
 const rowWidth = ui_element.rowWidth;
 const Row = ui_element.Row;
-const slot_size = ui_element.slot_size;
 const ui_gap = ui_element.ui_gap;
 const panel_button_height = ui_element.panel_button_height;
 const menu_button_width = ui_element.menu_button_width;
 const menu_button_font_size = ui_element.menu_button_font_size;
 const inventory_slot_size = ui_element.inventory_slot_size;
 const top_bar_height = ui_element.top_bar_height;
+const top_bar_slot_size = ui_element.top_bar_slot_size;
 const lineHeight = ui_element.lineHeight;
 const spanRow = ui_tooltip.spanRow;
 const emitIconButton = emit.emitIconButton;
@@ -299,7 +299,7 @@ pub fn buildGlobalTopBar(
     // background + icon, same as the skip button. Clicking it while the
     // options menu is open toggles the menu closed (the action routes
     // through the Escape chain, which closes an open menu first).
-    const options_cell = row.next(slot_size);
+    const options_cell = row.next(top_bar_slot_size);
     if (current_screen != .main_menu) {
         try emitIconButton(
             elements,
@@ -318,7 +318,7 @@ pub fn buildGlobalTopBar(
 
     // Undo button — same size, one `ui_gap` to the right of options. Same
     // layered background + icon treatment as the options button.
-    const undo_cell = row.next(slot_size);
+    const undo_cell = row.next(top_bar_slot_size);
     try emitIconButton(
         elements,
         allocator,
@@ -339,7 +339,7 @@ pub fn buildGlobalTopBar(
     // negative-source-width trick). Emitted inline rather than through
     // emitIconButton, which has no flip parameter (this is the only
     // flipped icon button).
-    const redo_cell = row.next(slot_size);
+    const redo_cell = row.next(top_bar_slot_size);
     try elements.append(allocator, .{ .button = .{
         .sprite_id = button_background_sprite_id,
         .screen_position = redo_cell.position(),

@@ -1145,7 +1145,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
         },
     );
     try std.testing.expectEqual(@as(i32, 1760), editorPickerOverlayRect().width);
-    try std.testing.expectEqual(@as(i32, 1328), editorPickerOverlayRect().height);
+    try std.testing.expectEqual(@as(i32, 1456), editorPickerOverlayRect().height);
 
     // Structural count, derived from the same list the picker iterates —
     // self-updates as skills land, while still catching double-emitted or

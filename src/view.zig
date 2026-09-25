@@ -4158,11 +4158,11 @@ test "camera clamp: near-edge player keeps the 2-tile margin, void shed" {
     var state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
     var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 568), camera.position.y);
     // The player's screen position: 512 px inside both region edges
     // (region x0 = 0, y0 = 256).
     try std.testing.expectEqual(@as(i32, 512), 128 - camera.position.x + 1920);
-    try std.testing.expectEqual(@as(i32, 768), 128 - camera.position.y + 1080);
+    try std.testing.expectEqual(@as(i32, 640), 128 - camera.position.y + 1080);
 
     // Bottom-right corner: symmetric (512 px inside the region's right and
     // bottom edges).
@@ -4192,20 +4192,20 @@ test "camera clamp: a level that fits is centered as a whole" {
     var state_ = levelStateWithPlayer(&tiles, .{ .x = 1, .y = 1 });
     var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 448), camera.position.y);
 
     // Even with the player at a corner — centering wins over the margin.
     state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
     camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 448), camera.position.y);
 
     // A pan wiggles the centered view by up to 4 tiles each way instead of
     // being a no-op.
     state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
     camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = -10_000 }, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
-    try std.testing.expectEqual(@as(i32, -640), camera.position.y);
+    try std.testing.expectEqual(@as(i32, -576), camera.position.y);
 }
 
 test "camera clamp: one axis fits, the other clamps" {
@@ -4263,7 +4263,7 @@ test "camera clamp: panels shift the margin band to the viewable region" {
     };
     const camera = computeCamera(&state_, 1.0, null, panel_region);
     try std.testing.expectEqual(@as(i32, 336), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 568), camera.position.y);
     // Player screen x: 512 px right of the panel edge (1200).
     try std.testing.expectEqual(@as(i32, ui.inventory_panel_width + 512), 128 - camera.position.x + 1920);
 }
@@ -4289,7 +4289,7 @@ test "camera clamp: hub screens clamp against the hub tile grid" {
     };
     const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 448), camera.position.y);
 }
 
 test "camera clamp: null region is the unclamped behavior" {
@@ -4339,7 +4339,7 @@ test "editor viewport: clamps the active level around its player_start" {
     state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 29, .max_y = 16 };
     var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 568), camera.position.y);
 
     // Tab to the small level: centered as a whole — the tab switch
     // re-clamps on the new layout (the snapshot refresh).
@@ -4347,7 +4347,7 @@ test "editor viewport: clamps the active level around its player_start" {
     state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 3, .max_y = 2 };
     camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 448), camera.position.y);
 }
 
 test "editor viewport: mid-edit tile changes never reframe the camera" {
@@ -4384,7 +4384,7 @@ test "editor viewport: mid-edit tile changes never reframe the camera" {
     // center as a whole at 512, 384).
     const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 568), camera.position.y);
 }
 
 /// Test helper: the tile bbox snapshot `refreshEditorClampBounds` would
