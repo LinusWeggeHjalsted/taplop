@@ -13434,3 +13434,44 @@ Shader compile failure degrades to plain trilinear (no scope; the
 washed-out intermediate zooms return rather than anything breaking).
 Verified natively at all four zooms (0.75 matches the crispness character
 of 0.5/1.0; 0.25/1.0 pixel-identical to before) + web compile.
+
+## Global top bar — always-visible options/undo/redo + redo button
+
+The infinite undo/redo timeline is core to the game, but its only surface
+was the undo button in the level/hub/editor top bar — invisible on menus
+and under full-screen overlays. Redo had NO button at all (machinery fully
+wired since the input-convergence work: binding, anytime flag,
+`history.redo`, consumption + sound — only the UI was missing).
+
+Landed (`screens.zig` / `view.zig` / `state.zig`):
+
+- **`buildGlobalTopBar`** (renamed from `buildTopBar`): options, undo, redo
+  in the top-left, emitted LAST in view()'s UI assembly — the painter's-order
+  list draws it above everything (options menu, mission-complete/fail,
+  error popup) and hitTest's topmost-first scan gives it click priority.
+  Zero new layering machinery: "always on top" is a property the flat
+  element list already had. The editor's level tabs deliberately stay in
+  the editor arm (UNDER overlays, per the design call); the tab row starts
+  right of the bar's three cells (region_left 2→3 slots in editor_shell).
+- **Redo button**: mirrors undo's glyph flipped horizontally
+  (Image.flip_horizontal — emitted inline; emitIconButton has no flip
+  parameter and this is the only flipped icon button). ui/icon_undo AND the
+  flipped redo are magenta placeholders — artist list (icon_redo planned).
+- **Dim state**: `GameStateHistory.canUndo`/`canRedo` (new, mirroring
+  undo/redo's own branching incl. the mid-drain jump-to-current-idle case;
+  unit-tested) thread through `RenderContext` into the bar. An unavailable
+  button gets its background re-drawn on top at 50% alpha tinted the
+  theme's darkest — the same wash skill cooldowns use. Still clickable
+  (no-op, exactly like the keybind).
+- **Options button**: hidden on the main menu (that screen's button stack
+  is its option surface; the Escape chain the action routes through already
+  no-ops there — no remnant cleanup was needed, the main menu never had an
+  options entry). Clicking it while the menu is open toggles the menu
+  closed (routes through the Escape chain, same as before). Slot stays
+  reserved so undo/redo don't shift position between screens.
+- **FPS overlay** moved below the bar (it owned the top-left corner before).
+
+Buttons emit the same anytime actions as the keybinds — no handler changes,
+replay-safe by construction, undo/redo reachable from any screen including
+over the mission-complete overlay (undoing the completing move dismisses
+it; it's on the timeline).

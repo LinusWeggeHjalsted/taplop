@@ -254,43 +254,67 @@ pub fn buildErrorPopup(
     );
 }
 
-/// Top bar: options button flush in the top-left corner, then `ui_gap`,
-/// then the undo button, then the remaining width reserved for the combat
-/// log (not rendered — see TODO → Combat Log). Left-anchored row mirroring
-/// the bottom bar's conventions (`Row`, `ui_gap`, `slot_size`). No
-/// background of its own — purely a layout region, like the bottom bar.
-/// Undo is never disabled: the
-/// only state with nothing to undo is a fresh main menu, where this bar is
-/// not shown; `history.undo` no-ops at the earliest idle point regardless.
-pub fn buildTopBar(
+/// The GLOBAL TOP BAR — the always-on-top UI layer: options, undo, and
+/// redo, top-left. Emitted LAST in view()'s UI assembly, so the painter's-
+/// order list draws it above everything (options menu, mission overlays,
+/// error popup) and hitTest's topmost-first scan gives it click priority —
+/// see DESIGN → UI Framework (global top bar). Undo/redo are available on
+/// every screen and across screen transitions (anytime actions); the
+/// buttons just emit the same actions the keybinds do.
+///
+/// Availability dimming: an unavailable undo/redo (nothing left to undo /
+/// redo — `GameStateHistory.canUndo`/`canRedo`) gets the button background
+/// re-drawn on top at 50% alpha, the same wash the skill cooldown uses
+/// (see emit.zig's skill slot). The button stays clickable (a no-op,
+/// exactly like the keybind) — the wash is the visual truth only.
+///
+/// The options button is NOT emitted on the main menu: that screen's own
+/// button stack is its option surface, and the Escape chain (which the
+/// button routes through) deliberately no-ops there — see
+/// `handleEscapeKey`. The slot stays reserved so the undo/redo positions
+/// don't shift between screens.
+///
+/// No background of its own — purely a layout region, like the bottom bar.
+/// The remaining width stays reserved for the combat log (see TODO →
+/// Combat Log).
+pub fn buildGlobalTopBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     screen: Rectangle,
+    current_screen: state.Screen,
     active_theme: types.ActiveColorTheme,
+    can_undo: bool,
+    can_redo: bool,
 ) !void {
     const p = active_theme.player_gradient.colors;
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
     const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    // The unavailable wash tint — the skill cooldown's overlay color.
+    const c_dim = active_theme.darkest;
 
     var row = Row.init(screen.position(), top_bar_height, ui_gap);
 
     // Options button — flush in the top-left corner (no margin). Layered
-    // background + icon, same as the skip button.
+    // background + icon, same as the skip button. Clicking it while the
+    // options menu is open toggles the menu closed (the action routes
+    // through the Escape chain, which closes an open menu first).
     const options_cell = row.next(slot_size);
-    try emitIconButton(
-        elements,
-        allocator,
-        options_cell,
-        button_background_sprite_id,
-        "ui/icon_options",
-        .toggle_options_menu,
-        .{ .header = try spanRow(allocator, text("Options")) },
-        c_btn_bg,
-        c_btn_icon,
-        false,
-        null,
-    );
+    if (current_screen != .main_menu) {
+        try emitIconButton(
+            elements,
+            allocator,
+            options_cell,
+            button_background_sprite_id,
+            "ui/icon_options",
+            .toggle_options_menu,
+            .{ .header = try spanRow(allocator, text("Options")) },
+            c_btn_bg,
+            c_btn_icon,
+            false,
+            null,
+        );
+    }
 
     // Undo button — same size, one `ui_gap` to the right of options. Same
     // layered background + icon treatment as the options button.
@@ -308,6 +332,51 @@ pub fn buildTopBar(
         false,
         null,
     );
+    if (!can_undo) try emitDimWash(elements, allocator, undo_cell, c_dim);
+
+    // Redo button — mirrors the undo button; its glyph is the undo icon
+    // flipped horizontally (Image.flip_horizontal — the render seam's
+    // negative-source-width trick). Emitted inline rather than through
+    // emitIconButton, which has no flip parameter (this is the only
+    // flipped icon button).
+    const redo_cell = row.next(slot_size);
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = button_background_sprite_id,
+        .screen_position = redo_cell.position(),
+        .width = redo_cell.width,
+        .height = redo_cell.height,
+        .action = .redo,
+        .color = c_btn_bg,
+        .tooltip = .{ .header = try spanRow(allocator, text("Redo")) },
+    } });
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = "ui/icon_undo",
+        .screen_position = redo_cell.position(),
+        .width = redo_cell.width,
+        .height = redo_cell.height,
+        .color = c_btn_icon,
+        .flip_horizontal = true,
+        // Sits on top of the background; let the button win the hit-test.
+        .blocks_input = false,
+    } });
+    if (!can_redo) try emitDimWash(elements, allocator, redo_cell, c_dim);
+}
+
+/// The unavailable-state wash for a global-bar button: the button
+/// background sprite re-drawn on top at 50% alpha, tinted the theme's
+/// `darkest` — the same treatment a skill on cooldown gets (see
+/// emit.zig's skill slot). Non-blocking, so hover/click pass through to
+/// the button beneath (which no-ops exactly like the keybind).
+fn emitDimWash(elements: *UiElementList, allocator: std.mem.Allocator, cell: Rectangle, dim_color: Color) !void {
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = dim_color,
+        .alpha = 128,
+        .blocks_input = false,
+    } });
 }
 
 /// The validation stats screen's session-side context — view() builds this

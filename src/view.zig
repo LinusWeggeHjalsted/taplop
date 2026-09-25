@@ -62,6 +62,11 @@ pub const RenderContext = struct {
     /// vertical center, damage number at a corner) rather than the 512x640
     /// frame edges. Frame-arena-backed (no deinit). See AGENTS Animation.
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+    /// Whether undo / redo is available right now (`GameStateHistory.
+    /// canUndo`/`canRedo`, computed by `frame()` where the history lives) —
+    /// the dim state of the global top bar's undo/redo buttons.
+    can_undo: bool,
+    can_redo: bool,
 };
 
 pub fn view(
@@ -252,12 +257,6 @@ pub fn view(
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
 
     if (current_state.screen == .level or current_state.screen == .hub) {
-        ui.buildTopBar(
-            &ui_elements,
-            frame_allocator,
-            ui.screenRect(),
-            active_theme,
-        ) catch @panic("failed to build top bar");
         const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
         ui.buildBottomBar(
             &ui_elements,
@@ -305,16 +304,12 @@ pub fn view(
             camera_zoom,
         );
     } else if (current_state.screen == .editor) {
-        // Editor top row: options + undo buttons in the same locations as
-        // levels/hubs (buildTopBar), then one level tab per mission level
-        // to their right. Built before the bottom bar so the bottom bar's
-        // hover-highlight pass wins overlaps, matching the level/hub order.
-        ui.buildTopBar(
-            &ui_elements,
-            frame_allocator,
-            ui.screenRect(),
-            active_theme,
-        ) catch @panic("failed to build top bar");
+        // Editor top row: one level tab per mission level plus the pinned
+        // + / Test / Validate actions. The options/undo/redo buttons come
+        // from the GLOBAL top bar (emitted at the end of this assembly, on
+        // top of everything); the tab row starts right of its three cells.
+        // Built before the bottom bar so the bottom bar's hover-highlight
+        // pass wins overlaps, matching the level/hub order.
         // The editor is non-null on this screen by invariant (open_editor
         // sets it, close_editor transitions away).
         if (current_state.editor) |editor| {
@@ -659,6 +654,24 @@ pub fn view(
             @panic("failed to build error popup");
     }
 
+    // GLOBAL TOP BAR (options / undo / redo): emitted last so the painter's-
+    // order list draws it above every other element — options menu, mission
+    // overlays, error popup — and hitTest's topmost-first scan gives it
+    // click priority. Undo/redo stay reachable from any screen, including
+    // over the mission-complete overlay (undoing the completing move
+    // dismisses it — it's on the timeline). The editor's level tabs are NOT
+    // part of this layer (they sit under overlays by design). See DESIGN →
+    // UI Framework (global top bar).
+    ui.buildGlobalTopBar(
+        &ui_elements,
+        frame_allocator,
+        ui.screenRect(),
+        current_state.screen,
+        active_theme,
+        render.can_undo,
+        render.can_redo,
+    ) catch @panic("failed to build global top bar");
+
     // Hover highlight: the topmost button under the pointer gets an edge
     // outline (same `highlighted` path as the active turn-step indicator).
     // Suppressed while dragging (the pointer is dragging, not hovering).
@@ -680,18 +693,18 @@ pub fn view(
     else
         &.{};
 
-    // FPS diagnostic overlay: drawn last (on top of all UI) in the top-left
-    // corner when `settings.show_fps` is on. Non-blocking so it can't steal
-    // clicks; outlined for readability over any background. Reads the EMA
-    // maintained in `frame()`'s render gate — pure over SessionState, so
-    // replay-safe.
+    // FPS diagnostic overlay: drawn on top of all UI in the top-left corner
+    // when `settings.show_fps` is on — BELOW the global top bar, which owns
+    // the corner now. Non-blocking so it can't steal clicks; outlined for
+    // readability over any background. Reads the EMA maintained in
+    // `frame()`'s render gate — pure over SessionState, so replay-safe.
     if (settings.show_fps) {
         const fps_rounded: i32 = @intFromFloat(@round(session.fps_smoothed));
         const fps_text = std.fmt.allocPrint(frame_allocator, "FPS {d}", .{fps_rounded}) catch
             @panic("failed to format fps label");
         ui_elements.append(frame_allocator, .{ .text_label = .{
             .text = fps_text,
-            .screen_position = .{ .x = 16, .y = 16 },
+            .screen_position = .{ .x = 16, .y = ui.top_bar_height + ui.ui_gap },
             .font_size = ui.settings_row_font_size,
             .outlined = true,
             .blocks_input = false,
@@ -3284,6 +3297,8 @@ test "editor scene: viewport projects tiles, placements, and markers" {
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
 
@@ -3350,6 +3365,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
 
@@ -3381,6 +3398,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
     try std.testing.expectEqual(@as(usize, 1), view_state_select.tile_overlays.len);
@@ -3402,6 +3421,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
     try std.testing.expectEqual(@as(usize, 1), view_state_entity.tile_overlays.len);
@@ -3424,6 +3445,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
     try std.testing.expectEqual(@as(usize, 1), view_state_item.tile_overlays.len);
@@ -3481,6 +3504,8 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
 
@@ -3574,6 +3599,8 @@ test "editor select tool: hover previews the covering decoration's footprint, el
                     .frame_allocator = arena__,
                     .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
                     .sprite_bounds = .{},
+                    .can_undo = false,
+                    .can_redo = false,
                 },
             );
         }
@@ -3677,6 +3704,8 @@ test "editor selection overlay: lightest-color outlines around all selected regi
             .frame_allocator = arena,
             .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
             .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
         },
     );
 

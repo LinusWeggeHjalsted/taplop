@@ -911,6 +911,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .frame_allocator = frame_alloc,
                 .font_metrics = backend.fontMetrics(),
                 .sprite_bounds = sprite_bounds,
+                .can_undo = history.canUndo(),
+                .can_redo = history.canRedo(),
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);

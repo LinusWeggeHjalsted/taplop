@@ -444,9 +444,10 @@ fn emitEditorToolDeleteButton(
     } });
 }
 
-/// Editor top row: level tabs, emitted to the RIGHT of the top bar's
-/// options + undo buttons (those come from `buildTopBar` — same locations
-/// as levels/hubs). One 128-high panel-backed button per level (the
+/// Editor top row: level tabs, emitted to the RIGHT of the global top
+/// bar's options + undo + redo buttons (those come from
+/// `buildGlobalTopBar` — the always-on-top layer; the tabs deliberately
+/// stay UNDER overlays). One 128-high panel-backed button per level (the
 /// palette group-header visual class), labeled with the level's name or
 /// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
 /// outline — the same path as tool cells); clicking switches the active
@@ -474,11 +475,12 @@ pub fn buildEditorLevelTabs(
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
-    // Tabs start right of the top bar's two cells (options + undo joined
-    // by ui_gap in buildTopBar's Row; one more gap separates the tabs),
-    // flush against the top of the screen, and end at the pinned add-level
-    // "+" — one ui_gap clear of it, one clear of the primary-actions block.
-    const region_left: i32 = 2 * (slot_size + ui_gap);
+    // Tabs start right of the global top bar's three cells (options + undo
+    // + redo joined by ui_gap in buildGlobalTopBar's Row; one more gap
+    // separates the tabs), flush against the top of the screen, and end at
+    // the pinned add-level "+" — one ui_gap clear of it, one clear of the
+    // primary-actions block.
+    const region_left: i32 = 3 * (slot_size + ui_gap);
     const plus_cell: Rectangle = .{
         .x = types.reference_width - editor_primary_actions_width - ui_gap -
             editor_header_strip_height,
@@ -1150,9 +1152,9 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     // add-level "+" (panel + button + glyph) = 15 elements.
     try std.testing.expectEqual(@as(usize, 15), elements.items.len);
 
-    // Tabs sit right of the top bar's options + undo cells, 128 high,
-    // flush against the top of the screen.
-    const start_x = 2 * (slot_size + ui_gap);
+    // Tabs sit right of the global top bar's options + undo + redo cells,
+    // 128 high, flush against the top of the screen.
+    const start_x = 3 * (slot_size + ui_gap);
     try std.testing.expectEqual(@as(i32, start_x), elements.items[0].nine_slice_panel.screen_position.x);
     try std.testing.expectEqual(@as(i32, 0), elements.items[0].nine_slice_panel.screen_position.y);
     try std.testing.expectEqual(@as(i32, 128), elements.items[0].nine_slice_panel.height);

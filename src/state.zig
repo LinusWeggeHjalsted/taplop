@@ -2509,6 +2509,26 @@ pub const GameStateHistory = struct {
         return true;
     }
 
+    /// Whether an undo is available right now — the dim state of the undo
+    /// button in the global top bar. Mirrors `undo`'s own branching:
+    /// mid-drain (stack non-empty or a wait active) undo jumps to the
+    /// CURRENT idle point, so any idle point must exist; otherwise there
+    /// must be an earlier one to step back to. Clicking while unavailable
+    /// still routes through `undo` (a no-op) — this is purely the visual
+    /// truth, so the button can never disagree with the keybind.
+    pub fn canUndo(self: *const GameStateHistory) bool {
+        if (self.current_state.event_stack.len > 0 or self.current_state.waiting != null) {
+            return self.idle_points.items.len > 0;
+        }
+        return self.current_idle_index > 0;
+    }
+
+    /// Whether a redo is available — the dim state of the redo button in
+    /// the global top bar. Mirrors `redo`: false at the latest idle point.
+    pub fn canRedo(self: *const GameStateHistory) bool {
+        return self.current_idle_index < self.idle_points.items.len - 1;
+    }
+
     /// The event index where the current level began: the most recent
     /// `start_level` meta event at or before `current_event_index`. Returns
     /// null if none is in the prefix (e.g. on the main menu or in a hub), so
@@ -2661,6 +2681,40 @@ test "recordEvent appends without trimming during normal forward play" {
 
     try std.testing.expectEqual(@as(usize, 6), history.event_history.items.len);
     try std.testing.expectEqual(@as(usize, 2), history.idle_points.items.len);
+}
+
+test "canUndo/canRedo track the timeline head for the global-bar dim state" {
+    const allocator = std.testing.allocator;
+    var history = historyForTimelineTest(allocator);
+    defer history.history_arena.deinit();
+
+    // The fixture leaves current_state undefined; initialize the two
+    // fields canUndo branches on (a settled, drained state).
+    history.current_state.event_stack = &.{};
+    history.current_state.waiting = null;
+
+    // At the earliest idle point with a settled stack: nothing to undo;
+    // the later idle point is redoable.
+    history.current_idle_index = 0;
+    history.current_event_index = 2;
+    try std.testing.expect(!history.canUndo());
+    try std.testing.expect(history.canRedo());
+
+    // At the latest idle point: undo is live, redo exhausted.
+    history.current_idle_index = 1;
+    try std.testing.expect(history.canUndo());
+    try std.testing.expect(!history.canRedo());
+
+    // Undone back to the earlier idle point: redo is live again.
+    history.current_idle_index = 0;
+    try std.testing.expect(history.canRedo());
+
+    // Mid-drain (stack non-empty): undo jumps to the CURRENT idle point, so
+    // it is available whenever any idle point exists — even at index 0.
+    history.current_event_index = 0;
+    const stack: [1]Event = .{.{ .meta_event = .open_main_menu }};
+    history.current_state.event_stack = &stack;
+    try std.testing.expect(history.canUndo());
 }
 
 test "SessionState pending error: set, read, clear" {
