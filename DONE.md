@@ -13563,3 +13563,46 @@ sweep-script rules) and points at DESIGN; the Subsystem Map gained a
 Testing line; the TODO notes ("Test design session", the coverage-matrix
 half of "Handler test coverage", "Test values that miss edge cases")
 collapsed into pointers/settled design.
+
+## Census sweep slice 1 — the editor inspector (exhaustiveness shape + the shared census helper)
+
+First file of the census-test sweep (TODO → Census-test sweep; design:
+DESIGN → Testing). `ui/editor_inspector.zig`'s window-census tests —
+hand-pinned visible-row windows at magic scroll offsets (the shape that
+broke ~15 tests on the semantics-neutral 128px top-bar change) — were
+converted to the exhaustiveness shape:
+
+- **`src/test_ui_census.zig`** (new, test-build-only): the hoisted
+  mismatch-printing census helper. `expectContentReachable` builds a panel
+  at EVERY scroll offset 0..clamped max and asserts (1) each window's
+  labels are an ordered subset of the expected full content list, (2) the
+  union of all windows covers the list — no never-emitted row, no
+  unreachable row. Geometry is the input, never the expectation; the
+  expected list is the panel's semantic content contract, not a window
+  snapshot. Panels duck-type
+  `buildAt(self, scroll, *UiElementList) anyerror!i32` returning the
+  CLAMPED offset (the builder's own clamp; a maxInt probe yields the max).
+- `InspectorPanel` / `MetadataSidebarPanel` — file-local census drivers
+  over the two builders (the second file to adopt the helper defines its
+  own driver struct; the helper itself is shared).
+- 13 tests converted. Pinned windows became per-offset scans (semantic
+  facts asserted wherever visible, plus stronger "never at ANY offset"
+  checks for hidden controls); the entity-content census pins the full
+  semantic label list once; counts derive from source enums
+  (weapon/item-kind cell counts, `gradient_color_count`,
+  `utility_skill_count`); clamp properties (negative→0, huge→max, the
+  max window nonempty) replace the hand-pinned 38/34 clamp values; the
+  stale-tool fallback now asserts ALL 96 inventory slots reachable
+  (was: one window's 66 buttons + highest slot 95 — a window snapshot).
+  `expectInspectorLabels` + `countSolidRects` deleted (subsumed).
+- Two builder facts the conversion surfaced: weapon slot rows have NO
+  Add (the type cells are the equip mechanism; gear slots show Add) —
+  the bare-entity census list initially included two hand Adds that
+  never appear; and adjacent 1-unit field rows can split across a
+  window edge, so field pairs must be gated on BOTH before unwrapping
+  (three tests hit the partial-window null unwrap).
+
+Remaining sweep files: handler_tests_editor.zig, editor_shell.zig,
+editor_pickers.zig, menus.zig, panels.zig, screens.zig, view.zig —
+each gets the same triage: semantic/derived assertions keep, pinned
+windows convert or delete.

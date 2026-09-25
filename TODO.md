@@ -26,6 +26,10 @@ Test by running `zig build run` and clicking through.
   window-census tests whose semantics were unchanged (DONE.md, "Top
   bar shrunk to 128px"). The design landed this session; the sweep is
   the implementation.
+  Progress: `src/test_ui_census.zig` (the shared helper) + the
+  editor_inspector.zig conversion DONE (slice 1 — DONE.md); remaining
+  files: handler_tests_editor, editor_shell, editor_pickers, menus,
+  panels, screens, view.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

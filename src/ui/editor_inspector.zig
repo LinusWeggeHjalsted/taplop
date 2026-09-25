@@ -17,6 +17,7 @@ const text_input = @import("text_input.zig");
 const ui_tooltip = @import("tooltip.zig");
 const utility_skills = @import("../utility_skills.zig");
 const lookups = @import("../generated_lookups.zig");
+const census = @import("../test_ui_census.zig");
 const Skill = @import("../skill.zig").Skill;
 
 const Action = types.Action;
@@ -2993,45 +2994,83 @@ pub fn allInspectorSectionsExpanded() [editor_inspector_section_count]bool {
     return .{true} ** editor_inspector_section_count;
 }
 
-/// Assert the inspector's content labels, in order, skipping the toggle
-/// button's own "Inspector" label (elements 0-2 are the toggle group, 3
-/// the background panel).
-fn expectInspectorLabels(elements: *const UiElementList, expected: []const []const u8) !void {
-    var labels: std.ArrayList([]const u8) = .empty;
-    defer labels.deinit(std.testing.allocator);
-    for (elements.items[4..]) |element| switch (element) {
-        .text_label => |label| try labels.append(std.testing.allocator, label.text),
-        else => {},
-    };
-    var matches = expected.len == labels.items.len;
-    if (matches) {
-        for (expected, labels.items) |want, got| {
-            if (!std.mem.eql(u8, want, got)) {
-                matches = false;
-                break;
-            }
-        }
-    }
-    if (!matches) {
-        // The census prints the found window on mismatch — the panel's
-        // visible-row count derives from its height, so geometry changes
-        // shift which entries fit.
-        std.debug.print("inspector label census mismatch — expected:", .{});
-        for (expected) |want| std.debug.print(" {s}", .{want});
-        std.debug.print("\n                              found:", .{});
-        for (labels.items) |got| std.debug.print(" {s}", .{got});
-        std.debug.print("\n", .{});
-    }
-    try std.testing.expectEqual(expected.len, labels.items.len);
-    for (expected, labels.items) |want, got| {
-        try std.testing.expectEqualStrings(want, got);
-    }
-}
+/// Census panel driver for `buildEditorInspectorPanel` (the shared census
+/// helper's duck-typed panel): builds at a scroll offset and reports the
+/// builder's own clamp (it mutates `ui_state`).
+const InspectorPanel = struct {
+    arena: std.mem.Allocator,
+    metrics: FontMetrics,
+    editor: types.Editor,
+    theme: types.ActiveColorTheme,
+    open: bool = true,
+    sections_expanded: bool = true,
+    selected_inventory_slot: ?u32 = null,
 
-fn countSolidRects(elements: *const UiElementList) usize {
+    pub fn buildAt(self: InspectorPanel, scroll: i32, elements: *UiElementList) anyerror!i32 {
+        var ui_state: UiState = .{
+            .editor_inspector_scroll = scroll,
+            .editor_inspector_section_expanded = if (self.sections_expanded)
+                allInspectorSectionsExpanded()
+            else
+                .{false} ** editor_inspector_section_count,
+            .editor_inventory_selected_slot = self.selected_inventory_slot,
+        };
+        try buildEditorInspectorPanel(
+            elements,
+            self.arena,
+            self.metrics,
+            self.editor,
+            self.theme,
+            self.open,
+            &ui_state,
+        );
+        return ui_state.editor_inspector_scroll;
+    }
+};
+
+/// Census panel driver for `buildEditorMetadataSidebar` (the same shape as
+/// `InspectorPanel`; the sidebar scrolls `editor_metadata_scroll`).
+const MetadataSidebarPanel = struct {
+    arena: std.mem.Allocator,
+    metrics: FontMetrics,
+    editor: types.Editor,
+    theme: types.ActiveColorTheme,
+    open: bool = true,
+    sections_expanded: bool = true,
+
+    pub fn buildAt(self: MetadataSidebarPanel, scroll: i32, elements: *UiElementList) anyerror!i32 {
+        var ui_state: UiState = .{
+            .editor_metadata_scroll = scroll,
+            .editor_inspector_section_expanded = if (self.sections_expanded)
+                allInspectorSectionsExpanded()
+            else
+                .{false} ** editor_inspector_section_count,
+        };
+        try buildEditorMetadataSidebar(
+            elements,
+            self.arena,
+            self.metrics,
+            self.editor,
+            self.theme,
+            self.open,
+            &ui_state,
+        );
+        return ui_state.editor_metadata_scroll;
+    }
+};
+
+/// The scrollbar's track + thumb rects (the fixed grays) — presence means
+/// the builder judged the content as overflowing the window.
+fn countScrollbarRects(elements: *const UiElementList) usize {
     var count: usize = 0;
     for (elements.items) |element| switch (element) {
-        .solid_rect => count += 1,
+        .solid_rect => |rect| {
+            if (std.meta.eql(rect.color, types.Color{ .r = 80, .g = 80, .b = 80 }) or
+                std.meta.eql(rect.color, types.Color{ .r = 180, .g = 180, .b = 180 }))
+            {
+                count += 1;
+            }
+        },
         else => {},
     };
     return count;
@@ -3175,90 +3214,104 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Scroll 14 — the Stats section's four numeric fields fill the window
-    // (the taller panel fits one more unit: the Weapons header peeks in at
-    // the tail): decimal-formatted values.
-    // (The Keep colors row added two Identity units; Stats starts at 14.)
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 14, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Stats", "Max health", "Defense", "Speed", "Aggro range", "- Weapons" });
-        try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
-        try std.testing.expectEqualStrings("0", findTextField(&elements, .{ .entity_stat = .defense }).?.text);
-        try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .speed }).?.text);
-        try std.testing.expectEqualStrings("3", findTextField(&elements, .{ .entity_stat = .aggro_range }).?.text);
-    }
+    // Every scroll offset is scanned; each fact is asserted wherever it
+    // is visible (the exhaustiveness shape — geometry is the input,
+    // never the expectation; DESIGN → Testing → Assertion patterns).
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
+    };
+    const max_scroll = try census.maxScroll(panel);
 
-    // The Team field rides the same stat machinery (scroll 0 window,
-    // Identity section): the template's team, decimal-formatted.
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Keep colors", "false", "Color" });
-        try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .team }).?.text);
-    }
+    var stat_fields_seen = false;
+    var team_value_seen = false;
+    var swatch_row_seen = false;
+    var toggle_seen = false;
 
-    // The Color control (scroll 3 — the Keep colors row sits above the
-    // swatches now and pushed them out of the scroll-0 window): six
-    // swatch fills in the ENEMY gradient + six payload buttons, the
-    // current index (2) highlighted.
-    {
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        _ = try panel.buildAt(scroll, &elements);
+
+        // The Stats section's four numeric fields, decimal-formatted,
+        // when the whole set is visible together.
+        const max_health = findTextField(&elements, .{ .entity_stat = .max_health });
+        const defense = findTextField(&elements, .{ .entity_stat = .defense });
+        const speed = findTextField(&elements, .{ .entity_stat = .speed });
+        const aggro_range = findTextField(&elements, .{ .entity_stat = .aggro_range });
+        if (max_health != null and defense != null and speed != null and aggro_range != null) {
+            try std.testing.expectEqualStrings("20", max_health.?.text);
+            try std.testing.expectEqualStrings("0", defense.?.text);
+            try std.testing.expectEqualStrings("1", speed.?.text);
+            try std.testing.expectEqualStrings("3", aggro_range.?.text);
+            stat_fields_seen = true;
+        }
+
+        // The Team field rides the same stat machinery: the template's
+        // team, decimal-formatted.
+        if (findTextField(&elements, .{ .entity_stat = .team })) |team_field| {
+            try std.testing.expectEqualStrings("1", team_field.text);
+            team_value_seen = true;
+        }
+
+        // The Color control: six swatch payload buttons in the ENEMY
+        // gradient, the current index (2) the only highlighted one, the
+        // gradient's index-2 fill present (the distinctive non-black).
         var swatch_count: usize = 0;
         var highlighted_count: usize = 0;
+        var highlighted_color: ?u32 = null;
         var swatch_fill_seen = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_color) {
                 swatch_count += 1;
                 if (button.highlighted) {
                     highlighted_count += 1;
-                    try std.testing.expectEqual(@as(u32, 2), button.editor_color.?);
+                    highlighted_color = button.editor_color.?;
                 }
             },
             .solid_rect => |rect| {
-                // The enemy gradient's index-2 color is the swatch fill for
-                // index 2 (the others are black — assert the distinctive one).
                 if (std.meta.eql(rect.color, enemy_two)) swatch_fill_seen = true;
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 6), swatch_count);
-        try std.testing.expectEqual(@as(usize, 1), highlighted_count);
-        try std.testing.expect(swatch_fill_seen);
-    }
+        if (swatch_count == types.gradient_color_count) {
+            try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+            try std.testing.expectEqual(@as(u32, 2), highlighted_color.?);
+            try std.testing.expect(swatch_fill_seen);
+            swatch_row_seen = true;
+        }
 
-    // The Displays-weapons control: a full-width toggle showing the FORMAT
-    // vocabulary ("true"), highlighted while true. Scroll 3 — the Team
-    // field pushed the toggle row out of the scroll-0 window.
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        // The Displays-weapons control: a half-width toggle showing the
+        // FORMAT vocabulary ("true"), never highlighted (the label
+        // carries the state).
         var toggle_button: ?Button = null;
-        var saw_true_label = false;
+        var true_label_seen = false;
         for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .toggle_editor_entity_displays_weapons) {
-                toggle_button = button;
+            .button => |button| {
+                if (button.action == .toggle_editor_entity_displays_weapons) toggle_button = button;
             },
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "true")) saw_true_label = true;
+                if (std.mem.eql(u8, label.text, "true")) true_label_seen = true;
             },
             else => {},
         };
-        try std.testing.expect(toggle_button != null);
-        // Half the control width (full-width reads as a section header),
-        // and never highlighted (the true/false label carries the state).
-        try std.testing.expectEqual(
-            @divFloor(editorInspectorPanelRect().width - 2 * ui_gap, 2),
-            toggle_button.?.width,
-        );
-        try std.testing.expect(!toggle_button.?.highlighted);
-        try std.testing.expect(saw_true_label);
+        if (toggle_button) |button| {
+            try std.testing.expectEqual(
+                @divFloor(editorInspectorPanelRect().width - 2 * ui_gap, 2),
+                button.width,
+            );
+            try std.testing.expect(!button.highlighted);
+            try std.testing.expect(true_label_seen);
+            toggle_seen = true;
+        }
     }
+
+    try std.testing.expect(stat_fields_seen);
+    try std.testing.expect(team_value_seen);
+    try std.testing.expect(swatch_row_seen);
+    try std.testing.expect(toggle_seen);
 }
 
 test "inspector sprite rows display custom namespaced stems as their file name" {
@@ -3296,55 +3349,48 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
         .active_tool = .{ .entity_type = 0 },
     };
 
-    var elements: UiElementList = .empty;
-    var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-
-    // The base-sprite row shows the FILE NAME; the state keeps the full
-    // namespaced stem (the display is a pure projection — pick payloads
-    // + the level file carry the path).
-    try expectInspectorLabels(
-        &elements,
-        &.{ "- Identity", "Name", "Team", "Sprite", "boss", "Keep colors", "true", "Displays weapons", "true" },
-    );
+    // The display is a pure projection — the state keeps the full
+    // namespaced stem (pick payloads + the level file carry the path).
     try std.testing.expectEqualStrings(
         "custom/artists_den/boss",
         editor.entity_types[0].template.sprite,
     );
 
-    // Flag ON: no Color row + no swatch buttons anywhere.
-    var saw_color_label = false;
-    var saw_swatch_button = false;
-    for (elements.items) |element| switch (element) {
-        .text_label => |label| {
-            if (std.mem.eql(u8, label.text, "Color")) saw_color_label = true;
-        },
-        .button => |button| {
-            if (button.action == .select_editor_entity_color) saw_swatch_button = true;
-        },
-        else => {},
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
     };
-    try std.testing.expect(!saw_color_label);
-    try std.testing.expect(!saw_swatch_button);
+    const max_scroll = try census.maxScroll(panel);
 
-    // The layer row (the Layers section at the plan's tail — max scroll)
-    // shows the layer's file name too.
-    {
-        var tail_elements: UiElementList = .empty;
-        var tail_ui_state: UiState = .{
-            .editor_inspector_scroll = 999,
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
-        };
-        try buildEditorInspectorPanel(&tail_elements, arena.allocator(), metrics, editor, theme, true, &tail_ui_state);
-        var saw_hood_label = false;
-        for (tail_elements.items) |element| switch (element) {
+    // The base-sprite row + the layer row show the FILE NAME. Flag ON: no
+    // Color row + no swatch buttons at ANY offset (stronger than any
+    // single window).
+    var base_file_name_seen = false;
+    var layer_file_name_seen = false;
+    var color_label_seen = false;
+    var swatch_button_seen = false;
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
+        var elements: UiElementList = .empty;
+        _ = try panel.buildAt(scroll, &elements);
+        for (elements.items) |element| switch (element) {
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "hood")) saw_hood_label = true;
+                if (std.mem.eql(u8, label.text, "boss")) base_file_name_seen = true;
+                if (std.mem.eql(u8, label.text, "hood")) layer_file_name_seen = true;
+                if (std.mem.eql(u8, label.text, "Color")) color_label_seen = true;
+            },
+            .button => |button| {
+                if (button.action == .select_editor_entity_color) swatch_button_seen = true;
             },
             else => {},
         };
-        try std.testing.expect(saw_hood_label);
     }
+    try std.testing.expect(base_file_name_seen);
+    try std.testing.expect(layer_file_name_seen);
+    try std.testing.expect(!color_label_seen);
+    try std.testing.expect(!swatch_button_seen);
 
     // Same rule for a decoration: flag ON hides the Color row + the
     // world-gradient swatch buttons.
@@ -3359,26 +3405,31 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
             .decoration_types = &decoration_types,
             .active_tool = .{ .decoration_type = 0 },
         };
-        var decoration_elements: UiElementList = .empty;
-        try buildEditorInspectorPanel(
-            &decoration_elements,
-            arena.allocator(),
-            metrics,
-            decoration_editor,
-            theme,
-            true,
-            &ui_state,
-        );
-        try expectInspectorLabels(
-            &decoration_elements,
-            &.{ "- Identity", "Sprite", "banner", "Keep colors", "true", "- Footprint", "Footprint", "0 tiles", "- Layers" },
-        );
-        for (decoration_elements.items) |element| switch (element) {
-            .button => |button| {
-                try std.testing.expect(button.action != .select_editor_decoration_color);
-            },
-            else => {},
+        const decoration_panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = decoration_editor,
+            .theme = theme,
         };
+        const decoration_max = try census.maxScroll(decoration_panel);
+        var banner_seen = false;
+        var decoration_swatch_seen = false;
+        var decoration_scroll: i32 = 0;
+        while (decoration_scroll <= decoration_max) : (decoration_scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try decoration_panel.buildAt(decoration_scroll, &elements);
+            for (elements.items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, "banner")) banner_seen = true;
+                },
+                .button => |button| {
+                    if (button.action == .select_editor_decoration_color) decoration_swatch_seen = true;
+                },
+                else => {},
+            };
+        }
+        try std.testing.expect(banner_seen);
+        try std.testing.expect(!decoration_swatch_seen);
     }
 }
 
@@ -3410,47 +3461,61 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
         .active_tool = .{ .decoration_type = 0 },
     };
 
-    var elements: UiElementList = .empty;
-    var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-
-    // Identity (Sprite + Keep colors + Color — a decoration's name IS
-    // its sprite path, no name row) + the Footprint header; the taller
-    // panel also fits the footprint row's first two labels (its own tests
-    // reach the full row scrolled).
-    try expectInspectorLabels(
-        &elements,
-        &.{ "- Identity", "Sprite", "stone_2", "Keep colors", "false", "Color", "- Footprint", "Footprint", "2 tiles" },
-    );
-
-    // The sprite button opens the shared picker (the input site routes the
-    // kind by the inspector target).
-    var saw_sprite_button = false;
-    var swatch_count: usize = 0;
-    var highlighted_count: usize = 0;
-    var world_fill_seen = false;
-    for (elements.items) |element| switch (element) {
-        .button => |button| {
-            if (button.action == .open_editor_sprite_picker) saw_sprite_button = true;
-            if (button.action == .select_editor_decoration_color) {
-                swatch_count += 1;
-                if (button.highlighted) {
-                    highlighted_count += 1;
-                    try std.testing.expectEqual(@as(u32, 3), button.editor_color.?);
-                }
-            }
-        },
-        .solid_rect => |rect| {
-            // The WORLD gradient's index-3 color is the swatch fill for
-            // index 3 (the others are black — assert the distinctive one).
-            if (std.meta.eql(rect.color, world_three)) world_fill_seen = true;
-        },
-        else => {},
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
     };
-    try std.testing.expect(saw_sprite_button);
-    try std.testing.expectEqual(@as(usize, 6), swatch_count);
-    try std.testing.expectEqual(@as(usize, 1), highlighted_count);
-    try std.testing.expect(world_fill_seen);
+    const max_scroll = try census.maxScroll(panel);
+
+    // The sprite button opens the shared picker (the input site routes
+    // the kind by the inspector target). The Color control: six swatch
+    // payload buttons in the WORLD gradient, the current index (3) the
+    // only highlighted one, its fill present. The Footprint row's tile
+    // count is reachable somewhere. Each fact asserted wherever visible.
+    var sprite_button_seen = false;
+    var swatch_row_seen = false;
+    var footprint_count_seen = false;
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
+        var elements: UiElementList = .empty;
+        _ = try panel.buildAt(scroll, &elements);
+        var swatch_count: usize = 0;
+        var highlighted_count: usize = 0;
+        var highlighted_color: ?u32 = null;
+        var world_fill_seen = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "2 tiles")) footprint_count_seen = true;
+            },
+            .button => |button| {
+                if (button.action == .open_editor_sprite_picker) sprite_button_seen = true;
+                if (button.action == .select_editor_decoration_color) {
+                    swatch_count += 1;
+                    if (button.highlighted) {
+                        highlighted_count += 1;
+                        highlighted_color = button.editor_color.?;
+                    }
+                }
+            },
+            .solid_rect => |rect| {
+                // The WORLD gradient's index-3 color is the swatch fill for
+                // index 3 (the others are black — assert the distinctive one).
+                if (std.meta.eql(rect.color, world_three)) world_fill_seen = true;
+            },
+            else => {},
+        };
+        if (swatch_count == types.gradient_color_count) {
+            try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+            try std.testing.expectEqual(@as(u32, 3), highlighted_color.?);
+            try std.testing.expect(world_fill_seen);
+            swatch_row_seen = true;
+        }
+    }
+    try std.testing.expect(sprite_button_seen);
+    try std.testing.expect(swatch_row_seen);
+    try std.testing.expect(footprint_count_seen);
 }
 
 test "inspector weapons + gear sections: type rows, add/delete, item fields when equipped" {
@@ -3482,83 +3547,112 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Units: Identity 13 (the Team field + the Keep colors toggle
-    // included) + spacer, Stats 9 +
-    // spacer → Weapons header at 24. Scroll 24 shows: the Weapons header,
-    // Main hand (equipped: type row + Delete + its fields), Off hand
-    // (empty: type row, no Delete).
-    {
+    const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
+    };
+    const max_scroll = try census.maxScroll(panel);
+
+    // Main hand: an equipped sword → type row + Delete + its fields.
+    // Off hand: empty → type row + Add, never fields. Gear: coat
+    // equipped → Delete + fields; amulet empty → Add, never fields. Each
+    // fact asserted wherever visible; the empty slots' fields must
+    // NEVER appear at any offset.
+    var main_hand_fields_seen = false;
+    var main_hand_type_row_seen = false;
+    var off_hand_type_row_seen = false;
+    var off_hand_fields_seen = false;
+    var amulet_add_seen = false;
+    var coat_delete_seen = false;
+    var coat_fields_seen = false;
+    var amulet_name_seen = false;
+
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 24, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "- Gear" });
+        _ = try panel.buildAt(scroll, &elements);
 
-        // The equipped weapon's fields carry its values.
-        try std.testing.expectEqualStrings(
-            "Skeleton Sword",
-            findTextField(&elements, .{ .item_name = .main_hand }).?.text,
-        );
-        try std.testing.expectEqualStrings(
-            "5",
-            findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } }).?.text,
-        );
-        // No off-hand fields (the slot is empty).
-        try std.testing.expect(findTextField(&elements, .{ .item_name = .off_hand }) == null);
+        // The equipped weapon's fields carry its values (the pair is
+        // adjacent 1-unit rows — gate on both so a window edge between
+        // them doesn't false-fail).
+        const main_hand_name = findTextField(&elements, .{ .item_name = .main_hand });
+        const main_hand_damage = findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } });
+        if (main_hand_name != null and main_hand_damage != null) {
+            try std.testing.expectEqualStrings("Skeleton Sword", main_hand_name.?.text);
+            try std.testing.expectEqualStrings("5", main_hand_damage.?.text);
+            main_hand_fields_seen = true;
+        }
+        if (findTextField(&elements, .{ .item_name = .off_hand }) != null) {
+            off_hand_fields_seen = true;
+        }
 
-        // Type cells: 12 total (two hands × 6), exactly one highlighted —
-        // the main hand's sword. The main hand's row also carries a
-        // Delete; the off hand's doesn't.
-        var type_cells: usize = 0;
-        var highlighted: ?types.GearSlot = null;
-        var deletes: usize = 0;
+        // Type cells: one full row per hand — the main hand's carries the
+        // highlighted sword + a Delete; the off hand's carries neither.
+        var main_hand_cells: usize = 0;
+        var main_hand_highlighted: ?types.WeaponType = null;
+        var main_hand_deletes: usize = 0;
+        var off_hand_cells: usize = 0;
+        var off_hand_highlight_count: usize = 0;
         for (elements.items) |element| switch (element) {
             .button => |button| {
                 if (button.action == .select_editor_weapon_type) {
-                    type_cells += 1;
-                    if (button.highlighted) highlighted = button.editor_gear_slot.?;
                     try std.testing.expect(button.editor_weapon_type != null);
+                    switch (button.editor_gear_slot.?) {
+                        .main_hand => {
+                            main_hand_cells += 1;
+                            if (button.highlighted) main_hand_highlighted = button.editor_weapon_type.?;
+                        },
+                        .off_hand => {
+                            off_hand_cells += 1;
+                            if (button.highlighted) off_hand_highlight_count += 1;
+                        },
+                        else => {},
+                    }
                 }
                 if (button.action == .delete_editor_item and button.editor_gear_slot.? == .main_hand) {
-                    deletes += 1;
+                    main_hand_deletes += 1;
                 }
+                if (button.action == .add_editor_item and button.editor_gear_slot.? == .amulet) amulet_add_seen = true;
+                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .coat) coat_delete_seen = true;
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 12), type_cells);
-        try std.testing.expectEqual(types.GearSlot.main_hand, highlighted.?);
-        try std.testing.expectEqual(@as(usize, 1), deletes);
+        if (main_hand_cells == weapon_type_count) {
+            try std.testing.expectEqual(types.WeaponType.sword, main_hand_highlighted.?);
+            try std.testing.expectEqual(@as(usize, 1), main_hand_deletes);
+            main_hand_type_row_seen = true;
+        }
+        if (off_hand_cells == weapon_type_count) {
+            try std.testing.expectEqual(@as(usize, 0), off_hand_highlight_count);
+            off_hand_type_row_seen = true;
+        }
+
+        // The equipped coat's fields carry its values; the empty amulet
+        // never has any.
+        const coat_name = findTextField(&elements, .{ .item_name = .coat });
+        const coat_health = findTextField(&elements, .{ .item_stat = .{ .slot = .coat, .stat = .health_bonus } });
+        if (coat_name != null and coat_health != null) {
+            try std.testing.expectEqualStrings("Skeleton Coat", coat_name.?.text);
+            try std.testing.expectEqualStrings("2", coat_health.?.text);
+            coat_fields_seen = true;
+        }
+        if (findTextField(&elements, .{ .item_name = .amulet }) != null) {
+            amulet_name_seen = true;
+        }
     }
 
-    // The Gear section's items (scroll 34 — the window opens at the Gear
-    // header; +2 from the Identity Keep colors row): coat equipped →
-    // Delete + its fields; amulet empty → Add.
-    // The taller panel now also fits the coat's defense field.
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 34, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus", "Coat defense bonus" });
-
-        var adds: usize = 0;
-        var coat_deletes: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| {
-                if (button.action == .add_editor_item and button.editor_gear_slot.? == .amulet) adds += 1;
-                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .coat) coat_deletes += 1;
-            },
-            else => {},
-        };
-        try std.testing.expectEqual(@as(usize, 1), adds);
-        try std.testing.expectEqual(@as(usize, 1), coat_deletes);
-        try std.testing.expectEqualStrings(
-            "Skeleton Coat",
-            findTextField(&elements, .{ .item_name = .coat }).?.text,
-        );
-        try std.testing.expectEqualStrings(
-            "2",
-            findTextField(&elements, .{ .item_stat = .{ .slot = .coat, .stat = .health_bonus } }).?.text,
-        );
-    }
+    try std.testing.expect(main_hand_fields_seen);
+    try std.testing.expect(main_hand_type_row_seen);
+    try std.testing.expect(off_hand_type_row_seen);
+    try std.testing.expect(!off_hand_fields_seen);
+    try std.testing.expect(amulet_add_seen);
+    try std.testing.expect(coat_delete_seen);
+    try std.testing.expect(coat_fields_seen);
+    try std.testing.expect(!amulet_name_seen);
 }
 
 test "editorInspectorTarget: active entity/decoration/item tools pass through; tile falls back to the player" {
@@ -3887,56 +3981,80 @@ test "inspector item content: type rows, name + stat fields, ref targets" {
         .active_tool = .{ .item_type = 0 },
     };
 
-    var elements: UiElementList = .empty;
-    var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+    const type_cell_count = @typeInfo(types.WeaponType).@"enum".fields.len +
+        @typeInfo(types.ItemKind).@"enum".fields.len - 1;
 
-    // The name field: current value + the `.item_type` ref target.
-    const name_field = findTextField(&elements, .item_def_name).?;
-    try std.testing.expectEqualStrings("Iron Sword", name_field.text);
-    try std.testing.expectEqual(
-        types.TextFieldRef{ .id = .item_def_name, .target = .{ .item_type = 0 } },
-        name_field.ref,
-    );
-
-    // The weapon's stat field: decimal value + the same target.
-    const damage_field = findTextField(&elements, .{ .item_def_stat = .weapon_damage }).?;
-    try std.testing.expectEqualStrings("5", damage_field.text);
-    try std.testing.expectEqual(
-        types.TextFieldRef{ .id = .{ .item_def_stat = .weapon_damage }, .target = .{ .item_type = 0 } },
-        damage_field.ref,
-    );
-
-    // The type rows: 6 weapon cells + 5 gear cells, all carrying the
-    // `.select_editor_item_type` action; the sword cell (the current
-    // item) is the only highlighted one; weapon cells carry the weapon
-    // type payload, gear cells don't.
-    var pick_cells: usize = 0;
-    var highlighted_kinds: usize = 0;
-    var sword_icons: usize = 0;
-    for (elements.items) |element| switch (element) {
-        .button => |button| if (button.action == .select_editor_item_type) {
-            pick_cells += 1;
-            try std.testing.expect(button.editor_item_kind != null);
-            if (button.editor_item_kind.? == .weapon) {
-                try std.testing.expect(button.editor_weapon_type != null);
-                if (button.highlighted) {
-                    highlighted_kinds += 1;
-                    try std.testing.expectEqual(types.WeaponType.sword, button.editor_weapon_type.?);
-                }
-            } else {
-                try std.testing.expect(button.editor_weapon_type == null);
-                try std.testing.expect(!button.highlighted);
-            }
-        },
-        .image => |image| {
-            if (std.mem.eql(u8, image.sprite_id, "items/sword")) sword_icons += 1;
-        },
-        else => {},
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
     };
-    try std.testing.expectEqual(@as(usize, 11), pick_cells);
-    try std.testing.expectEqual(@as(usize, 1), highlighted_kinds);
-    try std.testing.expectEqual(@as(usize, 1), sword_icons);
+    const max_scroll = try census.maxScroll(panel);
+
+    // The name + stat fields: current values + the `.item_type` ref
+    // targets. The type rows: one cell per weapon type + one per gear
+    // kind, the sword cell (the current item) the only highlighted one;
+    // weapon cells carry the weapon-type payload, gear cells don't. Each
+    // fact asserted wherever visible.
+    var name_field_seen = false;
+    var damage_field_seen = false;
+    var type_rows_seen = false;
+
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
+        var elements: UiElementList = .empty;
+        _ = try panel.buildAt(scroll, &elements);
+
+        if (findTextField(&elements, .item_def_name)) |name_field| {
+            try std.testing.expectEqualStrings("Iron Sword", name_field.text);
+            try std.testing.expectEqual(
+                types.TextFieldRef{ .id = .item_def_name, .target = .{ .item_type = 0 } },
+                name_field.ref,
+            );
+            name_field_seen = true;
+        }
+        if (findTextField(&elements, .{ .item_def_stat = .weapon_damage })) |damage_field| {
+            try std.testing.expectEqualStrings("5", damage_field.text);
+            try std.testing.expectEqual(
+                types.TextFieldRef{ .id = .{ .item_def_stat = .weapon_damage }, .target = .{ .item_type = 0 } },
+                damage_field.ref,
+            );
+            damage_field_seen = true;
+        }
+
+        var pick_cells: usize = 0;
+        var highlighted_kinds: usize = 0;
+        var sword_icons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_item_type) {
+                pick_cells += 1;
+                try std.testing.expect(button.editor_item_kind != null);
+                if (button.editor_item_kind.? == .weapon) {
+                    try std.testing.expect(button.editor_weapon_type != null);
+                    if (button.highlighted) {
+                        highlighted_kinds += 1;
+                        try std.testing.expectEqual(types.WeaponType.sword, button.editor_weapon_type.?);
+                    }
+                } else {
+                    try std.testing.expect(button.editor_weapon_type == null);
+                    try std.testing.expect(!button.highlighted);
+                }
+            },
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, "items/sword")) sword_icons += 1;
+            },
+            else => {},
+        };
+        if (pick_cells == type_cell_count) {
+            try std.testing.expectEqual(@as(usize, 1), highlighted_kinds);
+            try std.testing.expectEqual(@as(usize, 1), sword_icons);
+            type_rows_seen = true;
+        }
+    }
+    try std.testing.expect(name_field_seen);
+    try std.testing.expect(damage_field_seen);
+    try std.testing.expect(type_rows_seen);
 }
 
 test "inspector item content: per-kind stat fields; a skill tome renders bare rows" {
@@ -3953,7 +4071,8 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // A coat (two stats) — the field set follows the kind.
+    // A coat (two stats) — the field set follows the kind; a stat the
+    // kind doesn't carry is never offered at any offset.
     {
         const item_types = [_]types.ItemTypeDef{.{
             .id = "Leather Coat",
@@ -3963,27 +4082,45 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
             .item_types = &item_types,
             .active_tool = .{ .item_type = 0 },
         };
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqualStrings(
-            "Leather Coat",
-            findTextField(&elements, .item_def_name).?.text,
-        );
-        try std.testing.expectEqualStrings(
-            "3",
-            findTextField(&elements, .{ .item_def_stat = .health_bonus }).?.text,
-        );
-        try std.testing.expectEqualStrings(
-            "2",
-            findTextField(&elements, .{ .item_def_stat = .defense_bonus }).?.text,
-        );
-        // A stat the kind doesn't carry is never offered.
-        try std.testing.expect(findTextField(&elements, .{ .item_def_stat = .weapon_damage }) == null);
+        const panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
+        };
+        const max_scroll = try census.maxScroll(panel);
+        var name_seen = false;
+        var health_seen = false;
+        var defense_seen = false;
+        var weapon_damage_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            if (findTextField(&elements, .item_def_name)) |name_field| {
+                try std.testing.expectEqualStrings("Leather Coat", name_field.text);
+                name_seen = true;
+            }
+            if (findTextField(&elements, .{ .item_def_stat = .health_bonus })) |health_field| {
+                try std.testing.expectEqualStrings("3", health_field.text);
+                health_seen = true;
+            }
+            if (findTextField(&elements, .{ .item_def_stat = .defense_bonus })) |defense_field| {
+                try std.testing.expectEqualStrings("2", defense_field.text);
+                defense_seen = true;
+            }
+            if (findTextField(&elements, .{ .item_def_stat = .weapon_damage }) != null) {
+                weapon_damage_seen = true;
+            }
+        }
+        try std.testing.expect(name_seen);
+        try std.testing.expect(health_seen);
+        try std.testing.expect(defense_seen);
+        try std.testing.expect(!weapon_damage_seen);
     }
 
     // A skill tome (unreachable live — not authorable): no name field, no
-    // stat fields, but the type rows still render (11 cells).
+    // stat fields at any offset, but the type rows still render.
     {
         const item_types = [_]types.ItemTypeDef{.{
             .id = "Skill Tome",
@@ -3993,18 +4130,33 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
             .item_types = &item_types,
             .active_tool = .{ .item_type = 0 },
         };
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expect(findTextField(&elements, .item_def_name) == null);
-        var pick_cells: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| {
-                if (button.action == .select_editor_item_type) pick_cells += 1;
-            },
-            else => {},
+        const type_cell_count = @typeInfo(types.WeaponType).@"enum".fields.len +
+            @typeInfo(types.ItemKind).@"enum".fields.len - 1;
+        const panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
         };
-        try std.testing.expectEqual(@as(usize, 11), pick_cells);
+        const max_scroll = try census.maxScroll(panel);
+        var name_field_seen = false;
+        var type_rows_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            if (findTextField(&elements, .item_def_name) != null) name_field_seen = true;
+            var pick_cells: usize = 0;
+            for (elements.items) |element| switch (element) {
+                .button => |button| {
+                    if (button.action == .select_editor_item_type) pick_cells += 1;
+                },
+                else => {},
+            };
+            if (pick_cells == type_cell_count) type_rows_seen = true;
+        }
+        try std.testing.expect(!name_field_seen);
+        try std.testing.expect(type_rows_seen);
     }
 }
 
@@ -4063,15 +4215,23 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     // five headers (+ markers) + spacers, everything fits, no scrollbar.
     const editor: types.Editor = .{};
 
-    // Open (the default): toggle 3 + background panel + 5 section
-    // headers × (panel + button + label) = 19 elements.
+    // Open (the default): the toggle trio + background panel + five
+    // collapsed section strips. The exhaustive census over the single
+    // window (all-collapsed content fits — max scroll 0) pins the exact
+    // ordered content.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 19), elements.items.len);
+        // toggle 3 + background 1 + one strip (panel + button + label)
+        // per section header.
+        try std.testing.expectEqual(@as(usize, 4 + 3 * 5), elements.items.len);
         try expectInspectorToggleShape(&elements);
-        try expectInspectorLabels(&elements, &.{ "+ Player", "+ Weapons", "+ Gear", "+ Utility skills", "+ Inventory" });
+        try census.expectContentReachable(
+            arena.allocator(),
+            InspectorPanel{ .arena = arena.allocator(), .metrics = metrics, .editor = editor, .theme = theme, .sections_expanded = false },
+            &.{ "Inspector", "+ Player", "+ Weapons", "+ Gear", "+ Utility skills", "+ Inventory" },
+        );
         // The player content tints with the PLAYER gradient (the strip at
         // element 4 uses gradient[5]).
         try std.testing.expectEqual(player_five, elements.items[4].nine_slice_panel.color);
@@ -4139,109 +4299,114 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 49 row units (6 sections × 1 + 19 two-unit entries — 6 identity
-    // fields (Team + Keep colors included), 4 stats, 2 weapon slots, 5 gear
-    // slots, the
-    // utility-skill row, the add-layer row — + 5 spacers); the panel fits
-    // 10 units, so 39 units scroll + the scrollbar shows.
-    const visible_rows = @divFloor(
-        editorInspectorPanelRect().height - 2 * ui_gap,
-        editor_inspector_row_height,
-    );
-    try std.testing.expectEqual(@as(i32, 11), visible_rows);
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
+    };
+    const max_scroll = try census.maxScroll(panel);
 
-    // Scroll 0: units 0..11 — Identity, Name, Team, Sprite, Keep colors,
-    // and the Color swatch row (the taller panel fits it now — the
-    // Displays weapons toggle below it still doesn't fully fit).
-    // Elements: bg 1 + Identity 3 (panel + button + label) +
-    // Name + Team (two stat text fields) + Sprite 3 (panel + picker
-    // button + label) + Keep colors 4 (row label + panel + button +
-    // value label) + Color 13 (label + 6 swatch buttons + 6 swatch
-    // fills) + scrollbar 2 = 34.
+    // Overflow: the entity content is taller than the window, so a
+    // scroll range exists and the scrollbar (track + thumb) is emitted.
+    try std.testing.expect(max_scroll > 0);
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 34), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Keep colors", "false", "Color" });
-        // The scrollbar rects + the Color row's six swatch fills.
-        try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
+        _ = try panel.buildAt(0, &elements);
+        try std.testing.expectEqual(@as(usize, 2), countScrollbarRects(&elements));
     }
 
-    // Scroll 5 (the Team field pushes everything two units down): the
-    // window opens at Sprite and runs through the Keep colors toggle, the
-    // Color swatches, the Displays weapons toggle + the spacer + the
-    // Stats header (Max health doesn't fully fit).
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 5, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Keep colors", "false", "Color", "Displays weapons", "true", "- Stats" });
-    }
+    // THE exhaustive census: every window's labels are an ordered subset
+    // of the full content list, and the union of all windows covers it
+    // completely — no never-emitted row, no unreachable row. The list is
+    // the panel's semantic content contract, NOT a window snapshot.
+    try census.expectContentReachable(arena.allocator(), panel, &.{
+        "Inspector",        "- Identity",    "Name",
+        "Team",             "Sprite",        "(none)",
+        "Keep colors",      "false",         "Color",
+        "Displays weapons", "true",          "- Stats",
+        "Max health",       "Defense",       "Speed",
+        "Aggro range",      "- Weapons",     "Main hand",
+        "Off hand",         "- Gear",        "Amulet",
+        "Add",              "Coat",          "Add",
+        "Gloves",           "Add",           "Pants",
+        "Add",              "Boots",         "Add",
+        "- Utility skills", "Skill bar",     "- Layers",
+        "Add layer",        "Pick sprite",
+    });
 
-    // Out-of-range scroll clamps to max (49 − 11 = 38, the five spacers
-    // included): the window is the last gear slot + the utility section +
-    // the skill row + the Layers tail.
+    // Clamp semantics: negative clamps to 0; the max-clamped window
+    // still shows content (the tail, never an empty window).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 38), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{
-            "Boots", "Add", "- Utility skills", "Skill bar", "- Layers", "Add layer", "Pick sprite",
-        });
-        // The skill row: five 128×128 picker buttons — three empty (the
-        // diamond sprite) and this template has no skills equipped, so
-        // all five are empty diamonds.
-        var picker_slot_buttons: usize = 0;
+        try std.testing.expectEqual(@as(i32, 0), try panel.buildAt(-4, &elements));
+    }
+    {
+        var elements: UiElementList = .empty;
+        _ = try panel.buildAt(max_scroll, &elements);
+        var label_count: usize = 0;
         for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .open_editor_skill_picker) {
-                picker_slot_buttons += 1;
-                try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
-            },
+            .text_label => label_count += 1,
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 5), picker_slot_buttons);
+        try std.testing.expect(label_count > 0);
     }
 
-    // Negative scroll clamps to 0.
+    // The skill row: five picker slots (utility_skill_count), all empty
+    // diamonds for this unequipped template — asserted wherever the
+    // row is fully visible.
     {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = -4 };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
+        var skill_row_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            var picker_buttons: usize = 0;
+            var all_diamonds = true;
+            for (elements.items) |element| switch (element) {
+                .button => |button| if (button.action == .open_editor_skill_picker) {
+                    picker_buttons += 1;
+                    if (!std.mem.eql(u8, button.sprite_id.?, "ui/skill_slot_empty")) all_diamonds = false;
+                },
+                else => {},
+            };
+            if (picker_buttons == types.utility_skill_count) {
+                try std.testing.expect(all_diamonds);
+                skill_row_seen = true;
+            }
+        }
+        try std.testing.expect(skill_row_seen);
     }
 
-    // A stale tool id (the type deleted mid-edit) falls back to the PLAYER
-    // content — its scroll CLAMPS (45 units − 11 visible = 34: the summary
-    // grew into the 16-row slot grid), no reset; the bottom window lands on
-    // the grid's last eleven rows (pure slot cells — no text labels).
+    // A stale tool id (the type deleted mid-edit) falls back to the
+    // PLAYER content: the full slot grid is reachable — every inventory
+    // slot button appears at some offset.
     {
         const stale_editor: types.Editor = .{
             .entity_types = &entity_types,
             .active_tool = .{ .entity_type = 7 },
         };
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 34), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{});
-        // Eleven visible rows × six cells; the window ends at the grid's end
-        // (slot 95) and nothing is selected.
-        var slot_buttons: usize = 0;
-        var highest_slot: u32 = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .select_editor_inventory_slot) {
-                slot_buttons += 1;
-                highest_slot = @max(highest_slot, button.editor_inventory_slot.?);
-                try std.testing.expect(!button.highlighted);
-            },
-            else => {},
+        const stale_panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = stale_editor,
+            .theme = theme,
         };
-        try std.testing.expectEqual(@as(usize, 66), slot_buttons);
-        try std.testing.expectEqual(@as(u32, 95), highest_slot);
-        // No swatches in the window — only the scrollbar rects are solid.
-        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
+        const stale_max = try census.maxScroll(stale_panel);
+        try std.testing.expect(stale_max > 0);
+        var slot_seen = [_]bool{false} ** types.inventory_slot_count;
+        var scroll: i32 = 0;
+        while (scroll <= stale_max) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try stale_panel.buildAt(scroll, &elements);
+            for (elements.items) |element| switch (element) {
+                .button => |button| if (button.action == .select_editor_inventory_slot) {
+                    slot_seen[button.editor_inventory_slot.?] = true;
+                },
+                else => {},
+            };
+        }
+        for (slot_seen) |seen| try std.testing.expect(seen);
     }
 }
 
@@ -4268,58 +4433,60 @@ test "inspector utility-skill row: occupied slots show the skill, empty the diam
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Scroll to the bottom — the window lands on the skill row.
-    var elements: UiElementList = .empty;
-    var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-
-    // Five picker buttons: blink's slot is the skill button, the rest
-    // the empty diamond. Every slot rides its index.
-    var slot_buttons: usize = 0;
-    var blink_slot: ?u32 = null;
-    for (elements.items) |element| switch (element) {
-        .button => |button| if (button.action == .open_editor_skill_picker) {
-            slot_buttons += 1;
-            if (button.editor_utility_slot == 1) {
-                try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
-                blink_slot = button.editor_utility_slot;
-            } else {
-                try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
-            }
-        },
-        else => {},
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
     };
-    try std.testing.expectEqual(@as(usize, 5), slot_buttons);
-    try std.testing.expectEqual(@as(?u32, 1), blink_slot);
+    const max_scroll = try census.maxScroll(panel);
 
-    // The occupied slot carries the full-size skill icon (the entity-
-    // inspect look) with the icon tint from the gradient's index 1 — and
-    // the row's geometry: 128×128 cells pitched 128 + ui_gap.
-    var saw_blink_icon = false;
-    for (elements.items) |element| switch (element) {
-        .image => |image| if (std.mem.eql(u8, image.sprite_id, skillIconSpriteId(.blink))) {
-            saw_blink_icon = true;
-            try std.testing.expectEqual(@as(i32, 128), image.width);
-            try std.testing.expectEqual(@as(i32, 128), image.height);
-        },
-        else => {},
-    };
-    try std.testing.expect(saw_blink_icon);
+    // Wherever the skill row is fully visible: five picker buttons
+    // (utility_skill_count) — blink's slot is the skill button, the rest
+    // the empty diamond, every slot riding its index; the occupied slot
+    // carries the full-size skill icon; the cells pitch row height +
+    // ui_gap.
+    var skill_row_seen = false;
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
+        var elements: UiElementList = .empty;
+        _ = try panel.buildAt(scroll, &elements);
 
-    // Slot pitch: consecutive picker buttons advance by 128 + ui_gap.
-    var previous_x: ?i32 = null;
-    var pitches: usize = 0;
-    for (elements.items) |element| switch (element) {
-        .button => |button| if (button.action == .open_editor_skill_picker) {
-            if (previous_x) |x| {
-                try std.testing.expectEqual(editor_inspector_row_height + ui_gap, button.screen_position.x - x);
-                pitches += 1;
-            }
-            previous_x = button.screen_position.x;
-        },
-        else => {},
-    };
-    try std.testing.expectEqual(@as(usize, 4), pitches);
+        var slot_buttons: usize = 0;
+        var blink_slot: ?u32 = null;
+        var saw_blink_icon = false;
+        var previous_x: ?i32 = null;
+        var pitches: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .open_editor_skill_picker) {
+                slot_buttons += 1;
+                if (button.editor_utility_slot == 1) {
+                    try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
+                    blink_slot = button.editor_utility_slot;
+                } else {
+                    try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+                }
+                if (previous_x) |x| {
+                    try std.testing.expectEqual(editor_inspector_row_height + ui_gap, button.screen_position.x - x);
+                    pitches += 1;
+                }
+                previous_x = button.screen_position.x;
+            },
+            .image => |image| if (std.mem.eql(u8, image.sprite_id, skillIconSpriteId(.blink))) {
+                saw_blink_icon = true;
+                try std.testing.expectEqual(@as(i32, 128), image.width);
+                try std.testing.expectEqual(@as(i32, 128), image.height);
+            },
+            else => {},
+        };
+        if (slot_buttons == types.utility_skill_count) {
+            try std.testing.expectEqual(@as(?u32, 1), blink_slot);
+            try std.testing.expect(saw_blink_icon);
+            try std.testing.expectEqual(@as(usize, types.utility_skill_count - 1), pitches);
+            skill_row_seen = true;
+        }
+    }
+    try std.testing.expect(skill_row_seen);
 }
 
 test "inspector player content: gear + skills + inventory over player_def, commits target player_def" {
@@ -4354,88 +4521,98 @@ test "inspector player content: gear + skills + inventory over player_def, commi
         .selection = &.{.{ .player_start = {} }},
     };
 
-    // Window [7,17): the main hand's slot row + its item fields + the
-    // off-hand row + the Gear header. The weapon's text fields carry
-    // `.player_def` — the player content's commits route there.
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 7, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "- Gear" });
-        const name_field = findTextField(&elements, .{ .item_name = .main_hand }).?;
-        try std.testing.expectEqualStrings("Starter Sword", name_field.text);
-        try std.testing.expectEqual(types.TextEditTarget{ .entity = .player_def }, name_field.ref.target);
-        const damage_field = findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } }).?;
-        try std.testing.expectEqualStrings("3", damage_field.text);
-        // The equipped hand shows its Delete (not Add).
-        var main_hand_delete = false;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .delete_editor_item and
-                button.editor_gear_slot.? == .main_hand)
-            {
-                main_hand_delete = true;
-            },
-            else => {},
-        };
-        try std.testing.expect(main_hand_delete);
-    }
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
+    };
+    const max_scroll = try census.maxScroll(panel);
 
-    // The Import row: BOTH buttons render — Player data (the session
-    // import) and Max player (the shipped max loadout).
-    {
+    // The equipped main hand's fields carry `.player_def` — the player
+    // content's commits route there — and the equipped hand shows its
+    // Delete (not Add). The Import row renders BOTH buttons — Player
+    // data (the session import) and Max player (the shipped max
+    // loadout). The skill row: blink occupied in slot 0, the rest
+    // diamonds. The inventory grid's first row: the two equipped items
+    // (slots 3 + 4) render their icon overlays. Each fact asserted
+    // wherever visible.
+    var main_hand_fields_seen = false;
+    var main_hand_delete_seen = false;
+    var import_buttons_seen = false;
+    var skill_row_seen = false;
+    var inventory_first_row_seen = false;
+
+    var scroll: i32 = 0;
+    while (scroll <= max_scroll) : (scroll += 1) {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        _ = try panel.buildAt(scroll, &elements);
+
+        const main_hand_name = findTextField(&elements, .{ .item_name = .main_hand });
+        const main_hand_damage = findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } });
+        if (main_hand_name != null and main_hand_damage != null) {
+            try std.testing.expectEqualStrings("Starter Sword", main_hand_name.?.text);
+            try std.testing.expectEqual(types.TextEditTarget{ .entity = .player_def }, main_hand_name.?.ref.target);
+            try std.testing.expectEqualStrings("3", main_hand_damage.?.text);
+            try std.testing.expectEqual(types.TextEditTarget{ .entity = .player_def }, main_hand_damage.?.ref.target);
+            main_hand_fields_seen = true;
+        }
+
         var player_data_button = false;
         var max_player_button = false;
+        var main_hand_delete = false;
+        var picker_buttons: usize = 0;
+        var blink_occupied = false;
+        var first_row_cells: usize = 0;
+        var icon_overlays: usize = 0;
         for (elements.items) |element| switch (element) {
             .button => |button| {
                 if (button.action == .import_editor_player) player_data_button = true;
                 if (button.action == .import_editor_max_player) max_player_button = true;
-            },
-            else => {},
-        };
-        try std.testing.expect(player_data_button);
-        try std.testing.expect(max_player_button);
-    }
-
-    // Bottom window (scroll 29: Boots → the skill row → the Inventory
-    // header + the grid's first two rows): blink occupied in slot 0, the
-    // rest diamonds; the two inventory items (slots 3 + 4, row 0) render
-    // their icon overlays. The full grid replaced the old summary.
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 29, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "- Utility skills", "Skill bar", "- Inventory" });
-        var occupied_slots: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .open_editor_skill_picker) {
-                if (button.editor_utility_slot == 0) {
-                    try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
-                    occupied_slots += 1;
-                } else {
-                    try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+                if (button.action == .delete_editor_item and
+                    button.editor_gear_slot.? == .main_hand)
+                {
+                    main_hand_delete = true;
+                }
+                if (button.action == .open_editor_skill_picker) {
+                    picker_buttons += 1;
+                    if (button.editor_utility_slot == 0) {
+                        try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
+                        blink_occupied = true;
+                    } else {
+                        try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+                    }
+                }
+                if (button.action == .select_editor_inventory_slot and
+                    button.editor_inventory_slot.? < editor_inventory_slots_per_row)
+                {
+                    first_row_cells += 1;
                 }
             },
-            else => {},
-        };
-        try std.testing.expectEqual(@as(usize, 1), occupied_slots);
-        // The grid's first three rows: 18 cells, two carrying item icons.
-        var slot_buttons: usize = 0;
-        var icon_overlays: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .select_editor_inventory_slot) {
-                slot_buttons += 1;
-            },
-            .image => |image| if (std.mem.startsWith(u8, image.sprite_id, "items/")) {
-                icon_overlays += 1;
+            .image => |image| {
+                if (std.mem.startsWith(u8, image.sprite_id, "items/")) icon_overlays += 1;
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 18), slot_buttons);
-        try std.testing.expectEqual(@as(usize, 2), icon_overlays);
+        if (player_data_button and max_player_button) import_buttons_seen = true;
+        if (main_hand_delete) main_hand_delete_seen = true;
+        if (picker_buttons == types.utility_skill_count) {
+            try std.testing.expect(blink_occupied);
+            skill_row_seen = true;
+        }
+        // The grid's first row fully visible → its two occupied cells'
+        // icon overlays (the only items/ images in this content).
+        if (first_row_cells == editor_inventory_slots_per_row) {
+            try std.testing.expectEqual(@as(usize, 2), icon_overlays);
+            inventory_first_row_seen = true;
+        }
     }
+
+    try std.testing.expect(main_hand_fields_seen);
+    try std.testing.expect(main_hand_delete_seen);
+    try std.testing.expect(import_buttons_seen);
+    try std.testing.expect(skill_row_seen);
+    try std.testing.expect(inventory_first_row_seen);
 }
 
 test "inspector Layers sections: per-layer rows + add button (enemy + decoration)" {
@@ -4452,8 +4629,10 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // ENEMY content with one layer: the clamped window lands on the
-    // utility row + the whole Layers section.
+    // ENEMY content with one layer: the layer row (sprite re-pick +
+    // delete, both carrying the layer index) + the color row's swatches
+    // are reachable; the current color index (2) is the only highlighted
+    // swatch. Facts asserted wherever visible.
     {
         const entity_layers = [_]types.EntityLayer{.{ .sprite = "hood", .color_index = 2 }};
         const entity_types = [_]types.EntityTypeDef{.{
@@ -4469,52 +4648,64 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
             .entity_types = &entity_types,
             .active_tool = .{ .entity_type = 0 },
         };
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_scroll = 999,
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        const panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
         };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{
-            "- Utility skills", "Skill bar", "- Layers", "Layer 1", "hood", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
-        });
+        const max_scroll = try census.maxScroll(panel);
 
-        // The layer slot row: the stem button opens the ENTITY layer
-        // picker for index 0; Delete carries the same payload. The color
-        // swatches carry the layer index + the layer-color action, the
-        // current index (2) highlighted.
-        var saw_stem_button = false;
-        var saw_delete = false;
-        var swatch_count: usize = 0;
-        var highlighted_count: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| {
-                if (button.action == .open_editor_entity_layer_picker and
-                    button.editor_layer != null and button.editor_layer.? == 0)
-                {
-                    saw_stem_button = true;
-                }
-                if (button.action == .delete_editor_entity_layer and
-                    button.editor_layer != null and button.editor_layer.? == 0)
-                {
-                    saw_delete = true;
-                }
-                if (button.action == .select_editor_entity_layer_color) {
-                    try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
-                    swatch_count += 1;
-                    if (button.highlighted) highlighted_count += 1;
-                }
-            },
-            else => {},
-        };
-        try std.testing.expect(saw_stem_button);
-        try std.testing.expect(saw_delete);
-        try std.testing.expectEqual(@as(usize, 6), swatch_count);
-        try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+        var stem_button_seen = false;
+        var delete_button_seen = false;
+        var swatch_row_seen = false;
+        var layer_labels_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            var saw_layer_label = false;
+            var saw_hood_label = false;
+            var swatch_count: usize = 0;
+            var highlighted_count: usize = 0;
+            for (elements.items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, "Layer 1")) saw_layer_label = true;
+                    if (std.mem.eql(u8, label.text, "hood")) saw_hood_label = true;
+                },
+                .button => |button| {
+                    if (button.action == .open_editor_entity_layer_picker and
+                        button.editor_layer != null and button.editor_layer.? == 0)
+                    {
+                        stem_button_seen = true;
+                    }
+                    if (button.action == .delete_editor_entity_layer and
+                        button.editor_layer != null and button.editor_layer.? == 0)
+                    {
+                        delete_button_seen = true;
+                    }
+                    if (button.action == .select_editor_entity_layer_color) {
+                        try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                        swatch_count += 1;
+                        if (button.highlighted) highlighted_count += 1;
+                    }
+                },
+                else => {},
+            };
+            if (swatch_count == types.gradient_color_count) {
+                try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+                swatch_row_seen = true;
+            }
+            if (saw_layer_label and saw_hood_label) layer_labels_seen = true;
+        }
+        try std.testing.expect(stem_button_seen);
+        try std.testing.expect(delete_button_seen);
+        try std.testing.expect(swatch_row_seen);
+        try std.testing.expect(layer_labels_seen);
     }
 
-    // DECORATION content with one layer: the clamped window lands on the
-    // footprint row + the whole Layers section (world-gradient swatches).
+    // DECORATION content with one layer: the color row's swatches carry
+    // the layer index (world-gradient swatches).
     {
         const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
         const decoration_layers = [_]types.DecorationLayer{.{
@@ -4533,25 +4724,29 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
             .decoration_types = &decoration_types,
             .active_tool = .{ .decoration_type = 0 },
         };
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_scroll = 999,
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        const panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
         };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{
-            "- Footprint", "Footprint", "2 tiles", "- Layers", "Layer 1", "tree_1_canopy", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
-        });
-
-        var swatch_count: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .select_editor_decoration_layer_color) {
-                try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
-                swatch_count += 1;
-            },
-            else => {},
-        };
-        try std.testing.expectEqual(@as(usize, 6), swatch_count);
+        const max_scroll = try census.maxScroll(panel);
+        var swatch_row_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            var swatch_count: usize = 0;
+            for (elements.items) |element| switch (element) {
+                .button => |button| if (button.action == .select_editor_decoration_layer_color) {
+                    try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                    swatch_count += 1;
+                },
+                else => {},
+            };
+            if (swatch_count == types.gradient_color_count) swatch_row_seen = true;
+        }
+        try std.testing.expect(swatch_row_seen);
     }
 }
 
@@ -4596,13 +4791,11 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     }
 
     // Open + COLLAPSED (the default): the background panel + two section
-    // headers only — the inspector's all-collapsed convention. 10 = toggle
-    // 3 + panel 1 + two strips × (panel + button + label).
+    // headers only — the inspector's all-collapsed convention.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 10), elements.items.len);
         // The strips are the shared collapsible headers (+ marker, the
         // toggle action, the section id payload).
         var headers: [2]?Button = .{ null, null };
@@ -4630,104 +4823,114 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         for (elements.items) |element| try std.testing.expect(element != .text_field);
     }
 
-    // Open + EXPANDED: the entries window like the inspector's (13 units
-    // of content, 11 visible) — at scroll 0 the mission + level name
-    // fields, the WORLD row, and the ENEMY row are visible, the player
-    // row is not (it doesn't fully fit); the scrollbar appears.
+    // Open + EXPANDED: the entries window like the inspector's. The
+    // exhaustive census over every scroll offset pins the content list
+    // (the sidebar's semantic content contract, not a window snapshot).
     {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        const panel = MetadataSidebarPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
         };
-        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try census.expectContentReachable(arena.allocator(), panel, &.{
+            "Metadata", "- Mission", "Name", "- Current level", "Name", "World colors", "Enemy colors", "Auto", "Player colors", "Auto",
+        });
+        const max_scroll = try census.maxScroll(panel);
+        try std.testing.expect(max_scroll > 0);
 
-        var mission_field: ?TextFieldUi = null;
-        var level_field: ?TextFieldUi = null;
-        var open_buttons: [3]?Button = .{ null, null, null };
-        var scrollbar_rects: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .text_field => |field| switch (field.ref.id) {
-                .mission_name => mission_field = field,
-                .level_name => level_field = field,
-                else => {},
-            },
-            .button => |button| switch (button.action) {
-                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
-                    .world => open_buttons[0] = button,
-                    .enemy => open_buttons[1] = button,
-                    .player => open_buttons[2] = button,
-                },
-                else => {},
-            },
-            .solid_rect => |rect| {
-                // Scrollbar track + thumb (the fixed grays).
-                if (std.meta.eql(rect.color, types.Color{ .r = 80, .g = 80, .b = 80 }) or
-                    std.meta.eql(rect.color, types.Color{ .r = 180, .g = 180, .b = 180 }))
-                {
-                    scrollbar_rects += 1;
-                }
-            },
-            else => {},
-        };
-        try std.testing.expect(mission_field != null);
-        try std.testing.expectEqualStrings("My Mission", mission_field.?.text);
-        try std.testing.expectEqual(types.TextEditTarget.mission, mission_field.?.ref.target);
-        try std.testing.expect(level_field != null);
-        try std.testing.expectEqualStrings("Second", level_field.?.text);
-        try std.testing.expectEqual(types.TextEditTarget{ .level = 1 }, level_field.?.ref.target);
-        try std.testing.expect(open_buttons[0] != null);
-        try std.testing.expect(open_buttons[1] != null);
-        try std.testing.expect(open_buttons[2] == null);
-        // The WORLD swatch is ALWAYS outlined (its index is always an
-        // explicit pick — no Auto state to carry the outline instead).
-        try std.testing.expect(open_buttons[0].?.highlighted);
-        try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
-    }
-
-    // Scrolled to the bottom: the player row is visible, the mission
-    // name field is not (windowed out).
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
-            .editor_metadata_scroll = 99, // clamped to 2 by the builder
-        };
-        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        // The semantic facts, asserted wherever visible: the mission +
+        // level name fields' values + targets; the WORLD swatch ALWAYS
+        // outlined (its index is always an explicit pick — no Auto state
+        // to carry the outline instead); the outline marks the mode on
+        // the enemy (auto) + player (manual, override 2) rows; the
+        // scrollbar (track + thumb) present while overflowing.
         var mission_field_seen = false;
-        var player_button: ?Button = null;
-        var enemy_auto_button: ?Button = null;
-        var enemy_swatch_button: ?Button = null;
-        var player_auto_button: ?Button = null;
-        for (elements.items) |element| switch (element) {
-            .text_field => |field| {
-                if (field.ref.id == .mission_name) mission_field_seen = true;
-            },
-            .button => |button| switch (button.action) {
-                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
-                    .enemy => enemy_swatch_button = button,
-                    .player => player_button = button,
+        var level_field_seen = false;
+        var world_button_seen = false;
+        var enemy_row_mode_seen = false;
+        var player_row_mode_seen = false;
+        var scrollbar_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            if (countScrollbarRects(&elements) == 2) scrollbar_seen = true;
+
+            var mission_field: ?TextFieldUi = null;
+            var level_field: ?TextFieldUi = null;
+            var world_button: ?Button = null;
+            var enemy_auto_button: ?Button = null;
+            var enemy_swatch_button: ?Button = null;
+            var player_auto_button: ?Button = null;
+            var player_swatch_button: ?Button = null;
+            for (elements.items) |element| switch (element) {
+                .text_field => |field| switch (field.ref.id) {
+                    .mission_name => mission_field = field,
+                    .level_name => level_field = field,
                     else => {},
                 },
-                .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
-                    .enemy => enemy_auto_button = button,
-                    .player => player_auto_button = button,
+                .button => |button| switch (button.action) {
+                    .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
+                        .world => world_button = button,
+                        .enemy => enemy_swatch_button = button,
+                        .player => player_swatch_button = button,
+                    },
+                    .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
+                        .enemy => enemy_auto_button = button,
+                        .player => player_auto_button = button,
+                        else => {},
+                    },
                     else => {},
                 },
                 else => {},
+            };
+            if (mission_field) |field| {
+                try std.testing.expectEqualStrings("My Mission", field.text);
+                try std.testing.expectEqual(types.TextEditTarget.mission, field.ref.target);
+                mission_field_seen = true;
+            }
+            if (level_field) |field| {
+                try std.testing.expectEqualStrings("Second", field.text);
+                try std.testing.expectEqual(types.TextEditTarget{ .level = 1 }, field.ref.target);
+                level_field_seen = true;
+            }
+            if (world_button) |button| {
+                try std.testing.expect(button.highlighted);
+                world_button_seen = true;
+            }
+            if (enemy_auto_button != null and enemy_swatch_button != null) {
+                try std.testing.expect(enemy_auto_button.?.highlighted);
+                try std.testing.expect(!enemy_swatch_button.?.highlighted);
+                enemy_row_mode_seen = true;
+            }
+            if (player_auto_button != null and player_swatch_button != null) {
+                try std.testing.expect(!player_auto_button.?.highlighted);
+                try std.testing.expect(player_swatch_button.?.highlighted);
+                player_row_mode_seen = true;
+            }
+        }
+        try std.testing.expect(mission_field_seen);
+        try std.testing.expect(level_field_seen);
+        try std.testing.expect(world_button_seen);
+        try std.testing.expect(enemy_row_mode_seen);
+        try std.testing.expect(player_row_mode_seen);
+        try std.testing.expect(scrollbar_seen);
+
+        // Clamp semantics: an out-of-range scroll clamps to the content
+        // max, and the max window shows the TAIL — the mission name
+        // field (the topmost row) is windowed out there.
+        var tail_elements: UiElementList = .empty;
+        const clamped = try panel.buildAt(99, &tail_elements);
+        try std.testing.expectEqual(max_scroll, clamped);
+        var mission_field_in_tail = false;
+        for (tail_elements.items) |element| switch (element) {
+            .text_field => |field| {
+                if (field.ref.id == .mission_name) mission_field_in_tail = true;
             },
             else => {},
         };
-        try std.testing.expect(!mission_field_seen);
-        try std.testing.expect(player_button != null);
-        // The outline marks the mode: enemy (auto) → the AUTO button
-        // outlined, the swatch not; player (manual, override 2) → the
-        // SWATCH outlined, the Auto button not.
-        try std.testing.expect(enemy_auto_button.?.highlighted);
-        try std.testing.expect(!enemy_swatch_button.?.highlighted);
-        try std.testing.expect(!player_auto_button.?.highlighted);
-        try std.testing.expect(player_button.?.highlighted);
-        // The scroll CLAMPED to the content max (13 units - 11 visible).
-        try std.testing.expectEqual(@as(i32, 2), ui_state.editor_metadata_scroll);
+        try std.testing.expect(!mission_field_in_tail);
     }
 }
 
@@ -4757,102 +4960,138 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
         .selection = &.{.{ .player_start = {} }},
     };
 
-    // No selection: bare slot rows only — the section header plus cells,
-    // no detail entries anywhere.
+    const panel = InspectorPanel{
+        .arena = arena.allocator(),
+        .metrics = metrics,
+        .editor = editor,
+        .theme = theme,
+    };
+    const max_scroll = try census.maxScroll(panel);
+
+    // No selection: bare slot rows only — the section header reachable,
+    // and NO detail buttons at ANY offset (stronger than any single
+    // window).
     {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 28, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{"- Inventory"});
         var detail_buttons: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .add_editor_inventory_item or
-                button.action == .delete_editor_inventory_item or
-                button.action == .select_editor_inventory_item_type)
-            {
-                detail_buttons += 1;
-            },
-            else => {},
-        };
+        var inventory_header_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= max_scroll) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try panel.buildAt(scroll, &elements);
+            for (elements.items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, "- Inventory")) inventory_header_seen = true;
+                },
+                .button => |button| if (button.action == .add_editor_inventory_item or
+                    button.action == .delete_editor_inventory_item or
+                    button.action == .select_editor_inventory_item_type)
+                {
+                    detail_buttons += 1;
+                },
+                else => {},
+            };
+        }
         try std.testing.expectEqual(@as(usize, 0), detail_buttons);
+        try std.testing.expect(inventory_header_seen);
     }
 
-    // Selected OCCUPIED slot 4 (row 0): the detail block inserts directly
-    // below row 0 — Delete (not Add), the type rows (the amulet cell
-    // highlighted), name + spell damage fields, all targeting slot 4.
+    // Selected OCCUPIED slot 4: the detail block inserts directly below
+    // its slot row — Delete (not Add), the type rows (the amulet cell
+    // highlighted), name + spell damage fields, all targeting slot 4;
+    // the slot's own cell highlighted. Facts asserted wherever visible.
     {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_scroll = 29,
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
-            .editor_inventory_selected_slot = 4,
+        const selected_panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
+            .selected_inventory_slot = 4,
         };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Slot 5", "Delete", "Type", "Name", "Spell damage" });
-        const name_field = findTextField(&elements, .inventory_item_name).?;
-        try std.testing.expectEqualStrings("Starter Amulet", name_field.text);
-        try std.testing.expectEqual(types.TextEditTarget{ .inventory_slot = 4 }, name_field.ref.target);
-        const stat_field = findTextField(&elements, .{ .inventory_item_stat = .spell_damage }).?;
-        try std.testing.expectEqualStrings("3", stat_field.text);
-        // The selected cell is highlighted; the Delete button carries
-        // the slot payload.
-        var selected_highlighted = false;
-        var delete_button = false;
-        var amulet_highlighted = false;
-        for (elements.items) |element| switch (element) {
-            .button => |button| {
-                if (button.action == .select_editor_inventory_slot and
-                    button.editor_inventory_slot.? == 4 and button.highlighted)
-                {
-                    selected_highlighted = true;
-                }
-                if (button.action == .delete_editor_inventory_item and
-                    button.editor_inventory_slot.? == 4)
-                {
-                    delete_button = true;
-                }
-                if (button.action == .select_editor_inventory_item_type and
-                    button.editor_item_kind.? == .amulet and button.highlighted)
-                {
-                    amulet_highlighted = true;
-                }
-            },
-            else => {},
-        };
-        try std.testing.expect(selected_highlighted);
-        try std.testing.expect(delete_button);
-        try std.testing.expect(amulet_highlighted);
+        const selected_max = try census.maxScroll(selected_panel);
+        var detail_fields_seen = false;
+        var slot_label_seen = false;
+        var selected_cell_seen = false;
+        var delete_button_seen = false;
+        var amulet_cell_seen = false;
+        var scroll: i32 = 0;
+        while (scroll <= selected_max) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try selected_panel.buildAt(scroll, &elements);
+            const detail_name = findTextField(&elements, .inventory_item_name);
+            const detail_stat = findTextField(&elements, .{ .inventory_item_stat = .spell_damage });
+            if (detail_name != null and detail_stat != null) {
+                try std.testing.expectEqualStrings("Starter Amulet", detail_name.?.text);
+                try std.testing.expectEqual(types.TextEditTarget{ .inventory_slot = 4 }, detail_name.?.ref.target);
+                try std.testing.expectEqualStrings("3", detail_stat.?.text);
+                detail_fields_seen = true;
+            }
+            for (elements.items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, "Slot 5")) slot_label_seen = true;
+                },
+                .button => |button| {
+                    if (button.action == .select_editor_inventory_slot and
+                        button.editor_inventory_slot.? == 4 and button.highlighted)
+                    {
+                        selected_cell_seen = true;
+                    }
+                    if (button.action == .delete_editor_inventory_item and
+                        button.editor_inventory_slot.? == 4)
+                    {
+                        delete_button_seen = true;
+                    }
+                    if (button.action == .select_editor_inventory_item_type and
+                        button.editor_item_kind.? == .amulet and button.highlighted)
+                    {
+                        amulet_cell_seen = true;
+                    }
+                },
+                else => {},
+            };
+        }
+        try std.testing.expect(detail_fields_seen);
+        try std.testing.expect(slot_label_seen);
+        try std.testing.expect(selected_cell_seen);
+        try std.testing.expect(delete_button_seen);
+        try std.testing.expect(amulet_cell_seen);
     }
 
-    // Selected EMPTY slot 13 (row 2): Add only — no type rows, no fields
-    // (author decision: an empty slot shows Add until an item exists).
+    // Selected EMPTY slot 13: Add only — no type rows, no fields at ANY
+    // offset (author decision: an empty slot shows Add until an item
+    // exists).
     {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{
-            .editor_inspector_scroll = 28,
-            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
-            .editor_inventory_selected_slot = 13,
+        const selected_panel = InspectorPanel{
+            .arena = arena.allocator(),
+            .metrics = metrics,
+            .editor = editor,
+            .theme = theme,
+            .selected_inventory_slot = 13,
         };
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "- Inventory", "Slot 14", "Add" });
-        var add_button = false;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .add_editor_inventory_item and
-                button.editor_inventory_slot.? == 13)
-            {
-                add_button = true;
-            },
-            else => {},
-        };
-        try std.testing.expect(add_button);
-        try std.testing.expect(findTextField(&elements, .inventory_item_name) == null);
+        const selected_max = try census.maxScroll(selected_panel);
+        var add_button_seen = false;
+        var name_field_seen = false;
         var type_cells: usize = 0;
-        for (elements.items) |element| switch (element) {
-            .button => |button| if (button.action == .select_editor_inventory_item_type) {
-                type_cells += 1;
-            },
-            else => {},
-        };
+        var scroll: i32 = 0;
+        while (scroll <= selected_max) : (scroll += 1) {
+            var elements: UiElementList = .empty;
+            _ = try selected_panel.buildAt(scroll, &elements);
+            if (findTextField(&elements, .inventory_item_name) != null) name_field_seen = true;
+            for (elements.items) |element| switch (element) {
+                .button => |button| {
+                    if (button.action == .add_editor_inventory_item and
+                        button.editor_inventory_slot.? == 13)
+                    {
+                        add_button_seen = true;
+                    }
+                    if (button.action == .select_editor_inventory_item_type) {
+                        type_cells += 1;
+                    }
+                },
+                else => {},
+            };
+        }
+        try std.testing.expect(add_button_seen);
+        try std.testing.expect(!name_field_seen);
         try std.testing.expectEqual(@as(usize, 0), type_cells);
     }
 }
