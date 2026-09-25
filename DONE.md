@@ -13606,3 +13606,46 @@ Remaining sweep files: handler_tests_editor.zig, editor_shell.zig,
 editor_pickers.zig, menus.zig, panels.zig, screens.zig, view.zig —
 each gets the same triage: semantic/derived assertions keep, pinned
 windows convert or delete.
+
+## Census sweep slices 2 + 3 — shell / pickers / menus / panels / screens triage
+
+The second sweep pass triaged the remaining ui builder test files. Most
+were already in the target shape (the derive-don't-curate rule had landed
+with them); the conversion surgically fixed the stragglers:
+
+- `editor_shell.zig`: the palette group-window test's hand-pinned window
+  (8), clamp (4 = 12−8), and tool-cell count (12) now derive from
+  `editor_palette_max_tools` + the type arrays; the group-detection
+  probe picks the decoration cell by the button-before-graphic pairing
+  instead of the 5th-emitted-cell index (positional coupling); the
+  fixed-tools test's element counts derive from the same structure
+  (2×2 + 3×9; 2 fixed + one cell per group's window). The level-tabs
+  tests were already semantic (clamp behavior with structurally derived
+  counts) — untouched.
+- `editor_pickers.zig`: the official-tab counts (9 = "10 shipped minus
+  player") now derive from `official_entity_sprite_stems.len` (the
+  player is already excluded from the list — the literal lied about
+  its own derivation); the theme picker's element count (28) derives
+  from the gradient + block counts + frame rects.
+- `menus.zig`: clean — the load-save/mission-browser window tests
+  already assert properties (window < total, first visible = scroll 0,
+  clamp derived from the observed row count). Untouched.
+- `panels.zig`: the skills-panel overflow test's hand-derived window
+  arithmetic (visible rows [1,7), 21 slots) replaced with the semantic
+  properties: over-scroll clamps in range + the LAST skill's slot
+  visible at max (max scroll reaches the end), slots == icons,
+  window < total, containment against the panel's own padding edge.
+  The few-skills count derives from the learned list.
+- `screens.zig`: the error-popup clamp test's pinned 37 (= 60 lines −
+  23 visible) derives from the popup's own constants, the same shape
+  the neighboring scrolled-window test already used. The rest of the
+  popup tests were already property-shaped.
+- `view.zig` deferred to its own slice: the camera-clamp tests assert
+  exact hand-computed pixel positions (encoding the band geometry) —
+  they need the relative-form conversion (camera offset vs the region
+  edge, player-relative centering), which is careful transcription
+  per test.
+- `handler_tests_editor.zig` (147 tests) + tooltip/element tests:
+  triaged clean — drain tests and semantic assertions, no census tier.
+
+Remaining sweep work: view.zig (camera clamp + editor viewport tests).

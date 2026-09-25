@@ -926,8 +926,8 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
     var session: state.SessionState = .{};
     session.error_scroll_offset = 100_000; // way past max_scroll (lines)
 
-    // The same 60-token message (exactly 60 visual lines, 23 visible):
-    // max_scroll = 60 - 23 = 37 lines.
+    // The same 60-token message (exactly 60 visual lines — one token
+    // per line at these metrics).
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
     for (0..60) |i| {
@@ -939,8 +939,11 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
-    // Clamped to exactly max_scroll: 60 lines - 23 visible.
-    try std.testing.expectEqual(@as(i32, 37), session.error_scroll_offset);
+    // Clamped to exactly max_scroll: the line count minus the visible
+    // count (derived from the popup's own constants, the same shape as the
+    // scrolled-window test).
+    const expected_visible: i32 = @intCast(@divTrunc(error_popup_max_body_height, lineHeight(error_body_font_size)));
+    try std.testing.expectEqual(@as(i32, 60) - expected_visible, session.error_scroll_offset);
 }
 
 const testing = std.testing;

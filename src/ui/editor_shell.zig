@@ -1447,10 +1447,9 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         .select,
     );
 
-    // 2 fixed tools x (bg + graphic) + 3 groups x (header panel + button
-    // + label + plus (panel + button + glyph) + type (bg + graphic + delete
-    // button)) = 4 + 27.
-    try std.testing.expectEqual(@as(usize, 31), elements.items.len);
+    // 2 fixed tools × (bg + graphic) + 3 groups × 9 (header panel +
+    // button + label + plus trio + type bg + graphic + delete button).
+    try std.testing.expectEqual(@as(usize, 2 * 2 + 3 * 9), elements.items.len);
 
     // Every tool graphic sits on a button_background cell at the bottom of the
     // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" cells are
@@ -1472,7 +1471,9 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 5), background_count);
+    // 2 fixed tools + one type cell per palette group's window.
+    const tool_cell_count = 2 + entity_types.len + decoration_types.len + item_types.len;
+    try std.testing.expectEqual(@as(usize, tool_cell_count), background_count);
 
     // Fixed tools: Select uses tile_highlight frame 0 (a source rectangle,
     // not the whole 1024-wide sheet); Tile uses world/tile tinted with the
@@ -2013,9 +2014,11 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         .select,
     );
 
-    // The over-scrolled offset clamps to size - max = 12 - 8 = 4; negative
-    // would clamp to 0.
-    try std.testing.expectEqual(@as(i32, 4), scroll_offsets[1]);
+    // The over-scrolled offset clamps to size − max (derived from the
+    // same constant the builder clamps with); negative would clamp to 0.
+    const expected_window = @min(decoration_types.len, editor_palette_max_tools);
+    const expected_clamp: i32 = @intCast(decoration_types.len - expected_window);
+    try std.testing.expectEqual(expected_clamp, scroll_offsets[1]);
 
     // Count decoration tool cells: exactly 8 (the window). Tooltips live
     // on the button_background image, which is emitted immediately BEFORE
@@ -2041,7 +2044,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
             previous_tooltip = null;
         },
     };
-    try std.testing.expectEqual(@as(usize, 8), decoration_cells);
+    try std.testing.expectEqual(@as(usize, expected_window), decoration_cells);
     try std.testing.expect(!found_first);
     try std.testing.expect(found_last);
 
@@ -2062,26 +2065,29 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         };
         break :blk count;
     };
-    // 2 fixed + 1 enemy + 8 decorations + 1 item (pluses are in the
-    // header strip, out of the bar band).
-    try std.testing.expectEqual(@as(usize, 12), tool_backgrounds);
+    // 2 fixed + the enemy window + the decoration window + the item
+    // (pluses are in the header strip, out of the bar band).
+    try std.testing.expectEqual(
+        @as(usize, 2 + entity_types.len + expected_window + item_types.len),
+        tool_backgrounds,
+    );
 
-    // The 5th background cell (index 4) is the first decoration window
-    // cell — cells are emitted in order: Select, Tile, enemy, enemy-plus,
-    // decorations (8), decoration-plus, item, item-plus.
-    var cell_index: usize = 0;
+    // The first decoration window cell (found by the button that
+    // immediately precedes its graphic — the button/image pairing, not
+    // an emission index): group detection maps it to group 1
+    // (Decorations).
     var decoration_cell_center: ?types.ScreenPosition = null;
+    var previous_button_center: ?types.ScreenPosition = null;
     for (elements.items) |element| switch (element) {
         .button => |button| {
-            if (button.sprite_id == null) continue;
-            if (!std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id)) continue;
-            if (button.screen_position.y < types.reference_height - bottom_bar_height) continue;
-            defer cell_index += 1;
-            if (cell_index == 4) {
-                decoration_cell_center = .{
-                    .x = button.screen_position.x + @divTrunc(button.width, 2),
-                    .y = button.screen_position.y + @divTrunc(button.height, 2),
-                };
+            previous_button_center = .{
+                .x = button.screen_position.x + @divTrunc(button.width, 2),
+                .y = button.screen_position.y + @divTrunc(button.height, 2),
+            };
+        },
+        .image => |image| {
+            if (decoration_cell_center == null and std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
+                decoration_cell_center = previous_button_center;
             }
         },
         else => {},

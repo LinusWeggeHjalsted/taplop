@@ -26,10 +26,13 @@ Test by running `zig build run` and clicking through.
   window-census tests whose semantics were unchanged (DONE.md, "Top
   bar shrunk to 128px"). The design landed this session; the sweep is
   the implementation.
-  Progress: `src/test_ui_census.zig` (the shared helper) + the
-  editor_inspector.zig conversion DONE (slice 1 — DONE.md); remaining
-  files: handler_tests_editor, editor_shell, editor_pickers, menus,
-  panels, screens, view.
+  Progress: slices 1–3 DONE (DONE.md) — the shared helper +
+  editor_inspector; shell/pickers/menus/panels/screens triaged +
+  converted; handler_tests_editor triaged clean (drain tests, no census
+  tier). Remaining: view.zig — the camera-clamp + editor-viewport
+  tests assert exact hand-computed pixel positions (encoding band
+  geometry); convert to the relative form (camera offset vs the region
+  edge, player-relative centering) so band changes don't re-break them.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

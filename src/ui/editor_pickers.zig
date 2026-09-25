@@ -1271,7 +1271,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 9), pick_buttons); // 10 shipped minus player
+        try std.testing.expectEqual(official_entity_sprite_stems.len, pick_buttons); // the player is excluded from the stems list
         try std.testing.expect(!saw_player);
         try std.testing.expectEqualStrings("bear", highlighted.?);
         try std.testing.expect(saw_bear_graphic);
@@ -1520,7 +1520,7 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 9), pick_buttons);
+        try std.testing.expectEqual(official_entity_sprite_stems.len, pick_buttons);
         try std.testing.expect(!saw_player);
         try std.testing.expectEqualStrings("bear", highlighted.?);
     }
@@ -1790,7 +1790,13 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
                 .height = panel.height,
             },
         );
-        try std.testing.expectEqual(@as(usize, 28), elements.items.len);
+        // 3 base elements (overlay panel + header label + close button)
+        // + one row per gradient (its color blocks + strip button) + the
+        // current row's 4 frame edge rects.
+        try std.testing.expectEqual(
+            @as(usize, 3 + definitions.gradients.len * (types.gradient_color_count + 1) + 4),
+            elements.items.len,
+        );
         // The strips are FIXED-SIZE (6 × slot_size wide, slot_size tall),
         // not stretched to the overlay — the row's button spans the whole
         // strip (the 6 blocks beneath it are slot_size/6 each).
