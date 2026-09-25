@@ -161,6 +161,25 @@ next session meets it as a surprise instead of a known.
   supersampling option. SDF-for-art (alpha-channel distance fields) was
   considered and rejected: silhouette-only, breaks soft-alpha art, and its
   win is magnification — the pipeline never draws world art above 1:1.
+- **Sprite-pass LOD snap (DONE)** — trilinear's residual weakness: at a
+  NON-dyadic minification the fractional blend over-blurs (zoom 0.75 on a
+  1080p target sits at LOD 1.41 → 41% of the heavily-averaged level 2 mixed
+  in → the "washed out" zoom; which zooms wash depends on the render
+  preset). Fix (landed): the backend's sprite-pass shader — raylib's default
+  batch fragment shader + an `lodBias` uniform — snaps mip selection to the
+  SHARPER adjacent level for the frame's discrete camera-zoom x render-preset
+  combo (`spriteLodSnapBias`; 0 at exact powers of two, so on-level combos
+  are untouched). Residual cost: the sharper level is undersampled by up to
+  2^frac (≤1.5x across the combos) — mild sparkle on fine detail instead of
+  uniform blur. Scope granularity: one scope for the text-free world layers,
+  per-item scopes where text can draw mid-pass (raylib's endShaderMode
+  restores the DEFAULT shader, so a scope spanning an SDF text draw would
+  silently lose the bias); UI elements draw sprites before text, so
+  per-element scoping is exact. Shader compile failure degrades to plain
+  trilinear (no scope). The exact-filter escalation path (software
+  box-prefiltered variant textures per zoom level, alias-free AND sharp at
+  every combo) was considered and deferred — not worth the VRAM + plumbing
+  unless the snap's residual sparkle ever bothers in practice.
 - All raylib-linked files (`native.zig`, `web.zig`, everything under
   `src/raylib/`)
   are excluded from the test-root scan in `build.zig` (`collectZigFiles` —

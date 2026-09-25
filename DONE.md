@@ -13393,3 +13393,44 @@ Design: DESIGN → Platform Seam → SDF text outline (unification, clamp, the
 transparent-outline-color rule, fallback policy). Verified: native (plain +
 outlined text at all sizes, inventory material counts clean), web compile +
 browser run.
+
+## Sprite-pass LOD snap — fixing the washed-out 0.75x zoom (follow-up to slice 1)
+
+Follow-up to the sprite-mipmap slice (entries above; design: DESIGN →
+Platform Seam → Sprite-pass LOD snap). After trilinear mipmaps landed, zoom
+0.75 looked washed out compared to 0.5 and 1.0: trilinear's fractional blend
+at a NON-dyadic minification mixes in the heavily-averaged deeper level
+(zoom 0.75 on a 1080p target = LOD 1.41 → 41% of the 4x-averaged level 2),
+over-blurring versus the ideal 2.67x box. Which zoom washes depends on the
+render preset (the camera zoom takes only four values, 0.25/0.5/0.75/1.0,
+and zoom × renderScale lands exactly ON a mip level only at powers of two).
+
+Fix — option A of the two considered (the other, exact software-box-filtered
+variant textures per zoom level, deferred; see DESIGN): the backend's
+sprite-pass shader (`src/raylib/backend.zig`), raylib's default batch
+fragment shader (texel × tint, blend-mode-orthogonal, white-texture rects
+pass through) plus an `lodBias` uniform, snapped per frame to the SHARPER
+adjacent mip level for the current zoom × render-preset combo
+(`spriteLodSnapBias` — subtracts the LOD's fractional part; 0 at exact
+powers of two, so on-level combos render identically to before). Residual
+cost: the sharper level is undersampled by up to 2^frac (≤1.5x across the
+16 combos) — mild sparkle on fine detail instead of uniform blur, the
+standard sharpness trade.
+
+Two raylib facts shaped the implementation:
+- SetShaderValue binds the program itself (rlEnableShader), so the
+  set-uniform-then-beginShaderMode pattern (inherited from the SDF path) is
+  sound rather than lucky.
+- EndShaderMode restores the DEFAULT shader, not the enclosing scope — so
+  scopes must not span text draws: one scope for the text-free world layers
+  (tiles/overlays/ground/insets — the big batch-friendly runs), per-item
+  scopes for world overlays (floating combat numbers) and UI elements
+  (SDF labels switch shaders mid-element; every element draws sprites
+  before text, so per-element scoping is exact). Per-element scoping adds
+  no meaningful flush cost — slice 2's per-label shader toggles already
+  flush at that granularity.
+
+Shader compile failure degrades to plain trilinear (no scope; the
+washed-out intermediate zooms return rather than anything breaking).
+Verified natively at all four zooms (0.75 matches the crispness character
+of 0.5/1.0; 0.25/1.0 pixel-identical to before) + web compile.

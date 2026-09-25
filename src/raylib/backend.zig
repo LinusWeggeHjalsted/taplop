@@ -90,6 +90,70 @@ fn blitTransform(target_width_int: i32, target_height_int: i32) ViewTransform {
     };
 }
 
+/// Fragment shader for the sprite pass (see `beginSpritePass`): raylib's
+/// default batch fragment shader (textured quad: texel × vertex tint) plus
+/// an `lodBias` uniform that snaps mip selection to the SHARPER adjacent
+/// level for the discrete camera-zoom × render-preset combos (see
+/// `spriteLodSnapBias`). Mirrors the default shader EXACTLY otherwise —
+/// untextured draws (rect fills) bind raylib's white 1x1 texture, so the
+/// multiply passes them through untouched, and the blend mode is orthogonal
+/// to the shader. Desktop GL (GLSL 3.30).
+const sprite_pass_fs_glsl330 =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\uniform float lodBias;
+    \\out vec4 finalColor;
+    \\void main()
+    \\{
+    \\    vec4 texelColor = texture(texture0, fragTexCoord, lodBias);
+    \\    finalColor = texelColor*fragColor;
+    \\}
+;
+
+/// WebGL variant (GLSL ES 3.00 — the web context is WebGL 2; same math as
+/// the desktop one).
+const sprite_pass_fs_glsl300es =
+    \\#version 300 es
+    \\precision highp float;
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\uniform float lodBias;
+    \\out vec4 finalColor;
+    \\void main()
+    \\{
+    \\    vec4 texelColor = texture(texture0, fragTexCoord, lodBias);
+    \\    finalColor = texelColor*fragColor;
+    \\}
+;
+
+/// The sprite-pass fragment shader for this build target: GLSL ES 3.00 on
+/// web (emscripten), GLSL 3.30 on desktop.
+const sprite_pass_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.arch == .wasm32)
+    sprite_pass_fs_glsl300es
+else
+    sprite_pass_fs_glsl330;
+
+/// Per-frame mip snap bias for the sprite pass: trilinear's fractional blend
+/// at a NON-dyadic minification over-blurs — at LOD 1.41 (zoom 0.75 on a
+/// 1080p target) it mixes 41% of the heavily-averaged level 2 into the
+/// sample, which reads as the "washed out" zoom level. `total_scale` is the
+/// drawn sprite's whole minification (camera zoom × renderScale for world
+/// layers, renderScale for UI); the returned bias snaps sampling to the
+/// SHARPER adjacent level (subtracting the LOD's fractional part). Residual
+/// cost: the sharper level is undersampled by up to 2^frac (≤ 1.5× across
+/// the discrete zoom × preset combos — mild sparkle on fine detail instead
+/// of uniform blur). Returns 0 at exact powers of two and at magnification,
+/// so the on-level combos are unaffected.
+fn spriteLodSnapBias(total_scale: f32) f32 {
+    if (total_scale >= 1.0) return 0.0;
+    const lod = std.math.log2(1.0 / total_scale);
+    const fractional_part = lod - @floor(lod);
+    return -fractional_part;
+}
+
 
 
 pub const RaylibBackend = struct {
@@ -111,6 +175,17 @@ pub const RaylibBackend = struct {
     /// SDF text-outline pipeline + text drawing (see text.zig).
     /// `fontMetrics` below is the thin wrapper main.zig drives.
     text: text_mod.TextRenderer,
+    /// Sprite-pass shader (see `beginSpritePass`): the default batch fragment
+    /// shader + an `lodBias` uniform that snaps mip selection for the discrete
+    /// camera-zoom × render-preset combos. null → the shader failed to
+    /// compile and sprite draws use the plain default shader (trilinear —
+    /// the washed-out intermediate zooms, accepted for a near-unreachable
+    /// failure).
+    sprite_shader: ?rl.Shader,
+    /// Cached `lodBias` uniform location (-1 = not found; raylib's
+    /// setShaderValue no-ops on -1, degrading to an unbiasd — trilinear —
+    /// sprite pass, never a crash).
+    sprite_lod_bias_location: i32,
     /// Transient per-frame allocations (null-terminated strings for raylib,
     /// asset paths). Reset at the start of every render.
     frame_arena: std.heap.ArenaAllocator,
@@ -171,12 +246,24 @@ pub const RaylibBackend = struct {
         // transparent-edge artifact at no per-frame cost.
         rl.setTextureFilter(render_target.texture, .bilinear);
 
+        // Sprite-pass shader: the default batch fragment shader + an LOD snap
+        // bias uniform (see `beginSpritePass`). Loaded unconditionally at init
+        // — a compile failure just means sprite draws keep the plain
+        // trilinear filter (slice-1 look, washed-out intermediate zooms).
+        const sprite_shader = rl.loadShaderFromMemory(null, sprite_pass_fs_source) catch null;
+        const sprite_lod_bias_location: i32 = if (sprite_shader) |shader|
+            rl.getShaderLocation(shader, "lodBias")
+        else
+            -1;
+
         return .{
             .allocator = allocator,
             .render_target = render_target,
             .render_width = default_dims.width,
             .render_height = default_dims.height,
             .text = text_mod.TextRenderer.init(allocator, file_source),
+            .sprite_shader = sprite_shader,
+            .sprite_lod_bias_location = sprite_lod_bias_location,
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
             .textures = .{ .allocator = allocator, .file_source = file_source },
             .audio = .{ .allocator = allocator, .file_source = file_source },
@@ -187,6 +274,7 @@ pub const RaylibBackend = struct {
     }
 
     pub fn deinit(self: *RaylibBackend) void {
+        if (self.sprite_shader) |shader| rl.unloadShader(shader);
         self.textures.deinit();
         self.audio.deinit();
         self.text.deinit();
@@ -234,6 +322,27 @@ pub const RaylibBackend = struct {
     /// target (`render_width / reference_width`).
     fn renderScale(self: *const RaylibBackend) f32 {
         return @as(f32, @floatFromInt(self.render_width)) / reference_width;
+    }
+
+    /// Begin a sprite-pass draw scope under the sprite shader, with the LOD
+    /// snap bias for `total_scale` — the drawn sprites' whole minification
+    /// (camera zoom × renderScale for world layers, renderScale for UI).
+    /// No-op when the shader failed to compile (plain trilinear). SCOPE
+    /// GRANULARITY MATTERS: raylib's endShaderMode (nested SDF text draws)
+    /// restores the DEFAULT shader, not this one, so a scope must not span
+    /// text draws — sprite-only runs share one scope, anything that can
+    /// contain text (world overlays, UI elements) scopes per item.
+    /// See DESIGN → Platform Seam → Sprite-mipmap smoothing.
+    fn beginSpritePass(self: *RaylibBackend, total_scale: f32) void {
+        const shader = self.sprite_shader orelse return;
+        const lod_bias = spriteLodSnapBias(total_scale);
+        rl.setShaderValue(shader, self.sprite_lod_bias_location, &lod_bias, .float);
+        rl.beginShaderMode(shader);
+    }
+
+    /// Close a `beginSpritePass` scope. No-op when the shader is unavailable.
+    fn endSpritePass(self: *RaylibBackend) void {
+        if (self.sprite_shader != null) rl.endShaderMode();
     }
 
     /// Open the audio device and load all sfx + the music streams (the
@@ -368,8 +477,14 @@ pub const RaylibBackend = struct {
         // See DESIGN → Platform Seam → Render target resolution.
         rl.beginBlendMode(.alpha_premultiply);
         rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = self.renderScale() });
-        // World layers first (tiles, then overlays + ground drawables as they
-        // land), then the UI on top.
+        // Sprite passes (LOD snap; see beginSpritePass): ONE scope for the
+        // text-free world layers, then per-item scopes where text can draw
+        // mid-pass (combat numbers, UI labels switch to the SDF shader, and
+        // raylib's endShaderMode would drop the bias for anything after
+        // them). World layers first (tiles, then overlays + ground drawables
+        // as they land), then the UI on top.
+        const world_total_scale = view_state.world_scale * self.renderScale();
+        self.beginSpritePass(world_total_scale);
         for (view_state.tiles) |tile| draw_mod.drawWorldSprite(self, 
             "world/tile",
             tile.screen_position,
@@ -379,9 +494,18 @@ pub const RaylibBackend = struct {
         for (view_state.tile_overlays) |overlay| draw_mod.drawTileOverlay(self, overlay, view_state.world_scale);
         for (view_state.ground_drawables) |ground| draw_mod.drawGroundDrawable(self, ground, view_state.world_scale);
         for (view_state.occlusion_insets) |inset| draw_mod.drawOcclusionInset(self, inset, view_state.world_scale);
-        for (view_state.world_overlays) |overlay| draw_mod.drawWorldOverlay(self, overlay, view_state.world_scale);
+        self.endSpritePass();
+        for (view_state.world_overlays) |overlay| {
+            self.beginSpritePass(world_total_scale);
+            draw_mod.drawWorldOverlay(self, overlay, view_state.world_scale);
+            self.endSpritePass();
+        }
         const theme_darkest = view_state.active_color_theme.darkest;
-        for (view_state.ui_elements) |element| draw_mod.drawUiElement(self, element, view_state.active_color_theme.lightest, theme_darkest);
+        for (view_state.ui_elements) |element| {
+            self.beginSpritePass(self.renderScale());
+            draw_mod.drawUiElement(self, element, view_state.active_color_theme.lightest, theme_darkest);
+            self.endSpritePass();
+        }
         rl.endMode2D();
         rl.endBlendMode();
         rl.endTextureMode();
