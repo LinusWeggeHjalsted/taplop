@@ -73,6 +73,12 @@ Two hygiene rules that keep the above true in practice:
 
 ### Testing discipline (arena blind spots)
 
+The suite's settled design — the four bug classes it exists to catch, the
+tier conventions (where each kind of test lives), the assertion patterns
+(derived expectations, exhaustiveness properties over pinned windows, the
+deletion policy), and the rejected coverage-matrix — live in DESIGN →
+Testing. This section holds only the working mechanics.
+
 Most tests wrap in an `ArenaAllocator` for easy cleanup (every sub-allocation
 freed at once on deinit). Arena-wrapping MASKS two classes of bug:
 - **Leaks** — arena `free` is a no-op, so a forgotten `free` is invisible
@@ -122,11 +128,6 @@ d  diff before running them across the tree.** Asserted replacements catch
   census counts were hand-updated twice before being derived from the
   same list the picker iterates (self-updating, still catches emission
   bugs). Snapshot counts of anything that grows by design are churn.
-- **Write tests from the design doc's semantics, not the code's behavior.**
-  The adrenaline-surge handler's push order was implemented backwards; the
-  death-ordering test caught it because it pinned the INTENDED semantics
-  (resets land even when the attacks kill), not what the code happened to
-  do. Tests copied from behavior re-assert bugs.
 
 ### Commit policy
 
@@ -615,3 +616,10 @@ stay here in AGENTS; this map is the seam between the two.
   residency, level caps, safety ceiling, asset-memory levers.
 - **UI framework** — DESIGN → UI Framework: ViewState, flat UiElement list,
   Rect algebra, builders, text coloring + measurement seam.
+- **Testing** — DESIGN → Testing: the four bug classes, tier conventions
+  (inline pure-fn tests / handler drain tests via the harness / skill
+  contracts / UI structure tests), assertion patterns (derived
+  expectations, exhaustiveness properties, awkward values), deletion
+  policy, the rejected coverage matrix. Working mechanics (test.sh,
+  discovery, arena blind spots) stay in AGENTS → Build & Test. Key:
+  `src/test_harness.zig`, `src/handler_tests_*.zig`, `src/skill_tests.zig`.

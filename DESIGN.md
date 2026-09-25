@@ -4026,6 +4026,132 @@ setters landed with the settings-sidebar slice. Remaining: validation result +
 replay attachment (deferred with online services), editor autosave
 (nice-to-have).
 
+## Testing
+
+Settled test-suite design: what the suite exists to catch, where each kind
+of test lives, and the assertion shapes that don't churn. Working rules —
+how to RUN tests, the arena blind spots, the no-`expectPanics` workaround,
+sweep-script discipline — stay in AGENTS → Build & Test; this section is
+the "what a good test looks like" contract. Motivating history: the 128px
+top-bar geometry change broke ~15 window-census tests whose assertions
+pinned DERIVED facts (element counts, visible-row windows, pixel positions)
+while every builder's semantics was unchanged (DONE.md, "Top bar shrunk to
+128px").
+
+### The four bug classes
+
+The suite exists to catch exactly four classes of bug. Every assertion
+should serve one of them:
+
+1. **Determinism/replay breakage** — a handler that pushes different
+   children than the recording, state that reconstructs differently.
+   The natural-stack replay verification + the main.zig round-trip
+   reconstruction test are the backbone; anything touching event
+   ordering or state shaping must keep them exact.
+2. **Gameplay semantic errors** — combat math, skill behavior, turn
+   flow, movement. Caught by contract tests pinned to the semantics
+   the design specifies, not to what the code happens to do.
+3. **Format round-trip corruption** — config/save/session-log
+   writer↔reader pairs drifting apart. Caught by round-trip tests
+   with awkward values.
+4. **UI structural emission errors** — a row never emitted, a window
+   that skips content, a scrollbar that disagrees with overflow,
+   hit-testing that misses what's drawn. Caught by STRUCTURAL
+   assertions, not geometric ones.
+
+**Corollary — the deletion criterion:** an assertion that serves none of
+these classes is asserting a fact that changes BY DESIGN (derived geometry,
+hand-pinned counts, snapshot windows). It breaks on the next intentional
+layout/content change while carrying no bug-catching information.
+Delete it.
+
+### Tiers — where tests live
+
+- **Pure-function contract tests: inline in the owning file.** No
+  scaffolding, sits next to the contract it pins, and sees file-private
+  symbols — which also keeps the minimize-`pub` rule honest (no `pub`
+  needed for a test).
+- **Handler drain tests: `handler_tests_*.zig`, one category per file**
+  (gear / combat / ai / turnflow / editor / autosave / devtools), via
+  `test_harness.zig` — each test a scripted mini-session: push to a
+  precondition, push the event under test, `runToIdle`, assert on
+  `current_state`. Contract tests by construction: they run the real
+  `processEvent` dispatch, never a helper the handler doesn't use.
+  **Per-variant convention:** every new event variant lands with ≥1
+  drain test in the tier file it arrives with (no coverage matrix —
+  see Rejected below).
+- **Skill contract tests: `skill_tests.zig`** — one per skill: cast
+  semantics + AI priority/selection, from the design doc's semantics.
+- **UI structure tests: inline in the owning ui file**, using the
+  assertion patterns below. The `editor_inspector.zig` split (~4,900
+  lines, ~1,700 of them tests) is deliberately deferred until the
+  census sweep shows how much of that test mass survives deletion.
+
+### Assertion patterns (the anti-churn core)
+
+- **Contract over mechanics.** Assert what the function/handler PROMISES
+  (the design-doc semantics), not how it computes. The `aggro_around`
+  tests locked in a mover-centric bug by asserting the mechanic instead
+  of the contract — tests copied from behavior re-assert bugs.
+- **Derive the expectation from the source the code iterates.** Counts
+  from the same enum/list the code walks, label lists from the same
+  row list the builder lays out (the utility-skill census is the model:
+  self-updating, still catches emission bugs). Hand-maintained
+  duplicates of machine-derivable facts are drift by definition.
+- **Exhaustiveness properties over pinned windows.** The UI census
+  shape: iterate ALL scroll offsets (or all clamp/branch cases),
+  collect what is ever visible, and assert the structural property —
+  every field id reachable somewhere, nothing visible twice, clamps
+  hold at the boundaries, scrollbar present iff overflow. Geometry is
+  the INPUT to the test, never the expectation: a layout change moves
+  the window, the property still holds. Strictly stronger than a
+  pinned window at catching emission bugs, and immune to intentional
+  geometry churn.
+- **Semantic queries over positional ones.** "The `.max_health` field
+  is visible" (find by field id / action / text), not "row 3 of the
+  scroll-14 window is `Max health`".
+- **One assertion KIND per fact.** A label census + per-field string
+  checks + pixel positions all pinning the same window is triple churn
+  surface for one fact. Pick the strongest kind; drop the rest.
+- **Census helpers print found-vs-expected on mismatch.** A census
+  break should be a 30-second read, not archaeology.
+  `expectInspectorLabels` (ui/editor_inspector.zig) is the pattern;
+  hoist a shared helper as files adopt it.
+- **Awkward values.** Boundary-invisible bugs hide behind nice values:
+  `computeHarvest`'s cleanly-divisible ratios hid multiply/divide
+  order, a `warnings: null` round-trip skipped `validateKeys`
+  entirely. Use fractional rates, non-null optional payloads, empty
+  and max states — the value that makes the arithmetic order MATTER.
+
+### Deletion policy
+
+When a change subsumes a test with a stronger form — an exhaustiveness
+property covering a pinned window, a derived census covering a
+hand-pinned count — the old test is DELETED, not ported alongside.
+Strength is the criterion, not test count: a suite that only grows
+accretes churn. The ~15 broken census tests of the 128px incident are
+the archetype — each carried near-zero information and still cost a
+fix on a semantics-neutral change.
+
+### Rejected: coverage matrix (event variant → has ≥1 test)
+
+- **Comptime assertion: impossible.** "Has a test" isn't comptime-
+  observable — test names are strings, and there's no reflection over
+  which tests exist.
+- **Grep report (script diffing pushed variants in test files against
+  the `events.zig` union): lies in both directions.** Tests push via
+  helpers (`pushEvents`, `pushPlayerSkillUse`, harness starting
+  states), so it under-counts; non-push references over-count. A
+  report that's wrong some of the time trains people to ignore it.
+- **Blanket smoke test (push every variant, run to idle): dies on the
+  fail-fast force-unwraps.** Most variants need legal preconditions,
+  so per-variant setup reappears — hand-maintained curation again.
+
+Decision: the per-variant convention (Tiers above) is the mechanism. The
+first untested-variant bite was `swap_positions` (rewritten untested). If
+a second lands, write the grep report THEN and accept its inaccuracies as
+advisory.
+
 ## Decorations & Footprint
 
 Decorations are multi-tile sprite props placed in levels/hubs. Each carries a

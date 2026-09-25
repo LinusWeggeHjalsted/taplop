@@ -13525,3 +13525,41 @@ Settled geometry (DESIGN → UI Framework → Entity inspect):
 - Known edge: effect icons wrap UPWARD when more than one row is active,
   and a second row rises back under the panels (needs ~16+ concurrent
   effects to hit; accepted).
+
+## Testing discipline — design settled (DESIGN → Testing)
+
+The test-design session TODO called for: a coherent pass over the suite's
+brittle shape, motivated by the 128px top-bar change breaking ~15
+window-census tests whose semantics were unchanged. The DESIGN went in
+this session; the file-by-file census sweep is the follow-up task
+(TODO → Census-test sweep).
+
+What landed (all in DESIGN → Testing):
+- **The four bug classes** the suite exists to catch (determinism/replay,
+  gameplay semantics, format round-trips, UI structural emission) with
+  the deletion criterion: an assertion serving none of them asserts
+  churn-by-design.
+- **Tier conventions** — pure-fn tests inline in the owning file; handler
+  drain tests in `handler_tests_*.zig` via the harness; skill contracts in
+  `skill_tests.zig`; UI structure tests inline in the owning ui file. Per-
+  variant convention: every new event variant lands with ≥1 drain test.
+- **Assertion patterns** — contract over mechanics; derive expectations
+  from the source the code iterates; exhaustiveness properties over
+  pinned windows (iterate all scroll offsets, assert reachability/
+  clamps — geometry is the input, never the expectation); semantic
+  queries over positional ones; one assertion kind per fact; census
+  helpers print found-vs-expected (expectInspectorLabels is the pattern);
+  awkward values.
+- **Deletion policy** — subsumed tests are deleted, not ported; strength
+  is the criterion, not count.
+- **Coverage matrix REJECTED** with the reasoning recorded (comptime
+  impossible; grep report lies via helper-mediated pushes; blanket smoke
+  test dies on fail-fast preconditions). If an untested-variant gap bites
+  again, the grep report is written then, as an advisory.
+
+Doc moves in the same pass: AGENTS → Testing discipline now holds only
+the working mechanics (arena blind spots, no-expectPanics workaround,
+sweep-script rules) and points at DESIGN; the Subsystem Map gained a
+Testing line; the TODO notes ("Test design session", the coverage-matrix
+half of "Handler test coverage", "Test values that miss edge cases")
+collapsed into pointers/settled design.

@@ -16,19 +16,16 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered — pick what progresses)
 
-- **Test design session (start the next session here)** — a coherent,
-  structured pass over the test suite's brittle shape, motivated by the
-  128px top-bar geometry change breaking ~15 window-census tests
-  (hand-pinned snapshots of DERIVED facts: element counts, visible-row
-  windows, pixel positions — see DONE.md, "Top bar shrunk to 128px").
-  The shape rule is already written (AGENTS → Testing discipline:
-  derive expectations from the same constants the code iterates; assert
-  semantics over snapshots); the pass applies it systematically: derive
-  windows/counts where the constants exist, keep semantic lists where
-  they're genuinely semantic, and keep the census-mismatch printing that
-  landed this session (expectInspectorLabels' found-window printout —
-  make it the pattern for census helpers). Not a spot fix: do it as one
-  designed sweep, file by file.
+- **Census-test sweep (the next session's task)** — apply the settled
+  test design (DESIGN → Testing) to the brittle census tier, file by
+  file: derive windows/counts where the constants exist, replace pinned
+  windows with exhaustiveness properties, DELETE the subsumed tests
+  (strength is the criterion, not count), and hoist the
+  mismatch-printing census helper (`expectInspectorLabels` is the
+  pattern). Motivated by the 128px top-bar change breaking ~15
+  window-census tests whose semantics were unchanged (DONE.md, "Top
+  bar shrunk to 128px"). The design landed this session; the sweep is
+  the implementation.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
@@ -838,11 +835,10 @@ Done items in DONE.md. Open:
   (`swap_positions`, `retreat`, `swap_hands`, the cantrip arms) — exactly
   where sibling-drift bugs live (see DESIGN → Architecture → "Prefer
   composing"; `swap_positions` had no test when it was rewritten to compose
-  `move_entity`). A coverage matrix (event variant → has ≥1 test) would
-  surface the gaps mechanically; `pushAndRunSub` makes adding them cheap.
-  Prefer CONTRACT tests over MECHANICS tests — the `aggro_around` tests
-  locked in the mover-centric bug by asserting the mechanic instead of the
-  contract. Keep adding tests when new handlers land.
+  `move_entity`). `pushAndRunSub` makes adding them cheap; the per-variant
+  convention (every new event variant lands with ≥1 drain test — DESIGN →
+  Testing → Tiers) applies going forward, and the coverage-matrix idea is
+  REJECTED (DESIGN → Testing → Rejected).
 - **Optional: split `editor_inspector`'s field emitters** into
   `editor_inspector_fields.zig` (4,649 lines, ~1,700 of them tests).
 - **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-
@@ -854,20 +850,11 @@ Done items in DONE.md. Open:
   is read-only. If the skill-button or gear-slot visuals change, both sites
   need updating. Refactor to a shared core taking an entity + a read-only
   flag — deferred (a deliberate cleanup slice, not urgent).
-- **Test values that miss edge cases.** Three bugs this session were
-  invisible to passing tests because the tests used "nice" values: (1)
-  `computeHarvest` tests used cleanly-divisible ratios (10/5, 6/3) so the
-  multiply-before-divide vs divide-before-multiply order didn't matter;
-  (2) the `loadPlayerSave` round-trip test passed `warnings: null` so
-  `validateKeys` never ran, hiding the missing `mission_uuid` whitelist;
-  (3) no test covered `on_end_turn` at all, let alone the LIFO ordering
-  against round-building. Recurring shape: tests exist + pass but don't
-  exercise the boundary. A convention ("use awkward values" — fractional
-  rates, non-null warnings, empty/edge states) or a coverage matrix would
-  help. The inventory click path was the same shape — `resolveInventoryClick`
-  had zero coverage, so the `>=` threshold bug (click-to-equip was dead code)
-  was never caught. Not actionable as a single task; keep in mind when
-  writing new tests.
+- **Awkward-values convention — settled** (the "nice values hide boundary
+  bugs" note from the gear session: divisible harvest ratios, `warnings:
+  null`, the untested `on_end_turn`, zero-coverage
+  `resolveInventoryClick`). The convention + examples live in DESIGN →
+  Testing → Assertion patterns; the bug history is in DONE.md.
 - Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
   size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
   leaving holes the marching ring_index won't preferentially reuse — so
