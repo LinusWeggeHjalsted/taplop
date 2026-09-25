@@ -13495,3 +13495,33 @@ below the bar. The window-census tests pinned to the old geometry were
 updated from the builder's (unchanged) semantics; the inspector's
 label-census helper now prints the found window on mismatch, which
 made the sweep mechanical.
+
+## Middle panels top-anchored + dedicated bottom-bar indicator strip
+
+Follow-up to the 128px top-bar pass (entry above): with the band 128
+taller, the middle panels grew to fill it and ran straight into the
+bottom bar — hiding the indicator row (momentum above the health globe,
+active effects above the skill bars, move/attack steps above skip) behind
+open panels. That overlap predates the top-bar change (the old 1648-tall
+panels ended at the bar top too); the taller band just made it obvious.
+
+Settled geometry (DESIGN → UI Framework → Entity inspect):
+- `middle_panel_height` is now the inventory grid's EXACT-FIT content
+  height, DERIVED from the same constants the builder lays out with
+  (`middle_panel_header_height + 2*ui_gap + inventory_rows*slot`), not
+  the band height — the panel can never outgrow its grid, and the value
+  can't go stale (its previous form, a hand-maintained 1648 literal,
+  was exactly the drift pattern the derive-don't-curate rule warns
+  about; the brief reference_height−bars derivation inherited from the
+  128px pass was wrong for the same reason — it coupled the panel to
+  the bars instead of to its content).
+- Panels are TOP-ANCHORED in the band (the old "vertically centered" was
+  a no-op while panel height equaled the band; centering a shorter
+  panel would re-cover the strip). The strip between the panel bottoms
+  and the bar is the indicator row's dedicated space — indicators moved
+  flush against the bar top (the freed strip is exactly one 128 icon
+  tall, so the old 16px ui_gap above them had to go; keeping it would
+  clip the icon tops under the panels).
+- Known edge: effect icons wrap UPWARD when more than one row is active,
+  and a second row rises back under the panels (needs ~16+ concurrent
+  effects to hit; accepted).

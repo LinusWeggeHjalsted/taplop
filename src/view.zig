@@ -811,12 +811,16 @@ fn middlePanelsOccupiedWidth(
 }
 
 /// Dispatch each open middle panel to its builder, stacking them left-to-
-/// right flush against the left edge of the screen. Each panel is vertically
-/// centered within the middle section. A panel that renders nothing this
-/// frame (the inspect panel's target dying) reserves no space. The x cursor
-/// advances by `ui_gap` between consecutive built panels. Panel widths come
-/// from `middlePanelWidth`, shared with the camera clamp region. See DESIGN
-/// → UI Framework.
+/// right flush against the left edge of the screen. Each panel is TOP-
+/// ANCHORED in the middle section (`middle_panel_height` is the content
+/// exact-fit, not the section height) so the strip between the panels'
+/// bottom edge and the bottom bar stays clear — the bottom-bar indicator
+/// row (momentum / effects / turn steps) lives there, and must not sit
+/// behind open panels. A panel that renders nothing this frame (the
+/// inspect panel's target dying) reserves no space. The x cursor advances
+/// by `ui_gap` between consecutive built panels. Panel widths come from
+/// `middlePanelWidth`, shared with the camera clamp region. See DESIGN →
+/// UI Framework.
 fn buildMiddlePanels(
     elements: *std.ArrayList(ui.UiElement),
     allocator: std.mem.Allocator,
@@ -833,7 +837,7 @@ fn buildMiddlePanels(
         const panel_width = middlePanelWidth(panel_id, session, current_state, font_metrics) orelse continue;
         const bounds = Rectangle{
             .x = cursor_x,
-            .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
+            .y = section.y,
             .width = panel_width,
             .height = ui.middle_panel_height,
         };

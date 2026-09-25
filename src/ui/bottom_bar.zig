@@ -228,13 +228,17 @@ pub fn buildBottomBar(
         );
     }
 
-    // --- Indicators above the bar (16px gap, 128×128) ---
+    // --- Indicators above the bar (flush, 128×128) — the dedicated strip
+    // between the middle panels' bottom edge and the bar top (the panels
+    // are top-anchored with the inventory grid's exact-fit height; see
+    // `middle_panel_height`). Flush, not gapped: the strip is exactly one
+    // icon tall. ---
 
     // Momentum: centered above the health globe (levels only).
     if (in_level) {
         const momentum_cell = health_cell
             .placeTopCenter(small_icon_size, small_icon_size, 0)
-            .translate(0, -(ui_gap + small_icon_size));
+            .translate(0, -small_icon_size);
         try elements.append(allocator, .{ .image = .{
             .sprite_id = "ui/momentum",
             .screen_position = momentum_cell.position(),
@@ -261,7 +265,7 @@ pub fn buildBottomBar(
         const span_right = utility_sub_bar.right();
         const span_width = utility_sub_bar.right() - weapon_sub_bar.x;
         const columns = @max(1, @divFloor(span_width, small_icon_size));
-        const bottom_row_top = bar.y - ui_gap - small_icon_size;
+        const bottom_row_top = bar.y - small_icon_size;
         for (player.active_effects, 0..) |effect, index| {
             const ordinal: i32 = @intCast(index);
             const column = @mod(ordinal, columns);
@@ -300,7 +304,7 @@ pub fn buildBottomBar(
         const turn_phase = if (game_state.level) |level| level.turn_phase else null;
         const strip: Rectangle = .{
             .x = skip.x,
-            .y = bar.y - ui_gap - small_icon_size,
+            .y = bar.y - small_icon_size,
             .width = skip.width,
             .height = small_icon_size,
         };

@@ -295,13 +295,14 @@ pub const inventory_slot_size: i32 = 128;
 /// `ui_gap` clearance. Width  = 16 + 1024 + 16 + 128 + 16 = 1200.
 /// Content height = 16 + 1536 + 16 = 1568 = middle_panel_height − header_height.
 pub const inventory_panel_width: i32 = 1200;
-/// Middle panels fill the full middle section height (reference_height −
-/// top_bar_height − bottom_bar_height — derived, so a bar-size change
-/// can't leave it stale). The header strip (`header_height`) sits at the
-/// top of each panel; the content area below is
-/// `middle_panel_height − header_height` = 1568, which fits the inventory
-/// grid (16 + 12×128 + 16) exactly. See `emitPanelHeader`.
-pub const middle_panel_height: i32 = types.reference_height - top_bar_height - bottom_bar_height;
+/// Middle panels (inventory / gear / skills / entity inspect) occupy the
+/// TOP of the middle section: height is the inventory grid's EXACT FIT
+/// (header + gap + grid + gap), NOT the section — the freed strip below
+/// them, down to the bottom bar, is the bottom-bar indicator row's
+/// dedicated space (momentum / effects / turn steps sit flush against the
+/// bar; see bottom_bar.zig). Derived from the same constants the inventory
+/// builder lays out with, so the grid can never outgrow the panel.
+pub const middle_panel_height: i32 = middle_panel_header_height + 2 * ui_gap + types.inventory_rows * inventory_slot_size;
 /// Height of the title + close-button strip at the top of every middle
 /// panel. Sized so the inventory grid fits exactly below it (1648 − 80 −
 /// 1568 = 0 slack). The close button matches this height.

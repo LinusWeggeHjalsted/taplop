@@ -4417,7 +4417,12 @@ The entity-inspect middle panel (`buildEntityInspectPanel`, opened by right-
 -clicking a world tile with an entity — levels only) is a READ-ONLY mirror of
 the player's skill bar + active effects + gear panel. It shares the middle-
 panel band + `middle_panel_height` with inventory/gear/skills; which entity
-it shows is `UiState.inspected_entity_index`.
+it shows is `UiState.inspected_entity_index`. Middle panels are TOP-ANCHORED
+in the band: `middle_panel_height` is the inventory grid's exact-fit content
+height (derived: header + gaps + rows×slot), not the band height — the strip
+between the panels' bottom edge and the bottom bar is the indicator row's
+dedicated space (momentum / effects / turn steps sit flush against the
+bar, so open panels never cover them).
 
 - **Read-only by construction.** Every slot is an `.image`, never a `.slot`
   or `.button` — so no `SlotRef` (not draggable from/to) and no `Action`
