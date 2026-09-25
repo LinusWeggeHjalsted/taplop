@@ -13281,3 +13281,34 @@ cadence). Method note: swept structurally (items bounded by the next
 top-level bullet/section header) after a regex-to-blank-line approach
 over-deleted open items in blankless regions — diagnosed via keep-list
 grep against HEAD, repaired from git, redone safely.
+
+## WebGL 2 — web build switched from WebGL1 (render smoothing slice 0)
+
+Slice 0 of the render-smoothing work (settled plan: DESIGN → Platform Seam →
+WebGL 2 + Sprite-mipmap smoothing; TODO → Platform Layer). The web build now
+requests a WebGL2 context:
+
+- `build.zig`: the web raylib dependency sets `opengl_version = .gles_3`
+  (raylib-zig's emscripten default is `.gles_2`/WebGL1), and the emcc step
+  sets `MIN_WEBGL_VERSION=2` + `MAX_WEBGL_VERSION=2`. The TWO must stay in
+  lockstep: raylib compiles for GL ES 3 and submits its built-in shaders as
+  `#version 300 es`, while emcc's GL glue defaults to creating a WebGL1
+  context — missing the emcc half produced the exact black screen caught by
+  the runtime check (every shader failing "unsupported shader version 300").
+  Raylib pairs these the same way in its own examples Makefile
+  (BUILD_WEB_WEBGL2).
+- `src/raylib/text.zig`: the SDF outline shader's GLSL ES 1.00 fallback
+  variant is REPLACED by a 300 es variant (same math as desktop, including
+  `fwidth`; highp floats — the AA band is a small fwidth delta that mediump
+  would band). One shader shape on both platforms now.
+
+Why WebGL2 (settled before the switch): WebGL1 forbids mipmaps on NPOT
+textures and most of our art is NPOT (512x640 entities, arbitrary custom
+assets) — the sprite-mipmap slice would break most art on web; and ES 3.00
+gives `fwidth` for shader AA. Browser floor moves to Safari/iOS 15 (2021) —
+accepted, the game's web audience is desktop browsers. Verified in the
+browser: page loads, main menu renders, no shader warnings in the console.
+WebGL2 also refuses mipmaps on the SDF atlas's unsized LUMINANCE_ALPHA
+format — that atlas stays mip-free by design, so the refusal is
+self-enforcing. Custom-asset dimension rule (entities 512x640, decoration
+art whole 256x256-tile rectangles) recorded in TODO → Content Loading.

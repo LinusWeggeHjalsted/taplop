@@ -131,6 +131,35 @@ next session meets it as a surprise instead of a known.
   IDBFS at /ziglop for persistence and drives `frame()` via
   `emscripten_set_main_loop_arg` (the browser schedules rAFs; no sleep/yield,
   no asyncify). The patched-stdlib web-build workflow lives in AGENTS → Build & Test.
+- **WebGL 2 (GL ES 3.0), not WebGL 1** — the web raylib dependency sets
+  `opengl_version = .gles_3` in build.zig (raylib-zig's auto-default for
+  emscripten is WebGL 1). Two reasons, both settled:
+  - WebGL 1 forbids mipmaps on non-power-of-two textures, and MOST of our
+    art is NPOT (512x640 entities, arbitrary custom-mission assets) — the
+    sprite-mipmap smoothing pass would break most art on web under WebGL1.
+    (WebGL2/ES3 derive an effective RGBA8 internal format from our RGBA
+    uploads, so `glGenerateMipmap` is legal for all of them.)
+  - GLSL ES 3.00 has `fwidth`, so the SDF text shader gets adaptive
+    antialiasing on web, same as desktop — one shader shape, no fixed-
+    smoothing fallback variant.
+  Browser floor moves to Safari/iOS 15 (Sept 2021); every evergreen desktop
+  browser has had WebGL2 since 2017. Accepted: a mouse-driven tactical
+  game's web audience is desktop browsers. WebGL2 refuses mipmaps on the
+  SDF atlas's LUMINANCE_ALPHA format (unsized, not color-renderable) — that
+  atlas stays mip-free by design, so the refusal is self-enforcing.
+- **Sprite-mipmap smoothing (settled plan, implementation pending)** — the
+  harsh world-asset edges below 1:1 zoom are undersampled bilinear
+  minification: bilinear only reads the 2x2 texels nearest the sample
+  point, correct at 2:1 (aligned box filter) and increasingly lossy past
+  it (default zoom 50% x 0.5 renderScale = 1/4 source scale on a 1080p
+  target). Fix: `genTextureMipmaps` + `.trilinear` at every sprite-texture
+  load (the `TextureStore` choke point covers shipped + shadowed +
+  custom-mission art uniformly; mip chains are +33% VRAM, GPU-side build,
+  premultiplied alpha box-filters correctly). The render-target blit stays
+  bilinear; `render_resolution` above the window remains the explicit
+  supersampling option. SDF-for-art (alpha-channel distance fields) was
+  considered and rejected: silhouette-only, breaks soft-alpha art, and its
+  win is magnification — the pipeline never draws world art above 1:1.
 - All raylib-linked files (`native.zig`, `web.zig`, everything under
   `src/raylib/`)
   are excluded from the test-root scan in `build.zig` (`collectZigFiles` —
@@ -261,10 +290,11 @@ Key pieces (`src/raylib/text.zig`):
   the backend's SDF constants must stay in lockstep (a `@compileError` + blob
   validation guard this; the blob carries its baked params and mismatches
   degrade to the fallback).
-- **Shader**: embedded GLSL (330 on desktop, ES 1.00 on web — both variants
-  in the backend, selected comptime). Thresholds the decoded field:
+- **Shader**: embedded GLSL (3.30 on desktop, 3.00 es on web — both
+  variants in the backend, selected comptime; both use `fwidth`, since the
+  web context is WebGL 2). Thresholds the decoded field:
   `d >= 0` fill, `[-outlineWidth, 0)` outline band, `fwidth`-sized
-  antialiasing (fixed smoothing on GLSL ES 1.00, no `fwidth`). Straight
+  antialiasing. Straight
   alpha out (raylib blends premultiplied-input as straight; the old
   raylib SDF example's shader outputs the same shape).
 - **GRAY_ALPHA, not GRAYSCALE**: the runtime texture is reconstructed as

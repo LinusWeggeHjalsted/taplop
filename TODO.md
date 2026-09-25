@@ -442,6 +442,17 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
+- **Render smoothing (native-1080p edge harshness)** — settled plan, DESIGN →
+  Platform Seam (WebGL 2 + Sprite-mipmap smoothing bullets) holds the why.
+  - [x] Slice 0: switch the web build to WebGL2 (`opengl_version = .gles_3`;
+    SDF shader ES 3.00 variant replaces the ES 1.00 one) — DONE, see
+    DONE.md.
+  - [ ] Slice 1: sprite mipmaps — `genTextureMipmaps` + `.trilinear` at every
+    sprite-texture load in `textures.zig` (covers shipped + custom art at
+    the one choke point). SDF atlas stays mip-free.
+  - [ ] Slice 2: text unification — route ALL text through the SDF pipeline
+    (`outlineWidth = 0` for plain fill); retire the runtime coverage atlas
+    (fallback policy to be decided when the plain font goes away).
 - **Render-resolution live swap — runtime confirmation open** (browser +
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target
@@ -527,8 +538,9 @@ Open:
   ui/icon_validate) and will draw magenta until
   real assets land.
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
-  → Asset memory levers matter more for web than native); WebGL1/WebGL2 build
-  option; emrun polish.
+  → Asset memory levers matter more for web than native); emrun polish.
+  (The WebGL1/WebGL2 build option is DONE — the web build is WebGL2-only;
+  see DESIGN → Platform Seam → WebGL 2.)
 
 - **Load-save browser polish** (the browser itself is DONE — DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player
@@ -648,6 +660,14 @@ looking:
   mission is only reproducible with the exact mission bytes. Mission refs
   should eventually be content-addressed (hash) or pinned to an immutable
   version id — matters for recorded-history-as-test and replay sharing.
+- **Custom-asset dimension validation** — custom (mission-shipped) sprites
+  must follow the shipped asset structure: entity sprites exactly
+  512x640, decoration sprites rectangles of whole 256x256 tiles (dims a
+  multiple of 256). Enforce where custom PNG dims are already resolved
+  (loaders.zig sprite-dims resolution): warn + reject at mission import /
+  load, never silently render off-grid art. Keeps the view math (entity
+  bounds, decoration footprint splitting) and the sprite scaling
+  conventions (world zoom × render scale) valid for arbitrary content.
 
 ## Online Services
 

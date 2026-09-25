@@ -87,36 +87,39 @@ const sdf_outline_fs_glsl330 =
     \\}
 ;
 
-/// WebGL variant (GLSL ES 1.00 — valid in both WebGL1 and WebGL2 contexts).
-/// Same math, but GLSL ES 1.00 has no `fwidth`, so the antialias band is a
-/// fixed smoothing constant (in field-alpha units; 1/32 ≈ 1.3 atlas px).
-const sdf_outline_fs_glsl100 =
-    \\#version 100
-    \\precision mediump float;
-    \\varying vec2 fragTexCoord;
-    \\varying vec4 fragColor;
+/// WebGL variant (GLSL ES 3.00 — the web context is WebGL 2, requested via
+/// `opengl_version = .gles_3` on the web raylib dependency in build.zig;
+/// see DESIGN → Platform Seam → WebGL 2). Same math as the desktop variant,
+/// including `fwidth`-sized antialiasing (GLSL ES 3.00 has derivatives).
+/// Highp floats: the decoded field spans ±21 and the AA band is a small
+/// `fwidth` delta — mediump's 10-bit mantissa would visibly band it.
+const sdf_outline_fs_glsl300es =
+    \\#version 300 es
+    \\precision highp float;
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
     \\uniform sampler2D texture0;
     \\uniform float outlineWidth;
     \\uniform vec4 outlineColor;
-    \\const float smoothing = 1.0/32.0;
+    \\out vec4 finalColor;
     \\void main()
     \\{
-    \\    float dist = texture2D(texture0, fragTexCoord).a;
-    \\    float fill = smoothstep(0.5 - smoothing, 0.5 + smoothing, dist);
-    \\    float outlineEdge = 0.5 - outlineWidth*6.0/255.0;
-    \\    float band = smoothstep(outlineEdge - smoothing, outlineEdge + smoothing, dist);
+    \\    float d = (texture(texture0, fragTexCoord).a*255.0 - 128.0)/6.0;
+    \\    float aa = fwidth(d);
+    \\    float fill = smoothstep(-aa, aa, d);
+    \\    float band = smoothstep(-outlineWidth - aa, -outlineWidth + aa, d);
     \\    float fa = fill*fragColor.a;
     \\    float ba = band*outlineColor.a;
     \\    float outA = fa + ba*(1.0 - fa);
     \\    vec3 outRGB = fragColor.rgb*fa + outlineColor.rgb*ba*(1.0 - fa);
-    \\    gl_FragColor = vec4(outRGB, outA);
+    \\    finalColor = vec4(outRGB, outA);
     \\}
 ;
 
-/// The shader source for this build target: GLSL 1.00 on web (emscripten),
+/// The shader source for this build target: GLSL ES 3.00 on web (emscripten),
 /// GLSL 3.30 on desktop.
 const sdf_outline_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.arch == .wasm32)
-    sdf_outline_fs_glsl100
+    sdf_outline_fs_glsl300es
 else
     sdf_outline_fs_glsl330;
 

@@ -252,6 +252,14 @@ pub fn build(b: *std.Build) void {
     const raylib_web_dep = b.dependency("raylib_zig", .{
         .target = web_target,
         .optimize = optimize,
+        // WebGL 2 (GL ES 3.0), NOT the auto-default WebGL 1: WebGL1 forbids
+        // mipmaps on non-power-of-two textures (most of our art is NPOT —
+        // 512x640 entities, arbitrary custom-mission assets) and has no
+        // `fwidth` for shader antialiasing. Our custom shaders are GLSL 330
+        // on desktop / 300 es on web. Browser floor: Safari/iOS 15 (2021);
+        // all evergreen desktop browsers since 2017. See DESIGN → Platform
+        // Seam (WebGL 2).
+        .opengl_version = .gles_3,
         // Same custom frame control as native: EndDrawing() only flushes the
         // render batch; we drive swapScreenBuffer + pollInputEvents ourselves
         // from the emscripten main-loop callback (no asyncify).
@@ -307,6 +315,15 @@ pub fn build(b: *std.Build) void {
     emcc_settings.put("FORCE_FILESYSTEM", "1") catch @panic("emcc settings OOM");
     emcc_settings.put("ALLOW_MEMORY_GROWTH", "1") catch @panic("emcc settings OOM");
     emcc_settings.put("USE_GLFW", "3") catch @panic("emcc settings OOM");
+    // WebGL 2 context settings — MUST stay in lockstep with the web raylib
+    // dependency's `opengl_version = .gles_3` above: with it, raylib compiles
+    // for GL ES 3 and submits its built-in shaders as `#version 300 es`, but
+    // emcc's GL glue defaults to a WebGL 1 context (MIN/MAX_WEBGL_VERSION=1)
+    // — the mismatch makes every shader fail with "unsupported shader
+    // version 300" and the page renders black. Raylib pairs the two the same
+    // way (its examples Makefile's BUILD_WEB_WEBGL2 adds these settings).
+    emcc_settings.put("MIN_WEBGL_VERSION", "2") catch @panic("emcc settings OOM");
+    emcc_settings.put("MAX_WEBGL_VERSION", "2") catch @panic("emcc settings OOM");
     // The game's main() does substantial work at startup (config loads, game-
     // state construction, deep copies) on top of raylib's init; the emscripten
     // default 64KB stack overflows. 8MB is generous and matches typical native
