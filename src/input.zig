@@ -402,20 +402,22 @@ pub const AnytimeInput = struct {
     /// the click — the row is resolved against the CURRENT tab's list
     /// before any rescan can replace it.
     clicked_editor_mission_row: ?u32 = null,
-    /// Open/close the editor's mission browser (the options-menu Open
-    /// Mission button, the browser's Back button, and the ctrl+O binding).
-    /// Editor-screen-only at the consumption site (the
-    /// save_editor_mission no-op discipline).
-    toggle_editor_mission_browser: bool = false,
+    /// Open/close the editor browser (the main-menu Editor button, the
+    /// options-menu Open Mission button, the browser's Back button, and
+    /// the ctrl+O binding). The consumption site accepts the editor +
+    /// main-menu screens; the keybind ships editor-context, so on the
+    /// main menu only the button path can set this.
+    toggle_editor_browser: bool = false,
     /// Import a mission .zip (the mission browser's Import button + the
     /// ctrl+I binding). Web-only effect at the consumption site (the
     /// upload trigger is comptime-dead on native — the skip_level
     /// discipline); consumed only while the browser is open.
     import_editor_mission: bool = false,
-    /// The fresh-mission open (the options-menu New Mission button + the
-    /// ctrl+N binding): pushes `open_editor` with a null path from inside
-    /// the editor. Editor-screen-only at the consumption site (the
-    /// save_editor_mission no-op discipline).
+    /// The fresh-mission open (the editor browser's New Mission button,
+    /// the options-menu New Mission button, and the ctrl+N binding):
+    /// pushes `open_editor` with a null path. The consumption site accepts
+    /// the editor + main-menu screens (the toggle_editor_browser
+    /// discipline).
     new_editor_mission: bool = false,
 
     /// Only handled when the player is in a hub or level.
@@ -572,7 +574,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_editor_mission_row,
         => player_input.anytime.options_action = action,
         .close_editor_picker => player_input.anytime.options_action = action,
-        .toggle_editor_mission_browser => player_input.anytime.toggle_editor_mission_browser = true,
+        .toggle_editor_browser => player_input.anytime.toggle_editor_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         // Keyboard-only editor shortcuts — no button carries these (the
@@ -616,7 +618,6 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
-        .open_editor,
         .open_credits,
         => player_input.idle.menu_action = action,
     }
@@ -980,7 +981,7 @@ pub fn translateInput(
     result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.toggle_editor_browser = checkAction(.toggle_editor_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.new_editor_mission = checkAction(.new_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     // Editor tool/palette keybinds (Digit1–5, editor context — see the

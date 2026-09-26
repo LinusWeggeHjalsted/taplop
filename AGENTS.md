@@ -508,7 +508,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/ui/panels.zig` — in-game middle panels (inventory/gear/skills/
   entity inspect) + slot-content support
 - `src/ui/screens.zig` — error popup, top bar, mission complete/fail
-- `src/ui/menus.zig` — options/main menu, load-save + mission browsers,
+- `src/ui/menus.zig` — options/main menu, load-save + editor browsers,
   credits, settings
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)

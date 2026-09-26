@@ -712,6 +712,17 @@ fn queueEscapeSound(history: *GameStateHistory) void {
     if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_options_menu);
 }
 
+/// The screens where the editor browser and its in-window actions
+/// (New Mission, tabs, rows) are consumed: the editor screen (with the
+/// editor state populated — the save_editor_mission discipline) and the
+/// main menu (the Editor button's entry point). Button-only from the
+/// main menu: the browser keybinds ship editor-context, so on the main
+/// menu only the button path reaches these consumption sites.
+fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
+    if (current_state.screen == .editor) return current_state.editor != null;
+    return current_state.screen == .main_menu;
+}
+
 /// Escape: close the topmost open overlay; with nothing closable open (and
 /// on level/hub), open the options menu. The steps mirror the view's z-order
 /// (topmost surface first; the error popup is more-modal still but is
@@ -733,11 +744,12 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
-    // Editor mission browser (opens over the editor / on top of the options
-    // menu): Escape steps back one layer — only the browser closes.
-    if (ui_state.editor_mission_browser_open) {
+    // Editor browser (opens over the editor, on top of the options menu,
+    // or over the main menu): Escape steps back one layer — only the
+    // browser closes.
+    if (ui_state.editor_browser_open) {
         queueEscapeSound(history);
-        ui_state.editor_mission_browser_open = false;
+        ui_state.editor_browser_open = false;
         return;
     }
 
@@ -886,15 +898,16 @@ pub fn handleAnytimeInput(
         }
     }
 
-    if (anytime.toggle_editor_mission_browser) {
-        // The editor's mission browser (the options-menu Open Mission button,
-        // the browser's Back button, ctrl+O). Editor-only — every other
-        // screen no-ops (the save_editor_mission discipline).
-        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+    if (anytime.toggle_editor_browser) {
+        // The editor browser (the main-menu Editor button, the options-menu
+        // Open Mission button, the browser's Back button, ctrl+O). Reachable
+        // on the editor + main-menu screens; every other screen no-ops (the
+        // save_editor_mission discipline).
+        if (editorBrowserReachableScreen(&history.current_state)) {
             const ui_state = &history.session.ui_state;
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_editor_mission_browser);
-            ui_state.editor_mission_browser_open = !ui_state.editor_mission_browser_open;
-            if (ui_state.editor_mission_browser_open) {
+            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_editor_browser);
+            ui_state.editor_browser_open = !ui_state.editor_browser_open;
+            if (ui_state.editor_browser_open) {
                 // Fresh view state on every open (the load-save browser's
                 // reset-on-open pattern): scroll to the top + the local tab
                 // (your collection is the primary target), then scan now.
@@ -906,16 +919,15 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.new_editor_mission) {
-        // The fresh-mission open (the options-menu New Mission button,
-        // ctrl+N): the main-menu Editor button's action from INSIDE the
-        // editor — a RECORDED player action (`open_editor` with a null
-        // path, the same event the mission-browser rows fire with a
-        // path), so replay + undo reproduce the mission swap. The
-        // open_editor handler bumps world_generation, so the post-update
-        // UI reset closes the options menu / browser / pickers over it.
-        // Editor-only; every other screen no-ops (the
-        // save_editor_mission discipline).
-        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+        // The fresh-mission open (the editor browser's New Mission button,
+        // the options-menu New Mission button, ctrl+N): a RECORDED player
+        // action (`open_editor` with a null path, the same event the
+        // browser rows fire with a path), so replay + undo reproduce the
+        // open/swap. The open_editor handler bumps world_generation, so
+        // the post-update UI reset closes the options menu / browser /
+        // pickers over it. Reachable on the editor + main-menu screens;
+        // every other screen no-ops (the save_editor_mission discipline).
+        if (editorBrowserReachableScreen(&history.current_state)) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .new_editor_mission);
             pushPlayerActionAndDrain(history, .{ .open_editor = .{ .mission_path = null } });
         }
@@ -2172,11 +2184,12 @@ pub fn handleAnytimeInput(
                 const item_action = editorInventoryItemDefAction(slot, item) orelse return;
                 pushPlayerActionAndDrain(history, item_action);
             },
-            // Mission-browser tab switch (Your Missions / Official). A view
-            // affordance — direct UiState write, off the undo timeline (the
-            // sprite-picker tab's convention).
+            // Mission-list tab switch (Your Missions / Official — the
+            // active kind's content tab). A view affordance — direct UiState
+            // write, off the undo timeline (the sprite-picker tab's
+            // convention).
             .select_editor_mission_tab => {
-                if (!history.session.ui_state.editor_mission_browser_open) return;
+                if (!history.session.ui_state.editor_browser_open) return;
                 const tab = anytime.clicked_editor_mission_tab orelse return;
                 history.session.ui_state.editor_mission_browser_tab = tab;
                 // A tab switch resets the scroll — the other tab's list has
@@ -2193,7 +2206,7 @@ pub fn handleAnytimeInput(
             // surfaces and the browser stays open (the revert restores
             // world_generation, so the transition UI reset never fires).
             .open_editor_mission_row => {
-                if (!history.session.ui_state.editor_mission_browser_open) return;
+                if (!history.session.ui_state.editor_browser_open) return;
                 const row = anytime.clicked_editor_mission_row orelse return;
                 const missions = switch (history.session.ui_state.editor_mission_browser_tab) {
                     .local => history.session.editor_local_missions,
@@ -2214,7 +2227,7 @@ pub fn handleAnytimeInput(
         }
     }
 
-    // Editor mission browser: a modal on top of everything but the error
+    // Editor browser: a modal on top of everything but the error
     // popup (which gated above) and above the options menu it opened from.
     // Its own interactions were folded into the anytime / options_action
     // fields above (toggle, tabs, rows — the options-menu-before-the-gate
@@ -2224,7 +2237,7 @@ pub fn handleAnytimeInput(
     // No periodic rescan while open (see SessionState.editor_local_missions).
     // The zip-import marker is polled here: a completed web upload extracts
     // into missions/ + rescans, so the new row appears immediately.
-    if (history.session.ui_state.editor_mission_browser_open) {
+    if (history.session.ui_state.editor_browser_open) {
         // The Import trigger (web-only effect at the seam; native no-ops —
         // the button is never emitted there and the binding parses +
         // no-ops, the skip_level discipline).
@@ -2582,14 +2595,6 @@ pub fn handleIdleInput(
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, action);
             switch (action) {
                 .new_game => event_push.pushPlayerAction(current, .start_new_game, allocator),
-                // Main-menu Editor button: open a FRESH empty mission
-                // (New Mission, one default-template level, empty
-                // palettes). Opening an EXISTING mission is the editor's
-                // mission browser (the options-menu Open Mission button /
-                // ctrl+O) — it pushes open_editor with a path.
-                .open_editor => event_push.pushPlayerAction(current, .{ .open_editor = .{
-                    .mission_path = null,
-                } }, allocator),
                 // Continue: resume the last game. Two branches in the handler
                 // (populated PlayerData → resume from memory; empty → load the
                 // autosave first).

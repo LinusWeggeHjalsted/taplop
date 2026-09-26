@@ -2924,11 +2924,22 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqualStrings("Old", history.current_state.editor.?.mission.name);
 
-    // Screen gate: outside the editor the flag no-ops (no event, no undo
-    // step — the save_editor_mission discipline).
+    // Reachable screens: from the MAIN MENU the flag opens the editor
+    // directly (the editor browser's New Mission button — the same
+    // recorded player action, no editor to replace).
     var menu_history = harness.newHistory(null);
     runToIdle(&menu_history);
     input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&menu_history);
+    try testing.expect(menu_history.current_state.screen == .editor);
+    try testing.expect(menu_history.current_state.editor != null);
+
+    // Every other screen no-ops (no event, no undo step — the
+    // save_editor_mission discipline).
+    menu_history.current_state.screen = .hub;
+    menu_history.current_state.editor = null;
+    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(menu_history.current_state.screen == .hub);
     try testing.expect(menu_history.current_state.editor == null);
     try testing.expectEqual(@as(usize, 0), menu_history.current_state.event_stack.len);
 }
@@ -7701,9 +7712,9 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     // + both lists scanned (the official one parsed from the embedded
     // mission files — the shipped campaign is always there).
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(history.session.ui_state.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     try testing.expect(history.session.editor_official_missions.len > 0);
@@ -7715,31 +7726,42 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_options_menu = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(!history.session.ui_state.editor_browser_open);
     try testing.expect(history.session.ui_state.options_menu_open);
 
     // Re-toggle while a stale scroll + tab linger: both reset on open.
     history.session.ui_state.editor_mission_scroll_offset = 7;
     history.session.ui_state.editor_mission_browser_tab = .official;
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(history.session.ui_state.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(!history.session.ui_state.editor_browser_open);
 
-    // Editor-only: on a non-editor screen the toggle is a no-op (the
-    // save_editor_mission discipline).
+    // Reachable screens: the toggle ALSO opens from the main menu (the
+    // Editor button's entry path — same scan + reset-on-open).
     history.current_state.screen = .main_menu;
     history.current_state.editor = null;
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(history.session.ui_state.editor_browser_open);
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_browser_open);
+
+    // Every other screen no-ops (the save_editor_mission discipline).
+    history.current_state.screen = .hub;
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_browser_open);
 }
 
 test "mission browser: row click opens the mission, tab switch resets scroll, wheel scrolls rows" {
@@ -7760,7 +7782,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
 
     // Open the browser (scans) — the local list now carries the mission.
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
     try testing.expectEqualStrings("missions/test_mission", history.session.editor_local_missions[0].path);
@@ -7831,9 +7853,9 @@ test "mission import: a picked zip extracts into missions/, the row appears, the
 
     // Open the browser + run one anytime tick (the poll runs while open).
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(history.session.ui_state.editor_browser_open);
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
 
     // The row: name + the save-convention dir path derived from the zip's
@@ -7882,7 +7904,7 @@ test "mission import: an OS-made zip with a single root folder strips it" {
     harness.file_source.writeFile(".mission_import_marker", "imported_missions/os_made.zip") catch @panic("marker write");
 
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
 
@@ -7922,7 +7944,7 @@ test "mission import: an unsafe entry name fails whole — popup, nothing writte
     harness.file_source.writeFile(".mission_import_marker", "imported_missions/evil.zip") catch @panic("marker write");
 
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
 
@@ -7956,7 +7978,7 @@ test "mission import: a zip without mission.txt pops up instead of extracting" {
     harness.file_source.writeFile(".mission_import_marker", "imported_missions/random.zip") catch @panic("marker write");
 
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_editor_mission_browser = true,
+        .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
 

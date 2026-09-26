@@ -92,7 +92,7 @@ context anytime
 input_type key
 input_name KeyO
 ctrl true
-action toggle_editor_mission_browser
+action toggle_editor_browser
 context editor
 
 input_type key

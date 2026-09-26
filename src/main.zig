@@ -346,12 +346,13 @@ fn update(
     // DESIGN → UI Framework → Settings screen.
     input_gestures.handleSliderDrag(history, player_input.pointer, ui_elements);
 
-    // Options menu pauses the game. The editor mission browser (a modal on
-    // top of it or standalone over the editor) gets the same pause: drag /
-    // camera pan / viewport gestures + idle input are blocked while it's
-    // open. Its own interactions were consumed in handleAnytimeInput above.
+    // Options menu pauses the game. The editor browser (a modal on
+    // top of it or standalone over the editor / main menu) gets the same
+    // pause: drag / camera pan / viewport gestures + idle input are blocked
+    // while it's open. Its own interactions were consumed in
+    // handleAnytimeInput above.
     if (history.session.ui_state.options_menu_open or
-        history.session.ui_state.editor_mission_browser_open) return;
+        history.session.ui_state.editor_browser_open) return;
 
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this

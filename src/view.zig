@@ -626,14 +626,14 @@ pub fn view(
         ) catch @panic("failed to build settings panel");
     }
 
-    // Editor mission browser: full-screen modal over the editor, on top of
-    // the options menu it opened from (the settings screen's stacking —
-    // drawn under the error popup, which stays the most-modal surface). The
-    // lists live on SessionState (scanned from the input path when the
-    // browser opens — view stays file-free; see
+    // Editor browser: full-screen modal over the editor or the main
+    // menu, on top of the options menu it opened from (the settings
+    // screen's stacking — drawn under the error popup, which stays the
+    // most-modal surface). The lists live on SessionState (scanned from
+    // the input path when the browser opens — view stays file-free; see
     // SessionState.editor_local_missions).
-    if (session.ui_state.editor_mission_browser_open) {
-        ui.buildEditorMissionBrowser(
+    if (session.ui_state.editor_browser_open) {
+        ui.buildEditorBrowser(
             &ui_elements,
             frame_allocator,
             font_metrics,
@@ -643,7 +643,7 @@ pub fn view(
             session.ui_state.editor_mission_browser_tab,
             &session.ui_state.editor_mission_scroll_offset,
             button_color,
-        ) catch @panic("failed to build editor mission browser");
+        ) catch @panic("failed to build editor browser");
     }
 
     // Recoverable error popup: modal, centered, drawn on top of all other

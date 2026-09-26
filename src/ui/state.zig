@@ -230,15 +230,15 @@ pub const UiState = struct {
     /// shipped ones).
     editor_picker_sprite_tab: types.EditorSpritePickerTab = .mission_local,
 
-    /// Editor mission browser (the options-menu Open Mission button /
-    /// ctrl+O): a full-screen modal over the editor, mirroring the
-    /// load-save browser. Like the options menu it locks input (the input
-    /// layer gates on it); the panel itself blocks input to the editor UI
-    /// behind it. Auto-cleared by the screen-transition UI reset —
-    /// open_editor bumps world_generation on every successful open, so the
-    /// reset fires even editor-to-editor. See DESIGN → Architecture →
-    /// Level Editor → The mission browser.
-    editor_mission_browser_open: bool = false,
+    /// Editor browser (the main-menu Editor button, the options-menu Open
+    /// Mission button / ctrl+O): a full-screen modal over the editor OR
+    /// the main menu, mirroring the load-save browser. Like the options
+    /// menu it locks input (the input layer gates on it); the panel itself
+    /// blocks input to the UI behind it. Auto-cleared by the
+    /// screen-transition UI reset — open_editor bumps world_generation on
+    /// every successful open, so the reset fires even editor-to-editor.
+    /// See DESIGN → Architecture → Level Editor → The editor browser.
+    editor_browser_open: bool = false,
 
     /// Which tab the mission browser is showing (Your Missions / Official).
     /// View affordance — a direct UiState write, off the undo timeline.

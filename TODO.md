@@ -336,9 +336,9 @@ work:
   pre-release, official data ships embedded with the exe).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
-- **Mission browser polish** (the browser itself — two tabs, scan-on-open,
+- **Editor browser polish** (the browser itself — two tabs, scan-on-open,
   web zip import, new-mission — is DONE — DONE.md; design: DESIGN → Level
-  Editor → The mission browser): columns (author / level count / timestamp
+  Editor → The editor browser): columns (author / level count / timestamp
   formatting), keyboard navigation; rides the load-save browser's polish
   slice when the UI design settles.
 

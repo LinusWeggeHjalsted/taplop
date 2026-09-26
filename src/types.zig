@@ -270,7 +270,6 @@ pub const Action = enum {
     // picker; the picked file lands in saves/ and loads. Native builds never
     // emit the button (drop files into the persistent saves/ dir by hand).
     import_save,
-    open_editor,
     open_settings,
     open_credits,
     // A settings toggle or choice button was clicked. The SettingRef (which
@@ -510,12 +509,15 @@ pub const Action = enum {
     // no-op. Consumed in handleIdleInput's editor arm, gated on the
     // select tool active — a no-op on every other screen.
     select_editor_all,
-    // Opens/closes the editor's mission browser (the options-menu Open
-    // Mission button, the browser's Back button, and the ctrl+O binding).
-    // A full-screen modal over the editor, mirroring the load-save browser;
-    // editor-screen-only (the toggle no-ops elsewhere). See DESIGN →
-    // Architecture → Level Editor → The mission browser.
-    toggle_editor_mission_browser,
+    // Opens/closes the editor browser — the tabbed full-screen modal
+    // (one tab per editor kind, default Mission) that owns browsing AND
+    // creating editor content. Emitters: the main-menu Editor button, the
+    // browser's Back button, the editor options-menu Open Mission button,
+    // and the ctrl+O binding (editor context — the keybind path stays
+    // editor-scoped; the button path also works from the main menu, where
+    // the consumption site accepts both screens). See DESIGN →
+    // Architecture → Level Editor → The editor browser.
+    toggle_editor_browser,
     // A mission-browser TAB button was clicked (Your Missions / Official).
     // The tab rides in `AnytimeInput.clicked_editor_mission_tab`. Routed
     // through `options_action` so it works while the browser is open over
@@ -534,13 +536,13 @@ pub const Action = enum {
     // ships in default_settings.txt and no-ops on native, where the button
     // is never emitted — the skip_level discipline).
     import_editor_mission,
-    // The fresh-mission open (the options-menu New Mission button + the
-    // ctrl+N binding): the main-menu Editor button's action from INSIDE
-    // the editor — pushes `open_editor` with a null path, replacing the
-    // mission being edited with a new one-level template mission (no
-    // unsaved-changes confirm — the mission-browser row discipline).
-    // Editor-screen-only at the consumption site (the
-    // save_editor_mission no-op discipline).
+    // The fresh-mission open (the editor browser's New Mission button, the
+    // options-menu New Mission button, and the ctrl+N binding): pushes
+    // `open_editor` with a null path — a fresh one-level template mission
+    // from the main menu or a from-inside-the-editor replacement of the
+    // mission being edited (no unsaved-changes confirm — the
+    // editor-browser-row discipline). The consumption site accepts the
+    // editor + main-menu screens (the toggle_editor_browser discipline).
     new_editor_mission,
     // Editor tool/palette keyboard shortcuts (Digit1–5, context editor —
     // the first same-combo cross-context pair: Digit1–8 are the in-game
@@ -792,11 +794,17 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .delete_editor_selection,
         .clear_editor_selection,
         .select_editor_all,
-        .toggle_editor_mission_browser,
+        // The editor browser + its in-window controls: reachable from the
+        // editor AND the main menu (the browser opens from both screens'
+        // buttons; shipped keybinds stay editor-context, menu-context
+        // bindings are legal and fire on the main menu where the
+        // consumption site accepts them).
+        .toggle_editor_browser,
         .select_editor_mission_tab,
         .open_editor_mission_row,
         .import_editor_mission,
         .new_editor_mission,
+        => .{ .editor = true, .menu = true },
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,
@@ -811,7 +819,6 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
-        .open_editor,
         .open_credits,
         => .{ .menu = true },
 

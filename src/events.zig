@@ -692,10 +692,10 @@ pub const PlayerInputEvent = union(enum) {
     start_new_game: void,
     // Open the editor. Null mission_path = create a FRESH empty mission
     // ("New Mission", one default-template level, empty palettes — the
-    // main-menu Editor button; the mission uuid is minted at SAVE time,
+    // New Mission buttons; the mission uuid is minted at SAVE time,
     // never held in state — see DESIGN → Level Editor → Mission
-    // identity). A path = open that mission directory (the future mission
-    // browser + the round-trip tests).
+    // identity). A path = open that mission directory (the editor
+    // browser's rows + the round-trip tests).
     open_editor: struct {
         mission_path: ?[]const u8,
     },

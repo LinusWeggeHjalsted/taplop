@@ -456,7 +456,7 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
     `options_action` + `menu_action` dispatch switches queue their action's
     layer in one place each (covering ~50 actions for button AND keybind
     paths); the scattered flag sections (toggles, swap, skip, undo/redo,
-    editor save/export/new-mission, mission browser, dismiss_error) queue at
+    editor save/export/new-mission, editor browser, dismiss_error) queue at
     their sites. Skill slots: the release seam suppresses the up base
     (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes any
     button sound, and the prepare/unprepare path plays its own up base +
@@ -1765,7 +1765,7 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
   mission.txt are SKIPPED (broken/half-installed missions aren't offered).
   Persistent-dir only (no VFS — the local collection is the source of
   truth; transient acquisitions persist into this dir first). The EDITOR's
-  mission browser reuses this scan for its Your Missions tab; the dream
+  editor browser reuses this scan for its Your Missions tab; the dream
   browser will reuse it too. `FileSource.listOfficialMissions` is the
   Official-tab sibling (comptime embedded path list + runtime metadata
   parse, same entry shape).
@@ -2925,7 +2925,7 @@ buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
    open on undo. Prefer the GameState-derived approach when the trigger is
    already in undoable state.
 
-### Level Editor (core + UI + save/export + mission browser landed)
+### Level Editor (core + UI + save/export + editor browser landed)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
 editor is focused on a mission with per-level tabs (quick swap to edit each
@@ -2999,15 +2999,17 @@ utility skill learned, every hub in the campaign discovered.
 In-campaign play of a custom mission uses the campaign's PlayerData instead
 (separate path, doesn't change the editor design).
 
-**Fresh missions + Mission identity (uuid).** The main-menu Editor button
-opens a FRESH empty mission: `open_editor` with a NULL `mission_path` →
+**Fresh missions + Mission identity (uuid).** A fresh-mission open
+(the editor browser's / options menu's New Mission button, ctrl+N, or a
+mission-browser row with no editor state yet) pushes `open_editor` with
+a NULL `mission_path` →
 "New Mission" at `missions/New Mission` (the persistent-dir-relative path
 — anchors the sprite picker's mission-local scan + the `custom/<mission>/`
 stem namespace; the dir usually doesn't exist yet, and the scan treats a
 missing dir as empty), ONE default-template level
 (`data/default_level.txt`), empty palettes, `player_def` from
-`max_player.txt`. A non-null path opens that mission directory (the editor's
-mission browser — see The mission browser) — the loading path is unchanged.
+`max_player.txt`. A non-null path opens that mission directory (an
+editor browser row — see The editor browser) — the loading path is unchanged.
 
 The fresh mission's uuid stays EMPTY for the whole editing session:
 mission uuids are FILE CONTENT (authored in mission.txt), and identity is
@@ -3053,10 +3055,11 @@ validation_replay.txt (once validation writes one) into a STORE-method
 zip (`zip_writer.zig`) at `exported_missions/<uuid>_<name>.zip` — on web
 the file is also offered as a browser download (the Export Save seam).
 
-**The mission browser (LANDED).** The editor options menu's Open Mission
-button (+ ctrl+O) opens a full-screen modal over the editor, mirroring the
-load-save browser (`UiState.editor_mission_browser_open` — a modal like the
-options menu; Escape steps back one layer, the options menu it opened from
+**The editor browser (LANDED).** The main-menu Editor button, the
+editor options menu's Open Mission button (+ ctrl+O), and the browser's
+Back button all toggle the full-screen modal (`UiState.editor_browser_open`
++ `Action.toggle_editor_browser` — reachable on the editor + main-menu
+screens; Escape steps back one layer, the options menu it opened from
 stays beneath). Two tabs at the top (the sprite picker's tab pattern):
 **Your Missions** (`FileSource.listMissions` — the persistent `missions/`
 dir, where editor saves land) and **Official** (`FileSource.listOfficialMissions`

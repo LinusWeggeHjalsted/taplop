@@ -158,25 +158,24 @@ pub fn buildOptionsMenu(
         };
         button_count += 1;
 
-        // Open an EXISTING mission into the editor (the mission browser):
-        // your saved/imported missions + the official campaign ones, two
-        // tabs. Opening replaces the mission being edited (no unsaved-
-        // changes confirm — save first if in doubt; ctrl+S is cheap).
-        // Also on ctrl+O (the binding ships in default_settings.txt).
+        // Open the editor browser (your saved/imported missions + the
+        // official campaign ones, two tabs): a row click replaces the
+        // mission being edited (no unsaved-changes confirm — save first
+        // if in doubt; ctrl+S is cheap). Also on ctrl+O (the binding
+        // ships in default_settings.txt).
         buttons[button_count] = .{
             .label = "Open Mission",
-            .action = .toggle_editor_mission_browser,
+            .action = .toggle_editor_browser,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
                 "Ctrl+O — browse your saved missions and the official ones",
             ))}) },
         };
         button_count += 1;
 
-        // The fresh-mission open: the main-menu Editor button's action
-        // from inside the editor — replaces the mission being edited
-        // with a new one-level template mission (no unsaved-changes
-        // confirm, same as an open — save first if in doubt). Also on
-        // ctrl+N (the binding ships in default_settings.txt).
+        // The fresh-mission open (also the editor browser's New Mission
+        // button + ctrl+N): replaces the mission being edited with a
+        // new one-level template mission (no unsaved-changes confirm,
+        // same as an open — save first if in doubt).
         buttons[button_count] = .{
             .label = "New Mission",
             .action = .new_editor_mission,
@@ -260,8 +259,10 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
-    // Dev entry point (hardcoded beginnings mission).
-    buttons[button_count] = .{ .label = "Editor", .action = .open_editor };
+    // Opens the editor browser (the tabbed modal — browse + create
+    // editor content; the mission kind today). See DESIGN → Architecture
+    // → Level Editor → The editor browser.
+    buttons[button_count] = .{ .label = "Editor", .action = .toggle_editor_browser };
     button_count += 1;
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
     button_count += 1;
@@ -502,18 +503,21 @@ pub fn buildLoadSavePanel(
 
 // --- Editor mission browser (editor, full screen) ---
 
-/// Build the editor's mission browser: a full-screen modal panel mirroring
-/// the load-save browser — two tab buttons top-left (Your Missions /
-/// Official — the sprite picker's tab pattern), one clickable row per
-/// mission (display name; a click opens it in the editor via `open_editor`,
-/// replacing the mission being edited), a Back button bottom-left. The
+/// Build the editor browser: a full-screen modal panel mirroring the
+/// load-save browser — the editor-kind tab row (Mission today; Hub /
+/// Campaign tabs append when those editors land) with a New button
+/// derived from the active kind, and the active kind's content. The
+/// mission content mirrors the load-save browser: two tab buttons
+/// top-left (Your Missions / Official — the sprite picker's tab
+/// pattern), one clickable row per mission (display name; a click opens
+/// it in the editor via `open_editor`), a Back button bottom-left. The
 /// web-only Import button (zip upload) lands with the import slice.
 /// Overflowing lists scroll with the load-save browser's whole-row model;
 /// the scroll offset clamps here (authoritative — the view is the only
 /// place that knows the max). Barebones like the load-save browser (same
 /// polish slice owns richer row visuals). See DESIGN → Architecture →
-/// Level Editor → The mission browser.
-pub fn buildEditorMissionBrowser(
+/// Level Editor → The editor browser.
+pub fn buildEditorBrowser(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -698,7 +702,7 @@ pub fn buildEditorMissionBrowser(
         },
         "Back",
         menu_button_font_size,
-        .toggle_editor_mission_browser,
+        .toggle_editor_browser,
         button_color,
         null,
     );
@@ -1354,7 +1358,7 @@ test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
     try std.testing.expect(found_back);
 }
 
-test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + clamp" {
+test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -1379,7 +1383,7 @@ test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + c
 
     var scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildEditorMissionBrowser(
+    try buildEditorBrowser(
         &elements,
         allocator,
         metrics,
@@ -1428,7 +1432,7 @@ test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + c
     // Scroll past the end clamps to the last window; the last row is visible.
     scroll = 999;
     var elements_end: UiElementList = .empty;
-    try buildEditorMissionBrowser(
+    try buildEditorBrowser(
         &elements_end,
         allocator,
         metrics,
@@ -1453,7 +1457,7 @@ test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + c
     // Negative scroll clamps to 0.
     scroll = -5;
     var elements_neg: UiElementList = .empty;
-    try buildEditorMissionBrowser(
+    try buildEditorBrowser(
         &elements_neg,
         allocator,
         metrics,
@@ -1467,7 +1471,7 @@ test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + c
     try std.testing.expectEqual(@as(i32, 0), scroll);
 }
 
-test "buildEditorMissionBrowser: empty lists show per-tab placeholders, Back always emitted" {
+test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emitted" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -1478,7 +1482,7 @@ test "buildEditorMissionBrowser: empty lists show per-tab placeholders, Back alw
     for ([_]types.EditorMissionBrowserTab{ .local, .official }) |tab| {
         var scroll: i32 = 0;
         var elements: UiElementList = .empty;
-        try buildEditorMissionBrowser(
+        try buildEditorBrowser(
             &elements,
             allocator,
             metrics,
@@ -1500,7 +1504,7 @@ test "buildEditorMissionBrowser: empty lists show per-tab placeholders, Back alw
             .text_label => |label| if (std.mem.eql(u8, label.text, expected_text)) {
                 found_placeholder = true;
             },
-            .button => |button| if (button.action == .toggle_editor_mission_browser) {
+            .button => |button| if (button.action == .toggle_editor_browser) {
                 found_back = true;
             },
             else => {},
