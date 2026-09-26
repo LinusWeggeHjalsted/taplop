@@ -33,6 +33,7 @@ pub const glyph_spacing_font_divisor = ui_element.glyph_spacing_font_divisor;
 pub const FontMetrics = ui_element.FontMetrics;
 pub const lineHeight = ui_element.lineHeight;
 pub const top_bar_height = ui_element.top_bar_height;
+pub const top_bar_slot_size = ui_element.top_bar_slot_size;
 pub const bottom_bar_height = ui_element.bottom_bar_height;
 pub const slot_size = ui_element.slot_size;
 pub const swap_button_size = ui_element.swap_button_size;

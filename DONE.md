@@ -14014,3 +14014,41 @@ Tests: inline in `src/ui/state.zig` (the pure-fn tier) — open order =
 display order, close compacts, reopen lands rightmost, closing the
 rightmost panel leaves the prefix intact, and the full-strip edge cases
 (fifth open ignored; a close+reopen at capacity never clobbers a slot).
+
+## Global top bar tooltips — the hover pass ran before the bar existed (bug fix)
+
+The options/undo/redo buttons carried tooltip headers the whole time
+(`buildGlobalTopBar`), but no tooltip ever spawned for them. Root cause:
+ORDERING in view()'s assembly. The hover-tooltip pass (`tooltipAt` →
+`buildTooltip`) ran near the end of the assembly, but the global top bar is
+emitted LAST (after it) — for click priority above modals — so the top-bar
+buttons were never in the element list when the pass hit-tested the
+pointer. Anything the pass couldn't see, it couldn't hover. The buttons'
+tooltips have been dead since the global top bar landed (ec8f5dc), not
+since the 128×128 shrink (a040c03) — the shrink is just when it was
+noticed. (The hover-HIGHLIGHT pass runs after the top bar, which is why
+button highlighting kept working and masked the difference.)
+
+Not the icon: `emitIconButton`'s icon image is `blocks_input = false`
+(passes hover through to the button beneath) — the layering was fine.
+
+Fix: move the hover-tooltip pass to immediately after `buildGlobalTopBar`.
+Consequences:
+- Top-bar tooltips spawn (the fix).
+- The pass now also sees the settings screen / editor browser / error
+  popup (previously emitted after it). None of those carry tooltip-bearing
+  elements, so nothing changes for them — and modal shielding is
+  unchanged (`hitTest`'s blocks_input short-circuit still prevents a
+  tooltip from an element behind a modal). The one tooltip that can draw
+  over a modal is one spawned by the top bar itself, which sits above
+  modals by design (click priority) — its tooltip belonging to the same
+  layer is consistent.
+- The old comment's "error popup stays above tooltips" invariant is
+  restated precisely: no tooltip can bleed THROUGH a modal from behind;
+  top-bar tooltips may sit above it, like their buttons do.
+
+Test: full-`view()` contract test in view.zig — hovering each top-bar
+cell center emits that button's tooltip header (Options/Undo/Redo at the
+tooltip header font size), and the inter-button gap spawns none. Also
+closed a facade gap found on the way: `top_bar_slot_size` was never
+re-exported from `src/ui.zig`.

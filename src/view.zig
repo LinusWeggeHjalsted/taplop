@@ -584,31 +584,6 @@ pub fn view(
         ) catch @panic("failed to build mission complete overlay");
     }
 
-    // Hover tooltip: the topmost element under the pointer that carries
-    // tooltip content spawns a tooltip, appended here so it draws on top of
-    // all gameplay + overlay UI (bars, panels, options menu, mission
-    // complete/fail). Modal 9-slice panels shield tooltip-bearing elements
-    // behind them via `hitTest`'s blocks_input short-circuit, so a tooltip
-    // never bleeds through a modal surface from an element underneath.
-    // Suppressed while dragging. The error popup (appended next) stays above
-    // tooltips as the most-modal surface.
-    if (session.ui_state.drag == null) {
-        const pointer = session.input_state.mouse_screen_position;
-        const point = pointer.toScreenPosition();
-        if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
-            const bounds = ui.boundsOf(hovered);
-            ui.buildTooltip(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                bounds.position(),
-                bounds.width,
-                bounds.height,
-                ui.tooltipOf(hovered).?,
-            ) catch @panic("failed to build tooltip");
-        }
-    }
-
     // Settings screen: full-screen modal overlay. Opens on top of the
     // options menu (in-game drill-in) or directly over the main menu (main-
     // menu Settings button). Drawn under the error popup so a recoverable
@@ -672,6 +647,34 @@ pub fn view(
         render.can_undo,
         render.can_redo,
     ) catch @panic("failed to build global top bar");
+
+    // Hover tooltip: the topmost element under the pointer that carries
+    // tooltip content spawns a tooltip, appended here so it draws on top of
+    // all gameplay + overlay UI — bars, panels, options menu, mission
+    // overlays, and the global top bar itself (which is why this pass runs
+    // AFTER the top bar is emitted: its buttons must be in the list for a
+    // hover to resolve to them). Modal 9-slice panels shield tooltip-bearing
+    // elements behind them via `hitTest`'s blocks_input short-circuit, so a
+    // tooltip never bleeds through a modal surface from an element
+    // underneath; the only tooltip that can draw over a modal popup is one
+    // spawned by the top bar, which sits above modals by design. Suppressed
+    // while dragging.
+    if (session.ui_state.drag == null) {
+        const pointer = session.input_state.mouse_screen_position;
+        const point = pointer.toScreenPosition();
+        if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
+            const bounds = ui.boundsOf(hovered);
+            ui.buildTooltip(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                bounds.position(),
+                bounds.width,
+                bounds.height,
+                ui.tooltipOf(hovered).?,
+            ) catch @panic("failed to build tooltip");
+        }
+    }
 
     // Hover highlight: the topmost button under the pointer gets an edge
     // outline (same `highlighted` path as the active turn-step indicator).
@@ -4566,4 +4569,110 @@ test "camera recenter key: editor level tabs change it even with identical playe
     // Outside the editor there is no editor index to ride along.
     const level_state = levelStateWithPlayer(&.{}, .{ .x = 0, .y = 0 });
     try std.testing.expectEqual(@as(?usize, null), cameraRecenterKey(&level_state).editor_level_index);
+}
+
+test "global top bar: hovering options/undo/redo spawns their tooltips" {
+    // Regression contract: the hover-tooltip pass must run AFTER the global
+    // top bar is emitted (the top bar is the LAST element block appended, so
+    // its buttons are invisible to a pass that runs earlier). Before the
+    // fix the pass ran before the emission and no tooltip could ever spawn
+    // for the top bar — its buttons resolved to nothing under the pointer.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+    var session = state.SessionState{};
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Button centers: a row of `top_bar_slot_size` cells flush top-left,
+    // separated by `ui_gap` (options, undo, redo).
+    const stride = ui.top_bar_slot_size + ui.ui_gap;
+    const cell_center_y = @divTrunc(ui.top_bar_height, 2);
+    const cases = [_]struct { x: i32, header: []const u8 }{
+        .{ .x = @divTrunc(ui.top_bar_slot_size, 2), .header = "Options" },
+        .{ .x = stride + @divTrunc(ui.top_bar_slot_size, 2), .header = "Undo" },
+        .{ .x = 2 * stride + @divTrunc(ui.top_bar_slot_size, 2), .header = "Redo" },
+    };
+    for (cases) |case| {
+        session.input_state.mouse_screen_position = .{
+            .x = @floatFromInt(case.x),
+            .y = @floatFromInt(cell_center_y),
+        };
+        const view_state = view(
+            &state_,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            .{
+                .camera = computeCamera(&state_, 1.0, null, null),
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = true,
+                .can_redo = true,
+            },
+        );
+        // The tooltip's header label: text == the button's header, at the
+        // tooltip header font size (the size only tooltip headers use).
+        var found = false;
+        for (view_state.ui_elements) |element| {
+            switch (element) {
+                .text_label => |label| {
+                    if (label.font_size == ui.tooltip_header_font_size and
+                        std.mem.eql(u8, label.text, case.header))
+                    {
+                        found = true;
+                    }
+                },
+                else => {},
+            }
+        }
+        try std.testing.expect(found);
+    }
+
+    // Negative control: the gap between buttons resolves to nothing — none
+    // of the three headers may spawn there. (Scoped to the header texts, not
+    // the font size alone: other UI legitimately uses size-64 labels.)
+    session.input_state.mouse_screen_position = .{
+        .x = @floatFromInt(ui.top_bar_slot_size + @divTrunc(ui.ui_gap, 2)),
+        .y = @floatFromInt(cell_center_y),
+    };
+    const view_state = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = computeCamera(&state_, 1.0, null, null),
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = font_metrics,
+            .sprite_bounds = .{},
+            .can_undo = true,
+            .can_redo = true,
+        },
+    );
+    for (view_state.ui_elements) |element| {
+        switch (element) {
+            .text_label => |label| {
+                if (label.font_size == ui.tooltip_header_font_size) {
+                    for (cases) |case| {
+                        try std.testing.expect(!std.mem.eql(u8, label.text, case.header));
+                    }
+                }
+            },
+            else => {},
+        }
+    }
 }
