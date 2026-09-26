@@ -61,6 +61,105 @@ const salvageRegionOccupiedSlots = player_handlers.salvageRegionOccupiedSlots;
 /// (recoverable class — the live session's state is untouched; the old
 /// replay file is kept so it still certifies the content it was recorded
 /// against).
+/// One stem's spec check for the Revalidate art report: skips non-custom
+/// + already-reported stems, then appends a violation line when the PNG is
+/// unresolvable or its dims fail the kind's spec.
+fn reportStemIfViolating(
+    lines: *std.ArrayList([]const u8),
+    seen: *std.ArrayList([]const u8),
+    file_source: *const @import("../file_source.zig").FileSource,
+    mission_path: []const u8,
+    stem: []const u8,
+    entity_kind: bool,
+    allocator: std.mem.Allocator,
+) void {
+    if (!std.mem.startsWith(u8, stem, "custom/")) return;
+    for (seen.items) |seen_stem| {
+        if (std.mem.eql(u8, seen_stem, stem)) return;
+    }
+    seen.append(allocator, stem) catch @panic("failed to append seen stem");
+
+    const slash = std.mem.lastIndexOfScalar(u8, stem, '/') orelse return;
+    const dims = loaders.resolveMissionSpriteDimensions(
+        file_source,
+        mission_path,
+        stem[slash + 1 ..],
+        allocator,
+    ) orelse {
+        const kind: []const u8 = if (entity_kind) "entity" else "decoration";
+        const line = std.fmt.allocPrint(
+            allocator,
+            "{s} art '{s}' is missing or invalid",
+            .{ kind, stem },
+        ) catch @panic("failed to format art spec report line");
+        lines.append(allocator, line) catch @panic("failed to append art spec report line");
+        return;
+    };
+    const conforms = if (entity_kind)
+        types.entitySpriteDimsConform(dims)
+    else
+        types.decorationSpriteDimsConform(dims);
+    if (conforms) return;
+    const line = if (entity_kind)
+        std.fmt.allocPrint(
+            allocator,
+            "entity art '{s}' is {d}x{d} (must be 512x640)",
+            .{ stem, dims.x, dims.y },
+        ) catch @panic("failed to format art spec report line")
+    else
+        std.fmt.allocPrint(
+            allocator,
+            "decoration art '{s}' is {d}x{d} (must be whole multiples of 256)",
+            .{ stem, dims.x, dims.y },
+        ) catch @panic("failed to format art spec report line");
+    lines.append(allocator, line) catch @panic("failed to append art spec report line");
+}
+
+/// The publish-checkpoint art-spec scan for Revalidate: list every custom
+/// sprite the mission references that violates its kind's spec — an
+/// unresolvable PNG (missing/invalid) or wrong dims (entity art must be
+/// 512x640, decoration art whole 256px tiles; same rules as the load-side
+/// warnings + the render gate). Returns null when everything conforms;
+/// otherwise a newline-joined report (one line per distinct stem).
+/// Revalidation still PASSES on violations — they degrade to the magenta
+/// fallback at runtime; the report rides the success message so the
+/// author certifies with eyes open. Requires the live editor (Revalidate
+/// is editor-only); null editor → no report.
+fn customSpriteSpecReport(history: *GameStateHistory, allocator: std.mem.Allocator) ?[]const u8 {
+    const editor = history.current_state.editor orelse return null;
+
+    var lines: std.ArrayList([]const u8) = .empty;
+    var seen: std.ArrayList([]const u8) = .empty;
+    defer seen.deinit(allocator);
+
+    // Entity art: the player template + every entity type (base + layers).
+    reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, editor.player_def.template.sprite, true, allocator);
+    for (editor.player_def.template.layers) |layer| {
+        reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, layer.sprite, true, allocator);
+    }
+    for (editor.entity_types) |type_definition| {
+        reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, type_definition.template.sprite, true, allocator);
+        for (type_definition.template.layers) |layer| {
+            reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, layer.sprite, true, allocator);
+        }
+    }
+    // Decoration art: every decoration type (base + layers).
+    for (editor.decoration_types) |type_definition| {
+        reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, type_definition.sprite, false, allocator);
+        for (type_definition.layers) |layer| {
+            reportStemIfViolating(&lines, &seen, history.file_source, editor.mission.path, layer.sprite, false, allocator);
+        }
+    }
+
+    if (lines.items.len == 0) return null;
+    var report: std.ArrayList(u8) = .empty;
+    for (lines.items, 0..) |line, index| {
+        if (index > 0) report.appendSlice(allocator, "\n") catch @panic("failed to join art spec report");
+        report.appendSlice(allocator, line) catch @panic("failed to join art spec report");
+    }
+    return report.items;
+}
+
 fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8) void {
     const scratch = history.current_arena.allocator();
 
@@ -122,10 +221,26 @@ fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8
                 );
                 return;
             };
-            history.session.setPendingError(
-                history.history_arena.allocator(),
-                "Revalidation passed — the stored replay again certifies the current mission content.",
-            );
+            // The publish-checkpoint art-spec report: revalidation PASSES
+            // regardless (violations degrade to the magenta fallback at
+            // runtime), but the author certifies with eyes open — the
+            // success message carries the violation list when there is
+            // one (customSpriteSpecReport — same spec as the load warnings
+            // + the render gate).
+            const spec_report = customSpriteSpecReport(history, scratch);
+            if (spec_report) |report| {
+                const message = std.fmt.allocPrint(
+                    scratch,
+                    "Revalidation passed — the stored replay again certifies the current mission content.\n\nCustom art spec warnings:\n{s}",
+                    .{report},
+                ) catch @panic("failed to format the revalidation success message");
+                history.session.setPendingError(history.history_arena.allocator(), message);
+            } else {
+                history.session.setPendingError(
+                    history.history_arena.allocator(),
+                    "Revalidation passed — the stored replay again certifies the current mission content.",
+                );
+            }
         },
     }
 }

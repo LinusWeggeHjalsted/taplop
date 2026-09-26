@@ -104,6 +104,17 @@ pub const Vector2 = struct {
 pub const entity_sprite_frame_width: i32 = 512;
 pub const entity_sprite_frame_height: i32 = 640;
 
+/// Entity art spec: exactly the fixed 512x640 frame.
+pub fn entitySpriteDimsConform(dims: Vector2) bool {
+    return dims.x == entity_sprite_frame_width and dims.y == entity_sprite_frame_height;
+}
+
+/// Decoration art spec: whole multiples of 256 in both axes (the view
+/// math chunks one 256px piece per bbox tile), strictly positive.
+pub fn decorationSpriteDimsConform(dims: Vector2) bool {
+    return dims.x > 0 and dims.y > 0 and @rem(dims.x, 256) == 0 and @rem(dims.y, 256) == 0;
+}
+
 /// The render-side custom-art gate: does this sprite id's kind accept these
 /// pixel dims? Custom (mission-bundled) art must follow the shipped asset
 /// structure — entity sprites exactly the fixed 512x640 frame, decoration
@@ -115,11 +126,10 @@ pub const entity_sprite_frame_height: i32 = 640;
 /// prefixes — ui/, world/, items/ — follow their own conventions).
 pub fn customSpriteDimsPassGate(sprite_id: []const u8, dims: Vector2) bool {
     if (std.mem.startsWith(u8, sprite_id, "entities/custom/")) {
-        return dims.x == entity_sprite_frame_width and dims.y == entity_sprite_frame_height;
+        return entitySpriteDimsConform(dims);
     }
     if (std.mem.startsWith(u8, sprite_id, "decorations/custom/")) {
-        return dims.x > 0 and dims.y > 0 and
-            @rem(dims.x, 256) == 0 and @rem(dims.y, 256) == 0;
+        return decorationSpriteDimsConform(dims);
     }
     return true;
 }

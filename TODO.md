@@ -301,11 +301,10 @@ work:
   Revalidate): consider promoting it from the options menu to the top bar
   next to Test/Validate; the success message currently rides the error
   popup — a real notification/toast surface would be the proper home.
-- **Custom-sprite dims verification** — the LOAD side landed (warn +
-  degrade — see DESIGN → Custom Missions & Online Services → Custom-asset
-  dimensions). Remaining: the pick-commit backstop (same spec check at the
-  editor's base/layer sprite commits) + the footprint editor's open gate.
-  Picker scroll is a follow-up if real content overflows 4 columns.
+- **Custom-sprite dims verification** — DONE across all layers (load
+  warn+degrade, render magenta gate, picker filter, pick-commit backstops,
+  Revalidate report — see DESIGN → Custom Missions & Online Services →
+  Custom-asset dimensions; history in DONE.md).
 - **Mission metadata cleanup — derive start_hub / end_hub /
   level_count.** mission.txt's Metadata carries three fields that
   restate the campaign graph or the mission directory — drift-prone
@@ -616,14 +615,11 @@ looking:
   mission is only reproducible with the exact mission bytes. Mission refs
   should eventually be content-addressed (hash) or pinned to an immutable
   version id — matters for recorded-history-as-test and replay sharing.
-- **Custom-asset dimension validation** — SETTLED, load side + render gate
-  LANDED: see DESIGN → Custom Missions & Online Services → Custom-asset
-  dimensions (the spec, the warn + degrade posture, the four footprint
-  clamps, the dims floor + 4096 warning, the magenta render gate). Remaining
-  slices: (4) pick-commit backstops + a Revalidate warning listing
-  non-conforming art. The picker filter landed (slice 3) — the mission-local
-  tab shows only spec-conforming sprites + a visible "N hidden — <spec>"
-  note.
+- **Custom-asset dimension validation** — DONE, all layers (load
+  warn+degrade, render magenta gate, picker filter + commit backstops,
+  Revalidate art report). Settled design + the layer inventory: DESIGN →
+  Custom Missions & Online Services → Custom-asset dimensions; history in
+  DONE.md.
 
 ## Online Services
 

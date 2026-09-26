@@ -2004,11 +2004,13 @@ and no mask traces art that isn't there. Non-custom ids are never gated
 items/ follow their own conventions). No size gate — the >4096 warning is
 advisory, and huge art renders wherever the device allows.
 
-Remaining (TODO → Content Loading): the pick-commit backstop + the
-Revalidate warning (the picker filter landed: the mission-local tab shows
-only spec-conforming sprites — entity 512x640, decoration whole tiles,
-layers matching the edited base — and names the hidden count under the
-grid instead of silently vanishing files).
+Editor-side enforcement (landed): the picker filter (slice 3 — the
+mission-local tab offers only conforming art, with a visible hidden-count
+note) + the pick-commit backstops (a custom sprite failing its spec
+no-ops, nothing recorded — stale scans and crafted input can't mint a
+guaranteed-magenta type) + the Revalidate art report (the success message
+carries the violation list at the publish checkpoint; revalidation still
+PASSES — violations degrade at runtime).
 
 ### Auth & the server seam (deferred)
 

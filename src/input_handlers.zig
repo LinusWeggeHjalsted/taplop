@@ -1222,8 +1222,10 @@ pub fn handleAnytimeInput(
             // view state, the confirm is what records). The picker target
             // carries the TYPE ID, so a mid-edit tool switch can never
             // silently retarget the draft. A grid beyond the draft
-            // capacity (custom art) doesn't open — custom dims
-            // verification is a TODO.
+            // capacity (custom art >8x8 tiles) doesn't open — a deliberate
+            // UI gate, not a rejection (huge art keeps its committed
+            // footprint; see DESIGN → Custom Missions & Online Services →
+            // Custom-asset dimensions).
             .open_editor_footprint_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
@@ -1430,6 +1432,22 @@ pub fn handleAnytimeInput(
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
+                // Pick-commit backstop (the picker filter's defense-in-depth
+                // — a stale scan or crafted input): a custom sprite that
+                // doesn't resolve to exactly the fixed 512x640 frame no-ops,
+                // nothing recorded. The load + render sides degrade the
+                // same art anyway; committing it would only mint a
+                // guaranteed-magenta type.
+                if (std.mem.startsWith(u8, sprite, "custom/") and
+                    !loaders.customEntitySpriteConforms(
+                        history.file_source,
+                        editor.mission.path,
+                        sprite,
+                        history.current_arena.allocator(),
+                    ))
+                {
+                    return;
+                }
                 if (std.mem.eql(u8, template.sprite, sprite)) return;
                 // Pick-time default follows the art source: official stems
                 // tint (false), mission-local custom art keeps its own
@@ -1509,7 +1527,11 @@ pub fn handleAnytimeInput(
                         file_stem,
                         arena,
                     ) orelse return;
-                    if (pixel_dims.x <= 0 or pixel_dims.y <= 0) return;
+                    // Pick-commit backstop (the picker filter's
+                    // defense-in-depth): whole 256px tiles only — also
+                    // covers the old positive-dims check (conforming dims
+                    // are strictly positive).
+                    if (!types.decorationSpriteDimsConform(pixel_dims)) return;
                     // The sprite grid's tile rows (256px per tile); the
                     // default footprint reserves the bottom-left tile.
                     // Duped HERE (an arena slice) — a runtime-sized array
@@ -1585,6 +1607,19 @@ pub fn handleAnytimeInput(
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 const arena = history.current_arena.allocator();
+                // Pick-commit backstop (same rule as the base-sprite arm):
+                // a custom layer sprite that isn't the fixed 512x640 frame
+                // no-ops — nothing recorded.
+                if (std.mem.startsWith(u8, sprite, "custom/") and
+                    !loaders.customEntitySpriteConforms(
+                        history.file_source,
+                        editor.mission.path,
+                        sprite,
+                        arena,
+                    ))
+                {
+                    return;
+                }
                 const sprite_value = arena.dupe(u8, sprite) catch
                     @panic("failed to allocate layer sprite commit value");
                 if (layer_index) |index| {
@@ -1607,15 +1642,16 @@ pub fn handleAnytimeInput(
             },
             // A DECORATION layer picker cell — the entity arm's shape plus
             // the dims invariant: the layer's pixel dims must equal the
-            // base type's (the level parser panics otherwise). A custom
-            // stem's dims come from its PNG; an official stem's from the
-            // comptime metadata table. A MISMATCH (or a vanished/corrupt
-            // file) keeps the picker OPEN and records nothing — the pick
-            // visibly didn't take (the official tab already filters to
-            // matching dims, so this only guards mission-local picks).
-            // A new layer's color adopts a registry prefab's authored
-            // layer color when the stem is one (tree_1's canopy is 2),
-            // else 0; a re-pick keeps the layer's color.
+            // base type's (a mismatch warns + degrades at load — see
+            // DESIGN → Custom Missions & Online Services → Custom-asset
+            // dimensions). A custom stem's dims come from its PNG; an
+            // official stem's from the comptime metadata table. A MISMATCH
+            // (or a vanished/corrupt file) keeps the picker OPEN and
+            // records nothing — the pick visibly didn't take (the official
+            // tab already filters to matching dims, so this only guards
+            // mission-local picks). A new layer's color adopts a registry
+            // prefab's authored layer color when the stem is one (tree_1's
+            // canopy is 2), else 0; a re-pick keeps the layer's color.
             .select_editor_decoration_layer => {
                 // Gate: only a pick while the DECORATION LAYER picker is
                 // open.

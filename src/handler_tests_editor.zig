@@ -3429,9 +3429,12 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     var harness = Harness.init(backing.allocator());
 
     // A png + a non-png in the harness's persistent scratch dir (the scan
-    // filters by extension; content is irrelevant — no dims are parsed for
-    // entities).
-    try harness.file_source.writeFile("missions/artists_den/boss.png", "png");
+    // filters by extension). The png is a REAL minimal IHDR fixture at the
+    // entity spec (512x640) — the pick-commit backstop resolves the dims,
+    // so garbage bytes would no-op the pick.
+    const boss_png = loaders.minimalPngHeader(testing.allocator, 512, 640);
+    defer testing.allocator.free(boss_png);
+    try harness.file_source.writeFile("missions/artists_den/boss.png", boss_png);
     try harness.file_source.writeFile("missions/artists_den/notes.txt", "not a sprite");
 
     const entity_types = [_]types.EntityTypeDef{
@@ -3523,6 +3526,50 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
         .options_action = .close_editor_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_picker == null);
+}
+
+test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The pick-commit backstop (the picker filter's defense-in-depth — a
+    // stale scan or crafted input): a custom entity sprite that isn't the
+    // fixed 512x640 frame no-ops — nothing recorded, no undo step minted.
+    // The load + render sides would degrade the same art anyway; committing
+    // it would only author a guaranteed-magenta type.
+    const boss_png = loaders.minimalPngHeader(testing.allocator, 256, 256);
+    defer testing.allocator.free(boss_png);
+    try harness.file_source.writeFile("missions/artists_den/boss.png", boss_png);
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_sprite,
+        .clicked_editor_sprite = "custom/artists_den/boss",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    // The pick visibly didn't take: the sprite is unchanged and no undo
+    // step exists (undo at the initial idle point returns false).
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqualStrings(
+        "skeleton_1",
+        history.current_state.editor.?.entity_types[0].template.sprite,
+    );
+    try testing.expect(!history.undo(event_handlers.processEvent));
 }
 
 test "palette + click: default type creation, tool switch, picker routing" {
@@ -6372,6 +6419,9 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
     pushRevalidateFixture(&history);
     try testing.expect(history.session.pending_error != null);
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Revalidation passed") != null);
+    // No custom art in the fixture mission — the success message carries
+    // no spec report.
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Custom art spec warnings") == null);
 
     // Same run, new binding: events-derived turns + created + uuid are
     // kept, the content hash is the CURRENT dir's (and it changed).
@@ -6394,6 +6444,58 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
         mission.level_count,
     );
     try testing.expectEqualStrings(&content_hash.hashToHex(hash), after.replay.content_hash);
+}
+
+test "revalidate: non-conforming custom art rides the success message" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
+
+    // The editor's palette references two spec violations: a decoration
+    // type whose custom art is 1000x1200 (not whole tiles) and a player
+    // def with a MISSING custom sprite. The run + revalidation itself are
+    // unaffected (the report is a publish-checkpoint scan of the palette,
+    // not part of the replay check) — the success message carries the list.
+    const banner_png = loaders.minimalPngHeader(testing.allocator, 1000, 1200);
+    defer testing.allocator.free(banner_png);
+    try harness.file_source.writeFile(validation_fixture_path ++ "/banner.png", banner_png);
+
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "custom/fixture/banner",
+        .sprite = "custom/fixture/banner",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 1000, .y = 1200 },
+    }};
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{
+            .id = "Player",
+            .template = .{ .name = "Editor Player", .sprite = "custom/fixture/ghost", .team = 0 },
+        },
+        .decoration_types = &decoration_types,
+        .mission = .{ .path = validation_fixture_path },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    pushRevalidateFixture(&history);
+    try testing.expect(history.session.pending_error != null);
+    const message = history.session.pending_error.?;
+    try testing.expect(std.mem.indexOf(u8, message, "Revalidation passed") != null);
+    try testing.expect(std.mem.indexOf(u8, message, "Custom art spec warnings:") != null);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        message,
+        "entity art 'custom/fixture/ghost' is missing or invalid",
+    ) != null);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        message,
+        "decoration art 'custom/fixture/banner' is 1000x1200 (must be whole multiples of 256)",
+    ) != null);
 }
 
 test "revalidate: a divergent edit rejects and keeps the stored replay unchanged" {

@@ -1696,6 +1696,35 @@ fn resolveCustomSpriteFileDims(
     return parsePngDimensions(bytes);
 }
 
+/// The pick-commit backstop for custom ENTITY sprites (the picker filter's
+/// defense-in-depth — a stale scan or crafted input): does the namespaced
+/// stem resolve to a PNG with exactly the fixed 512x640 entity frame?
+/// False on missing/invalid files too.
+pub fn customEntitySpriteConforms(
+    file_source: *const FileSource,
+    mission_path: []const u8,
+    sprite_stem: []const u8,
+    allocator: std.mem.Allocator,
+) bool {
+    const dims = resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator) orelse
+        return false;
+    return types.entitySpriteDimsConform(dims);
+}
+
+/// The pick-commit backstop for custom DECORATION sprites: does the stem
+/// resolve to a PNG of whole 256px tiles (the sprite-grid spec)? False on
+/// missing/invalid files too.
+pub fn customDecorationSpriteConforms(
+    file_source: *const FileSource,
+    mission_path: []const u8,
+    sprite_stem: []const u8,
+    allocator: std.mem.Allocator,
+) bool {
+    const dims = resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator) orelse
+        return false;
+    return types.decorationSpriteDimsConform(dims);
+}
+
 /// Resolve a decoration sprite's pixel dims at LOAD time. Exactly two
 /// channels — custom assets are always mission-bundled and never live
 /// under assets/ (see DESIGN → Custom Missions & Online Services):
@@ -3117,7 +3146,9 @@ test "loadLevel decoration with layers" {
 /// A minimal PNG byte sequence: signature + IHDR chunk (dims + zeros).
 /// `parsePngDimensions` reads only the signature + IHDR dims, so the
 /// pixel data + CRC are absent — this is a fixture, not a decodable image.
-fn minimalPngHeader(allocator: std.mem.Allocator, width: u32, height: u32) []u8 {
+/// pub ONLY as the cross-file test-fixture helper (handler tests build
+/// conforming custom-sprite PNGs with it; production code never calls it).
+pub fn minimalPngHeader(allocator: std.mem.Allocator, width: u32, height: u32) []u8 {
     const bytes = allocator.alloc(u8, 33) catch @panic("failed to allocate PNG fixture");
     @memcpy(bytes[0..8], &png_signature);
     std.mem.writeInt(u32, bytes[8..12], 13, .big);

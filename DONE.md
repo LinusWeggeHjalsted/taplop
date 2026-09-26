@@ -13847,3 +13847,45 @@ file's IHDR dims, so the filter is pure — no IO at pick time.
   exact note text), decoration pick (non-multiple hidden), decoration
   layer add (base-dims mismatch hidden despite conforming grid), and
   the Official tab's no-note guarantee.
+
+## Custom-asset dimensions — slice 4: pick-commit backstops + the Revalidate art report
+
+The last layer — the editor can no longer mint spec-violating types, and
+the publish checkpoint reports them. With this, every layer of the
+custom-asset spec is enforced (load warn+degrade, render magenta gate,
+picker filter, commit backstops, Revalidate report).
+
+- **Pick-commit backstops** (input_handlers.zig, the picker filter's
+  defense-in-depth — a stale scan or crafted input):
+  - Entity base + layer picks: a custom stem must resolve to exactly the
+    fixed 512x640 frame (`loaders.customEntitySpriteConforms`, wrapping
+    the IHDR read + the types predicate) — otherwise the pick no-ops,
+    nothing recorded (the load + render sides would degrade the same art
+    anyway; committing it would only author a guaranteed-magenta type).
+  - Decoration base picks (mission-local branch): the resolved dims must
+    be whole 256px tiles (`types.decorationSpriteDimsConform` — subsumes
+    the old positive-dims check).
+  - Decoration layer picks were already fully backstopped (unresolvable +
+    base-dims equality); its stale comment citing the removed load-time
+    panic fixed.
+- **The Revalidate art report** (`customSpriteSpecReport` in
+  player_input.zig): at the publish checkpoint, the success message
+  carries a violation list — every distinct custom sprite the editor's
+  palette references (player def + entity types + decoration types, base +
+  layers) that is missing/invalid or wrong-dims per its kind.
+  Revalidation still PASSES (violations degrade to magenta at runtime) —
+  the author certifies with eyes open, matching warn-not-reject
+  everywhere else.
+- **types.zig predicate split**: `entitySpriteDimsConform` +
+  `decorationSpriteDimsConform` (the specs, callable without an id) with
+  `customSpriteDimsPassGate` delegating to them — one fact, one place.
+- `loaders.minimalPngHeader` went pub (the cross-file test-fixture
+  helper; production never calls it). The footprint-editor open gate
+  verified sound (grid derivation + 8x8 capacity check — a deliberate UI
+  gate per the design, not a rejection); its stale TODO comment fixed.
+- Tests: the wrong-dims entity pick no-ops (sprite unchanged, no undo
+  step — the existing conforming pick test's fixture upgraded to a real
+  512x640 IHDR PNG); the revalidate success message carries the spec
+  report (missing sprite + non-conforming decoration listed) and the
+  no-custom-art success carries none. Picker scroll remains a follow-up
+  if real content ever overflows the picker's 6 columns.
