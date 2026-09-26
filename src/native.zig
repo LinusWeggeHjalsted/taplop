@@ -5,9 +5,11 @@
 //! IO, the persistent data directory (per-OS default — `$HOME/.ziglop` on
 //! Linux, `$HOME/Library/Application Support/ziglop` on macOS — overridable
 //! via --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
-//! main.run with a RaylibBackend. An optional --replay <path> flag loads a
-//! session log and reconstructs the session before the loop starts. See
-//! DESIGN → File System & IO + Logging & Replay.
+//! main.run with a RaylibBackend. Optional flags: `--replay <path>` loads a
+//! session log and reconstructs the session before the loop starts;
+//! `--diagnostics` activates the platform diagnostics log in ANY build
+//! (release included — dev-mode builds default active). See DESIGN →
+//! File System & IO + Logging & Replay + Platform Seam → Diagnostics.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -52,6 +54,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // here, and shipped-content reads check here first for player mods.
     const data_dir_override = parseStringFlag(init.args, allocator, "--data-dir");
     const replay_path = parseStringFlag(init.args, allocator, "--replay");
+    const diagnostics_requested = parseBoolFlag(init.args, "--diagnostics");
     // The resolved path outlives the Dir handle: it's stored on the session
     // for user-facing messages (the Export Save tooltip). Process-lifetime
     // allocation, never freed.
@@ -73,6 +76,15 @@ pub fn main(init: std.process.Init.Minimal) void {
         &file_source,
     );
     defer backend.deinit();
+
+    // Diagnostics activation (--diagnostics): the runtime on-switch for the
+    // platform log, valid on ANY build including plain release — the binary
+    // that exhibits a bug produces its own data. Dev-mode builds default
+    // active (set at backend init); the flag ORs in before the first render.
+    // See DESIGN → Platform Seam → Diagnostics.
+    if (diagnostics_requested) {
+        backend.diagnostics.enabled = true;
+    }
 
     var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
     setup.fixupPointers();
@@ -127,6 +139,18 @@ fn parseStringFlag(
         }
     }
     return null;
+}
+
+/// Whether a boolean flag (`--name`) is present in argv. No value form —
+/// presence is the whole meaning. Used for `--diagnostics`.
+fn parseBoolFlag(args: std.process.Args, name: []const u8) bool {
+    var iter = std.process.Args.Iterator.init(args);
+    defer iter.deinit();
+    _ = iter.next(); // skip program name
+    while (iter.next()) |arg| {
+        if (std.mem.eql(u8, arg, name)) return true;
+    }
+    return false;
 }
 
 /// Expand a leading `~` or `~/` to `$HOME`. A value that doesn't start with

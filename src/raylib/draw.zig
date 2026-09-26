@@ -506,8 +506,8 @@ fn drawSprite(
     // A negative source width tells DrawTexturePro to mirror horizontally
     // (the same trick as drawSpriteDrawable).
     if (flip_horizontal) effective.width = -effective.width;
-    if (diagnostics_mod.enabled and !backend.diagnostics.sprite_probe_logged) {
-        backend.diagnostics.logFirstSpriteDraw(sprite_id, texture, source orelse whole, destination, tint, alpha);
+    if (backend.diagnostics.shouldRecordFirstSpriteDraw()) {
+        diagnostics_mod.recordFirstSpriteDraw(&backend.diagnostics, sprite_id, texture, source orelse whole, destination, tint, alpha);
     }
     rl.drawTexturePro(texture, effective, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
 }
@@ -520,7 +520,7 @@ fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkes
     const texture = backend.textures.getTexture(panel.sprite_id) orelse {
         rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
         return;
-    };        // `default_tint` (pure white) is the "unset" sentinel: a panel that
+    }; // `default_tint` (pure white) is the "unset" sentinel: a panel that
     // didn't pick an explicit color inherits the active theme's `darkest`
     // (mirrors the text-label convention in `drawTextLabel`). An explicit
     // `.color` overrides it.
@@ -542,8 +542,8 @@ fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkes
         .height = panel.height,
     };
     const pieces = ui.nineSlicePieces(texture.width, texture.height, destination);
-    if (diagnostics_mod.enabled and !backend.diagnostics.panel_probe_logged) {
-        backend.diagnostics.logFirstPanelDraw(panel, texture, tint, theme_darkest, destination, pieces);
+    if (backend.diagnostics.shouldRecordFirstPanelDraw()) {
+        diagnostics_mod.recordFirstPanelDraw(&backend.diagnostics, panel, texture, tint, theme_darkest, destination, pieces);
     }
     for (pieces) |piece| {
         if (piece.destination.width <= 0 or piece.destination.height <= 0) continue;

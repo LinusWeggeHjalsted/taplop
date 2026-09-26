@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const types = @import("types.zig");
+const ui = @import("ui.zig");
 const FileSource = @import("file_source.zig").FileSource;
 
 /// Where the log lands (persistent dir; rewritten whole on every flush).
@@ -44,7 +45,7 @@ pub const BootValues = struct {
 /// first panel probe is diffed against.
 pub const SpriteDrawValues = struct {
     sprite_id: []const u8,
-    texture_id: i32,
+    texture_id: u32,
     texture_width: i32,
     texture_height: i32,
     source: types.Rectangle,
@@ -53,18 +54,13 @@ pub const SpriteDrawValues = struct {
     alpha: u8,
 };
 
-/// One 9-slice piece's rects, as passed to the panel probe.
-pub const NineSlicePieceValues = struct {
-    source: types.Rectangle,
-    destination: types.Rectangle,
-};
-
 /// First 9-slice-panel-draw probe values — the full draw state (texture,
 /// tint before + after default-tint resolution, destination, all nine
-/// source/destination rect pairs) to diff against the control.
+/// source/destination rect pairs) to diff against the control. The pieces
+/// are the pure `ui.nineSlicePieces` output (raylib-free — same seam).
 pub const PanelDrawValues = struct {
     sprite_id: []const u8,
-    texture_id: i32,
+    texture_id: u32,
     texture_width: i32,
     texture_height: i32,
     panel_color: types.Color,
@@ -74,7 +70,7 @@ pub const PanelDrawValues = struct {
     /// no alpha; the resolved raylib color does).
     resolved_tint_alpha: u8,
     destination: types.Rectangle,
-    pieces: [9]NineSlicePieceValues,
+    pieces: [9]ui.NineSlicePiece,
 };
 
 /// One render-target pixel sample at a probed destination: the readback

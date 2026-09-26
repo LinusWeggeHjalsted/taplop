@@ -39,15 +39,14 @@ const audio_mod = @import("audio.zig");
 const textures_mod = @import("textures.zig");
 const text_mod = @import("text.zig");
 const conversions = @import("conversions.zig");
-const diagnostics_mod = @import("diagnostics.zig");
+const diagnostics_mod = @import("../diagnostics.zig");
+const diagnostics_probes = @import("diagnostics.zig");
 const draw_mod = @import("draw.zig");
 
 const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
-
-
 
 /// Maps reference-space content to the actual window: a uniform scale plus a
 /// centering offset (the letterbox bars). `render` uses it to blit; `pollInput`
@@ -154,8 +153,6 @@ fn spriteLodSnapBias(total_scale: f32) f32 {
     return -fractional_part;
 }
 
-
-
 pub const RaylibBackend = struct {
     allocator: std.mem.Allocator,
     /// The texture subsystem: the lazy sprite caches (main textures,
@@ -205,9 +202,12 @@ pub const RaylibBackend = struct {
     /// music intensity stack (see audio.zig + DESIGN → Audio). Thin
     /// wrappers below keep the duck-typed interface unchanged.
     audio: audio_mod.Audio,
-    /// Dev diagnostics: the boot/probe/readback log (see diag.zig; dev-mode
-    /// native builds only — call sites are comptime-gated by
-    /// `diagnostics_mod.enabled`, so none of it is analyzed or linked otherwise).
+    /// Diagnostics: the boot/probe/readback log (src/diagnostics.zig — raylib-
+    /// free; the GL-gathering probe sites live in raylib/diagnostics.zig).
+    /// Runtime activation (`enabled`: the --diagnostics CLI flag ORs onto the
+    /// dev-mode default), so the code ships in every native build — a
+    /// release build can produce its own diagnostics. Flushes at the
+    /// end-of-frame safe point + shutdown.
     diagnostics: diagnostics_mod.Diagnostics,
 
     /// Last real-clock sample (microseconds) for delta computation. Updated
@@ -267,7 +267,11 @@ pub const RaylibBackend = struct {
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
             .textures = .{ .allocator = allocator, .file_source = file_source },
             .audio = .{ .allocator = allocator, .file_source = file_source },
-            .diagnostics = .{ .allocator = allocator, .file_source = file_source },
+            .diagnostics = .{
+                .allocator = allocator,
+                .file_source = file_source,
+                .enabled = diagnostics_probes.default_enabled,
+            },
             .last_time_microseconds = @intFromFloat(rl.getTime() * std.time.us_per_s),
             .file_source = file_source,
         };
@@ -279,7 +283,7 @@ pub const RaylibBackend = struct {
         self.audio.deinit();
         self.text.deinit();
         self.frame_arena.deinit();
-        if (diagnostics_mod.enabled) self.diagnostics.deinit();
+        self.diagnostics.deinit();
         rl.unloadRenderTexture(self.render_target);
         rl.closeWindow();
     }
@@ -456,7 +460,8 @@ pub const RaylibBackend = struct {
     ) void {
         _ = viewport;
         _ = self.frame_arena.reset(.retain_capacity);
-        if (diagnostics_mod.enabled and !self.diagnostics.boot_logged) self.diagnostics.logBoot(self.render_width, self.render_height);
+        if (self.diagnostics.shouldRecordBoot())
+            diagnostics_probes.recordBoot(&self.diagnostics, self.render_width, self.render_height);
 
         // Draw all reference-space content into the offscreen target. The
         // target may be smaller than the 4K reference (the render_resolution
@@ -485,7 +490,8 @@ pub const RaylibBackend = struct {
         // as they land), then the UI on top.
         const world_total_scale = view_state.world_scale * self.renderScale();
         self.beginSpritePass(world_total_scale);
-        for (view_state.tiles) |tile| draw_mod.drawWorldSprite(self, 
+        for (view_state.tiles) |tile| draw_mod.drawWorldSprite(
+            self,
             "world/tile",
             tile.screen_position,
             view_state.world_scale,
@@ -509,7 +515,8 @@ pub const RaylibBackend = struct {
         rl.endMode2D();
         rl.endBlendMode();
         rl.endTextureMode();
-        if (diagnostics_mod.enabled and self.diagnostics.readback_pending) self.diagnostics.logTargetReadback(self.render_target, self.render_width, self.render_height, self.renderScale());
+        if (self.diagnostics.shouldReadBackTarget())
+            diagnostics_probes.recordTargetReadback(&self.diagnostics, self.render_target, self.render_width, self.render_height, self.renderScale());
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
         // y-flipped, so the source height is negated. The blit uses the RENDER
@@ -519,10 +526,6 @@ pub const RaylibBackend = struct {
         rl.beginDrawing();
         // With SUPPORT_CUSTOM_FRAME_CONTROL, endDrawing() only flushes the
         // render batch — we swap the buffer ourselves (vsync paces here).
-        defer {
-            rl.endDrawing();
-            rl.swapScreenBuffer();
-        }
         rl.clearBackground(rl.Color.black);
         const transform = blitTransform(self.render_width, self.render_height);
         const target_width: f32 = @floatFromInt(self.render_width);
@@ -540,15 +543,21 @@ pub const RaylibBackend = struct {
             .height = target_height * transform.scale,
         };
         rl.drawTexturePro(self.render_target.texture, source, destination, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
-    }
+        rl.endDrawing();
+        rl.swapScreenBuffer();
 
+        // End-of-frame diagnostics flush: AFTER present, never mid-draw —
+        // observation work inside the draw path perturbs the observed
+        // system (the mac-hunt lesson). Sections only mark pending; this is
+        // the safe point that writes.
+        self.diagnostics.flushIfPending();
+    }
 };
 
 /// The Audio subsystem's load-time warning sink (see audio.zig): routes its
-/// formatted messages — e.g. the music phase-lock mismatch — into the dev
-/// diagnostics buffer. Wired unconditionally: the append is inert when
-/// diagnostics are inactive (the buffer is simply never flushed in non-dev
-/// builds).
+/// formatted messages — e.g. the music phase-lock mismatch — into the
+/// diagnostics buffer. Wired unconditionally; the append self-gates on
+/// `enabled`, so an inactive instance accumulates nothing.
 fn audioDiagnosticsSink(context: ?*anyopaque, message: []const u8) void {
     const self: *RaylibBackend = @ptrCast(@alignCast(context orelse return));
     self.diagnostics.append("{s}", .{message});
