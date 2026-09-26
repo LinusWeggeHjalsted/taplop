@@ -14169,6 +14169,17 @@ Landed shape:
   could never dispatch the old way — same reason Settings routes there).
   The credits Back button reuses the toggle.
 
+Painter-order fix (caught in play, the session after landing): the
+credits panel emitted inside the main-menu view branch — BEFORE the
+screen-independent options-menu block — so with both up (credits opened
+from the menu's Credits button), the full-screen options panel covered
+the equally full-screen credits panel entirely: the flag was logically
+open (Escape correctly closed credits first, per the chain), but nothing
+rendered. The load-save browser had the same latent emission spot. Both
+moved to AFTER the options-menu emission (still main-menu-gated); a
+view-level regression test pins the order (options panel < Exit Game
+button < credits panel).
+
 Tests: escape opens + closes the options menu on the main menu (the old
 no-op test reworked); the options_action dispatch drives the credits
 toggle both ways and the Exit Game quit request; builder tests pin the

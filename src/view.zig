@@ -425,34 +425,6 @@ pub fn view(
             continue_available,
             button_color,
         ) catch @panic("failed to build main menu");
-
-        // Load-save browser, drawn over the main menu when open. The list
-        // lives on SessionState (scanned from the input path — view stays
-        // file-free; see SessionState.save_files).
-        if (session.ui_state.load_save_menu_open) {
-            ui.buildLoadSavePanel(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                ui.screenRect(),
-                session.save_files,
-                &session.ui_state.load_save_scroll_offset,
-                button_color,
-            ) catch @panic("failed to build load save panel");
-        }
-
-        // Credits screen, drawn over the main menu when open. Modal like
-        // the load-save browser — the panel blocks input to the buttons
-        // behind it.
-        if (session.ui_state.credits_open) {
-            ui.buildCreditsPanel(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                ui.screenRect(),
-                button_color,
-            ) catch @panic("failed to build credits panel");
-        }
     }
 
     // Drag ghost: the dragged content follows the pointer, drawn last (on
@@ -534,6 +506,39 @@ pub fn view(
             button_color,
             session.persistent_dir_path,
         ) catch @panic("failed to build options menu");
+    }
+
+    // Main-menu overlays (load-save browser, credits): both open ON TOP of
+    // the options menu (the credits button lives in its main-menu variant;
+    // the browser is reachable while the menu is closed), so they emit
+    // AFTER it — painter order is draw order, and a full-screen panel
+    // emitted earlier would be covered entirely. The list for the browser
+    // lives on SessionState (scanned from the input path — view stays
+    // file-free; see SessionState.save_files).
+    if (current_state.screen == .main_menu) {
+        if (session.ui_state.load_save_menu_open) {
+            ui.buildLoadSavePanel(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                ui.screenRect(),
+                session.save_files,
+                &session.ui_state.load_save_scroll_offset,
+                button_color,
+            ) catch @panic("failed to build load save panel");
+        }
+
+        // Modal like the load-save browser — the panel blocks input to the
+        // buttons behind it.
+        if (session.ui_state.credits_open) {
+            ui.buildCreditsPanel(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                ui.screenRect(),
+                button_color,
+            ) catch @panic("failed to build credits panel");
+        }
     }
 
     // Mission-fail overlay: full-screen modal shown when the player is dead
@@ -4674,4 +4679,85 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
             else => {},
         }
     }
+}
+
+test "main menu: credits draws ON TOP of the options menu (painter order)" {
+    // Regression: the credits panel used to be emitted in the main-menu
+    // branch, BEFORE the screen-independent options menu block — two
+    // full-screen panels, so the options menu covered it entirely (the
+    // credits flag was logically open; Escape correctly closed credits
+    // first, but nothing rendered). The contract: with both up, the
+    // options menu's panel + buttons emit FIRST, the credits panel after.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const main_menu_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+    session.ui_state.options_menu_open = true;
+    session.ui_state.credits_open = true;
+
+    const view_state = view(
+        &main_menu_state,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
+        },
+    );
+
+    // Both overlays emit exactly one full-screen panel each. The options
+    // menu's panel comes first, then its buttons (Exit Game identifies the
+    // block), then the credits panel — drawn on top.
+    var full_screen_panel_indices: [2]usize = undefined;
+    var panel_count: usize = 0;
+    var exit_game_index: ?usize = null;
+    for (view_state.ui_elements, 0..) |element, index| {
+        switch (element) {
+            .nine_slice_panel => |panel| {
+                const is_full_screen = panel.screen_position.x == 0 and
+                    panel.screen_position.y == 0 and
+                    panel.width == types.reference_width and
+                    panel.height == types.reference_height;
+                if (is_full_screen and panel_count < 2) {
+                    full_screen_panel_indices[panel_count] = index;
+                    panel_count += 1;
+                }
+            },
+            .button => |button| {
+                if (button.action == .exit_game and exit_game_index == null) {
+                    exit_game_index = index;
+                }
+            },
+            else => {},
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), panel_count);
+    try std.testing.expect(exit_game_index != null);
+    // options-menu panel < Exit Game button < credits panel (painter order).
+    try std.testing.expect(full_screen_panel_indices[0] < exit_game_index.?);
+    try std.testing.expect(exit_game_index.? < full_screen_panel_indices[1]);
 }
