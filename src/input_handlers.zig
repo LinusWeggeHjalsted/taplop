@@ -773,8 +773,9 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
-    // Main-menu overlays (the options menu and mission overlays can never be
-    // open on the main menu, so these sit topmost whenever they're up).
+    // Main-menu overlays (load-save browser, credits — both reachable
+    // from the main menu's own stack/options menu; they open on top of
+    // the options menu, so they sit topmost whenever they're up).
     if (ui_state.load_save_menu_open) {
         queueEscapeSound(history);
         ui_state.load_save_menu_open = false;
@@ -806,11 +807,9 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
-    // Nothing to close: open the options menu. It is the in-game pause/exit
-    // menu — its entries (Restart/Exit Mission/Exit to Main Menu) are
-    // meaningful only in level/hub; the main menu has its own button stack,
-    // so Escape is a no-op there.
-    if (current.screen == .main_menu) return;
+    // Nothing to close: open the options menu. Every screen has a variant
+    // — the main menu's carries Settings/Credits/Exit Game instead of the
+    // session verbs (see buildOptionsMenu).
     queueEscapeSound(history);
     ui_state.options_menu_open = true;
 }
@@ -1021,6 +1020,24 @@ pub fn handleAnytimeInput(
             // → Settings screen.
             .open_settings =>
                 history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
+            // Credits (the main-menu options menu variant): toggle the
+            // overlay — it opens on top of this menu, and the Back button
+            // reuses this action to close (the load-save browser's toggle
+            // pattern). Routed through `options_action` because idle input
+            // is gated while the options menu is open.
+            .open_credits =>
+                history.session.ui_state.credits_open = !history.session.ui_state.credits_open,
+            // Exit Game (the main-menu options menu variant, native only —
+            // the button is not emitted on web, where closing the tab is
+            // the user's). A request, not a state transform: the game loop's
+            // exit condition consumes it and the shutdown defers flush.
+            // The comptime os gate is the defensive half for a future
+            // keybind; the button half lives in the view.
+            .exit_game => {
+                if (@import("builtin").os.tag != .emscripten) {
+                    history.session.quit_requested = true;
+                }
+            },
             // A settings toggle or choice was clicked. The SettingRef rode
             // in `anytime.clicked_setting`. Mutate `history.settings` (a
             // direct write — settings are off the undo timeline, like
@@ -2649,11 +2666,6 @@ pub fn handleIdleInput(
                 // is never emitted there — drop files into the persistent
                 // saves/ dir by hand instead).
                 .import_save => file_source_mod.triggerBrowserUpload(),
-                // Credits screen: toggle the panel (the Back button reuses
-                // this action to close — same toggle pattern as the
-                // load-save browser).
-                .open_credits => history.session.ui_state.credits_open =
-                    !history.session.ui_state.credits_open,
                 else => {},
             }
         }

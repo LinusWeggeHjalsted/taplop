@@ -1229,13 +1229,15 @@ z-order (topmost surface first):
    Mission button's orchestrator (`player_exit_mission` + drain).
 4. **Mission complete** (view-derived `last_completed_mission`) — fires the
    Continue button's `dismiss_mission_complete` + drain.
-5. **Load-save browser / credits** (main-menu overlays).
+5. **Load-save browser / credits** (reachable from the main menu's own
+   stack and its options-menu variant; they open on top of the options
+   menu, so they sit topmost whenever they're up).
 6. **Options menu** — closes it, leaving any full-screen overlay beneath
    it open.
 7. **Full-screen overlays** (world map, full combat log) — closes the
    topmost open one (last occupied slot draws on top).
-8. Nothing open → opens the options menu, level/hub only (no-op on the
-   main menu — the menu's exit entries are meaningless there).
+8. Nothing open → opens the options menu on ANY screen (the main-menu
+   variant carries its own entries — see below).
 
 The error popup is more-modal still but never reaches the chain: the
 `pending_error` gate at the top of `handleAnytimeInput` consumes
@@ -4717,12 +4719,22 @@ TODO). The screen is reachable from TWO entry points, both wired through
    stacking rule from DESIGN → Modal overlays: each `blocks_input` panel
    shields the one behind it.
 
-**Options menu is NOT reachable from the main menu.** `escape`
-(Escape) is gated on `screen != .main_menu`. The main menu has its own
-button stack (Continue / New Game / Load Save / Editor / Settings /
-Credits); the options menu's Restart/Exit-Mission/Exit-to-Menu entries are
-meaningful only in level/hub. Pre-fix, Escape opened the options menu even
-on the main menu, surfacing nonsensical exit buttons.
+**The options menu is reachable everywhere, with per-screen content.**
+The button list is derived from the current screen, so each surface gets
+meaningful entries: level/hub/editor keep the pause-menu set (session
+verbs + save paths + Settings + Exit to Main Menu), and the main-menu
+variant carries the meta entries instead — Continue (close) / Settings /
+Credits / Exit Game (native only; a browser tab is the user's to close,
+not ours). The entry point is the top-bar options button, emitted on every
+screen, plus Escape via the chain above. The main-menu's own stack holds
+only the session-flow verbs + mode entries (Continue / New Game / Load
+Save / Editor); Settings + Credits moved INTO the options menu (one
+convention from every screen). Exit Game requests the quit via
+`SessionState.quit_requested` — a request, not a state transform: the
+game loop's exit condition consumes it, and the shutdown defers flush
+pending writes + diagnostics. (History: this reverses an earlier decision
+— Escape on the main menu was once a no-op because the menu's content was
+session-only; the per-screen button lists removed that reason.)
 
 **Control kinds.** Every field is one of:
 - **Toggle** (bool): click to flip. `vsync`,

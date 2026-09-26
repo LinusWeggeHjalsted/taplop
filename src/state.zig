@@ -386,6 +386,13 @@ pub const SessionState = struct {
     /// the wrapped line count).
     error_scroll_offset: i32 = 0,
 
+    /// Exit Game requested (the main-menu options menu's Exit Game button,
+    /// native-only — the button is not emitted on web). A request, not a
+    /// state transform: never recorded, off the undo timeline; the game
+    /// loop's exit condition consumes it, and the shutdown defers flush
+    /// pending writes + diagnostics on the way out.
+    quit_requested: bool = false,
+
     /// Copy `msg` into the durable history arena and set it as the pending
     /// error. Overwrites (leaks) any prior message. The caller passes
     /// `history_arena.allocator()` so the message outlives `current_arena`

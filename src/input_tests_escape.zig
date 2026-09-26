@@ -3,7 +3,8 @@
 //! topmost open overlay (settings, load-save browser, credits, world map /
 //! full combat log, options menu) or fires the mission fail/complete
 //! overlay's primary button; with nothing open it opens the options menu
-//! (level/hub only). See DESIGN → Input → Escape overlay chain.
+//! on ANY screen (the main-menu variant carries its own entries). See
+//! DESIGN → Input → Escape overlay chain.
 
 const std = @import("std");
 const testing = std.testing;
@@ -69,15 +70,20 @@ test "escape: with nothing open, opens the options menu (level)" {
     try testing.expect(history.session.ui_state.options_menu_open);
 }
 
-test "escape: main menu no-op with no overlay; closes credits + load-save browser" {
+test "escape: main menu opens + closes the options menu; closes credits + load-save browser" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     var history = harness.newHistory(null);
     test_harness.runToIdle(&history);
 
-    // No overlay up on the main menu → Escape does nothing (the options
-    // menu's entries are meaningless there).
+    // Nothing open on the main menu → Escape opens the options menu (the
+    // main-menu variant: Settings/Credits/Exit Game, not the session
+    // verbs).
+    pressEscape(&history);
+    try testing.expect(history.session.ui_state.options_menu_open);
+
+    // A second Escape closes it.
     pressEscape(&history);
     try testing.expect(!history.session.ui_state.options_menu_open);
 
@@ -90,6 +96,35 @@ test "escape: main menu no-op with no overlay; closes credits + load-save browse
     pressEscape(&history);
     try testing.expect(!history.session.ui_state.load_save_menu_open);
     try testing.expect(!history.session.ui_state.options_menu_open);
+}
+
+test "options menu on the main menu: credits toggles via options_action; exit game requests the quit" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    // The credits + exit-game buttons live in the options menu, so they
+    // route through the anytime options_action path (idle input is gated
+    // while the menu is open).
+    var anytime: input.AnytimeInput = .{};
+    anytime.options_action = .open_credits;
+    input_handlers.handleAnytimeInput(&history, anytime, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.session.ui_state.credits_open);
+
+    // The credits Back button reuses the action to close.
+    var anytime_close: input.AnytimeInput = .{};
+    anytime_close.options_action = .open_credits;
+    input_handlers.handleAnytimeInput(&history, anytime_close, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(!history.session.ui_state.credits_open);
+
+    // Exit Game: a request flag for the game loop's exit condition — not
+    // a state transform, nothing recorded.
+    var anytime_exit: input.AnytimeInput = .{};
+    anytime_exit.options_action = .exit_game;
+    input_handlers.handleAnytimeInput(&history, anytime_exit, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.session.quit_requested);
 }
 
 test "escape: closes the topmost full-screen overlay only" {

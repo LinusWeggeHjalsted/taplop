@@ -169,8 +169,9 @@ pub const Action = enum {
     /// load-save browser, credits, world map / full combat log, or the
     /// options menu (whichever is topmost); on mission fail / mission
     /// complete it fires the overlay's primary button (exit mission /
-    /// continue); with nothing open (level/hub only) it opens the options
-    /// menu. Named for the key behavior, not the menu: the chain (see
+    /// continue); with nothing open it opens the options menu (any screen —
+    /// the main-menu variant carries its own content). Named for the key
+    /// behavior, not the menu: the chain (see
     /// DESIGN → Input → Escape overlay chain) is the action's whole
     /// meaning. Previously `toggle_options_menu`; installs with a user
     /// settings.txt naming the old action warn + drop it at load and pick
@@ -242,6 +243,11 @@ pub const Action = enum {
     restart_mission,
     exit_mission,
     exit_to_menu,
+    /// Quit the application (the main-menu options menu's Exit Game button,
+    /// native-only — never emitted on web, where closing the tab is the
+    /// user's). Button-only: no binding ships; the handler's screen gate is
+    /// the defensive half for a future keybind.
+    exit_game,
     // Mission-complete overlay commands.
     continue_after_mission,
     replay_mission,
@@ -829,6 +835,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .load_save_row,
         .import_save,
         .open_credits,
+        .exit_game,
         => .{ .menu = true },
 
         // Multi-screen: fires on more than one screen's surface.

@@ -14128,3 +14128,50 @@ Docs: DESIGN → Platform Seam → Diagnostics flipped to the implemented shape;
 AGENTS's two overlapping diagnostics entries consolidated into one (the old
 "Dev diagnostics log" + "Diagnostics log" pair) + `src/diagnostics.zig` added
 to Key Files; TODO item checked off.
+
+## Options menu on the main menu — per-screen content + Exit Game (design reversal)
+
+Reversal of a recorded decision (DESIGN previously held "options menu is
+NOT reachable from the main menu"). The original exclusion existed because
+the menu's content was session-only (Restart/Exit-Mission/Exit-to-Menu are
+meaningless without a game in progress); the per-screen button lists
+dissolved that reason, so the decision rule became: session-flow verbs +
+mode entries stay on the main-menu stack, preferences and one-time views go
+under Options.
+
+Landed shape:
+- **Main-menu stack:** Continue* / New Game / Load Save / Editor —
+  Settings + Credits moved INTO the options menu. One convention from
+  every screen: settings is always one step inside the menu.
+- **Options menu, main-menu variant:** Continue (close) / Settings /
+  Credits / Exit Game. No session verbs, no Exit to Main Menu. Export Save
+  is also hidden there (no game in progress; Load Save is that screen's
+  workflow) — that gate previously excluded only the editor, and the new
+  builder test caught the leak before runtime.
+- **Exit Game:** native only (a browser tab is the user's to close, not
+  ours — the web build omits the button and the handler's comptime os gate
+  is the defensive half for a future keybind). New button-only
+  `Action.exit_game`; the dispatch sets `SessionState.quit_requested` — a
+  request, not a state transform (never recorded, off the undo timeline);
+  the game loop's exit condition consumes it and the shutdown defers flush
+  pending writes + diagnostics.
+- **Entry point:** the top-bar options button, now emitted on EVERY screen
+  (the unused `current_screen` parameter dropped). Escape opens the menu
+  anywhere — the chain's final-branch main-menu no-op gate removed.
+- **Routing consequence:** `.open_credits` moved from the idle
+  `menu_action` path to the anytime `options_action` dispatch (idle input
+  is gated while the options menu is open, so a Credits button inside it
+  could never dispatch the old way — same reason Settings routes there).
+  The credits Back button reuses the toggle.
+
+Tests: escape opens + closes the options menu on the main menu (the old
+no-op test reworked); the options_action dispatch drives the credits
+toggle both ways and the Exit Game quit request; builder tests pin the
+main-menu options-menu variant (meta entries present, session verbs +
+editor block + Exit to Main Menu absent) and the slimmed main-menu stack
+(Continue gated on continue_available; New Game/Load Save/Editor present;
+Settings/Credits absent).
+
+Docs: DESIGN → Escape overlay chain (arm 8 + the reachability section
+rewritten as the reversal with its history note); AGENTS had no stale
+references.

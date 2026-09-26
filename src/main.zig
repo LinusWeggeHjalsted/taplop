@@ -950,7 +950,10 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     // (useful work, no yield). Web doesn't sleep at all — the browser's rAF
     // scheduling IS the yield.
     const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see DESIGN → Platform Seam (idle yield)
-    while (!backend.shouldClose()) {
+    // Exit conditions: the window's close button OR a requested quit (the
+    // main-menu options menu's Exit Game — native only; web never sets it).
+    // The run() defers flush pending writes + diagnostics on the way out.
+    while (!backend.shouldClose() and !frame_state.history.session.quit_requested) {
         frame(backend, frame_state);
         if (frame_state.history.current_state.event_stack.len == 0 or
             frame_state.history.current_state.waiting != null)

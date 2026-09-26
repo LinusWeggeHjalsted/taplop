@@ -642,7 +642,6 @@ pub fn view(
         &ui_elements,
         frame_allocator,
         ui.screenRect(),
-        current_state.screen,
         active_theme,
         render.can_undo,
         render.can_redo,

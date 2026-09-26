@@ -39,7 +39,6 @@ const buildMissionFail = @import("screens.zig").buildMissionFail;
 const spanRow = ui_tooltip.spanRow;
 const emitPanelButton = emit.emitPanelButton;
 
-
 /// Build the options menu: a full-screen 9-slice panel background with a
 /// centered stack of `menu_button_width` buttons (same design as the main
 /// menu). Context-specific: the button list depends on the current screen.
@@ -114,9 +113,11 @@ pub fn buildOptionsMenu(
     // save — and hidden during an editor run (playtest/validate): the
     // run's player_data is temporary (rebuilt from the editor loadout,
     // restored on exit), so an export mid-run would write the throwaway
-    // run data as a campaign save. `save_game` is button-only (no
+    // run data as a campaign save. Also hidden on the main menu — no
+    // game is in progress (empty/throwaway player_data); Load Save is
+    // that screen's save workflow. `save_game` is button-only (no
     // keybind), so hiding the button removes the path entirely.
-    if (current_screen != .editor and editor_run == null) {
+    if (current_screen != .editor and current_screen != .main_menu and editor_run == null) {
         const export_save_body = if (persistent_dir_path) |dir|
             try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
         else
@@ -204,12 +205,26 @@ pub fn buildOptionsMenu(
     }
 
     // Settings: opens the settings overlay on top of this one (drill-in).
-    // Present in every context the options menu appears in (level + hub).
+    // Present in every context the options menu appears in.
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
     button_count += 1;
 
-    buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };
-    button_count += 1;
+    // The main-menu variant: no session verbs (nothing to restart/exit/
+    // export) and no Exit to Main Menu (already there) — Credits + the
+    // native-only Exit Game join Settings. On web, Exit Game is omitted
+    // (closing the tab is the user's, not ours; the handler's comptime os
+    // gate is the defensive half for a future keybind).
+    if (current_screen == .main_menu) {
+        buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
+        button_count += 1;
+        if (@import("builtin").os.tag != .emscripten) {
+            buttons[button_count] = .{ .label = "Exit Game", .action = .exit_game };
+            button_count += 1;
+        }
+    } else {
+        buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };
+        button_count += 1;
+    }
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
     const origin = screen
@@ -240,7 +255,10 @@ pub fn buildOptionsMenu(
 /// Build the main-menu button stack: fixed-size buttons centered as a group
 /// on `screen`, spaced by `ui_gap`, each with a centered text label. The
 /// Continue button is emitted only when `continue_available` (there is a game
-/// to resume — populated PlayerData).
+/// to resume — populated PlayerData). Settings + Credits live in the
+/// OPTIONS MENU's main-menu variant (reached via the top-bar options
+/// button / Escape — one convention from every screen); this stack holds
+/// only the session-flow verbs + mode entries.
 pub fn buildMainMenu(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -250,7 +268,7 @@ pub fn buildMainMenu(
     button_color: Color,
 ) !void {
     const MenuButton = struct { label: []const u8, action: Action };
-    var buttons: [6]MenuButton = undefined;
+    var buttons: [4]MenuButton = undefined;
     var button_count: usize = 0;
     if (continue_available) {
         buttons[button_count] = .{ .label = "Continue", .action = .continue_game };
@@ -264,10 +282,6 @@ pub fn buildMainMenu(
     // editor content; the mission kind today). See DESIGN → Architecture
     // → Level Editor → The editor browser.
     buttons[button_count] = .{ .label = "Editor", .action = .toggle_editor_browser };
-    button_count += 1;
-    buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
-    button_count += 1;
-    buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
     button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
@@ -1135,7 +1149,7 @@ pub fn buildSettingsPanel(
                 .screen_position = .{ .x = x, .y = y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
                 .font_size = settings_row_font_size,
                 .blocks_input = false,
-            }}) catch @panic("failed to append settings label");
+            } }) catch @panic("failed to append settings label");
             return x + label_width + settings_label_to_control_gap;
         }
     }.run;
@@ -1167,7 +1181,7 @@ pub fn buildSettingsPanel(
                 .screen_position = .{ .x = ctrl_x, .y = y },
                 .width = settings_slider_width,
                 .height = settings_row_height,
-            }}) catch @panic("failed to append slider");
+            } }) catch @panic("failed to append slider");
             // Value text right of the slider.
             const value_x = ctrl_x + settings_slider_width + settings_slider_value_gap;
             elems.append(alloc, .{ .text_label = .{
@@ -1175,7 +1189,7 @@ pub fn buildSettingsPanel(
                 .screen_position = .{ .x = value_x, .y = y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
                 .font_size = settings_row_font_size,
                 .blocks_input = false,
-            }}) catch @panic("failed to append slider value");
+            } }) catch @panic("failed to append slider value");
         }
     }.run;
 
@@ -1530,7 +1544,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
-    .mission,
+        .mission,
         &missions,
         &.{},
         .local,
@@ -1580,7 +1594,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
-    .mission,
+        .mission,
         &missions,
         &.{},
         .local,
@@ -1606,7 +1620,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
-    .mission,
+        .mission,
         &missions,
         &.{},
         .local,
@@ -1632,7 +1646,7 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
             allocator,
             metrics,
             screen,
-        .mission,
+            .mission,
             &.{},
             &.{},
             tab,
@@ -1766,6 +1780,95 @@ test "buildOptionsMenu: Revalidate Mission is editor-only" {
             .button => |b| {
                 try std.testing.expect(b.action != .revalidate_editor_mission);
             },
+            else => {},
+        };
+    }
+}
+
+test "buildOptionsMenu: the main-menu variant carries the meta entries, not the session verbs" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    var elements: UiElementList = .empty;
+    try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, button_color, null);
+    // The main-menu variant: Continue (close) + Settings + Credits + Exit
+    // Game (tests run native — the web build omits Exit Game), and none of
+    // the session verbs or the editor block.
+    for ([_]types.Action{ .escape, .open_settings, .open_credits, .exit_game }) |expected| {
+        var found = false;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == expected) found = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found);
+    }
+    for ([_]types.Action{
+        .restart_mission,     .exit_mission,       .exit_to_menu,              .save_game,
+        .save_editor_mission, .new_editor_mission, .revalidate_editor_mission,
+    }) |forbidden| {
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != forbidden),
+            else => {},
+        };
+    }
+}
+
+test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in the options menu" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Continue present only when a game exists to resume.
+    {
+        var elements: UiElementList = .empty;
+        try buildMainMenu(&elements, allocator, metrics, screen, true, button_color);
+        var found_continue = false;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == .continue_game) found_continue = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found_continue);
+    }
+    {
+        var elements: UiElementList = .empty;
+        try buildMainMenu(&elements, allocator, metrics, screen, false, button_color);
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != .continue_game),
+            else => {},
+        };
+    }
+
+    // Both cases: New Game / Load Save / Editor present; Settings +
+    // Credits moved to the options menu (the top-bar options button is
+    // the entry point from every screen).
+    var elements: UiElementList = .empty;
+    try buildMainMenu(&elements, allocator, metrics, screen, true, button_color);
+    for ([_]types.Action{ .new_game, .toggle_load_save_menu, .toggle_editor_browser }) |expected| {
+        var found = false;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == expected) found = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found);
+    }
+    for ([_]types.Action{ .open_settings, .open_credits }) |moved| {
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != moved),
             else => {},
         };
     }

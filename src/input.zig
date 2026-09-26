@@ -526,6 +526,12 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // options_action switch runs regardless of screen. See DESIGN → UI
         // Framework → Settings screen.
         .open_settings => player_input.anytime.options_action = action,
+        // Credits + Exit Game live in the MAIN-MENU options menu variant;
+        // they must route through the anytime path too (idle input is
+        // gated while the options menu is open).
+        .open_credits,
+        .exit_game,
+        => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .add_editor_palette_type => player_input.anytime.options_action = action,
@@ -623,7 +629,6 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
-        .open_credits,
         => player_input.idle.menu_action = action,
     }
 }

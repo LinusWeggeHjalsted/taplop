@@ -268,11 +268,10 @@ pub fn buildErrorPopup(
 /// (see emit.zig's skill slot). The button stays clickable (a no-op,
 /// exactly like the keybind) — the wash is the visual truth only.
 ///
-/// The options button is NOT emitted on the main menu: that screen's own
-/// button stack is its option surface, and the Escape chain (which the
-/// button routes through) deliberately no-ops there — see
-/// `handleEscapeKey`. The slot stays reserved so the undo/redo positions
-/// don't shift between screens.
+/// The options button is emitted on EVERY screen, the main menu included
+/// — the options menu's main-menu variant carries Settings/Credits/Exit
+/// Game (see `buildOptionsMenu`), so the top bar is its one entry point
+/// there, same as everywhere else.
 ///
 /// No background of its own — purely a layout region, like the bottom bar.
 /// The remaining width stays reserved for the combat log (see TODO →
@@ -281,7 +280,6 @@ pub fn buildGlobalTopBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     screen: Rectangle,
-    current_screen: state.Screen,
     active_theme: types.ActiveColorTheme,
     can_undo: bool,
     can_redo: bool,
@@ -300,7 +298,7 @@ pub fn buildGlobalTopBar(
     // options menu is open toggles the menu closed (the action routes
     // through the Escape chain, which closes an open menu first).
     const options_cell = row.next(top_bar_slot_size);
-    if (current_screen != .main_menu) {
+    {
         try emitIconButton(
             elements,
             allocator,
