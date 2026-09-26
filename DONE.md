@@ -14143,8 +14143,10 @@ Landed shape:
 - **Main-menu stack:** Continue* / New Game / Load Save / Editor —
   Settings + Credits moved INTO the options menu. One convention from
   every screen: settings is always one step inside the menu.
-- **Options menu, main-menu variant:** Continue (close) / Settings /
-  Credits / Exit Game. No session verbs, no Exit to Main Menu. Export Save
+- **Options menu, main-menu variant:** Settings / Credits / Exit Game. No
+  Continue (it would read as resume-the-game, colliding with the
+  main-menu stack's Continue — Escape + the top-bar button close the
+  menu), no session verbs, no Exit to Main Menu. Export Save
   is also hidden there (no game in progress; Load Save is that screen's
   workflow) — that gate previously excluded only the editor, and the new
   builder test caught the leak before runtime.

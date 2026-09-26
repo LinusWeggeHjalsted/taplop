@@ -42,7 +42,10 @@ const emitPanelButton = emit.emitPanelButton;
 /// Build the options menu: a full-screen 9-slice panel background with a
 /// centered stack of `menu_button_width` buttons (same design as the main
 /// menu). Context-specific: the button list depends on the current screen.
-/// Continue carries `.escape` (the toggle closes the menu);
+/// Continue carries `.escape` (the toggle closes the menu) — except on the
+/// main menu, where it is omitted (it would collide with the stack's
+/// resume-game Continue; the options menu variant holds only the meta
+/// entries there);
 /// Save carries `.save_game`. Rendered on top of the bottom bar when
 /// `options_menu_open` is set, like the error popup. See DESIGN → UI
 /// Framework.
@@ -79,8 +82,13 @@ pub fn buildOptionsMenu(
     var buttons: [9]MenuButton = undefined;
     var button_count: usize = 0;
 
-    buttons[button_count] = .{ .label = "Continue", .action = .escape };
-    button_count += 1;
+    // Continue = close-the-menu (`.escape`). Omitted on the main menu: it
+    // would read as resume-the-game (the main-menu stack's Continue), and
+    // Escape + the top-bar options button already close the menu.
+    if (current_screen != .main_menu) {
+        buttons[button_count] = .{ .label = "Continue", .action = .escape };
+        button_count += 1;
+    }
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in
     // progress to restart or abandon. During an editor run the buttons
@@ -1796,10 +1804,12 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
 
     var elements: UiElementList = .empty;
     try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, button_color, null);
-    // The main-menu variant: Continue (close) + Settings + Credits + Exit
-    // Game (tests run native — the web build omits Exit Game), and none of
-    // the session verbs or the editor block.
-    for ([_]types.Action{ .escape, .open_settings, .open_credits, .exit_game }) |expected| {
+    // The main-menu variant: Settings + Credits + Exit Game (tests run
+    // native — the web build omits Exit Game), and none of the session
+    // verbs, the editor block, or Exit to Main Menu. No Continue either —
+    // it would read as resume-the-game, colliding with the main-menu
+    // stack's Continue; Escape closes the menu.
+    for ([_]types.Action{ .open_settings, .open_credits, .exit_game }) |expected| {
         var found = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {
@@ -1811,7 +1821,7 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     }
     for ([_]types.Action{
         .restart_mission,     .exit_mission,       .exit_to_menu,              .save_game,
-        .save_editor_mission, .new_editor_mission, .revalidate_editor_mission,
+        .save_editor_mission, .new_editor_mission, .revalidate_editor_mission, .escape,
     }) |forbidden| {
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != forbidden),
