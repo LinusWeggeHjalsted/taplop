@@ -13942,3 +13942,49 @@ became the **editor browser** (`buildEditorBrowser`, `toggle_editor_browser`,
   fresh-mission paragraph re-anchored on the New buttons; the Escape
   overlay chain gained the (pre-existing but undocumented) browser entry;
   TODO → Level Editor gains the hub/campaign editor design-session item.
+
+## Custom art carries on save — stem-namespace normalization + the referenced-art copy (the single-dir rule)
+
+A spurious "custom sprite could not be resolved" warning on opening the
+"miku test" mission exposed a model split: the load-side dims check read
+`<loading-mission>/<file-stem>.png` (mission-relative), while the render
+side read the stem's EMBEDDED namespace (`missions/<dir>/<file-stem>.png`
+— assetPathFor, ids are self-describing). A mission renamed after
+authoring kept stems naming the old dir — art rendered (old dir existed)
+but the dims check warned against the new dir.
+
+**Decision (settled):** custom art lives in the mission's OWN directory
+and NOTHING resolves it elsewhere — the stem's dir component is identity
+only. The rejected alternative (load-side resolves via the embedded
+namespace too, matching the render side) was moot: the texture store has
+no mission context, so "only the own dir" can only hold if the embedded
+dir IS the own dir — which makes the SAVE the enforcement point:
+
+- **Writer normalization** — `writeEditorMission` (now taking the save
+  target's dir name) rewrites every `custom/<anything>/<file-stem>` to
+  `custom/<uuid>_<name>/<file-stem>` in the written level files
+  (normalizedCustomStem in writers.zig; non-custom + degenerate stems
+  pass through). The in-memory Editor is untouched — the side effect
+  stays replay-safe.
+- **Referenced-art copy** — `copyReferencedCustomSprites` (mission_io.zig,
+  step 3b of saveEditorMission) copies each referenced custom PNG (entity
+  + decoration palette types, base + layers — referenced only, per
+  decision) into the save target. Source: the mission's current dir
+  first, then the stem's embedded namespace (the one-time migration
+  read for pre-rename content; a missing source is skipped — it already
+  warned at load). A copy write failure fails the save (the config-write
+  class).
+- Consequences: a renamed mission's re-save lands self-contained (old
+  dir deletable, exports carry their art); a stem rewrite changes the
+  content hash — Revalidate re-binds as usual. The in-session editor
+  keeps old-namespace stems until reopen (renders fine; the next save
+  normalizes again).
+- Tests: the writer normalization contract (all four channels — entity
+  base + layer, decoration base + layer — normalized, shipped stems
+  untouched, stale namespace absent, unplaced types unwritten); the
+  handler save contract (rename: art copied under the file stem into the
+  new dir + the written level file carries the healed namespace).
+- Docs: DESIGN → the save/export flow carries the rule; the Sprite id
+  convention section now states the single-dir model once (both
+  consumers + the save-enforced invariant), replacing the drifted
+  "resolves from the mission directory being loaded" phrasing.

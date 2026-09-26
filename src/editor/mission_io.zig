@@ -157,9 +157,17 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         uuid = minted_uuid.?;
     }
 
-    // 2. Project the editor into file contents (transient — the scratch
-    //    arena reclaims them at the next idle point).
-    const written = writers.writeEditorMission(editor.*, uuid, scratch) catch |write_error| {
+    // 2. Derive the save target's dir name — the stem-namespace target
+    //    (the writer normalizes custom sprite stems to it) + the art-copy
+    //    target — then project the editor into file contents (transient —
+    //    the scratch arena reclaims them at the next idle point).
+    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
+    const mission_dir_name = std.fmt.allocPrint(
+        scratch,
+        "{s}_{s}",
+        .{ uuid, sanitized_name },
+    ) catch @panic("failed to format mission dir name");
+    const written = writers.writeEditorMission(editor.*, uuid, mission_dir_name, scratch) catch |write_error| {
         const message = switch (write_error) {
             error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
             else => "failed to save: out of memory",
@@ -170,11 +178,10 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     };
 
     // 3. Write into missions/<uuid>_<name>/.
-    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
     const dir_path = std.fmt.allocPrint(
         durable,
-        "missions/{s}_{s}",
-        .{ uuid, sanitized_name },
+        "missions/{s}",
+        .{mission_dir_name},
     ) catch @panic("failed to allocate mission dir path");
     const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
         @panic("failed to allocate mission.txt path");
@@ -217,6 +224,15 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         };
     }
 
+    // 3b. Carry the referenced custom art into the save target (the
+    //     single-dir rule — see copyReferencedCustomSprites). A copy WRITE
+    //     failure fails the save like a config write failure.
+    if (!copyReferencedCustomSprites(history, editor, dir_path)) {
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return null;
+    }
+
     // 4. Record the save on the session (the editor_mission_sprites
     //    ownership pattern: free the previous memo's strings, then store).
     //    The uuid slice: a fresh mint or the previous memo's REUSED slice is
@@ -243,6 +259,86 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         .dir_path = dir_path,
     };
     return dir_path;
+}
+
+/// Copy every REFERENCED custom sprite PNG — entity + decoration palette
+/// types, base + layers (placements reference types; the player has no
+/// custom sprite) — into the save target dir. The single-dir rule: custom
+/// art lives in the mission's OWN directory, and the save is where a
+/// renamed mission carries its art forward (the writer normalizes the
+/// stems' namespace to the same target in the same save). Source
+/// resolution: the mission's CURRENT dir first (the rule's home), then
+/// the stem's embedded namespace — legacy content authored before a
+/// rename, a one-time migration read that self-heals it. A missing
+/// source is skipped — the load side already warned. Returns false only
+/// on a target WRITE failure (the config-write failure class), with the
+/// popup already surfaced.
+fn copyReferencedCustomSprites(
+    history: *GameStateHistory,
+    editor: *const types.Editor,
+    dir_path: []const u8,
+) bool {
+    for (editor.entity_types) |entity_type| {
+        if (!copyOneReferencedCustomSprite(history, editor.mission.path, entity_type.template.sprite, dir_path)) return false;
+        for (entity_type.template.layers) |layer| {
+            if (!copyOneReferencedCustomSprite(history, editor.mission.path, layer.sprite, dir_path)) return false;
+        }
+    }
+    for (editor.decoration_types) |decoration_type| {
+        if (!copyOneReferencedCustomSprite(history, editor.mission.path, decoration_type.sprite, dir_path)) return false;
+        for (decoration_type.layers) |layer| {
+            if (!copyOneReferencedCustomSprite(history, editor.mission.path, layer.sprite, dir_path)) return false;
+        }
+    }
+    return true;
+}
+
+/// One referenced stem's PNG: resolve a source (current dir, then the
+/// stem's embedded namespace), read it, write it into `dir_path` under the
+/// FILE STEM (the namespace is identity-only). Non-custom and degenerate
+/// stems no-op; a missing source skips; a write failure surfaces the
+/// popup + returns false.
+fn copyOneReferencedCustomSprite(
+    history: *GameStateHistory,
+    mission_path: []const u8,
+    sprite_stem: []const u8,
+    dir_path: []const u8,
+) bool {
+    if (!std.mem.startsWith(u8, sprite_stem, "custom/")) return true;
+    const slash = std.mem.lastIndexOfScalar(u8, sprite_stem, '/') orelse return true;
+    const file_stem = sprite_stem[slash + 1 ..];
+    if (file_stem.len == 0) return true;
+    const scratch = history.current_arena.allocator();
+
+    const current_dir_path = std.fmt.allocPrint(
+        scratch,
+        "{s}/{s}.png",
+        .{ mission_path, file_stem },
+    ) catch @panic("failed to build custom sprite source path");
+    const bytes = history.file_source.readFile(scratch, current_dir_path) catch blk: {
+        // Legacy source: the stem's embedded namespace (pre-rename
+        // content — the migration read).
+        const embedded_path = std.fmt.allocPrint(
+            scratch,
+            "missions/{s}.png",
+            .{sprite_stem["custom/".len..]},
+        ) catch @panic("failed to build custom sprite legacy source path");
+        break :blk history.file_source.readFile(scratch, embedded_path) catch
+            return true; // missing source: skip — already warned at load
+    };
+    const target_path = std.fmt.allocPrint(
+        scratch,
+        "{s}/{s}.png",
+        .{ dir_path, file_stem },
+    ) catch @panic("failed to build custom sprite target path");
+    history.file_source.writeFile(target_path, bytes) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not copy a custom sprite into the mission directory",
+        );
+        return false;
+    };
+    return true;
 }
 
 /// Free the previous stash + store the new replay bytes on the session,

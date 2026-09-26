@@ -3051,7 +3051,24 @@ PER-LEVEL layout char codes (only the tools that level places get a
 definition; codes assigned in palette order from digits → lowercase →
 uppercase → remaining printable ASCII, `!` `.` `=` space reserved; a
 level exceeding the 91-code set fails the write with a popup). Enemy/item
-chars imply their tile on reload; decoration anchors take no tile. The
+chars imply their tile on reload; decoration anchors take no tile.
+**The save carries the mission's custom art + heals stale stem
+namespaces (the single-dir rule — see the Sprite id convention):** the
+writer normalizes every `custom/<anything>/<file-stem>` to the save
+target's namespace (`custom/<uuid>_<name>/<file-stem>` — the dir
+component is identity-only, so the save target is the truth; the
+in-memory Editor state is NOT touched, keeping the side effect
+replay-safe), and the save copies every REFERENCED custom PNG (entity +
+decoration palette types, base + layers — referenced art only, not the
+whole old dir) into the target dir. Source: the mission's current dir
+first, then the stem's embedded namespace (legacy pre-rename content —
+a one-time migration read; a missing source is skipped, it already
+warned at load). Consequence: a RENAMED mission re-save lands in a new
+dir WITH its art + healed stems — the old dir becomes deletable, and
+exports of renamed missions are self-contained (the zip bundles the
+saved dir). A stem rewrite changes content identity — the validation
+replay re-binds via Revalidate as usual.
+The
 EXPORT (the options menu's Export Mission button) saves first, then
 bundles the saved configs + the mission dir's custom sprites + a
 validation_replay.txt (once validation writes one) into a STORE-method
@@ -4264,14 +4281,25 @@ The code prepends the asset folder (`entities/{s}` for entities,
 `decorations/{s}` for decorations, `weapons/{s}` for weapons, `skills/{s}`
 for skills). The comptime sprite-metadata table (dims) is keyed by the full
 asset-relative path, so the parser's `resolveDecorationSpriteDimensions`
-prepends `decorations/` for the shipped-table lookup. Custom decoration
-stems (`custom/<mission-dir>/<name>`) are NOT assets/ paths — custom art is
-mission-bundled and resolves from the mission directory being loaded:
-dims at load time, and RENDERING through the texture store — a sprite id
-`<kind>/custom/<mission-dir>/<file-stem>` reads
-`missions/<mission-dir>/<file-stem>.png` (`assetPathFor` in
-src/raylib/textures.zig; the id's folder prefix is dropped — the code
-convention never maps custom ids onto `assets/`).
+prepends `decorations/` for the shipped-table lookup. Custom stems
+(`custom/<mission-dir>/<file-stem>`) are NOT assets/ paths — the dir
+component is IDENTITY ONLY, never a lookup into another mission's
+folder: **custom art lives in the mission's OWN directory (the
+single-dir rule), and nothing ever resolves it elsewhere.** The two
+consumers agree because the save enforces the invariant:
+- **Load-time dims** read `<mission-path>/<file-stem>.png` (the mission
+  being loaded).
+- **Rendering** — the texture store has no mission context, so the id
+  must be self-describing: `<kind>/custom/<mission-dir>/<file-stem>`
+  reads `missions/<mission-dir>/<file-stem>.png` (`assetPathFor` in
+  src/raylib/textures.zig; the id's folder prefix is dropped — custom
+  ids never map onto `assets/`). The save (see The save/export flow)
+  normalizes every stem's namespace to the save target AND copies the
+  referenced art there, so the embedded dir IS the mission's own dir for
+  anything that round-trips a save. Legacy content authored before a
+  rename (stems naming an old dir) renders while the old dir exists and
+  warns at load until re-saved — the save's migration read + rewrite
+  self-heals it.
 
 **Derived, not stored:**
 - **bbox** = sprite pixel dimensions / 256 (tiles_w × tiles_h). A footprint

@@ -4026,6 +4026,89 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
     try testing.expectEqualStrings(first_dir_path, second_save.dir_path);
 }
 
+test "editor save: a renamed mission carries its custom art + heals stale stem namespaces" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+
+    // Legacy content: the art lives in the OLD dir (authored there before
+    // the rename) and the in-memory stems still name that namespace.
+    const uuid = "11111111-1111-1111-1111-111111111111";
+    const old_dir = "missions/11111111-1111-1111-1111-111111111111_Old Name";
+    const hero_png = loaders.minimalPngHeader(arena, 512, 640);
+    harness.file_source.writeFile(
+        try std.fmt.allocPrint(arena, "{s}/hero.png", .{old_dir}),
+        hero_png,
+    ) catch @panic("write hero.png");
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &[_]types.EntityPlacement{.{
+            .type_id = 0,
+            .position = .{ .x = 1, .y = 0 },
+        }},
+    }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{
+            .name = "New Name",
+            .uuid = uuid,
+            .path = old_dir,
+            .level_count = 1,
+        },
+        .entity_types = &[_]types.EntityTypeDef{
+            .{ .id = "Hero", .template = .{
+                .name = "Hero",
+                .sprite = "custom/11111111-1111-1111-1111-111111111111_Old Name/hero",
+                .team = 1,
+            } },
+        },
+        .player_def = .{ .id = "Player", .template = .{
+            .name = "New Player",
+            .sprite = "player",
+            .team = 0,
+        } },
+    }));
+    runToIdle(&history);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .save_editor_mission = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.pendingError() == null);
+
+    // The save target is the RENAMED dir (the uuid is reused from the
+    // editor's mission identity).
+    const saved = history.session.editor_saved_mission.?;
+    const new_dir = "missions/11111111-1111-1111-1111-111111111111_New Name";
+    try testing.expectEqualStrings(new_dir, saved.dir_path);
+
+    // The referenced art carried into the new dir, under the FILE stem.
+    {
+        const copied = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/hero.png", .{new_dir}),
+        );
+        try testing.expectEqualSlices(u8, hero_png, copied);
+    }
+
+    // The written level file carries the healed namespace — the old
+    // namespace appears nowhere.
+    {
+        const level_txt = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{new_dir}),
+        );
+        try testing.expect(
+            std.mem.indexOf(u8, level_txt, "custom/11111111-1111-1111-1111-111111111111_New Name/hero") != null,
+        );
+        try testing.expect(std.mem.indexOf(u8, level_txt, "Old Name") == null);
+    }
+}
+
 test "editor export: saves first, bundles configs + custom sprites into the zip" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

@@ -396,6 +396,7 @@ const LayoutCodeAssignment = struct {
 pub fn writeEditorMission(
     editor: types.Editor,
     mission_uuid: []const u8,
+    mission_dir_name: []const u8,
     allocator: std.mem.Allocator,
 ) !WrittenEditorMission {
     var mission_buffer: std.ArrayList(u8) = .empty;
@@ -414,6 +415,7 @@ pub fn writeEditorMission(
             editor.entity_types,
             editor.decoration_types,
             editor.item_types,
+            mission_dir_name,
             allocator,
         ));
     }
@@ -541,6 +543,27 @@ fn setGridCell(
     grid[@intCast(y * grid_width + x)] = character;
 }
 
+/// Rewrite a custom sprite stem's namespace to the save target:
+/// `custom/<anything>/<file-stem>` → `custom/<mission_dir_name>/<file-stem>`.
+/// The namespace component is IDENTITY ONLY, never a read path — custom
+/// art resolves from the mission's own directory (see DESIGN → Custom
+/// Missions & Online Services → the sprite id convention + the save flow's
+/// art copy) — so the save is where a stale namespace (a mission renamed
+/// after authoring keeps stems naming the old dir) is healed. Non-custom
+/// stems and degenerate stems (no dir segment — the picker never writes
+/// them) pass through unchanged.
+fn normalizedCustomStem(
+    sprite: []const u8,
+    mission_dir_name: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    if (!std.mem.startsWith(u8, sprite, "custom/")) return sprite;
+    const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return sprite;
+    const file_stem = sprite[slash + 1 ..];
+    if (file_stem.len == 0) return sprite;
+    return std.fmt.allocPrint(allocator, "custom/{s}/{s}", .{ mission_dir_name, file_stem });
+}
+
 /// Write one level file. The layout is TRANSLATED so the written grid is
 /// minimal: the bbox over everything placed (tiles, placements, whole
 /// decoration footprints, '!', '=') becomes the grid, each row trimmed to
@@ -552,6 +575,7 @@ fn writeEditorLevel(
     entity_types: []const types.EntityTypeDef,
     decoration_types: []const types.DecorationTypeDef,
     item_types: []const types.ItemTypeDef,
+    mission_dir_name: []const u8,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
     const codes = try assignLayoutCodes(level, entity_types, decoration_types, item_types, allocator);
@@ -649,7 +673,7 @@ fn writeEditorLevel(
         try buffer.appendSlice(allocator, "\nEntities\n");
         for (codes.entity, 0..) |assignment, index| {
             if (index > 0) try buffer.appendSlice(allocator, "\n");
-            try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template);
+            try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template, mission_dir_name);
         }
     }
 
@@ -660,7 +684,7 @@ fn writeEditorLevel(
             if (index > 0) try buffer.appendSlice(allocator, "\n");
             const definition = decoration_types[assignment.type_id];
             try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
-            try buffer.print(allocator, "sprite {s}\n", .{definition.sprite});
+            try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(definition.sprite, mission_dir_name, allocator)});
             try buffer.print(allocator, "color_index {d}\n", .{definition.color_index});
             if (definition.keep_original_colors) {
                 try buffer.print(allocator, "keep_original_colors true\n", .{});
@@ -670,7 +694,7 @@ fn writeEditorLevel(
             }
             for (definition.layers) |layer| {
                 try buffer.appendSlice(allocator, "layer\n");
-                try buffer.print(allocator, "sprite {s}\n", .{layer.sprite});
+                try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_dir_name, allocator)});
                 try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
             }
         }
@@ -698,10 +722,11 @@ fn writeEntityDefinition(
     allocator: std.mem.Allocator,
     code: u8,
     template: types.Entity,
+    mission_dir_name: []const u8,
 ) !void {
     try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{code}});
     try buffer.print(allocator, "name {s}\n", .{template.name});
-    try buffer.print(allocator, "sprite {s}\n", .{template.sprite});
+    try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(template.sprite, mission_dir_name, allocator)});
     if (template.team != 1) {
         try buffer.print(allocator, "team {d}\n", .{template.team});
     }
@@ -755,7 +780,7 @@ fn writeEntityDefinition(
     }
     for (template.layers) |layer| {
         try buffer.appendSlice(allocator, "layer\n");
-        try buffer.print(allocator, "sprite {s}\n", .{layer.sprite});
+        try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_dir_name, allocator)});
         try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
     }
 }
@@ -1208,7 +1233,7 @@ test "writeEditorMission round-trips through the load path" {
     const arena = arena_state.allocator();
 
     const editor = editor_write_fixture;
-    const written = try writeEditorMission(editor, "436ab363-3588-42ce-950a-0bc813069c3d", arena);
+    const written = try writeEditorMission(editor, "436ab363-3588-42ce-950a-0bc813069c3d", "436ab363-3588-42ce-950a-0bc813069c3d_Beginnings", arena);
 
     // mission.txt: the identity + shape; no hub fields (editor missions have
     // no campaign context, and the loader treats them as optional).
@@ -1332,6 +1357,73 @@ test "writeEditorMission round-trips through the load path" {
     }
 }
 
+test "writeEditorMission normalizes custom sprite stems to the save target's namespace" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Stale-namespace stems (authored under an old dir — the mission was
+    // renamed since) on every channel that writes a sprite (entity base +
+    // layer, decoration base + layer), plus shipped stems that must pass
+    // through untouched.
+    const entity_layers = [_]types.EntityLayer{
+        .{ .sprite = "custom/old_dir/hero_hat", .color_index = 1 },
+    };
+    const decoration_layers = [_]types.DecorationLayer{
+        .{ .sprite = "custom/old_dir/tree_top", .color_index = 2, .pixel_dims = .{ .x = 256, .y = 256 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &[_]types.Vector2{.{ .x = 0, .y = 0 }},
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &[_]types.EntityPlacement{.{
+            .type_id = 0,
+            .position = .{ .x = 0, .y = 0 },
+        }},
+        .decoration_placements = &[_]types.DecorationPlacement{.{
+            .type_id = 0,
+            .position = .{ .x = 0, .y = 0 },
+        }},
+    }};
+    const editor: types.Editor = .{
+        .mission = .{ .name = "New Name", .level_count = 1 },
+        .levels = &levels,
+        .entity_types = &[_]types.EntityTypeDef{
+            .{ .id = "Hero", .template = .{
+                .name = "Hero",
+                .sprite = "custom/old_dir/hero",
+                .team = 1,
+                .layers = &entity_layers,
+            } },
+            // Never placed — written to NO file (per-level tool filtering).
+            .{ .id = "Ghost", .template = .{
+                .name = "Ghost",
+                .sprite = "custom/old_dir/ghost",
+                .team = 1,
+            } },
+        },
+        .decoration_types = &[_]types.DecorationTypeDef{
+            .{ .id = "tree", .sprite = "custom/old_dir/tree", .layers = &decoration_layers },
+        },
+    };
+
+    const written = try writeEditorMission(editor, "u", "u_New Name", arena);
+
+    // Every PLACED custom stem is rewritten to the save target's
+    // namespace; the stale namespace appears nowhere (the never-placed
+    // Ghost type included — unused types are not written). The trailing
+    // newline keeps hero from matching hero_hat.
+    const level_txt = written.level_txts[0];
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/hero\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/hero_hat") != null);
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/tree\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/tree_top") != null);
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "old_dir") == null);
+    // Shipped stems pass through (the load defaults + the decoration's
+    // defaulted keys are part of the same contract — normalization only
+    // ever touches custom stems).
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "name Hero") != null);
+}
+
 /// deep_copy.deepEqual under a shorter alias (the tests compare Item values).
 const deepCopyEqual = @import("deep_copy.zig").deepEqual;
 
@@ -1341,7 +1433,7 @@ test "writeEditorLevel layout is translated + row-trimmed" {
     const arena = arena_state.allocator();
 
     const editor = editor_write_fixture;
-    const written = try writeEditorMission(editor, "u", arena);
+    const written = try writeEditorMission(editor, "u", "u_My Mission", arena);
 
     // Level 1 (offset by (4,2)): the grid is the bbox, each row trimmed to
     // its own last used column — interior alignment spaces stay, trailing
@@ -1398,6 +1490,6 @@ test "writeEditorMission fails when a level needs more codes than the ASCII set"
 
     try std.testing.expectError(
         error.TooManyLayoutCodes,
-        writeEditorMission(editor, "u", arena),
+        writeEditorMission(editor, "u", "u_My Mission", arena),
     );
 }

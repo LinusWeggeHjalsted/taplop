@@ -431,7 +431,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   inspect, and the editor viewport gestures (right-click delete, marquee,
   selection move drag).
 - `src/editor/mission_io.zig` — editor mission save/export/import (uuid
-  resolution, STORE zip bundling, the web import marker poll) + the
+  resolution, stem-namespace normalization + the referenced-art carry on
+  save, STORE zip bundling, the web import marker poll) + the
   mission list/sprite rescans + the validation-replay write
   (`writeValidationReplay`, the one handler-owned side effect — the
   end_validation success path calls it gated `!replaying`).
