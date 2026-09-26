@@ -275,8 +275,8 @@ pub const AnytimeInput = struct {
     undo: bool = false,
     redo: bool = false,
     /// Escape — drives the overlay-close chain in handleAnytimeInput (see
-    /// Action.toggle_options_menu + DESIGN → Input → Escape overlay chain).
-    toggle_options_menu: bool = false,
+    /// Action.escape + DESIGN → Input → Escape overlay chain).
+    escape: bool = false,
     dump_event_log: bool = false,
     /// Save the edited mission (ctrl+S / the editor options-menu button).
     /// Editor-only: consumed in handleAnytimeInput's editor gate; a no-op
@@ -507,7 +507,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
     switch (action) {
         .undo => player_input.anytime.undo = true,
         .redo => player_input.anytime.redo = true,
-        .toggle_options_menu => player_input.anytime.toggle_options_menu = true,
+        .escape => player_input.anytime.escape = true,
         .dump_event_log => player_input.anytime.dump_event_log = true,
         .save_editor_mission => player_input.anytime.save_editor_mission = true,
         .export_editor_mission => player_input.anytime.export_editor_mission = true,
@@ -983,7 +983,7 @@ pub fn translateInput(
     // Toggles / dump_event_log / dismiss_error are press-only.
     result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.escape = checkAction(.escape, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.toggle_editor_browser = checkAction(.toggle_editor_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
@@ -1134,7 +1134,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
     // → Text input widget).
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Escape" }, .action = .toggle_options_menu, .context = .anytime },
+        .{ .input = .{ .key = "Escape" }, .action = .escape, .context = .anytime },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1170,7 +1170,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
         );
         try std.testing.expectEqual(types.TextEditOutcome.commit, result.text_edit_outcome);
         try std.testing.expect(!result.idle.confirm);
-        try std.testing.expect(!result.anytime.toggle_options_menu);
+        try std.testing.expect(!result.anytime.escape);
         try std.testing.expectEqualStrings("Wolf Pup", ui_state.text_edit.?.buffer.currentText());
     }
 }

@@ -709,7 +709,7 @@ pub fn beginFocusedTextEdit(
 /// its interim placeholder) — no base up, per the no-click-sounds-for-keys
 /// rule. See DESIGN → Audio (layered cues).
 fn queueEscapeSound(history: *GameStateHistory) void {
-    if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_options_menu);
+    if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .escape);
 }
 
 /// The screens where the editor browser and its in-window actions
@@ -933,7 +933,7 @@ pub fn handleAnytimeInput(
         }
     }
 
-    if (anytime.toggle_options_menu) {
+    if (anytime.escape) {
         handleEscapeKey(history);
     }
 

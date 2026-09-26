@@ -170,11 +170,12 @@ pub const Action = enum {
     /// options menu (whichever is topmost); on mission fail / mission
     /// complete it fires the overlay's primary button (exit mission /
     /// continue); with nothing open (level/hub only) it opens the options
-    /// menu. Named for the historical options-menu toggle — renaming awaits
-    /// the InputBindings per-action migration (a user settings.txt replaces
-    /// the binding set, so a rename strands existing installs). See DESIGN →
-    /// Input → Escape overlay chain.
-    toggle_options_menu,
+    /// menu. Named for the key behavior, not the menu: the chain (see
+    /// DESIGN → Input → Escape overlay chain) is the action's whole
+    /// meaning. Previously `toggle_options_menu`; installs with a user
+    /// settings.txt naming the old action warn + drop it at load and pick
+    /// up this action's default binding.
+    escape,
     toggle_inventory,
     toggle_gear,
     toggle_skills,
@@ -699,7 +700,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         // except `error` is inactive).
         .undo,
         .redo,
-        .toggle_options_menu,
+        .escape,
         .dump_event_log,
         .zoom_in,
         .zoom_out,

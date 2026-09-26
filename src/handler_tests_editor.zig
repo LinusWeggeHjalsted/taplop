@@ -7807,7 +7807,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     // stacking): Escape steps back one layer — only the browser closes.
     history.session.ui_state.options_menu_open = true;
     input_handlers.handleAnytimeInput(&history, .{
-        .toggle_options_menu = true,
+        .escape = true,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.session.ui_state.editor_browser_open);
     try testing.expect(history.session.ui_state.options_menu_open);

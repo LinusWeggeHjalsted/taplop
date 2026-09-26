@@ -340,7 +340,7 @@ fn update(
     // idle path sees the fresh cursor (auto_target_at_cursor reads it).
     input_handlers.resolveTileCursor(history, player_input, ui_elements);
 
-    // Always handle anytime input first (toggle_options_menu always works,
+    // Always handle anytime input first (escape always works,
     // but other inputs are blocked when the options menu is open)
     input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position.toScreenPosition(), ui_elements);
 

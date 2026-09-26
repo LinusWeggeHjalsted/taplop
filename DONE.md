@@ -14052,3 +14052,27 @@ cell center emits that button's tooltip header (Options/Undo/Redo at the
 tooltip header font size), and the inter-button gap spawns none. Also
 closed a facade gap found on the way: `top_bar_slot_size` was never
 re-exported from `src/ui.zig`.
+
+## `toggle_options_menu` renamed to `escape` — the deferred action rename
+
+The action was always the generic Escape (close topmost overlay; else open
+the options menu — DESIGN → Input → Escape overlay chain), named for its
+historical options-menu toggle. The rename was deferred until the binding
+self-heal machinery landed (an install whose user settings.txt names the
+old action warns + drops it at load as an unknown action, and the renamed
+action's default Escape binding applies — the same self-heal the
+editor-browser rename validated).
+
+Sweep: the `Action` enum member + its doc comment (the "renaming awaits"
+sentence replaced by the old-name + self-heal note), `AnytimeInput` field,
+`applyAction`/`translateInput`/`checkAction` sites, the default binding in
+`data/default_settings.txt`, the options + Continue buttons + their
+comments, the escape-chain arm + action-sound site in input_handlers, main's
+anytime-first comment, and the escape/editor test fixtures. The button-layer
+sound path derives from `@tagName(action)` (audio.zig + sound_report.zig),
+so the report follows automatically — no shipped asset is affected (no
+button layers exist yet).
+
+Docs: DESIGN → Escape overlay chain + the main-menu gating note renamed in
+place; TODO item checked off. DONE.md's older entries keep the old name —
+they are the archive of sessions where it was current.

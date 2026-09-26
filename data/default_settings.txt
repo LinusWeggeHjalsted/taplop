@@ -109,7 +109,7 @@ context editor
 
 input_type key
 input_name Escape
-action toggle_options_menu
+action escape
 context anytime
 
 input_type key

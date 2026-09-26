@@ -43,7 +43,7 @@ const emitPanelButton = emit.emitPanelButton;
 /// Build the options menu: a full-screen 9-slice panel background with a
 /// centered stack of `menu_button_width` buttons (same design as the main
 /// menu). Context-specific: the button list depends on the current screen.
-/// Continue carries `.toggle_options_menu` (the toggle closes the menu);
+/// Continue carries `.escape` (the toggle closes the menu);
 /// Save carries `.save_game`. Rendered on top of the bottom bar when
 /// `options_menu_open` is set, like the error popup. See DESIGN → UI
 /// Framework.
@@ -80,7 +80,7 @@ pub fn buildOptionsMenu(
     var buttons: [9]MenuButton = undefined;
     var button_count: usize = 0;
 
-    buttons[button_count] = .{ .label = "Continue", .action = .toggle_options_menu };
+    buttons[button_count] = .{ .label = "Continue", .action = .escape };
     button_count += 1;
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in

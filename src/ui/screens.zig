@@ -307,7 +307,7 @@ pub fn buildGlobalTopBar(
             options_cell,
             button_background_sprite_id,
             "ui/icon_options",
-            .toggle_options_menu,
+            .escape,
             .{ .header = try spanRow(allocator, text("Options")) },
             c_btn_bg,
             c_btn_icon,

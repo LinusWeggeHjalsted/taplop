@@ -1,5 +1,5 @@
 //! Tests for the Escape overlay chain (`handleEscapeKey`, reached via
-//! `handleAnytimeInput`'s `toggle_options_menu` arm): Escape closes the
+//! `handleAnytimeInput`'s `escape` arm): Escape closes the
 //! topmost open overlay (settings, load-save browser, credits, world map /
 //! full combat log, options menu) or fires the mission fail/complete
 //! overlay's primary button; with nothing open it opens the options menu
@@ -26,7 +26,7 @@ const three_by_three = [_]types.Vector2{
 /// elements + a far-away pointer, so nothing but the escape chain can react.
 fn pressEscape(history: *state.GameStateHistory) void {
     var anytime: input.AnytimeInput = .{};
-    anytime.toggle_options_menu = true;
+    anytime.escape = true;
     input_handlers.handleAnytimeInput(history, anytime, .{ .x = -4096, .y = -4096 }, &.{});
 }
 

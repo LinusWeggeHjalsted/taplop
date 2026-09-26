@@ -19,9 +19,8 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
-- **`toggle_options_menu` rename** — unblocked by the per-action binding
-  overlay (a renamed action self-heals to its new default on existing
-  installs — history in DONE.md); pick up whenever.
+- [x] `toggle_options_menu` rename — DONE: the action is `escape` now (see
+      DONE.md; existing installs self-heal via the warn+drop at load).
 - **Art report (machine-derived asset inventory)** — a scripts/art_report.sh
   (the sound_report.sh pattern): every sprite id the game can consume with
   shipped/placeholder/missing status, resolved against assets/ + the

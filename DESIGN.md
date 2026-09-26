@@ -1212,10 +1212,11 @@ combat-log UI rendering + replay-viewer UI still TODO)
 
 ### Escape overlay chain
 
-Escape is one anytime action (`Action.toggle_options_menu` — named for its
-historical options-menu toggle; renaming awaits the InputBindings per-action
-migration, since a renamed/new action is invisible to installs with a user
-settings.txt). `handleEscapeKey` (input_handlers.zig) consumes it as a
+Escape is one anytime action (`Action.escape`, previously
+`toggle_options_menu` — renamed once the binding self-heal landed: an
+install whose user settings.txt names the old action warns + drops it at
+load and picks up the renamed action's default binding).
+`handleEscapeKey` (input_handlers.zig) consumes it as a
 generic "close the topmost overlay" chain, ordered to mirror the view's
 z-order (topmost surface first):
 
@@ -4717,7 +4718,7 @@ TODO). The screen is reachable from TWO entry points, both wired through
    stacking rule from DESIGN → Modal overlays: each `blocks_input` panel
    shields the one behind it.
 
-**Options menu is NOT reachable from the main menu.** `toggle_options_menu`
+**Options menu is NOT reachable from the main menu.** `escape`
 (Escape) is gated on `screen != .main_menu`. The main menu has its own
 button stack (Continue / New Game / Load Save / Editor / Settings /
 Credits); the options menu's Restart/Exit-Mission/Exit-to-Menu entries are
