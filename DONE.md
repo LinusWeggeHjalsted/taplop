@@ -14144,9 +14144,7 @@ Landed shape:
   Settings + Credits moved INTO the options menu. One convention from
   every screen: settings is always one step inside the menu.
 - **Options menu, main-menu variant:** Settings / Credits / Exit Game. No
-  Continue (it would read as resume-the-game, colliding with the
-  main-menu stack's Continue — Escape + the top-bar button close the
-  menu), no session verbs, no Exit to Main Menu. Export Save
+  session verbs, no Exit to Main Menu. Export Save
   is also hidden there (no game in progress; Load Save is that screen's
   workflow) — that gate previously excluded only the editor, and the new
   builder test caught the leak before runtime.
@@ -14160,6 +14158,11 @@ Landed shape:
 - **Entry point:** the top-bar options button, now emitted on EVERY screen
   (the unused `current_screen` parameter dropped). Escape opens the menu
   anywhere — the chain's final-branch main-menu no-op gate removed.
+- **No Continue button in ANY options-menu variant** (a follow-up call the
+  same session): the `.escape` action — Escape keybind + the top-bar
+  options button toggle — is the close path everywhere; a Continue button
+  would collide with resume-game meanings (the mission-complete overlay's
+  Continue, the main-menu stack's Continue).
 - **Routing consequence:** `.open_credits` moved from the idle
   `menu_action` path to the anytime `options_action` dispatch (idle input
   is gated while the options menu is open, so a Credits button inside it

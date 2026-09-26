@@ -4725,9 +4725,10 @@ meaningful entries: level/hub/editor keep the pause-menu set (session
 verbs + save paths + Settings + Exit to Main Menu), and the main-menu
 variant carries the meta entries instead — Settings / Credits / Exit Game
 (native only; a browser tab is the user's to close,
-not ours). No Continue there — it would read as resume-the-game
-(colliding with the main-menu stack's Continue); Escape + the top-bar
-button close the menu. The entry point is the top-bar options button, emitted on every
+not ours). No variant carries a close button — a Continue button would
+collide with resume-game meanings on some screens, and the `.escape`
+action (Escape keybind + the top-bar options button toggle) is the close
+path everywhere. The entry point is the top-bar options button, emitted on every
 screen, plus Escape via the chain above. The main-menu's own stack holds
 only the session-flow verbs + mode entries (Continue / New Game / Load
 Save / Editor); Settings + Credits moved INTO the options menu (one

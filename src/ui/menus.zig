@@ -42,10 +42,10 @@ const emitPanelButton = emit.emitPanelButton;
 /// Build the options menu: a full-screen 9-slice panel background with a
 /// centered stack of `menu_button_width` buttons (same design as the main
 /// menu). Context-specific: the button list depends on the current screen.
-/// Continue carries `.escape` (the toggle closes the menu) — except on the
-/// main menu, where it is omitted (it would collide with the stack's
-/// resume-game Continue; the options menu variant holds only the meta
-/// entries there);
+/// No close button anywhere — the menu closes via the `.escape` action
+/// (the Escape keybind + the top-bar options button toggle it); that is
+/// enough of a close path, and a "Continue" button would collide with
+/// resume-game meanings on some screens.
 /// Save carries `.save_game`. Rendered on top of the bottom bar when
 /// `options_menu_open` is set, like the error popup. See DESIGN → UI
 /// Framework.
@@ -81,14 +81,6 @@ pub fn buildOptionsMenu(
     const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
     var buttons: [9]MenuButton = undefined;
     var button_count: usize = 0;
-
-    // Continue = close-the-menu (`.escape`). Omitted on the main menu: it
-    // would read as resume-the-game (the main-menu stack's Continue), and
-    // Escape + the top-bar options button already close the menu.
-    if (current_screen != .main_menu) {
-        buttons[button_count] = .{ .label = "Continue", .action = .escape };
-        button_count += 1;
-    }
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in
     // progress to restart or abandon. During an editor run the buttons
@@ -1806,9 +1798,9 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, button_color, null);
     // The main-menu variant: Settings + Credits + Exit Game (tests run
     // native — the web build omits Exit Game), and none of the session
-    // verbs, the editor block, or Exit to Main Menu. No Continue either —
-    // it would read as resume-the-game, colliding with the main-menu
-    // stack's Continue; Escape closes the menu.
+    // verbs, the editor block, or Exit to Main Menu. No Continue — like
+    // every variant, the menu has no close button (Escape + the top-bar
+    // options button close it).
     for ([_]types.Action{ .open_settings, .open_credits, .exit_game }) |expected| {
         var found = false;
         for (elements.items) |element| switch (element) {
@@ -1933,8 +1925,8 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     }
 
     // Editor context: no Export Save button (the editor's save target is
-    // the mission being edited — a future slice). Continue + Settings +
-    // Exit to Main Menu remain.
+    // the mission being edited). Settings + Exit to Main Menu remain —
+    // and no close button, per the no-Continue convention.
     {
         var elements: UiElementList = .empty;
         try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, button_color, "/home/tester/.ziglop");
