@@ -27,6 +27,7 @@ const rowWidth = ui_element.rowWidth;
 const Row = ui_element.Row;
 const ui_gap = ui_element.ui_gap;
 const panel_button_height = ui_element.panel_button_height;
+const top_bar_height = ui_element.top_bar_height;
 const menu_button_width = ui_element.menu_button_width;
 const menu_button_font_size = ui_element.menu_button_font_size;
 const main_menu_title_font_size = ui_element.main_menu_title_font_size;
@@ -580,11 +581,13 @@ pub fn buildEditorBrowser(
 
     // KIND TAB ROW (top-left): one tab per editor kind, derived from
     // `editor_browser_kind_specs` (Mission today; Hub / Campaign append
-    // with their editors) — the tabs ARE the window's identity. Same
+    // with their editors) — the tabs ARE the window's identity. Sits BELOW
+    // the global top bar (the always-on-top layer would cover the tabs —
+    // everything in the window hangs off this row's y). Same
     // emission shape as the content tabs: darkest background panels, the
     // active tab's highlight outline is the indication, no tint change
     // (the picker's convention).
-    const kind_tabs_y = origin.y + load_save_padding;
+    const kind_tabs_y = origin.y + top_bar_height + load_save_padding;
     var kind_tab_x = origin.x + ui_gap;
     for (editor_browser_kind_specs) |spec| {
         const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
@@ -620,35 +623,9 @@ pub fn buildEditorBrowser(
         kind_tab_x += kind_tab_width + ui_gap;
     }
 
-    // NEW button (top-right), derived from the ACTIVE kind — one button,
-    // not one per tab (the tab row already shows the kinds). Fires the
-    // same recorded open_editor{null} as ctrl+N / the options-menu New
-    // Mission button; from the main menu it opens the editor directly.
-    {
-        const new_label = editorBrowserNewButtonLabel(kind);
-        const new_label_width = font_metrics.measureSpanWidth(text(new_label), menu_button_font_size);
-        const new_button_width = @min(load_save_button_width, new_label_width + 6 * ui_gap);
-        try emitPanelButton(
-            elements,
-            allocator,
-            font_metrics,
-            .{
-                .x = screen.x + screen.width - load_save_padding - new_button_width,
-                .y = kind_tabs_y,
-                .width = new_button_width,
-                .height = middle_panel_header_height,
-            },
-            new_label,
-            menu_button_font_size,
-            .new_editor_mission,
-            button_color,
-            null,
-        );
-    }
-
-    // Content per kind — the kind row + New button above are
-    // kind-independent chrome. Exhaustive switch: a new EditorKind member
-    // is a compile error until its content builder is routed here.
+    // Content per kind — the kind row above is kind-independent chrome.
+    // Exhaustive switch: a new EditorKind member is a compile error
+    // until its content builder is routed here.
     switch (kind) {
         .mission => try buildMissionBrowserContent(
             elements,
@@ -683,18 +660,40 @@ pub fn buildEditorBrowser(
         button_color,
         null,
     );
-    // Bottom-right: Import (web only — the load-save browser's Import
-    // discipline): opens a file picker for a mission .zip; the picked zip
-    // extracts into missions/ and the rescanned list shows it. Native has
-    // no button — drop the extracted folder (or a STORE zip) into the
-    // persistent missions/ dir by hand.
+    // Bottom-right: the New button, derived from the ACTIVE kind (one
+    // button, not one per tab — the tab row already shows the kinds),
+    // mirroring the Back button's metrics. Fires the same recorded
+    // open_editor{null} as ctrl+N / the options-menu New Mission button;
+    // from the main menu it opens the editor directly.
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = screen.x + screen.width - load_save_padding - load_save_button_width,
+            .y = button_y,
+            .width = load_save_button_width,
+            .height = panel_button_height,
+        },
+        editorBrowserNewButtonLabel(kind),
+        menu_button_font_size,
+        .new_editor_mission,
+        button_color,
+        null,
+    );
+    // Import (web only — the load-save browser's Import discipline): opens
+    // a file picker for a mission .zip; the picked zip extracts into
+    // missions/ and the rescanned list shows it. Sits LEFT of the New
+    // button. Native has no button — drop the extracted folder (or a
+    // STORE zip) into the persistent missions/ dir by hand.
     if (@import("builtin").os.tag == .emscripten) {
         try emitPanelButton(
             elements,
             allocator,
             font_metrics,
             .{
-                .x = screen.x + screen.width - load_save_padding - load_save_button_width,
+                .x = screen.x + screen.width - load_save_padding -
+                    2 * load_save_button_width - load_save_button_gap,
                 .y = button_y,
                 .width = load_save_button_width,
                 .height = panel_button_height,
