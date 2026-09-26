@@ -620,10 +620,10 @@ looking:
   LANDED: see DESIGN → Custom Missions & Online Services → Custom-asset
   dimensions (the spec, the warn + degrade posture, the four footprint
   clamps, the dims floor + 4096 warning, the magenta render gate). Remaining
-  slices: (3) the editor picker filter (mission-local tab shows only
-  spec-conforming sprites + a visible "N hidden" note);
-  (4) pick-commit backstops + a Revalidate warning listing non-conforming
-  art.
+  slices: (4) pick-commit backstops + a Revalidate warning listing
+  non-conforming art. The picker filter landed (slice 3) — the mission-local
+  tab shows only spec-conforming sprites + a visible "N hidden — <spec>"
+  note.
 
 ## Online Services
 

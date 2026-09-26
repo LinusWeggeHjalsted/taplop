@@ -2004,8 +2004,11 @@ and no mask traces art that isn't there. Non-custom ids are never gated
 items/ follow their own conventions). No size gate — the >4096 warning is
 advisory, and huge art renders wherever the device allows.
 
-Remaining (TODO → Content Loading): the editor-side enforcement (picker
-filter + pick-commit backstop + Revalidate warning).
+Remaining (TODO → Content Loading): the pick-commit backstop + the
+Revalidate warning (the picker filter landed: the mission-local tab shows
+only spec-conforming sprites — entity 512x640, decoration whole tiles,
+layers matching the edited base — and names the hidden count under the
+grid instead of silently vanishing files).
 
 ### Auth & the server seam (deferred)
 

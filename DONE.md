@@ -13822,3 +13822,28 @@ stay honest).
   web builds compile (`scripts/web.sh`); the gate is on the
   texture-load path (post-GL-init), same code shape as the existing
   missing-asset fallback it extends.
+
+## Custom-asset dimensions — slice 3: the editor picker filter
+
+The mission-local sprite-picker tab offers only spec-conforming art per
+kind — the acquisition side of the same gate the render side applies
+(slice 2). The scan (`rescanEditorMissionSprites`) already carries each
+file's IHDR dims, so the filter is pure — no IO at pick time.
+
+- **Filter rules** (editor_pickers.zig, the mission_local cell build):
+  `customSpriteDimsPassGate` on the cell's graphic id (entity picks:
+  exactly 512x640; decoration picks: whole multiples of 256 — an
+  unreadable (0,0) scan entry fails every spec and hides), PLUS the
+  decoration-layer rule: a layer pick must match the edited base's dims
+  (the load-time invariant, same rule the Official tab's layer list
+  already applied — a grid-conforming 768x768 file still hides against
+  a 512x256 base).
+- **The hidden note** — never a silent vanish: "N sprites hidden — <the
+  kind's spec>" as a centered text label at the bottom of the picker
+  panel (mission tab only; the Official tab never hides so it never
+  notes). Shows alongside "No sprites" when everything was filtered, so
+  an author whose PNG vanished sees WHY, not a broken scan.
+- Tests: entity pick (conforming shown, wrong-dims + unreadable hidden,
+  exact note text), decoration pick (non-multiple hidden), decoration
+  layer add (base-dims mismatch hidden despite conforming grid), and
+  the Official tab's no-note guarantee.

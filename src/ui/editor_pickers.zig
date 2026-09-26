@@ -406,6 +406,14 @@ pub fn buildEditorSpritePicker(
         "decorations/"
     else
         "entities/";
+    // Spec-conforming mission-local files only: the same gate the render
+    // side applies (`customSpriteDimsPassGate` on the cell's graphic id —
+    // entity art exactly 512x640, decoration art whole 256px tiles); a
+    // decoration LAYER pick must also match the edited base's dims (the
+    // load-time invariant, same as the Official tab's layer filter).
+    // Hidden files are counted and named in a note under the grid — never
+    // silently vanished (an author whose PNG doesn't show needs the reason).
+    var hidden_sprite_count: usize = 0;
     switch (tab) {
         .mission_local => {
             for (mission_sprites) |mission_sprite| {
@@ -416,6 +424,24 @@ pub fn buildEditorSpritePicker(
                     "custom/{s}/{s}",
                     .{ mission_directory, stem },
                 );
+                const graphic_id = try std.fmt.allocPrint(
+                    allocator,
+                    "{s}{s}",
+                    .{ mission_kind_prefix, stored_id },
+                );
+                const dims_conform = types.customSpriteDimsPassGate(graphic_id, mission_sprite.pixel_dims);
+                const base_dims_match = if (picker_kind == .decoration_layer)
+                    if (decoration_context) |context|
+                        mission_sprite.pixel_dims.x == context.type_definition.pixel_dims.x and
+                            mission_sprite.pixel_dims.y == context.type_definition.pixel_dims.y
+                    else
+                        true
+                else
+                    true;
+                if (!dims_conform or !base_dims_match) {
+                    hidden_sprite_count += 1;
+                    continue;
+                }
                 // Entity art follows the fixed 512x640 frame
                 // convention; decoration art's dims come from the scan's
                 // IHDR read.
@@ -426,11 +452,7 @@ pub fn buildEditorSpritePicker(
                 try cells.append(allocator, .{
                     .stored_id = stored_id,
                     .label = stem,
-                    .graphic_id = try std.fmt.allocPrint(
-                        allocator,
-                        "{s}{s}",
-                        .{ mission_kind_prefix, stored_id },
-                    ),
+                    .graphic_id = graphic_id,
                     .frame_width = frame.x,
                     .frame_height = frame.y,
                     .untinted = true,
@@ -564,6 +586,33 @@ pub fn buildEditorSpritePicker(
         .width = bounds.width,
         .height = bounds.height - middle_panel_header_height,
     };
+
+    // The hidden-files note (mission tab only): names WHY files don't show
+    // — the filter's silent alternative reads as a broken scan to an author
+    // whose PNG just vanished.
+    if (tab == .mission_local and hidden_sprite_count > 0) {
+        const spec_note: []const u8 = switch (picker_kind) {
+            .entity_base, .entity_layer => "entity art must be exactly 512x640",
+            .decoration_base => "decoration art must be whole multiples of 256",
+            .decoration_layer => "layer art must match the base sprite's dims",
+        };
+        const note = try std.fmt.allocPrint(
+            allocator,
+            "{d} sprites hidden — {s}",
+            .{ hidden_sprite_count, spec_note },
+        );
+        const note_width = font_metrics.measureSpanWidth(text(note), editor_group_header_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = note,
+            .screen_position = .{
+                .x = content.x + @divFloor(content.width - note_width, 2),
+                .y = content.y + content.height - editor_group_header_font_size - ui_gap,
+            },
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+    }
 
     // The edited template's colors were resolved above (the target's
     // single seam); a registry-prefab cell overrides the base tint with
@@ -1572,6 +1621,200 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
         try std.testing.expect(pick_buttons > 0);
         try std.testing.expectEqual(@as(usize, 0), highlighted_count);
         try std.testing.expect(!saw_mismatched_dims);
+    }
+}
+
+test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites + notes the hidden count" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // The hidden note (the ONLY text label mentioning "sprites hidden").
+    const hiddenNote = struct {
+        fn find(elements: []const ui_element.UiElement) ?[]const u8 {
+            for (elements) |element| switch (element) {
+                .text_label => |label| if (std.mem.indexOf(u8, label.text, "sprites hidden") != null)
+                    return label.text,
+                else => {},
+            };
+            return null;
+        }
+    }.find;
+
+    // ENTITY base pick: a conforming 512x640 file shows; a wrong-dims
+    // file and an unreadable (0,0) scan are hidden + counted.
+    {
+        const entity_types = [_]types.EntityTypeDef{.{
+            .id = "Skeleton",
+            .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+        }};
+        const editor: types.Editor = .{
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+            .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
+        };
+        const mission_sprites = [_]state.MissionSprite{
+            .{ .file_name = "hero.png", .pixel_dims = .{ .x = 512, .y = 640 } },
+            .{ .file_name = "tiny.png", .pixel_dims = .{ .x = 256, .y = 256 } },
+            .{ .file_name = "broken.png", .pixel_dims = .{ .x = 0, .y = 0 } },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &mission_sprites,
+            &.{},
+            .entity_sprite,
+            .mission_local,
+        );
+        var pick_buttons: usize = 0;
+        var saw_hero = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_entity_sprite) {
+                pick_buttons += 1;
+                if (std.mem.eql(u8, button.editor_sprite.?, "custom/test_m/hero")) saw_hero = true;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), pick_buttons);
+        try std.testing.expect(saw_hero);
+        try std.testing.expectEqualStrings(
+            "2 sprites hidden — entity art must be exactly 512x640",
+            hiddenNote(elements.items).?,
+        );
+    }
+
+    // DECORATION base pick: whole-256-multiple dims show; a non-multiple
+    // is hidden + counted with the decoration spec reason.
+    {
+        const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+        const decoration_types = [_]types.DecorationTypeDef{.{
+            .id = "stone_2",
+            .sprite = "stone_2",
+            .footprint = &footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        }};
+        const editor: types.Editor = .{
+            .decoration_types = &decoration_types,
+            .active_tool = .{ .decoration_type = 0 },
+            .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
+        };
+        const mission_sprites = [_]state.MissionSprite{
+            .{ .file_name = "blocks.png", .pixel_dims = .{ .x = 512, .y = 256 } },
+            .{ .file_name = "odd.png", .pixel_dims = .{ .x = 1000, .y = 1200 } },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &mission_sprites,
+            &.{},
+            .decoration_sprite,
+            .mission_local,
+        );
+        var pick_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_decoration_sprite) {
+                pick_buttons += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), pick_buttons);
+        try std.testing.expectEqualStrings(
+            "1 sprites hidden — decoration art must be whole multiples of 256",
+            hiddenNote(elements.items).?,
+        );
+    }
+
+    // DECORATION layer add (base 512x256): a grid-conforming sprite with
+    // the WRONG dims (768x768) is still hidden — the layer must match
+    // the base, same rule as the Official tab.
+    {
+        const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+        const decoration_types = [_]types.DecorationTypeDef{.{
+            .id = "stone_2",
+            .sprite = "stone_2",
+            .footprint = &footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        }};
+        const editor: types.Editor = .{
+            .decoration_types = &decoration_types,
+            .active_tool = .{ .decoration_type = 0 },
+            .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
+        };
+        const mission_sprites = [_]state.MissionSprite{
+            .{ .file_name = "match.png", .pixel_dims = .{ .x = 512, .y = 256 } },
+            .{ .file_name = "big.png", .pixel_dims = .{ .x = 768, .y = 768 } },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &mission_sprites,
+            &.{},
+            .{ .decoration_layer = null },
+            .mission_local,
+        );
+        var pick_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_decoration_layer) {
+                pick_buttons += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), pick_buttons);
+        try std.testing.expectEqualStrings(
+            "1 sprites hidden — layer art must match the base sprite's dims",
+            hiddenNote(elements.items).?,
+        );
+    }
+
+    // The Official tab never hides anything (shipped art) — no note even
+    // when the mission scan carries non-conforming files.
+    {
+        const entity_types = [_]types.EntityTypeDef{.{
+            .id = "Skeleton",
+            .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+        }};
+        const editor: types.Editor = .{
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+            .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
+        };
+        const mission_sprites = [_]state.MissionSprite{
+            .{ .file_name = "tiny.png", .pixel_dims = .{ .x = 256, .y = 256 } },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &mission_sprites,
+            &.{},
+            .entity_sprite,
+            .official,
+        );
+        try std.testing.expect(hiddenNote(elements.items) == null);
     }
 }
 
