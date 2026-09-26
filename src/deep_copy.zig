@@ -82,8 +82,8 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
 /// No floats are compared (event payloads are ints/enums/bools/strings/
 /// slices/structs), so exact `==` is correct everywhere it applies.
 ///
-/// Used by replay verification (see `GameStateHistory.verifyReplayStep`) to
-/// confirm that handler-pushed children match the recorded event stream.
+/// Used by replay verification (see `GameStateHistory.verifyReplayMatch`) to
+/// confirm the event the handlers would run next equals the recorded one.
 pub fn deepEqual(comptime T: type, a: T, b: T) bool {
     const info = @typeInfo(T);
 

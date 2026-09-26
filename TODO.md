@@ -35,10 +35,9 @@ Test by running `zig build run` and clicking through.
   log and reconstructs the session to its END state (resume mid-session);
   the in-game viewer is the stepping UI on top of the same machinery. See
   "Logging & Replay" below.
-- **Mission end states** — mission_complete / mission_fail screens + player
-  death. See "Mission Flow" below.
-- **Remaining 4b visuals** — gear + effect sprites, sprite animation (8 fps) +
-  animated flag banner, ground items, decorations (footprint splitting DONE).
+- **Gear sprites** — the last unlanded entity sub-layer (effect overlays,
+  sprite animation, ground items, decorations all DONE — history in
+  DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as an
@@ -70,7 +69,7 @@ Test by running `zig build run` and clicking through.
   in mind). The action↔context validity half landed with binding contexts
   (load-time warn + drop — DESIGN → Input → Action↔context validity).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
-  aspect-true — DONE.md), `highlighted` edge outlines, missing art
+  aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global
   top bar's redo button flips icon_undo as its glyph until icon_redo
   lands; skills/meteor icon is the renamed daze.png placeholder — artist
@@ -78,9 +77,11 @@ Test by running `zig build run` and clicking through.
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons and combat damage/heal numbers).
-- **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
-  inspect) + overlays (world map, full combat log) + options/settings/top bar
-  (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.
+- **Larger systems (beyond MVP)** — the world-map overlay + NPC
+  interaction/dialogue (see "NPC Interaction" below). Middle panels
+  (inventory/gear/skills/inspect), options/settings/top bar, drag-drop, and
+  the audio architecture are DONE (history in DONE.md); the full combat-log
+  overlay is the Combat-log UI item above.
 - **Online services** — web database for leaderboards + custom content
   hosting/sharing. Builds on the custom-mission VFS acquisition path; see
   "Content Loading / Custom Missions" + "Online Services" below.
@@ -89,9 +90,11 @@ via the session log (logging has landed).
 
 ## Skill Logic
 
-All 25 ported skills done (history in DONE.md). The remaining designs
-(from the original Unity design doc) are triaged into tiers; each new skill
-lands with AI priority + target selection + tests in `src/skill_tests.zig`.
+All 44 shipped skills done — the 25 original ports + the Tier A reworks
+(crossbow / idol / spell, cantrips, enchantments; history in DONE.md). The
+remaining designs (from the original Unity design doc) are triaged into
+tiers; each new skill lands with AI priority + target selection + tests in
+`src/skill_tests.zig`.
 
 - **Playtest-dependent: swap/blink adjacent repositioning** — swap (and
   blink) can fire a pointless ADJACENT reposition; decide from playtest
@@ -136,45 +139,28 @@ Reference notes that matter while working here (sprite/asset conventions):
   for level-end and hub mission-start markers.
 - Ground items: world/ground_items.png (256×256, centered pivot 0.5/0.5).
 
-Open / in-progress:
+Open:
 
-- [~] TileOverlayDrawable slice (Phase 4.3): move-range HIGHLIGHTS
-  (translucent fill over level.highlighted_tiles) + hover CURSOR (outline).
-  Overlays have no art — renderer draws them as primitives. The cursor is
-  derived in view() from the session pointer (screenToTile), replay-safe.
-  range/radius outlines emitted on skill-slot hover (single bounding square,
-  Chebyshev ≤ range else ≤ radius, extent = 2*N+1, theme lightest, unified
-  8px thickness — see DONE.md). Radius outline also follows the tile cursor
-  while a targeting+radius skill is prepared (e.g. Flash Strike). Aggro
-  outline emitted while the entity-inspect panel is open (square centered
-  on the inspected entity) — see DONE.md.
-- [~] Entity sub-layer assembly: base sprite + weapons + entity layers +
-  effect overlays + health bars DONE (DONE.md). Still TODO: gear sprites.
-- Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
-  — frame is purely a function of wall-clock time, like the pointer/tooltip).
-  Looping machinery DONE (animation clock, `settings.animation_fps`, the flag
-  banner) — see DESIGN → Animation + DONE.md.
-  - [~] One-shot anims: trigger in EVENT HANDLERS via `session.queueAnim`
-        (gated `!replaying`, same shape as `queueSound`); `frame()` stamps
-        `end_clock` from the live clock; `view()` gates by `event_index <
-        current_event_index` AND `animation_clock < end_clock`; screen/world
-        transition clears via `session.clearAnims()`. Landed: skill-icon
-        pop, hit flash, damage/heal numbers, the SDF text outline (history in
-        DONE.md).
-    - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
-          same machinery, richer `AnimKind`).
-  - Per-sheet frame data (count, frame size) hardcoded per builder for now
-    (flag is the only animation); per-sprite pixel dims live in
-    `generated_sprite_metadata.zig` (DONE).
+- Gear sprites — the one unlanded EntityDrawable sub-layer (`gear_sprites`
+  is emitted empty; no gear art has shipped). Base + weapons + entity
+  layers + effect overlays + health bars all DONE — DONE.md.
+- Multi-frame one-shot anims: attack swings, death dissolves — same
+  machinery as the landed one-shots (skill-icon pop, hit flash,
+  damage/heal numbers — DONE.md; design: DESIGN → Animation), richer
+  `AnimKind` per event. Per-sheet frame data (count, frame size) stays
+  hardcoded per builder for now; per-sprite pixel dims live in
+  `generated_sprite_metadata.zig` (DONE).
+
 ## UI Framework — Panel Builders
 
 Layout infrastructure + buildBottomBar + buildMainMenu + buildTooltip +
 buildSkillTooltip + 9-slice + bottom-bar tooltips DONE (history in DONE.md).
 Open:
 
-- buildTopBar: options button (top-left), combat log summary.
-- buildSkillsPanel: sorting / grouping / search deferred; drag-to-bar is a
-  later slice (display slice + drag refs DONE — DONE.md).
+- buildTopBar: the combat-log summary (options + undo buttons DONE —
+  DONE.md).
+- buildSkillsPanel: sorting / grouping / search deferred (display slice +
+  drag-to-bar DONE — DONE.md).
 - buildWorldMap: campaign graph visualization, clickable hubs/missions.
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
@@ -182,35 +168,22 @@ Open:
   screen. Full-screen modal overlay (`UiState.settings_open`), reachable
   from the main-menu Settings button AND from a new "Settings" button in
   the options menu (level + hub; settings opens on top, Back returns to the
-  options menu). Input bindings deferred. Slices:
-  - [ ] **Slice 1 — overlay shell + options-menu wiring:** `settings_open`
-        on `UiState`; `buildSettingsPanel` shell (full-screen `blocks_input`
-        panel + Back button bottom-left, closes via `Action.open_settings`
-        toggle). Gate `toggle_options_menu` (Escape) on `screen != .main_menu`
-        (options menu not reachable from main menu — its exit buttons are
-        nonsensical there). Add "Settings" button to `buildOptionsMenu` (all
-        contexts it appears in). Main-menu `.open_settings` toggles
-        `settings_open` (currently a no-op).
-  - [ ] **Slice 2 — volume integer migration:** `settings_file_format_version`
-        1 → 2; convert `master_volume` / `music_volume` / `sound_effects_volume`
-        from f32 0.0–1.0 to u32 0–100 (loader + writer + defaults +
-        `data/default_settings.txt`); parse clamps 0–100. Backend
-        `applyVolumes` / `playSounds` convert `@as(f32, vol) / 100.0` at the
-        raylib seam. Free pre-release migration (v1 user file → version gate
-        → fallback to defaults → next write persists v2).
-  - [ ] **Settings numeric fields → text input:** wire freeform integer
+  options menu). Input bindings deferred. Slices 1–3 DONE (the overlay
+  shell + options-menu wiring; the volume u32 0–100 migration,
+  `settings_file_format_version` 2; toggles + choices + sliders with audio
+  live-apply — history in DONE.md). Open:
+  - **Settings numeric fields → text input:** wire freeform integer
         entry for `render_fps_cap` / `animation_fps` to the text-input
         widget (landed with the editor inspector — DESIGN → UI Framework →
         Text input widget); sliders currently cover them.
-- buildOptionsMenu: settings controls (volume, gameplay toggles).
 - Middle section horizontal scroll when panels exceed width.
-- Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
-  temporarily uses their name as placeholder icon id).
+- Per-skill skill-tome icons: `skill_tome` items use one generic tome icon
+  (item/skill/effect icons otherwise DERIVE from ids —
+  `skillIconSpriteId` / `itemIconSpriteId` / `effectIconSpriteId` in
+  emit.zig; no config field needed).
 - Move UI sprite assets from Unity project — remaining placeholder ids:
-  ui/icon_swap, ui/momentum (shipped-so-far list in DONE.md; also tracked
-  under Cross-cutting polish missing art).
-- Author real tooltips on elements (skills: range/radius/cooldown rows;
-  items; effects) using the span constructors.
+  ui/icon_swap, ui/momentum (also tracked under Cross-cutting polish
+  missing art).
 - text_label hover bounds are a placeholder (boundsOf reports a font_size
   square, no measurement) — fine while no text label has a tooltip. Wire
   boundsOf for text_label to measureSpanWidth (the real font + FontMetrics
@@ -238,13 +211,6 @@ DONE.md). Open:
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 
-## Input Resolution from ViewState
-
-- Use previous_view_state to resolve screen position → tile coordinate.
-- Replace direct camera math in translateInput.
-
-(Other input resolution DONE — history in DONE.md.)
-
 ## Drag & Drop
 
 Core lifecycle, click/drag disambiguation, inventory click intents,
@@ -253,10 +219,6 @@ multi-salvage — all DONE (DONE.md). Open:
 - Cancel drag / snap item back when the pointer release is lost outside the
   game (focus loss, pointer leaves window) — currently a lost mouse-up leaves
   the drag latched to the cursor.
-- inventory → inventory move/swap event + handler (dragToOrchestrator
-  returns null for now).
-- Coordinate-space reconciliation with renderer: pointer→reference-space
-  conversion and screenToTile share an unverified assumption (see rendering).
 
 ## NPC Interaction
 
@@ -386,10 +348,12 @@ work:
 Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 → Logging & Replay; history in DONE.md). Remaining:
 
-- file_format_version: monotonic int per serialized artifact, in its Metadata
-  section. Session log starts at 1; retrofit missions/saves as those formats
-  stabilize (custom-mission support needs it). Also add a format_version to
-  mission Metadata when custom missions land.
+- file_format_version now rides every config file's Metadata section (all
+  at 1 — wiring DONE, DONE.md). The remaining work is policy, not wiring:
+  bump the relevant per-type constant in parser.zig whenever a serialized
+  format changes shape, and give the session log its v2
+  (ReconstructionCache section) when custom-mission sharing lands (see
+  below).
 - Pre-release replay-compat policy: handler changes that push new child
   events (e.g. the `damage`-event split, effect pacing) break strict
   verification of OLD session logs / validation replays — re-record rather
@@ -398,12 +362,15 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   reconstructFromEventLog/restoreTo at successive targets. Steps = the
   combat-log filter (derived, not idle_points). Needs the projection (DONE) +
   replay-viewer UI.
-- Replay verification cross-session: `verifyReplayStep` now runs for
-  cross-session `reconstructFromEventLog` too (a divergence is a real bug we
-  want surfaced). The remaining gap is custom-mission cross-session replay
-  where the mission files changed since the original session — that will
-  panic until the reconstruction cache is serialized into the session log
-  (`file_format_version` 2, lands with custom-mission sharing). See DESIGN →
+- Replay verification cross-session: natural-stack verification
+  (`verifyReplayMatch`) runs on cross-session `reconstructFromEventLog`
+  reconstructions too, and the replay CHECKING mode
+  (`reconstructFromEventLogChecking`) makes the same check catchable for
+  revalidate / server validation (DONE.md). The remaining gap is
+  custom-mission cross-session replay where the mission files changed since
+  the original session — that fails until the reconstruction cache is
+  serialized into the session log (`file_format_version` 2, lands with
+  custom-mission sharing). See DESIGN →
   Determinism & Tiebreaking → Replay VERIFICATION.
 - Exhaustive comptime round-trip test for the session-log writer/reader:
   inline-for over every Event category/variant, synthesize a payload (0 /
@@ -430,33 +397,11 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 - Expandable full-screen detailed combat log (buildFullCombatLog overlay;
   coarse + fine interleaved chronologically). Same projection drives it.
 
-## Mission Flow
-
-- New Screen variants and transition events.
-
-- Quit-to-menu and death/mission-fail exits MUST route through end_level /
-  end_hub so entity changes persist into PlayerData (see DESIGN →
-  Architecture) — the options-menu exit paths + mission-fail/complete
-  buttons are DONE (DONE.md).
-
 ## Platform Layer (raylib)
 
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
-- **Render smoothing (native-1080p edge harshness)** — settled plan, DESIGN →
-  Platform Seam (WebGL 2 + Sprite-mipmap smoothing bullets) holds the why.
-  - [x] Slice 0: switch the web build to WebGL2 (`opengl_version = .gles_3`;
-    SDF shader ES 3.00 variant replaces the ES 1.00 one) — DONE, see
-    DONE.md.
-  - [x] Slice 1: sprite mipmaps — `genTextureMipmaps` + `.trilinear` at the
-    two `TextureStore` upload sites (sprites + generated masks; covers
-    shipped + custom art at the one choke point). SDF atlas stays mip-free.
-    DONE — see DONE.md.
-  - [x] Slice 2: text unification — ALL text draws through the SDF pipeline
-    (plain fill = outlineWidth 0 with a transparent outline color); the
-    coverage atlas is demoted to a fallback-only load (built only when SDF
-    init fails). DONE — see DONE.md.
 - **Render-resolution live swap — runtime confirmation open** (browser +
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target
@@ -489,11 +434,10 @@ Open:
   identifier); add the `--diagnostics` CLI flag (native.zig, like
   `--replay` — any build, release included; dev-mode defaults to active);
   migrate the
-  boot/probe/readback sections out of src/raylib/diag.zig as thin
+  boot/probe/readback sections out of `src/raylib/diagnostics.zig` as thin
   value-recording call sites; keep `logs/diagnostics.txt` + whole-file-rewrite
-  semantics. Composes with the raylib split item above — the split lands
-  first (its slice 7 moves the diag code into `src/raylib/diag.zig`, the
-  value-recording call sites the redesign then hollows out).
+  semantics. The raylib split landed (src/raylib/, DONE.md) — this redesign
+  is unblocked.
 - **macOS native port** — cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
@@ -537,9 +481,6 @@ Open:
   (fixed — see DONE.md); remaining gap is edges + center STRETCHED, not
   tiled. Spec wants tiling — only matters once patterned panel art ships
   (current ui/panel.png is a flat fill).
-- Draw offset support (decoration overhang; SpriteDrawable.draw_offset).
-- Programmatic edge highlight for highlighted Button/Image (shader outline of
-  opaque pixels, or fallback highlight sprite) — currently ignored.
 - Bold/italic rendering — `drawTextLabel` ignores bold/italic (only the
   regular face is loaded); honoring TextLabel bold/italic + color needs
   separate faces. (TTF + metrics DONE — DONE.md.)
@@ -632,9 +573,10 @@ Open:
 Settled decisions + reasoning in DESIGN.md → Memory & Budget. Open work:
 
 - Tune caps + wasm budget from real measurements: add peak-usage reporting
-  via DebugAllocator (once a real level is drivable), then set the true caps +
-  safety ceiling from actual numbers instead of the current estimates
-  (max_entities=256, max_tiles~10k, ceiling ~256–512 MB).
+  via DebugAllocator (debug builds; release uses c_allocator), then set the
+  true caps + safety ceiling from actual numbers instead of the current
+  estimates (max_entities=256, max_tiles~10k, ceiling ~256–512 MB). Levels
+  are drivable end-to-end now — this is unblocked, just unscheduled.
 - Confirm whether source sprites are animation sheets before downscaling
   (affects how far we can shrink — see DESIGN → Memory & Budget → Asset
   memory, lever 1).
@@ -820,9 +762,9 @@ Done items in DONE.md. Open:
   keeping in mind events can also originate from save/replay data.
 - **Handler test coverage — the "boring" primitives gap.** The four
   tiers are DONE (DONE.md; harness `src/test_harness.zig`; tiers in
-  `src/handler_tests_gear/_combat/_ai/_turnflow.zig`). Coverage concentrates
-  on the interesting verbs and is thin on the boring primitives
-  (`swap_positions`, `retreat`, `swap_hands`, the cantrip arms) — exactly
+  `src/handler_tests_gear/_combat/_ai/_turnflow.zig`). Most of the named
+  primitives have since gained drain tests (`swap_positions`, `retreat`,
+  the combat verbs), but `swap_hands` still has none — exactly the class
   where sibling-drift bugs live (see DESIGN → Architecture → "Prefer
   composing"; `swap_positions` had no test when it was rewritten to compose
   `move_entity`). `pushAndRunSub` makes adding them cheap; the per-variant

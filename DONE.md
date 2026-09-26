@@ -13682,3 +13682,52 @@ census-tier file is either converted (editor_inspector exhaustiveness
 shape; shell/pickers/menus/panels/screens stragglers; view.zig camera
 derived form) or triaged clean (handler_tests_editor, tooltip, element —
 drain/semantic tests, no pinned windows).
+
+## TODO drift review — every claim verified against the tree (second sweep)
+
+A full staleness review of TODO.md: every open item was checked against
+the source, the assets tree, and DONE.md history before being kept,
+trimmed, or removed — not a read-through guess. What the review found
+already done (removed/trimmed from TODO):
+
+- **Mission end states** — mission_fail + mission-complete overlays
+  landed (SessionState trigger → GameState field, event-dismissed); the
+  whole "Mission Flow" section resolved with it.
+- **"Remaining 4b visuals"** — everything but gear sprites landed (effect
+  overlays, animation machinery + one-shots, ground items, decorations);
+  the NEXT UP bullet is now just "Gear sprites".
+- **Render smoothing** — all three slices ([x] in TODO); section removed.
+- **Settings screen slices 1–2** + the options-menu settings controls —
+  marked done (volume u32 0–100 migration included).
+- **Inventory→inventory drag** + the drag coordinate-space
+  reconciliation note (superseded by the unified camera seam + the
+  pointer-precision fix; the real-hardware concern lives in the mac
+  runtime checklist).
+- **`highlighted`/programmatic edge-highlight outlines**, **draw_offset
+  rendering support** — both implemented.
+- **Skill/item/effect icon + tooltip authoring** — resolved by the derived
+  id-based resolution (`skillIconSpriteId` / `itemIconSpriteId` /
+  `effectIconSpriteId`) + the authored tooltip rows; the surviving gap is
+  per-skill skill-tome icons.
+- **TileOverlayDrawable / one-shot anim `[~]` scaffolding** — all landed;
+  the View section now holds only gear sprites + multi-frame one-shots.
+- **file_format_version wiring** — every config file carries Metadata
+  version 1; the item is now policy-only. The replay-verification item
+  was reworded off the dead `verifyReplayStep` symbol (natural-stack
+  `verifyReplayMatch` + the CHECKING mode landed).
+- **"Input Resolution from ViewState"** section removed — superseded by
+  the shared-camera seam (one Camera value feeds input + view) and
+  `resolveTileCursor`; previous_view_state owns the UI hit-testing.
+- Skill count corrected (25 → 44); the "boring primitives" coverage note
+  updated (swap_positions/retreat covered; swap_hands still not).
+
+Verified still open and kept: combat-log UI, replay viewer stepping, gear
+sprites, tab-targeting/inspect binding, input dispatch convergence, keybind
+pipeline friction (no startup warn for unmapped binding ids yet), 9-slice
+edge tiling (still stretched), missing art (ui/icon_swap, ui/momentum,
+ui/icon_undo, icon_playtest/validate, the meteor placeholder), crossbow/idol
+weapon-type data (skills shipped, enum + data files not), the audio asset
+drop + cue-wiring tests, per-sfx cooldown, editor autosave, the mac
+checklist, custom-asset dims validation. Two stale code comments naming the
+removed `verifyReplayStep` (main.zig undo/redo test, deep_copy.zig deepEqual
+doc) were fixed in the same sweep (AGENTS staleness rule).

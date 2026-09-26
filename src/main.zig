@@ -1566,7 +1566,7 @@ test "replay verification: clean replay through the slow path passes" {
     for (&history.checkpoints) |*slot| slot.* = null;
 
     // Undo back to the start: each step replays from initial_state through
-    // every event up to the target idle point, running verifyReplayStep on
+    // every event up to the target idle point, running verifyReplayMatch on
     // each. A clean replay must not panic.
     while (history.undo(&event_handlers.processEvent)) {}
     try std.testing.expectEqual(@as(u32, 0), history.current_idle_index);
