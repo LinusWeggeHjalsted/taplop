@@ -1217,18 +1217,21 @@ install whose user settings.txt names the old action warns + drops it at
 load and picks up the renamed action's default binding).
 `handleEscapeKey` (input_handlers.zig) consumes it as a
 generic "close the topmost overlay" chain, ordered to mirror the view's
-z-order (topmost surface first):
+z-order (topmost surface first — the emission ladder view() pins via its
+z-order census test):
 
-1. **Settings overlay** — closes ONLY it. In-game it opens on top of the
-   options menu, so Escape steps back to the menu underneath (layered close,
-   not a cascade).
-2. **Editor browser** (over the editor, on top of the options menu it
+1. **Editor browser** (over the editor, on top of the options menu it
    opened from, or over the main menu) — closes only the browser, stepping
    back one layer.
-3. **Mission fail** (view-derived `playerDead`) — fires the overlay's Exit
+2. **Settings overlay** — closes ONLY it. In-game it opens on top of the
+   options menu, so Escape steps back to the menu underneath (layered close,
+   not a cascade).
+3. **Mission complete** (view-derived `last_completed_mission`) — fires the
+   Continue button's `dismiss_mission_complete` + drain. (Never co-rendered
+   with mission fail — complete shows in the hub/editor, fail on a level;
+   the order between them is cosmetic and pinned by the census.)
+4. **Mission fail** (view-derived `playerDead`) — fires the overlay's Exit
    Mission button's orchestrator (`player_exit_mission` + drain).
-4. **Mission complete** (view-derived `last_completed_mission`) — fires the
-   Continue button's `dismiss_mission_complete` + drain.
 5. **Load-save browser / credits** (reachable from the main menu's own
    stack and its options-menu variant; they open on top of the options
    menu, so they sit topmost whenever they're up).
@@ -2886,6 +2889,35 @@ the game cheating):
   over silently returning, which would hide the logic bug the unwrap catches
 
 ### Modal overlays (pause + shield pattern)
+
+**The z-order ladder** — the canonical emission order in `view()` (painter
+order = draw order; later block = on top). The Escape chain mirrors this
+list topmost-first, and the z-order census test in view.zig pins the
+reachable orderings so neither side can drift silently:
+
+1. Base per-screen UI (world, bottom bar / editor shell / main menu)
+2. Drag ghost (mid-drag only — no modal is reachable then)
+3. Options menu
+4. Load-save browser + credits (main-menu screen only)
+5. Mission-complete / validation stats
+6. Mission-fail overlay
+7. Settings screen
+8. Editor browser
+9. Error popup (the most-modal surface)
+10. Global top bar (options/undo/redo — clickable above every modal by
+    design)
+11. Hover tooltip (passive, non-blocking)
+12. FPS diagnostic label (non-blocking; spatially below the top bar)
+
+The full-screen overlays (world map, full combat log) have a RESERVED slot
+between the options menu and the base UI (below the options menu —
+Escape closes the menu first, leaving them open); nothing renders them
+yet, so the census can't cover them — when `buildWorldMap`/
+`buildFullCombatLog` land, they emit there and join the census.
+
+For unreachable pair orderings (complete vs fail, browser vs settings —
+never co-rendered), the view's emission is the spec and the chain follows:
+both were once out of sync, which is why the census exists.
 
 Full-screen modal overlays — the options menu, the error popup, the
 mission-fail overlay, the mission-complete overlay — share a structure:

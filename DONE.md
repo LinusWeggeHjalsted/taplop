@@ -14191,3 +14191,45 @@ Settings/Credits absent).
 Docs: DESIGN → Escape overlay chain (arm 8 + the reachability section
 rewritten as the reversal with its history note); AGENTS had no stale
 references.
+
+## Z-order census — the overlay ladder pinned; escape chain aligned to it
+
+Session-end reflection flagged the recurring bug class: both user-caught
+bugs this session (dead top-bar tooltips, credits covered by the options
+menu) were overlay-emission ORDER bugs in view() — z-order knowledge lived
+implicitly in one 4,300-line assembly function, and the escape chain's
+"ordered to mirror the view's z-order" promise had drifted out of sync.
+
+**Design first (settled, DESIGN → Modal overlays → the z-order ladder):**
+the canonical emission order is now written down — base UI → drag ghost →
+options menu → main-menu overlays (load-save browser, credits) →
+mission-complete → mission-fail → settings screen → editor browser →
+error popup → global top bar → hover tooltip → FPS label. The full-screen
+overlays' RESERVED slot (below the options menu — nothing renders them
+yet) is stated so buildWorldMap/buildFullCombatLog land in the right place.
+
+**Two chain/emission mismatches found** (both between never-co-rendered
+surfaces, so behavior-neutral): the chain claimed settings above browser
+and fail above complete; emission says browser above settings and complete
+above fail. Resolution principle: the chain's own doc comment promises it
+mirrors the view — so the VIEW's emission is the spec, and the chain arms
+were reordered (browser arm first, complete arm before fail). Zero
+view() changes.
+
+**The census test** (view.zig): two forced frames — every reachable
+overlay flag set at once — asserting marker elements emit in ladder order
+(marker = a distinctive button action per surface; LAST occurrence for
+surfaces whose action also appears in a lower surface, e.g. the credits
+panel's Back vs the options menu's Credits button). Frame 1 is the main
+menu (options menu, load-save browser, credits, settings, editor browser,
+error popup, top bar, tooltip, FPS); frame 2 is a dead-player level
+(bottom bar, options menu, mission-fail, mission-complete, settings,
+browser, error, top bar, FPS). A silent view() reorder OR a chain reorder
+without the emission following now fails the suite. The two regression
+tests from this session's bugs are subsumed as the census's pairwise
+cousins (kept — they document their specific incidents).
+
+Docs: DESIGN → Modal overlays gains the ladder section (with the
+never-co-rendered ordering note + the reserved full-screen slot); DESIGN →
+Escape overlay chain's arm list reordered to match; the chain code + its
+arm comments now point at the census as the pinner.

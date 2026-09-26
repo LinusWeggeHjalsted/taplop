@@ -4761,3 +4761,197 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
     try std.testing.expect(full_screen_panel_indices[0] < exit_game_index.?);
     try std.testing.expect(exit_game_index.? < full_screen_panel_indices[1]);
 }
+
+// Z-ORDER CENSUS (DESIGN → Modal overlays → the z-order ladder): two
+// forced frames, every reachable overlay flag set at once, asserting the
+// surfaces' marker elements emit in the canonical ladder order (painter
+// order = draw order). The Escape chain mirrors this ladder topmost-first;
+// this census is what keeps the two from drifting apart again — both a
+// silent view() reorder and a chain-arm reorder without the emission
+// following fail here.
+test "z-order census: forced frames emit every overlay surface in the canonical ladder order" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Marker finders: index of the first/last button carrying `action`
+    // (LAST for surfaces whose action also appears in a lower surface —
+    // the lower one emitted first), the tooltip header label, and the FPS
+    // diagnostic label (the ladder's topmost rung).
+    const firstButton = struct {
+        fn find(elements: []const ui.UiElement, action: types.Action) usize {
+            for (elements, 0..) |element, index| {
+                if (element == .button and element.button.action == action) return index;
+            }
+            @panic("census marker button not found");
+        }
+    }.find;
+    const lastButton = struct {
+        fn find(elements: []const ui.UiElement, action: types.Action) usize {
+            var found: ?usize = null;
+            for (elements, 0..) |element, index| {
+                if (element == .button and element.button.action == action) found = index;
+            }
+            return found orelse @panic("census marker button not found");
+        }
+    }.find;
+    const tooltipHeader = struct {
+        fn find(elements: []const ui.UiElement, header: []const u8) usize {
+            for (elements, 0..) |element, index| {
+                if (element == .text_label) {
+                    const label = element.text_label;
+                    if (label.font_size == ui.tooltip_header_font_size and
+                        std.mem.eql(u8, label.text, header)) return index;
+                }
+            }
+            @panic("census tooltip header not found");
+        }
+    }.find;
+    const fpsLabel = struct {
+        fn find(elements: []const ui.UiElement) usize {
+            for (elements, 0..) |element, index| {
+                if (element == .text_label and std.mem.startsWith(u8, element.text_label.text, "FPS")) {
+                    return index;
+                }
+            }
+            @panic("census FPS label not found");
+        }
+    }.find;
+
+    // Both frames hover the top-bar undo button (the tooltip rung) and
+    // enable show_fps (the FPS rung).
+    const stride = ui.top_bar_slot_size + ui.ui_gap;
+    const hover = types.ScreenPosition{
+        .x = stride + @divTrunc(ui.top_bar_slot_size, 2),
+        .y = @divTrunc(ui.top_bar_height, 2),
+    };
+
+    // ── Frame 1: the main menu — every main-menu-reachable surface up.
+    // Ladder: base < options menu < load-save browser < credits <
+    // settings screen < editor browser < error popup < top bar < tooltip
+    // < FPS label.
+    {
+        const main_menu_state = GameState{
+            .screen = .main_menu,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        };
+        var session = state.SessionState{};
+        session.ui_state.options_menu_open = true;
+        session.ui_state.load_save_menu_open = true;
+        session.ui_state.credits_open = true;
+        session.ui_state.settings_open = true;
+        session.ui_state.editor_browser_open = true;
+        session.setPendingError(arena, "census frame");
+        session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
+
+        const view_state = view(
+            &main_menu_state,
+            &session,
+            .{ .input_bindings = &.{}, .show_fps = true },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        const elements = view_state.ui_elements;
+        const main_menu_base = firstButton(elements, .new_game);
+        const options_menu = firstButton(elements, .exit_game);
+        const load_save_browser = lastButton(elements, .toggle_load_save_menu);
+        const credits = lastButton(elements, .open_credits);
+        const settings_screen = firstButton(elements, .change_setting);
+        const editor_browser = lastButton(elements, .toggle_editor_browser);
+        const error_popup = firstButton(elements, .dismiss_error);
+        const top_bar = firstButton(elements, .undo);
+        const tooltip = tooltipHeader(elements, "Undo");
+        const fps = fpsLabel(elements);
+        try std.testing.expect(main_menu_base < options_menu);
+        try std.testing.expect(options_menu < load_save_browser);
+        try std.testing.expect(load_save_browser < credits);
+        try std.testing.expect(credits < settings_screen);
+        try std.testing.expect(settings_screen < editor_browser);
+        try std.testing.expect(editor_browser < error_popup);
+        try std.testing.expect(error_popup < top_bar);
+        try std.testing.expect(top_bar < tooltip);
+        try std.testing.expect(tooltip < fps);
+    }
+
+    // ── Frame 2: a level, player dead — every level-reachable surface up.
+    // Ladder: bottom bar < options menu < mission-fail < mission-complete
+    // < settings screen < editor browser < error popup < top bar < FPS
+    // label. (complete above fail is the pinned never-co-rendered order;
+    // the load-save browser + credits are main-menu-gated and absent
+    // here.)
+    {
+        const dead_player = types.Entity{
+            .team = 0,
+            .position = .{ .x = 0, .y = 0 },
+            .current_health = 0,
+        };
+        var level_state = test_harness.levelStateWithEntities(arena, &.{dead_player}, &.{});
+        level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
+        var session = state.SessionState{};
+        session.ui_state.options_menu_open = true;
+        session.ui_state.settings_open = true;
+        session.ui_state.editor_browser_open = true;
+        session.setPendingError(arena, "census frame");
+        session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
+
+        const view_state = view(
+            &level_state,
+            &session,
+            .{ .input_bindings = &.{}, .show_fps = true },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            .{
+                .camera = computeCamera(&level_state, 1.0, null, null),
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        const elements = view_state.ui_elements;
+        const bottom_bar = firstButton(elements, .skip);
+        const options_menu = firstButton(elements, .restart_mission);
+        const mission_fail = lastButton(elements, .restart_mission);
+        const mission_complete = firstButton(elements, .continue_after_mission);
+        const settings_screen = firstButton(elements, .change_setting);
+        const editor_browser = lastButton(elements, .toggle_editor_browser);
+        const error_popup = firstButton(elements, .dismiss_error);
+        const top_bar = firstButton(elements, .undo);
+        const fps = fpsLabel(elements);
+        try std.testing.expect(bottom_bar < options_menu);
+        try std.testing.expect(options_menu < mission_fail);
+        try std.testing.expect(mission_fail < mission_complete);
+        try std.testing.expect(mission_complete < settings_screen);
+        try std.testing.expect(settings_screen < editor_browser);
+        try std.testing.expect(editor_browser < error_popup);
+        try std.testing.expect(error_popup < top_bar);
+        try std.testing.expect(top_bar < fps);
+    }
+}

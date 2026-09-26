@@ -735,7 +735,20 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Settings overlay (drawn above everything but the error popup). In-game
+    // The chain is ordered to mirror the view's z-order (topmost first);
+    // the census test in view.zig pins the emission ladder this mirrors.
+
+    // Editor browser (opens over the editor, on top of the options menu,
+    // or over the main menu): Escape steps back one layer — only the
+    // browser closes. Above the settings screen in the ladder (the
+    // browser block emits after it in view()).
+    if (ui_state.editor_browser_open) {
+        queueEscapeSound(history);
+        ui_state.editor_browser_open = false;
+        return;
+    }
+
+    // Settings overlay. In-game
     // it opens on top of the options menu, so Escape steps back to the menu
     // underneath — only the settings layer closes.
     if (ui_state.settings_open) {
@@ -744,12 +757,13 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
-    // Editor browser (opens over the editor, on top of the options menu,
-    // or over the main menu): Escape steps back one layer — only the
-    // browser closes.
-    if (ui_state.editor_browser_open) {
+    // Mission-complete overlay: Escape fires the Continue button's
+    // dismiss_mission_complete (on the undo timeline — undo re-shows, redo
+    // dismisses). Above the mission-fail overlay in the ladder (never
+    // co-rendered — complete shows in the hub/editor, fail on a level).
+    if (current.last_completed_mission != null) {
         queueEscapeSound(history);
-        ui_state.editor_browser_open = false;
+        pushPlayerActionAndDrain(history, .dismiss_mission_complete);
         return;
     }
 
@@ -761,15 +775,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         if (current.screen != .level) return;
         queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .player_exit_mission);
-        return;
-    }
-
-    // Mission-complete overlay: Escape fires the Continue button's
-    // dismiss_mission_complete (on the undo timeline — undo re-shows, redo
-    // dismisses).
-    if (current.last_completed_mission != null) {
-        queueEscapeSound(history);
-        pushPlayerActionAndDrain(history, .dismiss_mission_complete);
         return;
     }
 
