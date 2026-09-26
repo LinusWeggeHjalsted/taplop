@@ -1228,11 +1228,11 @@ const no_tint_color: types.Color = .{ .r = 255, .g = 255, .b = 255 };
 /// Entity sprite frame: all entities/weapons share one 512x640 frame (2 tiles
 /// wide x 2.5 tall) authored at tile_size_pixels, with one normalized pivot
 /// (horizontal center, at the feet with 0.5 tile of foot/shadow overflow).
-const entity_frame_width: f32 = 512.0;
-const entity_frame_height: f32 = 640.0;
+const entity_frame_width: f32 = @floatFromInt(types.entity_sprite_frame_width);
+const entity_frame_height: f32 = @floatFromInt(types.entity_sprite_frame_height);
 /// Integer frame dims for the compositing canvas (occlusion inset stack).
-const entity_frame_width_int: i32 = 512;
-const entity_frame_height_int: i32 = 640;
+const entity_frame_width_int: i32 = types.entity_sprite_frame_width;
+const entity_frame_height_int: i32 = types.entity_sprite_frame_height;
 const entity_pivot_x: f32 = 0.5;
 const entity_pivot_y: f32 = 0.8;
 

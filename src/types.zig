@@ -96,6 +96,14 @@ pub const Vector2 = struct {
     y: i32,
 };
 
+/// The fixed sprite frame EVERY entity sprite shares (bodies, layers,
+/// weapons): 512x640 source pixels, normalized pivot (0.5, 0.8). One tile
+/// is 256px. Custom entity art MUST be exactly this size — the render math
+/// draws at the fixed frame regardless (see the sprite conventions in
+/// AGENTS → View Function Implementation).
+pub const entity_sprite_frame_width: i32 = 512;
+pub const entity_sprite_frame_height: i32 = 640;
+
 pub const Action = enum {
     undo,
     redo,

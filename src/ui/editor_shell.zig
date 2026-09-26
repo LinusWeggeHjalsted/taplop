@@ -50,11 +50,12 @@ const close_button_size = ui_element.close_button_size;
 const button_background_sprite_id = emit.button_background_sprite_id;
 const spanRow = @import("tooltip.zig").spanRow;
 
-/// All entity sprites share one 512x640 frame (view.zig `entity_frame_*`).
-/// Duplicated here because src/ui/ can't import view.zig (view imports the
+/// All entity sprites share one 512x640 frame — the canonical constants
+/// live in types.zig (`types.entity_sprite_frame_*`). Duplicated here
+/// because src/ui/ can't import view.zig (view imports the
 /// ui facade).
-pub const editor_entity_frame_width: i32 = 512;
-pub const editor_entity_frame_height: i32 = 640;
+pub const editor_entity_frame_width: i32 = types.entity_sprite_frame_width;
+pub const editor_entity_frame_height: i32 = types.entity_sprite_frame_height;
 
 /// `world/tile_highlight.png` spritesheet: 4 frames of 256x256 in a
 /// horizontal strip (frame N occupies x = N*256..N*256+256). The Select

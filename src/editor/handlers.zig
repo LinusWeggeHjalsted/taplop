@@ -1523,7 +1523,8 @@ fn entityLayerEditTemplate(
 }
 
 /// Does a decoration layer's pixel dims match its base type's? The
-/// load-time invariant (`validateDecorationFootprint` panics otherwise) —
+/// load-time invariant (a mismatch degrades to warn + keep — see DESIGN →
+/// Custom Missions & Online Services → Custom-asset dimensions) —
 /// shared by the layer-edit handler arms + the replay validation.
 fn decorationLayerDimsMatch(
     definition: *const types.DecorationTypeDef,

@@ -13731,3 +13731,55 @@ drop + cue-wiring tests, per-sfx cooldown, editor autosave, the mac
 checklist, custom-asset dims validation. Two stale code comments naming the
 removed `verifyReplayStep` (main.zig undo/redo test, deep_copy.zig deepEqual
 doc) were fixed in the same sweep (AGENTS staleness rule).
+
+## Custom-asset dimensions — slice 1: load-side warn + degrade (footprint clamps + dims floor)
+
+Custom content is untrusted: every spec violation in the mission/sprite
+load path now degrades with a warning instead of crashing or silently
+rendering wrong — the balance-bounds posture, extended to geometry. Design:
+DESIGN → Custom Missions & Online Services → Custom-asset dimensions.
+
+- **`resolveDecorationSpriteDimensions` → `?Vector2`**: an unknown shipped
+  stem or a missing/invalid mission PNG returns null instead of panicking;
+  the caller degrades to a 256x256 fallback (renders magenta — the texture
+  store can't resolve it either) with a warning naming the stem.
+- **Dims floor (`flooredSpriteGridDims`)**: custom decoration dims floor to
+  whole 256px tiles, minimum 1x1 per axis (a sub-256 sprite previously
+  produced a 0x0 bbox — a footprint-tile panic on hand-authored content;
+  a 1000px sprite already rendered with its edge silently cropped). Floor
+  warns; >4096px warns (max texture size — no size cap, huge art is legal).
+  Entity frame constants moved to `types.entity_sprite_frame_*`
+  (editor_shell + view alias them).
+- **Footprint clamps (`clampDecorationFootprint`, replacing
+  `validateDecorationFootprint`)**: out-of-bbox tiles dropped, world tiles
+  overlapping a level/hub tile dropped, malformed `footprint` lines skipped
+  (was a panic), an emptied or authored-empty footprint defaults to the
+  sprite grid's bottom-left tile (the pick-commit default). All warnings
+  name the decoration + file; all clamps are pure functions of the file
+  bytes → replay-safe.
+- **Decoration layers**: a dims mismatch vs the base warns and the layer is
+  kept (renders cropped — the view builds layer pieces from the BASE's
+  source rects); an unresolvable layer sprite warns and stays. Was a
+  load-time panic.
+- **Entity sprites (base + layers)**: warn-only when a custom stem isn't
+  512x640 or can't be resolved — the fixed-frame render continues.
+- **Surfacing**: the warnings thread through `loadLevel`/`loadHub`/`
+  `buildEditorMission` to the same `surfaceWarnings` popup as balance
+  bounds; `loadHub` gained `file_path` + `warnings` params (start_hub now
+  surfaces them; hubs are official content so the list is empty in
+  practice). Registry/defaults paths pass null (shipped content —
+  regressions are caught by the content tests, not runtime popups).
+- Tests: the four footprint clamp classes (malformed / out-of-bbox /
+  overlap / empty — valid art never warns, exact warning count), custom
+  decoration dims (floor, >4096, missing fallback, unknown shipped stem),
+  layer mismatch kept + warned, custom entity sprite warn-only (three
+  violations, conforming art silent). All file-source fixtures use the
+  minimal-PNG-header pattern.
+- Cleanup: a leftover `std.debug.print` in writers.zig's
+  writeEditorMission round-trip test removed (it printed every section on
+  every test run — the stderr noise that makes raw `zig build test` print
+  its advisory `failed command` line on success).
+
+Remaining slices (TODO → Content Loading → Custom-asset dimension
+validation): the render-side magenta gate, the editor picker filter + note,
+pick-commit backstops, Revalidate warning.

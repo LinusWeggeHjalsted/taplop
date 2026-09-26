@@ -1248,10 +1248,6 @@ test "writeEditorMission round-trips through the load path" {
     for (written.level_txts, 0..) |level_txt, index| {
         level_sections[index] = try parseConfigFile(level_txt, arena);
     }
-    for (level_sections[0]) |section| {
-        std.debug.print("SECTION '{s}' groups={d} raw={d}\n", .{ section.header, section.entry_groups.len, section.raw_lines.len });
-        for (section.raw_lines) |line| std.debug.print("  RAW '{s}'\n", .{line});
-    }
     const reloaded = try loaders.buildEditorMission(
         .{ .name = "My Mission", .level_count = 2 },
         editor.player_def.template,

@@ -301,11 +301,11 @@ work:
   Revalidate): consider promoting it from the options menu to the top bar
   next to Test/Validate; the success message currently rides the error
   popup — a real notification/toast surface would be the proper home.
-- **Custom-sprite dims verification** — currently any positive IHDR is
-  accepted (base + layer picks) and sprites beyond the 8×8 draft grid
-  don't open the footprint editor; verify multiples of 256 + sane bounds
-  at the pick commit + the footprint editor's open gate. Picker scroll is
-  a follow-up if real content overflows 4 columns.
+- **Custom-sprite dims verification** — the LOAD side landed (warn +
+  degrade — see DESIGN → Custom Missions & Online Services → Custom-asset
+  dimensions). Remaining: the pick-commit backstop (same spec check at the
+  editor's base/layer sprite commits) + the footprint editor's open gate.
+  Picker scroll is a follow-up if real content overflows 4 columns.
 - **Mission metadata cleanup — derive start_hub / end_hub /
   level_count.** mission.txt's Metadata carries three fields that
   restate the campaign graph or the mission directory — drift-prone
@@ -616,14 +616,15 @@ looking:
   mission is only reproducible with the exact mission bytes. Mission refs
   should eventually be content-addressed (hash) or pinned to an immutable
   version id — matters for recorded-history-as-test and replay sharing.
-- **Custom-asset dimension validation** — custom (mission-shipped) sprites
-  must follow the shipped asset structure: entity sprites exactly
-  512x640, decoration sprites rectangles of whole 256x256 tiles (dims a
-  multiple of 256). Enforce where custom PNG dims are already resolved
-  (loaders.zig sprite-dims resolution): warn + reject at mission import /
-  load, never silently render off-grid art. Keeps the view math (entity
-  bounds, decoration footprint splitting) and the sprite scaling
-  conventions (world zoom × render scale) valid for arbitrary content.
+- **Custom-asset dimension validation** — SETTLED + the load side LANDED:
+  see DESIGN → Custom Missions & Online Services → Custom-asset dimensions
+  (the spec, the warn + degrade posture, the four footprint clamps, the
+  dims floor + 4096 warning). Remaining slices: (2) the render-side magenta
+  gate — a texture-store dims check prefix-scoped to `entities/custom/` +
+  `decorations/custom/` (UI icons are 128x128 and must not trip it);
+  (3) the editor picker filter (mission-local tab shows only spec-conforming
+  sprites + a visible "N hidden" note); (4) pick-commit backstops + a
+  Revalidate warning listing non-conforming art.
 
 ## Online Services
 

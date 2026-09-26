@@ -1961,6 +1961,46 @@ the campaign.
   stats. `boundedU32(value_str, max, field_name, file_path, warnings, allocator)`
   is the helper; a null `warnings` list clamps silently (the test path).
 
+### Custom-asset dimensions (warn + degrade, never reject)
+
+Custom (mission-bundled) sprites follow the shipped asset structure:
+**entity sprites exactly 512x640** (the fixed frame —
+`types.entity_sprite_frame_*`), **decoration sprites whole multiples of
+256 in both axes** (the view math chunks one 256px piece per bbox tile).
+NO size cap — huge set-piece art is legal; sprites beyond 4096px in either
+dimension get a device warning (WebGL2's guaranteed max-texture floor is
+2048, but 4096+ is universal in practice), and the footprint editor's 8x8
+draft grid is a UI gate, not a rejection.
+
+The posture is the balance-bounds posture: custom content is UNTRUSTED,
+so spec violations **warn + degrade, never reject, never crash**. The
+editor must be able to open a broken mission to fix it (web users have no
+external file access), and wrong dims are view-side only — the clamps are
+pure functions of the file bytes, so replay/undo stay deterministic.
+
+Load-side enforcement (landed — loaders.zig, surfaced via the same
+`surfaceWarnings` popup as balance bounds):
+
+- Decoration dims: unresolvable sprite (unknown shipped stem / missing or
+  invalid mission PNG) → a 256x256 fallback (renders magenta); non-multiple
+  dims → floored to the grid, minimum 1x1 tiles; >4096px → warned.
+- Footprint clamps (footprint tiles dropped with warnings; an emptied or
+  authored-empty footprint falls back to the sprite grid's bottom-left
+  tile, the pick-commit default): out-of-bbox tiles, world tiles overlapping
+  a level/hub tile, malformed `footprint` lines (skipped).
+- Decoration layers: a dims mismatch vs the base warns and the layer is
+  KEPT (renders cropped to the base grid — the view builds layer pieces
+  from the base's source rects); an unresolvable layer sprite warns and
+  stays (renders fallback).
+- Entity sprites: warn-only — the fixed-frame render continues regardless
+  (wrong-dims art stretches, its own visible signal). Checked per base AND
+  layer sprite in loadLevel's entity walk.
+
+Remaining slices (TODO → Content Loading): the render-side magenta gate
+(texture-store dims check, prefix-scoped to `entities/custom/` +
+`decorations/custom/`) and the editor-side enforcement (picker filter +
+pick-commit backstop).
+
 ### Auth & the server seam (deferred)
 
 - **Local-first always.** The editor saves a mission to the persistent

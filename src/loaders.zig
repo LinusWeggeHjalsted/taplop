@@ -92,6 +92,49 @@ fn parsePngDimensions(bytes: []const u8) ?types.Vector2 {
     return .{ .x = width, .y = height };
 }
 
+/// The sprite-grid tile size: decoration art must be whole multiples of this
+/// in both dimensions — the view math chunks a decoration sprite into one
+/// 256px piece per bbox tile (see DESIGN → Decorations & Footprint).
+const sprite_grid_tile_pixels: i32 = 256;
+
+/// The soft ceiling for custom sprite dimensions (either axis): WebGL2's
+/// guaranteed minimum max texture size is 2048 (ES 3.0 baseline), but 4096+
+/// is universal in practice — beyond this a sprite may fail to upload on
+/// some devices. Warned at load, never rejected.
+const max_custom_sprite_dimension: i32 = 4096;
+
+/// Floor sprite dims onto the 256px sprite grid, minimum one tile per axis
+/// (sub-256 or non-multiple art degrades to its largest whole-tile region;
+/// zero/negative dims clamp to one tile). Pure — the same file bytes always
+/// produce the same result, so replay is unaffected.
+fn flooredSpriteGridDims(dims: types.Vector2) types.Vector2 {
+    const floorToGrid = struct {
+        fn axis(pixels: i32) i32 {
+            return @max(
+                sprite_grid_tile_pixels,
+                @divTrunc(pixels, sprite_grid_tile_pixels) * sprite_grid_tile_pixels,
+            );
+        }
+    }.axis;
+    return .{ .x = floorToGrid(dims.x), .y = floorToGrid(dims.y) };
+}
+
+/// Append a formatted warning to the optional load-warnings list (surfaced
+/// as one pending_error popup via `surfaceWarnings` — advisory, the load
+/// continues). Custom-content validation uses this everywhere: degrade +
+/// warn, never reject, never crash.
+fn appendLoadWarning(
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const list = warnings orelse return;
+    const message = std.fmt.allocPrint(allocator, format, args) catch
+        @panic("failed to format load warning");
+    list.append(allocator, message) catch @panic("failed to append load warning");
+}
+
 /// Resolve a mission-local sprite's pixel dims (the decoration picker's
 /// custom-stem commit path): read `<mission_path>/<file_stem>.png` via the
 /// file source and parse its IHDR. Returns null when the file is missing
@@ -1122,36 +1165,159 @@ pub fn decorationFootprintCovers(
     return false;
 }
 
-/// Validate a decoration's footprint against its sprite bbox and the level/hub
-/// tile set. Panics on violation (fail fast — see DESIGN → Error Handling):
-///   - empty footprint (no anchor, no reserved tiles)
-///   - footprint tile outside the sprite bbox
-///   - a world footprint tile overlapping a level/hub tile (placement invariant)
-fn validateDecorationFootprint(
-    decoration: types.Decoration,
+/// Warn (never reject) when a custom entity sprite — base or layer —
+/// doesn't follow the fixed 512x640 entity frame. Entity render math draws
+/// at the fixed frame regardless, so wrong-dims art renders stretched (its
+/// own visible signal); the warning names it for the author. Shipped stems
+/// are certified by the comptime metadata table and skip the check.
+fn warnEntitySpriteDimensions(
+    entity: types.Entity,
+    mission_path: []const u8,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    file_path: []const u8,
+) void {
+    if (!std.mem.startsWith(u8, entity.sprite, "custom/")) return;
+    const dims = resolveCustomSpriteFileDims(entity.sprite, mission_path, file_source, allocator) orelse {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "entity sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) — will render as fallback",
+            .{ entity.sprite, file_path },
+        );
+        return;
+    };
+    if (dims.x != types.entity_sprite_frame_width or dims.y != types.entity_sprite_frame_height) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "entity sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; rendered at the fixed frame",
+            .{ entity.sprite, file_path, dims.x, dims.y },
+        );
+    }
+    for (entity.layers) |layer| {
+        if (!std.mem.startsWith(u8, layer.sprite, "custom/")) continue;
+        const layer_dims = resolveCustomSpriteFileDims(layer.sprite, mission_path, file_source, allocator) orelse {
+            appendLoadWarning(
+                allocator,
+                warnings,
+                "entity layer sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) — will render as fallback",
+                .{ layer.sprite, file_path },
+            );
+            continue;
+        };
+        if (layer_dims.x != types.entity_sprite_frame_width or layer_dims.y != types.entity_sprite_frame_height) {
+            appendLoadWarning(
+                allocator,
+                warnings,
+                "entity layer sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; rendered at the fixed frame",
+                .{ layer.sprite, file_path, layer_dims.x, layer_dims.y },
+            );
+        }
+    }
+}
+
+/// Clamp a placed decoration's footprint to what the level can honor —
+/// hand-authored content is UNTRUSTED: invalid footprint tiles are DROPPED
+/// with a warning, never a crash, and an emptied (or authored-empty)
+/// footprint falls back to the sprite grid's bottom-left tile (the pick-
+/// commit default). The clamps are pure functions of the file bytes, so
+/// replay is unaffected. Mutates `decoration.footprint` in place (the
+/// walk's per-placement clone owns the slice).
+///   - footprint tiles outside the sprite bbox → dropped
+///   - world footprint tiles overlapping a level/hub tile → dropped
+///     (placement invariant — see DESIGN → Decorations & Footprint)
+fn clampDecorationFootprint(
+    decoration: *types.Decoration,
     tile_set: *const std.AutoHashMap(types.Vector2, void),
     allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    file_path: []const u8,
 ) void {
-    if (decoration.footprint.len == 0) {
-        @panic("decoration has no footprint tiles");
-    }
-    const tiles_w: i32 = @divTrunc(decoration.pixel_dims.x, 256);
-    const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, 256);
+    const grid_width: i32 = @divTrunc(decoration.pixel_dims.x, sprite_grid_tile_pixels);
+    const grid_height: i32 = @divTrunc(decoration.pixel_dims.y, sprite_grid_tile_pixels);
+
+    // Pass 1: keep in-bbox tiles only.
+    var kept: std.ArrayList(types.Vector2) = .empty;
+    defer kept.deinit(allocator);
+    var dropped_outside: usize = 0;
     for (decoration.footprint) |fp_grid| {
-        // Footprint must be within the sprite bbox.
-        if (fp_grid.x < 0 or fp_grid.x >= tiles_w or fp_grid.y < 0 or fp_grid.y >= tiles_h) {
-            @panic("decoration footprint tile is outside the sprite bbox");
+        if (fp_grid.x < 0 or fp_grid.x >= grid_width or fp_grid.y < 0 or fp_grid.y >= grid_height) {
+            dropped_outside += 1;
+            continue;
         }
+        kept.append(allocator, fp_grid) catch @panic("failed to append footprint tile");
     }
-    // World footprint tile = anchor world pos + (fp_grid - anchor_grid) —
-    // see decorationFootprintWorldTiles.
-    const world_tiles = decorationFootprintWorldTiles(decoration.footprint, decoration.position, allocator);
-    defer allocator.free(world_tiles);
-    for (world_tiles) |world_tile| {
-        if (tile_set.contains(world_tile)) {
-            @panic("decoration footprint overlaps a level/hub tile");
+    if (dropped_outside > 0) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "{d} footprint tiles on decoration '{s}' in {s} are outside the sprite bbox — dropped",
+            .{ dropped_outside, decoration.name, file_path },
+        );
+    }
+
+    // Pass 2: drop world-tile overlaps. Runs on the SURVIVORS — world
+    // positions derive from the anchor, which the survivors determine.
+    var dropped_overlap: usize = 0;
+    if (kept.items.len > 0) {
+        const world_tiles = decorationFootprintWorldTiles(kept.items, decoration.position, allocator);
+        defer allocator.free(world_tiles);
+        var write_index: usize = 0;
+        for (kept.items, 0..) |fp_grid, index| {
+            if (tile_set.contains(world_tiles[index])) {
+                dropped_overlap += 1;
+                continue;
+            }
+            kept.items[write_index] = fp_grid;
+            write_index += 1;
         }
+        kept.shrinkRetainingCapacity(write_index);
     }
+    if (dropped_overlap > 0) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "{d} footprint tiles on decoration '{s}' in {s} overlap level/hub tiles — dropped",
+            .{ dropped_overlap, decoration.name, file_path },
+        );
+    }
+
+    // Empty footprint (authored empty, or everything was dropped) → the
+    // sprite grid's bottom-left tile, the pick-commit default. Grid dims are
+    // ≥1 per axis by construction (dims are floored ≥256 at parse).
+    if (kept.items.len == 0) {
+        if (decoration.footprint.len == 0) {
+            appendLoadWarning(
+                allocator,
+                warnings,
+                "decoration '{s}' in {s} has no footprint tiles — defaulted to the sprite grid's bottom-left tile",
+                .{ decoration.name, file_path },
+            );
+        } else {
+            appendLoadWarning(
+                allocator,
+                warnings,
+                "decoration '{s}' in {s}: every footprint tile was dropped — defaulted to the sprite grid's bottom-left tile",
+                .{ decoration.name, file_path },
+            );
+        }
+        kept.append(allocator, .{ .x = 0, .y = @max(0, grid_height - 1) }) catch
+            @panic("failed to append default footprint tile");
+    }
+
+    // Nothing changed → keep the original slice (no realloc churn).
+    if (dropped_outside == 0 and dropped_overlap == 0 and
+        kept.items.len == decoration.footprint.len)
+    {
+        return;
+    }
+
+    const new_footprint = allocator.dupe(types.Vector2, kept.items) catch
+        @panic("failed to allocate clamped footprint");
+    allocator.free(decoration.footprint);
+    decoration.footprint = new_footprint;
 }
 
 /// Parse one decoration entry's pairs (sprite / color_index / footprint /
@@ -1165,11 +1331,52 @@ fn parseDecorationEntry(
     mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    file_path: []const u8,
 ) DecorationDefinition {
     const base_sprite = findValue(pairs, "sprite") orelse &.{};
     const base_color_index = asU32(findValue(pairs, "color_index") orelse "0") orelse 0;
     const keep_original_colors = asBool(findValue(pairs, "keep_original_colors") orelse "false") orelse false;
-    const base_pixel_dims = resolveDecorationSpriteDimensions(base_sprite, mission_path, file_source, allocator);
+
+    // Resolve the base sprite's dims, degrading with warnings on every
+    // spec violation (custom content is untrusted: warn + degrade, never
+    // reject, never crash — the balance-bounds posture):
+    //   - unresolvable (unknown shipped stem / missing or invalid mission
+    //     PNG) → a one-tile 256x256 fallback; renders magenta (the texture
+    //     store can't resolve it either)
+    //   - not a whole multiple of 256 → floored to the sprite grid (the
+    //     view math chunks per 256px bbox tile; edge remainder crops)
+    //   - beyond 4096px → kept, warned (may exceed device max texture size)
+    var base_pixel_dims: types.Vector2 = undefined;
+    if (resolveDecorationSpriteDimensions(base_sprite, mission_path, file_source, allocator)) |dims| {
+        base_pixel_dims = dims;
+    } else {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "decoration sprite '{s}' in {s} could not be resolved (not shipped, or a missing/invalid mission PNG) — falling back to 256x256",
+            .{ base_sprite, file_path },
+        );
+        base_pixel_dims = .{ .x = sprite_grid_tile_pixels, .y = sprite_grid_tile_pixels };
+    }
+    const floored_base_dims = flooredSpriteGridDims(base_pixel_dims);
+    if (floored_base_dims.x != base_pixel_dims.x or floored_base_dims.y != base_pixel_dims.y) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "decoration sprite '{s}' in {s} is {d}x{d} — not a whole multiple of 256; floored to {d}x{d} (edge pixels crop)",
+            .{ base_sprite, file_path, base_pixel_dims.x, base_pixel_dims.y, floored_base_dims.x, floored_base_dims.y },
+        );
+        base_pixel_dims = floored_base_dims;
+    }
+    if (base_pixel_dims.x > max_custom_sprite_dimension or base_pixel_dims.y > max_custom_sprite_dimension) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "decoration sprite '{s}' in {s} is {d}x{d} — exceeds 4096px and may not render on some devices (max texture size)",
+            .{ base_sprite, file_path, base_pixel_dims.x, base_pixel_dims.y },
+        );
+    }
 
     // Collect base footprint + parse layer sub-groups. The pairs list is
     // flat; a `layer` key delimits a new sub-group whose following
@@ -1186,10 +1393,13 @@ fn parseDecorationEntry(
             if (in_layer) finishLayer(
                 current_layer_sprite,
                 current_layer_color,
+                base_sprite,
                 base_pixel_dims,
                 mission_path,
                 file_source,
                 allocator,
+                warnings,
+                file_path,
                 &layers,
             );
             // Start a new layer sub-group.
@@ -1210,8 +1420,15 @@ fn parseDecorationEntry(
         } else {
             // Base-level fields.
             if (std.mem.eql(u8, pair.key, "footprint")) {
-                const coords = parseVector2Pair(pair.value) orelse
-                    @panic("malformed footprint coordinate line");
+                const coords = parseVector2Pair(pair.value) orelse {
+                    appendLoadWarning(
+                        allocator,
+                        warnings,
+                        "malformed footprint line '{s}' on decoration '{s}' in {s} — skipped",
+                        .{ pair.value, base_sprite, file_path },
+                    );
+                    continue;
+                };
                 footprint.append(allocator, coords) catch @panic("failed to append footprint");
             }
             // character_code / sprite / color_index are already handled
@@ -1222,10 +1439,13 @@ fn parseDecorationEntry(
     if (in_layer) finishLayer(
         current_layer_sprite,
         current_layer_color,
+        base_sprite,
         base_pixel_dims,
         mission_path,
         file_source,
         allocator,
+        warnings,
+        file_path,
         &layers,
     );
 
@@ -1239,30 +1459,55 @@ fn parseDecorationEntry(
     };
 }
 
-/// Resolve a pending layer sub-group's sprite + color into a `DecorationLayer`,
-/// validate its pixel dims match the base, and append it. Shared by the two
-/// layer-finish sites in `parseDecorationEntry` (mid-entry `layer` delimiter
-/// + end-of-entry). No-op (appends nothing) when the layer had no `sprite`.
+/// Resolve a pending layer sub-group's sprite + color into a `DecorationLayer`
+/// and append it. Shared by the two layer-finish sites in
+/// `parseDecorationEntry` (mid-entry `layer` delimiter + end-of-entry).
+/// No-op (appends nothing) when the layer had no `sprite`. Degrade + warn on
+/// spec violations, never a panic: an unresolvable layer sprite is kept
+/// (renders as fallback), and a dims mismatch against the base is kept too
+/// (renders cropped to the base's grid — the view builds layer pieces from
+/// the BASE's source rects).
 fn finishLayer(
     layer_sprite: ?[]const u8,
     layer_color: u32,
+    base_sprite: []const u8,
     base_pixel_dims: types.Vector2,
     mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    file_path: []const u8,
     layers: *std.ArrayList(types.DecorationLayer),
 ) void {
-    if (layer_sprite) |sprite| {
-        const layer_dims = resolveDecorationSpriteDimensions(sprite, mission_path, file_source, allocator);
-        if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
-            @panic("decoration layer sprite must be the same pixel dimensions as the base");
-        }
+    const sprite = layer_sprite orelse return;
+    const layer_dims = resolveDecorationSpriteDimensions(sprite, mission_path, file_source, allocator) orelse {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "layer sprite '{s}' on decoration '{s}' in {s} could not be resolved — kept, will render as fallback",
+            .{ sprite, base_sprite, file_path },
+        );
         layers.append(allocator, .{
             .sprite = sprite,
             .color_index = layer_color,
-            .pixel_dims = layer_dims,
+            .pixel_dims = .{ .x = 0, .y = 0 },
         }) catch @panic("failed to append decoration layer");
+        return;
+    };
+    const floored_layer_dims = flooredSpriteGridDims(layer_dims);
+    if (floored_layer_dims.x != base_pixel_dims.x or floored_layer_dims.y != base_pixel_dims.y) {
+        appendLoadWarning(
+            allocator,
+            warnings,
+            "layer sprite '{s}' on decoration '{s}' in {s} is {d}x{d} but the base is {d}x{d} — kept, will render cropped to the base grid",
+            .{ sprite, base_sprite, file_path, floored_layer_dims.x, floored_layer_dims.y, base_pixel_dims.x, base_pixel_dims.y },
+        );
     }
+    layers.append(allocator, .{
+        .sprite = sprite,
+        .color_index = layer_color,
+        .pixel_dims = floored_layer_dims,
+    }) catch @panic("failed to append decoration layer");
 }
 
 /// Parse all decoration definitions from a level/hub's Decorations section
@@ -1277,19 +1522,23 @@ fn finishLayer(
 /// A `layer` line is a delimiter: the following `sprite`/`color_index` pairs
 /// belong to that layer until the next `layer` or end of entry. Pixel dims
 /// are resolved from the comptime sprite-metadata table (shipped) or the file
-/// source (custom); layer dims are validated == base dims at load.
+/// source (custom). Spec violations (unresolvable sprites, non-grid dims, a
+/// layer/base dims mismatch) degrade with a warning — see
+/// `parseDecorationEntry` + `finishLayer`.
 fn parseDecorationDefinitions(
     sections: []const Section,
     mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    file_path: []const u8,
 ) std.AutoHashMap(u8, DecorationDefinition) {
     var definitions = std.AutoHashMap(u8, DecorationDefinition).init(allocator);
     if (findSection(sections, "Decorations")) |section| {
         for (section.entry_groups) |group| {
             const code_string = findValue(group.pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            definitions.put(code_string[0], parseDecorationEntry(group.pairs, mission_path, file_source, allocator)) catch
+            definitions.put(code_string[0], parseDecorationEntry(group.pairs, mission_path, file_source, allocator, warnings, file_path)) catch
                 @panic("failed to insert decoration definition");
         }
     }
@@ -1318,7 +1567,9 @@ pub fn loadDecorationRegistry(
             // Skip an empty group (no sprite) — e.g. a trailing blank-line
             // artifact. A real entry must have a `sprite` key.
             if (findValue(group.pairs, "sprite") == null) continue;
-            const def = parseDecorationEntry(group.pairs, "", file_source, allocator);
+            // Shipped content; warnings are null (registry regressions are
+            // caught by the content tests, not surfaced at runtime).
+            const def = parseDecorationEntry(group.pairs, "", file_source, allocator, null, "");
             list.append(allocator, .{
                 .id = def.sprite,
                 .sprite = def.sprite,
@@ -1377,8 +1628,9 @@ pub fn loadEditorDefaults(
     const decoration_pairs = decorations_section.entry_groups[0].pairs;
     if (findValue(decoration_pairs, "sprite") == null) return error.MissingDefaultEntry;
     // Registry + editor-defaults entries are shipped, mission-agnostic
-    // content — a custom (mission-bundled) stem fails fast here.
-    const decoration_definition = parseDecorationEntry(decoration_pairs, "", file_source, allocator);
+    // content — a custom (mission-bundled) stem can't resolve here; it
+    // degrades to the 256x256 fallback with a warning.
+    const decoration_definition = parseDecorationEntry(decoration_pairs, "", file_source, allocator, warnings, file_path);
 
     // Item: the first Items entry (a valid item_type is required).
     const items_section = findSection(sections, "Items") orelse return error.MissingDefaultEntry;
@@ -1411,43 +1663,63 @@ fn parseVector2Pair(value: []const u8) ?types.Vector2 {
     return .{ .x = x, .y = y };
 }
 
+/// Extract the file stem from a namespaced custom stem
+/// (`custom/<mission-dir>/<file-stem>` — the last path segment; the dir
+/// name is namespace-only, never a read path). Returns null for a stem
+/// with no segment after the last slash.
+fn customFileStem(sprite_stem: []const u8) ?[]const u8 {
+    const slash = std.mem.lastIndexOfScalar(u8, sprite_stem, '/') orelse return null;
+    if (slash + 1 >= sprite_stem.len) return null;
+    return sprite_stem[slash + 1 ..];
+}
+
+/// Resolve a namespaced custom stem's pixel dims by reading
+/// `<mission_path>/<file-stem>.png` and parsing its IHDR. Returns null
+/// when the stem is malformed, the mission path or file source is
+/// missing, or the file is unreadable or not a valid PNG — callers
+/// degrade with a warning (custom content is untrusted; never a crash).
+fn resolveCustomSpriteFileDims(
+    sprite_stem: []const u8,
+    mission_path: []const u8,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) ?types.Vector2 {
+    const file_stem = customFileStem(sprite_stem) orelse return null;
+    if (mission_path.len == 0) return null;
+    const source = file_source orelse return null;
+    const path = std.fmt.allocPrint(allocator, "{s}/{s}.png", .{ mission_path, file_stem }) catch
+        @panic("failed to build mission sprite path for dims resolution");
+    defer allocator.free(path);
+    const bytes = source.readFile(allocator, path) catch return null;
+    defer allocator.free(bytes);
+    return parsePngDimensions(bytes);
+}
+
 /// Resolve a decoration sprite's pixel dims at LOAD time. Exactly two
 /// channels — custom assets are always mission-bundled and never live
 /// under assets/ (see DESIGN → Custom Missions & Online Services):
 ///   1. a `custom/<mission-dir>/<file-stem>` stem reads the PNG from the
-///      mission directory being loaded (`{mission_path}/{file-stem}.png`);
-///      the embedded dir name is namespace-only, never a read path
+///      mission directory being loaded (`{mission_path}/{file-stem}.png`)
 ///   2. anything else must be a shipped decoration (comptime table —
 ///      keyed by the asset-relative path `decorations/tree_1`, so the
 ///      bare config stem gets the `decorations/` prefix)
-/// Unknown stems, or a mission PNG that is missing/corrupt, fail fast.
+/// Returns null when neither channel resolves (an unknown shipped stem,
+/// or a missing/invalid mission PNG) — the caller degrades with a
+/// warning (custom content is untrusted; never a crash).
 fn resolveDecorationSpriteDimensions(
     sprite_stem: []const u8,
     mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
-) types.Vector2 {
+) ?types.Vector2 {
     if (std.mem.startsWith(u8, sprite_stem, "custom/")) {
-        const slash = std.mem.lastIndexOfScalar(u8, sprite_stem, '/') orelse
-            @panic("custom decoration stem with no file stem");
-        const file_stem = sprite_stem[slash + 1 ..];
-        if (mission_path.len == 0) @panic("custom decoration stem with no mission path");
-        const source = file_source orelse @panic("custom decoration stem with no file source");
-        const path = std.fmt.allocPrint(allocator, "{s}/{s}.png", .{ mission_path, file_stem }) catch
-            @panic("failed to build mission sprite path for dims resolution");
-        defer allocator.free(path);
-        const bytes = source.readFile(allocator, path) catch
-            @panic("failed to read mission sprite PNG for dims resolution");
-        defer allocator.free(bytes);
-        return parsePngDimensions(bytes) orelse
-            @panic("mission sprite PNG is not a valid PNG");
+        return resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator);
     }
 
     const full_id = std.fmt.allocPrint(allocator, "decorations/{s}", .{sprite_stem}) catch
         @panic("failed to build decoration sprite id for dims");
     defer allocator.free(full_id);
-    const dims_str = sprite_metadata.map.get(full_id) orelse
-        @panic("unknown decoration sprite: not shipped and not mission-bundled");
+    const dims_str = sprite_metadata.map.get(full_id) orelse return null;
     return parseDimsString(dims_str);
 }
 
@@ -1708,7 +1980,7 @@ pub fn loadLevel(
     // Parse decoration definitions keyed by character code (sprite +
     // sprite-grid footprint + pixel dims). Replaces the old decoration_codes
     // list — the layout walk now looks up the full definition per char.
-    var decoration_definitions = parseDecorationDefinitions(sections, mission_path, file_source, allocator);
+    var decoration_definitions = parseDecorationDefinitions(sections, mission_path, file_source, allocator, warnings, file_path);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
     var entity_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
     defer freeEntityDefinitions(&entity_definitions, allocator);
@@ -1718,6 +1990,7 @@ pub fn loadLevel(
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
             const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator, file_path, warnings);
+            warnEntitySpriteDimensions(entity, mission_path, file_source, allocator, warnings, file_path);
             try entity_definitions.put(code_string[0], entity);
         }
     }
@@ -1841,16 +2114,17 @@ pub fn loadLevel(
         }
     }
 
-    // Validate decoration footprints: each world footprint tile must not
-    // overlap a level tile (placement invariant — see DESIGN → Decorations
-    // & Footprint). Build a tile-position set for O(1) lookup.
+    // Clamp decoration footprints: invalid tiles are dropped with a
+    // warning (untrusted content — never a crash); a world footprint tile
+    // must not overlap a level tile (placement invariant — see DESIGN →
+    // Decorations & Footprint). Build a tile-position set for O(1) lookup.
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
     for (tile_positions.items) |tile| {
         tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
     }
-    for (decoration_list.items) |decoration| {
-        validateDecorationFootprint(decoration, &tile_set, allocator);
+    for (decoration_list.items) |*decoration| {
+        clampDecorationFootprint(decoration, &tile_set, allocator, warnings, file_path);
     }
 
     level.level_tiles = try tile_positions.toOwnedSlice(allocator);
@@ -1865,6 +2139,8 @@ pub fn loadHub(
     sections: []const Section,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) !Hub {
     try validateSections(sections, &hub_sections);
     try validateFileFormatVersion(sections, "Metadata", hub_file_format_version);
@@ -1884,9 +2160,10 @@ pub fn loadHub(
     }
 
     // Parse decoration definitions keyed by character code (same as levels).
-    // Hubs carry no mission-bundled stems (campaign content only) — an empty
-    // mission path makes a custom stem fail fast.
-    var decoration_definitions = parseDecorationDefinitions(sections, "", file_source, allocator);
+    // Hubs carry no mission-bundled stems (campaign content only) — a custom
+    // stem can't resolve against the empty mission path and degrades to the
+    // fallback with a warning.
+    var decoration_definitions = parseDecorationDefinitions(sections, "", file_source, allocator, warnings, file_path);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
 
     // Collect exit character codes
@@ -2002,15 +2279,15 @@ pub fn loadHub(
         hub.player.position = .{ .x = hub.player.position.x + offset.x, .y = hub.player.position.y + offset.y };
     }
 
-    // Validate decoration footprints (same as levels — see DESIGN →
+    // Clamp decoration footprints (same as levels — see DESIGN →
     // Decorations & Footprint).
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
     for (tile_positions.items) |tile| {
         tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
     }
-    for (decoration_list.items) |decoration| {
-        validateDecorationFootprint(decoration, &tile_set, allocator);
+    for (decoration_list.items) |*decoration| {
+        clampDecorationFootprint(decoration, &tile_set, allocator, warnings, file_path);
     }
 
     hub.hub_tiles = try tile_positions.toOwnedSlice(allocator);
@@ -2912,6 +3189,300 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
     try std.testing.expectEqual(@as(i32, 256), level.decorations[0].layers[0].pixel_dims.y);
 }
 
+/// Test helper: does the collected load-warnings list contain a message with
+/// the given substring? Tests assert warning PRESENCE by substring rather
+/// than exact counts or full text — the contract is WHICH conditions warn,
+/// not the wording.
+fn hasLoadWarningContaining(warnings: []const []const u8, needle: []const u8) bool {
+    for (warnings) |warning| {
+        if (std.mem.indexOf(u8, warning, needle) != null) return true;
+    }
+    return false;
+}
+
+test "loadLevel clamps invalid decoration footprints (malformed, out-of-bbox, overlap, empty) with warnings" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Four decorations, one per clamp class. A: a malformed footprint line
+    // is skipped, leaving an authored-empty footprint → the bottom-left
+    // default. B: the only footprint tile is outside the 1x1 sprite bbox →
+    // dropped → default. C (tree_1, 3x3 grid): one of two in-bbox footprint
+    // tiles lands on the level tile at (2,1) → dropped, the survivor stays.
+    // D (tree_1): a valid footprint → untouched, NO warning.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Footprint Clamp Test
+        \\
+        \\Layout
+        \\A.BD
+        \\.C..
+        \\
+        \\Entities
+        \\
+        \\Decorations
+        \\character_code A
+        \\sprite stone_1
+        \\footprint x y
+        \\
+        \\character_code B
+        \\sprite stone_1
+        \\footprint 2 2
+        \\
+        \\character_code C
+        \\sprite tree_1
+        \\footprint 0 2
+        \\footprint 1 2
+        \\
+        \\character_code D
+        \\sprite tree_1
+        \\footprint 1 2
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, arena);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const level = try loadLevel(sections, null, arena, "", "", &warnings);
+
+    try std.testing.expectEqual(4, level.decorations.len);
+    // A: default bottom-left tile.
+    try std.testing.expectEqual(1, level.decorations[0].footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.decorations[0].footprint[0]);
+    // B: out-of-bbox tile dropped, default written.
+    try std.testing.expectEqual(1, level.decorations[1].footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.decorations[1].footprint[0]);
+    // C: the overlapping tile (world (2,1)) dropped, the survivor stays.
+    try std.testing.expectEqual(1, level.decorations[3].footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, level.decorations[3].footprint[0]);
+    // D: untouched.
+    try std.testing.expectEqual(1, level.decorations[2].footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, level.decorations[2].footprint[0]);
+
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "malformed footprint line"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "has no footprint tiles"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "outside the sprite bbox"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "every footprint tile was dropped"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "overlap level/hub tiles"));
+    // Exactly one warning per clamp class: A 2 (malformed + empty), B 2
+    // (out-of-bbox + emptied), C 1 (overlap), D 0 (valid) — pins that the
+    // valid decoration never warns and no class double-warns.
+    try std.testing.expectEqual(@as(usize, 5), warnings.items.len);
+}
+
+test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var threaded_io = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const scratch = "zig-cache/test-custom-decoration-dims";
+    const temp_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = @import("file_source.zig").FileSource.init(io, temp_dir);
+
+    // wide: 1000x1200 → floored to 768x1024. huge: 8192x256 is already a
+    // whole multiple of 256 → kept, only the >4096 device warning fires.
+    // tiny: 250x250 → floored up to the 1x1 minimum. ghost: no PNG at all →
+    // the 256x256 fallback (renders magenta). unknown: a typo'd bare stem →
+    // the same fallback class.
+    const fixtures = [_]struct { name: []const u8, width: u32, height: u32 }{
+        .{ .name = "wide.png", .width = 1000, .height = 1200 },
+        .{ .name = "huge.png", .width = 8192, .height = 256 },
+        .{ .name = "tiny.png", .width = 250, .height = 250 },
+    };
+    for (fixtures) |fixture| {
+        const png = minimalPngHeader(std.testing.allocator, fixture.width, fixture.height);
+        defer std.testing.allocator.free(png);
+        const path = std.fmt.allocPrint(std.testing.allocator, "test_m/{s}", .{fixture.name}) catch
+            @panic("failed to format fixture path");
+        defer std.testing.allocator.free(path);
+        file_source.writeFile(path, png) catch @panic("write fixture png");
+    }
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Custom Dims Test
+        \\
+        \\Layout
+        \\WHTGU
+        \\.....
+        \\
+        \\Entities
+        \\
+        \\Decorations
+        \\character_code W
+        \\sprite custom/test_m/wide
+        \\footprint 0 0
+        \\
+        \\character_code H
+        \\sprite custom/test_m/huge
+        \\footprint 0 0
+        \\
+        \\character_code T
+        \\sprite custom/test_m/tiny
+        \\footprint 0 0
+        \\
+        \\character_code G
+        \\sprite custom/test_m/ghost
+        \\footprint 0 0
+        \\
+        \\character_code U
+        \\sprite tree_99
+        \\footprint 0 0
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, arena);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", "test_m", &warnings);
+
+    try std.testing.expectEqual(5, level.decorations.len);
+    // wide: floored to whole tiles.
+    try std.testing.expectEqual(types.Vector2{ .x = 768, .y = 1024 }, level.decorations[0].pixel_dims);
+    // huge: a multiple of 256 stays as-is.
+    try std.testing.expectEqual(types.Vector2{ .x = 8192, .y = 256 }, level.decorations[1].pixel_dims);
+    // tiny: sub-256 clamps up to the 1x1 minimum.
+    try std.testing.expectEqual(types.Vector2{ .x = 256, .y = 256 }, level.decorations[2].pixel_dims);
+    // ghost + unknown: the 256x256 fallback.
+    try std.testing.expectEqual(types.Vector2{ .x = 256, .y = 256 }, level.decorations[3].pixel_dims);
+    try std.testing.expectEqual(types.Vector2{ .x = 256, .y = 256 }, level.decorations[4].pixel_dims);
+
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "floored to 768x1024"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "exceeds 4096px"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "floored to 256x256"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "'custom/test_m/ghost'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "'tree_99'"));
+    // huge is grid-conformant: no floor warning for it (the >4096 device
+    // warning still names its dims — different needle).
+    try std.testing.expect(!hasLoadWarningContaining(warnings.items, "floored to 8192"));
+}
+
+test "decoration layer dims mismatch vs base: kept + warned (no panic)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // tree_1 base (768x768) with a stone_1 layer (256x256): the mismatch
+    // warns and the layer is KEPT (renders cropped to the base grid) —
+    // the old behavior was a load-time panic.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Layer Mismatch Test
+        \\
+        \\Layout
+        \\T..
+        \\...
+        \\...
+        \\
+        \\Entities
+        \\
+        \\Decorations
+        \\character_code T
+        \\sprite tree_1
+        \\footprint 1 2
+        \\layer
+        \\sprite stone_1
+        \\color_index 2
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, arena);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const level = try loadLevel(sections, null, arena, "", "", &warnings);
+
+    try std.testing.expectEqual(1, level.decorations[0].layers.len);
+    try std.testing.expectEqualStrings("stone_1", level.decorations[0].layers[0].sprite);
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "cropped to the base grid"));
+}
+
+test "loadLevel custom entity sprites: 512x640 warn-only" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var threaded_io = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const scratch = "zig-cache/test-custom-entity-dims";
+    const temp_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = @import("file_source.zig").FileSource.init(io, temp_dir);
+
+    // hero: conforming 512x640 (silent). tiny: wrong dims. missing: no
+    // PNG at all. All warn-only — the fixed-frame render continues.
+    const hero_png = minimalPngHeader(std.testing.allocator, 512, 640);
+    defer std.testing.allocator.free(hero_png);
+    file_source.writeFile("test_m/hero.png", hero_png) catch @panic("write hero.png");
+    const tiny_png = minimalPngHeader(std.testing.allocator, 256, 256);
+    defer std.testing.allocator.free(tiny_png);
+    file_source.writeFile("test_m/tiny.png", tiny_png) catch @panic("write tiny.png");
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Custom Entity Dims Test
+        \\
+        \\Layout
+        \\EFGH
+        \\....
+        \\
+        \\Entities
+        \\character_code E
+        \\name Hero
+        \\sprite custom/test_m/hero
+        \\
+        \\character_code F
+        \\name WrongDims
+        \\sprite custom/test_m/tiny
+        \\
+        \\character_code G
+        \\name Missing
+        \\sprite custom/test_m/missing
+        \\
+        \\character_code H
+        \\name Layered
+        \\sprite custom/test_m/hero
+        \\layer
+        \\sprite custom/test_m/tiny
+        \\color_index 2
+        \\
+        \\Decorations
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, arena);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", "test_m", &warnings);
+
+    // All four entities load regardless of sprite spec — warn-only.
+    try std.testing.expectEqual(5, level.entities.len);
+    try std.testing.expectEqualStrings("custom/test_m/hero", level.entities[1].sprite);
+    try std.testing.expectEqualStrings("custom/test_m/tiny", level.entities[2].sprite);
+    try std.testing.expectEqualStrings("custom/test_m/missing", level.entities[3].sprite);
+
+    // Exactly the three spec violations warn: wrong base dims, a missing
+    // base PNG, a wrong-dims layer. The conforming hero base stays silent.
+    try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/test_m/tiny'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/test_m/missing'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity layer sprite 'custom/test_m/tiny'"));
+    try std.testing.expect(!hasLoadWarningContaining(warnings.items, "'custom/test_m/hero' in"));
+}
+
 test "loadDecorationRegistry parses prefabs (no character_code)" {
     const allocator = std.testing.allocator;
     // The shipped registry: Metadata + Decorations with one entry per sprite,
@@ -3222,7 +3793,7 @@ test "loadHub parses a complete hub" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const hub = try loadHub(sections, null, allocator);
+    const hub = try loadHub(sections, null, allocator, "", null);
     defer freeHub(hub, allocator);
 
     // Metadata

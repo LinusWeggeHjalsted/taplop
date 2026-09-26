@@ -56,7 +56,7 @@ fn validateConfigFile(
         _ = try loaders.loadCampaign(sections, allocator);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/hub.txt")) {
-        _ = try loaders.loadHub(sections, file_source, allocator);
+        _ = try loaders.loadHub(sections, file_source, allocator, "", null);
         parser.validateKeys(sections, parser.hub_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/mission.txt")) {
         _ = try loaders.loadMission(sections, allocator);

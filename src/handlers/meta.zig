@@ -152,6 +152,7 @@ pub fn handleMetaEvent(
             };
         },
         .start_hub => |start| {
+            var balance_warnings: std.ArrayList([]const u8) = .empty;
             // Build hub file path: data/campaigns/{campaign}/hubs/{hub_id}/hub.txt
             const hub_path = std.fmt.allocPrint(
                 allocator,
@@ -175,10 +176,13 @@ pub fn handleMetaEvent(
                 hub_sections,
                 history.file_source,
                 allocator,
+                hub_path,
+                &balance_warnings,
             ) catch {
                 failReconstructionRead(history, "failed to parse hub file");
                 return;
             };
+            surfaceWarnings(history, &balance_warnings, allocator);
 
             current.player_data.current_hub = start.hub_id;
             current.world_generation +%= 1;
