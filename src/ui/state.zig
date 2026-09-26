@@ -74,7 +74,11 @@ pub const editor_inspector_section_count: usize =
     @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len;
 
 pub const UiState = struct {
-    /// Middle section panels, ordered by open time (first opened = leftmost).
+    /// Middle section panels, ordered by open time (first opened =
+    /// leftmost). The open panels always occupy a contiguous prefix of the
+    /// slots (closing compacts), so slot order IS display order and a
+    /// reopened panel lands rightmost instead of recalling its pre-close
+    /// slot.
     open_middle_panels: [max_middle_panels]?MiddlePanelId = .{null} ** max_middle_panels,
 
     /// Full-screen overlays that can stack (world map, full combat log).
@@ -318,21 +322,34 @@ pub const UiState = struct {
     editor_tile_drag: bool = false,
 
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
-        // If already open, close it
+        // If already open, close it and compact the remaining panels down
+        // (the contiguous-prefix invariant above).
         for (&self.open_middle_panels) |*slot| {
             if (slot.*) |open| {
                 if (open == panel_id) {
                     slot.* = null;
+                    var write_index: usize = 0;
+                    for (self.open_middle_panels) |maybe_panel| {
+                        if (maybe_panel) |remaining| {
+                            self.open_middle_panels[write_index] = remaining;
+                            write_index += 1;
+                        }
+                    }
+                    while (write_index < max_middle_panels) : (write_index += 1) {
+                        self.open_middle_panels[write_index] = null;
+                    }
                     return;
                 }
             }
         }
-        // Not open — find first empty slot
-        for (&self.open_middle_panels) |*slot| {
-            if (slot.* == null) {
-                slot.* = panel_id;
-                return;
-            }
+        // Not open — append after the last open panel (rightmost in display
+        // order). No-op when all slots are open.
+        var target_index: usize = 0;
+        for (self.open_middle_panels, 0..) |maybe_panel, index| {
+            if (maybe_panel != null) target_index = index + 1;
+        }
+        if (target_index < max_middle_panels) {
+            self.open_middle_panels[target_index] = panel_id;
         }
     }
 
@@ -476,3 +493,69 @@ pub const EditorMoveDrag = struct {
     promoted: bool,
 };
 
+
+test "toggleMiddlePanel: open order is display order; reopen lands rightmost" {
+    const Panels = [max_middle_panels]?MiddlePanelId;
+    var ui_state = UiState{};
+
+    // Open order = slot order (leftmost first).
+    ui_state.toggleMiddlePanel(.inventory);
+    ui_state.toggleMiddlePanel(.skills);
+    try std.testing.expectEqual(
+        Panels{ .inventory, .skills, null, null },
+        ui_state.open_middle_panels,
+    );
+
+    // Closing a middle panel compacts the rest (contiguous prefix).
+    ui_state.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, null, null, null },
+        ui_state.open_middle_panels,
+    );
+
+    // Reopening appends rightmost — it does not recall its pre-close slot.
+    ui_state.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, .inventory, null, null },
+        ui_state.open_middle_panels,
+    );
+
+    // Closing the rightmost panel leaves the prefix intact.
+    ui_state.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, null, null, null },
+        ui_state.open_middle_panels,
+    );
+    ui_state.toggleMiddlePanel(.skills);
+    try std.testing.expectEqual(
+        Panels{ null, null, null, null },
+        ui_state.open_middle_panels,
+    );
+}
+
+test "toggleMiddlePanel: a full panel strip ignores a new open" {
+    const Panels = [max_middle_panels]?MiddlePanelId;
+    var ui_state = UiState{};
+    for ([_]MiddlePanelId{ .inventory, .gear, .skills, .entity_inspect }) |panel_id| {
+        ui_state.toggleMiddlePanel(panel_id);
+    }
+    // All four are open — a fifth panel id cannot be stored, so this
+    // close-then-reopen pair must not clobber anything.
+    ui_state.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .entity_inspect, null },
+        ui_state.open_middle_panels,
+    );
+    ui_state.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .entity_inspect, .inventory },
+        ui_state.open_middle_panels,
+    );
+    // The strip is full again; toggling a panel that is already open still
+    // closes it, and the freed slot is usable.
+    ui_state.toggleMiddlePanel(.entity_inspect);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .inventory, null },
+        ui_state.open_middle_panels,
+    );
+}

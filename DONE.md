@@ -13988,3 +13988,29 @@ dir IS the own dir — which makes the SAVE the enforcement point:
   convention section now states the single-dir model once (both
   consumers + the save-enforced invariant), replacing the drifted
   "resolves from the mission directory being loaded" phrasing.
+
+## Middle-panel reopen order — a reopened panel lands rightmost (bug fix)
+
+`UiState.toggleMiddlePanel`'s open path used "fill the first empty slot",
+but panels render left-flush in slot order (`buildMiddlePanels` skips nulls
+and keeps relative order). Closing a middle panel leaves a hole at its old
+slot, so reopening it while others stay open put it back in that hole —
+LEFT of panels opened after it (open inventory → skills → close inventory →
+reopen: inventory rendered left of skills). Only closing every panel reset
+the slot assignment, which made open order look sticky.
+
+Fix (the field's own doc comment said "ordered by open time" all along —
+the implementation just didn't honor it on reopen):
+- Open path: append after the last open panel (rightmost in display
+  order). No-op when all four slots are open (same as before).
+- Close path: compact the remaining panels down, so open slots are
+  always a contiguous prefix — a reopened panel cannot recall its
+  pre-close slot even indirectly.
+
+Invariant now stated on the field: open panels occupy a contiguous prefix
+of the slots, so slot order IS display order.
+
+Tests: inline in `src/ui/state.zig` (the pure-fn tier) — open order =
+display order, close compacts, reopen lands rightmost, closing the
+rightmost panel leaves the prefix intact, and the full-strip edge cases
+(fifth open ignored; a close+reopen at capacity never clobbers a slot).
