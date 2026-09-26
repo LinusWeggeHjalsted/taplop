@@ -2184,6 +2184,17 @@ pub fn handleAnytimeInput(
                 const item_action = editorInventoryItemDefAction(slot, item) orelse return;
                 pushPlayerActionAndDrain(history, item_action);
             },
+            // Editor-browser kind tab switch (Mission today; Hub /
+            // Campaign when those editors land): switches the browser
+            // content to that kind. A view affordance — direct UiState
+            // write, off the undo timeline; the scroll resets like a
+            // list-tab switch (the other kind's list has its own extent).
+            .select_editor_kind_tab => {
+                if (!history.session.ui_state.editor_browser_open) return;
+                const kind = anytime.clicked_editor_kind orelse return;
+                history.session.ui_state.editor_browser_kind = kind;
+                history.session.ui_state.editor_mission_scroll_offset = 0;
+            },
             // Mission-list tab switch (Your Missions / Official — the
             // active kind's content tab). A view affordance — direct UiState
             // write, off the undo timeline (the sprite-picker tab's

@@ -301,8 +301,11 @@ fn update(
                         if (button.editor_skill) |skill_id| {
                             player_input.anytime.clicked_editor_skill = skill_id;
                         }
-                        // Mission-browser tabs + rows: the tab / row index
-                        // ride alongside their actions.
+                        // Editor-browser tabs + rows: the kind / tab /
+                        // row index ride alongside their actions.
+                        if (button.editor_kind) |kind| {
+                            player_input.anytime.clicked_editor_kind = kind;
+                        }
                         if (button.editor_mission_tab) |mission_tab| {
                             player_input.anytime.clicked_editor_mission_tab = mission_tab;
                         }

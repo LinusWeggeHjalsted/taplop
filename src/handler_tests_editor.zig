@@ -7805,6 +7805,25 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
         .clicked_editor_mission_tab = .local,
     }, .{ .x = 0, .y = 0 }, &.{});
 
+    // A kind tab switch is the same shape: direct UiState write + scroll
+    // reset (the other kind's content has its own extent). No-op without
+    // the browser open (the scroll stays — the gate returned early).
+    history.session.ui_state.editor_mission_scroll_offset = 5;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_kind_tab,
+        .clicked_editor_kind = .mission,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.EditorKind.mission, history.session.ui_state.editor_browser_kind);
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
+    history.session.ui_state.editor_browser_open = false;
+    history.session.ui_state.editor_mission_scroll_offset = 5;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_kind_tab,
+        .clicked_editor_kind = .mission,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(i32, 5), history.session.ui_state.editor_mission_scroll_offset);
+    history.session.ui_state.editor_browser_open = true;
+
     // The row click: pushes open_editor with the row's path and drains —
     // the editor swaps to the opened mission, world_generation bumps (the
     // driver's UI reset signal — the browser itself clears there), and the

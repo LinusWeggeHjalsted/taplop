@@ -518,11 +518,18 @@ pub const Action = enum {
     // the consumption site accepts both screens). See DESIGN →
     // Architecture → Level Editor → The editor browser.
     toggle_editor_browser,
-    // A mission-browser TAB button was clicked (Your Missions / Official).
-    // The tab rides in `AnytimeInput.clicked_editor_mission_tab`. Routed
-    // through `options_action` so it works while the browser is open over
-    // the options menu.
+    // A mission-list TAB button was clicked (Your Missions / Official —
+    // the active kind's content tab). The tab rides in
+    // `AnytimeInput.clicked_editor_mission_tab`. Routed through
+    // `options_action` so it works while the browser is open over the
+    // options menu.
     select_editor_mission_tab,
+    // An editor-browser KIND tab was clicked (Mission today; Hub /
+    // Campaign when those editors land) — switches the browser's content
+    // to that editor kind. The kind rides in
+    // `AnytimeInput.clicked_editor_kind`. Same options_action routing as
+    // the mission-list tabs.
+    select_editor_kind_tab,
     // A mission-browser ROW was clicked (open that mission in the editor,
     // replacing the one being edited — no unsaved-changes confirm by
     // design). The row index rides in `AnytimeInput.clicked_editor_mission_row`
@@ -800,6 +807,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         // bindings are legal and fire on the main menu where the
         // consumption site accepts them).
         .toggle_editor_browser,
+        .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
         .import_editor_mission,
@@ -1988,8 +1996,18 @@ pub const EditorSpritePickerTab = enum {
     official,
 };
 
-/// Which tab the editor's mission browser is showing (see DESIGN →
-/// Architecture → Level Editor → The mission browser). Local = the
+/// Which editor kind the editor browser shows — one tab per kind (the
+/// tab row derives from this enum). Mission is the only editor kind
+/// today; hub + campaign append when those editors land (the
+/// editor-browser label switch is exhaustive, so a new member is a
+/// compile error until classified). See DESIGN → Architecture →
+/// Level Editor → The editor browser.
+pub const EditorKind = enum {
+    mission,
+};
+
+/// Which tab the editor browser's mission list is showing (see DESIGN →
+/// Architecture → Level Editor → The editor browser). Local = the
 /// player's saved/imported missions under `missions/` in the persistent
 /// dir; Official = the shipped embedded campaign missions.
 pub const EditorMissionBrowserTab = enum {

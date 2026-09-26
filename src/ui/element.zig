@@ -682,6 +682,11 @@ pub const Button = struct {
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
+    /// Editor-browser KIND tab identity (Mission today), if this button is
+    /// one of the browser's kind tabs. The `.select_editor_kind_tab`
+    /// action + `AnytimeInput.clicked_editor_kind` fold this into the
+    /// handler — same payload-rides-along pattern as `editor_sprite_tab`.
+    editor_kind: ?types.EditorKind = null,
     /// Mission-browser tab identity, if this button is one of the browser's
     /// two tabs (Your Missions / Official). The `.select_editor_mission_tab`
     /// action + `AnytimeInput.clicked_editor_mission_tab` fold this into the

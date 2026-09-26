@@ -501,7 +501,44 @@ pub fn buildLoadSavePanel(
     }
 }
 
-// --- Editor mission browser (editor, full screen) ---
+// --- Editor browser (editor + main menu, full screen) ---
+
+/// The editor-browser kind tab row's spec — DERIVED at comptime from
+/// `types.EditorKind` + `editorBrowserKindLabel` (the generated-lookup
+/// pattern: the builder's tab row and its tests both walk this list, so a
+/// new editor kind appears as a tab by adding the enum member — the
+/// exhaustive label switch is the compile error until it's named).
+const EditorBrowserKindSpec = struct {
+    kind: types.EditorKind,
+    label: []const u8,
+};
+const editor_kind_count = @typeInfo(types.EditorKind).@"enum".fields.len;
+const editor_browser_kind_specs: [editor_kind_count]EditorBrowserKindSpec = blk: {
+    var specs: [editor_kind_count]EditorBrowserKindSpec = undefined;
+    for (@typeInfo(types.EditorKind).@"enum".fields, 0..) |field, index| {
+        const kind: types.EditorKind = @enumFromInt(field.value);
+        specs[index] = .{ .kind = kind, .label = editorBrowserKindLabel(kind) };
+    }
+    break :blk specs;
+};
+
+/// The kind tab's label — one per editor kind, exhaustive by construction
+/// (no else-arm: a new EditorKind member is a compile error until named).
+fn editorBrowserKindLabel(kind: types.EditorKind) []const u8 {
+    return switch (kind) {
+        .mission => "Mission",
+    };
+}
+
+/// The New button's label, derived from the ACTIVE kind — one button, not
+/// one per tab (the tab row already shows the kinds; buttons for content
+/// that isn't on screen would be dead buttons). Exhaustive like the tab
+/// label: a new editor kind names its New button here.
+fn editorBrowserNewButtonLabel(kind: types.EditorKind) []const u8 {
+    return switch (kind) {
+        .mission => "New Mission",
+    };
+}
 
 /// Build the editor browser: a full-screen modal panel mirroring the
 /// load-save browser — the editor-kind tab row (Mission today; Hub /
@@ -522,6 +559,7 @@ pub fn buildEditorBrowser(
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
+    kind: types.EditorKind,
     local_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
     official_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
     tab: types.EditorMissionBrowserTab,
@@ -538,6 +576,154 @@ pub fn buildEditorBrowser(
         .blocks_input = true,
     } });
 
+    const origin = screen.position();
+
+    // KIND TAB ROW (top-left): one tab per editor kind, derived from
+    // `editor_browser_kind_specs` (Mission today; Hub / Campaign append
+    // with their editors) — the tabs ARE the window's identity. Same
+    // emission shape as the content tabs: darkest background panels, the
+    // active tab's highlight outline is the indication, no tint change
+    // (the picker's convention).
+    const kind_tabs_y = origin.y + load_save_padding;
+    var kind_tab_x = origin.x + ui_gap;
+    for (editor_browser_kind_specs) |spec| {
+        const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
+        const kind_tab_width = label_width + 2 * ui_gap;
+        const active = spec.kind == kind;
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = .{ .x = kind_tab_x, .y = kind_tabs_y },
+            .width = kind_tab_width,
+            .height = middle_panel_header_height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = .{ .x = kind_tab_x, .y = kind_tabs_y },
+            .width = kind_tab_width,
+            .height = middle_panel_header_height,
+            .action = .select_editor_kind_tab,
+            .editor_kind = spec.kind,
+            .highlighted = active,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = spec.label,
+            .screen_position = .{
+                .x = kind_tab_x + ui_gap,
+                .y = kind_tabs_y + @divFloor(
+                    middle_panel_header_height - middle_panel_header_font_size,
+                    2,
+                ),
+            },
+            .font_size = middle_panel_header_font_size,
+            .blocks_input = false,
+        } });
+        kind_tab_x += kind_tab_width + ui_gap;
+    }
+
+    // NEW button (top-right), derived from the ACTIVE kind — one button,
+    // not one per tab (the tab row already shows the kinds). Fires the
+    // same recorded open_editor{null} as ctrl+N / the options-menu New
+    // Mission button; from the main menu it opens the editor directly.
+    {
+        const new_label = editorBrowserNewButtonLabel(kind);
+        const new_label_width = font_metrics.measureSpanWidth(text(new_label), menu_button_font_size);
+        const new_button_width = @min(load_save_button_width, new_label_width + 6 * ui_gap);
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{
+                .x = screen.x + screen.width - load_save_padding - new_button_width,
+                .y = kind_tabs_y,
+                .width = new_button_width,
+                .height = middle_panel_header_height,
+            },
+            new_label,
+            menu_button_font_size,
+            .new_editor_mission,
+            button_color,
+            null,
+        );
+    }
+
+    // Content per kind — the kind row + New button above are
+    // kind-independent chrome. Exhaustive switch: a new EditorKind member
+    // is a compile error until its content builder is routed here.
+    switch (kind) {
+        .mission => try buildMissionBrowserContent(
+            elements,
+            allocator,
+            font_metrics,
+            screen,
+            kind_tabs_y + middle_panel_header_height + load_save_header_gap,
+            local_missions,
+            official_missions,
+            tab,
+            scroll_offset,
+            button_color,
+        ),
+    }
+
+    // Bottom-left: Back (closes the browser — same toggle action that
+    // opens it).
+    const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = screen.x + load_save_padding,
+            .y = button_y,
+            .width = load_save_button_width,
+            .height = panel_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .toggle_editor_browser,
+        button_color,
+        null,
+    );
+    // Bottom-right: Import (web only — the load-save browser's Import
+    // discipline): opens a file picker for a mission .zip; the picked zip
+    // extracts into missions/ and the rescanned list shows it. Native has
+    // no button — drop the extracted folder (or a STORE zip) into the
+    // persistent missions/ dir by hand.
+    if (@import("builtin").os.tag == .emscripten) {
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{
+                .x = screen.x + screen.width - load_save_padding - load_save_button_width,
+                .y = button_y,
+                .width = load_save_button_width,
+                .height = panel_button_height,
+            },
+            "Import",
+            menu_button_font_size,
+            .import_editor_mission,
+            button_color,
+            null,
+        );
+    }
+}
+
+/// The editor browser's MISSION-kind content: the Your Missions /
+/// Official list tabs + the mission rows + scrollbar (the pre-kind-tab
+/// browser body). One content builder per editor kind — the parent
+/// switch routes here. `tabs_y` is the content top (below the kind row).
+fn buildMissionBrowserContent(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    tabs_y: i32,
+    local_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
+    official_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
+    tab: types.EditorMissionBrowserTab,
+    scroll_offset: *i32,
+    button_color: Color,
+) !void {
     const content_x = screen.x + load_save_padding;
     const content_width = screen.width - 2 * load_save_padding;
     const origin = screen.position();
@@ -556,13 +742,13 @@ pub fn buildEditorBrowser(
         const active = spec.tab == tab;
         try elements.append(allocator, .{ .nine_slice_panel = .{
             .sprite_id = "ui/panel",
-            .screen_position = .{ .x = tab_x, .y = origin.y + load_save_padding },
+            .screen_position = .{ .x = tab_x, .y = tabs_y },
             .width = tab_width,
             .height = middle_panel_header_height,
             .color = button_color,
         } });
         try elements.append(allocator, .{ .button = .{
-            .screen_position = .{ .x = tab_x, .y = origin.y + load_save_padding },
+            .screen_position = .{ .x = tab_x, .y = tabs_y },
             .width = tab_width,
             .height = middle_panel_header_height,
             .action = .select_editor_mission_tab,
@@ -573,7 +759,7 @@ pub fn buildEditorBrowser(
             .text = spec.label,
             .screen_position = .{
                 .x = tab_x + ui_gap,
-                .y = origin.y + load_save_padding + @divFloor(
+                .y = tabs_y + @divFloor(
                     middle_panel_header_height - middle_panel_header_font_size,
                     2,
                 ),
@@ -585,7 +771,7 @@ pub fn buildEditorBrowser(
     }
 
     // Rows region: from below the tabs to above the Back button.
-    const rows_y = origin.y + load_save_padding + middle_panel_header_height + load_save_header_gap;
+    const rows_y = tabs_y + middle_panel_header_height + load_save_header_gap;
     const rows_bottom = screen.y + screen.height - load_save_padding -
         panel_button_height - load_save_button_gap;
     const rows_height = rows_bottom - rows_y;
@@ -685,49 +871,6 @@ pub fn buildEditorBrowser(
                 .color = thumb_color,
             } });
         }
-    }
-
-    // Bottom-left: Back (closes the browser — same toggle action that
-    // opens it).
-    const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
-    try emitPanelButton(
-        elements,
-        allocator,
-        font_metrics,
-        .{
-            .x = content_x,
-            .y = button_y,
-            .width = load_save_button_width,
-            .height = panel_button_height,
-        },
-        "Back",
-        menu_button_font_size,
-        .toggle_editor_browser,
-        button_color,
-        null,
-    );
-    // Bottom-right: Import (web only — the load-save browser's Import
-    // discipline): opens a file picker for a mission .zip; the picked zip
-    // extracts into missions/ and the rescanned list shows it. Native has
-    // no button — drop the extracted folder (or a STORE zip) into the
-    // persistent missions/ dir by hand.
-    if (@import("builtin").os.tag == .emscripten) {
-        try emitPanelButton(
-            elements,
-            allocator,
-            font_metrics,
-            .{
-                .x = screen.x + screen.width - load_save_padding - load_save_button_width,
-                .y = button_y,
-                .width = load_save_button_width,
-                .height = panel_button_height,
-            },
-            "Import",
-            menu_button_font_size,
-            .import_editor_mission,
-            button_color,
-            null,
-        );
     }
 }
 
@@ -1388,6 +1531,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
+    .mission,
         &missions,
         &.{},
         .local,
@@ -1437,6 +1581,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
+    .mission,
         &missions,
         &.{},
         .local,
@@ -1462,6 +1607,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         allocator,
         metrics,
         screen,
+    .mission,
         &missions,
         &.{},
         .local,
@@ -1487,6 +1633,7 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
             allocator,
             metrics,
             screen,
+        .mission,
             &.{},
             &.{},
             tab,
@@ -1512,6 +1659,80 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
         try std.testing.expect(found_placeholder);
         try std.testing.expect(found_back);
     }
+}
+
+test "buildEditorBrowser: kind tabs derived from the enum, one New button derived from the active kind" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildEditorBrowser(
+        &elements,
+        allocator,
+        metrics,
+        screen,
+        .mission,
+        &.{},
+        &.{},
+        .local,
+        &scroll,
+        .{ .r = 50, .g = 50, .b = 50 },
+    );
+
+    // The kind tab row walks the same comptime spec list this test walks
+    // (derived expectations — a new editor kind can't appear as a tab
+    // without appearing here too): one tab per spec, in spec order, each
+    // carrying its kind payload + the kind-switch action, the active
+    // kind highlighted, and its label text emitted.
+    var kind_tab_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_kind_tab) {
+            const spec = editor_browser_kind_specs[kind_tab_count];
+            kind_tab_count += 1;
+            try std.testing.expectEqual(spec.kind, button.editor_kind.?);
+            try std.testing.expectEqual(spec.kind == .mission, button.highlighted);
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(editor_browser_kind_specs.len, kind_tab_count);
+    for (editor_browser_kind_specs) |spec| {
+        var found_label = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| if (std.mem.eql(u8, label.text, spec.label)) {
+                found_label = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found_label);
+    }
+
+    // ONE New button (not one per tab), labeled from the active kind,
+    // firing the fresh-mission open.
+    var new_button_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .new_editor_mission) {
+            new_button_count += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 1), new_button_count);
+    var found_new_label = false;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (std.mem.eql(
+            u8,
+            label.text,
+            editorBrowserNewButtonLabel(.mission),
+        )) {
+            found_new_label = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_new_label);
 }
 
 test "buildOptionsMenu: Revalidate Mission is editor-only" {

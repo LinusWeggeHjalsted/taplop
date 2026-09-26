@@ -392,6 +392,10 @@ pub const AnytimeInput = struct {
     /// `options_action == .select_editor_utility_skill` (a picker cell).
     /// No payload = the picker's None cell.
     clicked_editor_skill: ?types.SkillId = null,
+    /// Editor-browser KIND tab, set alongside
+    /// `options_action == .select_editor_kind_tab` by the release dispatch
+    /// (one of the browser's kind tabs — Mission today).
+    clicked_editor_kind: ?types.EditorKind = null,
     /// Mission-browser tab, set alongside
     /// `options_action == .select_editor_mission_tab` by the release
     /// dispatch (one of the browser's two tab buttons).
@@ -570,6 +574,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .add_editor_item => player_input.anytime.options_action = action,
         .delete_editor_item => player_input.anytime.options_action = action,
         .open_editor_skill_picker => player_input.anytime.options_action = action,
+        .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
         => player_input.anytime.options_action = action,

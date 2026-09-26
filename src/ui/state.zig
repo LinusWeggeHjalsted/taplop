@@ -240,6 +240,12 @@ pub const UiState = struct {
     /// See DESIGN → Architecture → Level Editor → The editor browser.
     editor_browser_open: bool = false,
 
+    /// Which editor kind the browser is showing (the kind tab row —
+    /// Mission today; Hub / Campaign append when those editors land).
+    /// View affordance — a direct UiState write, off the undo timeline
+    /// (the list-tab's convention); a kind switch resets the scroll.
+    editor_browser_kind: types.EditorKind = .mission,
+
     /// Which tab the mission browser is showing (Your Missions / Official).
     /// View affordance — a direct UiState write, off the undo timeline.
     /// Reset to `.local` on every open (your collection is the primary

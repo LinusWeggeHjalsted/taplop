@@ -638,6 +638,7 @@ pub fn view(
             frame_allocator,
             font_metrics,
             ui.screenRect(),
+            session.ui_state.editor_browser_kind,
             session.editor_local_missions,
             session.editor_official_missions,
             session.ui_state.editor_mission_browser_tab,
