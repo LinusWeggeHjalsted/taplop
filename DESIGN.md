@@ -1992,14 +1992,20 @@ Load-side enforcement (landed — loaders.zig, surfaced via the same
   KEPT (renders cropped to the base grid — the view builds layer pieces
   from the base's source rects); an unresolvable layer sprite warns and
   stays (renders fallback).
-- Entity sprites: warn-only — the fixed-frame render continues regardless
-  (wrong-dims art stretches, its own visible signal). Checked per base AND
-  layer sprite in loadLevel's entity walk.
+- Entity sprites: the load warns (per base AND layer sprite in loadLevel's
+  entity walk) — the entity still spawns.
 
-Remaining slices (TODO → Content Loading): the render-side magenta gate
-(texture-store dims check, prefix-scoped to `entities/custom/` +
-`decorations/custom/`) and the editor-side enforcement (picker filter +
-pick-commit backstop).
+The render-side gate (`types.customSpriteDimsPassGate`, applied at the
+texture store's three decode sites — main textures, outline masks, and the
+composite occlusion-inset blit): a custom sprite whose dims fail its
+kind's spec is treated as MISSING everywhere — the magenta fallback draws,
+and no mask traces art that isn't there. Non-custom ids are never gated
+(shipped art is certified by the build-time metadata table; ui/, world/,
+items/ follow their own conventions). No size gate — the >4096 warning is
+advisory, and huge art renders wherever the device allows.
+
+Remaining (TODO → Content Loading): the editor-side enforcement (picker
+filter + pick-commit backstop + Revalidate warning).
 
 ### Auth & the server seam (deferred)
 

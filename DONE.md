@@ -13783,3 +13783,42 @@ DESIGN → Custom Missions & Online Services → Custom-asset dimensions.
 Remaining slices (TODO → Content Loading → Custom-asset dimension
 validation): the render-side magenta gate, the editor picker filter + note,
 pick-commit backstops, Revalidate warning.
+
+## Custom-asset dimensions — slice 2: the render-side magenta gate
+
+The "never silently render off-grid art" half: a custom sprite whose pixel
+dims fail its kind's spec is treated as MISSING at every render path — the
+existing magenta fallback draws, exactly like absent art. Complements the
+load-side floor/clamps (slice 1: geometry stays valid; slice 2: the pixels
+stay honest).
+
+- **`types.customSpriteDimsPassGate(sprite_id, dims)`** — the predicate
+  lives in types.zig (raylib-free, unit-tested): `entities/custom/…` must
+  be exactly the fixed 512x640 frame; `decorations/custom/…` whole
+  multiples of 256 both axes (zero/negative gated); every other id passes
+  untouched — the gate is scoped to custom art only (shipped art is
+  certified by the build-time metadata table; ui/ icons are 128x128 and
+  world/ sources have their own conventions). No SIZE gate: the >4096
+  load warning is advisory, huge art renders where the device allows.
+- **Applied at the texture store's three decode sites**
+  (src/raylib/textures.zig): the main texture load (ensureSpriteLoaded —
+  a gated sprite caches as known-missing, so the magenta path is taken
+  with zero re-read cost), the outer outline mask (the highlight falls
+  back to a rectangle ring around the magenta box), and the composite
+  occlusion-inset blit (blitSpriteAlpha returns its existing
+  `error.MissingSprite` — a gated sprite contributes no alpha, so the
+  inset trace matches what's actually drawn). `getSpriteBounds` stays
+  ungated — it's pure layout math (palette aspect-fit), not visual
+  output.
+- **Entity wrong-dims art now renders magenta, not stretched** — the
+  load-side warning text updated to match ("will render as fallback"),
+  and the DESIGN section records the gate semantics.
+- Tests: the predicate's three contracts in types.zig (entity exactly
+  512x640, decoration multiples of 256 incl. huge/zero/negative
+  awkward values, non-custom ids never gated). The store itself is
+  raylib-linked (headless-excluded) — the predicate is the testable
+  seam, the store wiring is three one-line checks.
+- Platform-seam verification per the compiles-≠-runs rule: native +
+  web builds compile (`scripts/web.sh`); the gate is on the
+  texture-load path (post-GL-init), same code shape as the existing
+  missing-asset fallback it extends.

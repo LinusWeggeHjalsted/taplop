@@ -616,15 +616,14 @@ looking:
   mission is only reproducible with the exact mission bytes. Mission refs
   should eventually be content-addressed (hash) or pinned to an immutable
   version id — matters for recorded-history-as-test and replay sharing.
-- **Custom-asset dimension validation** — SETTLED + the load side LANDED:
-  see DESIGN → Custom Missions & Online Services → Custom-asset dimensions
-  (the spec, the warn + degrade posture, the four footprint clamps, the
-  dims floor + 4096 warning). Remaining slices: (2) the render-side magenta
-  gate — a texture-store dims check prefix-scoped to `entities/custom/` +
-  `decorations/custom/` (UI icons are 128x128 and must not trip it);
-  (3) the editor picker filter (mission-local tab shows only spec-conforming
-  sprites + a visible "N hidden" note); (4) pick-commit backstops + a
-  Revalidate warning listing non-conforming art.
+- **Custom-asset dimension validation** — SETTLED, load side + render gate
+  LANDED: see DESIGN → Custom Missions & Online Services → Custom-asset
+  dimensions (the spec, the warn + degrade posture, the four footprint
+  clamps, the dims floor + 4096 warning, the magenta render gate). Remaining
+  slices: (3) the editor picker filter (mission-local tab shows only
+  spec-conforming sprites + a visible "N hidden" note);
+  (4) pick-commit backstops + a Revalidate warning listing non-conforming
+  art.
 
 ## Online Services
 

@@ -98,11 +98,59 @@ pub const Vector2 = struct {
 
 /// The fixed sprite frame EVERY entity sprite shares (bodies, layers,
 /// weapons): 512x640 source pixels, normalized pivot (0.5, 0.8). One tile
-/// is 256px. Custom entity art MUST be exactly this size — the render math
-/// draws at the fixed frame regardless (see the sprite conventions in
-/// AGENTS → View Function Implementation).
+/// is 256px. Custom entity art MUST be exactly this size — the render-side
+/// gate (`customSpriteDimsPassGate`) magentas non-conforming art (see
+/// DESIGN → Custom Missions & Online Services → Custom-asset dimensions).
 pub const entity_sprite_frame_width: i32 = 512;
 pub const entity_sprite_frame_height: i32 = 640;
+
+/// The render-side custom-art gate: does this sprite id's kind accept these
+/// pixel dims? Custom (mission-bundled) art must follow the shipped asset
+/// structure — entity sprites exactly the fixed 512x640 frame, decoration
+/// sprites whole multiples of 256 in both axes. A false return makes the
+/// texture store treat the sprite as missing (the magenta fallback):
+/// off-grid art is never silently rendered — the load side already warned
+/// + degraded the geometry (loaders.zig). Non-custom ids are never gated
+/// (shipped art is certified by the build-time metadata table; other
+/// prefixes — ui/, world/, items/ — follow their own conventions).
+pub fn customSpriteDimsPassGate(sprite_id: []const u8, dims: Vector2) bool {
+    if (std.mem.startsWith(u8, sprite_id, "entities/custom/")) {
+        return dims.x == entity_sprite_frame_width and dims.y == entity_sprite_frame_height;
+    }
+    if (std.mem.startsWith(u8, sprite_id, "decorations/custom/")) {
+        return dims.x > 0 and dims.y > 0 and
+            @rem(dims.x, 256) == 0 and @rem(dims.y, 256) == 0;
+    }
+    return true;
+}
+
+test "customSpriteDimsPassGate: entity art must be exactly 512x640" {
+    const conforming = Vector2{ .x = entity_sprite_frame_width, .y = entity_sprite_frame_height };
+    try std.testing.expect(customSpriteDimsPassGate("entities/custom/mission/hero", conforming));
+    // Wrong dims in either axis → gated (magenta).
+    try std.testing.expect(!customSpriteDimsPassGate("entities/custom/mission/hero", .{ .x = 512, .y = 641 }));
+    try std.testing.expect(!customSpriteDimsPassGate("entities/custom/mission/hero", .{ .x = 256, .y = 640 }));
+}
+
+test "customSpriteDimsPassGate: decoration art must be whole multiples of 256" {
+    try std.testing.expect(customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 768, .y = 768 }));
+    // Huge art passes (no size cap — the >4096 warning at load is advisory).
+    try std.testing.expect(customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 8192, .y = 256 }));
+    // Non-multiples, zero/negative dims → gated.
+    try std.testing.expect(!customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 1000, .y = 1024 }));
+    try std.testing.expect(!customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 250, .y = 256 }));
+    try std.testing.expect(!customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 0, .y = 256 }));
+}
+
+test "customSpriteDimsPassGate: non-custom ids are never gated" {
+    // Shipped world art (the tile source is not a multiple of 256), UI
+    // icons (128x128), and every other prefix pass untouched — the gate is
+    // scoped to custom art only.
+    try std.testing.expect(customSpriteDimsPassGate("world/tile", .{ .x = 600, .y = 600 }));
+    try std.testing.expect(customSpriteDimsPassGate("ui/icon_gear", .{ .x = 128, .y = 128 }));
+    try std.testing.expect(customSpriteDimsPassGate("entities/skeleton_1", .{ .x = 123, .y = 45 }));
+    try std.testing.expect(customSpriteDimsPassGate("custom/mission/tree", .{ .x = 123, .y = 45 }));
+}
 
 pub const Action = enum {
     undo,

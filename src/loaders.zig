@@ -1166,10 +1166,11 @@ pub fn decorationFootprintCovers(
 }
 
 /// Warn (never reject) when a custom entity sprite — base or layer —
-/// doesn't follow the fixed 512x640 entity frame. Entity render math draws
-/// at the fixed frame regardless, so wrong-dims art renders stretched (its
-/// own visible signal); the warning names it for the author. Shipped stems
-/// are certified by the comptime metadata table and skip the check.
+/// doesn't follow the fixed 512x640 entity frame. Warn-only at load (the
+/// entity still spawns); the render-side gate (`customSpriteDimsPassGate`)
+/// makes wrong-dims art draw as the magenta fallback, and the warning
+/// names it for the author. Shipped stems are certified by the comptime
+/// metadata table and skip the check.
 fn warnEntitySpriteDimensions(
     entity: types.Entity,
     mission_path: []const u8,
@@ -1192,7 +1193,7 @@ fn warnEntitySpriteDimensions(
         appendLoadWarning(
             allocator,
             warnings,
-            "entity sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; rendered at the fixed frame",
+            "entity sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; will render as fallback",
             .{ entity.sprite, file_path, dims.x, dims.y },
         );
     }
@@ -1211,7 +1212,7 @@ fn warnEntitySpriteDimensions(
             appendLoadWarning(
                 allocator,
                 warnings,
-                "entity layer sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; rendered at the fixed frame",
+                "entity layer sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; will render as fallback",
                 .{ layer.sprite, file_path, layer_dims.x, layer_dims.y },
             );
         }

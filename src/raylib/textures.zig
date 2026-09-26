@@ -255,6 +255,12 @@ pub const TextureStore = struct {
         defer self.allocator.free(bytes);
         var image = rl.loadImageFromMemory(".png", bytes) catch return error.MissingSprite;
         defer rl.unloadImage(image);
+        // Same custom-art dims gate as the main texture path: a gated
+        // sprite contributes no alpha to the composite mask (the inset
+        // trace matches what's actually drawn — the magenta fallback).
+        if (!types.customSpriteDimsPassGate(sprite.sprite_id, .{ .x = image.width, .y = image.height })) {
+            return error.MissingSprite;
+        }
         image.setFormat(.uncompressed_r8g8b8a8);
         const colors = try rl.loadImageColors(image);
         defer rl.unloadImageColors(colors);
@@ -304,6 +310,14 @@ pub const TextureStore = struct {
             defer self.allocator.free(bytes);
             var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
+            // Custom-art dims gate: non-conforming mission-bundled art is
+            // treated as missing (the magenta fallback) — off-grid art is
+            // never silently rendered. The load side already warned +
+            // degraded the geometry (loaders.zig); shipped art and other
+            // prefixes are never gated (`customSpriteDimsPassGate`).
+            if (!types.customSpriteDimsPassGate(sprite_id, .{ .x = image.width, .y = image.height })) {
+                break :blk null;
+            }
             // Normalize to RGBA8 so premultiply has a stable byte layout.
             image.setFormat(.uncompressed_r8g8b8a8);
             // Premultiply RGB by alpha before upload. With the render pass's
@@ -344,6 +358,12 @@ pub const TextureStore = struct {
             defer self.allocator.free(bytes);
             var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
+            // Same custom-art dims gate as the main texture path: a gated
+            // sprite has no outline mask (the highlight falls back to a
+            // rectangle ring around the magenta box).
+            if (!types.customSpriteDimsPassGate(sprite_id, .{ .x = image.width, .y = image.height })) {
+                break :blk null;
+            }
             // Normalize to RGBA so alpha is always at the same byte offset.
             image.setFormat(.uncompressed_r8g8b8a8);
             break :blk self.generateOutlineMask(image, outline_thickness, .outer) catch null;
