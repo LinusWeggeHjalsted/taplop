@@ -683,17 +683,17 @@ pub fn buildEditorBrowser(
     );
     // Import (web only — the load-save browser's Import discipline): opens
     // a file picker for a mission .zip; the picked zip extracts into
-    // missions/ and the rescanned list shows it. Sits LEFT of the New
-    // button. Native has no button — drop the extracted folder (or a
-    // STORE zip) into the persistent missions/ dir by hand.
+    // missions/ and the rescanned list shows it. Centered along the
+    // bottom, between the Back and New buttons. Native has no button —
+    // drop the extracted folder (or a STORE zip) into the persistent
+    // missions/ dir by hand.
     if (@import("builtin").os.tag == .emscripten) {
         try emitPanelButton(
             elements,
             allocator,
             font_metrics,
             .{
-                .x = screen.x + screen.width - load_save_padding -
-                    2 * load_save_button_width - load_save_button_gap,
+                .x = screen.x + @divTrunc(screen.width - load_save_button_width, 2),
                 .y = button_y,
                 .width = load_save_button_width,
                 .height = panel_button_height,
