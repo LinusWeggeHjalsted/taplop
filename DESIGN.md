@@ -373,36 +373,35 @@ untracked allocations (font bytes, crash-dump output, existence probes)
 use `transient_allocator.zig` — c_allocator on emscripten, page_allocator
 on native. Never call `std.heap.page_allocator` directly from shared code.
 
-### Diagnostics (settled design; implementation pending)
+### Diagnostics
 
 Purpose: Terminal-less platform troubleshooting — getting data from
 machines whose users can't debug (the friend workflow; future player bug
 reports). The section set is exactly what carried the mac miscompile
 hunt; extend only when a real incident asks for more.
 
-- **File + naming:** `src/diagnostics.zig`, a raylib-free `Diagnostics`
-  type (values fed in by the backend — the GL-touching probe sites stay
-  in the backend and only record values, so diagnostics.zig compiles
-  in the headless test build). One instance owned by `RaylibBackend`:
-  an append buffer + section policy + flush scheduling. NO
-  abbreviations anywhere: `Diagnostics`, `diagnostics_enabled` — the
-  `diag_*` identifiers were already renamed during the src/raylib/
-  split (`src/raylib/diagnostics.zig`, the `Diagnostics` type,
-  `logs/diagnostics.txt`); the redesign moves the type out of the
-  raylib dir + re-gates it, keeping the names.
-- **Activation — a single toggle:** the `--diagnostics` runtime CLI
-  flag, valid on ANY native build INCLUDING plain release (the hunt's
+- **The seam:** `src/diagnostics.zig` is a raylib-free `Diagnostics`
+  type (append buffer + section one-shot policy + flush scheduling),
+  compiled + unit-tested in the headless test build.
+  `src/raylib/diagnostics.zig` is the value-gathering half: the GL-touching
+  probe sites read the raw values (GL identity strings, draw state,
+  render-target pixels) and record them as plain data — all `rl.*` stays
+  in the raylib dir. One instance owned by `RaylibBackend`. NO
+  abbreviations anywhere (`Diagnostics`, `diagnostics_file_path`).
+- **Activation — a single runtime toggle:** the `--diagnostics` CLI flag,
+  valid on ANY native build INCLUDING plain release (the hunt's
   structural catch-22 was "the broken build can't log" — dev-gated
   diagnostics can't capture release-only failures; the runtime flag
   lets the very binary that exhibits a bug produce its own data). Dev-
-  mode builds default to active (the comptime dev_mode acts as the
-  flag's default). The code ships in all native builds — a few KB,
-  zero runtime cost when inactive.
+  mode builds default to active (`--diagnostics` ORs onto that default;
+  web stays off — native-only). The code ships in all native builds — a
+  few KB, zero writes when inactive.
 - **Writing — event-driven, never per frame:** sections are one-shots
   (boot once at first render; each first-draw probe once per primitive
   per session; the readback once on the frame a probe armed) — a
   handful of writes per session. A pending flush executes at the
-  END-OF-FRAME safe point (after present), never mid-draw: observation
+  END-OF-FRAME safe point (after present, `flushIfPending` at the end of
+  `RaylibBackend.render`), never mid-draw: observation
   work inside the draw path perturbs the observed system — the mac-
   hunt lesson. Whole-file rewrite per flush (the file is always
   self-consistent). Clean shutdown flushes anything pending; a hard

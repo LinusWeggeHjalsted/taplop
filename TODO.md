@@ -429,22 +429,8 @@ Open:
   it permanently. Rationale (two 0.16.0 bugs, both settled, both at
   platform edges): DONE.md "mac 9-slice panels — ROOT CAUSE FOUND" +
   AGENTS → Build & Test (patched stdlib).
-- **Diagnostics redesign — settled design, implementation pending**
-  (DESIGN → Platform Seam → Diagnostics): priority-bumped — the rendering
-  session (mipmaps, SDF text, WebGL2, LOD snap) landed four platform-seam
-  changes with ZERO automated coverage (src/raylib is headless-excluded by
-  necessity), and the only thing that caught the WebGL2 black screen was a
-  manual browser run. A release-build `--diagnostics` flag is the structural
-  answer to "verify the seam without being at the machine". Scope below:
-  create raylib-free `src/diagnostics.zig` (`Diagnostics` type: buffer +
-  section policy + end-of-frame flush scheduling, renames every `diag_*`
-  identifier); add the `--diagnostics` CLI flag (native.zig, like
-  `--replay` — any build, release included; dev-mode defaults to active);
-  migrate the
-  boot/probe/readback sections out of `src/raylib/diagnostics.zig` as thin
-  value-recording call sites; keep `logs/diagnostics.txt` + whole-file-rewrite
-  semantics. The raylib split landed (src/raylib/, DONE.md) — this redesign
-  is unblocked.
+- [x] **Diagnostics redesign** — DONE (history in DONE.md; settled design:
+      DESIGN → Platform Seam → Diagnostics).
 - **macOS native port** — cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:

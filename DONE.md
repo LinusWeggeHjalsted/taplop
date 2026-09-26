@@ -14076,3 +14076,55 @@ button layers exist yet).
 Docs: DESIGN → Escape overlay chain + the main-menu gating note renamed in
 place; TODO item checked off. DONE.md's older entries keep the old name —
 they are the archive of sessions where it was current.
+
+## Diagnostics redesign — raylib-free type + the --diagnostics runtime flag (any build)
+
+The settled redesign landed (DESIGN → Platform Seam → Diagnostics; the
+original dev-gated shape's rationale is preserved in that section). Motivation
+(why now): the rendering session landed four platform-seam changes with zero
+automated coverage — src/raylib is headless-excluded by necessity — and the
+structural answer to "verify the seam without being at the machine" is a flag
+that works in the very binary that misbehaves.
+
+The seam, as designed:
+- `src/diagnostics.zig` (NEW, raylib-free — compiled + tested in the headless
+  test build): the `Diagnostics` type = append buffer + section one-shot
+  policy + flush scheduling. Plain-value structs (`BootValues`,
+  `SpriteDrawValues`, `PanelDrawValues`, `PixelSample`) are the wire format
+  across the seam; the type formats them and owns the file policy
+  (whole-file rewrite of `logs/diagnostics.txt`).
+- `src/raylib/diagnostics.zig` (hollowed out): the GL-gathering probe sites
+  — `glGetString` identity reads, draw-state conversion, the render-target
+  pixel sampling. All `rl.*` stays in the raylib dir; only values cross.
+- Runtime activation replaces the comptime gate: `enabled` on the type,
+  defaulted to dev-mode-native at backend init, OR-ed on by the
+  `--diagnostics` CLI flag in native.zig (a new `parseBoolFlag`, the
+  `--replay`/`--data-dir` pattern). The code ships in EVERY native build —
+  verified: a ReleaseFast build with `--diagnostics` writes the log
+  (boot + panel probe seen live), without the flag writes NOTHING (no
+  logs dir at all). The dev build behaves as before (default active).
+- Flush scheduling: sections only mark pending; `flushIfPending` runs at the
+  END-OF-FRAME safe point — the last statement of `RaylibBackend.render`,
+  after `endDrawing`/`swapScreenBuffer` (which came out of a `defer` so the
+  flush can follow them) — plus at clean shutdown via `deinit`. The old
+  system flushed immediately after each section, MID-DRAW on the probe
+  path — exactly the observation-perturbs-the-observed-system failure the
+  design calls out.
+- Leak fix along the way: the audio subsystem's diagnostics sink used to
+  append unconditionally into a never-flushed buffer in non-dev builds (a
+  slow process-lifetime leak); `append` now self-gates on `enabled`, so an
+  inactive instance accumulates nothing.
+
+Tests (inline in src/diagnostics.zig, the file_source.zig scratch-dir
+pattern): section one-shot policy (second boot with different values is a
+no-op; probes stay one-shot after the readback), probe destination capture +
+readback arming/consuming, whole-file-rewrite + pending-flag lifecycle
+(stale file until the next flush — never mid-draw), and disabled = no buffer
+growth + no file. The backend half stays headless-excluded (compile ≠ run:
+the release/dev runtime checks above were manual, per the platform-seam
+rule).
+
+Docs: DESIGN → Platform Seam → Diagnostics flipped to the implemented shape;
+AGENTS's two overlapping diagnostics entries consolidated into one (the old
+"Dev diagnostics log" + "Diagnostics log" pair) + `src/diagnostics.zig` added
+to Key Files; TODO item checked off.
