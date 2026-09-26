@@ -214,6 +214,11 @@ d  diff before running them across the tree.** Asserted replacements catch
   the runtime checklist lives in TODO (macOS native port). Persistent dir
   on mac: `~/Library/Application Support/ziglop/` — see DESIGN → File
   System & IO → Persistent path.
+- **`.zig-cache` grows unbounded** (one directory per build variant — it
+  accumulated to 90 GB on a 234 GB disk before being noticed). Prune it
+  (`rm -rf .zig-cache`) when disk gets tight or every few months: a fresh
+  cache is only ~350 MB (one native build + one test run), and a cold
+  full rebuild is ~40 s — pruning is cheap, letting it pile up is not.
 - Test discovery is automatic: build.zig generates `src/generated_test_root.zig`
   (gitignored) importing every `src/**/*.zig`, and `addTest` uses it as root. Any
   `test` block in any src file is picked up with no manual wiring. Note this

@@ -4739,6 +4739,14 @@ pending writes + diagnostics. (History: this reverses an earlier decision
 — Escape on the main menu was once a no-op because the menu's content was
 session-only; the per-screen button lists removed that reason.)
 
+**UI entries are per-screen so every label is unambiguous on its
+screen.** When adding a button/panel entry, check its label against
+everything else reachable on the same surface — a semantic collision
+(the menu-close "Continue" vs the resume-game "Continue" that cost two
+rework commits) is resolved at design time, not by playtest. Prefer
+omitting an entry over shipping an ambiguous one; if no honest label
+exists, the feature is usually in the wrong place.
+
 **Control kinds.** Every field is one of:
 - **Toggle** (bool): click to flip. `vsync`,
   `auto_skip_attack_step_out_of_combat`, `auto_target_at_cursor`, `show_fps`.
