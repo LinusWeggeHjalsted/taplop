@@ -13889,3 +13889,56 @@ picker filter, commit backstops, Revalidate report).
   report (missing sprite + non-conforming decoration listed) and the
   no-custom-art success carries none. Picker scroll remains a follow-up
   if real content ever overflows the picker's 6 columns.
+
+## The editor browser — front door for all three editor kinds (tabbed window + main-menu entry)
+
+The long-term goal is three editors (missions, hubs, campaigns — only the
+mission editor exists). The editor front door is ONE tabbed modal, not a
+chooser flow: the former mission browser (`buildEditorMissionBrowser`,
+`Action.toggle_editor_mission_browser`, `UiState.editor_mission_browser_open`)
+became the **editor browser** (`buildEditorBrowser`, `toggle_editor_browser`,
+`editor_browser_open`).
+
+- **Entry points.** The main-menu Editor button now toggles the browser
+  (previously it fired `open_editor{null}` directly — a fresh mission; that
+  menu_action path is deleted). From inside the editor: the options-menu
+  Open Mission button + ctrl+O (unchanged), plus the window's own Back
+  button. The toggle + New Mission consumption sites accept the editor +
+  main-menu screens via `editorBrowserReachableScreen` (input_handlers.zig);
+  every other screen no-ops (the save_editor_mission discipline). The
+  keybinds ship editor-context, so on the main menu only the button path
+  can fire them.
+- **Binding rename self-heal.** Existing installs' settings.txt naming
+  `toggle_editor_mission_browser` warn + drop at load (unknown action), and
+  the renamed action's default ctrl+O binding applies — the same
+  self-healing the deferred `toggle_options_menu` rename relies on.
+- **Kind tabs.** New `types.EditorKind` (mission today; hub + campaign
+  append when those editors land). The tab row derives from the enum at
+  comptime (`editor_browser_kind_specs`); the two label switches
+  (`editorBrowserKindLabel` tab label, `editorBrowserNewButtonLabel` New
+  button) are exhaustive with no else-arm — a new kind is a compile error
+  until named + routed. A kind appears as a tab only when its editor lands
+  (no placeholder tabs for unbuilt editors).
+- **One New button, derived from the active kind** ("New Mission" fires the
+  same recorded `open_editor{null}` as ctrl+N) — chosen over a per-tab
+  button set: buttons for content that isn't on screen would be dead
+  buttons, and the derive-don't-duplicate discipline applies to UI too.
+  From the main menu it opens the editor directly; the options-menu New
+  Mission button stays (kept for now, possibly dropped later).
+- **Per-kind content.** The mission list (Your Missions / Official tabs +
+  rows + scrollbar) moved to `buildMissionBrowserContent` behind an
+  exhaustive `switch (kind)` in the parent. Kind switch = direct UiState
+  write (`editor_browser_kind`) + scroll reset, off the undo timeline
+  (the list-tab convention).
+- **Tests** (contract-shaped, derived expectations): the kind-tab test
+  walks the same comptime spec list the builder walks (a new kind can't
+  appear as a tab without appearing in the test); one-New-button derived
+  label; the kind-switch handler case (write + scroll reset + closed-browser
+  no-op); the browser toggle's main-menu open + non-reachable-screen no-op
+  contract updated (was "editor-only no-op"); the new_editor_mission
+  main-menu open added to its gate test.
+- **Docs.** DESIGN → Level Editor → The editor browser rewritten for the
+  tabbed window (entry points, kind derivation, single New button);
+  fresh-mission paragraph re-anchored on the New buttons; the Escape
+  overlay chain gained the (pre-existing but undocumented) browser entry;
+  TODO → Level Editor gains the hub/campaign editor design-session item.

@@ -1222,16 +1222,19 @@ z-order (topmost surface first):
 1. **Settings overlay** — closes ONLY it. In-game it opens on top of the
    options menu, so Escape steps back to the menu underneath (layered close,
    not a cascade).
-2. **Mission fail** (view-derived `playerDead`) — fires the overlay's Exit
+2. **Editor browser** (over the editor, on top of the options menu it
+   opened from, or over the main menu) — closes only the browser, stepping
+   back one layer.
+3. **Mission fail** (view-derived `playerDead`) — fires the overlay's Exit
    Mission button's orchestrator (`player_exit_mission` + drain).
-3. **Mission complete** (view-derived `last_completed_mission`) — fires the
+4. **Mission complete** (view-derived `last_completed_mission`) — fires the
    Continue button's `dismiss_mission_complete` + drain.
-4. **Load-save browser / credits** (main-menu overlays).
-5. **Options menu** — closes it, leaving any full-screen overlay beneath
+5. **Load-save browser / credits** (main-menu overlays).
+6. **Options menu** — closes it, leaving any full-screen overlay beneath
    it open.
-6. **Full-screen overlays** (world map, full combat log) — closes the
+7. **Full-screen overlays** (world map, full combat log) — closes the
    topmost open one (last occupied slot draws on top).
-7. Nothing open → opens the options menu, level/hub only (no-op on the
+8. Nothing open → opens the options menu, level/hub only (no-op on the
    main menu — the menu's exit entries are meaningless there).
 
 The error popup is more-modal still but never reaches the chain: the
@@ -3055,12 +3058,23 @@ validation_replay.txt (once validation writes one) into a STORE-method
 zip (`zip_writer.zig`) at `exported_missions/<uuid>_<name>.zip` — on web
 the file is also offered as a browser download (the Export Save seam).
 
-**The editor browser (LANDED).** The main-menu Editor button, the
-editor options menu's Open Mission button (+ ctrl+O), and the browser's
-Back button all toggle the full-screen modal (`UiState.editor_browser_open`
-+ `Action.toggle_editor_browser` — reachable on the editor + main-menu
-screens; Escape steps back one layer, the options menu it opened from
-stays beneath). Two tabs at the top (the sprite picker's tab pattern):
+**The editor browser (LANDED).** One full-screen modal is the editor
+front door — browsing AND creating editor content — from both the main
+menu (the Editor button) and inside the editor (the options menu's Open
+Mission button + ctrl+O); the Back button closes it (all three toggle
+`Action.toggle_editor_browser`, `UiState.editor_browser_open`; Escape
+steps back one layer, the options menu it opened from stays beneath).
+The window is TABBED PER EDITOR KIND — the long-term plan is three
+editors (missions, hubs, campaigns) and only the mission editor exists,
+so the tab row shows one tab; a kind appears as a tab only when its
+editor lands (the specs list derives from `types.EditorKind` at
+comptime; the exhaustive label switches are the compile error until a
+new kind is named + routed). A single NEW button derives from the
+ACTIVE kind ("New Mission", firing the same recorded `open_editor{null}`
+as ctrl+N) — not one button per tab: buttons for content that isn't on
+screen would be dead buttons. Per-kind content lives behind an
+exhaustive switch; the mission content keeps the original browser
+shape — two tabs at the top (the sprite picker's tab pattern):
 **Your Missions** (`FileSource.listMissions` — the persistent `missions/`
 dir, where editor saves land) and **Official** (`FileSource.listOfficialMissions`
 — the shipped embedded campaign missions, comptime path list + runtime
@@ -3094,11 +3108,13 @@ shape). Three settled points:
 - **Undo across the swap works** — `open_editor` is on the timeline, so
   undo restores the previously-edited mission. Accepted as a feature.
 
-**The fresh-mission open (New Mission — LANDED).** The options menu's
-New Mission button (+ ctrl+N, the `new_editor_mission` action) fires the
-main-menu Editor button's action from INSIDE the editor: `open_editor`
-with a null path, consumed in the anytime block behind the editor-screen
-gate (every other screen no-ops — the save_editor_mission discipline).
+**The fresh-mission open (New Mission — LANDED).** The browser's New
+Mission button, the options menu's New Mission button (+ ctrl+N, the
+`new_editor_mission` action) fire `open_editor` with a null path,
+consumed in the anytime block behind the editor + main-menu gate
+(`editorBrowserReachableScreen` — every other screen no-ops, the
+save_editor_mission discipline; the keybind ships editor-context, so on
+the main menu only the button path fires).
 It's a RECORDED player action (`pushPlayerActionAndDrain`), so the three
 settled points above apply verbatim: no unsaved-changes confirm, the
 world_generation bump closes the options menu / browser / pickers over

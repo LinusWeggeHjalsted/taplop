@@ -296,6 +296,14 @@ Most of it is implemented (DESIGN's Level Editor section has the
 Implemented paragraph; the landed-slice history is in DONE.md). Remaining
 work:
 
+- **Hub editor + campaign editor** — the long-term plan is THREE editors
+  (missions, hubs, campaigns); the mission editor is the only one built,
+  and the editor browser is already the shared front door (kind tabs +
+  per-kind content — see DESIGN → Architecture → Level Editor → The
+  editor browser; a kind appears as a tab only when its editor lands).
+  Hub editing is blocked on NPC art; campaign editing = map background +
+  placing hubs + connecting hubs with missions. Design sessions before
+  any code.
 - **Revalidate Mission follow-ups** (the button itself is DONE — DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
@@ -336,8 +344,9 @@ work:
   pre-release, official data ships embedded with the exe).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
-- **Editor browser polish** (the browser itself — two tabs, scan-on-open,
-  web zip import, new-mission — is DONE — DONE.md; design: DESIGN → Level
+- **Editor browser polish** (the browser itself — kind tabs + New
+  button, two list tabs, scan-on-open, web zip import, main-menu entry
+  — is DONE — DONE.md; design: DESIGN → Level
   Editor → The editor browser): columns (author / level count / timestamp
   formatting), keyboard navigation; rides the load-save browser's polish
   slice when the UI design settles.
