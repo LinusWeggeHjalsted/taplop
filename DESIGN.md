@@ -4800,8 +4800,12 @@ Back button — pinned by the tab-row test in menus.zig.
 **The Keybinds tab** is the in-game rebinding list's read-only half (editing
 is TODO → Keybind editor slice 4): one row per binding — modifier/key panels
 ("+" between; prettified ids via `keyIdDisplayLabel`: Ctrl/Shift/Alt,
-KeyZ→Z, Digit1→1, left→LMB) and the action panel at a fixed column labeled
-"Action — Contexts" (the DERIVED context set, `actionDisplayLabel` +
+KeyZ→Z, Digit1→1, left→LMB; never narrower than `keybind_min_panel_width`
+— 9-slice panels render badly small, so single-char keys get a proper
+button with a centered label) and the action panel DIRECTLY after the combo
+(one row gap, no fixed column — the tab's right side stays open for the
+slice-4 action-picker column) labeled "Action — Contexts" (the DERIVED
+context set, `actionDisplayLabel` +
 `contextSetDisplayLabel`, both comptime-generated from the enum/switch so
 new members label themselves). NO group headers — the action name rides
 in every row's action panel. Rows are sorted by action (declaration order,

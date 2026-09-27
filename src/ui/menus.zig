@@ -1650,9 +1650,12 @@ fn makeContextSetLabel(comptime mask: u32) []const u8 {
 
 /// Horizontal padding inside a keybind key/action panel (label inset).
 pub const keybind_panel_padding: i32 = 24;
-/// Width of the combo zone (modifier + key panels) before the action panel's
-/// fixed column — enough for [Ctrl]+[Shift]+[Key].
-pub const keybind_combo_zone_width: i32 = 900;
+/// Minimum panel width in the keybinds list. 9-slice panels render badly
+/// below a certain width (the corner tiles dominate the panel — see TODO →
+/// Cross-cutting polish), and single-character keys (I, U, 1) would
+/// otherwise produce stub panels; the label centers in the panel so the
+/// extra width reads as a button, not stretched text.
+pub const keybind_min_panel_width: i32 = 160;
 
 /// Sort display order: by action (enum declaration order — undo, redo,
 /// escape, ...), stable so an action's multiple combos keep their file
@@ -1721,7 +1724,10 @@ fn buildKeybindsContent(
     const last_visible = @min(sorted.len, first_visible + visible_rows);
 
     // Emit a 9-slice panel + centered label (the key/action panel shape; no
-    // button — the list is read-only in this slice).
+    // button — the list is read-only in this slice). The width never drops
+    // below `keybind_min_panel_width` (9-slice panels render badly small;
+    // single-char keys would stub). Returns the panel width so the caller
+    // places the next panel flush after it.
     const emitPanelWithLabel = struct {
         fn run(
             elems: *UiElementList,
@@ -1732,9 +1738,12 @@ fn buildKeybindsContent(
             panel_y: i32,
             panel_height: i32,
             panel_color: Color,
-        ) !void {
+        ) !i32 {
             const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
-            const panel_width = label_width + 2 * keybind_panel_padding;
+            const panel_width = @max(
+                label_width + 2 * keybind_panel_padding,
+                keybind_min_panel_width,
+            );
             try elems.append(alloc, .{ .nine_slice_panel = .{
                 .sprite_id = "ui/panel",
                 .screen_position = .{ .x = panel_x, .y = panel_y },
@@ -1745,12 +1754,13 @@ fn buildKeybindsContent(
             try elems.append(alloc, .{ .text_label = .{
                 .text = label_text,
                 .screen_position = .{
-                    .x = panel_x + keybind_panel_padding,
+                    .x = panel_x + @divTrunc(panel_width - label_width, 2),
                     .y = panel_y + @divTrunc(panel_height - settings_row_font_size, 2),
                 },
                 .font_size = settings_row_font_size,
                 .blocks_input = false,
             } });
+            return panel_width;
         }
     }.run;
 
@@ -1772,9 +1782,7 @@ fn buildKeybindsContent(
             };
             for (modifiers) |modifier_label| {
                 if (modifier_label) |label| {
-                    try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
-                    panel_x += font_metrics.measureSpanWidth(text(label), settings_row_font_size) +
-                        2 * keybind_panel_padding;
+                    panel_x += try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
                     try elements.append(allocator, .{ .text_label = .{
                         .text = "+",
                         .screen_position = .{
@@ -1787,21 +1795,23 @@ fn buildKeybindsContent(
                     panel_x += settings_row_gap;
                 }
             }
-            try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
+            panel_x += try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
 
-            // Action panel at the fixed column: "Action — Contexts"
-            // (the derived context set; see DESIGN → Input → Binding
-            // contexts).
+            // Action panel DIRECTLY after the combo (one row gap — no
+            // fixed column), labeled "Action — Contexts" (the derived
+            // context set; see DESIGN → Input → Binding contexts). The
+            // right side of the tab stays open for the action-picker
+            // column (TODO → Keybind editor slice 4).
             const action_label = std.fmt.allocPrint(allocator, "{s} — {s}", .{
                 actionDisplayLabel(binding.action),
                 contextSetDisplayLabel(types.actionBindingContexts(binding.action)),
             }) catch @panic("failed to format keybind action label");
-            try emitPanelWithLabel(
+            _ = try emitPanelWithLabel(
                 elements,
                 allocator,
                 font_metrics,
                 action_label,
-                content_x + keybind_combo_zone_width,
+                panel_x + settings_row_gap,
                 row_y,
                 settings_row_height,
                 button_color,
@@ -2531,6 +2541,17 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 1), u_labels);
     try std.testing.expectEqual(@as(usize, 1), plus_labels);
     try std.testing.expectEqual(@as(usize, 2), undo_anytime); // both combos
+    // The min-width contract: every keybind panel (key/modifier/action —
+    // all settings_row_height) stays at or above `keybind_min_panel_width`
+    // (9-slice panels render badly below it; single-char keys would stub).
+    for (elements.items) |element| switch (element) {
+        .nine_slice_panel => |panel| {
+            if (panel.height == settings_row_height) {
+                try std.testing.expect(panel.width >= keybind_min_panel_width);
+            }
+        },
+        else => {},
+    };
     try std.testing.expectEqual(@as(usize, 1), confirm_game);
     try std.testing.expectEqual(@as(usize, 1), select_tool_editor);
 }
