@@ -1422,13 +1422,13 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
 }
 
-test "translateInput: ctrl+N fires new_editor_mission on the editor + menu sets" {
+test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
     // The New Mission keybind's dispatch pin (the ctrl+S lesson: a binding
     // with every other site wired but no checkAction line is dead).
-    // Fires on editor AND main-menu contexts — new_editor_mission is in
-    // the editor-browser family, valid in {editor, menu} (contexts are
-    // DERIVED from the action; the old shipped binding was authored
-    // editor-only). Dormant on level/hub (a playtest/validation run).
+    // new_editor_mission is in the editor-browser family — EDITOR-ONLY
+    // by classification (the browser still opens from the main menu via
+    // its buttons; the keyboard shortcuts are editor-only). Dormant on
+    // level/hub (a playtest/validation run) + the main menu.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
     };
@@ -1447,12 +1447,12 @@ test "translateInput: ctrl+N fires new_editor_mission on the editor + menu sets"
         const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
         try std.testing.expect(result.anytime.new_editor_mission);
     }
-    // Main menu: fires too (the derived {editor, menu} set — the browser
-    // family's consumption site accepts menu fires).
+    // Main menu: no fire (the browser opens there via its BUTTONS; the
+    // keyboard shortcut is editor-only).
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .menu = true });
-        try std.testing.expect(result.anytime.new_editor_mission);
+        try std.testing.expect(!result.anytime.new_editor_mission);
     }
     // Level/hub (a playtest/validation run — the binding must go dormant
     // there): no fire.

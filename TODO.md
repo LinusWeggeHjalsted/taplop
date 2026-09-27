@@ -48,8 +48,10 @@ Test by running `zig build run` and clicking through.
   Settled design: contexts are DERIVED from `actionBindingContexts` (the
   binding `context` file line becomes informational — loader ignores it,
   writer emits the derived value; the load-time action↔context validity
-  layer is deleted; ctrl+O now opens the editor browser from the main menu
-  too — the one narrowing this removes). Conflict rule: one combo (input +
+  layer is deleted; the accidental editor-actions-{editor, menu}
+  classification fallthrough was fixed — every editor action is editor-only
+  for keys, the browser still opens from the main menu via its buttons).
+  Conflict rule: one combo (input +
   required modifiers) → one action per context; UI prevents, load-time
   warn + drop the later entry + the repair write cleans the file, engine
   first-match-wins replaces equal-specificity co-fire. UI: the settings

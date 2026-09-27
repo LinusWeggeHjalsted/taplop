@@ -1088,13 +1088,14 @@ combat-log UI rendering + replay-viewer UI still TODO)
   special cases (`save_editor_mission` is editor-only so ctrl+S is dead
   mid-run; `save_game` is game-context and additionally handler-gated
   against editor runs — the run's player_data is throwaway, same reasoning
-  as the view hiding Export Save mid-run). One behavior change from the
-  authored-context era: the editor-browser-family keys (ctrl+O, ctrl+N, ...)
-  now fire on the MAIN MENU too — the family is valid in {editor, menu}, the
-  old shipped bindings were authored editor-only, and the consumption sites
-  already accept menu fires. Button clicks bypass the gate entirely
-  (`applyAction` sets actions directly) — buttons only render in their
-  context.
+  as the view hiding Export Save mid-run). The editor-browser family
+  (toggle_editor_browser, tabs, rows, import, new mission) is EDITOR-ONLY
+  for keys: the browser still OPENS from the main menu via its buttons
+  (clicks bypass the context gate; the consumption sites keep their
+  `editorBrowserReachableScreen` gate for those), but a main-menu surface
+  has no editor semantics for the shortcuts. Button clicks bypass the gate
+  entirely (`applyAction` sets actions directly) — buttons only render in
+  their context.
 - **Action↔context classification is declared + compiler-enforced.**
   `types.actionBindingContexts` is an exhaustive no-else switch classifying
   every Action into its firing contexts — the single declaration of "where

@@ -946,18 +946,18 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .delete_editor_selection,
         .clear_editor_selection,
         .select_editor_all,
-        // The editor browser + its in-window controls: reachable from the
-        // editor AND the main menu (the browser opens from both screens'
-        // buttons; shipped keybinds stay editor-context, menu-context
-        // bindings are legal and fire on the main menu where the
-        // consumption site accepts them).
+        // The editor browser + its in-window controls. The browser OPENS
+        // from the main menu too (its buttons — clicks bypass the context
+        // gate; the consumption sites keep their
+        // `editorBrowserReachableScreen` gate for those), but the
+        // keyboard shortcuts are EDITOR-ONLY: a main-menu surface has no
+        // editor semantics for them.
         .toggle_editor_browser,
         .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
         .import_editor_mission,
         .new_editor_mission,
-        => .{ .editor = true, .menu = true },
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,

@@ -14478,3 +14478,37 @@ Tests: the headerless shape is pinned (no exact-action-name label exists
 — the spelling only appears inside "Action — Contexts" labels); the
 existing scroll window/clamp tests carry over unchanged (rows are now
 just bindings).
+
+## Editor actions are editor-only — the actionBindingContexts fallthrough fix
+
+Playtesting the keybinds tab surfaced it: EVERY editor action displayed
+"Editor + Menu". Root cause: a pre-existing fallthrough bug in
+`actionBindingContexts` — the ~54 editor-screen actions (save_editor_mission
+through select_editor_all) never got their own arm and fell through into the
+editor-browser family's `=> .{ .editor = true, .menu = true }`, with the
+browser comment sitting INSIDE the prong list making it look like two
+groups. Latent while contexts were authored (the set was only the
+load-time validity set; the bindings' own "context editor" lines gated) —
+slice 2's derived contexts made the set the real gate, slice 3's tab
+displayed it.
+
+The fix (agreed): EVERY editor action is EDITOR-ONLY for keys — the big
+group, the browser family (ctrl+O/ctrl+N — narrowed from the slice-2
+widening), and the tool-shortcut group now share one
+`=> .{ .editor = true }` arm. The browser still OPENS from the main menu via
+its BUTTONS (clicks bypass the context gate; the
+`editorBrowserReachableScreen` handler gates stay for those) — a main-menu
+surface has no editor semantics for the shortcuts.
+
+Behavior on the main menu was already nil for the big group (consumption
+sites gate on editor presence / screen == .editor — verified), and the
+browser family's menu fires are gone with the classification. The conflict
+rule gets correctly more permissive: editor-screen actions + menu actions
+sharing a combo are legal cross-context pairs now, not phantom conflicts via
+the menu member.
+
+Tests: the ctrl+N dispatch pin reverted to editor-only (editor fires, menu
++ level/hub don't); the keybinds tab label test expects "Select editor
+tool — Editor". The `{editor, menu}` set is now unused (no action carries
+it) — `contextSetDisplayLabel` handles any subset generically for when a
+future action genuinely needs it.

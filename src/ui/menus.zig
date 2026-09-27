@@ -2521,7 +2521,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
             if (std.mem.eql(u8, label.text, "+")) plus_labels += 1;
             if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_anytime += 1;
             if (std.mem.eql(u8, label.text, "Confirm — Game")) confirm_game += 1;
-            if (std.mem.eql(u8, label.text, "Select editor tool — Editor + Menu")) select_tool_editor += 1;
+            if (std.mem.eql(u8, label.text, "Select editor tool — Editor")) select_tool_editor += 1;
         },
         else => {},
     };
