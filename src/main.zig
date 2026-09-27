@@ -556,6 +556,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend_input,
         frame_state.frame_arena.allocator(),
         history,
+        // The last-rendered UI — the same element list the press/release
+        // dispatch hit-tests against; the ui dump lists it. Empty before the
+        // first render.
+        if (frame_state.previous_view_state) |*previous_view_state|
+            previous_view_state.ui_elements
+        else
+            &.{},
     );
     // Camera is derived (centered on the player + clamped to the view
     // region — see DESIGN → Platform Seam → Camera clamping), computed

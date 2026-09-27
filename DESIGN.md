@@ -1370,7 +1370,13 @@ the reader thread exits, zero cost.
   the normal paths: `press Enter` or the M2 click rule), `action <name>`,
   `wait <n>` (skip n frames — the pacing primitive), `dump <thing>`
   (state / ui / settings / bindings / history — plain text on stdout),
-  `quit`. Blank lines and `#` comments skip — scripts are annotatable.
+  `quit`. The `ui` dump lists the last-rendered interactive surfaces
+  (buttons / sliders / text fields / ref-bearing slots) with their rects
+  and CENTER points — a valid click point each, in reference space — so
+  scripts are self-documenting: `dump ui`, read a center, `move` +
+  `press`/`release` it (button lines carry the action name, the same
+  enum `action <name>` accepts). Blank lines and `#` comments skip —
+  scripts are annotatable.
   Verbs, ids, action names, and dump kinds are exact-match (they name
   enum values the engine consumes).
 - **Console sessions are ordinary sessions**: injected events produce

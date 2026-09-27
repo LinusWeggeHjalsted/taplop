@@ -74,6 +74,7 @@ fn runConsoleScript(
             backend_input,
             arena,
             history,
+            &.{},
         );
         result = input.translateInput(
             platform_input,

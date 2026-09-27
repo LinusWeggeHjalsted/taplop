@@ -16,6 +16,7 @@ const input = @import("input.zig");
 const state = @import("state.zig");
 const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
+const ui = @import("ui.zig");
 
 const GameStateHistory = state.GameStateHistory;
 const PlatformInput = input.PlatformInput;
@@ -363,6 +364,7 @@ pub fn applyFrameCommand(
     backend_input: PlatformInput,
     arena: std.mem.Allocator,
     history: *GameStateHistory,
+    ui_elements: []const ui.UiElement,
 ) PlatformInput {
     const command = queue.takeFrameCommand() orelse return backend_input;
     switch (command) {
@@ -371,7 +373,7 @@ pub fn applyFrameCommand(
             return backend_input;
         },
         .dump => |kind| {
-            writeDump(kind, queue, history);
+            writeDump(kind, queue, history, ui_elements);
             return backend_input;
         },
         // A popped wait never leaves takeFrameCommand (it arms its own idle
@@ -508,9 +510,14 @@ pub fn foldInjectedActions(
 /// Write one dump projection to the console output (stdout, wired by the
 /// native driver). Best-effort — a failed write reports on stderr and never
 /// surfaces as a crash (the diagnostics-write convention).
-fn writeDump(kind: ConsoleCommand.DumpKind, queue: *ConsoleQueue, history: *GameStateHistory) void {
+fn writeDump(
+    kind: ConsoleCommand.DumpKind,
+    queue: *ConsoleQueue,
+    history: *GameStateHistory,
+    ui_elements: []const ui.UiElement,
+) void {
     if (queue.output) |*output| {
-        writeDumpText(kind, &output.interface, history);
+        writeDumpText(kind, &output.interface, history, ui_elements);
     }
 }
 
@@ -518,10 +525,11 @@ fn writeDumpText(
     kind: ConsoleCommand.DumpKind,
     output: *std.Io.Writer,
     history: *GameStateHistory,
+    ui_elements: []const ui.UiElement,
 ) void {
     var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer arena.deinit();
-    const text = dumpText(kind, history, arena.allocator());
+    const text = dumpText(kind, history, ui_elements, arena.allocator());
     output.writeAll(text) catch |err| {
         std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
         return;
@@ -542,11 +550,12 @@ fn writeDumpText(
 fn dumpText(
     kind: ConsoleCommand.DumpKind,
     history: *GameStateHistory,
+    ui_elements: []const ui.UiElement,
     allocator: std.mem.Allocator,
 ) []const u8 {
     return switch (kind) {
         .state => dumpStateText(history, allocator),
-        .ui => dumpUiText(history, allocator),
+        .ui => dumpUiText(history, ui_elements, allocator),
         .settings => writers.writeSettings(history.settings, allocator) catch
             @panic("failed to serialize settings dump"),
         .bindings => dumpBindingsText(history, allocator),
@@ -606,7 +615,11 @@ fn dumpStateText(history: *GameStateHistory, allocator: std.mem.Allocator) []con
     return buffer.items;
 }
 
-fn dumpUiText(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
+fn dumpUiText(
+    history: *GameStateHistory,
+    ui_elements: []const ui.UiElement,
+    allocator: std.mem.Allocator,
+) []const u8 {
     var buffer: std.ArrayList(u8) = .empty;
     const session = &history.session;
     const ui_state = &session.ui_state;
@@ -636,6 +649,98 @@ fn dumpUiText(history: *GameStateHistory, allocator: std.mem.Allocator) []const 
         allocator,
         if (session.camera_pan != null) "camera_pan: active\n" else "camera_pan: none\n",
     ) catch @panic("failed to format ui dump");
+
+    // The last-rendered interactive surfaces (the same element list the
+    // press/release dispatch hit-tests against — `previous_view_state`),
+    // each with its rect and its CENTER, a valid click point. Reference
+    // space, so a coordinate from here clicks the same surface at any
+    // window size / render resolution. Buttons carry their action name (the
+    // semantic identity — the same enum `action <name>` accepts); sliders
+    // their setting + value; text fields their current text; ref-bearing
+    // slots their drag identity.
+    buffer.appendSlice(
+        allocator,
+        "interactive surfaces (reference space; center = a valid click point):\n",
+    ) catch @panic("failed to format ui dump");
+    var surfaces: usize = 0;
+    for (ui_elements) |element| {
+        switch (element) {
+            .button => |button| {
+                buffer.print(
+                    allocator,
+                    "button {d} {d} {d} {d} center {d} {d} action {s}\n",
+                    .{
+                        button.screen_position.x,
+                        button.screen_position.y,
+                        button.width,
+                        button.height,
+                        button.screen_position.x + @divTrunc(button.width, 2),
+                        button.screen_position.y + @divTrunc(button.height, 2),
+                        @tagName(button.action),
+                    },
+                ) catch @panic("failed to format ui dump");
+                surfaces += 1;
+            },
+            .slider => |slider| {
+                buffer.print(
+                    allocator,
+                    "slider {d} {d} {d} {d} center {d} {d} setting {s} value {d} min {d} max {d}\n",
+                    .{
+                        slider.screen_position.x,
+                        slider.screen_position.y,
+                        slider.width,
+                        slider.height,
+                        slider.screen_position.x + @divTrunc(slider.width, 2),
+                        slider.screen_position.y + @divTrunc(slider.height, 2),
+                        @tagName(slider.setting_id),
+                        slider.value,
+                        slider.min,
+                        slider.max,
+                    },
+                ) catch @panic("failed to format ui dump");
+                surfaces += 1;
+            },
+            .text_field => |field| {
+                // The text is last + verbatim (it can contain spaces).
+                buffer.print(
+                    allocator,
+                    "text_field {d} {d} {d} {d} center {d} {d} text {s}\n",
+                    .{
+                        field.screen_position.x,
+                        field.screen_position.y,
+                        field.width,
+                        field.height,
+                        field.screen_position.x + @divTrunc(field.width, 2),
+                        field.screen_position.y + @divTrunc(field.height, 2),
+                        field.text,
+                    },
+                ) catch @panic("failed to format ui dump");
+                surfaces += 1;
+            },
+            // Only ref-bearing slots are interactive (drag sources/drop
+            // targets); a bare slot is a decorative cell.
+            .slot => |slot| if (slot.ref) |slot_ref| {
+                buffer.print(
+                    allocator,
+                    "slot {d} {d} {d} {d} center {d} {d} ref {s}\n",
+                    .{
+                        slot.screen_position.x,
+                        slot.screen_position.y,
+                        slot.size,
+                        slot.size,
+                        slot.screen_position.x + @divTrunc(slot.size, 2),
+                        slot.screen_position.y + @divTrunc(slot.size, 2),
+                        @tagName(slot_ref),
+                    },
+                ) catch @panic("failed to format ui dump");
+                surfaces += 1;
+            },
+            else => {},
+        }
+    }
+    if (surfaces == 0) {
+        buffer.appendSlice(allocator, "none\n") catch @panic("failed to format ui dump");
+    }
     return buffer.items;
 }
 
@@ -898,12 +1003,12 @@ test "applyFrameCommand: quit requests the session quit; empty queue passes thro
 
     // Empty queue: the backend input returns unchanged (value-equal —
     // empty-slice pointers are not comparable).
-    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history);
+    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{});
     try std_testing.expectEqualDeep(backend_input, passed_through);
     try std_testing.expect(!history.session.quit_requested);
 
     queue.push(parseCommandLine("quit").command);
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{});
     try std_testing.expect(history.session.quit_requested);
 }
 
@@ -917,24 +1022,24 @@ test "dumpText: projections report the state they are handed" {
     test_harness.runToIdle(&history);
 
     // state: a main-menu history — screen + no world.
-    const state_text = dumpText(.state, &history, arena);
+    const state_text = dumpText(.state, &history, &.{}, arena);
     try std_testing.expect(std.mem.indexOf(u8, state_text, "screen: main_menu") != null);
     try std_testing.expect(std.mem.indexOf(u8, state_text, "entities: none (no world)") != null);
 
     // ui: reflects the session's UI flags.
     history.session.ui_state.options_menu_open = true;
     history.session.ui_state.keybind_scroll_offset = 4;
-    const ui_text = dumpText(.ui, &history, arena);
+    const ui_text = dumpText(.ui, &history, &.{}, arena);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "keybind_scroll_offset: 4") != null);
 
     // settings: the writer's own full-file text.
-    const settings_text = dumpText(.settings, &history, arena);
+    const settings_text = dumpText(.settings, &history, &.{}, arena);
     const written = writers.writeSettings(history.settings, arena) catch unreachable;
     try std_testing.expectEqualStrings(written, settings_text);
 
     // bindings: one line per binding, derived from the same list.
-    const bindings_text = dumpText(.bindings, &history, arena);
+    const bindings_text = dumpText(.bindings, &history, &.{}, arena);
     const binding_lines = std.mem.count(u8, bindings_text, " -> ");
     try std_testing.expectEqual(history.settings.input_bindings.len, binding_lines);
     if (history.settings.input_bindings.len > 0) {
@@ -943,8 +1048,82 @@ test "dumpText: projections report the state they are handed" {
     }
 
     // history: the session-log body.
-    const history_text = dumpText(.history, &history, arena);
+    const history_text = dumpText(.history, &history, &.{}, arena);
     try std_testing.expect(std.mem.indexOf(u8, history_text, "EventLog") != null);
+}
+
+test "dumpText ui: interactive surfaces list rects + ready-to-use click centers" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    const elements = [_]ui.UiElement{
+        .{ .button = .{
+            .screen_position = .{ .x = 1408, .y = 1176 },
+            .width = 1024,
+            .height = 160,
+            .action = .toggle_load_save_menu,
+        } },
+        .{ .slider = .{
+            .setting_id = .master_volume,
+            .min = 0,
+            .max = 100,
+            .value = 50,
+            .screen_position = .{ .x = 512, .y = 208 },
+            .width = 320,
+            .height = 48,
+        } },
+        .{ .text_field = .{
+            .screen_position = .{ .x = 300, .y = 400 },
+            .width = 512,
+            .height = 64,
+            .text_position = .{ .x = 312, .y = 412 },
+            .text = "Wolf Pup",
+            .font_size = 48,
+            .frame_color = .{ .r = 255, .g = 255, .b = 255 },
+            .ref = .{ .id = .entity_name, .target = .{ .entity = .{ .entity_type = 0 } } },
+        } },
+        .{ .slot = .{
+            .screen_position = .{ .x = 100, .y = 200 },
+            .size = 128,
+            .ref = .{ .skill_bar = 0 },
+        } },
+    };
+
+    const text = dumpText(.ui, &history, &elements, arena);
+
+    // Each surface's line: rect + center (a valid click point — the exact
+    // coordinate a `move` + `press left`/`release left` pair acts at) + the
+    // semantic identity (action / setting / text / ref).
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        "button 1408 1176 1024 160 center 1920 1256 action toggle_load_save_menu\n",
+    ) != null);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        "slider 512 208 320 48 center 672 232 setting master_volume value 50 min 0 max 100\n",
+    ) != null);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        "text_field 300 400 512 64 center 556 432 text Wolf Pup\n",
+    ) != null);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        "slot 100 200 128 128 center 164 264 ref skill_bar\n",
+    ) != null);
+
+    // An element list with no interactive surfaces reports none.
+    const empty_text = dumpText(.ui, &history, &.{}, arena);
+    try std_testing.expect(std.mem.indexOf(u8, empty_text, "interactive surfaces") != null);
+    try std_testing.expect(std.mem.indexOf(u8, empty_text, "none\n") != null);
 }
 
 test "writeDumpText: writes the projection to the output writer" {
@@ -960,7 +1139,7 @@ test "writeDumpText: writes the projection to the output writer" {
     // wiring's File.Writer parent has).
     var allocating: std.Io.Writer.Allocating = .init(std_testing.allocator);
     defer allocating.deinit();
-    writeDumpText(.state, &allocating.writer, &history);
+    writeDumpText(.state, &allocating.writer, &history, &.{});
 
     const written = allocating.written();
     try std_testing.expect(std.mem.indexOf(u8, written, "screen: main_menu") != null);

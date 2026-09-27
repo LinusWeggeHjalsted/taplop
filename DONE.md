@@ -14731,3 +14731,25 @@ remembered position). Live-verified: `move 1920 1256` + `press left`/
 `release left` clicks the main menu's Load Save button (fresh data dir,
 3-button layout, button center at reference (1920, 1256)) with the
 hardware mouse resting elsewhere.
+
+## Console input — the ui dump's interactive-surface listing
+
+The `dump ui` extension that makes scripts self-documenting: alongside the
+overlay flags, the dump lists the LAST-RENDERED interactive surfaces
+(`previous_view_state.ui_elements` — the exact list the press/release
+dispatch hit-tests against), each with its rect and its CENTER — a valid
+click point, reference space, so a coordinate from the dump clicks the
+same surface at any window size / render resolution. Button lines carry
+the action name (the same enum `action <name>` accepts), sliders their
+setting + value + range, text fields their current text, ref-bearing slots
+their drag identity.
+
+Seam: `applyFrameCommand` (and the writeDump → dumpText → dumpUiText
+chain) gained the `ui_elements` param — frame() passes
+`previous_view_state.ui_elements` (empty before the first render). The
+interactive listing lives in the projection (pure over the element
+list), unit-tested with hand-built elements; live-verified with the
+self-documenting loop: `dump ui` → read `button ... center 1920 1256
+action toggle_load_save_menu` → `move 1920 1256` + press/release → the
+browser opens, and a follow-up `dump ui` lists the newly opened
+browser's own Back button.
