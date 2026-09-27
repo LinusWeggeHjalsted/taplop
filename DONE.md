@@ -14809,3 +14809,50 @@ the startup batch is pending; runToIdle → the next frame releases it).
 Live-verified: the mini run's guessed `wait 60`/`wait 90` replaced with
 `wait idle` — New Game → hub → beginnings mission → level dump, all
 pacing-exact.
+
+## Console input — the agent live run (slice 3: an AI plays the game)
+
+The agreed curiosity run: the agent (glm) drove a full gameplay session
+entirely through the console channel — every decision made from dump
+output alone (no screenshots; this model cannot read images).
+
+Method: a fifo keeps the game's stdin open across the agent's tool calls
+(a `sleep` holder prevents EOF between command writes); commands written
+as observed, output file read per step — a genuinely interactive session,
+not a pre-scripted blind run.
+
+The session: boot → `dump ui` (New Game center) → click → hub → `dump
+level` (mission exits with centers) → click "beginnings" → level "Beginnings
+0" (4 skeletons... 3 skeletons, skill bar, flag) → walked toward the
+nearest skeleton (aggro at chebyshev 3) → slice prepared via `press
+Digit1` (no target at range 2 — sword needs adjacency) → skip attack →
+enemy turn drained under `wait idle` (real-clock waits held exactly) →
+approach → two skeletons adjacent → retaliated down to 8/20 → replenish
+(`press Digit4`, heal to full, cooldown 5 visible in the dump) → slice
+landed twice — one discovery: `press Digit1` with the pointer resting on
+a skeleton's tile fired slice INSTANTLY (auto-target-at-cursor — the
+first slice needed no explicit target click) → walked into a 2v1 anyway →
+died at 0/20 → mission-fail overlay (its restart/exit buttons were in the
+`dump ui` listing — Exit Mission clickable at center 1920 1168) → pressed
+Escape (≡ clicking Exit Mission) → back in the hub, 194 recorded events →
+`ctrl+L` wrote the session log → `quit`.
+
+The full-circle proof: `--data-dir <dir> --replay <session-log>` on the
+console session's log reconstructed EXACTLY (hub, 194 events, 17 idle
+points, world_generation 3 — replay-verification passed silently). The
+design's promise — console sessions are ordinary sessions and their logs
+are valid --replay fixtures — holds end to end.
+
+Fixes that fell out of the run: the level dump's skill section originally
+printed only `equipped_utility_skills` (slots 4-8); it now prints the FULL
+8-slot bar via `collectSkillSlots` (weapon skills 1-3 included — slice was
+invisible before). DESIGN amended.
+
+Playtest finding (genuine, from a fresh player's run): "Beginnings 0"
+with the starter loadout — two skeletons adjacent deal ~12/turn while the
+starter sword's slice deals ~4-5/turn and replenish is a 5-turn cooldown;
+a fresh player who walks into the 2v1 (both skeletons converge once one
+aggroes) dies in three rounds. The counterplay exists (retreat, fight one
+at a time — the skeletons' approach was slow enough to kite), but the
+first mission punishes aggroing early. Flagged for playtest triage, not
+changed.

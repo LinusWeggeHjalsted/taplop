@@ -1384,8 +1384,9 @@ the reader thread exits, zero cost.
   WORLD (level or hub) for gameplay decisions: turn phase, entities
   (team / health / aggro / tile), the phase's legal-target highlights
   (the game's own computed move/skill-targeting tiles — a script never
-  reasons about legality, it clicks a highlight), the player's utility
-  skill slots + cooldowns, and the level-end flag / mission exits — each
+  reasons about legality, it clicks a highlight), the player's full
+  8-slot skill bar (weapon + utility, the Digit1-8 numbering) +
+  cooldowns, and the level-end flag / mission exits — each
   tile line with its CENTER, a click point projected through the frame's
   LIVE camera (`view.tileClickCenter`, the inverse of screenToTile, so a
   coordinate off the dump line resolves back to its tile). That is why

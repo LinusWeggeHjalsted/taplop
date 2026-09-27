@@ -655,7 +655,12 @@ fn dumpLevelText(
             appendEntityLine(&buffer, allocator, index, entity, camera, camera_zoom);
         }
         if (level.entities.len > 0) {
-            appendSkillLines(&buffer, allocator, level.entities[0]);
+            appendSkillLines(
+                &buffer,
+                allocator,
+                level.entities[0],
+                history.weapon_type_definitions,
+            );
         }
     } else if (current.hub) |hub| {
         buffer.print(allocator, "world: hub \"{s}\"\n", .{hub.name}) catch
@@ -736,32 +741,36 @@ fn appendEntityLine(
     ) catch @panic("failed to format level dump");
 }
 
-/// The player's utility skill slots (entity 0 in a level): id + cooldown
-/// (ready when 0).
+/// The player's full skill bar (entity 0 in a level): slots 1-2 = main-hand
+/// weapon skills, 3 = off-hand, 4-8 = utility — the same numbering the
+/// Digit1-8 bindings and the bottom bar use. Id + cooldown (ready when 0).
 fn appendSkillLines(
     buffer: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
     player: types.Entity,
+    weapon_type_definitions: *const [types.weapon_type_count]types.WeaponTypeDefinition,
 ) void {
-    buffer.appendSlice(allocator, "utility skills:\n") catch @panic("failed to format level dump");
-    for (player.equipped_utility_skills, 0..) |slot, index| {
+    buffer.appendSlice(allocator, "skill bar:\n") catch @panic("failed to format level dump");
+    const slots = player.collectSkillSlots(weapon_type_definitions);
+    for (slots, 0..) |slot, index| {
+        const slot_number = index + 1;
         if (slot) |skill| {
             const cooldown = player.skill_cooldowns.get(skill);
             if (cooldown == 0) {
                 buffer.print(
                     allocator,
                     "skill {d}: {s} ready\n",
-                    .{ index, @tagName(skill) },
+                    .{ slot_number, @tagName(skill) },
                 ) catch @panic("failed to format level dump");
             } else {
                 buffer.print(
                     allocator,
                     "skill {d}: {s} cooldown {d}\n",
-                    .{ index, @tagName(skill), cooldown },
+                    .{ slot_number, @tagName(skill), cooldown },
                 ) catch @panic("failed to format level dump");
             }
         } else {
-            buffer.print(allocator, "skill {d}: none\n", .{index}) catch @panic("failed to format level dump");
+            buffer.print(allocator, "skill {d}: none\n", .{slot_number}) catch @panic("failed to format level dump");
         }
     }
 }
@@ -1398,8 +1407,11 @@ test "dumpText level: the active world with clickable highlights + entities" {
 
     try std_testing.expect(std.mem.indexOf(u8, text, "entity 0 \"Hero\" team 0 tile (1, 1) health 20/20 aggro no center") != null);
     try std_testing.expect(std.mem.indexOf(u8, text, "entity 1 \"Wolf\" team 1 tile (3, 1) health 8/12 aggro yes center") != null);
-    try std_testing.expect(std.mem.indexOf(u8, text, "skill 0: bash cooldown 2\n") != null);
+    // The skill bar: slots 1-3 = weapon skills (none here — no weapons),
+    // 4-8 = utility (bash sits in the first utility slot → bar slot 4).
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 1: none\n") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "skill 4: bash cooldown 2\n") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "skill 5: none\n") != null);
 
     // The click-center contract: a dumped center resolves back to its tile
     // through screenToTile — the exact resolution a console `move` + press
