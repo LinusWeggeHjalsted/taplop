@@ -80,6 +80,23 @@ Test by running `zig build run` and clicking through.
         rebuild-ownership path (leak-checked) — the arms are thin + the
         steal scan + capture seam are unit-covered, but the mutation path
         itself is not.
+- **Console input (stdin — a scripted/TAS input channel)** — the game
+  reads stdin while it runs: always-on, native only; piped scripts drive
+  the game, launching from a terminal gives terminal control. Mirrors the
+  engine's own synthetic-input model: one command per frame merged into
+  the frame's PlatformInput (raw inputs — press/release/move/scroll/type
+  through the identical pipeline); actions via applyAction (the button
+  path). Console sessions produce ordinary session logs → valid
+  `--replay` fixtures. Full settled design: DESIGN → Input → Console
+  input. Slices:
+  - [ ] 1. `src/console.zig` (raylib-free): command parser
+        (press/release/move/scroll/type/action/wait/dump/quit), the
+        queue, the merge helper, the applyAction injection, the dump
+        projections + unit tests — including the regression pins this
+        unlocks (press Escape end-to-end; scroll with the options menu
+        open moves the keybind offset, at the handler level).
+  - [ ] 2. Native wiring: the reader thread, the per-frame queue drain,
+        always-on stdin (EOF-safe), stdout dumps.
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through

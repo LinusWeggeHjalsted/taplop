@@ -1306,6 +1306,56 @@ player actions on the undo timeline. Middle panels (inventory/gear/skills/
 entity inspect) are deliberately NOT in the chain: their per-panel toggles
 (I/G/S) are the close path; revisit if playtesting asks for it.
 
+### Console input (stdin — a scripted input channel, TAS-shaped)
+
+The game reads stdin while it runs: launching from a terminal gives
+terminal control alongside the game window; piping a script drives the
+game. ANOTHER INPUT CHANNEL, not a dev tool — always on (no flag), native
+only (web has no stdin; the node headless run is a later investigation).
+An stdin-less launch (double-click, the mac app bundle) is immediate EOF —
+the reader thread exits, zero cost.
+
+- **Injection mirrors the engine's own synthetic-input model.** A reader
+  thread blocks on stdin lines → parses → a mutex-guarded queue; the native
+  driver drains ONE COMMAND PER FRAME and merges its events into that
+  frame's `PlatformInput` (right after the raylib poll) — the same
+  per-frame, per-event cadence the synthetic key-repeat machinery uses.
+  Everything downstream is the identical pipeline (`translateInput`,
+  held-state tracking, context gating, `checkAction`, `frame()`'s gate
+  ordering, drains, recorded events) — no parallel path, no different
+  rate, so console-driven gameplay is identical to played gameplay.
+  Chords work across frames (`press ControlLeft`, then `press KeyQ` next
+  frame — held-state persistence supplies the modifier, like a human
+  pressing across a frame boundary); `release <id>` completes the held
+  model (a key never released stays held — like holding a physical key).
+- **Actions inject at the button seam.** `action <name>` runs
+  `applyAction` on the frame's PlayerInput — literally the button-click
+  path (context-free by design; the consumption sites gate themselves).
+- **The command set** (human readable + writable, both directions):
+  `press <id>` / `release <id>` (any producible input id — the
+  `producible_key_ids`/`producible_mouse_ids` vocabulary; an unknown id
+  errors with the dead-binding advisory's message), `move <x> <y>`
+  (pointer, reference space), `scroll <delta>`, `type <text>` (the char
+  queue — the text-input widget's own machinery consumes it; commit via
+  the normal paths: `press Enter` or the M2 click rule), `action <name>`,
+  `wait <n>` (skip n frames — the pacing primitive), `dump <thing>`
+  (state / ui / settings / bindings / history — plain text on stdout),
+  `quit`.
+- **Console sessions are ordinary sessions**: injected events produce
+  normal recorded events, so a console-driven session's log is a valid
+  `--replay` artifact — scripted setup doubles as fixture generation.
+  Input is deterministic (one command per frame); replay determinism
+  follows the event history as always.
+- **What it tests**: everything from `PlatformInput` upward — the
+  placement-class bugs the headless suite cannot see become drivable (the
+  dead-Escape class: `press Escape` end-to-end; the wheel-after-the-gate
+  class: `scroll 1` with the options menu open). BELOW the merge point —
+  the raylib poll table itself — remains the comptime lockstep guard's
+  territory.
+- Key files: `src/console.zig` (raylib-free: parser + queue + merge +
+  applyAction injection + dump projections — unit-tested in the test
+  root), the reader thread + the per-frame drain in `src/native.zig`.
+
 ## Error Handling
 
 A `@panic` (unrecoverable failure) dumps the live `event_history` to
