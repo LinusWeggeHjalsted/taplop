@@ -91,6 +91,7 @@ const shared_key_mappings = [_]KeyMapping{
     .{ .key = .grave, .id = "Backquote" },
     // Whitespace + editing.
     .{ .key = .space, .id = "Space" },
+    .{ .key = .escape, .id = "Escape" },
     .{ .key = .enter, .id = "Enter" },
     .{ .key = .tab, .id = "Tab" },
     .{ .key = .backspace, .id = "Backspace" },
