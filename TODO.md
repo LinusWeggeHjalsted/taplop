@@ -53,9 +53,10 @@ Test by running `zig build run` and clicking through.
   required modifiers) → one action per context; UI prevents, load-time
   warn + drop the later entry + the repair write cleans the file, engine
   first-match-wins replaces equal-specificity co-fire. UI: the settings
-  screen gains Settings/Keybinds tabs; left column = bindings grouped by
-  action (9-slice key panels + action panel with derived context tag +
-  scroll); right column = full scrollable action picker. Edits go through
+  screen gains Settings/Keybinds tabs; left column = bindings one row
+  per binding, sorted by action (9-slice key panels + action panel with
+  derived context tag, NO group headers — the action name rides in every
+  row + scroll); right column = full scrollable action picker. Edits go through
   an obvious listening state → a pending state with Confirm/Cancel + a
   steal warning ("Enter currently fires Confirm (game) — confirming will
   remove it") when the combo would remove an existing binding; steal

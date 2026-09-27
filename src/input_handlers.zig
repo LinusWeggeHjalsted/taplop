@@ -2284,6 +2284,23 @@ pub fn handleAnytimeInput(
         return;
     }
 
+    // Keybinds tab list scroll, BEFORE the options-menu gate: the settings
+    // overlay opens ON TOP of the options menu in-game, so its wheel must
+    // run before the gate's return (the slider-drag-before-the-gate
+    // pattern in main's frame). One wheel notch = one row (whole visible
+    // rows); lower clamp here, upper clamp authoritative in the builder.
+    // The Settings tab has no scrollable content — the wheel no-ops there.
+    if (history.session.ui_state.settings_open and
+        history.session.ui_state.settings_tab == .keybinds and
+        anytime.scroll_delta != 0)
+    {
+        const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+        history.session.ui_state.keybind_scroll_offset -= delta_rows;
+        if (history.session.ui_state.keybind_scroll_offset < 0) {
+            history.session.ui_state.keybind_scroll_offset = 0;
+        }
+    }
+
     // When options menu is open, block all other input
     if (history.session.ui_state.options_menu_open) return;
 
@@ -2315,21 +2332,6 @@ pub fn handleAnytimeInput(
             history.session.ui_state.load_save_scroll_offset -= delta_rows;
             if (history.session.ui_state.load_save_scroll_offset < 0) {
                 history.session.ui_state.load_save_scroll_offset = 0;
-            }
-        } else if (history.session.ui_state.settings_open and
-            history.session.ui_state.settings_tab == .keybinds)
-        {
-            // Keybinds tab list scroll (vertical): one wheel notch = one
-            // row (group headers + combo rows both count). The settings
-            // overlay is a fullscreen modal, so any wheel input while it's
-            // up belongs to the list — never the camera. Lower clamp here;
-            // the builder clamps the upper bound in place (authoritative —
-            // it knows the row count). The Settings tab has no scrollable
-            // content — the wheel no-ops there.
-            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
-            history.session.ui_state.keybind_scroll_offset -= delta_rows;
-            if (history.session.ui_state.keybind_scroll_offset < 0) {
-                history.session.ui_state.keybind_scroll_offset = 0;
             }
         } else if (history.current_state.screen == .editor and
             history.current_state.editor != null and

@@ -116,8 +116,8 @@ pub const UiState = struct {
     /// `keybind_scroll_offset` (the other tab's list has its own extent).
     settings_tab: types.SettingsTab = .settings,
 
-    /// The Keybinds tab's list scroll: the index of the first visible ROW
-    /// (group headers + binding rows both count — the list is flat rows).
+    /// The Keybinds tab's list scroll: the index of the first visible
+    /// binding row (the list has no group headers — one row per binding).
     /// One wheel notch = one row; lower clamp at the input site, upper
     /// clamp in the builder (authoritative — only it knows the content
     /// height). See DESIGN → UI Framework → Settings screen.

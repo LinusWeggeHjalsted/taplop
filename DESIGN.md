@@ -4797,18 +4797,20 @@ fit the wide reference screen better. The control column must clear the
 Back button — pinned by the tab-row test in menus.zig.
 
 **The Keybinds tab** is the in-game rebinding list's read-only half (editing
-is TODO → Keybind editor slice 4): all bindings SORTED by action
-(enum-declaration order, stable — an action's multiple combos keep their
-file order), one group-header row per action + one row per binding —
-modifier/key panels ("+" between; prettified ids via `keyIdDisplayLabel`:
-Ctrl/Shift/Alt, KeyZ→Z, Digit1→1, left→LMB) and the action panel at a
-fixed column labeled "Action — Contexts" (the DERIVED context set,
-`actionDisplayLabel` + `contextSetDisplayLabel`, both comptime-generated
-from the enum/switch so new members label themselves). Scroll follows the
+is TODO → Keybind editor slice 4): one row per binding — modifier/key panels
+("+" between; prettified ids via `keyIdDisplayLabel`: Ctrl/Shift/Alt,
+KeyZ→Z, Digit1→1, left→LMB) and the action panel at a fixed column labeled
+"Action — Contexts" (the DERIVED context set, `actionDisplayLabel` +
+`contextSetDisplayLabel`, both comptime-generated from the enum/switch so
+new members label themselves). NO group headers — the action name rides
+in every row's action panel. Rows are sorted by action (declaration order,
+stable) so an action's multiple combos sit adjacent. Scroll follows the
 game-wide row-scroll convention: `keybind_scroll_offset` is the first
-visible row (headers + combo rows both count), one wheel notch = one row
-(lower clamp at the input site, upper clamp authoritative in
-`buildKeybindsContent`), whole visible rows only.
+visible row, one wheel notch = one row (lower clamp at the input site,
+upper clamp authoritative in `buildKeybindsContent`), whole visible rows
+only. The wheel routing runs BEFORE the options-menu gate (the settings
+overlay opens ON TOP of the options menu in-game — the slider-drag-
+before-the-gate pattern) or the gate's return eats it.
 
 1. The main-menu "Settings" button (opens settings directly over the main
    menu — the world is already idle there, so no pause concern).

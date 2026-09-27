@@ -14453,3 +14453,28 @@ Tests: `inputIdProducible` per-variant contract (W3C ids producible, typo
 not, mouse ids as mouse only, no gamepad yet); the loader warn keeps the
 entry + names the id + the failure mode. TODO: friction item checked off
 (both halves done).
+
+## Keybinds tab follow-ups — no group headers + the wheel-before-gate fix
+
+Two changes from playtesting the read-only keybinds tab:
+
+**No group headers.** The action name rides in every row's action panel
+("Undo — Anytime"), so the per-action header rows were pure duplication —
+removed. The list is one row per binding, still sorted by action
+(declaration order, stable) so an action's multiple combos sit adjacent.
+The `KeybindRow` union (header/binding rows) went with them — the builder
+iterates the sorted bindings directly.
+
+**The wheel-before-the-gate fix.** Slice 3's wheel routing lived in the
+scroll chain AFTER the options-menu gate — but the settings screen opens
+ON TOP of the options menu in-game (the menu stays open underneath), so
+the gate's `return` ate the wheel before it ever reached the keybinds
+branch: scrolling worked over the main menu and was dead in-game. The
+routing moved BEFORE the gate (the slider-drag-before-the-gate pattern in
+main's frame); DESIGN → UI Framework → Settings screen notes the placement
+rule.
+
+Tests: the headerless shape is pinned (no exact-action-name label exists
+— the spelling only appears inside "Action — Contexts" labels); the
+existing scroll window/clamp tests carry over unchanged (rows are now
+just bindings).

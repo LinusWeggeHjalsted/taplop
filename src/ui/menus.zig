@@ -1661,22 +1661,17 @@ fn bindingActionLessThan(_: void, left: types.InputBinding, right: types.InputBi
     return @intFromEnum(left.action) < @intFromEnum(right.action);
 }
 
-/// One flat list row: a group header (an action's first row — the label the
-/// combos below hang under) or a binding's combo row.
-const KeybindRow = union(enum) {
-    group_header: types.Action,
-    binding: types.InputBinding,
-};
-
-/// The Keybinds tab's list: bindings sorted by action, one group-header row
-/// per action + one row per binding — modifier/key panels ("+" between) and
-/// the action panel at a fixed column, labeled "Action — Contexts" (the
-/// derived context set: `actionBindingContexts`). Scroll: `scroll_offset`
-/// is the first visible ROW (headers + combo rows both count); the wheel
-/// adjusts it lower-clamped at the input site, this builder clamps the upper
-/// bound (authoritative — only it knows the row count + region height) and
-/// emits exactly the visible window. Read-only (editing lands in TODO →
-/// Keybind editor slice 4). See DESIGN → UI Framework → Settings screen.
+/// The Keybinds tab's list: one row per binding — modifier/key panels ("+"
+/// between) and the action panel at a fixed column, labeled
+/// "Action — Contexts" (the derived context set: `actionBindingContexts`;
+/// the action name in every row is why there are no group headers). Rows
+/// are sorted by action (declaration order, stable), so an action's
+/// multiple combos sit adjacent. Scroll: `scroll_offset` is the first
+/// visible row; the wheel adjusts it lower-clamped at the input site, this
+/// builder clamps the upper bound (authoritative — only it knows the row
+/// count + region height) and emits exactly the visible window. Read-only
+/// (editing lands in TODO → Keybind editor slice 4). See DESIGN → UI
+/// Framework → Settings screen.
 fn buildKeybindsContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1715,26 +1710,15 @@ fn buildKeybindsContent(
     const sorted = try allocator.dupe(types.InputBinding, bindings);
     std.mem.sort(types.InputBinding, sorted, {}, bindingActionLessThan);
 
-    // Flatten into rows: a group header wherever the action changes.
-    var rows: std.ArrayList(KeybindRow) = .empty;
-    var previous_action: ?types.Action = null;
-    for (sorted) |binding| {
-        if (previous_action != binding.action) {
-            try rows.append(allocator, .{ .group_header = binding.action });
-            previous_action = binding.action;
-        }
-        try rows.append(allocator, .{ .binding = binding });
-    }
-
     // Clamp the scroll (authoritative upper bound).
-    if (rows.items.len <= visible_rows) {
+    if (sorted.len <= visible_rows) {
         scroll_offset.* = 0;
     } else {
-        scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(rows.items.len - visible_rows)));
+        scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(sorted.len - visible_rows)));
         if (scroll_offset.* < 0) scroll_offset.* = 0;
     }
     const first_visible: usize = @intCast(scroll_offset.*);
-    const last_visible = @min(rows.items.len, first_visible + visible_rows);
+    const last_visible = @min(sorted.len, first_visible + visible_rows);
 
     // Emit a 9-slice panel + centered label (the key/action panel shape; no
     // button — the list is read-only in this slice).
@@ -1770,69 +1754,58 @@ fn buildKeybindsContent(
         }
     }.run;
 
-    for (rows.items[first_visible..last_visible], first_visible..) |row, row_index| {
+    for (sorted[first_visible..last_visible], first_visible..) |binding, row_index| {
         const row_y = content_top + @as(i32, @intCast(row_index - first_visible)) * row_stride;
-        switch (row) {
-            .group_header => |action| {
-                const label_text = actionDisplayLabel(action);
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = label_text,
-                    .screen_position = .{ .x = content_x, .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-                    .font_size = settings_row_font_size,
-                    .blocks_input = false,
-                } });
-            },
-            .binding => |binding| {
-                // Key panels: required modifiers first ("+" between panels),
-                // then the key. Mouse/gamepad buttons render the same way.
-                var panel_x = content_x;
-                const key_label = switch (binding.input) {
-                    .key => |id| keyIdDisplayLabel(id),
-                    .mouse_button => |id| keyIdDisplayLabel(id),
-                    .gamepad_button => |id| keyIdDisplayLabel(id),
-                };
-                const modifiers = [_]?[]const u8{
-                    if (binding.modifiers.ctrl) "Ctrl" else null,
-                    if (binding.modifiers.shift) "Shift" else null,
-                    if (binding.modifiers.alt) "Alt" else null,
-                };
-                for (modifiers) |modifier_label| {
-                    if (modifier_label) |label| {
-                        try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
-                        panel_x += font_metrics.measureSpanWidth(text(label), settings_row_font_size) +
-                            2 * keybind_panel_padding;
-                        try elements.append(allocator, .{ .text_label = .{
-                            .text = "+",
-                            .screen_position = .{
-                                .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
-                                .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
-                            },
-                            .font_size = settings_row_font_size,
-                            .blocks_input = false,
-                        } });
-                        panel_x += settings_row_gap;
-                    }
+        {
+            // Key panels: required modifiers first ("+" between panels),
+            // then the key. Mouse/gamepad buttons render the same way.
+            var panel_x = content_x;
+            const key_label = switch (binding.input) {
+                .key => |id| keyIdDisplayLabel(id),
+                .mouse_button => |id| keyIdDisplayLabel(id),
+                .gamepad_button => |id| keyIdDisplayLabel(id),
+            };
+            const modifiers = [_]?[]const u8{
+                if (binding.modifiers.ctrl) "Ctrl" else null,
+                if (binding.modifiers.shift) "Shift" else null,
+                if (binding.modifiers.alt) "Alt" else null,
+            };
+            for (modifiers) |modifier_label| {
+                if (modifier_label) |label| {
+                    try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
+                    panel_x += font_metrics.measureSpanWidth(text(label), settings_row_font_size) +
+                        2 * keybind_panel_padding;
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = "+",
+                        .screen_position = .{
+                            .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
+                            .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+                        },
+                        .font_size = settings_row_font_size,
+                        .blocks_input = false,
+                    } });
+                    panel_x += settings_row_gap;
                 }
-                try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
+            }
+            try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
 
-                // Action panel at the fixed column: "Action — Contexts"
-                // (the derived context set; see DESIGN → Input → Binding
-                // contexts).
-                const action_label = std.fmt.allocPrint(allocator, "{s} — {s}", .{
-                    actionDisplayLabel(binding.action),
-                    contextSetDisplayLabel(types.actionBindingContexts(binding.action)),
-                }) catch @panic("failed to format keybind action label");
-                try emitPanelWithLabel(
-                    elements,
-                    allocator,
-                    font_metrics,
-                    action_label,
-                    content_x + keybind_combo_zone_width,
-                    row_y,
-                    settings_row_height,
-                    button_color,
-                );
-            },
+            // Action panel at the fixed column: "Action — Contexts"
+            // (the derived context set; see DESIGN → Input → Binding
+            // contexts).
+            const action_label = std.fmt.allocPrint(allocator, "{s} — {s}", .{
+                actionDisplayLabel(binding.action),
+                contextSetDisplayLabel(types.actionBindingContexts(binding.action)),
+            }) catch @panic("failed to format keybind action label");
+            try emitPanelWithLabel(
+                elements,
+                allocator,
+                font_metrics,
+                action_label,
+                content_x + keybind_combo_zone_width,
+                row_y,
+                settings_row_height,
+                button_color,
+            );
         }
     }
 }
@@ -2506,16 +2479,16 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     try std.testing.expect(lowest_control_bottom <= back_button_top);
 }
 
-test "buildSettingsPanel: keybinds tab — grouped rows, key panels, action labels + context tags" {
+test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + context tags" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
-    // Two combos on ONE action (undo: ctrl+Z and U — grouped under one
-    // header), plus cross-context same-combo-style rows with their derived
-    // context tags.
+    // Two combos on ONE action (undo: ctrl+Z and U — adjacent rows, no
+    // group headers), plus cross-context same-combo-style rows with their
+    // derived context tags.
     const bindings = [_]types.InputBinding{
         .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
         .{ .input = .{ .key = "KeyU" }, .action = .undo },
@@ -2528,8 +2501,9 @@ test "buildSettingsPanel: keybinds tab — grouped rows, key panels, action labe
     var elements: UiElementList = .empty;
     try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
 
-    // One group header per action — undo's two combos share ONE "Undo"
-    // header (exact match: the action labels carry the context suffix).
+    // NO group headers: the action name rides in every row's action panel,
+    // so no exact-match action-name label exists (the "Undo" spelling only
+    // appears inside "Undo — Anytime" action labels).
     var undo_headers: usize = 0;
     var ctrl_labels: usize = 0;
     var z_labels: usize = 0;
@@ -2551,7 +2525,7 @@ test "buildSettingsPanel: keybinds tab — grouped rows, key panels, action labe
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 1), undo_headers);
+    try std.testing.expectEqual(@as(usize, 0), undo_headers);
     try std.testing.expectEqual(@as(usize, 1), ctrl_labels);
     try std.testing.expectEqual(@as(usize, 1), z_labels);
     try std.testing.expectEqual(@as(usize, 1), u_labels);
