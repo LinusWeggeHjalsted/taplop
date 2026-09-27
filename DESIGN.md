@@ -1098,15 +1098,16 @@ combat-log UI rendering + replay-viewer UI still TODO)
   Binding overlay semantics below). `settings_file_format_version` did NOT bump: old files parse
   (bindings warn+drop+re-inject, scalars untouched) rather than being
   rejected wholesale.
-- **New keybind wiring sites (five, easily forgotten).** A new keybind
-  touches: (1) the binding entry in `data/default_settings.txt` (now
-  including its `context` line), (2) the backend's key table
-  (`key_mappings` in src/raylib/input_poll.zig — only bound keys are mapped;
-  unmapped keys never reach `translateInput`), (3) the `Action` enum + its
-  `actionBindingContexts` case, (4) the `AnytimeInput`/`IdleInput` field +
-  `applyAction` + the consumption site, (5) the `translateInput`
-  `checkAction` dispatch line. Two historical instances of a site being
-  forgotten: ctrl+A select-all (missing backend entry) and ctrl+S
+- **New keybind wiring sites (four, easily forgotten).** A new keybind
+  touches: (1) the binding entry in `data/default_settings.txt` (including
+  its informational `context` line), (2) the `Action` enum + its
+  `actionBindingContexts` case, (3) the `AnytimeInput`/`IdleInput` field +
+  `applyAction` + the consumption site, (4) the `translateInput`
+  `checkAction` dispatch line. The backend's key table is NO LONGER a site:
+  `key_mappings` in src/raylib/input_poll.zig maps the FULL W3C id set
+  (every key raylib can report), so any binding name reaches
+  `translateInput` with no backend edit. Two historical instances of a site
+  being forgotten: ctrl+A select-all (missing backend entry) and ctrl+S
   save-mission (missing dispatch line). The startup warning for bindings
   naming inputs no backend mapping can produce is still TODO (see TODO →
   New-keybind pipeline friction).

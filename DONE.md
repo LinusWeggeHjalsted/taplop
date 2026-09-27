@@ -14280,3 +14280,27 @@ backend: the write is scheduled on `pending_writes`, fires past the 1s
 debounce, and the rewritten file overlays warning-free). DESIGN → Input →
 Binding overlay semantics + Error Handling → three contexts updated (the
 old "no write-on-load" prose replaced by the repair-write rule).
+
+## Keybind editor slice 1 — full W3C key table in input_poll
+
+`shared_key_mappings` grew from the ~40 keys bound in
+`data/default_settings.txt` to the FULL key set raylib can report (every
+`KeyboardKey` member except the super keys, which stay mac-only and map to
+the Control ids — the existing convention). Ids follow the W3C
+KeyboardEvent.code names (KeyA–KeyZ, Digit0–9, BracketLeft, NumpadEnter,
+BrowserBack, ...), matching the existing entries' convention. A binding —
+authored in defaults or captured by the future rebind UI — can now name any
+physical key with no backend edit; the backend key table is retired from
+the new-keybind wiring sites (five → four, updated in DESIGN → Input).
+
+Unbound-but-mapped keys reach `translateInput` and match nothing
+(`checkAction` only matches bound inputs) — inert. Poll cost: one
+`isKeyPressed` per table entry per frame (~110). `max_events_per_frame`
+derives from the table length (formula, unchanged). A comptime uniqueness
+guard (compile error on a duplicated key or id; the mac overlay excluded —
+it intentionally reuses Control ids) catches copy-paste dupes at compile
+time; the file is raylib-linked so it rides the native build, not the test
+build.
+
+TODO: keybind editor slice list added (4 slices; settled design recorded
+there). Runtime verified on native + web (main menu loads).

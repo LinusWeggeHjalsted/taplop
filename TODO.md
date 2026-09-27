@@ -44,6 +44,32 @@ Test by running `zig build run` and clicking through.
   `handleIdleInput` where the tile cursor is resolved; right-click is the
   only inspect path today). (Camera clamping + editor viewport framing
   DONE — DONE.md; design: DESIGN → Platform Seam → Camera clamping.)
+- **Keybind editor (settings → Keybinds tab)** — in-game rebinding UI.
+  Settled design: contexts are DERIVED from `actionBindingContexts` (the
+  binding `context` file line becomes informational — loader ignores it,
+  writer emits the derived value; the load-time action↔context validity
+  layer is deleted; ctrl+O now opens the editor browser from the main menu
+  too — the one narrowing this removes). Conflict rule: one combo (input +
+  required modifiers) → one action per context; UI prevents, load-time
+  warn + drop the later entry + the repair write cleans the file, engine
+  first-match-wins replaces equal-specificity co-fire. UI: the settings
+  screen gains Settings/Keybinds tabs; left column = bindings grouped by
+  action (9-slice key panels + action panel with derived context tag +
+  scroll); right column = full scrollable action picker. Edits go through
+  an obvious listening state → a pending state with Confirm/Cancel + a
+  steal warning ("Enter currently fires Confirm (game) — confirming will
+  remove it") when the combo would remove an existing binding; steal
+  applies on confirm. Slices:
+  - [x] 1. Full key table in `input_poll` (the full W3C id set — retires
+        the backend-edit wiring site; unmapped-id startup warn stays open
+        under New-keybind pipeline friction) — DONE
+  - [ ] 2. Context derivation + conflict rule (engine gating, loader
+        ignores the context line, load-time conflict warn+drop + repair
+        write, first-match-wins tiebreak, delete the validity layer)
+  - [ ] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
+        context tags, scroll)
+  - [ ] 4. Editing flows (listening state, pending confirm/cancel +
+        steal warning, right-column action picker, add/remove/reset)
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through
