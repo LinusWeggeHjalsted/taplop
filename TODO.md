@@ -87,16 +87,14 @@ Test by running `zig build run` and clicking through.
   later). Fold the `input_handlers.zig` SPLIT (2800+ lines, ten concerns)
   into this work — if the convergence lands well, the file may split
   naturally or not need it; don't split as a separate chore first.
-- **New-keybind pipeline friction** — wiring sites per keybind (the map:
-  DESIGN → Input → New keybind wiring sites — now four; the backend key
-  table is no longer a site, and the binding `context` line is derived
-  (informational — see DESIGN → Input → Binding contexts). Still open:
-  warn at startup (dev-mode console or the pending-error popup — advisory)
-  when a loaded binding names an input id no backend mapping can produce
-  (a typo'd id in a hand-edited file — the full W3C key table is mapped,
-  but unknown ids still parse and never fire). The action↔context
-  validity load-validation layer was DELETED with derived contexts
-  (see DONE.md, keybind editor slice 2).
+- [x] **New-keybind pipeline friction** — DONE. The wiring-site map
+      shrank (four sites — DESIGN → Input → New keybind wiring sites; the
+      backend key table + the derived `context` line are no longer sites),
+      and the dead-binding startup warn landed after the missing-Escape
+      regression exposed the class (a binding naming an id no platform
+      table can produce warns + is kept; a comptime lockstep guard pins
+      the tables to `types.producible_key_ids` — see DONE.md, dead-binding
+      advisory).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global

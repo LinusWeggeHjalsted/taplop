@@ -14417,3 +14417,39 @@ labels; scroll window + clamp (short list resets to 0, overflow clamps to
 the last full window, same window size at every offset, negative clamps
 to 0). Docs: DESIGN → UI Framework → Settings screen rewritten for the
 tabs + both layouts. Runtime verified native + web.
+
+## Dead-binding advisory — the missing-Escape class pinned shut
+
+The missing-Escape regression (the full-table rewrite dropped the escape
+row; Escape silently did nothing everywhere — see the fix commit) exposed
+the open TODO item's failure mode concretely: a binding naming an input id
+no platform table can produce is silently dead, and NOTHING could catch
+it — the poll is raylib-linked (invisible to the headless test build) and
+the uniqueness guard checks duplicates only, not missing rows.
+
+The fix, both directions:
+- **`types.producible_key_ids` / `producible_mouse_ids`** — the ids the
+  backend tables can produce, declared in raylib-free code (types.zig —
+  loaders can't import input.zig: input imports ui, ui imports loaders;
+  types is imported by all three sites). The initial lists were GENERATED
+  from the tables (machine-walked, not hand-copied).
+- **A comptime lockstep guard in input_poll** — the key + mouse tables and
+  the lists must name exactly the same ids, both directions (a table id
+  missing from the list = the loader would warn a real binding as dead; a
+  list entry with no table row = the loader accepts a binding nothing can
+  produce). Verified by pulling Escape from the list: the native build
+  fails with "key table id missing from types.producible_key_ids: Escape"
+  — the exact regression, now a compile error.
+- **A load-time advisory warn** (`loadSettings`, user-file warnings path):
+  a binding naming an unproducible id warns ("...names input id 'Escapee'
+  no platform mapping can produce; the binding can never fire") and is
+  KEPT — the id may be valid on another platform or a future table, and
+  dropping would lose the entry. The startup popup deliberately repeats
+  until the file names a producible id. Gamepad ids warn until a gamepad
+  table lands (per-variant check: a KEY binding naming "left" is dead
+  even though the mouse table produces "left").
+
+Tests: `inputIdProducible` per-variant contract (W3C ids producible, typo
+not, mouse ids as mouse only, no gamepad yet); the loader warn keeps the
+entry + names the id + the failure mode. TODO: friction item checked off
+(both halves done).

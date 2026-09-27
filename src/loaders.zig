@@ -357,6 +357,20 @@ pub fn loadSettings(
                 .gamepad_button => .{ .gamepad_button = input_name_owned },
             };
 
+            // Dead-binding advisory (see `types.producible_key_ids`): a
+            // binding naming an input id no platform table can produce can
+            // never fire (a typo'd hand-edit — or a table/list drift bug;
+            // the missing-Escape regression's failure mode). Warn + KEEP
+            // the entry (the id may be valid on another platform or a
+            // future table — dropping would lose it); the startup popup
+            // deliberately repeats until the file names a producible id.
+            if (warnings) |w| {
+                if (!types.inputIdProducible(input)) {
+                    const message = std.fmt.allocPrint(allocator, "InputBindings entry '{s}' (action '{s}') names input id '{s}' no platform mapping can produce; the binding can never fire", .{ input_name, action_string, input_name }) catch @panic("failed to format binding warning");
+                    w.append(allocator, message) catch @panic("failed to append binding warning");
+                }
+            }
+
             const modifiers = types.Modifiers{
                 .ctrl = asBool(findValue(pairs, "ctrl") orelse "false") orelse false,
                 .shift = asBool(findValue(pairs, "shift") orelse "false") orelse false,
@@ -5005,4 +5019,41 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
     try std.testing.expectEqual(@as(?u32, 5), instantiated.enemy_gradient_index);
     try std.testing.expectEqual(@as(?u32, 0), instantiated.player_gradient_index);
     try std.testing.expectEqual(@as(u32, 2), instantiated.color_wheel_index);
+}
+
+test "loadSettings warns (keeps) a binding naming an unproducible input id" {
+    // The dead-binding advisory (the missing-Escape regression's class): a
+    // binding naming an id no platform table can produce can never fire.
+    // Warned — with the exact failure mode — but KEPT (dropping would lose
+    // the entry; the id may be valid on another platform or a future
+    // table). The popup deliberately repeats until the file names a
+    // producible id. See `types.producible_key_ids`.
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Escapee
+        \\action escape
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "can never fire") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "Escapee") != null);
+    // Kept, not dropped — the advisory leaves the entry in place.
+    try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
+    try std.testing.expectEqual(.escape, settings.input_bindings[0].action);
 }

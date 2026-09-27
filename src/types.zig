@@ -650,6 +650,73 @@ pub const RawInput = union(enum) {
     gamepad_button: []const u8,
 };
 
+/// Every key id the platform backend's key table can produce (the W3C
+/// KeyboardEvent.code names — `src/raylib/input_poll.zig` maps every
+/// raylib-reported key to one of these). A comptime cross-check there
+/// keeps this list and the table in lockstep (both directions — a table id
+/// missing here, or a list entry with no table row, is a compile error).
+/// `loadSettings` warns (advisively — the entry is kept) when a binding
+/// names an id outside this set: nothing can ever produce it, so the
+/// binding can never fire (the dead-binding class the missing-Escape
+/// regression exposed — see DONE.md). The initial list was generated from
+/// the table (machine-walked), not hand-copied.
+pub const producible_key_ids = [_][]const u8{
+    "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft", "AltRight",
+    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ",
+    "KeyK", "KeyL", "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT",
+    "KeyU", "KeyV", "KeyW", "KeyX", "KeyY", "KeyZ",
+    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7",
+    "Digit8", "Digit9",
+    "Quote", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "BracketLeft",
+    "Backslash", "BracketRight", "Backquote",
+    "Space", "Escape", "Enter", "Tab", "Backspace", "Insert", "Delete",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End",
+    "CapsLock", "ScrollLock", "NumLock", "PrintScreen", "Pause",
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7",
+    "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract",
+    "NumpadAdd", "NumpadEnter", "NumpadEqual",
+    "ContextMenu", "BrowserBack", "AudioVolumeUp", "AudioVolumeDown",
+};
+
+/// Every mouse button id the backend's mouse table can produce. Gamepad
+/// ids appear here when a gamepad table lands (until then a gamepad binding
+/// warns as unproducible — nothing can produce it).
+pub const producible_mouse_ids = [_][]const u8{ "left", "right", "middle" };
+
+/// True if `input` names an id the backend tables can produce (the binding
+/// CAN fire). False = a dead binding (warned at load, kept — the id may be
+/// valid on another platform or a future table; see `producible_key_ids`).
+pub fn inputIdProducible(input: RawInput) bool {
+    const ids = switch (input) {
+        .key => producible_key_ids[0..],
+        .mouse_button => producible_mouse_ids[0..],
+        // No gamepad table exists yet — no gamepad id is producible.
+        .gamepad_button => return false,
+    };
+    const id = switch (input) {
+        .key => |name| name,
+        .mouse_button => |name| name,
+        .gamepad_button => |name| name,
+    };
+    for (ids) |producible_id| {
+        if (std.mem.eql(u8, id, producible_id)) return true;
+    }
+    return false;
+}
+
+test "inputIdProducible: the backend tables' id sets, per input kind" {
+    // Every W3C key id is producible; a typo'd id is not; mouse ids are
+    // producible as mouse only (a key binding naming "left" is dead — the
+    // check is per-variant); no gamepad table exists yet.
+    try std.testing.expect(inputIdProducible(.{ .key = "KeyZ" }));
+    try std.testing.expect(inputIdProducible(.{ .key = "Escape" }));
+    try std.testing.expect(!inputIdProducible(.{ .key = "Escapee" }));
+    try std.testing.expect(inputIdProducible(.{ .mouse_button = "left" }));
+    try std.testing.expect(!inputIdProducible(.{ .key = "left" }));
+    try std.testing.expect(!inputIdProducible(.{ .gamepad_button = "a" }));
+}
+
 /// True if two `RawInput`s name the same physical input (same variant +
 /// id string). The combo-equality half of the binding-conflict predicate
 /// (same input + same modifiers = same combo) — see `sameCombo`.

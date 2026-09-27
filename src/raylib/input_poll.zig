@@ -166,6 +166,49 @@ comptime {
     }
 }
 
+// Lockstep guard: the backend tables and `types.producible_key_ids` /
+// `producible_mouse_ids` must name EXACTLY the same ids (both directions).
+// A table id missing from the list = `loadSettings` would warn a REAL
+// binding as dead (the missing-Escape regression's failure mode); a list
+// entry with no table row = a binding the loader accepts but nothing can
+// ever produce (the silent dead-binding class). Comptime — checked in
+// every native build.
+comptime {
+    @setEvalBranchQuota(200_000);
+    for (shared_key_mappings) |mapping| {
+        var found = false;
+        for (types.producible_key_ids) |producible_id| {
+            if (std.mem.eql(u8, mapping.id, producible_id)) found = true;
+        }
+        if (!found)
+            @compileError("key table id missing from types.producible_key_ids: " ++ mapping.id);
+    }
+    for (types.producible_key_ids) |producible_id| {
+        var found = false;
+        for (shared_key_mappings) |mapping| {
+            if (std.mem.eql(u8, mapping.id, producible_id)) found = true;
+        }
+        if (!found)
+            @compileError("types.producible_key_ids entry has no key table row: " ++ producible_id);
+    }
+    for (mouse_mappings) |mapping| {
+        var found = false;
+        for (types.producible_mouse_ids) |producible_id| {
+            if (std.mem.eql(u8, mapping.id, producible_id)) found = true;
+        }
+        if (!found)
+            @compileError("mouse table id missing from types.producible_mouse_ids: " ++ mapping.id);
+    }
+    for (types.producible_mouse_ids) |producible_id| {
+        var found = false;
+        for (mouse_mappings) |mapping| {
+            if (std.mem.eql(u8, mapping.id, producible_id)) found = true;
+        }
+        if (!found)
+            @compileError("types.producible_mouse_ids entry has no mouse table row: " ++ producible_id);
+    }
+}
+
 /// raylib keys mapped to the game's binding ids on macOS only. Mac
 /// convention is Command for app shortcuts, so the super keys report as the
 /// Control ids — every `ControlLeft` binding (undo, save, select-all, …)
