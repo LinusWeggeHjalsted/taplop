@@ -286,6 +286,17 @@ pub const ConsoleQueue = struct {
     read_counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// Idle frames remaining from a popped `wait` (game thread only).
     wait_frames_remaining: u32 = 0,
+    /// The console's remembered pointer position — set by `move`, persists
+    /// across frames like held keys (the console's pointer is where the
+    /// console left it). The native backend re-reports the hardware pointer
+    /// position EVERY frame (unconditionally), which would otherwise
+    /// overwrite a scripted position before the next command lands — so
+    /// every INPUT-command frame re-applies this position ahead of the
+    /// command's own events (last writer wins within the frame; see
+    /// `applyFrameCommand`). Frames between commands stay on the hardware
+    /// position — a human at the window never loses the pointer. Game
+    /// thread only (set + read in applyFrameCommand).
+    pointer_position: ?input.PointerPosition = null,
     /// Dump output goes here (stdout), wired by the native driver. Without a
     /// writer there is no reader thread either (web), so a dump can never
     /// arrive. Stored as the concrete parent (the File.Writer owns its
@@ -366,7 +377,24 @@ pub fn applyFrameCommand(
         // A popped wait never leaves takeFrameCommand (it arms its own idle
         // frames there) — this arm only keeps the switch exhaustive.
         .wait => return backend_input,
-        else => return mergeIntoPlatformInput(command, backend_input, arena),
+        // `move` both remembers the position and applies it this frame.
+        .move => |position| {
+            queue.pointer_position = position;
+            return mergeIntoPlatformInput(command, backend_input, arena);
+        },
+        // Press/release/scroll/type/action: re-apply the remembered pointer
+        // position ahead of the command's own events (a mouse_move event
+        // after the backend's per-frame hardware position — last writer
+        // wins), so the command acts where the console moved the pointer,
+        // frames later. Without a remembered position (no `move` yet), the
+        // command acts at the hardware position.
+        else => {
+            var merged = backend_input;
+            if (queue.pointer_position) |position| {
+                merged = mergeIntoPlatformInput(.{ .move = position }, merged, arena);
+            }
+            return mergeIntoPlatformInput(command, merged, arena);
+        },
     }
 }
 

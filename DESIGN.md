@@ -1354,7 +1354,18 @@ the reader thread exits, zero cost.
   `press <id>` / `release <id>` (any producible input id — the
   `producible_key_ids`/`producible_mouse_ids` vocabulary; an unknown id
   errors with the dead-binding advisory's message), `move <x> <y>`
-  (pointer, reference space), `scroll <delta>`, `type <text>` (the char
+  (pointer, reference space — the same space the backend maps the
+  hardware pointer into via the letterbox inverse, so a coordinate
+  clicks the same button at any window size / render resolution;
+  the position PERSISTS across frames like held keys: the native
+  backend re-reports the hardware pointer position EVERY frame
+  (unconditionally), which would otherwise overwrite a scripted
+  position before the next command lands, so every INPUT-command
+  frame re-applies the remembered position ahead of the command's
+  own events — last writer wins within the frame. Frames between
+  commands stay on the hardware position, so a human at the window
+  never loses the pointer; without a `move` yet, commands act at the
+  hardware position), `scroll <delta>`, `type <text>` (the char
   queue — the text-input widget's own machinery consumes it; commit via
   the normal paths: `press Enter` or the M2 click rule), `action <name>`,
   `wait <n>` (skip n frames — the pacing primitive), `dump <thing>`

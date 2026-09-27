@@ -41,22 +41,32 @@ fn keyHeld(input_state: *const input.InputState, id: []const u8) bool {
 
 /// One frame's console-driven input: parse a script of commands, run them
 /// one per frame (the live drain's cadence) against `history`, returning the
-/// LAST frame's PlayerInput. Mirrors frame()'s seam order: poll (empty
-/// backend input) → applyFrameCommand → translateInput → fold injected
-/// actions. `arena` backs the merged bytes (the live seam's frame arena —
-/// not testing.allocator, whose leak check would fire on the merges).
+/// LAST frame's PlayerInput. Mirrors frame()'s seam order: poll (backend
+/// input) → applyFrameCommand → translateInput → fold injected actions.
+/// `arena` backs the merged bytes (the live seam's frame arena — not
+/// testing.allocator, whose leak check would fire on the merges).
+/// `hardware_pointer` simulates the native backend's UNCONDITIONAL per-frame
+/// mouse_move event (the hardware position it re-reports every frame — the
+/// behavior that would overwrite a scripted position between commands).
 fn runConsoleScript(
     history: *state.GameStateHistory,
     input_state: *input.InputState,
     arena: std.mem.Allocator,
+    hardware_pointer: ?input.PointerPosition,
     script: []const []const u8,
 ) input.PlayerInput {
     var result: input.PlayerInput = .{};
+    // One queue for the whole script (the live queue lives on FrameState —
+    // the remembered pointer position persists across frames on it).
+    var queue: console.ConsoleQueue = .{};
     for (script) |line| {
-        var queue: console.ConsoleQueue = .{};
         queue.push(console.parseCommandLine(line).command);
+        const hardware_events: [1]input.PlatformInputEvent = if (hardware_pointer) |position|
+            .{.{ .mouse_move = position }}
+        else
+            .{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
         const backend_input = input.PlatformInput{
-            .events = &.{},
+            .events = &hardware_events,
             .viewport = .{ .width = types.reference_width, .height = types.reference_height },
         };
         const platform_input = console.applyFrameCommand(
@@ -94,7 +104,7 @@ test "console press Escape closes the options menu (merge → translate → hand
     history.session.ui_state.options_menu_open = true;
 
     var input_state: input.InputState = .{};
-    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), &.{"press Escape"});
+    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"press Escape"});
 
     // The merged key edge rode the full pipeline: a held-state Escape press
     // whose binding translated to the escape action.
@@ -130,7 +140,7 @@ test "console scroll with the options menu open moves the keybind scroll offset"
     history.session.ui_state.keybind_scroll_offset = 4;
 
     var input_state: input.InputState = .{};
-    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), &.{"scroll 1"});
+    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"scroll 1"});
 
     // One wheel notch up = one row earlier (the row-scroll convention).
     try testing.expectEqual(@as(f32, 1), player_input.anytime.scroll_delta);
@@ -157,7 +167,7 @@ test "console action escape closes the options menu (the button seam)" {
     history.session.ui_state.options_menu_open = true;
 
     var input_state: input.InputState = .{};
-    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), &.{"action escape"});
+    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"action escape"});
 
     // applyAction folded the action directly (no binding consulted)...
     try testing.expect(player_input.anytime.escape);
@@ -186,6 +196,7 @@ test "console chords work across frames (held-state supplies the modifier)" {
         &history,
         &input_state,
         backing.allocator(),
+        null,
         &.{ "press ControlLeft", "press KeyQ" },
     );
 
@@ -206,6 +217,7 @@ test "console release completes the held model" {
         &history,
         &input_state,
         backing.allocator(),
+        null,
         &.{ "press Escape", "release Escape" },
     );
     try testing.expect(!keyHeld(&input_state, "Escape"));
@@ -220,6 +232,50 @@ test "console quit requests the session quit" {
 
     try testing.expect(!history.session.quit_requested);
     var input_state: input.InputState = .{};
-    _ = runConsoleScript(&history, &input_state, backing.allocator(), &.{"quit"});
+    _ = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"quit"});
     try testing.expect(history.session.quit_requested);
+}
+
+test "console move persists to the command frame over the backend's per-frame hardware position" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    // The native backend re-reports the hardware pointer position EVERY
+    // frame (unconditionally); without persistence a scripted `move` would
+    // be overwritten before the next command lands. The remembered
+    // position re-applies ahead of the command's events (last writer wins
+    // within the frame), so the press acts where the console moved the
+    // pointer — frames later.
+    var input_state: input.InputState = .{};
+    const player_input = runConsoleScript(
+        &history,
+        &input_state,
+        backing.allocator(),
+        .{ .x = 2291, .y = 981 }, // hardware resting elsewhere
+        &.{ "move 1920 1256", "press left" },
+    );
+
+    try testing.expect(player_input.pointer.pressed);
+    try testing.expectEqual(@as(f32, 1920), player_input.pointer.position.x);
+    try testing.expectEqual(@as(f32, 1256), player_input.pointer.position.y);
+
+    // And the hardware position owns the frame when no command re-applies
+    // the remembered one (the human never loses the pointer):
+    const hardware_frame = input.translateInput(
+        input.PlatformInput{
+            .events = &.{.{ .mouse_move = .{ .x = 2291, .y = 981 } }},
+            .viewport = .{ .width = types.reference_width, .height = types.reference_height },
+        },
+        &input_state,
+        history.settings,
+        .{ .position = .{ .x = 0, .y = 0 } },
+        0,
+        null,
+        null,
+        game_contexts,
+    );
+    try testing.expectEqual(@as(f32, 2291), hardware_frame.pointer.position.x);
 }

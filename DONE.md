@@ -14689,3 +14689,45 @@ input; slice 1 — the raylib-free core — is the previous entry).
 Follow-up candidate: a real TAS fixture script (menu click-through via
 `move` + `press left`, a level start, `dump history` → a `--replay`
 fixture) once there's a need for one — the machinery is in place.
+
+## Console input — pointer-position persistence (the `move` overwrite bug)
+
+Found by live smoke minutes after slice 2 landed: a scripted `move` + 
+`press left` clicked NOTHING — the press frame hit-tested the HARDWARE
+mouse position (reference-mapped), not the scripted one. Root cause: the
+native backend emits a `mouse_move` event EVERY frame unconditionally
+(it always pushes the current position — the behavior translateInput's
+own `mouse_moved_this_tick` change-detection already works around), so a
+console `move` position set on its own frame was overwritten by the next
+frame's hardware report before any subsequent command landed. Held keys
+persist across frames; the pointer position did not.
+
+Fix (the held-key model applied to the pointer): the queue remembers
+`pointer_position` (set by `move`, persists until the next `move` — the
+console's pointer is where the console left it), and every INPUT-command
+frame re-applies it as a `mouse_move` event appended AFTER the backend's
+events (last writer wins within the frame), ahead of the command's own
+events. Deliberately NOT a sticky override that hardware must fight: only
+command frames re-apply, so frames between commands — and everything
+after script EOF — stay on the hardware position; a human at the window
+never loses the pointer. `dump`/`quit` frames do not re-apply (dumps stay
+pure projections — no pointer perturbation).
+
+Also the answer to "which space does `move` use": reference space,
+end to end — the backend maps the hardware pointer through the letterbox
+inverse into reference space at the poll and reports the viewport as the
+reference dims, so a script computes coordinates once against the
+reference layout (3840×2160) and they click the same buttons at any
+window size / render resolution. DESIGN → Input → Console input now
+carries both facts.
+
+The handler-level pin (`input_tests_console.zig`): runConsoleScript
+simulates the backend's unconditional per-frame hardware `mouse_move`
+(the behavior that causes the overwrite) and asserts the press frame
+acts at the scripted position while a no-command frame stays on the
+hardware one. The harness needed ONE queue across the whole script (the
+live queue lives on FrameState; a fresh queue per line would drop the
+remembered position). Live-verified: `move 1920 1256` + `press left`/
+`release left` clicks the main menu's Load Save button (fresh data dir,
+3-button layout, button center at reference (1920, 1256)) with the
+hardware mouse resting elsewhere.
