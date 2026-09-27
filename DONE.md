@@ -14787,3 +14787,25 @@ the ui dump): `dump level` lists the ACTIVE WORLD — level or hub.
   turn cycled (no aggro'd enemies → straight turn_end → fresh
   player_move highlights). The full loop — dump, decide, click, verify —
   works end to end with zero knowledge beyond the dumps.
+
+## Console input — wait idle (turn-flow pacing)
+
+`wait idle`: hold commands until the game is idle — stack empty, no wait,
+no modal error, the SAME condition under which the game accepts player
+input (the frame's own idle gate, computed in applyFrameCommand) — then
+release the next command on that first idle frame. The pacing primitive
+for scripted turn flow: enemy turns drain over real-clock wait timers, and
+a `wait <n>` frame count is a guess that either wastes time or races the
+drain; `wait idle` is exact by construction. A new `.wait_idle` command
+kind (parser: `wait idle`); popped like `wait n` (consumed inside
+takeFrameCommand, arms a `wait_until_idle` hold). Note: a stall means the
+game never idled — itself a bug worth noticing; the human at the window
+still controls everything.
+
+Tests: parser case, queue hold/release (held on busy frames, released on
+the first idle frame, hold cleared after), and an applyFrameCommand pin
+against a real harness history (quit behind the hold never fires while
+the startup batch is pending; runToIdle → the next frame releases it).
+Live-verified: the mini run's guessed `wait 60`/`wait 90` replaced with
+`wait idle` — New Game → hub → beginnings mission → level dump, all
+pacing-exact.

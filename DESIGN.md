@@ -1368,7 +1368,12 @@ the reader thread exits, zero cost.
   hardware position), `scroll <delta>`, `type <text>` (the char
   queue — the text-input widget's own machinery consumes it; commit via
   the normal paths: `press Enter` or the M2 click rule), `action <name>`,
-  `wait <n>` (skip n frames — the pacing primitive), `dump <thing>`
+  `wait <n>` (skip n frames) / `wait idle` (hold until the game is
+  idle — stack empty, no wait, no modal error, the same condition
+  under which the game accepts player input — then release the next
+  command on that first idle frame; the pacing primitive for scripted
+  turn flow, where enemy turns drain over real-clock waits and a frame
+  count is a guess), `dump <thing>`
   (state / ui / level / settings / bindings / history — plain text on
   stdout), `quit`. The `ui` dump lists the last-rendered interactive
   surfaces (buttons / sliders / text fields / ref-bearing slots) with

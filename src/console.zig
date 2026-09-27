@@ -89,6 +89,13 @@ pub const ConsoleCommand = union(enum) {
     /// button clicks use (context-free; the consumption sites gate
     /// themselves). Payload-less actions only (the keybind vocabulary).
     action: types.Action,
+    /// Hold commands until the game is idle (stack empty, no wait, no
+    /// modal error — the same condition under which the game accepts
+    /// player input). The pacing primitive for scripted turn flow: enemy
+    /// turns drain over real-clock waits, and a frame count is a guess;
+    /// `wait idle` releases the next command on the first frame the game
+    /// would accept input again.
+    wait_idle: void,
     /// Skip n frames before the next command (the pacing primitive).
     wait: u32,
     /// Write a projection to stdout.
@@ -200,7 +207,8 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
     }
 
     if (std.mem.eql(u8, verb, "wait")) {
-        if (argument.len == 0) return staticMessage("wait requires a frame count (wait 60)");
+        if (argument.len == 0) return staticMessage("wait requires a frame count (wait 60) or 'idle'");
+        if (std.mem.eql(u8, argument, "idle")) return .{ .command = .{ .wait_idle = {} } };
         const frames = std.fmt.parseInt(u32, argument, 10) catch
             return formattedMessage("wait count '{s}' is not a non-negative integer", .{argument});
         return .{ .command = .{ .wait = frames } };
@@ -289,6 +297,9 @@ pub const ConsoleQueue = struct {
     read_counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// Idle frames remaining from a popped `wait` (game thread only).
     wait_frames_remaining: u32 = 0,
+    /// Set by a popped `wait idle` (game thread only): hold commands until
+    /// the game is idle, then release the next command on that same frame.
+    wait_until_idle: bool = false,
     /// The console's remembered pointer position — set by `move`, persists
     /// across frames like held keys (the console's pointer is where the
     /// console left it). The native backend re-reports the hardware pointer
@@ -330,8 +341,16 @@ pub const ConsoleQueue = struct {
     /// Pop this frame's command (at most one per frame, game thread). A
     /// popped `wait n` arms n idle frames and yields null this frame; while
     /// frames remain, each call decrements and yields null — so `wait n`
-    /// spaces the surrounding commands n idle frames apart.
-    fn takeFrameCommand(self: *ConsoleQueue) ?ConsoleCommand {
+    /// spaces the surrounding commands n idle frames apart. A popped
+    /// `wait idle` holds until `game_is_idle` (computed by the caller from
+    /// the game state), then releases the next command on that same frame.
+    fn takeFrameCommand(self: *ConsoleQueue, game_is_idle: bool) ?ConsoleCommand {
+        if (self.wait_until_idle) {
+            if (!game_is_idle) return null;
+            self.wait_until_idle = false;
+            // Fall through: the next command releases on the first idle
+            // frame, not the one after.
+        }
         if (self.wait_frames_remaining > 0) {
             self.wait_frames_remaining -= 1;
             return null;
@@ -345,6 +364,10 @@ pub const ConsoleQueue = struct {
         self.read_counter.store(read +% 1, .release);
         if (command == .wait) {
             self.wait_frames_remaining = command.wait;
+            return null;
+        }
+        if (command == .wait_idle) {
+            self.wait_until_idle = true;
             return null;
         }
         return command;
@@ -370,7 +393,13 @@ pub fn applyFrameCommand(
     camera: types.Camera,
     camera_zoom: f32,
 ) PlatformInput {
-    const command = queue.takeFrameCommand() orelse return backend_input;
+    // The game is idle — the condition under which it accepts player input
+    // (empty stack, no wait, no modal error): the release condition for
+    // `wait idle`.
+    const game_is_idle = history.current_state.event_stack.len == 0 and
+        history.current_state.waiting == null and
+        history.session.pending_error == null;
+    const command = queue.takeFrameCommand(game_is_idle) orelse return backend_input;
     switch (command) {
         .quit => {
             history.session.quit_requested = true;
@@ -380,9 +409,10 @@ pub fn applyFrameCommand(
             writeDump(kind, queue, history, ui_elements, camera, camera_zoom);
             return backend_input;
         },
-        // A popped wait never leaves takeFrameCommand (it arms its own idle
-        // frames there) — this arm only keeps the switch exhaustive.
-        .wait => return backend_input,
+        // Popped waits never leave takeFrameCommand (they arm their own
+        // idle frames / idle hold there) — this arm only keeps the switch
+        // exhaustive.
+        .wait, .wait_idle => return backend_input,
         // `move` both remembers the position and applies it this frame.
         .move => |position| {
             queue.pointer_position = position;
@@ -441,9 +471,9 @@ fn mergeIntoPlatformInput(
             actions[0] = action;
             merged.actions = actions;
         },
-        // Not input commands — applyFrameCommand handles them (wait never
-        // reaches here either).
-        .wait, .dump, .quit => {},
+        // Not input commands — applyFrameCommand handles them (the waits
+        // never reach here either).
+        .wait, .wait_idle, .dump, .quit => {},
     }
     return merged;
 }
@@ -977,6 +1007,7 @@ test "parseCommandLine: every command shape" {
         .{ .line = "action save_game", .expected = .{ .action = .save_game } },
         .{ .line = "wait 60", .expected = .{ .wait = 60 } },
         .{ .line = "wait 0", .expected = .{ .wait = 0 } },
+        .{ .line = "wait idle", .expected = .{ .wait_idle = {} } },
         .{ .line = "dump state", .expected = .{ .dump = .state } },
         .{ .line = "dump ui", .expected = .{ .dump = .ui } },
         .{ .line = "dump level", .expected = .{ .dump = .level } },
@@ -1039,19 +1070,19 @@ test "parseCommandLine: a type payload over capacity errors instead of truncatin
 
 test "queue: push/take roundtrip preserves order; empty yields null" {
     var queue: ConsoleQueue = .{};
-    try std_testing.expect(queue.takeFrameCommand() == null);
+    try std_testing.expect(queue.takeFrameCommand(true) == null);
 
     queue.push(parseCommandLine("press Escape").command);
     queue.push(parseCommandLine("move 10 20").command);
     queue.push(parseCommandLine("quit").command);
 
-    const first = queue.takeFrameCommand().?;
+    const first = queue.takeFrameCommand(true).?;
     try std_testing.expect(first == .press);
-    const second = queue.takeFrameCommand().?;
+    const second = queue.takeFrameCommand(true).?;
     try std_testing.expect(second == .move);
-    const third = queue.takeFrameCommand().?;
+    const third = queue.takeFrameCommand(true).?;
     try std_testing.expect(third == .quit);
-    try std_testing.expect(queue.takeFrameCommand() == null);
+    try std_testing.expect(queue.takeFrameCommand(true) == null);
 }
 
 test "queue: wait n spaces surrounding commands n idle frames apart" {
@@ -1061,16 +1092,34 @@ test "queue: wait n spaces surrounding commands n idle frames apart" {
     queue.push(parseCommandLine("press KeyB").command);
 
     // Frame 1: the press before the wait.
-    try std_testing.expect(queue.takeFrameCommand().? == .press);
+    try std_testing.expect(queue.takeFrameCommand(true).? == .press);
     // Frame 2: the wait pops, arms 2 idle frames, yields nothing.
-    try std_testing.expect(queue.takeFrameCommand() == null);
+    try std_testing.expect(queue.takeFrameCommand(true) == null);
     // Frames 3 + 4: the armed idle frames.
-    try std_testing.expect(queue.takeFrameCommand() == null);
-    try std_testing.expect(queue.takeFrameCommand() == null);
+    try std_testing.expect(queue.takeFrameCommand(true) == null);
+    try std_testing.expect(queue.takeFrameCommand(true) == null);
     // Frame 5: the command after the wait — 3 frames after the wait itself.
-    const after = queue.takeFrameCommand().?;
+    const after = queue.takeFrameCommand(true).?;
     try std_testing.expect(after == .press);
     try std_testing.expectEqualStrings("KeyB", after.press.key.view());
+}
+
+test "queue: wait idle holds until the game is idle, then releases on that frame" {
+    var queue: ConsoleQueue = .{};
+    queue.push(parseCommandLine("wait idle").command);
+    queue.push(parseCommandLine("press KeyA").command);
+
+    // Frame 1: the wait_idle pops + arms the hold (game not idle yet).
+    try std_testing.expect(queue.takeFrameCommand(false) == null);
+    // Busy frames: held.
+    try std_testing.expect(queue.takeFrameCommand(false) == null);
+    try std_testing.expect(queue.takeFrameCommand(false) == null);
+    // The first idle frame releases the next command on that same frame.
+    const command = queue.takeFrameCommand(true).?;
+    try std_testing.expect(command == .press);
+    // The hold is cleared: later frames flow normally (empty queue → null,
+    // busy or not).
+    try std_testing.expect(queue.takeFrameCommand(false) == null);
 }
 
 test "mergeIntoPlatformInput: input commands append to the backend's frame" {
@@ -1089,7 +1138,7 @@ test "mergeIntoPlatformInput: input commands append to the backend's frame" {
     {
         var queue: ConsoleQueue = .{};
         queue.push(parseCommandLine("press Escape").command);
-        const command = queue.takeFrameCommand().?;
+        const command = queue.takeFrameCommand(true).?;
         const merged = mergeIntoPlatformInput(command, backend_input, arena);
         try std_testing.expectEqual(@as(usize, 2), merged.events.len);
         try std_testing.expectEqualStrings("KeyZ", merged.events[0].key_down);
@@ -1370,6 +1419,31 @@ test "dumpText level: the active world with clickable highlights + entities" {
     test_harness.runToIdle(&menu_history);
     const no_world_text = dumpText(.level, &menu_history, &.{}, camera, zoom, arena);
     try std_testing.expect(std.mem.indexOf(u8, no_world_text, "world: none (no level or hub)\n") != null);
+}
+
+test "applyFrameCommand: wait idle holds while events are pending, releases when idle" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    // A fresh history has the startup batch pending (not idle).
+    var history = harness.newHistory(null);
+
+    var queue: ConsoleQueue = .{};
+    queue.push(parseCommandLine("wait idle").command);
+    queue.push(parseCommandLine("quit").command);
+
+    const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
+    // While the stack is pending, the quit behind the hold never fires.
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(!history.session.quit_requested);
+
+    // Drain to idle; the next frame releases the quit on the first idle
+    // frame.
+    test_harness.runToIdle(&history);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(history.session.quit_requested);
 }
 
 test "writeDumpText: writes the projection to the output writer" {
