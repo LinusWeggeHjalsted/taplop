@@ -1191,6 +1191,18 @@ combat-log UI rendering + replay-viewer UI still TODO)
   cursor nudges it can burst a few tiles during a drain that overlaps a held
   arrow. Pre-existing for real key presses; repeat makes it visible on held
   keys too. Brief and harmless; revisit if felt.
+- **Modal capture states: Escape cancels, Enter confirms.** While a modal
+  state owns the keyboard — the focused text field
+  (`translateInput`'s `text_edit` suppression), an active keybind edit
+  (`keybind_edit` + `routeKeybindCapture`) — binding translation is
+  suppressed and the state's SEAM owns the raw keys: Escape cancels
+  (discard/close), Enter triggers the primary action (commit/confirm). The
+  seam may consume Enter as ordinary input first (the text field's Enter
+  commits the field; the keybind LISTENING phase captures Enter as the
+  combo's key) — once the state is past capture, Enter confirms (a keybind
+  PENDING proposal). New modal states follow the convention; when a second
+  seam-driven confirmable surface appears, the shared flag/generalization
+  gets extracted then (one consumer today — the same call as B-simple).
 - **Settings persistence (user preferences).** Shipped defaults live in
   `data/default_settings.txt` (embedded, read-only). User preferences live in
   `~/.ziglop/settings.txt` (persistent dir, same format). At startup the
@@ -4819,7 +4831,9 @@ action (listening → pending); an add's listening/pending row renders as
 an extra row at the top of the list. The wheel scrolls the PICKER while
 it's open.
 - PENDING: the proposal row shows the captured combo + the action panel +
-Confirm/Cancel buttons + the STEAL WARNING (warn color): the scan
+Confirm/Cancel buttons (Enter CONFIRMS, Escape cancels — the
+modal-capture-state convention, see Input) + the STEAL WARNING (warn
+color): the scan
 (`findKeybindSteal`) is `sameCombo` + `bindingContextsCoFire` (contexts can
 be SIMULTANEOUSLY ACTIVE — NOT plain intersection: {anytime} co-fires with
 {game} in-game though the sets are disjoint; the slice-2 loader scan

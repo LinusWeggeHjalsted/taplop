@@ -14558,3 +14558,22 @@ action duplicate, cross-context legal); the interactive chrome (per-row
 rekey/reassign/X/+ buttons + the standalone Add + the min-width contract).
 FOLLOW-UP (TODO): an end-to-end harness test for the apply/remove rebuild
 ownership path.
+
+## Keybind pending: Enter confirms (the modal-capture-state convention)
+
+Agreed convention (the Enter-as-confirm discussion): **while a modal state
+owns the keyboard, Escape cancels, Enter triggers the primary action** —
+and the rule lives in each state's input seam, not a global mechanism (one
+consumer today; the shared flag gets extracted when a second seam-driven
+confirmable surface appears — the same call as B-simple).
+
+Implementation: `routeKeybindCapture` returns `.confirmed` for an Enter
+press during the PENDING phase → `resolveKeybindCaptureOutcome` applies.
+The obvious worry — Enter often being the key being rebound TO — is not
+ambiguous by phase separation: capture happens during LISTENING, so by
+PENDING an Enter press can only mean confirm (and during LISTENING Enter
+is an ordinary capturable key). Tests pin both directions.
+
+Docs: the convention bullet lives in DESIGN → Input (where a new modal
+state's builder will find it); the Settings screen's pending paragraph
+points at it.

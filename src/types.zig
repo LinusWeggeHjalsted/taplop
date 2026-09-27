@@ -1055,10 +1055,11 @@ pub const KeybindCommand = union(enum) {
 
 /// One frame's keybind-listening outcome, produced by the `translateInput`
 /// capture seam (the text-edit-outcome model): a key was captured (the
-/// edit moves to its pending state), Escape was pressed (cancel), or
-/// nothing happened. Resolved once per frame in `main.frame` — see
-/// `input_handlers.resolveKeybindCaptureOutcome`.
-pub const KeybindCaptureOutcome = enum { none, captured, canceled };
+/// edit moves to its pending state), Escape was pressed (cancel), Enter
+/// was pressed during pending (confirm — the modal-capture-state
+/// convention), or nothing happened. Resolved once per frame in
+/// `main.frame` — see `input_handlers.resolveKeybindCaptureOutcome`.
+pub const KeybindCaptureOutcome = enum { none, captured, canceled, confirmed };
 
 pub const InputBinding = struct {
     input: RawInput,

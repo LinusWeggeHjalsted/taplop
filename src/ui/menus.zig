@@ -2092,8 +2092,9 @@ fn emitPendingRow(
     panel_x += try emitKeybindPanel(elements, allocator, font_metrics, action_label, panel_x, row_y, settings_row_height, button_color);
     panel_x += settings_row_gap;
 
-    // Confirm / Cancel (buttons only — Enter is often the captured key
-    // itself; Escape cancels through the capture seam).
+    // Confirm / Cancel. Enter CONFIRMS through the capture seam during
+    // pending (the modal-capture-state convention — safe because capture
+    // happens during listening; Escape cancels the same way).
     panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Confirm", panel_x, row_y, button_color, .confirm, true);
     panel_x += settings_row_gap;
     panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Cancel", panel_x, row_y, button_color, .cancel, false);

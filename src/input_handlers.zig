@@ -737,6 +737,9 @@ pub fn resolveKeybindCaptureOutcome(
     switch (outcome) {
         .none => {},
         .canceled => ui_state.keybind_edit = null,
+        // Enter during pending: apply the proposal (the modal-capture-state
+        // convention — the Confirm button's keyboard path).
+        .confirmed => applyKeybindEdit(history),
         .captured => {
             const target = switch (edit_state.edit) {
                 .listening => |listening_target| listening_target,

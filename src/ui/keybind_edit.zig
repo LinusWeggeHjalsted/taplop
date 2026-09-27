@@ -135,9 +135,12 @@ pub fn isModifierInputId(id: []const u8) bool {
 /// Route one frame of raw input into the active keybind edit (the
 /// `translateInput` seam, the text-input model): Escape cancels at every
 /// phase; during LISTENING the first non-modifier key press or mouse press
-/// captures. Called only while an edit is active (binding translation is
-/// suppressed upstream). Pure UiState writes — no settings touch until
-/// confirm.
+/// captures; during PENDING Enter confirms (the modal-capture-state
+/// convention — Escape cancels, Enter triggers the primary action; safe
+/// despite Enter often being the captured key itself: capture happens
+/// during LISTENING, so by pending an Enter press can only mean confirm).
+/// Called only while an edit is active (binding translation is suppressed
+/// upstream). Pure UiState writes — no settings touch until confirm.
 pub fn routeKeybindCapture(
     edit_state: *KeybindEditState,
     pressed_keys: []const ?[]const u8,
@@ -150,6 +153,15 @@ pub fn routeKeybindCapture(
     for (pressed_keys) |slot| {
         const id = slot orelse continue;
         if (std.mem.eql(u8, id, "Escape")) return .canceled;
+    }
+
+    // Enter confirms during pending (the modal-capture-state convention —
+    // see the fn doc for why the captured-Enter case is not ambiguous).
+    if (edit_state.edit == .pending) {
+        for (pressed_keys) |slot| {
+            const id = slot orelse continue;
+            if (std.mem.eql(u8, id, "Enter")) return .confirmed;
+        }
     }
 
     if (edit_state.edit != .listening) return .none;
@@ -197,15 +209,24 @@ test "routeKeybindCapture: keys capture with held modifiers; Escape cancels; mod
     try std.testing.expectEqual(types.KeybindCaptureOutcome.canceled, routeKeybindCapture(&edit_state, &escape_press, &empty, .{}));
 
     // Outside listening (pending), a normal press does nothing; Escape
-    // still cancels.
+    // still cancels; Enter CONFIRMS (the modal-capture-state convention —
+    // capture is over by pending, so an Enter press can only mean confirm).
     edit_state = .{ .edit = .{ .pending = .{
-        .binding = .{ .input = .{ .key = "KeyQ" }, .action = .undo },
+        .binding = .{ .input = .{ .key = "Enter" }, .action = .undo },
         .replace_index = 0,
         .stolen_index = null,
     } } };
     const normal_press = [_]?[]const u8{"KeyQ"};
     try std.testing.expectEqual(types.KeybindCaptureOutcome.none, routeKeybindCapture(&edit_state, &normal_press, &empty, .{}));
     try std.testing.expectEqual(types.KeybindCaptureOutcome.canceled, routeKeybindCapture(&edit_state, &escape_press, &empty, .{}));
+    const enter_press = [_]?[]const u8{"Enter"};
+    try std.testing.expectEqual(types.KeybindCaptureOutcome.confirmed, routeKeybindCapture(&edit_state, &enter_press, &empty, .{}));
+
+    // During LISTENING Enter is an ordinary capturable key (the combo being
+    // rebound TO Enter captures it; only pending Enter confirms).
+    edit_state = .{ .edit = .{ .listening = .{ .binding = 0 } } };
+    try std.testing.expectEqual(types.KeybindCaptureOutcome.captured, routeKeybindCapture(&edit_state, &enter_press, &empty, .{}));
+    try std.testing.expectEqualStrings("Enter", edit_state.capture.capturedId().?);
 
     // A mouse press captures as a mouse binding.
     edit_state = .{ .edit = .{ .listening = .{ .binding = 0 } } };
