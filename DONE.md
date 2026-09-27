@@ -14867,3 +14867,58 @@ stats per item, one line per stack) and the player's INVENTORY
 (occupied/total slots, one line per item, same summaries). Also fixed a
 formatting nit the projection test caught: no space after the stack
 line's colon.
+
+## Console input — the second agent run (equip, undo-refinement, corridor war)
+
+The user-invited return match on "Beginnings 0" from a fresh save, with two
+new tools in play: inventory/equipping (the user's reminder) and undo/redo
+as a strategy-refinement instrument. The mission was NOT completed — the
+run ended mid-fight (11hp flanked in the corridor, reflect one tick out) —
+but the difficulty the user likes held up against full game knowledge +
+meta-tools, which is itself the finding.
+
+What the run surfaced (each verified against source or the event log):
+
+- **The drag-to-equip swap semantics**: dragging inventory/0 (Comfortable
+  Boots) onto gear/boots recorded `player_equip_to_gear` and executed —
+  the OLD Starter Boots survive into the inventory (the user's hint after
+  my misread; the ui dump's item line proved the swap, the history's
+  event 36-37 proved the drag had fired all along — my grep pattern
+  matched the count line but not the item line).
+- **Slot identity payloads**: the ui dump's slot lines now carry their
+  payload (`gear/boots`, `inventory/0`, `skill_bar/3`) — the tag alone
+  cannot distinguish same-kind slots, which drag targeting needs.
+- **Auto-pickup**: walking onto a ground stack transfers it (no click); the
+  level dump's ground/inventory sections drove it blind-free.
+- **Momentum** (the user's reminder): every skill use — attacks AND
+  cantrips — adds +1 momentum; the damage modifier is floor(log2(momentum)).
+  Explains slice hitting 5 against the weapon's base 3, and the
+  skeletons' hits ramping (one exchange cost 13, not the budgeted 10).
+- **Enemy AI behavior pinned empirically**: enemies attack in the SAME
+  turn they close into adjacency (a kited distance-2 end is not safe vs a
+  2-speed chaser); they hold attack range WITHOUT moving when already in
+  range (skel3 guarding the choke tile unmoved); and OCCUPIED TILES BLOCK
+  PATHFINDING — a skeleton on a 1-wide corridor tile is a door (the
+  flag's only route ran through (10,2), so the guard had to be killed or
+  lured off).
+- **Undo as strategy refinement, actually used**: when the pocket
+  slugfest math turned lethal (13-damage exchange vs the budgeted 10,
+  spinblade on cooldown), a 3-action rewind (each recorded player action —
+  move, skip, use_skill — is an idle point, finer than per-turn) restored
+  the pre-commit state, and the replan (reflect bait) ran from there.
+  Redo stayed available but was never needed — deterministic replays of
+  the same line.
+- **The identified winning line** (for the next attempt): the reflect-bait
+  rotation — heal, step to distance 2-3, cast reflect, let both chasers
+  close into their own damage (verified twice: both hit themselves for
+  zero cost to me), rotate replenish/reflect cooldowns while kiting at
+  end-distance ≥3 from the speed-1 guard and ≥4 from the speed-2 chaser,
+  kill the chaser, lure the guard off the choke tile, circle around, and
+  sprint the final speed-3 dash onto the flag (the level-end check fires
+  before any enemy turn). The run died executing exactly this — at 11hp
+  with reflect one tick late; the line is sound, the execution window was
+  one turn short.
+
+Session hygiene: the fifo + sleep-holder session pattern, quit + cleanup,
+and the whole second run's recorded history remains a valid --replay
+fixture by construction (the first run's log was replay-verified).
