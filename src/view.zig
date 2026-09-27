@@ -1235,6 +1235,16 @@ fn tileToScreen(tile: types.Vector2, camera: types.Camera, zoom: f32) types.Scre
     return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
 }
 
+/// The tile's center point in reference space — a click point that
+/// `input.screenToTile` resolves back to this tile (the camera transform at
+/// its half-tile offset). The console level dump prints these so a script
+/// can click a tile straight off the dump line.
+pub fn tileClickCenter(tile: types.Vector2, camera: types.Camera, zoom: f32) types.ScreenPosition {
+    const top_left = tileToScreen(tile, camera, zoom);
+    const half_tile: i32 = @intFromFloat(@round(input.tile_size_pixels * zoom / 2.0));
+    return .{ .x = top_left.x + half_tile, .y = top_left.y + half_tile };
+}
+
 /// Pure white — the "no tint" color for `keep_original_colors` rendering
 /// (the multiply identity: the art keeps its own colors). See DESIGN →
 /// Entity & UI Coloring.

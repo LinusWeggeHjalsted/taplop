@@ -14753,3 +14753,37 @@ self-documenting loop: `dump ui` → read `button ... center 1920 1256
 action toggle_load_save_menu` → `move 1920 1256` + press/release → the
 browser opens, and a follow-up `dump ui` lists the newly opened
 browser's own Back button.
+
+## Console input — the level dump (the active world, gameplay-decidable)
+
+The dump that makes the console a full gameplay channel (agreed follow-up to
+the ui dump): `dump level` lists the ACTIVE WORLD — level or hub.
+
+- Level: name, turn_phase, tile count, the level-end flag, prepared skill,
+  the phase's `highlighted_tiles` (the game's own computed legal targets —
+  a script never reasons about legality, it clicks a highlight), entities
+  (name / team / tile / health / aggro), and the player's utility skill
+  slots + cooldowns (ready / cooldown N / none).
+- Hub: name, player + NPCs, and the mission exits (mission id + tile) —
+  the click targets that start missions.
+- Every tile line carries its CENTER — a click point projected through
+  the frame's LIVE camera via the new `view.tileClickCenter` (tile center
+  through `tileToScreen`; the inverse of `screenToTile`, so a coordinate
+  straight off a dump line resolves back to its tile — pinned as a
+  round-trip in the projection test).
+- Seam decision (agreed option a): the console drain in frame() moved to
+  AFTER the camera computation (the camera depends only on state + zoom +
+  pan, not on input), and `applyFrameCommand` (+ the writeDump → dumpText
+  → dumpLevelText chain) takes the camera + zoom. Alternative rejected:
+  scripts replicating computeCamera/tileToScreen themselves — duplicates
+  the math, rots on camera changes.
+- Projection test: a harness level with entities/skills/highlights/flag
+  asserts the exact lines (centers derived via the same helper), the
+  click-center round-trip through `screenToTile`, and the no-world case.
+- Live-verified as a MINI RUN: `dump ui` → click New Game (center off the
+  dump) → hub dump (mission exits with centers) → click the "beginnings"
+  exit → level dump ("Beginnings 0": 4 move highlights, 4 entities, skill
+  bar) → click a highlight center → the player moved (0,0)→(1,0), the
+  turn cycled (no aggro'd enemies → straight turn_end → fresh
+  player_move highlights). The full loop — dump, decide, click, verify —
+  works end to end with zero knowledge beyond the dumps.

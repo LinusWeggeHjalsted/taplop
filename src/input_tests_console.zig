@@ -75,6 +75,8 @@ fn runConsoleScript(
             arena,
             history,
             &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
         );
         result = input.translateInput(
             platform_input,

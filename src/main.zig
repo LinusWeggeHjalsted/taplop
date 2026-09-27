@@ -545,6 +545,24 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     applyRenderResolutionSetting(backend, history);
 
     const backend_input = backend.pollInput();
+    // Camera is derived (centered on the player + clamped to the view
+    // region — see DESIGN → Platform Seam → Camera clamping), computed
+    // each frame so input (screenToTile) and rendering stay in sync.
+    // Computed BEFORE the console drain below so the level dump projects
+    // tiles through the frame's live camera.
+    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
+    const view_region = view_mod.cameraViewRegion(
+        &history.session,
+        &history.current_state,
+        backend.fontMetrics(),
+        camera_zoom,
+    );
+    // Input camera: computed BEFORE the drain, reflecting the previously-
+    // rendered view (the player clicks against what's on screen). Includes
+    // the current camera pan so screenToTile maps clicks against the panned
+    // view. The render camera is recomputed post-update below so it tracks
+    // the state being drawn (see the render gate).
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, view_region);
     // Console input (stdin — a scripted/TAS channel): drain one command per
     // frame and merge it into this frame's PlatformInput, so injected input
     // rides the identical pipeline as hardware input from here down (see
@@ -563,23 +581,9 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             previous_view_state.ui_elements
         else
             &.{},
-    );
-    // Camera is derived (centered on the player + clamped to the view
-    // region — see DESIGN → Platform Seam → Camera clamping), computed
-    // each frame so input (screenToTile) and rendering stay in sync.
-    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
-    const view_region = view_mod.cameraViewRegion(
-        &history.session,
-        &history.current_state,
-        backend.fontMetrics(),
+        camera,
         camera_zoom,
     );
-    // Input camera: computed BEFORE the drain, reflecting the previously-
-    // rendered view (the player clicks against what's on screen). Includes
-    // the current camera pan so screenToTile maps clicks against the panned
-    // view. The render camera is recomputed post-update below so it tracks
-    // the state being drawn (see the render gate).
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, view_region);
     // Which binding contexts are live this frame (see DESIGN → Input →
     // Binding contexts). The error popup is modal: while up, ONLY the
     // error_popup context is active (everything else — including `anytime`

@@ -17,6 +17,7 @@ const state = @import("state.zig");
 const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
 const ui = @import("ui.zig");
+const view = @import("view.zig");
 
 const GameStateHistory = state.GameStateHistory;
 const PlatformInput = input.PlatformInput;
@@ -100,7 +101,7 @@ pub const ConsoleCommand = union(enum) {
         mouse: IdText,
     };
 
-    pub const DumpKind = enum { state, ui, settings, bindings, history };
+    pub const DumpKind = enum { state, ui, level, settings, bindings, history };
 };
 
 /// The result of parsing one stdin line.
@@ -208,10 +209,11 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
     if (std.mem.eql(u8, verb, "dump")) {
         if (std.mem.eql(u8, argument, "state")) return .{ .command = .{ .dump = .state } };
         if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .dump = .ui } };
+        if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .dump = .level } };
         if (std.mem.eql(u8, argument, "settings")) return .{ .command = .{ .dump = .settings } };
         if (std.mem.eql(u8, argument, "bindings")) return .{ .command = .{ .dump = .bindings } };
         if (std.mem.eql(u8, argument, "history")) return .{ .command = .{ .dump = .history } };
-        return formattedMessage("unknown dump kind '{s}' (state, ui, settings, bindings, history)", .{argument});
+        return formattedMessage("unknown dump kind '{s}' (state, ui, level, settings, bindings, history)", .{argument});
     }
 
     return formattedMessage(
@@ -365,6 +367,8 @@ pub fn applyFrameCommand(
     arena: std.mem.Allocator,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
 ) PlatformInput {
     const command = queue.takeFrameCommand() orelse return backend_input;
     switch (command) {
@@ -373,7 +377,7 @@ pub fn applyFrameCommand(
             return backend_input;
         },
         .dump => |kind| {
-            writeDump(kind, queue, history, ui_elements);
+            writeDump(kind, queue, history, ui_elements, camera, camera_zoom);
             return backend_input;
         },
         // A popped wait never leaves takeFrameCommand (it arms its own idle
@@ -515,9 +519,11 @@ fn writeDump(
     queue: *ConsoleQueue,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
 ) void {
     if (queue.output) |*output| {
-        writeDumpText(kind, &output.interface, history, ui_elements);
+        writeDumpText(kind, &output.interface, history, ui_elements, camera, camera_zoom);
     }
 }
 
@@ -526,10 +532,12 @@ fn writeDumpText(
     output: *std.Io.Writer,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
 ) void {
     var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer arena.deinit();
-    const text = dumpText(kind, history, ui_elements, arena.allocator());
+    const text = dumpText(kind, history, ui_elements, camera, camera_zoom, arena.allocator());
     output.writeAll(text) catch |err| {
         std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
         return;
@@ -551,11 +559,14 @@ fn dumpText(
     kind: ConsoleCommand.DumpKind,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
     allocator: std.mem.Allocator,
 ) []const u8 {
     return switch (kind) {
         .state => dumpStateText(history, allocator),
         .ui => dumpUiText(history, ui_elements, allocator),
+        .level => dumpLevelText(history, camera, camera_zoom, allocator),
         .settings => writers.writeSettings(history.settings, allocator) catch
             @panic("failed to serialize settings dump"),
         .bindings => dumpBindingsText(history, allocator),
@@ -565,6 +576,164 @@ fn dumpText(
             allocator,
         ) catch @panic("failed to serialize history dump"),
     };
+}
+
+/// The active world (level or hub) for gameplay decisions: turn phase,
+/// entities (team / health / aggro / tile + click center), the phase's
+/// legal-target highlights (the game's own computed move/skill targeting —
+/// a script never reasons about legality, it clicks a highlight), the
+/// player's utility skill slots + cooldowns, and the level-end flag /
+/// mission exits (click centers — the world clickables a script drives).
+/// Click centers project through the frame's LIVE camera
+/// (`view.tileClickCenter`), so the coordinates resolve back to their
+/// tiles via `screenToTile` at whatever zoom/pan is current.
+fn dumpLevelText(
+    history: *GameStateHistory,
+    camera: types.Camera,
+    camera_zoom: f32,
+    allocator: std.mem.Allocator,
+) []const u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+    const current = &history.current_state;
+
+    if (current.level) |level| {
+        buffer.print(allocator, "world: level \"{s}\"\n", .{level.name}) catch
+            @panic("failed to format level dump");
+        buffer.print(allocator, "turn_phase: {s}\n", .{
+            if (level.turn_phase) |phase| @tagName(phase) else "none",
+        }) catch @panic("failed to format level dump");
+        buffer.print(allocator, "tiles: {d}\n", .{level.level_tiles.len}) catch
+            @panic("failed to format level dump");
+        if (level.level_end) |flag| {
+            appendTileLine(&buffer, allocator, "level_end", flag, camera, camera_zoom);
+        } else {
+            buffer.appendSlice(allocator, "level_end: none\n") catch @panic("failed to format level dump");
+        }
+        buffer.print(allocator, "prepared_skill: {s}\n", .{
+            if (level.prepared_skill) |skill| @tagName(skill) else "none",
+        }) catch @panic("failed to format level dump");
+
+        buffer.print(allocator, "highlights: {d}\n", .{level.highlighted_tiles.len}) catch
+            @panic("failed to format level dump");
+        for (level.highlighted_tiles) |tile| {
+            appendTileLine(&buffer, allocator, "highlight", tile, camera, camera_zoom);
+        }
+
+        buffer.print(allocator, "entities: {d}\n", .{level.entities.len}) catch
+            @panic("failed to format level dump");
+        for (level.entities, 0..) |entity, index| {
+            appendEntityLine(&buffer, allocator, index, entity, camera, camera_zoom);
+        }
+        if (level.entities.len > 0) {
+            appendSkillLines(&buffer, allocator, level.entities[0]);
+        }
+    } else if (current.hub) |hub| {
+        buffer.print(allocator, "world: hub \"{s}\"\n", .{hub.name}) catch
+            @panic("failed to format level dump");
+        buffer.print(allocator, "tiles: {d}\n", .{hub.hub_tiles.len}) catch
+            @panic("failed to format level dump");
+
+        buffer.appendSlice(allocator, "entities: 1 + npcs\n") catch @panic("failed to format level dump");
+        appendEntityLine(&buffer, allocator, 0, hub.player, camera, camera_zoom);
+        for (hub.npcs, 0..) |npc, index| {
+            appendEntityLine(&buffer, allocator, index + 1, npc.entity, camera, camera_zoom);
+        }
+
+        buffer.print(allocator, "mission_exits: {d}\n", .{hub.mission_exits.len}) catch
+            @panic("failed to format level dump");
+        for (hub.mission_exits) |mission_exit| {
+            buffer.print(
+                allocator,
+                "mission_exit \"{s}\" ({d}, {d}) center {d} {d}\n",
+                .{
+                    mission_exit.mission_id,
+                    mission_exit.position.x,
+                    mission_exit.position.y,
+                    view.tileClickCenter(mission_exit.position, camera, camera_zoom).x,
+                    view.tileClickCenter(mission_exit.position, camera, camera_zoom).y,
+                },
+            ) catch @panic("failed to format level dump");
+        }
+    } else {
+        buffer.appendSlice(allocator, "world: none (no level or hub)\n") catch
+            @panic("failed to format level dump");
+    }
+    return buffer.items;
+}
+
+/// One tile line: `<kind> (x, y) center cx cy` — the center is a click
+/// point that resolves back to the tile.
+fn appendTileLine(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    kind: []const u8,
+    tile: types.Vector2,
+    camera: types.Camera,
+    camera_zoom: f32,
+) void {
+    const center = view.tileClickCenter(tile, camera, camera_zoom);
+    buffer.print(
+        allocator,
+        "{s} ({d}, {d}) center {d} {d}\n",
+        .{ kind, tile.x, tile.y, center.x, center.y },
+    ) catch @panic("failed to format level dump");
+}
+
+fn appendEntityLine(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    index: usize,
+    entity: types.Entity,
+    camera: types.Camera,
+    camera_zoom: f32,
+) void {
+    const center = view.tileClickCenter(entity.position, camera, camera_zoom);
+    buffer.print(
+        allocator,
+        "entity {d} \"{s}\" team {d} tile ({d}, {d}) health {d}/{d} aggro {s} center {d} {d}\n",
+        .{
+            index,
+            entity.name,
+            entity.team,
+            entity.position.x,
+            entity.position.y,
+            entity.current_health,
+            entity.max_health,
+            if (entity.is_active) "yes" else "no",
+            center.x,
+            center.y,
+        },
+    ) catch @panic("failed to format level dump");
+}
+
+/// The player's utility skill slots (entity 0 in a level): id + cooldown
+/// (ready when 0).
+fn appendSkillLines(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    player: types.Entity,
+) void {
+    buffer.appendSlice(allocator, "utility skills:\n") catch @panic("failed to format level dump");
+    for (player.equipped_utility_skills, 0..) |slot, index| {
+        if (slot) |skill| {
+            const cooldown = player.skill_cooldowns.get(skill);
+            if (cooldown == 0) {
+                buffer.print(
+                    allocator,
+                    "skill {d}: {s} ready\n",
+                    .{ index, @tagName(skill) },
+                ) catch @panic("failed to format level dump");
+            } else {
+                buffer.print(
+                    allocator,
+                    "skill {d}: {s} cooldown {d}\n",
+                    .{ index, @tagName(skill), cooldown },
+                ) catch @panic("failed to format level dump");
+            }
+        } else {
+            buffer.print(allocator, "skill {d}: none\n", .{index}) catch @panic("failed to format level dump");
+        }
+    }
 }
 
 fn dumpStateText(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
@@ -810,6 +979,7 @@ test "parseCommandLine: every command shape" {
         .{ .line = "wait 0", .expected = .{ .wait = 0 } },
         .{ .line = "dump state", .expected = .{ .dump = .state } },
         .{ .line = "dump ui", .expected = .{ .dump = .ui } },
+        .{ .line = "dump level", .expected = .{ .dump = .level } },
         .{ .line = "dump settings", .expected = .{ .dump = .settings } },
         .{ .line = "dump bindings", .expected = .{ .dump = .bindings } },
         .{ .line = "dump history", .expected = .{ .dump = .history } },
@@ -1003,12 +1173,12 @@ test "applyFrameCommand: quit requests the session quit; empty queue passes thro
 
     // Empty queue: the backend input returns unchanged (value-equal —
     // empty-slice pointers are not comparable).
-    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{});
+    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expectEqualDeep(backend_input, passed_through);
     try std_testing.expect(!history.session.quit_requested);
 
     queue.push(parseCommandLine("quit").command);
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{});
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(history.session.quit_requested);
 }
 
@@ -1022,24 +1192,24 @@ test "dumpText: projections report the state they are handed" {
     test_harness.runToIdle(&history);
 
     // state: a main-menu history — screen + no world.
-    const state_text = dumpText(.state, &history, &.{}, arena);
+    const state_text = dumpText(.state, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, state_text, "screen: main_menu") != null);
     try std_testing.expect(std.mem.indexOf(u8, state_text, "entities: none (no world)") != null);
 
     // ui: reflects the session's UI flags.
     history.session.ui_state.options_menu_open = true;
     history.session.ui_state.keybind_scroll_offset = 4;
-    const ui_text = dumpText(.ui, &history, &.{}, arena);
+    const ui_text = dumpText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "keybind_scroll_offset: 4") != null);
 
     // settings: the writer's own full-file text.
-    const settings_text = dumpText(.settings, &history, &.{}, arena);
+    const settings_text = dumpText(.settings, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     const written = writers.writeSettings(history.settings, arena) catch unreachable;
     try std_testing.expectEqualStrings(written, settings_text);
 
     // bindings: one line per binding, derived from the same list.
-    const bindings_text = dumpText(.bindings, &history, &.{}, arena);
+    const bindings_text = dumpText(.bindings, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     const binding_lines = std.mem.count(u8, bindings_text, " -> ");
     try std_testing.expectEqual(history.settings.input_bindings.len, binding_lines);
     if (history.settings.input_bindings.len > 0) {
@@ -1048,7 +1218,7 @@ test "dumpText: projections report the state they are handed" {
     }
 
     // history: the session-log body.
-    const history_text = dumpText(.history, &history, &.{}, arena);
+    const history_text = dumpText(.history, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, history_text, "EventLog") != null);
 }
 
@@ -1094,7 +1264,7 @@ test "dumpText ui: interactive surfaces list rects + ready-to-use click centers"
         } },
     };
 
-    const text = dumpText(.ui, &history, &elements, arena);
+    const text = dumpText(.ui, &history, &elements, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
 
     // Each surface's line: rect + center (a valid click point — the exact
     // coordinate a `move` + `press left`/`release left` pair acts at) + the
@@ -1121,9 +1291,85 @@ test "dumpText ui: interactive surfaces list rects + ready-to-use click centers"
     ) != null);
 
     // An element list with no interactive surfaces reports none.
-    const empty_text = dumpText(.ui, &history, &.{}, arena);
+    const empty_text = dumpText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, empty_text, "interactive surfaces") != null);
     try std_testing.expect(std.mem.indexOf(u8, empty_text, "none\n") != null);
+}
+
+test "dumpText level: the active world with clickable highlights + entities" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    var entities = [_]types.Entity{
+        .{ .name = "Hero", .team = 0, .position = .{ .x = 1, .y = 1 }, .current_health = 20 },
+        .{ .name = "Wolf", .team = 1, .position = .{ .x = 3, .y = 1 }, .current_health = 8, .max_health = 12, .is_active = true },
+    };
+    entities[0].equipped_utility_skills[0] = .bash;
+    entities[0].skill_cooldowns.set(.bash, 2);
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 },
+        .{ .x = 0, .y = 2 }, .{ .x = 1, .y = 2 }, .{ .x = 2, .y = 2 },
+    };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(arena, &entities, &tiles));
+    test_harness.runToIdle(&history);
+
+    const level = &history.current_state.level.?;
+    level.turn_phase = .player_move;
+    level.level_end = .{ .x = 2, .y = 2 };
+    const highlights = [_]types.Vector2{ .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 0 } };
+    level.highlighted_tiles = &highlights;
+
+    const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const zoom: f32 = 1.0;
+    const text = dumpText(.level, &history, &.{}, camera, zoom, arena);
+
+    // World + phase + flag + highlights + entities + skills, one line each,
+    // with click centers derived from the camera projection.
+    try std_testing.expect(std.mem.indexOf(u8, text, "world: level") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "turn_phase: player_move\n") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "tiles: 9\n") != null);
+
+    const flag_center = view.tileClickCenter(.{ .x = 2, .y = 2 }, camera, zoom);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        std.fmt.allocPrint(arena, "level_end (2, 2) center {d} {d}\n", .{ flag_center.x, flag_center.y }) catch unreachable,
+    ) != null);
+
+    const highlight_center = view.tileClickCenter(.{ .x = 0, .y = 1 }, camera, zoom);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        std.fmt.allocPrint(arena, "highlight (0, 1) center {d} {d}\n", .{ highlight_center.x, highlight_center.y }) catch unreachable,
+    ) != null);
+
+    try std_testing.expect(std.mem.indexOf(u8, text, "entity 0 \"Hero\" team 0 tile (1, 1) health 20/20 aggro no center") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "entity 1 \"Wolf\" team 1 tile (3, 1) health 8/12 aggro yes center") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "skill 0: bash cooldown 2\n") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "skill 1: none\n") != null);
+
+    // The click-center contract: a dumped center resolves back to its tile
+    // through screenToTile — the exact resolution a console `move` + press
+    // goes through — so a coordinate straight off the dump line lands on
+    // the intended tile.
+    const wolf_center = view.tileClickCenter(.{ .x = 3, .y = 1 }, camera, zoom);
+    const resolved_tile = input.screenToTile(
+        .{ .x = @floatFromInt(wolf_center.x), .y = @floatFromInt(wolf_center.y) },
+        camera,
+        zoom,
+        .{ .width = types.reference_width, .height = types.reference_height },
+    );
+    try std_testing.expectEqual(types.Vector2{ .x = 3, .y = 1 }, resolved_tile);
+
+    // No world (main menu): the dump says so.
+    var menu_history = harness.newHistory(null);
+    test_harness.runToIdle(&menu_history);
+    const no_world_text = dumpText(.level, &menu_history, &.{}, camera, zoom, arena);
+    try std_testing.expect(std.mem.indexOf(u8, no_world_text, "world: none (no level or hub)\n") != null);
 }
 
 test "writeDumpText: writes the projection to the output writer" {
@@ -1139,7 +1385,7 @@ test "writeDumpText: writes the projection to the output writer" {
     // wiring's File.Writer parent has).
     var allocating: std.Io.Writer.Allocating = .init(std_testing.allocator);
     defer allocating.deinit();
-    writeDumpText(.state, &allocating.writer, &history, &.{});
+    writeDumpText(.state, &allocating.writer, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
 
     const written = allocating.written();
     try std_testing.expect(std.mem.indexOf(u8, written, "screen: main_menu") != null);
