@@ -306,6 +306,11 @@ fn update(
                         if (button.editor_kind) |kind| {
                             player_input.anytime.clicked_editor_kind = kind;
                         }
+                        // Settings screen content tab (Settings /
+                        // Keybinds) rides alongside its action.
+                        if (button.settings_tab) |settings_tab| {
+                            player_input.anytime.clicked_settings_tab = settings_tab;
+                        }
                         if (button.editor_mission_tab) |mission_tab| {
                             player_input.anytime.clicked_editor_mission_tab = mission_tab;
                         }

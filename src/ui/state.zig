@@ -110,6 +110,19 @@ pub const UiState = struct {
     /// Framework → Settings screen.
     settings_open: bool = false,
 
+    /// Which content tab the open settings screen shows (Settings /
+    /// Keybinds). A view affordance — direct UiState write, off the undo
+    /// timeline (the editor-browser tab convention). A tab switch resets
+    /// `keybind_scroll_offset` (the other tab's list has its own extent).
+    settings_tab: types.SettingsTab = .settings,
+
+    /// The Keybinds tab's list scroll: the index of the first visible ROW
+    /// (group headers + binding rows both count — the list is flat rows).
+    /// One wheel notch = one row; lower clamp at the input site, upper
+    /// clamp in the builder (authoritative — only it knows the content
+    /// height). See DESIGN → UI Framework → Settings screen.
+    keybind_scroll_offset: i32 = 0,
+
     /// Which slider is being dragged (left-press on a slider → held →
     /// release). Null when no slider drag is in progress. Off the undo
     /// timeline (UI interaction state, like `drag`). Cleared by the

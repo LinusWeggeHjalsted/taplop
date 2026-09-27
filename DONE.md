@@ -14374,3 +14374,46 @@ Binding contexts (derived), Action↔context classification, Hybrid
 precedence (+ the new binding-conflicts bullet), Binding overlay semantics;
 TODO friction item updated (backend key table + context line no longer
 wiring sites). Runtime verified native + web (main menu loads).
+
+## Keybind editor slice 3 — the Keybinds tab (read-only) + two-column Settings
+
+The settings screen gained content tabs (Settings / Keybinds —
+`UiState.settings_tab`, tab buttons under the header,
+`.select_settings_tab` + `clicked_settings_tab` payload through the
+options_action dispatch; a switch resets the keybind scroll, the
+browser-tab convention). Escape still closes the overlay from either tab.
+
+**The Keybinds tab** (read-only — editing is slice 4): bindings sorted by
+action (declaration order, stable so an action's combos keep file order),
+one group header per action + one row per binding — modifier/key 9-slice
+panels ("+" between; `keyIdDisplayLabel` prettifies ids: Ctrl/Shift/Alt,
+KeyZ→Z, Digit1→1, left→LMB) and the action panel at a fixed column,
+labeled "Action — Contexts" with the DERIVED context set. Scroll is the
+game-wide row-scroll convention (`keybind_scroll_offset` = first visible
+row, one notch = one row, lower clamp at the input site, upper clamp
+authoritative in the builder).
+
+Display labels are comptime-generated (`actionDisplayLabel` /
+`contextSetDisplayLabel`) so new Action members + context-set shapes label
+themselves. Lesson worth keeping: comptime labels must be built by STRING
+CONCATENATION (each `++` produces a compiler constant) — comptime-var
+buffers copied into a table do NOT materialize into the binary and arrive
+as scratch garbage at runtime (caught by a label-dump probe; the
+concatenation form is the StaticStringMap mechanism).
+
+**The Settings tab went two-column** (6 rows per column,
+`settingsControlRowRect`): a new layout-fit test exposed that a single
+12-row column needs 1792px where the region between the tab row and the
+Back button has ~1610 — the last row would overlap the Back button, and
+would have even BEFORE the tab row (the shipped screen's Show FPS row was
+already kissing the Back button). Two columns fit with margin and use the
+3840-wide reference screen properly. The fit is pinned by a test (lowest
+control bottom clears the Back button top).
+
+Tests: tab row + active highlight on both tabs; the settings tab keeps
+its controls + fits; the keybinds tab groups (one header per action, both
+combos), emits key panels + "+" + prettified labels + "Action — Contexts"
+labels; scroll window + clamp (short list resets to 0, overflow clamps to
+the last full window, same window size at every offset, negative clamps
+to 0). Docs: DESIGN → UI Framework → Settings screen rewritten for the
+tabs + both layouts. Runtime verified native + web.

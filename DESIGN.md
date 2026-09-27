@@ -4779,12 +4779,36 @@ bar, so open panels never cover them).
 
 ### Settings screen
 
-A full-screen modal overlay (`UiState.settings_open: bool`) that exposes
-every scalar `Settings` field for editing. Mirrors the load-save browser /
+A full-screen modal overlay (`UiState.settings_open: bool`) with TWO content
+tabs (`UiState.settings_tab`: **Settings** / **Keybinds** — tab buttons
+under the header, `.select_settings_tab` + `AnytimeInput
+.clicked_settings_tab`; a switch is a view affordance off the undo timeline
+and resets `keybind_scroll_offset`). Mirrors the load-save browser /
 credits screen overlays: a `blocks_input` 9-slice panel, a Back button
-bottom-left that closes it. Input bindings are NOT exposed (deferred — see
-TODO). The screen is reachable from TWO entry points, both wired through
-`Action.open_settings`:
+bottom-left that closes it. The screen is reachable from TWO entry points,
+both wired through `Action.open_settings`:
+
+**The Settings tab** (the scalar fields) lays its 12 control rows out on a
+TWO-COLUMN grid (6 rows per column, `settingsControlRowRect` — rows 0–5
+left, 6–11 right): a single 12-row column needs 1792px where the region
+between the tab row and the Back button has ~1610, and did even before the
+tab row existed (the last row kissed the Back button); two columns also
+fit the wide reference screen better. The control column must clear the
+Back button — pinned by the tab-row test in menus.zig.
+
+**The Keybinds tab** is the in-game rebinding list's read-only half (editing
+is TODO → Keybind editor slice 4): all bindings SORTED by action
+(enum-declaration order, stable — an action's multiple combos keep their
+file order), one group-header row per action + one row per binding —
+modifier/key panels ("+" between; prettified ids via `keyIdDisplayLabel`:
+Ctrl/Shift/Alt, KeyZ→Z, Digit1→1, left→LMB) and the action panel at a
+fixed column labeled "Action — Contexts" (the DERIVED context set,
+`actionDisplayLabel` + `contextSetDisplayLabel`, both comptime-generated
+from the enum/switch so new members label themselves). Scroll follows the
+game-wide row-scroll convention: `keybind_scroll_offset` is the first
+visible row (headers + combo rows both count), one wheel notch = one row
+(lower clamp at the input site, upper clamp authoritative in
+`buildKeybindsContent`), whole visible rows only.
 
 1. The main-menu "Settings" button (opens settings directly over the main
    menu — the world is already idle there, so no pause concern).

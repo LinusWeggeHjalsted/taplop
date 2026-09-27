@@ -682,6 +682,12 @@ pub const Button = struct {
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
+    /// Settings screen content tab (Settings / Keybinds), if this button
+    /// is one of the settings screen's tab buttons. The
+    /// `.select_settings_tab` action + `AnytimeInput.clicked_settings_tab`
+    /// fold this into the handler — same payload-rides-along pattern as
+    /// `editor_sprite_tab`.
+    settings_tab: ?types.SettingsTab = null,
     /// Editor-browser KIND tab identity (Mission today), if this button is
     /// one of the browser's kind tabs. The `.select_editor_kind_tab`
     /// action + `AnytimeInput.clicked_editor_kind` fold this into the

@@ -1069,12 +1069,28 @@ fn emitSettingButton(
     } });
 }
 
-/// Build the settings screen: a full-screen modal panel with a centered
-/// "Settings" header, a column of control rows (toggle/choice — sliders
-/// land in slice 3b), and a Back button in the bottom-left. The panel
-/// blocks input to the surface behind it (main menu or the options menu).
-/// See DESIGN → UI Framework → Settings screen.
-pub fn buildSettingsPanel(
+/// One Settings-tab control row's position on the two-column grid (6 rows
+/// per column, right column after the left): `row_index` 0-5 is the left
+/// column top-to-bottom, 6-11 the right. See `buildSettingsControls`.
+fn settingsControlRowRect(
+    content_x: i32,
+    content_width: i32,
+    rows_y_start: i32,
+    row_index: i32,
+) types.ScreenPosition {
+    const column_width = @divTrunc(content_width - ui_gap, 2);
+    const column = @divTrunc(row_index, 6);
+    return .{
+        .x = content_x + column * (column_width + ui_gap),
+        .y = rows_y_start + @mod(row_index, 6) * (settings_row_height + settings_row_gap),
+    };
+}
+
+/// The Settings tab's control rows (the 12 toggles/choices/sliders) —
+/// called by `buildSettingsPanel` when the settings tab is active. The rows
+/// vertically center as a group between `content_top` (below the tab row)
+/// and the Back button. See DESIGN → UI Framework → Settings screen.
+fn buildSettingsControls(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -1082,30 +1098,10 @@ pub fn buildSettingsPanel(
     settings: types.Settings,
     player_gradient: types.ColorGradient,
     button_color: Color,
+    content_top: i32,
 ) !void {
-    // Full-screen modal background — blocks input to the surface behind it.
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = screen.position(),
-        .width = screen.width,
-        .height = screen.height,
-        .blocks_input = true,
-    } });
-
-    const content_x = screen.x + settings_padding;
     const content_width = screen.width - 2 * settings_padding;
-
-    // Header, centered horizontally near the top.
-    const header_text = "Settings";
-    const header_width = font_metrics.measureSpanWidth(text(header_text), settings_header_font_size);
-    const header_x = content_x + @divTrunc(content_width - header_width, 2);
-    const header_y = screen.y + settings_padding;
-    try elements.append(allocator, .{ .text_label = .{
-        .text = header_text,
-        .screen_position = .{ .x = header_x, .y = header_y },
-        .font_size = settings_header_font_size,
-        .blocks_input = false,
-    } });
+    const content_x = screen.x + settings_padding;
 
     // Control rows. Each row: label (left) + control (right, flush
     // against the label — measured per-row so the control sits right after
@@ -1125,12 +1121,19 @@ pub fn buildSettingsPanel(
     //   9. Auto-skip attack step (toggle)
     //  10. Auto-target at cursor (toggle)
     //  11. Show FPS (toggle)
-    const row_count: i32 = 12;
-    const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
+    // The 12 rows flow into TWO side-by-side columns of 6 (the wide
+    // reference screen makes a single left-anchored column wasted space —
+    // and a single 12-row column needs 1792px where the region between the
+    // tab row and the Back button has ~1610: the last row would overlap the
+    // Back button. It did even before the tab row — the tab row made the
+    // pre-existing tightness a real collision). See
+    // `settingsControlRowRect`.
+    const rows_per_column: i32 = 6;
+    const rows_total_height = rowWidth(rows_per_column, settings_row_height, settings_row_gap);
     const buttons_top = screen.y + screen.height - settings_padding -
         panel_button_height - settings_button_gap;
-    const rows_y_start = header_y + lineHeight(settings_header_font_size) + settings_header_gap +
-        @divTrunc(buttons_top - (header_y + lineHeight(settings_header_font_size) + settings_header_gap) - rows_total_height, 2);
+    const rows_y_start = content_top +
+        @divTrunc(buttons_top - content_top - rows_total_height, 2);
 
     // Helper: emit a row label at content_x, vertically centered in the row,
     // and return the x position flush after the label (label_width + gap).
@@ -1199,44 +1202,44 @@ pub fn buildSettingsPanel(
 
     // Row 0: Master Volume (0–100).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.master_volume}) catch @panic("failed to format slider value");
-        emitSliderRow(elements, allocator, font_metrics, "Master Volume", .master_volume, 0, 100, settings.master_volume, value_label, content_x, r_y);
+        emitSliderRow(elements, allocator, font_metrics, "Master Volume", .master_volume, 0, 100, settings.master_volume, value_label, row.x, row.y);
     }
     row_index += 1;
 
     // Row 1: Music Volume (0–100).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.music_volume}) catch @panic("failed to format slider value");
-        emitSliderRow(elements, allocator, font_metrics, "Music Volume", .music_volume, 0, 100, settings.music_volume, value_label, content_x, r_y);
+        emitSliderRow(elements, allocator, font_metrics, "Music Volume", .music_volume, 0, 100, settings.music_volume, value_label, row.x, row.y);
     }
     row_index += 1;
 
     // Row 2: Sound Effects Volume (0–100).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.sound_effects_volume}) catch @panic("failed to format slider value");
-        emitSliderRow(elements, allocator, font_metrics, "Sound Effects Volume", .sound_effects_volume, 0, 100, settings.sound_effects_volume, value_label, content_x, r_y);
+        emitSliderRow(elements, allocator, font_metrics, "Sound Effects Volume", .sound_effects_volume, 0, 100, settings.sound_effects_volume, value_label, row.x, row.y);
     }
     row_index += 1;
 
     // Row 3: Render FPS Cap (0–256, 0 = Uncapped).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label: []const u8 = if (settings.render_fps_cap == 0)
             "Uncapped"
         else
             std.fmt.allocPrint(allocator, "{d}", .{settings.render_fps_cap}) catch @panic("failed to format slider value");
-        emitSliderRow(elements, allocator, font_metrics, "Render FPS Cap", .render_fps_cap, 0, 256, settings.render_fps_cap, value_label, content_x, r_y);
+        emitSliderRow(elements, allocator, font_metrics, "Render FPS Cap", .render_fps_cap, 0, 256, settings.render_fps_cap, value_label, row.x, row.y);
     }
     row_index += 1;
 
     // Row 4: Animation FPS (1–16).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}", .{settings.animation_fps}) catch @panic("failed to format slider value");
-        emitSliderRow(elements, allocator, font_metrics, "Animation FPS", .animation_fps, 1, 16, settings.animation_fps, value_label, content_x, r_y);
+        emitSliderRow(elements, allocator, font_metrics, "Animation FPS", .animation_fps, 1, 16, settings.animation_fps, value_label, row.x, row.y);
     }
     row_index += 1;
 
@@ -1248,17 +1251,17 @@ pub fn buildSettingsPanel(
     // out-run it). On native it's a real GLFW swap-interval toggle that only
     // applies at window creation, hence the restart note.
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const vsync_label = if (@import("builtin").os.tag == .emscripten)
             "VSync (always on in browser)"
         else
             "VSync (change requires restart)";
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, vsync_label, content_x, r_y);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, vsync_label, row.x, row.y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = row.y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.vsync) "On" else "Off",
             settings_row_font_size,
             .{ .id = .vsync },
@@ -1270,8 +1273,8 @@ pub fn buildSettingsPanel(
 
     // Row 6: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Camera Zoom", content_x, r_y);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Camera Zoom", row.x, row.y);
         const zoom_values = [_]u32{ 25, 50, 75, 100 };
         const zoom_labels = [_][]const u8{ "25%", "50%", "75%", "100%" };
         for (zoom_values, zoom_labels, 0..) |value, label, i| {
@@ -1281,7 +1284,7 @@ pub fn buildSettingsPanel(
                 font_metrics,
                 .{
                     .x = ctrl_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
-                    .y = r_y,
+                    .y = row.y,
                     .width = settings_choice_button_width,
                     .height = settings_row_height,
                 },
@@ -1301,8 +1304,8 @@ pub fn buildSettingsPanel(
     // highlighted button snaps back to what actually runs. See DESIGN →
     // Platform Seam → Render target resolution.
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Render Resolution", content_x, r_y);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Render Resolution", row.x, row.y);
         for (std.meta.tags(types.RenderResolution), 0..) |resolution, i| {
             try emitSettingButton(
                 elements,
@@ -1310,7 +1313,7 @@ pub fn buildSettingsPanel(
                 font_metrics,
                 .{
                     .x = ctrl_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
-                    .y = r_y,
+                    .y = row.y,
                     .width = settings_choice_button_width,
                     .height = settings_row_height,
                 },
@@ -1326,9 +1329,9 @@ pub fn buildSettingsPanel(
 
     // Row 8: Player Color — 6 swatches (player gradient indices 0–5).
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", content_x, r_y);
-        const swatch_y = r_y + @divTrunc(settings_row_height - settings_swatch_size, 2);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", row.x, row.y);
+        const swatch_y = row.y + @divTrunc(settings_row_height - settings_swatch_size, 2);
         for (0..types.gradient_color_count) |i| {
             const sx = ctrl_x + @as(i32, @intCast(i)) * (settings_swatch_size + settings_swatch_gap);
             const swatch_rect: Rectangle = .{ .x = sx, .y = swatch_y, .width = settings_swatch_size, .height = settings_swatch_size };
@@ -1354,13 +1357,13 @@ pub fn buildSettingsPanel(
 
     // Row 9: Auto-skip attack step toggle.
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-skip Attack Step", content_x, r_y);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-skip Attack Step", row.x, row.y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = row.y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.auto_skip_attack_step_out_of_combat) "On" else "Off",
             settings_row_font_size,
             .{ .id = .auto_skip_attack_step_out_of_combat },
@@ -1372,13 +1375,13 @@ pub fn buildSettingsPanel(
 
     // Row 10: Auto-target at cursor toggle.
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-target at Cursor", content_x, r_y);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-target at Cursor", row.x, row.y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = row.y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.auto_target_at_cursor) "On" else "Off",
             settings_row_font_size,
             .{ .id = .auto_target_at_cursor },
@@ -1390,19 +1393,134 @@ pub fn buildSettingsPanel(
 
     // Row 11: Show FPS toggle.
     {
-        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Show FPS", content_x, r_y);
+        const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Show FPS", row.x, row.y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = row.y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.show_fps) "On" else "Off",
             settings_row_font_size,
             .{ .id = .show_fps },
             false,
             button_color,
         );
+    }
+}
+
+/// Build the settings screen: a full-screen modal panel with a centered
+/// "Settings" header, a column of control rows (toggle/choice — sliders
+/// land in slice 3b), and a Back button in the bottom-left. The panel
+/// blocks input to the surface behind it (main menu or the options menu).
+/// See DESIGN → UI Framework → Settings screen.
+pub fn buildSettingsPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    settings: types.Settings,
+    player_gradient: types.ColorGradient,
+    button_color: Color,
+    tab: types.SettingsTab,
+    scroll_offset: *i32,
+) !void {
+    // Full-screen modal background — blocks input to the surface behind it.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    const content_x = screen.x + settings_padding;
+    const content_width = screen.width - 2 * settings_padding;
+
+    // Header, centered horizontally near the top.
+    const header_text = "Settings";
+    const header_width = font_metrics.measureSpanWidth(text(header_text), settings_header_font_size);
+    const header_x = content_x + @divTrunc(content_width - header_width, 2);
+    const header_y = screen.y + settings_padding;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = header_text,
+        .screen_position = .{ .x = header_x, .y = header_y },
+        .font_size = settings_header_font_size,
+        .blocks_input = false,
+    } });
+
+    // CONTENT TAB ROW (Settings / Keybinds), centered under the header.
+    // Same emission shape as the editor-browser kind tabs: tinted panels,
+    // the active tab's highlight outline is the indication. A tab switch
+    // is a view affordance (direct UiState write, off the undo timeline —
+    // the browser-tab convention); the scroll resets at the handler.
+    const settings_tab_specs = [_]struct { label: []const u8, tab: types.SettingsTab }{
+        .{ .label = "Settings", .tab = .settings },
+        .{ .label = "Keybinds", .tab = .keybinds },
+    };
+    const tabs_y = header_y + lineHeight(settings_header_font_size) + @divTrunc(settings_header_gap, 2);
+    var tabs_width_total: i32 = 0;
+    for (settings_tab_specs) |spec| {
+        tabs_width_total += font_metrics.measureSpanWidth(text(spec.label), settings_row_font_size) +
+            2 * @divTrunc(settings_label_to_control_gap, 2) + ui_gap;
+    }
+    tabs_width_total -= ui_gap; // no trailing gap
+    var tab_x = content_x + @divTrunc(content_width - tabs_width_total, 2);
+    for (settings_tab_specs) |spec| {
+        const label_width = font_metrics.measureSpanWidth(text(spec.label), settings_row_font_size);
+        const tab_width = label_width + settings_label_to_control_gap;
+        const active = spec.tab == tab;
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = .{ .x = tab_x, .y = tabs_y },
+            .width = tab_width,
+            .height = settings_row_height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = .{ .x = tab_x, .y = tabs_y },
+            .width = tab_width,
+            .height = settings_row_height,
+            .action = .select_settings_tab,
+            .settings_tab = spec.tab,
+            .highlighted = active,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = spec.label,
+            .screen_position = .{
+                .x = tab_x + @divTrunc(settings_label_to_control_gap, 2),
+                .y = tabs_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+            },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        tab_x += tab_width + ui_gap;
+    }
+    const content_top = tabs_y + settings_row_height + @divTrunc(settings_header_gap, 2);
+    // Content per tab — the tab row above is tab-independent chrome.
+    // Exhaustive switch: a new SettingsTab member is a compile error until
+    // its content builder is routed here.
+    switch (tab) {
+        .settings => try buildSettingsControls(
+            elements,
+            allocator,
+            font_metrics,
+            screen,
+            settings,
+            player_gradient,
+            button_color,
+            content_top,
+        ),
+        .keybinds => try buildKeybindsContent(
+            elements,
+            allocator,
+            font_metrics,
+            screen,
+            settings.input_bindings,
+            scroll_offset,
+            button_color,
+            content_top,
+        ),
     }
 
     // Back button, bottom-left.
@@ -1423,6 +1541,300 @@ pub fn buildSettingsPanel(
         button_color,
         null,
     );
+}
+
+// --- Keybinds tab (the in-game rebinding list) ---
+//
+// Display-label helpers (input ids + actions + context sets -> human-readable
+// labels), then the content builder. The ids/actions/context sets are the
+// file-format truth; these labels are VIEW-ONLY sugar.
+
+/// A key/button id's display label ("Ctrl", "Z", "PgUp", "LMB") — a view-only
+/// prettification of the raw id. Known idioms map to short labels; "KeyX" /
+/// "DigitN" strip their prefixes (slices INTO the id — the id outlives the
+/// frame); anything else shows verbatim (the full W3C key table means a raw
+/// id is always something recognizable).
+pub fn keyIdDisplayLabel(id: []const u8) []const u8 {
+    const fixed = std.StaticStringMap([]const u8).initComptime(.{
+        .{ "ControlLeft", "Ctrl" },
+        .{ "ControlRight", "Ctrl" },
+        .{ "ShiftLeft", "Shift" },
+        .{ "ShiftRight", "Shift" },
+        .{ "AltLeft", "Alt" },
+        .{ "AltRight", "Alt" },
+        .{ "PageUp", "PgUp" },
+        .{ "PageDown", "PgDn" },
+        .{ "left", "LMB" },
+        .{ "right", "RMB" },
+        .{ "middle", "MMB" },
+    });
+    if (fixed.get(id)) |label| return label;
+    if (std.mem.startsWith(u8, id, "Key") and id.len > 3) return id[3..];
+    if (std.mem.startsWith(u8, id, "Digit") and id.len > 5) return id[5..];
+    return id;
+}
+
+/// Comptime label builder: capitalize the first character, '_' -> ' '.
+/// Built by comptime STRING CONCATENATION (each `++` produces a compiler
+/// constant) — comptime-var buffers copied into a table do NOT materialize
+/// into the binary (the labels arrive as scratch garbage); concatenated
+/// comptime strings do (the `StaticStringMap` mechanism).
+fn makePrettifiedLabel(comptime name: []const u8) []const u8 {
+    comptime {
+        var built: []const u8 = "";
+        for (name, 0..) |character, character_index| {
+            var mapped: u8 = character;
+            if (character_index == 0) mapped = std.ascii.toUpper(character);
+            if (character == '_') mapped = ' ';
+            built = built ++ [_]u8{mapped};
+        }
+        return built;
+    }
+}
+
+/// An action's display label ("undo" -> "Undo", "dump_event_log" -> "Dump
+/// event log") — comptime-generated from the enum field names (machine-walked:
+/// a new Action's label appears with no edit here).
+pub fn actionDisplayLabel(action: types.Action) []const u8 {
+    const labels = comptime blk: {
+        @setEvalBranchQuota(20_000);
+        const fields = @typeInfo(types.Action).@"enum".fields;
+        var table: [fields.len][]const u8 = undefined;
+        for (fields, 0..) |field, index| {
+            table[index] = makePrettifiedLabel(field.name);
+        }
+        break :blk table;
+    };
+    return labels[@intFromEnum(action)];
+}
+
+/// A context set's display label ("Anytime", "Editor + Menu") —
+/// comptime-generated for every subset of the five contexts, so any set an
+/// `actionBindingContexts` case produces has a label with no edit here.
+pub fn contextSetDisplayLabel(set: types.BindingContextSet) []const u8 {
+    const labels = comptime blk: {
+        @setEvalBranchQuota(50_000);
+        var table: [1 << context_set_member_names.len][]const u8 = undefined;
+        for (0..1 << context_set_member_names.len) |mask| {
+            table[mask] = makeContextSetLabel(@intCast(mask));
+        }
+        break :blk table;
+    };
+    var mask: u32 = 0;
+    if (set.anytime) mask |= 1 << 0;
+    if (set.game) mask |= 1 << 1;
+    if (set.editor) mask |= 1 << 2;
+    if (set.menu) mask |= 1 << 3;
+    if (set.error_popup) mask |= 1 << 4;
+    return labels[mask];
+}
+
+/// The context members' display names, indexed by the mask bit each occupies
+/// in `contextSetDisplayLabel`'s pack.
+const context_set_member_names = [_][]const u8{ "Anytime", "Game", "Editor", "Menu", "Error popup" };
+
+/// One subset's label, built by comptime string concatenation (see
+/// `makePrettifiedLabel` for why concatenation, not comptime-var buffers).
+fn makeContextSetLabel(comptime mask: u32) []const u8 {
+    comptime {
+        var built: []const u8 = "";
+        for (context_set_member_names, 0..) |member_name, member_index| {
+            if ((mask >> @intCast(member_index)) & 1 == 0) continue;
+            if (built.len > 0) built = built ++ " + ";
+            built = built ++ member_name;
+        }
+        if (built.len == 0) built = "None";
+        return built;
+    }
+}
+
+/// Horizontal padding inside a keybind key/action panel (label inset).
+pub const keybind_panel_padding: i32 = 24;
+/// Width of the combo zone (modifier + key panels) before the action panel's
+/// fixed column — enough for [Ctrl]+[Shift]+[Key].
+pub const keybind_combo_zone_width: i32 = 900;
+
+/// Sort display order: by action (enum declaration order — undo, redo,
+/// escape, ...), stable so an action's multiple combos keep their file
+/// order. The file's order is load order, not a display order.
+fn bindingActionLessThan(_: void, left: types.InputBinding, right: types.InputBinding) bool {
+    return @intFromEnum(left.action) < @intFromEnum(right.action);
+}
+
+/// One flat list row: a group header (an action's first row — the label the
+/// combos below hang under) or a binding's combo row.
+const KeybindRow = union(enum) {
+    group_header: types.Action,
+    binding: types.InputBinding,
+};
+
+/// The Keybinds tab's list: bindings sorted by action, one group-header row
+/// per action + one row per binding — modifier/key panels ("+" between) and
+/// the action panel at a fixed column, labeled "Action — Contexts" (the
+/// derived context set: `actionBindingContexts`). Scroll: `scroll_offset`
+/// is the first visible ROW (headers + combo rows both count); the wheel
+/// adjusts it lower-clamped at the input site, this builder clamps the upper
+/// bound (authoritative — only it knows the row count + region height) and
+/// emits exactly the visible window. Read-only (editing lands in TODO →
+/// Keybind editor slice 4). See DESIGN → UI Framework → Settings screen.
+fn buildKeybindsContent(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    bindings: []const types.InputBinding,
+    scroll_offset: *i32,
+    button_color: Color,
+    content_top: i32,
+) !void {
+    const content_x = screen.x + settings_padding;
+    const content_width = screen.width - 2 * settings_padding;
+    const buttons_top = screen.y + screen.height - settings_padding -
+        panel_button_height - settings_button_gap;
+    const region_height = buttons_top - content_top;
+    const row_stride = settings_row_height + settings_row_gap;
+    const visible_rows: usize = @intCast(@max(1, @divTrunc(region_height, row_stride)));
+
+    if (bindings.len == 0) {
+        const placeholder = "No bindings";
+        const placeholder_width = font_metrics.measureSpanWidth(text(placeholder), settings_row_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = placeholder,
+            .screen_position = .{
+                .x = content_x + @divTrunc(content_width - placeholder_width, 2),
+                .y = content_top,
+            },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        scroll_offset.* = 0;
+        return;
+    }
+
+    // Sorted display copy (the frame arena owns it).
+    const sorted = try allocator.dupe(types.InputBinding, bindings);
+    std.mem.sort(types.InputBinding, sorted, {}, bindingActionLessThan);
+
+    // Flatten into rows: a group header wherever the action changes.
+    var rows: std.ArrayList(KeybindRow) = .empty;
+    var previous_action: ?types.Action = null;
+    for (sorted) |binding| {
+        if (previous_action != binding.action) {
+            try rows.append(allocator, .{ .group_header = binding.action });
+            previous_action = binding.action;
+        }
+        try rows.append(allocator, .{ .binding = binding });
+    }
+
+    // Clamp the scroll (authoritative upper bound).
+    if (rows.items.len <= visible_rows) {
+        scroll_offset.* = 0;
+    } else {
+        scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(rows.items.len - visible_rows)));
+        if (scroll_offset.* < 0) scroll_offset.* = 0;
+    }
+    const first_visible: usize = @intCast(scroll_offset.*);
+    const last_visible = @min(rows.items.len, first_visible + visible_rows);
+
+    // Emit a 9-slice panel + centered label (the key/action panel shape; no
+    // button — the list is read-only in this slice).
+    const emitPanelWithLabel = struct {
+        fn run(
+            elems: *UiElementList,
+            alloc: std.mem.Allocator,
+            fm: FontMetrics,
+            label_text: []const u8,
+            panel_x: i32,
+            panel_y: i32,
+            panel_height: i32,
+            panel_color: Color,
+        ) !void {
+            const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
+            const panel_width = label_width + 2 * keybind_panel_padding;
+            try elems.append(alloc, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = .{ .x = panel_x, .y = panel_y },
+                .width = panel_width,
+                .height = panel_height,
+                .color = panel_color,
+            } });
+            try elems.append(alloc, .{ .text_label = .{
+                .text = label_text,
+                .screen_position = .{
+                    .x = panel_x + keybind_panel_padding,
+                    .y = panel_y + @divTrunc(panel_height - settings_row_font_size, 2),
+                },
+                .font_size = settings_row_font_size,
+                .blocks_input = false,
+            } });
+        }
+    }.run;
+
+    for (rows.items[first_visible..last_visible], first_visible..) |row, row_index| {
+        const row_y = content_top + @as(i32, @intCast(row_index - first_visible)) * row_stride;
+        switch (row) {
+            .group_header => |action| {
+                const label_text = actionDisplayLabel(action);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = label_text,
+                    .screen_position = .{ .x = content_x, .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+                    .font_size = settings_row_font_size,
+                    .blocks_input = false,
+                } });
+            },
+            .binding => |binding| {
+                // Key panels: required modifiers first ("+" between panels),
+                // then the key. Mouse/gamepad buttons render the same way.
+                var panel_x = content_x;
+                const key_label = switch (binding.input) {
+                    .key => |id| keyIdDisplayLabel(id),
+                    .mouse_button => |id| keyIdDisplayLabel(id),
+                    .gamepad_button => |id| keyIdDisplayLabel(id),
+                };
+                const modifiers = [_]?[]const u8{
+                    if (binding.modifiers.ctrl) "Ctrl" else null,
+                    if (binding.modifiers.shift) "Shift" else null,
+                    if (binding.modifiers.alt) "Alt" else null,
+                };
+                for (modifiers) |modifier_label| {
+                    if (modifier_label) |label| {
+                        try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
+                        panel_x += font_metrics.measureSpanWidth(text(label), settings_row_font_size) +
+                            2 * keybind_panel_padding;
+                        try elements.append(allocator, .{ .text_label = .{
+                            .text = "+",
+                            .screen_position = .{
+                                .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
+                                .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+                            },
+                            .font_size = settings_row_font_size,
+                            .blocks_input = false,
+                        } });
+                        panel_x += settings_row_gap;
+                    }
+                }
+                try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
+
+                // Action panel at the fixed column: "Action — Contexts"
+                // (the derived context set; see DESIGN → Input → Binding
+                // contexts).
+                const action_label = std.fmt.allocPrint(allocator, "{s} — {s}", .{
+                    actionDisplayLabel(binding.action),
+                    contextSetDisplayLabel(types.actionBindingContexts(binding.action)),
+                }) catch @panic("failed to format keybind action label");
+                try emitPanelWithLabel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    action_label,
+                    content_x + keybind_combo_zone_width,
+                    row_y,
+                    settings_row_height,
+                    button_color,
+                );
+            },
+        }
+    }
 }
 
 test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
@@ -2025,4 +2437,194 @@ fn expectMenuButtonLabel(elements: []const UiElement, action: Action, expected: 
         else => {},
     };
     try std.testing.expect(found);
+}
+
+test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const bindings = [_]types.InputBinding{
+        .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
+    };
+    const settings: types.Settings = .{ .input_bindings = &bindings };
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .settings, &scroll);
+
+    // The tab row is tab-independent chrome: both tab buttons, the active
+    // one highlighted, regardless of which tab is showing.
+    var found_settings_tab_button = false;
+    var found_keybinds_tab_button = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_settings_tab) {
+            switch (button.settings_tab.?) {
+                .settings => {
+                    found_settings_tab_button = true;
+                    try std.testing.expect(button.highlighted);
+                },
+                .keybinds => {
+                    found_keybinds_tab_button = true;
+                    try std.testing.expect(!button.highlighted);
+                },
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(found_settings_tab_button);
+    try std.testing.expect(found_keybinds_tab_button);
+
+    // The Settings tab keeps its control rows (a settings toggle button),
+    // and the control column still FITS: the tab row shrank the rows region,
+    // and the rows-centering formula can silently overflow once the region
+    // is tighter — the lowest control's bottom must clear the Back button's
+    // top (the Back button toggles via the same .open_settings action that
+    // opened the screen).
+    var found_control = false;
+    var lowest_control_bottom: i32 = 0;
+    var back_button_top: i32 = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| {
+            if (button.action == .change_setting) {
+                found_control = true;
+                lowest_control_bottom = @max(
+                    lowest_control_bottom,
+                    button.screen_position.y + button.height,
+                );
+            }
+            if (button.action == .open_settings) {
+                back_button_top = button.screen_position.y;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(found_control);
+    try std.testing.expect(back_button_top > 0);
+    try std.testing.expect(lowest_control_bottom <= back_button_top);
+}
+
+test "buildSettingsPanel: keybinds tab — grouped rows, key panels, action labels + context tags" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    // Two combos on ONE action (undo: ctrl+Z and U — grouped under one
+    // header), plus cross-context same-combo-style rows with their derived
+    // context tags.
+    const bindings = [_]types.InputBinding{
+        .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
+        .{ .input = .{ .key = "KeyU" }, .action = .undo },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Digit1" }, .action = .select_editor_tool },
+    };
+    const settings: types.Settings = .{ .input_bindings = &bindings };
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+
+    // One group header per action — undo's two combos share ONE "Undo"
+    // header (exact match: the action labels carry the context suffix).
+    var undo_headers: usize = 0;
+    var ctrl_labels: usize = 0;
+    var z_labels: usize = 0;
+    var u_labels: usize = 0;
+    var plus_labels: usize = 0;
+    var undo_anytime: usize = 0;
+    var confirm_game: usize = 0;
+    var select_tool_editor: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "Undo")) undo_headers += 1;
+            if (std.mem.eql(u8, label.text, "Ctrl")) ctrl_labels += 1;
+            if (std.mem.eql(u8, label.text, "Z")) z_labels += 1;
+            if (std.mem.eql(u8, label.text, "U")) u_labels += 1;
+            if (std.mem.eql(u8, label.text, "+")) plus_labels += 1;
+            if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_anytime += 1;
+            if (std.mem.eql(u8, label.text, "Confirm — Game")) confirm_game += 1;
+            if (std.mem.eql(u8, label.text, "Select editor tool — Editor + Menu")) select_tool_editor += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 1), undo_headers);
+    try std.testing.expectEqual(@as(usize, 1), ctrl_labels);
+    try std.testing.expectEqual(@as(usize, 1), z_labels);
+    try std.testing.expectEqual(@as(usize, 1), u_labels);
+    try std.testing.expectEqual(@as(usize, 1), plus_labels);
+    try std.testing.expectEqual(@as(usize, 2), undo_anytime); // both combos
+    try std.testing.expectEqual(@as(usize, 1), confirm_game);
+    try std.testing.expectEqual(@as(usize, 1), select_tool_editor);
+}
+
+test "buildSettingsPanel: keybinds tab scroll window + clamp" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    // 60 distinct actions — enough rows (headers + combos) to overflow any
+    // plausible window. Every combo on the same key: the list is display-only
+    // here (no conflict scan on the view path).
+    const action_tags = std.meta.tags(types.Action);
+    var bindings: [60]types.InputBinding = undefined;
+    for (&bindings, action_tags[0..60], 0..) |*binding, action, index| {
+        binding.* = .{
+            .input = .{ .key = if (index % 2 == 0) "Enter" else "Space" },
+            .action = action,
+        };
+    }
+    const settings: types.Settings = .{ .input_bindings = &bindings };
+
+    // No overflow (short list): a forced-huge scroll clamps to 0.
+    {
+        const short: types.Settings = .{ .input_bindings = bindings[0..3] };
+        var scroll: i32 = 999;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, short, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+        try std.testing.expectEqual(@as(i32, 0), scroll);
+    }
+
+    // Overflow: scroll 999 clamps to the last full window (>= 1), and only
+    // the visible window's rows are emitted (fewer action labels than
+    // bindings).
+    var scroll: i32 = 999;
+    var elements: UiElementList = .empty;
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+    try std.testing.expect(scroll > 0);
+    var emitted_rows: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .nine_slice_panel => |panel| if (panel.height == settings_row_height) {
+            emitted_rows += 1;
+        },
+        else => {},
+    };
+    try std.testing.expect(emitted_rows > 0);
+    try std.testing.expect(emitted_rows < bindings.len);
+
+    // The window is the same size at the top and the end (a full window at
+    // every offset — whole visible rows only).
+    var top_scroll: i32 = 0;
+    var top_elements: UiElementList = .empty;
+    try buildSettingsPanel(&top_elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &top_scroll);
+    var top_rows: usize = 0;
+    for (top_elements.items) |element| switch (element) {
+        .nine_slice_panel => |panel| if (panel.height == settings_row_height) {
+            top_rows += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(emitted_rows, top_rows);
+
+    // Negative scroll clamps to 0.
+    scroll = -5;
+    var elements_neg: UiElementList = .empty;
+    try buildSettingsPanel(&elements_neg, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+    try std.testing.expectEqual(@as(i32, 0), scroll);
 }

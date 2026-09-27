@@ -396,6 +396,9 @@ pub const AnytimeInput = struct {
     /// `options_action == .select_editor_kind_tab` by the release dispatch
     /// (one of the browser's kind tabs — Mission today).
     clicked_editor_kind: ?types.EditorKind = null,
+    /// Settings screen content tab (Settings / Keybinds), set alongside
+    /// `options_action == .select_settings_tab` by the release dispatch.
+    clicked_settings_tab: ?types.SettingsTab = null,
     /// Mission-browser tab, set alongside
     /// `options_action == .select_editor_mission_tab` by the release
     /// dispatch (one of the browser's two tab buttons).
@@ -533,6 +536,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .exit_game,
         => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
+        .select_settings_tab => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .add_editor_palette_type => player_input.anytime.options_action = action,
         .delete_editor_palette_type => player_input.anytime.options_action = action,

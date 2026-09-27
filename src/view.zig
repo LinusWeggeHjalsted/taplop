@@ -603,6 +603,8 @@ pub fn view(
             settings,
             active_theme.player_gradient,
             button_color,
+            session.ui_state.settings_tab,
+            &session.ui_state.keybind_scroll_offset,
         ) catch @panic("failed to build settings panel");
     }
 

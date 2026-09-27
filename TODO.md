@@ -67,8 +67,9 @@ Test by running `zig build run` and clicking through.
         ignores the context line, load-time conflict warn+drop + repair
         write, first-match-wins tiebreak, delete the validity layer) — DONE
         (see DONE.md, keybind editor slice 2)
-  - [ ] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
-        context tags, scroll)
+  - [x] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
+        context tags, scroll) — DONE (see DONE.md, keybind editor slice 3;
+        the Settings tab's 12 rows went two-column to fit)
   - [ ] 4. Editing flows (listening state, pending confirm/cancel +
         steal warning, right-column action picker, add/remove/reset)
 - **Input dispatch convergence (planned refactor — design before code).**

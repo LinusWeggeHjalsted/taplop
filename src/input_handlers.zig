@@ -1027,6 +1027,18 @@ pub fn handleAnytimeInput(
                     history.session.quit_requested = true;
                 }
             },
+            // A settings screen content tab was clicked (Settings /
+            // Keybinds). A view affordance — direct UiState write, off the
+            // undo timeline (the editor-browser tab convention); the scroll
+            // resets on switch (the other tab's list has its own extent).
+            .select_settings_tab => {
+                if (!history.session.ui_state.settings_open) return;
+                const settings_tab = anytime.clicked_settings_tab orelse return;
+                if (history.session.ui_state.settings_tab == settings_tab) return;
+                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
+                history.session.ui_state.settings_tab = settings_tab;
+                history.session.ui_state.keybind_scroll_offset = 0;
+            },
             // A settings toggle or choice was clicked. The SettingRef rode
             // in `anytime.clicked_setting`. Mutate `history.settings` (a
             // direct write — settings are off the undo timeline, like
@@ -2303,6 +2315,21 @@ pub fn handleAnytimeInput(
             history.session.ui_state.load_save_scroll_offset -= delta_rows;
             if (history.session.ui_state.load_save_scroll_offset < 0) {
                 history.session.ui_state.load_save_scroll_offset = 0;
+            }
+        } else if (history.session.ui_state.settings_open and
+            history.session.ui_state.settings_tab == .keybinds)
+        {
+            // Keybinds tab list scroll (vertical): one wheel notch = one
+            // row (group headers + combo rows both count). The settings
+            // overlay is a fullscreen modal, so any wheel input while it's
+            // up belongs to the list — never the camera. Lower clamp here;
+            // the builder clamps the upper bound in place (authoritative —
+            // it knows the row count). The Settings tab has no scrollable
+            // content — the wheel no-ops there.
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.keybind_scroll_offset -= delta_rows;
+            if (history.session.ui_state.keybind_scroll_offset < 0) {
+                history.session.ui_state.keybind_scroll_offset = 0;
             }
         } else if (history.current_state.screen == .editor and
             history.current_state.editor != null and

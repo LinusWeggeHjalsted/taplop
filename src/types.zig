@@ -283,6 +283,12 @@ pub const Action = enum {
     // field + which value) rides in `AnytimeInput.clicked_setting`. See
     // DESIGN → UI Framework → Settings screen.
     change_setting,
+    // A settings screen tab button was clicked (Settings / Keybinds). The
+    // tab rides in `AnytimeInput.clicked_settings_tab`. Routed through
+    // `options_action` (the settings screen is reachable from the main
+    // menu AND the in-game options menu). See DESIGN → UI Framework →
+    // Settings screen.
+    select_settings_tab,
     // An editor palette group header was clicked (expand/collapse the
     // group). The group index rides in `AnytimeInput.clicked_editor_group`.
     // Routed through `options_action` so one handler serves it regardless
@@ -908,6 +914,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         // in-game options menu.
         .open_settings,
         .change_setting,
+        .select_settings_tab,
         => .{ .menu = true, .game = true },
         // Exit to Main Menu: the level/hub options menu and the editor's
         // (where it ends an editor run + closes the editor).
@@ -918,6 +925,10 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         => .{ .game = true, .editor = true },
     };
 }
+
+/// The settings screen's content tabs (the Keybinds tab is the in-game
+/// rebinding UI's list — see TODO → Keybind editor).
+pub const SettingsTab = enum { settings, keybinds };
 
 pub const InputBinding = struct {
     input: RawInput,
