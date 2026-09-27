@@ -63,9 +63,10 @@ Test by running `zig build run` and clicking through.
   - [x] 1. Full key table in `input_poll` (the full W3C id set — retires
         the backend-edit wiring site; unmapped-id startup warn stays open
         under New-keybind pipeline friction) — DONE
-  - [ ] 2. Context derivation + conflict rule (engine gating, loader
+  - [x] 2. Context derivation + conflict rule (engine gating, loader
         ignores the context line, load-time conflict warn+drop + repair
-        write, first-match-wins tiebreak, delete the validity layer)
+        write, first-match-wins tiebreak, delete the validity layer) — DONE
+        (see DONE.md, keybind editor slice 2)
   - [ ] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
         context tags, scroll)
   - [ ] 4. Editing flows (listening state, pending confirm/cancel +
@@ -85,14 +86,16 @@ Test by running `zig build run` and clicking through.
   later). Fold the `input_handlers.zig` SPLIT (2800+ lines, ten concerns)
   into this work — if the convergence lands well, the file may split
   naturally or not need it; don't split as a separate chore first.
-- **New-keybind pipeline friction** — five wiring sites per keybind (the
-  map: DESIGN → Input → New keybind wiring sites). Still open: warn at
-  startup (dev-mode console or the pending-error popup — advisory) when a
-  loaded binding names an input id no backend mapping can produce, and/or
-  map the full W3C key set once so new bindings never need a backend edit
-  (cost: a slightly bigger fixed poll loop — verify with the input budget
-  in mind). The action↔context validity half landed with binding contexts
-  (load-time warn + drop — DESIGN → Input → Action↔context validity).
+- **New-keybind pipeline friction** — wiring sites per keybind (the map:
+  DESIGN → Input → New keybind wiring sites — now four; the backend key
+  table is no longer a site, and the binding `context` line is derived
+  (informational — see DESIGN → Input → Binding contexts). Still open:
+  warn at startup (dev-mode console or the pending-error popup — advisory)
+  when a loaded binding names an input id no backend mapping can produce
+  (a typo'd id in a hand-edited file — the full W3C key table is mapped,
+  but unknown ids still parse and never fire). The action↔context
+  validity load-validation layer was DELETED with derived contexts
+  (see DONE.md, keybind editor slice 2).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global

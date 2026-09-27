@@ -14304,3 +14304,73 @@ build.
 
 TODO: keybind editor slice list added (4 slices; settled design recorded
 there). Runtime verified on native + web (main menu loads).
+
+## Keybind editor slice 2 — derived binding contexts + the one-combo-one-action rule
+
+The settled design (agreed in session): a binding's active contexts are
+DERIVED from `actionBindingContexts(action)` — the single, compiler-enforced
+declaration — instead of authored per binding. `InputBinding.context` (the
+field) is gone; the settings file KEEPS its `context` line as INFORMATIONAL
+(writer emits `primaryBindingContext(action)` — first declared member of the
+set; loader ignores the line; context-less entries parse fine). No
+`file_format_version` bump: old files parse (lines ignored), new files keep
+the line so an older binary still validates it.
+
+Why derived: every one of the 44 shipped bindings already used a context
+equal to its action's full valid set except one deliberate narrowing
+(`toggle_editor_browser` — valid {editor, menu}, shipped editor-only). The
+widening is the one behavior change: the editor-browser-family keys
+(ctrl+O, ctrl+N, …) now fire on the MAIN MENU too — verified safe (both
+consumption sites gate on `editorBrowserReachableScreen`, editor + main
+menu). The old ctrl+N test asserted the narrowed behavior and was updated
+to the derived behavior.
+
+The conflict rule (agreed): one combo (same input + same required
+modifiers) fires ONE action per context. Three layers:
+1. **Engine**: `isSuppressed` gained the equal-specificity tiebreak — a
+   same-combo equal-specificity DIFFERENT-action competitor appearing
+   EARLIER in the binding list wins (first-match-wins, deterministic, keeps
+   replay safe). Same-action earlier entries never suppress. Replaces the
+   old "equal-specificity ties co-fire" rule (nothing shipped relied on
+   co-fire — every same-combo pair in the defaults is cross-context).
+2. **Load** (`loadSettings` conflict scan): same combo + different actions
+   whose derived contexts INTERSECT (they would co-fire) → warn + drop the
+   later entry (first listed wins). Same combo + same action → duplicate,
+   warned + dropped. Cross-context same-combo pairs legal (kept silently).
+   Warned files ride the startup repair write — the popup explains once,
+   the file self-heals.
+3. **UI** (slice 4, TODO): prevented at assignment (steal with warning).
+
+Two bugs caught by tests during the slice:
+- The competitor gate in `isSuppressed` was first written as
+  `my_contexts.intersects(other_contexts)` — WRONG (two sets can share a
+  context while one is inactive: {menu, game} vs {editor, menu} in-game).
+  The correct gate is the old semantics restated: the competitor's derived
+  contexts intersect the FRAME's active set. Compile error (unused param)
+  flagged it before a silent behavior bug shipped.
+- The conflict scan's injected-default case: a user rebinding that
+  collides with an INJECTED default (user Enter→skip; confirm unmentioned
+  → its default Enter injected) must drop the injected default SILENTLY —
+  a warning would pop the same message EVERY launch (the injection
+  re-runs every launch; the repair write can't remove it). Regression
+  test pins the silence.
+
+New helpers in types.zig: `BindingContextSet.intersects` (the derived gate
++ conflict predicate), `primaryBindingContext` (writer's informational
+line), `rawInputsEqual` + `sameCombo` (combo identity, shared by the
+loader scan and the future keybind UI). The load-time action↔context
+validity layer was DELETED (nothing to validate — no binding can name a
+context its action doesn't fire in); what remains per entry: unknown action
+warn + drop. The 24 input.zig + 7 loaders.zig test fixtures lost their
+`.context` fields (a sed sweep dry-run against ONE file, full diff
+inspected, then the second — the AGENTS sweep discipline).
+
+Tests: context-less/context-line entries load (rewritten from the dropped
+validity tests); conflict warn+drop (first wins); duplicate warn+drop;
+cross-context + modifier-distinguished combos kept silently;
+injected-default collision silent; engine equal-specificity conflict
+first-match-wins; same-action duplicates both fire. Docs: DESIGN → Input —
+Binding contexts (derived), Action↔context classification, Hybrid
+precedence (+ the new binding-conflicts bullet), Binding overlay semantics;
+TODO friction item updated (backend key table + context line no longer
+wiring sites). Runtime verified native + web (main menu loads).

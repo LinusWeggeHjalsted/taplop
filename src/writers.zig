@@ -304,7 +304,11 @@ pub fn writeSettings(
         if (binding.modifiers.shift) try buffer.appendSlice(allocator, "shift true\n");
         if (binding.modifiers.alt) try buffer.appendSlice(allocator, "alt true\n");
         try buffer.print(allocator, "action {s}\n", .{@tagName(binding.action)});
-        try buffer.print(allocator, "context {s}\n", .{@tagName(binding.context)});
+        // Informational only — a binding's active contexts are DERIVED
+        // from the action at load (`actionBindingContexts`); the line is
+        // written so the file stays the same shape an older binary (or a
+        // human) expects. See DESIGN → Input → Binding contexts.
+        try buffer.print(allocator, "context {s}\n", .{@tagName(types.primaryBindingContext(binding.action))});
     }
 
     return try buffer.toOwnedSlice(allocator);

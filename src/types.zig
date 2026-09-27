@@ -644,21 +644,58 @@ pub const RawInput = union(enum) {
     gamepad_button: []const u8,
 };
 
+/// True if two `RawInput`s name the same physical input (same variant +
+/// id string). The combo-equality half of the binding-conflict predicate
+/// (same input + same modifiers = same combo) — see `sameCombo`.
+pub fn rawInputsEqual(a: RawInput, b: RawInput) bool {
+    return switch (a) {
+        .key => |a_key| switch (b) {
+            .key => |b_key| std.mem.eql(u8, a_key, b_key),
+            else => false,
+        },
+        .mouse_button => |a_button| switch (b) {
+            .mouse_button => |b_button| std.mem.eql(u8, a_button, b_button),
+            else => false,
+        },
+        .gamepad_button => |a_button| switch (b) {
+            .gamepad_button => |b_button| std.mem.eql(u8, a_button, b_button),
+            else => false,
+        },
+    };
+}
+
+/// True if two `InputBinding`s occupy the same key combo (same input +
+/// same required modifiers). The conflict predicate pairs this with
+/// `BindingContextSet.intersects` over the two actions' derived contexts:
+/// same combo + different actions + intersecting contexts = a conflict
+/// (they would co-fire). Used at load (`loadSettings` warns + drops) and
+/// by the keybind UI's steal warning. See DESIGN → Input → Hybrid
+/// precedence + binding conflicts.
+pub fn sameCombo(a: InputBinding, b: InputBinding) bool {
+    if (!rawInputsEqual(a.input, b.input)) return false;
+    return a.modifiers.ctrl == b.modifiers.ctrl and
+        a.modifiers.shift == b.modifiers.shift and
+        a.modifiers.alt == b.modifiers.alt;
+}
+
 pub const Modifiers = struct {
     ctrl: bool = false,
     shift: bool = false,
     alt: bool = false,
 };
 
-/// Where a keybinding is active. Bindings in different contexts may share
-/// the same key combo (Digit1 = skill 1 in game, select tool in editor);
-/// only bindings whose context is active reach `checkAction`, so same-combo
-/// cross-context pairs never co-fire. `anytime` is active on every screen
-/// except while the error popup is up; `error_popup` is active ONLY while
-/// the popup is up (the popup is modal — see DESIGN → Input → Binding
-/// contexts). Named `error_popup`, not `error`, because `error` is a Zig
-/// keyword. `menu` is the main-menu screen (button-only actions today,
-/// classified for the future binding UI). See DESIGN → Input.
+/// Where a keybinding is active — DERIVED from the action
+/// (`actionBindingContexts`), never authored per binding. Actions in
+/// different contexts may share the same key combo (Digit1 = skill 1 in
+/// game, select tool in editor); only bindings whose derived contexts are
+/// active reach `checkAction`, so same-combo cross-context pairs never
+/// co-fire. `anytime` is active on every screen except while the error
+/// popup is up; `error_popup` is active ONLY while the popup is up (the
+/// popup is modal — see DESIGN → Input → Binding contexts). Named
+/// `error_popup`, not `error`, because `error` is a Zig keyword. `menu` is
+/// the main-menu screen. The settings file still carries a `context` line
+/// per binding (informational, written as the derived primary; ignored at
+/// load) — see DESIGN → Input → Binding contexts. See DESIGN → Input.
 pub const BindingContext = enum {
     anytime,
     game,
@@ -669,9 +706,10 @@ pub const BindingContext = enum {
 
 /// A set of active `BindingContext`s — what `translateInput` is handed each
 /// frame (computed by the caller from the screen + pending_error; see
-/// main.zig's frame). Backs the binding gate in `checkAction`/
-/// `isActionHeld`/`isSuppressed` and the load-time action↔context
-/// validation (`actionBindingContexts`).
+/// main.zig's frame). Backs the derived binding gate in `checkAction`/
+/// `isActionHeld`/`isSuppressed`: a binding is active iff
+/// `actionBindingContexts(binding.action)` intersects the frame's active
+/// set (`intersects`).
 pub const BindingContextSet = struct {
     anytime: bool = false,
     game: bool = false,
@@ -688,18 +726,45 @@ pub const BindingContextSet = struct {
             .error_popup => self.error_popup,
         };
     }
+
+    /// True if any context is set in BOTH sets — the derived binding gate
+    /// (see the struct doc). Also the conflict predicate at load + in the
+    /// keybind UI: two actions sharing a combo conflict iff their context
+    /// sets intersect (they can be simultaneously active and would
+    /// co-fire).
+    pub fn intersects(self: BindingContextSet, other: BindingContextSet) bool {
+        return (self.anytime and other.anytime) or
+            (self.game and other.game) or
+            (self.editor and other.editor) or
+            (self.menu and other.menu) or
+            (self.error_popup and other.error_popup);
+    }
 };
 
-/// Which `BindingContext`s an action may be bound in — the single
-/// declaration of "where does this action fire" (consumption sites mirror
-/// it). Exhaustive by construction (no else-arm): adding an Action variant
-/// is a compile error until it's classified here. `loadSettings` warns +
-/// drops a binding whose context isn't in this set (a dead binding would
-/// fire only on screens where nothing consumes it). Button clicks are NOT
-/// context-gated (`applyAction` sets actions directly) — buttons only
-/// render in their context, so this map governs keyboard/gamepad bindings
-/// only. Actions valid on multiple screens carry multiple flags (e.g.
-/// `exit_to_menu` fires from the level/hub options menu and the editor's).
+/// The single `BindingContext` written to a binding's settings-file line —
+/// informational only (contexts are derived at load; see `BindingContext`).
+/// The first set member in `BindingContext` declaration order, deterministic
+/// for the writer. An older binary reading the file still validates this
+/// against its own `actionBindingContexts` (any member passes).
+pub fn primaryBindingContext(action: Action) BindingContext {
+    const contexts = actionBindingContexts(action);
+    if (contexts.anytime) return .anytime;
+    if (contexts.game) return .game;
+    if (contexts.editor) return .editor;
+    if (contexts.menu) return .menu;
+    return .error_popup;
+}
+
+/// Which `BindingContext`s an action fires in — the single declaration of
+/// "where does this action fire" (consumption sites mirror it). DERIVED:
+/// a binding's active contexts ARE this set (there is no per-binding
+/// context). Exhaustive by construction (no else-arm): adding an Action
+/// variant is a compile error until it's classified here. Button clicks
+/// are NOT context-gated (`applyAction` sets actions directly) — buttons
+/// only render in their context, so this map governs keyboard/gamepad
+/// bindings only. Actions valid on multiple screens carry multiple flags
+/// (e.g. `exit_to_menu` fires from the level/hub options menu and the
+/// editor's).
 pub fn actionBindingContexts(action: Action) BindingContextSet {
     return switch (action) {
         // Always active (except during the error popup, where everything
@@ -858,10 +923,11 @@ pub const InputBinding = struct {
     input: RawInput,
     modifiers: Modifiers = .{},
     action: Action,
-    /// Where this binding is active (required in the settings format —
-    /// `loadSettings` warns + drops an entry without it). See
-    /// `BindingContext` + `actionBindingContexts`.
-    context: BindingContext,
+    // Where this binding is active is DERIVED from the action
+    // (`actionBindingContexts`) — there is no per-binding context field.
+    // The settings file's informational `context` line is written from
+    // `primaryBindingContext` and ignored at load. See DESIGN → Input →
+    // Binding contexts.
 };
 
 pub const Settings = struct {

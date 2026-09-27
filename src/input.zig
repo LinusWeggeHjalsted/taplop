@@ -706,47 +706,39 @@ fn modifierSpecificity(modifiers: Modifiers) u8 {
     return count;
 }
 
-/// True if two `RawInput` refer to the same physical input (same variant +
-/// id string). Used to find competing bindings on the same key/button.
-fn sameInput(a: types.RawInput, b: types.RawInput) bool {
-    return switch (a) {
-        .key => |ak| switch (b) {
-            .key => |bk| std.mem.eql(u8, ak, bk),
-            else => false,
-        },
-        .mouse_button => |am| switch (b) {
-            .mouse_button => |bm| std.mem.eql(u8, am, bm),
-            else => false,
-        },
-        .gamepad_button => |ag| switch (b) {
-            .gamepad_button => |bg| std.mem.eql(u8, ag, bg),
-            else => false,
-        },
-    };
-}
-
 /// Hybrid precedence: `binding` (already matching the held modifiers + a
-/// pressed input) is suppressed if another binding on the SAME input matches
-/// the held modifiers with strictly MORE required modifiers — a more-specific
-/// chord wins, a plain binding gives way to it. Equal-specificity bindings
-/// co-fire. Only ACTIVE-context bindings compete (see DESIGN → Input →
-/// Binding contexts): an inactive-context binding on the same key never
-/// suppresses or is suppressed. See DESIGN → Input.
+/// pressed input) is suppressed if another binding on the SAME input —
+/// with derived contexts (`actionBindingContexts(other.action)`)
+/// intersecting the frame's ACTIVE set — EITHER matches the held modifiers
+/// with strictly MORE required modifiers (a more-specific chord wins, a
+/// plain binding gives way to it), OR matches with EQUAL specificity but
+/// is a DIFFERENT action appearing EARLIER in the binding list (one combo
+/// fires one action per context; first-listed wins — the deterministic
+/// fallback, reachable only via a hand-edited file since `loadSettings`
+/// warns + drops conflicts and the keybind UI prevents them). The same
+/// action earlier never suppresses (both entries fire the same flag).
+/// Only active bindings compete: a binding whose derived contexts are
+/// inactive this frame never suppresses or is suppressed. See DESIGN →
+/// Input → Hybrid precedence + binding conflicts.
 fn isSuppressed(
     binding: InputBinding,
+    binding_index: usize,
     bindings: []const InputBinding,
     modifiers: Modifiers,
     active_contexts: types.BindingContextSet,
 ) bool {
     const my_specificity = modifierSpecificity(binding.modifiers);
-    for (bindings) |other| {
-        if (!active_contexts.contains(other.context)) continue;
-        if (!sameInput(other.input, binding.input)) continue;
+    for (bindings, 0..) |other, other_index| {
+        if (!actionContextsActive(other.action, active_contexts)) continue;
+        if (!types.rawInputsEqual(other.input, binding.input)) continue;
         // The competitor must also match the held modifiers to win.
         if (other.modifiers.ctrl and !modifiers.ctrl) continue;
         if (other.modifiers.shift and !modifiers.shift) continue;
         if (other.modifiers.alt and !modifiers.alt) continue;
         if (modifierSpecificity(other.modifiers) > my_specificity) return true;
+        if (other_index < binding_index and
+            modifierSpecificity(other.modifiers) == my_specificity and
+            other.action != binding.action) return true;
     }
     return false;
 }
@@ -765,9 +757,9 @@ fn isActionHeld(
     modifiers: Modifiers,
     active_contexts: types.BindingContextSet,
 ) bool {
-    for (bindings) |binding| {
+    for (bindings, 0..) |binding, binding_index| {
         if (binding.action != action) continue;
-        if (!active_contexts.contains(binding.context)) continue;
+        if (!actionContextsActive(action, active_contexts)) continue;
         if (binding.modifiers.ctrl and !modifiers.ctrl) continue;
         if (binding.modifiers.shift and !modifiers.shift) continue;
         if (binding.modifiers.alt and !modifiers.alt) continue;
@@ -777,7 +769,7 @@ fn isActionHeld(
             .gamepad_button => |gamepad| InputState.isHeld(gamepad_buttons_held, gamepad),
         };
         if (held) {
-            if (isSuppressed(binding, bindings, modifiers, active_contexts)) continue;
+            if (isSuppressed(binding, binding_index, bindings, modifiers, active_contexts)) continue;
             return true;
         }
     }
@@ -798,14 +790,16 @@ fn checkAction(
     modifiers: Modifiers,
     active_contexts: types.BindingContextSet,
 ) bool {
-    for (bindings) |binding| {
+    for (bindings, 0..) |binding, binding_index| {
         if (binding.action != action) continue;
 
-        // Binding-context gate (see DESIGN → Input → Binding contexts):
-        // only bindings whose context is active this frame fire — same-combo
-        // cross-context pairs (Digit1 = skill 1 in game / select tool in
-        // editor) never co-fire; the active set is the single disambiguator.
-        if (!active_contexts.contains(binding.context)) continue;
+        // Derived binding-context gate (see DESIGN → Input → Binding
+        // contexts): a binding is active iff its action's contexts
+        // (`actionBindingContexts`) intersect the frame's active set —
+        // same-combo cross-context pairs (Digit1 = skill 1 in game /
+        // select tool in editor) never co-fire; the active set + the
+        // derived contexts are the single disambiguator.
+        if (!actionContextsActive(action, active_contexts)) continue;
 
         // A binding's modifiers are REQUIREMENTS, not an exact match: a plain
         // binding fires regardless of held modifiers (so ctrl+key works for
@@ -827,13 +821,21 @@ fn checkAction(
 
         if (pressed) {
             // Hybrid precedence — see DESIGN → Input. A more-specific chord
-            // on the same input suppresses this binding; equal-specificity
-            // ties co-fire (gated by handler context downstream).
-            if (isSuppressed(binding, bindings, modifiers, active_contexts)) continue;
+            // on the same input suppresses this binding; an equal-
+            // specificity different-action conflict is won by the earlier
+            // list entry (first-match-wins — see isSuppressed).
+            if (isSuppressed(binding, binding_index, bindings, modifiers, active_contexts)) continue;
             return true;
         }
     }
     return false;
+}
+
+/// Derived binding-context gate: `action`'s binding is active this frame
+/// iff `actionBindingContexts(action)` intersects the frame's active
+/// contexts (see DESIGN → Input → Binding contexts).
+fn actionContextsActive(action: types.Action, active_contexts: types.BindingContextSet) bool {
+    return types.actionBindingContexts(action).intersects(active_contexts);
 }
 
 /// Process raw platform input events, update InputState, and produce
@@ -1138,8 +1140,8 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
     // no binding may fire — the M2 suppression rule (DESIGN → UI Framework
     // → Text input widget).
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Escape" }, .action = .escape, .context = .anytime },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Escape" }, .action = .escape },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1190,8 +1192,8 @@ test "checkAction: more-specific chord suppresses plain binding on same key" {
     // Enter → confirm (plain); Enter+ctrl → dump_event_log (ctrl).
     // Pressing ctrl+Enter fires dump_event_log only.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log, .context = .anytime },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
@@ -1203,8 +1205,8 @@ test "checkAction: plain press (no chord modifiers) fires plain binding only" {
     // Same bindings, but ctrl NOT held. The ctrl binding's requirement isn't
     // met, so only the plain confirm fires.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log, .context = .anytime },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{};
@@ -1221,8 +1223,8 @@ test "checkAction: same key, different contexts — exactly one fires" {
     // the other (an inactive-context binding is not a precedence
     // competitor). See DESIGN → Input → Binding contexts.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "ArrowUp" }, .action = .move_cursor_up, .context = .game },
-        .{ .input = .{ .key = "ArrowUp" }, .action = .error_scroll_up, .context = .error_popup },
+        .{ .input = .{ .key = "ArrowUp" }, .action = .move_cursor_up },
+        .{ .input = .{ .key = "ArrowUp" }, .action = .error_scroll_up },
     };
     const pressed = keysPressedOne("ArrowUp");
     const mods = Modifiers{};
@@ -1239,8 +1241,8 @@ test "checkAction: editor bindings inactive on the level screen" {
     // (editor). On the level screen only the skill slot fires; on the
     // editor screen only the tool shortcut fires.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1, .context = .game },
-        .{ .input = .{ .key = "Digit1" }, .action = .select_editor_tool, .context = .editor },
+        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 },
+        .{ .input = .{ .key = "Digit1" }, .action = .select_editor_tool },
     };
     const pressed = keysPressedOne("Digit1");
     const mods = Modifiers{};
@@ -1252,13 +1254,46 @@ test "checkAction: editor bindings inactive on the level screen" {
     try std.testing.expect(checkAction(.select_editor_tool, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
 }
 
+test "checkAction: equal-specificity conflict — earlier binding wins, one action fires" {
+    // The conflict-rule fallback: one combo fires ONE action per context.
+    // Two same-combo equal-specificity bindings on different actions
+    // (both game-context) would co-fire — the EARLIER list entry wins and
+    // the later never fires, regardless of query order. Reachable only via
+    // a hand-edited file (`loadSettings` warns + drops conflicts; the
+    // keybind UI prevents them) — the deterministic fallback keeps replay
+    // safe. See DESIGN → Input → Hybrid precedence + binding conflicts.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .action = .skip },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{};
+    const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+}
+
+test "checkAction: same action twice on one combo — both entries fire it" {
+    // Duplicate entries on the SAME action are redundant, not conflicting:
+    // neither suppresses the other (both set the same flag — the loader
+    // warns + drops the duplicate; the engine stays permissive).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{};
+    const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+}
+
 test "checkAction: a chord requiring an un-held modifier does not suppress" {
     // Enter → confirm (plain); Enter+shift → dump_event_log (shift). Pressing
     // Enter with ctrl held (not shift): the shift binding doesn't match the
     // held modifiers, so it is NOT a competitor — confirm still fires.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log, .context = .anytime },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
@@ -1271,9 +1306,9 @@ test "checkAction: most specific among three wins" {
     // Enter+ctrl+shift → dump_event_log (ctrl+shift, spec2).
     // ctrl+shift+Enter fires dump_event_log only.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .skip, .context = .game },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true, .shift = true }, .action = .dump_event_log, .context = .anytime },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .skip },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true, .shift = true }, .action = .dump_event_log },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true, .shift = true };
@@ -1292,11 +1327,11 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
     // the click consumption sites serve both. On the game set the same
     // keys fire the skill slots and nothing editor-side.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1, .context = .game },
-        .{ .input = .{ .key = "Digit2" }, .action = .skill_slot_2, .context = .game },
-        .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool, .context = .editor },
-        .{ .input = .{ .key = "Digit2" }, .action = .editor_tile_tool, .context = .editor },
-        .{ .input = .{ .key = "Digit3" }, .action = .toggle_editor_entity_group, .context = .editor },
+        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 },
+        .{ .input = .{ .key = "Digit2" }, .action = .skill_slot_2 },
+        .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool },
+        .{ .input = .{ .key = "Digit2" }, .action = .editor_tile_tool },
+        .{ .input = .{ .key = "Digit3" }, .action = .toggle_editor_entity_group },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1361,9 +1396,9 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     // (toggle_skills, game context) is inactive there — the chord-vs-plain
     // precedence itself is pinned by the checkAction tests above.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills, .context = .game },
-        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission, .context = .editor },
-        .{ .input = .{ .key = "KeyE" }, .modifiers = .{ .ctrl = true }, .action = .export_editor_mission, .context = .editor },
+        .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
+        .{ .input = .{ .key = "KeyE" }, .modifiers = .{ .ctrl = true }, .action = .export_editor_mission },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1383,11 +1418,15 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
 }
 
-test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
+test "translateInput: ctrl+N fires new_editor_mission on the editor + menu sets" {
     // The New Mission keybind's dispatch pin (the ctrl+S lesson: a binding
     // with every other site wired but no checkAction line is dead).
+    // Fires on editor AND main-menu contexts — new_editor_mission is in
+    // the editor-browser family, valid in {editor, menu} (contexts are
+    // DERIVED from the action; the old shipped binding was authored
+    // editor-only). Dormant on level/hub (a playtest/validation run).
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission, .context = .editor },
+        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1404,16 +1443,18 @@ test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
         const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
         try std.testing.expect(result.anytime.new_editor_mission);
     }
-    // Level/hub (a playtest/validation run — the binding must go dormant
-    // there) and main menu: no fire.
-    {
-        var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
-        try std.testing.expect(!result.anytime.new_editor_mission);
-    }
+    // Main menu: fires too (the derived {editor, menu} set — the browser
+    // family's consumption site accepts menu fires).
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .menu = true });
+        try std.testing.expect(result.anytime.new_editor_mission);
+    }
+    // Level/hub (a playtest/validation run — the binding must go dormant
+    // there): no fire.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
     }
 }

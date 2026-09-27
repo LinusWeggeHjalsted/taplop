@@ -1061,43 +1061,50 @@ combat-log UI rendering + replay-viewer UI still TODO)
 
 ## Input
 
-- **Binding contexts — a key combo may be bound once per context.** Every
-  InputBindings entry carries a REQUIRED `context` key: `anytime` (active on
-  every screen), `game` (level + hub), `editor`, `menu` (main menu),
-  `error_popup`. Bindings in DIFFERENT contexts may share the same combo
-  (Digit1 = skill 1 in game, select tool in editor) and never co-fire:
-  `frame()` computes the frame's active `BindingContextSet` and hands it to
-  `translateInput`; `checkAction`/`isActionHeld`/`isSuppressed` skip bindings
-  whose context isn't active (an inactive binding is not a precedence
-  competitor either). The active set: while `pending_error` is set, ONLY
-  `error_popup` is active — the popup is modal, even `anytime` is swallowed
-  (this makes the old ArrowUp dual-bind explicit: with the popup up only
-  `error_scroll_*` fires, without it only `move_cursor_*`; the handler-side
-  pending_error gate remains as the wheel-redirect + defense-in-depth).
-  Otherwise the screen picks its context and `anytime` rides along
-  (level/hub → game, editor → editor, main_menu → menu, replay_viewer →
-  none yet). An editor playtest/validation run is a `.level` screen, so the
-  game set activates and the editor set goes dormant — the run plays like
-  gameplay with zero special cases. `save_editor_mission` is editor-context
-  (ctrl+S is dead mid-run); `save_game` is game-context and additionally
-  handler-gated against editor runs (the run's player_data is throwaway —
-  same reasoning as the view hiding Export Save mid-run). Button clicks
-  bypass the gate entirely (`applyAction` sets actions directly) — buttons
-  only render in their context.
-- **Action↔context validity is declared, compiler-enforced, and
-  load-validated.** `types.actionBindingContexts` is an exhaustive no-else
-  switch classifying every Action into its valid contexts — the single
-  declaration of "where does this action fire", and a compile error to add
-  an Action without classifying it. `loadSettings` warns + drops a binding
-  whose `context` is missing/unknown, whose action is unknown, or whose
-  context isn't valid for its action (such a binding could only fire on
-  screens where nothing consumes it — a dead binding). A dropped entry
-  leaves its action unmentioned, so the per-action overlay injects the
-  action's default binding (context included) — a pre-migration
-  context-less user file self-heals via the startup repair write (see
-  Binding overlay semantics below). `settings_file_format_version` did NOT bump: old files parse
-  (bindings warn+drop+re-inject, scalars untouched) rather than being
-  rejected wholesale.
+- **Binding contexts are DERIVED from the action — a key combo may be
+  bound once per context.** There is NO per-binding context: a binding's
+  active contexts ARE `actionBindingContexts(action)` — the single,
+  compiler-enforced declaration (see the next bullet). `frame()` computes
+  the frame's active `BindingContextSet` and hands it to `translateInput`;
+  `checkAction`/`isActionHeld`/`isSuppressed` skip a binding unless its
+  action's contexts intersect the active set (an inactive binding is not a
+  precedence competitor either). Bindings on actions in DIFFERENT contexts
+  may share the same combo (Digit1 = skill 1 in game, select tool in editor)
+  and never co-fire. The settings file still carries a per-binding
+  `context` line — INFORMATIONAL: the writer emits
+  `primaryBindingContext(action)` (first declared member of the action's
+  set), the loader IGNORES the line entirely (context-less entries parse
+  fine); the line exists so an older binary (which requires + validates it)
+  keeps working and the file stays human-readable. The active set: while
+  `pending_error` is set, ONLY `error_popup` is active — the popup is modal,
+  even `anytime` is swallowed (this makes the old ArrowUp dual-bind explicit:
+  with the popup up only `error_scroll_*` fires, without it only
+  `move_cursor_*`; the handler-side pending_error gate remains as the
+  wheel-redirect + defense-in-depth). Otherwise the screen picks its
+  context and `anytime` rides along (level/hub → game, editor → editor,
+  main_menu → menu, replay_viewer → none yet). An editor
+  playtest/validation run is a `.level` screen, so the game set activates
+  and the editor set goes dormant — the run plays like gameplay with zero
+  special cases (`save_editor_mission` is editor-only so ctrl+S is dead
+  mid-run; `save_game` is game-context and additionally handler-gated
+  against editor runs — the run's player_data is throwaway, same reasoning
+  as the view hiding Export Save mid-run). One behavior change from the
+  authored-context era: the editor-browser-family keys (ctrl+O, ctrl+N, ...)
+  now fire on the MAIN MENU too — the family is valid in {editor, menu}, the
+  old shipped bindings were authored editor-only, and the consumption sites
+  already accept menu fires. Button clicks bypass the gate entirely
+  (`applyAction` sets actions directly) — buttons only render in their
+  context.
+- **Action↔context classification is declared + compiler-enforced.**
+  `types.actionBindingContexts` is an exhaustive no-else switch classifying
+  every Action into its firing contexts — the single declaration of "where
+  does this action fire", and a compile error to add an Action without
+  classifying it. With derived contexts this switch IS the binding gate —
+  there is no load-time validity layer anymore (nothing to validate: no
+  binding can name a context its action doesn't fire in). What `loadSettings`
+  still validates per entry: the `action` itself (unknown → warn + drop).
+  `settings_file_format_version` did NOT bump: old files parse (context
+  lines ignored, scalars untouched) rather than being rejected wholesale.
 - **New keybind wiring sites (four, easily forgotten).** A new keybind
   touches: (1) the binding entry in `data/default_settings.txt` (including
   its informational `context` line), (2) the `Action` enum + its
@@ -1128,16 +1135,39 @@ combat-log UI rendering + replay-viewer UI still TODO)
   the button-click path (`applyAction` sets the action directly with no
   modifier filtering) so keyboard chords and clicks behave the same.
 - **Hybrid precedence — most-specific chord wins within the active
-  contexts, ties co-fire.** When two bindings share the same physical input
-  (same key/button id) AND both contexts are active, the one whose required
-  modifiers are a SUPERSET (in count, all held) wins and suppresses the
-  less-specific one: ctrl+Enter beats plain Enter. Equal-specificity
-  bindings (same required-modifier count) CO-FIRE — disambiguation is by
-  handler context downstream, not here. Same-combo different-context pairs
-  are NOT ties — the context gate resolves them upstream (see Binding
-  contexts). `checkAction` / `isActionHeld` suppress a matching binding when
-  another ACTIVE binding on the same input matches the held modifiers with
-  strictly more required modifiers (`isSuppressed`, `modifierSpecificity`).
+  contexts; a combo conflict is won by the earlier list entry.** When two
+  bindings share the same physical input (same key/button id) AND both are
+  active (derived contexts intersect the frame's active set), the one whose
+  required modifiers are a SUPERSET (in count, all held) wins and suppresses
+  the less-specific one: ctrl+Enter beats plain Enter. Equal-specificity
+  bindings on the SAME action never suppress each other (both fire the
+  same flag — the loader dedupes the combo). Equal-specificity bindings on
+  DIFFERENT actions are a CONFLICT — one combo fires one action per
+  context — and the EARLIER list entry wins (`isSuppressed`'s
+  first-match-wins tiebreak): the deterministic fallback, reachable only
+  via a hand-edited file, since `loadSettings` warns + drops conflicts
+  (the later entry) and the keybind UI prevents them. Same-combo
+  different-context pairs are NOT ties — the context gate resolves them
+  upstream (see Binding contexts). `checkAction` / `isActionHeld` suppress
+  a matching binding when another ACTIVE binding on the same input either
+  matches the held modifiers with strictly more required modifiers, or
+  equals them on a different action from an earlier list position
+  (`isSuppressed`, `modifierSpecificity`).
+- **Binding conflicts (one combo → one action per context) are validated at
+  load.** Same combo (`sameCombo`: same input + same required modifiers) on
+  DIFFERENT actions whose derived contexts INTERSECT (they would co-fire) is
+  a config error: `loadSettings` warns + drops the LATER entry (first
+  listed wins). Same combo on the SAME action is a redundant duplicate:
+  warned + dropped too. Cross-context same-combo pairs (Digit1 = skill in
+  game / tool in editor) are LEGAL — kept silently. ONE exception: a drop
+  whose LATER entry is an INJECTED default (the user rebound a combo a
+  default for an unmentioned action also occupies — user Enter→skip vs
+  injected confirm→Enter) is SILENT — nothing in the user's file is wrong,
+  the injection re-runs every launch, and a warning would pop the same
+  message every launch with nothing to repair. The startup repair write
+  (see Binding overlay semantics) cleans a warned file on the same launch,
+  so the popup explains itself once. The keybind UI prevents conflicts at
+  assignment time (steal with a warning — see TODO → Keybind editor).
 - **Synthetic key repeat is owned by the engine, not the OS.** A held key
   fires its first repeat after `key_repeat_initial_delay_microseconds` (300ms)
   then repeats at `key_repeat_interval_microseconds` (40ms), tracked in
@@ -1171,9 +1201,9 @@ combat-log UI rendering + replay-viewer UI still TODO)
   persisted preference; other tunable fields mark dirty as their UI lands.
 - **Binding overlay semantics.** Per-action, not per-key-combo: a user file's
   binding for an action replaces the default's binding for that action
-  (rebind = replace, not duplicate — the binding's `context` comes with the
-  entry; a user rebinding an action states its context like any authored
-  binding, validated against `actionBindingContexts` at load). Same-combo
+  (rebind = replace, not duplicate; the entry's `context` line, if present,
+  is ignored — contexts are derived from the action, see Binding
+  contexts). Same-combo
   different-action pairs WITHIN one context are a config error in spirit;
   the loader does not flag them today (equal-specificity ties co-fire per
   the hybrid precedence rule) — across contexts they are fine and resolved
@@ -1184,10 +1214,9 @@ combat-log UI rendering + replay-viewer UI still TODO)
   bindings for every action it doesn't mention (load-time, in
   `loadSettings`) — so a new official binding (skip_level, future editor
   keys, a renamed action) reaches existing installs instead of being
-  shadowed by the user file. A dropped entry (missing/invalid context,
-  unknown action — see Action↔context validity) equally counts as
-  unmentioned, so its default is injected: a pre-migration context-less
-  user file loses nothing permanently. Idempotent by construction: when the
+  shadowed by the user file. A dropped entry (unknown action — dropped
+  BEFORE the injection loop) equally counts as unmentioned, so its default
+  is injected. Idempotent by construction: when the
   overlay SUCCEEDS but produces warnings (dropped bindings, unknown keys —
   `overlayUserSettings` sets `repair_write_needed`), `createSessionSetup`
   marks settings dirty (`state.markSettingsDirty`), so the next debounced

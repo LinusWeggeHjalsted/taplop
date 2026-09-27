@@ -233,8 +233,8 @@ pub fn loadSettings(
     sections: []const Section,
     allocator: std.mem.Allocator,
     base: ?Settings,
-    /// Receives binding-level config warnings (missing/unknown context,
-    /// action not valid in its context, unknown action). Null on the
+    /// Receives binding-level config warnings (unknown action; duplicate
+    /// or conflicting combos — see the conflict scan below). Null on the
     /// defaults path (`loadSettingsWrapped`) — the shipped file is
     /// round-trip-tested, so binding warnings there are dev noise.
     warnings: ?*std.ArrayList([]const u8),
@@ -334,29 +334,11 @@ pub fn loadSettings(
                 continue;
             };
 
-            // Binding context is REQUIRED (see DESIGN → Input → Binding
-            // contexts). A context-less or unknown-context entry, or an
-            // action bound in a context it never fires in, is a config
-            // error: warn + drop the entry. A dropped entry leaves its
-            // action unmentioned, so the per-action overlay injects the
-            // action's default binding (with its default context) — a
-            // context-less pre-migration user file self-heals on the next
-            // debounced full-format write.
-            const context_string = findValue(pairs, "context") orelse "";
-            const context = parseEnum(types.BindingContext, context_string) orelse {
-                if (warnings) |w| {
-                    const message = std.fmt.allocPrint(allocator, "InputBindings entry for '{s}' is missing a valid context; entry dropped", .{action_string}) catch @panic("failed to format binding warning");
-                    w.append(allocator, message) catch @panic("failed to append binding warning");
-                }
-                continue;
-            };
-            if (!types.actionBindingContexts(action).contains(context)) {
-                if (warnings) |w| {
-                    const message = std.fmt.allocPrint(allocator, "Action '{s}' cannot be bound in context '{s}'; entry dropped", .{ action_string, context_string }) catch @panic("failed to format binding warning");
-                    w.append(allocator, message) catch @panic("failed to append binding warning");
-                }
-                continue;
-            }
+            // The entry's `context` line, if present, is IGNORED — a
+            // binding's active contexts are DERIVED from the action
+            // (`actionBindingContexts`); see DESIGN → Input → Binding
+            // contexts. (No validity check needed: there is nothing to
+            // validate against.)
 
             const InputTypeId = enum { key, mouse_button, gamepad_button };
             const input_type_id = parseEnum(InputTypeId, input_type) orelse continue;
@@ -385,9 +367,14 @@ pub fn loadSettings(
                 .input = input,
                 .modifiers = modifiers,
                 .action = action,
-                .context = context,
             });
         }
+
+        // How many entries came from the user file — everything appended
+        // after this count is an INJECTED default (the per-action migration
+        // below). The conflict scan uses it: a dropped INJECTED default is
+        // silent (see the scan's comment).
+        const user_binding_count = bindings.items.len;
 
         // Inject default bindings for actions the user file doesn't mention
         // — the per-action migration (see DESIGN → Input → Binding overlay
@@ -425,9 +412,74 @@ pub fn loadSettings(
                     .input = default_input,
                     .modifiers = default_binding.modifiers,
                     .action = default_binding.action,
-                    .context = default_binding.context,
                 });
             }
+        }
+
+        // Conflict scan (the load-time mirror of the keybind UI's rule —
+        // see DESIGN → Input → Hybrid precedence + binding conflicts):
+        // one combo (same input + same required modifiers) fires ONE
+        // action per context. A duplicate combo on the SAME action, or on
+        // DIFFERENT actions whose derived contexts intersect (they would
+        // co-fire), is a config error: warn + drop the LATER entry (first
+        // listed wins) — but ONLY when the dropped entry came from the
+        // user file. A dropped INJECTED default is SILENT: the user bound
+        // a combo that a default for an unmentioned action also occupies
+        // (user Enter→skip vs injected confirm→Enter) — nothing in the
+        // user's file is wrong, and the injection re-runs every launch, so
+        // warning would pop the same message every launch with nothing to
+        // repair. The engine's first-match-wins tiebreak makes any residual
+        // conflict a redundancy rather than a behavior cliff, and the
+        // startup repair write (see DESIGN → Input → Binding overlay
+        // semantics) cleans a warned file on the same launch.
+        {
+            var kept: std.ArrayList(types.InputBinding) = .empty;
+            outer: for (bindings.items, 0..) |binding, binding_index| {
+                const dropped_is_user_entry = binding_index < user_binding_count;
+                for (kept.items) |kept_binding| {
+                    if (!types.sameCombo(binding, kept_binding)) continue;
+                    // Same combo on the SAME action: a redundant duplicate,
+                    // dropped regardless of contexts.
+                    if (binding.action == kept_binding.action) {
+                        if (dropped_is_user_entry) {
+                            if (warnings) |w| {
+                                const input_name = switch (binding.input) {
+                                    .key => |name| name,
+                                    .mouse_button => |name| name,
+                                    .gamepad_button => |name| name,
+                                };
+                                const message = std.fmt.allocPrint(allocator, "InputBindings entry '{s}' duplicates the combo already bound to '{s}'; entry dropped", .{ input_name, @tagName(binding.action) }) catch @panic("failed to format binding warning");
+                                w.append(allocator, message) catch @panic("failed to append binding warning");
+                            }
+                        }
+                        freeRawInputString(binding.input, allocator);
+                        continue :outer;
+                    }
+                    // Different actions: a conflict ONLY when their derived
+                    // contexts intersect (they would co-fire). Cross-context
+                    // same-combo pairs (Digit1 = skill in game / tool in
+                    // editor) are LEGAL — keep both, no warning.
+                    if (!types.actionBindingContexts(binding.action).intersects(types.actionBindingContexts(kept_binding.action))) continue;
+                    if (dropped_is_user_entry) {
+                        if (warnings) |w| {
+                            const input_name = switch (binding.input) {
+                                .key => |name| name,
+                                .mouse_button => |name| name,
+                                .gamepad_button => |name| name,
+                            };
+                            const message = std.fmt.allocPrint(allocator, "InputBindings combo '{s}' already fires '{s}'; the binding to '{s}' is dropped (one combo fires one action per context)", .{ input_name, @tagName(kept_binding.action), @tagName(binding.action) }) catch @panic("failed to format binding warning");
+                            w.append(allocator, message) catch @panic("failed to append binding warning");
+                        }
+                    }
+                    // The dropped entry's owned string dies here; kept
+                    // entries keep theirs (they move into `kept`).
+                    freeRawInputString(binding.input, allocator);
+                    continue :outer;
+                }
+                try kept.append(allocator, binding);
+            }
+            bindings.deinit(allocator);
+            bindings = kept;
         }
 
         // Free the base's bindings before replacing (when a base is provided,
@@ -4258,7 +4310,6 @@ fn testOwnedBindings(
         key: []const u8,
         ctrl: bool = false,
         action: types.Action,
-        context: types.BindingContext,
     },
 ) ![]types.InputBinding {
     var bindings: std.ArrayList(types.InputBinding) = .empty;
@@ -4267,7 +4318,6 @@ fn testOwnedBindings(
             .input = .{ .key = try allocator.dupe(u8, spec.key) },
             .modifiers = .{ .ctrl = spec.ctrl },
             .action = spec.action,
-            .context = spec.context,
         });
     }
     return bindings.toOwnedSlice(allocator);
@@ -4283,9 +4333,9 @@ test "loadSettings injects default bindings for actions the user file doesn't me
     // Defaults: skip → Space, dump_event_log → ctrl+L, undo → ctrl+Z.
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip, .context = .game },
-            .{ .key = "L", .ctrl = true, .action = .dump_event_log, .context = .anytime },
-            .{ .key = "Z", .ctrl = true, .action = .undo, .context = .anytime },
+            .{ .key = "Space", .action = .skip },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
+            .{ .key = "Z", .ctrl = true, .action = .undo },
         }),
     };
     // loadSettings CONSUMES the base's bindings (frees them on replace;
@@ -4344,8 +4394,8 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
 
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip, .context = .game },
-            .{ .key = "L", .ctrl = true, .action = .dump_event_log, .context = .anytime },
+            .{ .key = "Space", .action = .skip },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
         }),
     };
     // loadSettings consumes the base's bindings — free merged only.
@@ -4378,19 +4428,17 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
     try std.testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
 }
 
-test "loadSettings drops a context-less binding with a warning and injects its default" {
-    // The pre-migration user file: bindings without a context key. The
-    // entry is warned + dropped — and a dropped entry leaves its action
-    // unmentioned, so the per-action overlay injects the action's default
-    // binding (with its default context). One boot with warnings, then the
-    // next debounced full-format write persists the context lines — the
-    // self-heal path for the one existing install. See DESIGN → Input →
-    // Binding overlay semantics.
+test "loadSettings accepts a context-less binding (contexts are derived)" {
+    // The `context` line is optional + informational — a binding's active
+    // contexts are DERIVED from the action (`actionBindingContexts`); the
+    // loader ignores the line entirely. A pre-migration context-less user
+    // file therefore loads as-is (no drop, no warning). See DESIGN → Input
+    // → Binding contexts.
     const allocator = std.testing.allocator;
 
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip, .context = .game },
+            .{ .key = "Space", .action = .skip },
         }),
     };
     // loadSettings consumes the base's bindings on replace — free merged only.
@@ -4415,20 +4463,22 @@ test "loadSettings drops a context-less binding with a warning and injects its d
     const merged = try loadSettings(sections, allocator, base, &warnings);
     defer freeSettings(merged, allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "context") != null);
-    // The default binding (with its context) was injected in place of the
-    // dropped entry — skip is still bound, not lost.
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    // The user's rebinding is authoritative — skip bound to Enter, the
+    // default (Space) replaced, nothing dropped.
     try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
     try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
-    try std.testing.expectEqualStrings("Space", merged.input_bindings[0].input.key);
-    try std.testing.expectEqual(.game, merged.input_bindings[0].context);
+    try std.testing.expectEqualStrings("Enter", merged.input_bindings[0].input.key);
 }
 
-test "loadSettings warns + drops a binding whose action never fires in its context" {
-    // select_editor_tool bound with context game: it could only fire on
-    // level/hub screens, where nothing consumes it — a dead binding.
-    // actionBindingContexts is the validity map; the loader enforces it.
+test "loadSettings ignores the binding context line (contexts are derived)" {
+    // `context game` on an editor-context action — under the OLD authored-
+    // context model this was a dead binding (warned + dropped); with derived
+    // contexts the line is ignored and the binding's active contexts come
+    // from `actionBindingContexts` (select_editor_tool → editor). The
+    // engine's context gate (checkAction) is where that lands — covered by
+    // the editor-inactive-on-level tests in input.zig. See DESIGN → Input →
+    // Binding contexts.
     const allocator = std.testing.allocator;
 
     const raw_text =
@@ -4452,9 +4502,186 @@ test "loadSettings warns + drops a binding whose action never fires in its conte
     const settings = try loadSettings(sections, allocator, null, &warnings);
     defer freeSettings(settings, allocator);
 
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
+    try std.testing.expectEqual(.select_editor_tool, settings.input_bindings[0].action);
+}
+
+test "loadSettings warns + drops a conflicting combo (same context, different actions)" {
+    // One combo fires ONE action per context: Enter bound to confirm AND
+    // skip (both game-context actions) would co-fire. The first listed
+    // wins; the later entry is warned + dropped. See DESIGN → Input →
+    // Hybrid precedence + binding conflicts.
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Enter
+        \\action confirm
+        \\context game
+        \\
+        \\input_type key
+        \\input_name Enter
+        \\action skip
+        \\context game
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "cannot be bound") != null);
-    try std.testing.expectEqual(@as(usize, 0), settings.input_bindings.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "already fires") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "confirm") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "skip") != null);
+    // First listed wins — confirm kept, the skip binding dropped.
+    try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
+    try std.testing.expectEqual(.confirm, settings.input_bindings[0].action);
+}
+
+test "loadSettings warns + drops a duplicate combo (same action twice)" {
+    // Same combo on the SAME action is redundant, not conflicting — but the
+    // file should carry one entry per combo; the later duplicate is warned
+    // + dropped (the repair write cleans it).
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Enter
+        \\action confirm
+        \\context game
+        \\
+        \\input_type key
+        \\input_name Enter
+        \\action confirm
+        \\context game
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "duplicates") != null);
+    try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
+    try std.testing.expectEqual(.confirm, settings.input_bindings[0].action);
+}
+
+test "loadSettings keeps cross-context same-combo bindings (no conflict)" {
+    // Overlap ACROSS contexts is legal (Digit1 = skill 1 in game, select
+    // tool in editor — never simultaneously active). Also covers modifier-
+    // distinguished combos on one key: plain Enter (confirm) + ctrl Enter
+    // (skip) are different combos. Neither pair warns or drops. See
+    // DESIGN → Input → Hybrid precedence + binding conflicts.
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Digit1
+        \\action skill_slot_1
+        \\context game
+        \\
+        \\input_type key
+        \\input_name Digit1
+        \\action editor_select_tool
+        \\context editor
+        \\
+        \\input_type key
+        \\input_name Enter
+        \\action confirm
+        \\context game
+        \\
+        \\input_type key
+        \\input_name Enter
+        \\ctrl true
+        \\action skip
+        \\context game
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try std.testing.expectEqual(@as(usize, 4), settings.input_bindings.len);
+}
+
+test "loadSettings: a user combo colliding with an injected default drops the default silently" {
+    // The no-popup-loop contract: the user bound Enter to skip; the
+    // per-action injection still injects confirm's default (Enter —
+    // confirm is unmentioned in the user file), and the conflict scan
+    // drops the INJECTED default. It must drop SILENTLY: nothing in the
+    // user's file is wrong, and the injection re-runs every launch — a
+    // warning would pop the same message every launch with nothing to
+    // repair (the repair write can't remove an injection). See DESIGN →
+    // Input → Hybrid precedence + binding conflicts.
+    const allocator = std.testing.allocator;
+
+    // Defaults: confirm → Enter, skip → Space.
+    const base = Settings{
+        .input_bindings = try testOwnedBindings(allocator, &.{
+            .{ .key = "Enter", .action = .confirm },
+            .{ .key = "Space", .action = .skip },
+        }),
+    };
+    // loadSettings consumes the base's bindings on replace — free merged only.
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Enter
+        \\action skip
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const merged = try loadSettings(sections, allocator, base, &warnings);
+    defer freeSettings(merged, allocator);
+
+    // Silent: no warning (and therefore no repair-write trigger).
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    // The user's rebinding wins; the injected confirm default is gone.
+    try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
+    try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
+    try std.testing.expectEqualStrings("Enter", merged.input_bindings[0].input.key);
 }
 
 test "loadSettings warns + drops a binding naming an unknown action" {
@@ -4493,7 +4720,7 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
 
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip, .context = .game },
+            .{ .key = "Space", .action = .skip },
         }),
     };
     // No InputBindings section → the base's bindings are aliased into the
