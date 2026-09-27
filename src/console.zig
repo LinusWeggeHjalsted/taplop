@@ -1019,8 +1019,37 @@ fn dumpUiText(
                 surfaces += 1;
             },
             // Only ref-bearing slots are interactive (drag sources/drop
-            // targets); a bare slot is a decorative cell.
+            // targets); a bare slot is a decorative cell. The identity
+            // carries the payload (gear/boots, inventory/0) — the tag alone
+            // can't distinguish slots of the same kind.
             .slot => |slot| if (slot.ref) |slot_ref| {
+                const identity: []const u8 = switch (slot_ref) {
+                    .inventory => |index| std.fmt.allocPrint(
+                        allocator,
+                        "inventory/{d}",
+                        .{index},
+                    ) catch @panic("failed to format slot identity"),
+                    .gear => |gear_slot| std.fmt.allocPrint(
+                        allocator,
+                        "gear/{s}",
+                        .{@tagName(gear_slot)},
+                    ) catch @panic("failed to format slot identity"),
+                    .skill_bar => |index| std.fmt.allocPrint(
+                        allocator,
+                        "skill_bar/{d}",
+                        .{index},
+                    ) catch @panic("failed to format slot identity"),
+                    .learned_skill => |skill| std.fmt.allocPrint(
+                        allocator,
+                        "learned_skill/{s}",
+                        .{@tagName(skill)},
+                    ) catch @panic("failed to format slot identity"),
+                    .save_file => |row| std.fmt.allocPrint(
+                        allocator,
+                        "save_file/{d}",
+                        .{row},
+                    ) catch @panic("failed to format slot identity"),
+                };
                 buffer.print(
                     allocator,
                     "slot {d} {d} {d} {d} center {d} {d} ref {s}\n",
@@ -1031,7 +1060,7 @@ fn dumpUiText(
                         slot.size,
                         slot.screen_position.x + @divTrunc(slot.size, 2),
                         slot.screen_position.y + @divTrunc(slot.size, 2),
-                        @tagName(slot_ref),
+                        identity,
                     },
                 ) catch @panic("failed to format ui dump");
                 surfaces += 1;
@@ -1438,7 +1467,7 @@ test "dumpText ui: interactive surfaces list rects + ready-to-use click centers"
     try std_testing.expect(std.mem.indexOf(
         u8,
         text,
-        "slot 100 200 128 128 center 164 264 ref skill_bar\n",
+        "slot 100 200 128 128 center 164 264 ref skill_bar/0\n",
     ) != null);
 
     // An element list with no interactive surfaces reports none.
