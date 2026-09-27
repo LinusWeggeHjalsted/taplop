@@ -14914,10 +14914,30 @@ What the run surfaced (each verified against source or the event log):
   zero cost to me), rotate replenish/reflect cooldowns while kiting at
   end-distance ≥3 from the speed-1 guard and ≥4 from the speed-2 chaser,
   kill the chaser, lure the guard off the choke tile, circle around, and
-  sprint the final speed-3 dash onto the flag (the level-end check fires
-  before any enemy turn). The run died executing exactly this — at 11hp
-  with reflect one tick late; the line is sound, the execution window was
-  one turn short.
+  the final dash onto the flag from (9,3) — chebyshev 2, in speed-2 reach
+  (the level-end check fires before any enemy turn). The run died
+  executing exactly this — at 11hp with reflect one tick late; the line
+  is sound, the execution window was one turn short.
+- **Speed misread, caught in review** (the user's question): the run logs
+  and narrative here repeatedly said "speed 2→3" after equipping the
+  Comfortable Boots — wrong. The player's base speed is 1 (no `speed`
+  line in the mission's player.txt → the Entity default), Starter Boots
+  have speed bonus 0, Comfortable Boots +1 → effective 1→2
+  (`getEffectiveSpeed`). The error came from counting HIGHLIGHT LIST SIZE
+  at (1,-1) in run 1 ((2,-2) was misread as a 2-step tile — chebyshev 1,
+  a diagonal 1-step neighbor) and never re-deriving it; the direct
+  observable was in every dump all along — pre-boots every move was
+  exactly 1 tile, post-boots exactly 2, never 3. Lesson applied: derive
+  claims from moves-per-turn (or `getEffectiveSpeed`), not highlight
+  counts (sparse grids make ring-counting unreliable). The recorded
+  winning line above had a downstream casualty of the same error — the
+  final dash was originally written from (8,3) (chebyshev 3 to the flag,
+  NOT reachable at speed 2); corrected to (9,3).
+- One honestly-unexplained observation: skel2 was once seen closing
+  (4,-2)→(5,0) — chebyshev 2 — in what appeared to be one enemy turn,
+  while the level data says `speed 1`. Possibly a stale dump read on my
+  end (I had those earlier), or a movement-mode behavior — unverified,
+  worth checking against `ai_movement` before the next attempt.
 
 Session hygiene: the fifo + sleep-holder session pattern, quit + cleanup,
 and the whole second run's recorded history remains a valid --replay
