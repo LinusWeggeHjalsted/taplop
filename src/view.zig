@@ -605,6 +605,11 @@ pub fn view(
             button_color,
             session.ui_state.settings_tab,
             &session.ui_state.keybind_scroll_offset,
+            if (session.ui_state.keybind_edit != null)
+                &session.ui_state.keybind_edit.?
+            else
+                null,
+            &session.ui_state.keybind_picker_scroll_offset,
         ) catch @panic("failed to build settings panel");
     }
 

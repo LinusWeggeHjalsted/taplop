@@ -238,6 +238,10 @@ pub const PlayerInput = struct {
     /// Resolved ONCE per frame by the caller (main), never per update()
     /// drain iteration. `.none` when no field is focused.
     text_edit_outcome: types.TextEditOutcome = .none,
+    /// One frame's keybind-listening outcome (the capture seam — the
+    /// text-edit-outcome model). Set only while a keybind edit is active;
+    /// resolved once per frame in `main.frame`.
+    keybind_capture_outcome: types.KeybindCaptureOutcome = .none,
 };
 
 /// Synthetic key-repeat cadence (see `InputState.KeyRepeatEntry`). A held
@@ -399,6 +403,10 @@ pub const AnytimeInput = struct {
     /// Settings screen content tab (Settings / Keybinds), set alongside
     /// `options_action == .select_settings_tab` by the release dispatch.
     clicked_settings_tab: ?types.SettingsTab = null,
+    /// Keybinds-tab edit command, set alongside
+    /// `options_action == .edit_keybind` by the release dispatch (the
+    /// keybinds tab's editing UI — one action, one payload union).
+    clicked_keybind_command: ?types.KeybindCommand = null,
     /// Mission-browser tab, set alongside
     /// `options_action == .select_editor_mission_tab` by the release
     /// dispatch (one of the browser's two tab buttons).
@@ -537,6 +545,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .select_settings_tab => player_input.anytime.options_action = action,
+        .edit_keybind => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .add_editor_palette_type => player_input.anytime.options_action = action,
         .delete_editor_palette_type => player_input.anytime.options_action = action,
@@ -856,6 +865,12 @@ pub fn translateInput(
     camera: Camera,
     delta_microseconds: u64,
     text_edit: ?*ui.TextEditState,
+    /// The active keybind edit, if any (the Keybinds tab's listening /
+    /// picker / pending state). While set, ALL binding translation is
+    /// suppressed (the text-edit model) and the raw key/mouse presses
+    /// route into the edit instead (`ui.routeKeybindCapture`). Escape
+    /// cancels at every phase.
+    keybind_edit: ?*ui.KeybindEditState,
     active_contexts: types.BindingContextSet,
 ) PlayerInput {
     // Track which inputs were just pressed this tick (edge detection)
@@ -985,6 +1000,25 @@ pub fn translateInput(
         result.anytime.scroll_delta = scroll_delta;
         result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
         result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
+        result.pointer = pointerFacts(state, &mouse_pressed, &mouse_released, modifiers);
+        result.modifiers = modifiers;
+        return result;
+    }
+
+    // Keybind edit active (the Keybinds tab's listening / picker / pending
+    // state — the same suppression model as the text-field focus above):
+    // ALL binding translation is suppressed and the raw presses route into
+    // the edit (capture during listening; Escape cancels at every phase).
+    // Pointer facts + the wheel flow (Confirm/Cancel/tab buttons are
+    // clicks — the `applyAction` path, not bindings).
+    if (keybind_edit) |edit_state| {
+        result.keybind_capture_outcome = ui.routeKeybindCapture(
+            edit_state,
+            &keys_pressed,
+            &mouse_pressed,
+            modifiers,
+        );
+        result.anytime.scroll_delta = scroll_delta;
         result.pointer = pointerFacts(state, &mouse_pressed, &mouse_released, modifiers);
         result.modifiers = modifiers;
         return result;
@@ -1159,7 +1193,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
     // Control (unfocused): Enter fires its binding.
     {
         var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null, active_contexts);
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, active_contexts);
         try std.testing.expect(result.idle.confirm);
         try std.testing.expectEqual(types.TextEditOutcome.none, result.text_edit_outcome);
     }
@@ -1177,6 +1211,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
             camera,
             0,
             &ui_state.text_edit.?,
+            null,
             active_contexts,
         );
         try std.testing.expectEqual(types.TextEditOutcome.commit, result.text_edit_outcome);
@@ -1356,7 +1391,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
     // Editor screen: Digit1 → select tool (bridged), no skill slot.
     {
         var input_state: InputState = .{};
-        const result = translateInput(press_one, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
         try std.testing.expectEqual(types.EditorToolId.select, result.anytime.clicked_editor_tool);
         try std.testing.expect(result.idle.skill_slot_selected == null);
@@ -1364,28 +1399,28 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
     // Editor screen: Digit2 → tile tool.
     {
         var input_state: InputState = .{};
-        const result = translateInput(press_two, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        const result = translateInput(press_two, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
         try std.testing.expectEqual(types.EditorToolId.tile, result.anytime.clicked_editor_tool);
     }
     // Editor screen: Digit3 → entity group toggle (group index 0).
     {
         var input_state: InputState = .{};
-        const result = translateInput(press_three, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        const result = translateInput(press_three, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.toggle_editor_palette_group, result.anytime.options_action);
         try std.testing.expectEqual(@as(usize, 0), result.anytime.clicked_editor_group);
     }
     // Level screen: the same keys are the skill slots — no editor bridge.
     {
         var input_state: InputState = .{};
-        const result = translateInput(press_one, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
         try std.testing.expectEqual(@as(u8, 1), result.idle.skill_slot_selected);
         try std.testing.expect(result.anytime.options_action == null);
         try std.testing.expect(result.anytime.clicked_editor_tool == null);
     }
     {
         var input_state: InputState = .{};
-        const result = translateInput(press_two, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        const result = translateInput(press_two, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
         try std.testing.expectEqual(@as(u8, 2), result.idle.skill_slot_selected);
     }
 }
@@ -1416,7 +1451,7 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     };
     var input_state: InputState = .{};
     const active_contexts: types.BindingContextSet = .{ .anytime = true, .editor = true };
-    const result = translateInput(platform, &input_state, settings, camera, 0, null, active_contexts);
+    const result = translateInput(platform, &input_state, settings, camera, 0, null, null, active_contexts);
     try std.testing.expect(result.anytime.save_editor_mission);
     try std.testing.expect(result.anytime.export_editor_mission);
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
@@ -1444,21 +1479,48 @@ test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
     // Editor screen: fires.
     {
         var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expect(result.anytime.new_editor_mission);
     }
     // Main menu: no fire (the browser opens there via its BUTTONS; the
     // keyboard shortcut is editor-only).
     {
         var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .menu = true });
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .menu = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
     }
     // Level/hub (a playtest/validation run — the binding must go dormant
     // there): no fire.
     {
         var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
     }
+}
+
+test "translateInput: an active keybind edit suppresses bindings + captures the press" {
+    // The capture seam (the text-edit suppression model): while an edit is
+    // active, NO binding fires and the raw presses route into the edit.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyQ" }, .action = .dump_event_log },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    var ui_state: ui.UiState = .{};
+    ui_state.keybind_edit = .{ .edit = .{ .listening = .{ .binding = 0 } } };
+    const platform = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyQ" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    var input_state: InputState = .{};
+    const result = translateInput(platform, &input_state, settings, camera, 0, null, if (ui_state.keybind_edit != null) &ui_state.keybind_edit.? else null, .{ .anytime = true, .game = true });
+    // Suppressed: the KeyQ binding never fired.
+    try std.testing.expect(!result.anytime.dump_event_log);
+    // Captured instead — with the held ctrl as the combo requirement.
+    try std.testing.expectEqual(types.KeybindCaptureOutcome.captured, result.keybind_capture_outcome);
+    try std.testing.expectEqualStrings("KeyQ", ui_state.keybind_edit.?.capture.capturedId().?);
+    try std.testing.expect(ui_state.keybind_edit.?.capture.modifiers.ctrl);
 }

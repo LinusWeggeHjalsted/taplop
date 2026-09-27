@@ -283,6 +283,12 @@ pub const Action = enum {
     // field + which value) rides in `AnytimeInput.clicked_setting`. See
     // DESIGN → UI Framework → Settings screen.
     change_setting,
+    // A keybinds-tab edit command was clicked (rekey / reassign / add /
+    // remove / pick / confirm / cancel / reset — the whole editing UI
+    // rides ONE action + the `KeybindCommand` payload in
+    // `AnytimeInput.clicked_keybind_command`). See DESIGN → UI Framework →
+    // Settings screen (the Keybinds tab editing flows).
+    edit_keybind,
     // A settings screen tab button was clicked (Settings / Keybinds). The
     // tab rides in `AnytimeInput.clicked_settings_tab`. Routed through
     // `options_action` (the settings screen is reachable from the main
@@ -634,8 +640,7 @@ pub fn skillTypeBaseSound(skill_type: SkillType) SoundId {
 /// → Audio (layered cues).
 pub fn actionIsSkillSlot(action: Action) bool {
     return switch (action) {
-        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
-        .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => true,
+        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4, .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => true,
         else => false,
     };
 }
@@ -661,22 +666,24 @@ pub const RawInput = union(enum) {
 /// regression exposed — see DONE.md). The initial list was generated from
 /// the table (machine-walked), not hand-copied.
 pub const producible_key_ids = [_][]const u8{
-    "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft", "AltRight",
-    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ",
-    "KeyK", "KeyL", "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT",
-    "KeyU", "KeyV", "KeyW", "KeyX", "KeyY", "KeyZ",
-    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7",
-    "Digit8", "Digit9",
-    "Quote", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "BracketLeft",
-    "Backslash", "BracketRight", "Backquote",
-    "Space", "Escape", "Enter", "Tab", "Backspace", "Insert", "Delete",
-    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End",
-    "CapsLock", "ScrollLock", "NumLock", "PrintScreen", "Pause",
-    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
-    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7",
-    "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract",
-    "NumpadAdd", "NumpadEnter", "NumpadEqual",
-    "ContextMenu", "BrowserBack", "AudioVolumeUp", "AudioVolumeDown",
+    "ControlLeft",  "ControlRight",   "ShiftLeft",      "ShiftRight",      "AltLeft",     "AltRight",
+    "KeyA",         "KeyB",           "KeyC",           "KeyD",            "KeyE",        "KeyF",
+    "KeyG",         "KeyH",           "KeyI",           "KeyJ",            "KeyK",        "KeyL",
+    "KeyM",         "KeyN",           "KeyO",           "KeyP",            "KeyQ",        "KeyR",
+    "KeyS",         "KeyT",           "KeyU",           "KeyV",            "KeyW",        "KeyX",
+    "KeyY",         "KeyZ",           "Digit0",         "Digit1",          "Digit2",      "Digit3",
+    "Digit4",       "Digit5",         "Digit6",         "Digit7",          "Digit8",      "Digit9",
+    "Quote",        "Comma",          "Minus",          "Period",          "Slash",       "Semicolon",
+    "Equal",        "BracketLeft",    "Backslash",      "BracketRight",    "Backquote",   "Space",
+    "Escape",       "Enter",          "Tab",            "Backspace",       "Insert",      "Delete",
+    "ArrowUp",      "ArrowDown",      "ArrowLeft",      "ArrowRight",      "PageUp",      "PageDown",
+    "Home",         "End",            "CapsLock",       "ScrollLock",      "NumLock",     "PrintScreen",
+    "Pause",        "F1",             "F2",             "F3",              "F4",          "F5",
+    "F6",           "F7",             "F8",             "F9",              "F10",         "F11",
+    "F12",          "Numpad0",        "Numpad1",        "Numpad2",         "Numpad3",     "Numpad4",
+    "Numpad5",      "Numpad6",        "Numpad7",        "Numpad8",         "Numpad9",     "NumpadDecimal",
+    "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd",       "NumpadEnter", "NumpadEqual",
+    "ContextMenu",  "BrowserBack",    "AudioVolumeUp",  "AudioVolumeDown",
 };
 
 /// Every mouse button id the backend's mouse table can produce. Gamepad
@@ -801,10 +808,7 @@ pub const BindingContextSet = struct {
     }
 
     /// True if any context is set in BOTH sets — the derived binding gate
-    /// (see the struct doc). Also the conflict predicate at load + in the
-    /// keybind UI: two actions sharing a combo conflict iff their context
-    /// sets intersect (they can be simultaneously active and would
-    /// co-fire).
+    /// (see the struct doc).
     pub fn intersects(self: BindingContextSet, other: BindingContextSet) bool {
         return (self.anytime and other.anytime) or
             (self.game and other.game) or
@@ -813,6 +817,25 @@ pub const BindingContextSet = struct {
             (self.error_popup and other.error_popup);
     }
 };
+
+/// True if two binding context sets can be SIMULTANEOUSLY ACTIVE (a
+/// same-combo pair on them would co-fire — the binding-CONFLICT predicate
+/// at load + in the keybind UI's steal scan). NOT plain intersection: the
+/// activation model (see DESIGN → Input → Binding contexts) has exactly
+/// one of game/editor/menu active with `anytime` riding along (everywhere
+/// except the modal error popup), so {anytime} ∩ {game} is empty YET both
+/// are active in-game — intersection would miss the conflict. Cross-screen
+/// sets (game vs editor) never co-fire; `error_popup` is active ALONE
+/// (co-fires only with itself).
+pub fn bindingContextsCoFire(a: BindingContextSet, b: BindingContextSet) bool {
+    if (a.error_popup or b.error_popup) {
+        return a.error_popup and b.error_popup;
+    }
+    if (a.anytime and b.anytime) return true;
+    if (a.anytime and (b.game or b.editor or b.menu)) return true;
+    if (b.anytime and (a.game or a.editor or a.menu)) return true;
+    return (a.game and b.game) or (a.editor and b.editor) or (a.menu and b.menu);
+}
 
 /// The single `BindingContext` written to a binding's settings-file line —
 /// informational only (contexts are derived at load; see `BindingContext`).
@@ -982,6 +1005,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .open_settings,
         .change_setting,
         .select_settings_tab,
+        .edit_keybind,
         => .{ .menu = true, .game = true },
         // Exit to Main Menu: the level/hub options menu and the editor's
         // (where it ends an editor run + closes the editor).
@@ -996,6 +1020,45 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
 /// The settings screen's content tabs (the Keybinds tab is the in-game
 /// rebinding UI's list — see TODO → Keybind editor).
 pub const SettingsTab = enum { settings, keybinds };
+
+/// One keybinds-tab edit command — the `.edit_keybind` action's payload
+/// (the whole editing UI rides one action + this union, riding along in
+/// `AnytimeInput.clicked_keybind_command`). See DESIGN → UI Framework →
+/// Settings screen.
+pub const KeybindCommand = union(enum) {
+    /// Start listening to rekey the binding at `settings.input_bindings[`
+    /// index]` (its action is kept; a new combo is captured).
+    rekey: usize,
+    /// Open the right-column action picker for the binding at
+    /// `settings.input_bindings[index]` (reassign its action).
+    reassign: usize,
+    /// Start listening to add another combo for the action (a row's `+`).
+    add: Action,
+    /// Standalone add (the list's Add button): open the action picker to
+    /// pick the action first, then listen.
+    add_open,
+    /// Remove the binding at `settings.input_bindings[index]` — direct,
+    /// no confirm (Reset to defaults is the safety net).
+    remove: usize,
+    /// The picker's pick of an action (what the open picker targets decides
+    /// what happens: reassign the target row, or move on to listening for
+    /// the standalone add).
+    pick: Action,
+    /// Apply the pending proposal (the Confirm button).
+    confirm,
+    /// Discard the edit / close the picker (the Cancel button).
+    cancel,
+    /// Replace ALL bindings with the shipped defaults' set (the Reset
+    /// button — the safety net for removals and bad rebinds).
+    reset_defaults,
+};
+
+/// One frame's keybind-listening outcome, produced by the `translateInput`
+/// capture seam (the text-edit-outcome model): a key was captured (the
+/// edit moves to its pending state), Escape was pressed (cancel), or
+/// nothing happened. Resolved once per frame in `main.frame` — see
+/// `input_handlers.resolveKeybindCaptureOutcome`.
+pub const KeybindCaptureOutcome = enum { none, captured, canceled };
 
 pub const InputBinding = struct {
     input: RawInput,
@@ -1652,12 +1715,10 @@ pub const Entity = struct {
             else
                 "",
             .item_stat => |field| if (self.gearSlotItem(field.slot)) |item|
-                (
-                    if (itemStatValue(item, field.stat)) |value|
-                        try std.fmt.allocPrint(allocator, "{d}", .{value})
-                    else
-                        ""
-                )
+                (if (itemStatValue(item, field.stat)) |value|
+                    try std.fmt.allocPrint(allocator, "{d}", .{value})
+                else
+                    "")
             else
                 "",
             // Settings-sidebar + item-type + inventory ids never resolve
@@ -2343,9 +2404,7 @@ pub const Editor = struct {
     mode: EditorMode = .edit,
 };
 
-pub const ReplayViewer = struct {
-
-};
+pub const ReplayViewer = struct {};
 
 pub const Campaign = struct {
     name: []const u8 = &.{},
@@ -2971,4 +3030,3 @@ pub const ViewState = struct {
     /// frame arena; the UI renders it (top-bar coarse recent + detailed log).
     combat_log: []const @import("events.zig").Event,
 };
-

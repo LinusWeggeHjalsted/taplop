@@ -14512,3 +14512,49 @@ Tests: the ctrl+N dispatch pin reverted to editor-only (editor fires, menu
 tool — Editor". The `{editor, menu}` set is now unused (no action carries
 it) — `contextSetDisplayLabel` handles any subset generically for when a
 future action genuinely needs it.
+
+## Keybind editor slice 4 — the editing flows (listening → pending, picker, add/remove/reset)
+
+The Keybinds tab became the full rebinding UI (the settled design from the
+TODO → Keybind editor item):
+
+- **Listening**: a row's combo area starts a rekey — the row swaps to a
+  highlighted "Press a key… (Esc to cancel)" panel. The capture seam is the
+  text-input model: while ANY edit is active (`UiState.keybind_edit` — the
+  new `ui/keybind_edit.zig` state machine), `translateInput` suppresses ALL
+  binding translation and routes raw presses into the edit. The first
+  non-modifier key or mouse press captures (a click anywhere binds the
+  clicked mouse button); the held modifiers become the combo's requirements;
+  Escape cancels at every phase. Resolved once per frame in `main.frame`.
+- **Pending**: the proposal row shows the captured combo + Confirm/Cancel
+  buttons + the steal warning (warn color): "This combo currently fires
+  Undo (game) — confirming will remove it" / "...is already bound to Undo —
+  confirming removes the duplicate". Confirm applies: rebuild
+  `settings.input_bindings` (replace/append + REMOVE the stolen entry —
+  first-listed-wins, the edited row wins) + `markSettingsDirty`.
+- **Picker**: a row's action panel (or the standalone Add button) opens the
+  right-column action picker — the full scrollable action list on the tab's
+  right half; picking moves the row's combo to it (reassign → pending) or
+  starts the standalone add's listening. The wheel scrolls the picker while
+  open. X removes directly (no confirm); Reset re-loads the embedded
+  defaults' bindings (the safety net).
+- The whole UI rides ONE action (`.edit_keybind`) + the `KeybindCommand`
+  payload union — one Action enum member + one button/anytime payload field
+  covers all nine commands, instead of nine actions.
+
+**A real slice-2 bug caught by the slice-4 steal test**: the conflict
+predicate used plain set intersection — but {anytime} ∩ {game} is empty
+while both are simultaneously active in-game (anytime rides along), so an
+anytime+game same-combo pair slipped through BOTH the loader's conflict
+scan and the UI's steal scan. Fixed with `types.bindingContextsCoFire`
+(the activation model: one of game/editor/menu + anytime riding; the modal
+error_popup alone) used at both predicate sites. The engine's runtime gate
+was always correct (it tests the frame's actual active set).
+
+Tests: the capture seam (captures + held modifiers, modifier-only never
+captures, Escape at every phase, mouse capture, translation suppressed —
+via translateInput); the steal scan (co-firing steal, excluded row, same-
+action duplicate, cross-context legal); the interactive chrome (per-row
+rekey/reassign/X/+ buttons + the standalone Add + the min-width contract).
+FOLLOW-UP (TODO): an end-to-end harness test for the apply/remove rebuild
+ownership path.

@@ -470,10 +470,16 @@ pub fn loadSettings(
                         continue :outer;
                     }
                     // Different actions: a conflict ONLY when their derived
-                    // contexts intersect (they would co-fire). Cross-context
-                    // same-combo pairs (Digit1 = skill in game / tool in
-                    // editor) are LEGAL — keep both, no warning.
-                    if (!types.actionBindingContexts(binding.action).intersects(types.actionBindingContexts(kept_binding.action))) continue;
+                    // contexts can be SIMULTANEOUSLY ACTIVE (they would
+                    // co-fire — `bindingContextsCoFire`, NOT plain
+                    // intersection: {anytime} co-fires with {game} in-game
+                    // though the sets are disjoint). Cross-context same-combo
+                    // pairs (Digit1 = skill in game / tool in editor) are
+                    // LEGAL — keep both, no warning.
+                    if (!types.bindingContextsCoFire(
+                        types.actionBindingContexts(binding.action),
+                        types.actionBindingContexts(kept_binding.action),
+                    )) continue;
                     if (dropped_is_user_entry) {
                         if (warnings) |w| {
                             const input_name = switch (binding.input) {
@@ -519,7 +525,7 @@ pub fn loadSettings(
 /// borrowed slice (e.g. the static `&.{}` empty-bindings default, which has
 /// no strings) must not be passed. Used by `freeSettings` and by the
 /// binding-replace path in `loadSettings`.
-fn freeRawInputString(input: types.RawInput, allocator: std.mem.Allocator) void {
+pub fn freeRawInputString(input: types.RawInput, allocator: std.mem.Allocator) void {
     switch (input) {
         .key => |s| allocator.free(s),
         .mouse_button => |s| allocator.free(s),
@@ -746,7 +752,6 @@ pub fn playerLoadoutEntity(player_data: PlayerData) types.Entity {
         .inventory = player_data.inventory,
     };
 }
-
 
 /// Compare two entity definitions for palette dedup. Compares the DEFINITION
 /// fields only (name, sprite, team, stats, weapons, gear, utility skills) —
@@ -1702,8 +1707,7 @@ pub fn loadEditorDefaults(
     // Item: the first Items entry (a valid item_type is required).
     const items_section = findSection(sections, "Items") orelse return error.MissingDefaultEntry;
     if (items_section.entry_groups.len == 0) return error.MissingDefaultEntry;
-    const item = parseItemEntry(items_section.entry_groups[0].pairs, file_path, warnings, allocator)
-        orelse return error.MissingDefaultEntry;
+    const item = parseItemEntry(items_section.entry_groups[0].pairs, file_path, warnings, allocator) orelse return error.MissingDefaultEntry;
 
     return .{
         .entity = .{ .id = entity_template.name, .template = entity_template },
@@ -2628,7 +2632,6 @@ fn parsePlayerLoadoutFields(
             }
         }
     }
-
 }
 
 pub fn loadPlayerSave(
@@ -2830,10 +2833,8 @@ pub fn deriveActiveColorTheme(
     }
 
     const world_index = color_wheel_index % gradient_count;
-    const enemy_index = if (enemy_gradient_override) |override| override % gradient_count else
-        autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .enemy);
-    const player_index = if (player_gradient_override) |override| override % gradient_count else
-        autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .player);
+    const enemy_index = if (enemy_gradient_override) |override| override % gradient_count else autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .enemy);
+    const player_index = if (player_gradient_override) |override| override % gradient_count else autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .player);
 
     return .{
         .lightest = color_theme_definitions.lightest,
@@ -4216,9 +4217,9 @@ test "color_themes.txt parses from disk" {
 // ============================================================
 
 const salvage_sections = [_][]const u8{
-    "Sword",  "Shield", "Spear",    "Dagger",
-    "Axe",    "Staff",  "Crossbow", "Idol",
-    "Amulet", "Coat",   "Gloves",   "Pants",
+    "Sword",  "Shield",    "Spear",    "Dagger",
+    "Axe",    "Staff",     "Crossbow", "Idol",
+    "Amulet", "Coat",      "Gloves",   "Pants",
     "Boots",  "SkillTome",
 };
 

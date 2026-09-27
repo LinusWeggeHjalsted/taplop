@@ -499,6 +499,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (Row/Grid), layout constants, FontMetrics, hit-testing, wrapRow
 - `src/ui/state.zig` — UiState + drag/click/marquee/picker-target types
 - `src/ui/text_input.zig` — the text-field widget core + routing
+- `src/ui/keybind_edit.zig` — the keybinds tab's edit state machine (listening/
+  picker/pending) + the translateInput capture seam (`routeKeybindCapture`) —
+  see DESIGN → UI Framework → Settings screen
 - `src/ui/tooltip.zig` — tooltip placement + content builders
 - `src/ui/emit.zig` — shared builder primitives (buttons/headers/number
   labels, sprite-id resolution, material icons)

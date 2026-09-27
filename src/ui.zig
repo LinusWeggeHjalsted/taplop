@@ -10,6 +10,7 @@
 
 const ui_element = @import("ui/element.zig");
 const ui_state = @import("ui/state.zig");
+const ui_keybind_edit = @import("ui/keybind_edit.zig");
 const ui_text_input = @import("ui/text_input.zig");
 const ui_tooltip = @import("ui/tooltip.zig");
 const ui_emit = @import("ui/emit.zig");
@@ -102,6 +103,13 @@ pub const EditorPickerTarget = ui_state.EditorPickerTarget;
 pub const editor_footprint_grid_cell_limit = ui_state.editor_footprint_grid_cell_limit;
 pub const editor_inspector_section_count = ui_state.editor_inspector_section_count;
 pub const UiState = ui_state.UiState;
+pub const KeybindEdit = ui_keybind_edit.KeybindEdit;
+pub const KeybindTarget = ui_keybind_edit.KeybindTarget;
+pub const PendingKeybind = ui_keybind_edit.PendingKeybind;
+pub const KeybindCapture = ui_keybind_edit.KeybindCapture;
+pub const KeybindEditState = ui_keybind_edit.KeybindEditState;
+pub const routeKeybindCapture = ui_keybind_edit.routeKeybindCapture;
+pub const isModifierInputId = ui_keybind_edit.isModifierInputId;
 pub const DragState = ui_state.DragState;
 pub const ClickButton = ui_state.ClickButton;
 pub const PendingSlotPress = ui_state.PendingSlotPress;

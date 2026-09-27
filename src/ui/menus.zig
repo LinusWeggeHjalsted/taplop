@@ -6,6 +6,7 @@
 const std = @import("std");
 const types = @import("../types.zig");
 const ui_element = @import("element.zig");
+const keybind_edit = @import("keybind_edit.zig");
 const emit = @import("emit.zig");
 const ui_tooltip = @import("tooltip.zig");
 const state = @import("../state.zig");
@@ -37,6 +38,7 @@ const middle_panel_header_font_size = ui_element.middle_panel_header_font_size;
 const lineHeight = ui_element.lineHeight;
 const buildMissionFail = @import("screens.zig").buildMissionFail;
 const spanRow = ui_tooltip.spanRow;
+const negative_color = ui_tooltip.negative_color;
 const emitPanelButton = emit.emitPanelButton;
 
 /// Build the options menu: a full-screen 9-slice panel background with a
@@ -1424,6 +1426,8 @@ pub fn buildSettingsPanel(
     button_color: Color,
     tab: types.SettingsTab,
     scroll_offset: *i32,
+    edit_state: ?*const keybind_edit.KeybindEditState,
+    picker_scroll_offset: *i32,
 ) !void {
     // Full-screen modal background — blocks input to the surface behind it.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -1520,6 +1524,8 @@ pub fn buildSettingsPanel(
             scroll_offset,
             button_color,
             content_top,
+            edit_state,
+            picker_scroll_offset,
         ),
     }
 
@@ -1664,17 +1670,25 @@ fn bindingActionLessThan(_: void, left: types.InputBinding, right: types.InputBi
     return @intFromEnum(left.action) < @intFromEnum(right.action);
 }
 
-/// The Keybinds tab's list: one row per binding — modifier/key panels ("+"
-/// between) and the action panel at a fixed column, labeled
-/// "Action — Contexts" (the derived context set: `actionBindingContexts`;
-/// the action name in every row is why there are no group headers). Rows
-/// are sorted by action (declaration order, stable), so an action's
-/// multiple combos sit adjacent. Scroll: `scroll_offset` is the first
-/// visible row; the wheel adjusts it lower-clamped at the input site, this
-/// builder clamps the upper bound (authoritative — only it knows the row
-/// count + region height) and emits exactly the visible window. Read-only
-/// (editing lands in TODO → Keybind editor slice 4). See DESIGN → UI
-/// Framework → Settings screen.
+/// The Keybinds tab's list + editing UI. READ side: one row per binding —
+/// modifier/key panels ("+" between; prettified ids via `keyIdDisplayLabel`)
+/// and the action panel directly after the combo, labeled "Action —
+/// Contexts" (the derived context set). Rows sorted by action (stable) so an
+/// action's combos sit adjacent.
+///
+/// EDIT side (TODO → Keybind editor slice 4): every row's combo area starts a
+/// LISTENING rekey (the row swaps to a highlighted "Press a key…" panel; the
+/// capture seam lives in `translateInput` — binding translation is
+/// suppressed while any edit is active) and its action panel opens the
+/// right-column action PICKER (the full scrollable action list); each row
+/// carries X (remove — direct, no confirm) and + (add a combo for its
+/// action). A capture or picker pick lands in a PENDING row: the proposed
+/// combo + Confirm/Cancel buttons + the steal warning in the warn color
+/// ("… currently fires Undo (game) — confirming will remove it"); confirming
+/// applies (the settings mutation + debounced persistence). An add's
+/// listening/pending row renders as an extra row at the top of the list.
+/// The standalone Add button (top of the list) opens the picker to pick the
+/// new binding's action first. See DESIGN → UI Framework → Settings screen.
 fn buildKeybindsContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1684,139 +1698,428 @@ fn buildKeybindsContent(
     scroll_offset: *i32,
     button_color: Color,
     content_top: i32,
+    edit_state: ?*const keybind_edit.KeybindEditState,
+    picker_scroll_offset: *i32,
 ) !void {
     const content_x = screen.x + settings_padding;
-    const content_width = screen.width - 2 * settings_padding;
     const buttons_top = screen.y + screen.height - settings_padding -
         panel_button_height - settings_button_gap;
-    const region_height = buttons_top - content_top;
     const row_stride = settings_row_height + settings_row_gap;
+
+    // The picker column owns the right half of the tab (when open); the
+    // binding list ALWAYS occupies the left half — a stable layout that
+    // doesn't reflow when the picker opens.
+    const picker_x = screen.x + @divTrunc(screen.width, 2) + @divTrunc(ui_gap, 2);
+
+    // The standalone Add button (top of the list — always visible): opens
+    // the picker to pick the new binding's action first.
+    _ = try emitKeybindCommandPanel(
+        elements,
+        allocator,
+        font_metrics,
+        "+ Add keybind",
+        content_x,
+        content_top,
+        button_color,
+        .add_open,
+        false,
+    );
+
+    const list_top = content_top + row_stride;
+    const region_height = buttons_top - list_top;
     const visible_rows: usize = @intCast(@max(1, @divTrunc(region_height, row_stride)));
 
-    if (bindings.len == 0) {
-        const placeholder = "No bindings";
-        const placeholder_width = font_metrics.measureSpanWidth(text(placeholder), settings_row_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = placeholder,
-            .screen_position = .{
-                .x = content_x + @divTrunc(content_width - placeholder_width, 2),
-                .y = content_top,
-            },
-            .font_size = settings_row_font_size,
-            .blocks_input = false,
-        } });
-        scroll_offset.* = 0;
-        return;
-    }
+    // The ADD proposal (an add's listening or pending phase) renders as an
+    // extra row at the top of the list — always visible, no scroll hunting.
+    const add_edit: ?keybind_edit.KeybindEdit = if (edit_state) |edit_source| switch (edit_source.edit) {
+        .listening => |target| switch (target) {
+            .add => |action| .{ .listening = .{ .add = action } },
+            else => null,
+        },
+        .pending => |pending| if (pending.replace_index == null) .{ .pending = pending } else null,
+        else => null,
+    } else null;
 
-    // Sorted display copy (the frame arena owns it).
-    const sorted = try allocator.dupe(types.InputBinding, bindings);
-    std.mem.sort(types.InputBinding, sorted, {}, bindingActionLessThan);
+    // Display order: indices sorted by action (stable) — each row carries
+    // its original binding index for edit targeting.
+    const order = try allocator.alloc(usize, bindings.len);
+    for (order, 0..) |*slot, index| slot.* = index;
+    std.mem.sort(usize, order, bindings, bindingIndexActionLessThan);
+
+    const RowEntry = union(enum) {
+        add_edit,
+        binding: usize,
+    };
+    var rows: std.ArrayList(RowEntry) = .empty;
+    if (add_edit != null) try rows.append(allocator, .add_edit);
+    for (order) |index| try rows.append(allocator, .{ .binding = index });
 
     // Clamp the scroll (authoritative upper bound).
-    if (sorted.len <= visible_rows) {
+    if (rows.items.len <= visible_rows) {
         scroll_offset.* = 0;
     } else {
-        scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(sorted.len - visible_rows)));
+        scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(rows.items.len - visible_rows)));
         if (scroll_offset.* < 0) scroll_offset.* = 0;
     }
     const first_visible: usize = @intCast(scroll_offset.*);
-    const last_visible = @min(sorted.len, first_visible + visible_rows);
+    const last_visible = @min(rows.items.len, first_visible + visible_rows);
 
-    // Emit a 9-slice panel + centered label (the key/action panel shape; no
-    // button — the list is read-only in this slice). The width never drops
-    // below `keybind_min_panel_width` (9-slice panels render badly small;
-    // single-char keys would stub). Returns the panel width so the caller
-    // places the next panel flush after it.
-    const emitPanelWithLabel = struct {
-        fn run(
-            elems: *UiElementList,
-            alloc: std.mem.Allocator,
-            fm: FontMetrics,
-            label_text: []const u8,
-            panel_x: i32,
-            panel_y: i32,
-            panel_height: i32,
-            panel_color: Color,
-        ) !i32 {
-            const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
-            const panel_width = @max(
-                label_width + 2 * keybind_panel_padding,
-                keybind_min_panel_width,
-            );
-            try elems.append(alloc, .{ .nine_slice_panel = .{
-                .sprite_id = "ui/panel",
-                .screen_position = .{ .x = panel_x, .y = panel_y },
-                .width = panel_width,
-                .height = panel_height,
-                .color = panel_color,
+    // The edit phase targeting a given row (phase-specific rendering).
+    const listening_index: ?usize = if (edit_state) |edit_source| switch (edit_source.edit) {
+        .listening => |target| switch (target) {
+            .binding => |index| index,
+            else => null,
+        },
+        else => null,
+    } else null;
+    const pending_data: ?keybind_edit.PendingKeybind = if (edit_state) |edit_source| switch (edit_source.edit) {
+        .pending => |pending| pending,
+        else => null,
+    } else null;
+
+    for (rows.items[first_visible..last_visible], first_visible..) |row_entry, row_index| {
+        const row_y = list_top + @as(i32, @intCast(row_index - first_visible)) * row_stride;
+        switch (row_entry) {
+            .add_edit => {
+                // The add proposal row: the obvious listening panel (no
+                // button — a click ANYWHERE is a mouse capture, handled by
+                // the capture seam), or the pending proposal row.
+                switch (add_edit.?) {
+                    // An add never opens the picker (the standalone add's
+                    // picker phase converts to listening on pick).
+                    .picker => {},
+                    .listening => |target| {
+                        const label_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(target.add)});
+                        const panel_width = try emitKeybindPanel(elements, allocator, font_metrics, label_text, content_x, row_y, settings_row_height, button_color);
+                        try emitListeningHighlight(elements, allocator, content_x, row_y, panel_width);
+                    },
+                    .pending => |pending| try emitPendingRow(elements, allocator, font_metrics, row_y, content_x, pending, bindings, button_color),
+                }
+            },
+            .binding => |index| {
+                const binding = bindings[index];
+                const is_listening = listening_index == index;
+                const is_pending = if (pending_data) |pending| pending.replace_index == index else false;
+
+                if (is_listening) {
+                    // The obvious listening state: highlighted panel (a
+                    // button with NO command — a click is a mouse capture
+                    // through the seam; the handler no-ops a payload-less
+                    // command), the action panel kept for context.
+                    const label_text = "Press a key… (Esc to cancel)";
+                    const panel_width = try emitKeybindPanel(elements, allocator, font_metrics, label_text, content_x, row_y, settings_row_height, button_color);
+                    try emitListeningHighlight(elements, allocator, content_x, row_y, panel_width);
+                    const action_label = try actionPanelLabel(allocator, binding.action);
+                    _ = try emitKeybindPanel(elements, allocator, font_metrics, action_label, content_x + panel_width + settings_row_gap, row_y, settings_row_height, button_color);
+                    continue;
+                }
+                if (is_pending) {
+                    try emitPendingRow(elements, allocator, font_metrics, row_y, content_x, pending_data.?, bindings, button_color);
+                    continue;
+                }
+
+                // Normal row: combo panels + a rekey button over the combo,
+                // the action panel + a reassign button over it, then X + +.
+                var panel_x = content_x;
+                const key_label = keyIdDisplayLabel(inputIdOf(binding.input));
+                const modifiers = [_]?[]const u8{
+                    if (binding.modifiers.ctrl) "Ctrl" else null,
+                    if (binding.modifiers.shift) "Shift" else null,
+                    if (binding.modifiers.alt) "Alt" else null,
+                };
+                for (modifiers) |modifier_label| {
+                    if (modifier_label) |label| {
+                        panel_x += try emitKeybindPanel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
+                        try elements.append(allocator, .{ .text_label = .{
+                            .text = "+",
+                            .screen_position = .{
+                                .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
+                                .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+                            },
+                            .font_size = settings_row_font_size,
+                            .blocks_input = false,
+                        } });
+                        panel_x += settings_row_gap;
+                    }
+                }
+                panel_x += try emitKeybindPanel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
+                // Rekey: an invisible button over the whole combo zone.
+                try elements.append(allocator, .{ .button = .{
+                    .screen_position = .{ .x = content_x, .y = row_y },
+                    .width = panel_x - content_x,
+                    .height = settings_row_height,
+                    .action = .edit_keybind,
+                    .keybind_command = .{ .rekey = index },
+                } });
+
+                // Action panel (flush after the combo) + the reassign
+                // button over it.
+                const action_label = try actionPanelLabel(allocator, binding.action);
+                const action_panel_width = try emitKeybindPanel(elements, allocator, font_metrics, action_label, panel_x, row_y, settings_row_height, button_color);
+                try elements.append(allocator, .{ .button = .{
+                    .screen_position = .{ .x = panel_x, .y = row_y },
+                    .width = action_panel_width,
+                    .height = settings_row_height,
+                    .action = .edit_keybind,
+                    .keybind_command = .{ .reassign = index },
+                } });
+                panel_x += action_panel_width + settings_row_gap;
+
+                // X (remove — direct) + + (add a combo for this action).
+                panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "X", panel_x, row_y, button_color, .{ .remove = index }, false);
+                panel_x += settings_row_gap;
+                _ = try emitKeybindCommandPanel(elements, allocator, font_metrics, "+", panel_x, row_y, button_color, .{ .add = binding.action }, false);
+            },
+        }
+    }
+
+    // The right-column action PICKER (the picker phase): the full
+    // scrollable action list — every Action, bound or not, labeled
+    // "Action — Contexts". Picking one either moves the target row's combo
+    // to it (reassign) or starts the standalone add's listening.
+    if (edit_state) |edit_source| switch (edit_source.edit) {
+        .picker => |picker_target| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "Pick an action (Esc to cancel)",
+                .screen_position = .{ .x = picker_x, .y = content_top + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+                .font_size = settings_row_font_size,
+                .blocks_input = false,
             } });
-            try elems.append(alloc, .{ .text_label = .{
-                .text = label_text,
+            const picker_list_top = content_top + row_stride;
+            const picker_region_height = buttons_top - picker_list_top;
+            const picker_visible_rows: usize = @intCast(@max(1, @divTrunc(picker_region_height, row_stride)));
+            const actions = std.meta.tags(types.Action);
+            if (actions.len <= picker_visible_rows) {
+                picker_scroll_offset.* = 0;
+            } else {
+                picker_scroll_offset.* = @min(picker_scroll_offset.*, @as(i32, @intCast(actions.len - picker_visible_rows)));
+                if (picker_scroll_offset.* < 0) picker_scroll_offset.* = 0;
+            }
+            const first: usize = @intCast(picker_scroll_offset.*);
+            const last = @min(actions.len, first + picker_visible_rows);
+            for (actions[first..last], first..) |action, action_index| {
+                const action_y = picker_list_top + @as(i32, @intCast(action_index - first)) * row_stride;
+                const label_text = try actionPanelLabel(allocator, action);
+                // Highlight the reassign target's current action.
+                const active = switch (picker_target) {
+                    .binding => |index| index < bindings.len and bindings[index].action == action,
+                    else => false,
+                };
+                _ = try emitKeybindCommandPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    label_text,
+                    picker_x,
+                    action_y,
+                    button_color,
+                    .{ .pick = action },
+                    active,
+                );
+            }
+        },
+        else => {},
+    };
+}
+
+/// A binding's input id, whatever variant it is.
+fn inputIdOf(input: types.RawInput) []const u8 {
+    return switch (input) {
+        .key => |id| id,
+        .mouse_button => |id| id,
+        .gamepad_button => |id| id,
+    };
+}
+
+/// Sort display order by action (declaration order) over INDICES (so each
+/// row carries its original binding index for edit targeting). Stable.
+fn bindingIndexActionLessThan(
+    bindings: []const types.InputBinding,
+    left: usize,
+    right: usize,
+) bool {
+    return @intFromEnum(bindings[left].action) < @intFromEnum(bindings[right].action);
+}
+
+/// "Action — Contexts" (the derived context set) — the action panel + picker
+/// row label.
+fn actionPanelLabel(allocator: std.mem.Allocator, action: types.Action) ![]const u8 {
+    return std.fmt.allocPrint(allocator, "{s} — {s}", .{
+        actionDisplayLabel(action),
+        contextSetDisplayLabel(types.actionBindingContexts(action)),
+    });
+}
+
+/// Panel + centered label (returns the panel width — the caller places the
+/// next panel flush after it). Never narrower than `keybind_min_panel_width`
+/// (9-slice panels render badly small).
+fn emitKeybindPanel(
+    elems: *UiElementList,
+    alloc: std.mem.Allocator,
+    fm: FontMetrics,
+    label_text: []const u8,
+    panel_x: i32,
+    panel_y: i32,
+    panel_height: i32,
+    panel_color: Color,
+) !i32 {
+    const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
+    const panel_width = @max(
+        label_width + 2 * keybind_panel_padding,
+        keybind_min_panel_width,
+    );
+    try elems.append(alloc, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = .{ .x = panel_x, .y = panel_y },
+        .width = panel_width,
+        .height = panel_height,
+        .color = panel_color,
+    } });
+    try elems.append(alloc, .{ .text_label = .{
+        .text = label_text,
+        .screen_position = .{
+            .x = panel_x + @divTrunc(panel_width - label_width, 2),
+            .y = panel_y + @divTrunc(panel_height - settings_row_font_size, 2),
+        },
+        .font_size = settings_row_font_size,
+        .blocks_input = false,
+    } });
+    return panel_width;
+}
+
+/// Panel + centered label + an invisible button carrying a `.edit_keybind`
+/// command (the interactive panel shape). Returns the panel width.
+fn emitKeybindCommandPanel(
+    elems: *UiElementList,
+    alloc: std.mem.Allocator,
+    fm: FontMetrics,
+    label_text: []const u8,
+    panel_x: i32,
+    panel_y: i32,
+    panel_color: Color,
+    command: types.KeybindCommand,
+    highlighted: bool,
+) !i32 {
+    const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
+    const panel_width = @max(
+        label_width + 2 * keybind_panel_padding,
+        keybind_min_panel_width,
+    );
+    try elems.append(alloc, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = .{ .x = panel_x, .y = panel_y },
+        .width = panel_width,
+        .height = settings_row_height,
+        .color = panel_color,
+    } });
+    try elems.append(alloc, .{ .button = .{
+        .screen_position = .{ .x = panel_x, .y = panel_y },
+        .width = panel_width,
+        .height = settings_row_height,
+        .action = .edit_keybind,
+        .keybind_command = command,
+        .highlighted = highlighted,
+    } });
+    try elems.append(alloc, .{ .text_label = .{
+        .text = label_text,
+        .screen_position = .{
+            .x = panel_x + @divTrunc(panel_width - label_width, 2),
+            .y = panel_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+        },
+        .font_size = settings_row_font_size,
+        .blocks_input = false,
+    } });
+    return panel_width;
+}
+
+/// The listening panel's highlight outline: a `highlighted` button with NO
+/// command (a click during listening is a mouse capture through the seam;
+/// the handler no-ops a payload-less `.edit_keybind`).
+fn emitListeningHighlight(
+    elems: *UiElementList,
+    alloc: std.mem.Allocator,
+    panel_x: i32,
+    panel_y: i32,
+    panel_width: i32,
+) !void {
+    try elems.append(alloc, .{ .button = .{
+        .screen_position = .{ .x = panel_x, .y = panel_y },
+        .width = panel_width,
+        .height = settings_row_height,
+        .action = .edit_keybind,
+        .highlighted = true,
+    } });
+}
+
+/// A pending proposal row: the captured combo panels + the proposal's
+/// action panel + Confirm / Cancel buttons + the steal warning (warn color).
+fn emitPendingRow(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    row_y: i32,
+    content_x: i32,
+    pending: keybind_edit.PendingKeybind,
+    bindings: []const types.InputBinding,
+    button_color: Color,
+) !void {
+    var panel_x = content_x;
+    const key_label = keyIdDisplayLabel(inputIdOf(pending.binding.input));
+    const modifiers = [_]?[]const u8{
+        if (pending.binding.modifiers.ctrl) "Ctrl" else null,
+        if (pending.binding.modifiers.shift) "Shift" else null,
+        if (pending.binding.modifiers.alt) "Alt" else null,
+    };
+    for (modifiers) |modifier_label| {
+        if (modifier_label) |label| {
+            panel_x += try emitKeybindPanel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "+",
                 .screen_position = .{
-                    .x = panel_x + @divTrunc(panel_width - label_width, 2),
-                    .y = panel_y + @divTrunc(panel_height - settings_row_font_size, 2),
+                    .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
+                    .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
                 },
                 .font_size = settings_row_font_size,
                 .blocks_input = false,
             } });
-            return panel_width;
+            panel_x += settings_row_gap;
         }
-    }.run;
+    }
+    panel_x += try emitKeybindPanel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
 
-    for (sorted[first_visible..last_visible], first_visible..) |binding, row_index| {
-        const row_y = content_top + @as(i32, @intCast(row_index - first_visible)) * row_stride;
-        {
-            // Key panels: required modifiers first ("+" between panels),
-            // then the key. Mouse/gamepad buttons render the same way.
-            var panel_x = content_x;
-            const key_label = switch (binding.input) {
-                .key => |id| keyIdDisplayLabel(id),
-                .mouse_button => |id| keyIdDisplayLabel(id),
-                .gamepad_button => |id| keyIdDisplayLabel(id),
-            };
-            const modifiers = [_]?[]const u8{
-                if (binding.modifiers.ctrl) "Ctrl" else null,
-                if (binding.modifiers.shift) "Shift" else null,
-                if (binding.modifiers.alt) "Alt" else null,
-            };
-            for (modifiers) |modifier_label| {
-                if (modifier_label) |label| {
-                    panel_x += try emitPanelWithLabel(elements, allocator, font_metrics, label, panel_x, row_y, settings_row_height, button_color);
-                    try elements.append(allocator, .{ .text_label = .{
-                        .text = "+",
-                        .screen_position = .{
-                            .x = panel_x + @divTrunc(settings_row_gap - font_metrics.measureSpanWidth(text("+"), settings_row_font_size), 2),
-                            .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
-                        },
-                        .font_size = settings_row_font_size,
-                        .blocks_input = false,
-                    } });
-                    panel_x += settings_row_gap;
-                }
-            }
-            panel_x += try emitPanelWithLabel(elements, allocator, font_metrics, key_label, panel_x, row_y, settings_row_height, button_color);
+    // The proposal's action panel.
+    const action_label = try actionPanelLabel(allocator, pending.binding.action);
+    panel_x += try emitKeybindPanel(elements, allocator, font_metrics, action_label, panel_x, row_y, settings_row_height, button_color);
+    panel_x += settings_row_gap;
 
-            // Action panel DIRECTLY after the combo (one row gap — no
-            // fixed column), labeled "Action — Contexts" (the derived
-            // context set; see DESIGN → Input → Binding contexts). The
-            // right side of the tab stays open for the action-picker
-            // column (TODO → Keybind editor slice 4).
-            const action_label = std.fmt.allocPrint(allocator, "{s} — {s}", .{
-                actionDisplayLabel(binding.action),
-                contextSetDisplayLabel(types.actionBindingContexts(binding.action)),
-            }) catch @panic("failed to format keybind action label");
-            _ = try emitPanelWithLabel(
-                elements,
-                allocator,
-                font_metrics,
-                action_label,
-                panel_x + settings_row_gap,
-                row_y,
-                settings_row_height,
-                button_color,
-            );
-        }
+    // Confirm / Cancel (buttons only — Enter is often the captured key
+    // itself; Escape cancels through the capture seam).
+    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Confirm", panel_x, row_y, button_color, .confirm, true);
+    panel_x += settings_row_gap;
+    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Cancel", panel_x, row_y, button_color, .cancel, false);
+
+    // The steal warning (see findKeybindSteal): the combo currently fires
+    // another binding — confirming REMOVES it — or duplicates its own
+    // action's combo (confirming dedupes).
+    if (pending.stolen_index) |stolen_index| {
+        const stolen = bindings[stolen_index];
+        const warning_text = if (stolen.action == pending.binding.action)
+            try std.fmt.allocPrint(allocator, "This combo is already bound to {s} — confirming removes the duplicate", .{actionDisplayLabel(stolen.action)})
+        else
+            try std.fmt.allocPrint(allocator, "This combo currently fires {s} ({s}) — confirming will remove it", .{
+                actionDisplayLabel(stolen.action),
+                contextSetDisplayLabel(types.actionBindingContexts(stolen.action)),
+            });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = warning_text,
+            .screen_position = .{
+                .x = panel_x + settings_row_gap,
+                .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2),
+            },
+            .font_size = settings_row_font_size,
+            .color = negative_color,
+            .blocks_input = false,
+        } });
     }
 }
 
@@ -2435,8 +2738,9 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     const settings: types.Settings = .{ .input_bindings = &bindings };
 
     var scroll: i32 = 0;
+    var picker_scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .settings, &scroll);
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .settings, &scroll, null, &picker_scroll);
 
     // The tab row is tab-independent chrome: both tab buttons, the active
     // one highlighted, regardless of which tab is showing.
@@ -2508,8 +2812,9 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     const settings: types.Settings = .{ .input_bindings = &bindings };
 
     var scroll: i32 = 0;
+    var picker_scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll, null, &picker_scroll);
 
     // NO group headers: the action name rides in every row's action panel,
     // so no exact-match action-name label exists (the "Undo" spelling only
@@ -2539,7 +2844,36 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 1), ctrl_labels);
     try std.testing.expectEqual(@as(usize, 1), z_labels);
     try std.testing.expectEqual(@as(usize, 1), u_labels);
-    try std.testing.expectEqual(@as(usize, 1), plus_labels);
+    // "+" appears as BOTH the combo separator (ctrl + Z) and each row's
+    // add-combo button label — at least the separator here.
+    try std.testing.expect(plus_labels >= 1);
+
+    // The editing chrome: each of the 4 rows carries a rekey button (over
+    // its combo), a reassign button (over its action panel), an X (remove)
+    // and a + (add a combo for its action); plus the standalone Add button.
+    var rekey_buttons: usize = 0;
+    var reassign_buttons: usize = 0;
+    var remove_buttons: usize = 0;
+    var add_buttons: usize = 0;
+    var add_open_buttons: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .edit_keybind) {
+            switch (button.keybind_command.?) {
+                .rekey => rekey_buttons += 1,
+                .reassign => reassign_buttons += 1,
+                .remove => remove_buttons += 1,
+                .add => add_buttons += 1,
+                .add_open => add_open_buttons += 1,
+                else => {},
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 4), rekey_buttons);
+    try std.testing.expectEqual(@as(usize, 4), reassign_buttons);
+    try std.testing.expectEqual(@as(usize, 4), remove_buttons);
+    try std.testing.expectEqual(@as(usize, 4), add_buttons);
+    try std.testing.expectEqual(@as(usize, 1), add_open_buttons);
     try std.testing.expectEqual(@as(usize, 2), undo_anytime); // both combos
     // The min-width contract: every keybind panel (key/modifier/action —
     // all settings_row_height) stays at or above `keybind_min_panel_width`
@@ -2581,8 +2915,9 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     {
         const short: types.Settings = .{ .input_bindings = bindings[0..3] };
         var scroll: i32 = 999;
+        var picker_scroll: i32 = 0;
         var elements: UiElementList = .empty;
-        try buildSettingsPanel(&elements, allocator, metrics, screen, short, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+        try buildSettingsPanel(&elements, allocator, metrics, screen, short, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll, null, &picker_scroll);
         try std.testing.expectEqual(@as(i32, 0), scroll);
     }
 
@@ -2590,8 +2925,9 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     // the visible window's rows are emitted (fewer action labels than
     // bindings).
     var scroll: i32 = 999;
+    var picker_scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+    try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll, null, &picker_scroll);
     try std.testing.expect(scroll > 0);
     var emitted_rows: usize = 0;
     for (elements.items) |element| switch (element) {
@@ -2606,8 +2942,9 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     // The window is the same size at the top and the end (a full window at
     // every offset — whole visible rows only).
     var top_scroll: i32 = 0;
+    var top_picker_scroll: i32 = 0;
     var top_elements: UiElementList = .empty;
-    try buildSettingsPanel(&top_elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &top_scroll);
+    try buildSettingsPanel(&top_elements, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &top_scroll, null, &top_picker_scroll);
     var top_rows: usize = 0;
     for (top_elements.items) |element| switch (element) {
         .nine_slice_panel => |panel| if (panel.height == settings_row_height) {
@@ -2620,6 +2957,6 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     // Negative scroll clamps to 0.
     scroll = -5;
     var elements_neg: UiElementList = .empty;
-    try buildSettingsPanel(&elements_neg, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll);
+    try buildSettingsPanel(&elements_neg, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll, null, &picker_scroll);
     try std.testing.expectEqual(@as(i32, 0), scroll);
 }

@@ -311,6 +311,12 @@ fn update(
                         if (button.settings_tab) |settings_tab| {
                             player_input.anytime.clicked_settings_tab = settings_tab;
                         }
+                        // Keybinds-tab edit command (rekey / reassign /
+                        // add / remove / pick / confirm / cancel / reset)
+                        // rides alongside its action.
+                        if (button.keybind_command) |keybind_command| {
+                            player_input.anytime.clicked_keybind_command = keybind_command;
+                        }
                         if (button.editor_mission_tab) |mission_tab| {
                             player_input.anytime.clicked_editor_mission_tab = mission_tab;
                         }
@@ -583,6 +589,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             &history.session.ui_state.text_edit.?
         else
             null,
+        // The active keybind edit, if any (the Keybinds tab's listening /
+        // picker / pending state — binding translation is suppressed while
+        // set; see DESIGN → UI Framework → Settings screen).
+        if (history.session.ui_state.keybind_edit != null)
+            &history.session.ui_state.keybind_edit.?
+        else
+            null,
         active_contexts,
     );
 
@@ -592,6 +605,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // event, so the drain below sees the resulting stack state.
     if (player_input.text_edit_outcome != .none) {
         input_handlers.resolveTextEditOutcome(history, player_input.text_edit_outcome);
+    }
+
+    // Keybind-capture resolution (a key was captured → pending; Escape →
+    // cancel). Same once-per-frame-here rule as the text-field resolution
+    // above — the drain re-runs update() per iteration.
+    if (player_input.keybind_capture_outcome != .none) {
+        input_handlers.resolveKeybindCaptureOutcome(history, player_input.keybind_capture_outcome);
     }
 
     // Recenter key before the drain, for the pan-clear check: if the

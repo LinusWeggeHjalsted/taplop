@@ -4797,8 +4797,44 @@ tab row existed (the last row kissed the Back button); two columns also
 fit the wide reference screen better. The control column must clear the
 Back button — pinned by the tab-row test in menus.zig.
 
-**The Keybinds tab** is the in-game rebinding list's read-only half (editing
-is TODO → Keybind editor slice 4): one row per binding — modifier/key panels
+**The Keybinds tab** is the in-game rebinding UI (editing flows landed):
+
+- Every row's COMBO area starts a LISTENING rekey (`KeybindTarget.binding`);
+the row swaps to a highlighted "Press a key… (Esc to cancel)" panel. The
+CAPTURE SEAM is the text-input model: while ANY edit is active
+(`UiState.keybind_edit`), `translateInput` suppresses ALL binding
+translation + routes raw presses into the edit (`ui.routeKeybindCapture` →
+`KeybindCaptureOutcome`, resolved once per frame in `main.frame` →
+`resolveKeybindCaptureOutcome`): the first non-modifier key press or mouse
+press captures (a click ANYWHERE during listening binds the clicked mouse
+button — standard capture behavior; modifier presses never capture, the
+held modifiers become the combo's requirements); Escape cancels at every
+phase (never captures).
+- The row's ACTION PANEL opens the right-column action PICKER
+(`KeybindTarget.binding`) — the full scrollable action list on the tab's
+right half; picking one moves the row's combo to it → PENDING. The
+standalone Add button (top of the list) opens the picker in add mode:
+pick the action → listening → pending. A row's `+` adds a combo for its
+action (listening → pending); an add's listening/pending row renders as
+an extra row at the top of the list. The wheel scrolls the PICKER while
+it's open.
+- PENDING: the proposal row shows the captured combo + the action panel +
+Confirm/Cancel buttons + the STEAL WARNING (warn color): the scan
+(`findKeybindSteal`) is `sameCombo` + `bindingContextsCoFire` (contexts can
+be SIMULTANEOUSLY ACTIVE — NOT plain intersection: {anytime} co-fires with
+{game} in-game though the sets are disjoint; the slice-2 loader scan
+shared the wrong predicate until a slice-4 test caught it) + not the row
+being edited; same action = a duplicate (confirming dedupes). Confirming
+applies: rebuild `settings.input_bindings` (replace/append + REMOVE the
+stolen entry — the loader's first-listed-wins rule, the edited row wins)
++ `markSettingsDirty` (the debounced persistence). X removes directly
+(no confirm — Reset is the safety net); Reset re-loads the embedded
+defaults' bindings. All phases are pure UiState (off the undo timeline);
+a tab switch discards an active edit.
+- The whole editing UI rides ONE action (`.edit_keybind`) + the
+`KeybindCommand` payload union in `AnytimeInput.clicked_keybind_command`.
+
+Read side: one row per binding — modifier/key panels
 ("+" between; prettified ids via `keyIdDisplayLabel`: Ctrl/Shift/Alt,
 KeyZ→Z, Digit1→1, left→LMB; never narrower than `keybind_min_panel_width`
 — 9-slice panels render badly small, so single-char keys get a proper

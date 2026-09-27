@@ -23,6 +23,7 @@ const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
+const parser = @import("parser.zig");
 const event_handlers = @import("event_handlers.zig");
 const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
@@ -715,6 +716,190 @@ fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
 /// buttons push, so Escape ≡ clicking the button — both land on the undo
 /// timeline as recorded player actions. See DESIGN → Input → Escape overlay
 /// chain.
+// --- Keybinds tab editing (TODO → Keybind editor slice 4) ---
+//
+// The capture resolution + the confirm/remove/reset mutations. The phase
+// transitions live in the `.edit_keybind` options_action arm above; the
+// capture seam lives in `translateInput` (`ui.routeKeybindCapture`).
+
+/// Resolve one frame's keybind-capture outcome (`main.frame`'s
+/// once-per-frame site — the text-edit-resolution model). Canceled: drop
+/// the edit. Captured (only during a LISTENING edit): build the PENDING
+/// proposal — the target's action + the captured combo (the held
+/// modifiers became the requirements) — and scan for the steal. Pure
+/// UiState writes; the settings mutation happens only at Confirm.
+pub fn resolveKeybindCaptureOutcome(
+    history: *GameStateHistory,
+    outcome: types.KeybindCaptureOutcome,
+) void {
+    const ui_state = &history.session.ui_state;
+    const edit_state = &(ui_state.keybind_edit orelse return);
+    switch (outcome) {
+        .none => {},
+        .canceled => ui_state.keybind_edit = null,
+        .captured => {
+            const target = switch (edit_state.edit) {
+                .listening => |listening_target| listening_target,
+                // A capture outside listening never happens (the seam gates
+                // on the phase); defensive no-op.
+                else => return,
+            };
+            const action = switch (target) {
+                .binding => |index| history.settings.input_bindings[index].action,
+                .add => |add_action| add_action,
+                // A standalone add never listens before its action pick.
+                .add_new => return,
+            };
+            const candidate: types.InputBinding = .{
+                .input = edit_state.capture.rawInput(),
+                .modifiers = edit_state.capture.modifiers,
+                .action = action,
+            };
+            const exclude_index: ?usize = switch (target) {
+                .binding => |index| index,
+                .add, .add_new => null,
+            };
+            edit_state.edit = .{ .pending = .{
+                .binding = candidate,
+                .replace_index = exclude_index,
+                .stolen_index = findKeybindSteal(history.settings.input_bindings, candidate, exclude_index),
+            } };
+        },
+    }
+}
+
+/// The steal scan (the keybind UI's half of the one-combo-one-action rule —
+/// see DESIGN → Input → Hybrid precedence + binding conflicts): the first
+/// binding other than `exclude_index` (the row being edited) that occupies
+/// the candidate's combo AND would co-fire with it (different actions whose
+/// derived contexts intersect) or duplicates it (same action — a redundant
+/// entry; confirming dedupes). Cross-context same-combo pairs are LEGAL
+/// (kept — the scan continues past them). Confirming REMOVES the returned
+/// entry — the edited row wins (the loader's first-listed-wins rule).
+pub fn findKeybindSteal(
+    bindings: []const types.InputBinding,
+    candidate: types.InputBinding,
+    exclude_index: ?usize,
+) ?usize {
+    for (bindings, 0..) |binding, index| {
+        if (exclude_index != null and index == exclude_index.?) continue;
+        if (!types.sameCombo(binding, candidate)) continue;
+        if (binding.action == candidate.action) return index;
+        if (types.bindingContextsCoFire(
+            types.actionBindingContexts(binding.action),
+            types.actionBindingContexts(candidate.action),
+        )) {
+            return index;
+        }
+    }
+    return null;
+}
+
+/// Dupe a binding's input id so a rebuilt list owns its strings (the
+/// loadSettings ownership contract — see DESIGN → File System & IO →
+/// Settings ownership).
+fn dupeBindingInput(raw_input: types.RawInput, allocator: std.mem.Allocator) types.RawInput {
+    return switch (raw_input) {
+        .key => |id| .{ .key = allocator.dupe(u8, id) catch @panic("failed to dupe binding id") },
+        .mouse_button => |id| .{ .mouse_button = allocator.dupe(u8, id) catch @panic("failed to dupe binding id") },
+        .gamepad_button => |id| .{ .gamepad_button = allocator.dupe(u8, id) catch @panic("failed to dupe binding id") },
+    };
+}
+
+/// Rebuild `settings.input_bindings` around an edit: the caller decides per
+/// index (keep / drop — freeing the entry's owned string) and supplies the
+/// entries to append. Kept entries' strings MOVE into the new list (only the
+/// old slice backing is freed, not the strings); dropped + appended
+/// entries' strings are freed / duped respectively. The camera_zoom
+/// discipline: mutate + mark dirty.
+fn rebuildInputBindings(
+    history: *GameStateHistory,
+    drop_mask: []const bool,
+    appended: []const types.InputBinding,
+) void {
+    const allocator = history.backing_allocator;
+    const old = history.settings.input_bindings;
+    var bindings: std.ArrayList(types.InputBinding) = .empty;
+    for (old, 0..) |binding, index| {
+        if (drop_mask[index]) {
+            loaders.freeRawInputString(binding.input, allocator);
+            continue;
+        }
+        bindings.append(allocator, binding) catch @panic("failed to rebuild input bindings");
+    }
+    for (appended) |binding| {
+        bindings.append(allocator, .{
+            .input = dupeBindingInput(binding.input, allocator),
+            .modifiers = binding.modifiers,
+            .action = binding.action,
+        }) catch @panic("failed to rebuild input bindings");
+    }
+    if (old.len > 0) allocator.free(old);
+    history.settings.input_bindings = bindings.toOwnedSlice(allocator) catch
+        @panic("failed to rebuild input bindings");
+    state.markSettingsDirty(history);
+}
+
+/// Apply the pending proposal (Confirm): replace the target entry (or
+/// append — an add) and REMOVE the stolen entry. The pending combo's id
+/// lives in the capture's buffer — duped into the settings allocation here.
+fn applyKeybindEdit(history: *GameStateHistory) void {
+    const ui_state = &history.session.ui_state;
+    const edit_state = &(ui_state.keybind_edit orelse return);
+    const pending = switch (edit_state.edit) {
+        .pending => |pending_keybind| pending_keybind,
+        else => return,
+    };
+    const allocator = history.backing_allocator;
+    const old = history.settings.input_bindings;
+    const drop_mask = allocator.alloc(bool, old.len) catch
+        @panic("failed to allocate binding rebuild mask");
+    defer allocator.free(drop_mask);
+    for (old, 0..) |_, index| {
+        drop_mask[index] = (pending.stolen_index == index) or (pending.replace_index == index);
+    }
+    // The replace entry + the append entry: same proposal, one binding.
+    rebuildInputBindings(history, drop_mask, &.{pending.binding});
+    ui_state.keybind_edit = null;
+}
+
+/// Remove one binding (the row's X — direct, no confirm; Reset to defaults
+/// is the safety net).
+fn removeKeybindBinding(history: *GameStateHistory, index: usize) void {
+    const allocator = history.backing_allocator;
+    if (index >= history.settings.input_bindings.len) return;
+    const drop_mask = allocator.alloc(bool, history.settings.input_bindings.len) catch
+        @panic("failed to allocate binding rebuild mask");
+    defer allocator.free(drop_mask);
+    for (drop_mask, 0..) |*drop, drop_index| drop.* = drop_index == index;
+    rebuildInputBindings(history, drop_mask, &.{});
+    history.session.ui_state.keybind_edit = null;
+}
+
+/// Replace ALL bindings with the shipped defaults' set (Reset): re-load the
+/// embedded `data/default_settings.txt`'s InputBindings. The fresh
+/// bindings' strings are loadSettings-owned (the standard ownership
+/// contract); the current ones are freed. Reset to defaults is the undo
+/// for the whole editing UI (settings changes carry no undo steps).
+fn resetKeybindsToDefaults(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    const bytes = history.file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch return;
+    defer allocator.free(bytes);
+    const sections = parser.parseConfigFile(bytes, allocator) catch return;
+    defer parser.freeParsedSections(sections, allocator);
+    const fresh = loaders.loadSettings(sections, allocator, null, null) catch return;
+    for (history.settings.input_bindings) |binding| {
+        loaders.freeRawInputString(binding.input, allocator);
+    }
+    if (history.settings.input_bindings.len > 0) {
+        allocator.free(history.settings.input_bindings);
+    }
+    history.settings.input_bindings = fresh.input_bindings;
+    history.session.ui_state.keybind_edit = null;
+    history.session.ui_state.keybind_scroll_offset = 0;
+    state.markSettingsDirty(history);
+}
+
 fn handleEscapeKey(history: *GameStateHistory) void {
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
@@ -1007,15 +1192,13 @@ pub fn handleAnytimeInput(
             // over the menu directly. Routed through `options_action` so
             // one handler serves both contexts. See DESIGN → UI Framework
             // → Settings screen.
-            .open_settings =>
-                history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
+            .open_settings => history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
             // Credits (the main-menu options menu variant): toggle the
             // overlay — it opens on top of this menu, and the Back button
             // reuses this action to close (the load-save browser's toggle
             // pattern). Routed through `options_action` because idle input
             // is gated while the options menu is open.
-            .open_credits =>
-                history.session.ui_state.credits_open = !history.session.ui_state.credits_open,
+            .open_credits => history.session.ui_state.credits_open = !history.session.ui_state.credits_open,
             // Exit Game (the main-menu options menu variant, native only —
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's
@@ -1027,10 +1210,80 @@ pub fn handleAnytimeInput(
                     history.session.quit_requested = true;
                 }
             },
+            // A keybinds-tab edit command was clicked (the whole editing
+            // UI rides this one action + the `KeybindCommand` payload).
+            // All phase transitions are direct UiState writes (off the
+            // undo timeline); the SETTINGS mutation happens only at
+            // remove / confirm / reset (the camera_zoom discipline — mutate
+            // + mark dirty). The key-capture seam lives in
+            // `translateInput` (`ui.routeKeybindCapture`) + main.frame's
+            // `resolveKeybindCaptureOutcome`; the builder renders the
+            // phases. See DESIGN → UI Framework → Settings screen.
+            .edit_keybind => {
+                if (!history.session.ui_state.settings_open) return;
+                if (history.session.ui_state.settings_tab != .keybinds) return;
+                const command = anytime.clicked_keybind_command orelse return;
+                const ui_state = &history.session.ui_state;
+                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
+                switch (command) {
+                    .rekey => |index| {
+                        if (index >= history.settings.input_bindings.len) return;
+                        ui_state.keybind_edit = .{ .edit = .{ .listening = .{ .binding = index } } };
+                    },
+                    .reassign => |index| {
+                        if (index >= history.settings.input_bindings.len) return;
+                        ui_state.keybind_picker_scroll_offset = 0;
+                        ui_state.keybind_edit = .{ .edit = .{ .picker = .{ .binding = index } } };
+                    },
+                    .add => |add_action| {
+                        ui_state.keybind_edit = .{ .edit = .{ .listening = .{ .add = add_action } } };
+                    },
+                    .add_open => {
+                        ui_state.keybind_picker_scroll_offset = 0;
+                        ui_state.keybind_edit = .{ .edit = .{ .picker = .add_new } };
+                    },
+                    .remove => |index| removeKeybindBinding(history, index),
+                    .pick => |picked_action| {
+                        const edit_state = &(ui_state.keybind_edit orelse return);
+                        switch (edit_state.edit) {
+                            .picker => |picker_target| switch (picker_target) {
+                                // Reassign: the target row's combo + the
+                                // picked action → pending (the steal scan
+                                // excludes the row itself).
+                                .binding => |index| {
+                                    if (index >= history.settings.input_bindings.len) return;
+                                    const target = history.settings.input_bindings[index];
+                                    const candidate: types.InputBinding = .{
+                                        .input = target.input,
+                                        .modifiers = target.modifiers,
+                                        .action = picked_action,
+                                    };
+                                    edit_state.edit = .{ .pending = .{
+                                        .binding = candidate,
+                                        .replace_index = index,
+                                        .stolen_index = findKeybindSteal(history.settings.input_bindings, candidate, index),
+                                    } };
+                                },
+                                // Standalone add: the action is known now →
+                                // listen for the combo.
+                                .add_new => edit_state.edit = .{ .listening = .{ .add = picked_action } },
+                                // A row's `+` never opens the picker.
+                                .add => return,
+                            },
+                            else => return,
+                        }
+                    },
+                    .confirm => applyKeybindEdit(history),
+                    .cancel => ui_state.keybind_edit = null,
+                    .reset_defaults => resetKeybindsToDefaults(history),
+                }
+            },
             // A settings screen content tab was clicked (Settings /
             // Keybinds). A view affordance — direct UiState write, off the
             // undo timeline (the editor-browser tab convention); the scroll
-            // resets on switch (the other tab's list has its own extent).
+            // resets on switch (the other tab's list has its own extent)
+            // and an active keybind edit is discarded (a hidden surface
+            // must not carry edit state).
             .select_settings_tab => {
                 if (!history.session.ui_state.settings_open) return;
                 const settings_tab = anytime.clicked_settings_tab orelse return;
@@ -1038,6 +1291,7 @@ pub fn handleAnytimeInput(
                 if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
                 history.session.ui_state.settings_tab = settings_tab;
                 history.session.ui_state.keybind_scroll_offset = 0;
+                history.session.ui_state.keybind_edit = null;
             },
             // A settings toggle or choice was clicked. The SettingRef rode
             // in `anytime.clicked_setting`. Mutate `history.settings` (a
@@ -1049,10 +1303,8 @@ pub fn handleAnytimeInput(
                 const settings = &history.settings;
                 switch (sref.id) {
                     .vsync => settings.vsync = !settings.vsync,
-                    .auto_skip_attack_step_out_of_combat =>
-                        settings.auto_skip_attack_step_out_of_combat = !settings.auto_skip_attack_step_out_of_combat,
-                    .auto_target_at_cursor =>
-                        settings.auto_target_at_cursor = !settings.auto_target_at_cursor,
+                    .auto_skip_attack_step_out_of_combat => settings.auto_skip_attack_step_out_of_combat = !settings.auto_skip_attack_step_out_of_combat,
+                    .auto_target_at_cursor => settings.auto_target_at_cursor = !settings.auto_target_at_cursor,
                     .show_fps => settings.show_fps = !settings.show_fps,
                     .camera_zoom => settings.camera_zoom = sref.choice_value orelse return,
                     .player_color_index => settings.player_color_index = sref.choice_value orelse return,
@@ -2295,6 +2547,18 @@ pub fn handleAnytimeInput(
         anytime.scroll_delta != 0)
     {
         const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+        // While the action picker is open, the wheel scrolls the PICKER
+        // (the picker owns the interaction — the binding list behind it
+        // scrolls once it closes).
+        if (history.session.ui_state.keybind_edit) |*edit_state| {
+            if (edit_state.edit == .picker) {
+                history.session.ui_state.keybind_picker_scroll_offset -= delta_rows;
+                if (history.session.ui_state.keybind_picker_scroll_offset < 0) {
+                    history.session.ui_state.keybind_picker_scroll_offset = 0;
+                }
+                return;
+            }
+        }
         history.session.ui_state.keybind_scroll_offset -= delta_rows;
         if (history.session.ui_state.keybind_scroll_offset < 0) {
             history.session.ui_state.keybind_scroll_offset = 0;
@@ -3016,7 +3280,6 @@ pub fn handleIdleInput(
             }
         }
     }
-
 }
 
 /// Resolve the logical tile cursor (`session.tile_cursor`) for this frame.
@@ -3856,7 +4119,6 @@ test "handleCameraPan: pan engages only past the drag threshold" {
 
 /// Fixture: a sword in inventory slot 0, boots in slot 1, a main-hand
 /// weapon equipped, Flash Strike in utility slot 0.
-
 fn dragGatePlayer() types.Entity {
     var player_entity = types.Entity{};
     player_entity.inventory.slots[0] = .{ .weapon = .{
@@ -4500,3 +4762,29 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
 }
 
+test "findKeybindSteal: co-firing conflicts + duplicates steal; cross-context is legal" {
+    // undo (anytime) + skip (game) on Enter — contexts intersect (they would
+    // co-fire): steal. skill_slot_1 (game) + editor_select_tool (editor) on
+    // Digit1 — cross-context: LEGAL. undo on KeyZ: the candidate's own row
+    // (excluded) never steals; another undo combo on the same combo steals
+    // as a redundant duplicate.
+    const bindings = [_]types.InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .undo },
+        .{ .input = .{ .key = "Enter" }, .action = .skip },
+        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 },
+        .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool },
+        .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
+    };
+    // A rekey of undo (index 0) to Enter: co-fires with skip — steal.
+    const candidate: types.InputBinding = .{ .input = .{ .key = "Enter" }, .action = .undo };
+    try std.testing.expectEqual(@as(?usize, 1), findKeybindSteal(&bindings, candidate, 0));
+    // The excluded row itself never steals.
+    const self_combo: types.InputBinding = .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo };
+    try std.testing.expectEqual(@as(?usize, null), findKeybindSteal(&bindings, self_combo, 4));
+    // A same-action duplicate steals (confirming dedupes).
+    const duplicate: types.InputBinding = .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo };
+    try std.testing.expectEqual(@as(?usize, 4), findKeybindSteal(&bindings, duplicate, 0));
+    // Cross-context same-combo is legal — never stolen.
+    const cross_context: types.InputBinding = .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 };
+    try std.testing.expectEqual(@as(?usize, null), findKeybindSteal(&bindings, cross_context, 2));
+}

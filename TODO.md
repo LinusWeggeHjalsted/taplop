@@ -73,8 +73,13 @@ Test by running `zig build run` and clicking through.
   - [x] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
         context tags, scroll) — DONE (see DONE.md, keybind editor slice 3;
         the Settings tab's 12 rows went two-column to fit)
-  - [ ] 4. Editing flows (listening state, pending confirm/cancel +
-        steal warning, right-column action picker, add/remove/reset)
+  - [x] 4. Editing flows (listening state, pending confirm/cancel +
+        steal warning, right-column action picker, add/remove/reset) — DONE
+        (see DONE.md, keybind editor slice 4). FOLLOW-UP: an end-to-end
+        harness test for `applyKeybindEdit`/`removeKeybindBinding`'s
+        rebuild-ownership path (leak-checked) — the arms are thin + the
+        steal scan + capture seam are unit-covered, but the mutation path
+        itself is not.
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through

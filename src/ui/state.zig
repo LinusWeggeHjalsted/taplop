@@ -7,6 +7,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const element = @import("element.zig");
 const text_input = @import("text_input.zig");
+const keybind_edit = @import("keybind_edit.zig");
 
 const ScreenPosition = types.ScreenPosition;
 const SlotRef = element.SlotRef;
@@ -122,6 +123,19 @@ pub const UiState = struct {
     /// clamp in the builder (authoritative — only it knows the content
     /// height). See DESIGN → UI Framework → Settings screen.
     keybind_scroll_offset: i32 = 0,
+
+    /// The active keybind edit (listening / picker / pending — the whole
+    /// state machine lives in `ui/keybind_edit.zig`). While set, binding
+    /// translation is suppressed (the text-input model) and Escape cancels.
+    /// Cleared on Confirm/Cancel, a tab switch, or the screen-transition UI
+    /// reset. See DESIGN → UI Framework → Settings screen.
+    keybind_edit: ?keybind_edit.KeybindEditState = null,
+
+    /// The right-column action picker's scroll (the picker phase): the
+    /// index of the first visible action row. While the picker is open the
+    /// wheel scrolls THIS list (not the binding list). Same clamp split as
+    /// `keybind_scroll_offset`.
+    keybind_picker_scroll_offset: i32 = 0,
 
     /// Which slider is being dragged (left-press on a slider → held →
     /// release). Null when no slider drag is in progress. Off the undo
