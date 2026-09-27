@@ -662,6 +662,31 @@ fn dumpLevelText(
                 history.weapon_type_definitions,
             );
         }
+
+        // Ground stacks: walking onto the tile picks them up (the pickup
+        // radius; a pants' pickup_radius_bonus widens it).
+        buffer.print(allocator, "ground items: {d}\n", .{level.ground_items.len}) catch
+            @panic("failed to format level dump");
+        for (level.ground_items) |stack| {
+            const center = view.tileClickCenter(stack.position, camera, camera_zoom);
+            buffer.print(
+                allocator,
+                "ground ({d}, {d}) center {d} {d}: ",
+                .{ stack.position.x, stack.position.y, center.x, center.y },
+            ) catch @panic("failed to format level dump");
+            for (stack.items, 0..) |item, item_index| {
+                if (item_index > 0) {
+                    buffer.appendSlice(allocator, ", ") catch @panic("failed to format level dump");
+                }
+                buffer.appendSlice(allocator, itemSummary(item, allocator)) catch
+                    @panic("failed to format level dump");
+            }
+            buffer.appendSlice(allocator, "\n") catch @panic("failed to format level dump");
+        }
+
+        if (level.entities.len > 0) {
+            appendInventoryLines(&buffer, allocator, level.entities[0]);
+        }
     } else if (current.hub) |hub| {
         buffer.print(allocator, "world: hub \"{s}\"\n", .{hub.name}) catch
             @panic("failed to format level dump");
@@ -739,6 +764,74 @@ fn appendEntityLine(
             center.y,
         },
     ) catch @panic("failed to format level dump");
+}
+
+/// One item's summary: kind + name + the stats that matter to a decision.
+fn itemSummary(item: types.Item, allocator: std.mem.Allocator) []const u8 {
+    return switch (item) {
+        .weapon => |weapon| std.fmt.allocPrint(
+            allocator,
+            "weapon \"{s}\" ({s}, damage {d})",
+            .{ weapon.name, @tagName(weapon.weapon_type), weapon.weapon_damage },
+        ) catch @panic("failed to format item summary"),
+        .amulet => |amulet| std.fmt.allocPrint(
+            allocator,
+            "amulet \"{s}\" (spell damage {d})",
+            .{ amulet.name, amulet.spell_damage },
+        ) catch @panic("failed to format item summary"),
+        .coat => |coat| std.fmt.allocPrint(
+            allocator,
+            "coat \"{s}\" (health {d}, defense {d})",
+            .{ coat.name, coat.health_bonus, coat.defense_bonus },
+        ) catch @panic("failed to format item summary"),
+        .gloves => |gloves| std.fmt.allocPrint(
+            allocator,
+            "gloves \"{s}\" (health {d}, damage {d})",
+            .{ gloves.name, gloves.health_bonus, gloves.damage_bonus },
+        ) catch @panic("failed to format item summary"),
+        .pants => |pants| std.fmt.allocPrint(
+            allocator,
+            "pants \"{s}\" (health {d}, pickup radius {d})",
+            .{ pants.name, pants.health_bonus, pants.pickup_radius_bonus },
+        ) catch @panic("failed to format item summary"),
+        .boots => |boots| std.fmt.allocPrint(
+            allocator,
+            "boots \"{s}\" (health {d}, speed {d})",
+            .{ boots.name, boots.health_bonus, boots.speed_bonus },
+        ) catch @panic("failed to format item summary"),
+        .skill_tome => |tome| std.fmt.allocPrint(
+            allocator,
+            "skill tome {s} (value {d})",
+            .{ @tagName(tome.skill), tome.value },
+        ) catch @panic("failed to format item summary"),
+    };
+}
+
+/// The player's inventory (entity 0 in a level): picked-up items land here
+/// (pickup is automatic on walking onto a ground stack's tile).
+fn appendInventoryLines(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    player: types.Entity,
+) void {
+    var occupied: usize = 0;
+    for (player.inventory.slots) |slot| {
+        if (slot != null) occupied += 1;
+    }
+    buffer.print(
+        allocator,
+        "inventory: {d}/{d} slots\n",
+        .{ occupied, types.inventory_slot_count },
+    ) catch @panic("failed to format level dump");
+    for (player.inventory.slots, 0..) |slot, index| {
+        if (slot) |item| {
+            buffer.print(
+                allocator,
+                "inventory {d}: {s}\n",
+                .{ index, itemSummary(item, allocator) },
+            ) catch @panic("failed to format level dump");
+        }
+    }
 }
 
 /// The player's full skill bar (entity 0 in a level): slots 1-2 = main-hand
@@ -1367,6 +1460,7 @@ test "dumpText level: the active world with clickable highlights + entities" {
     };
     entities[0].equipped_utility_skills[0] = .bash;
     entities[0].skill_cooldowns.set(.bash, 2);
+    entities[0].inventory.slots[0] = .{ .skill_tome = .{ .skill = .bash, .value = 3 } };
     const tiles = [_]types.Vector2{
         .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
         .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 },
@@ -1380,6 +1474,13 @@ test "dumpText level: the active world with clickable highlights + entities" {
     level.level_end = .{ .x = 2, .y = 2 };
     const highlights = [_]types.Vector2{ .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 0 } };
     level.highlighted_tiles = &highlights;
+    const ground_items = [_]types.GroundItems{
+        .{ .position = .{ .x = 2, .y = 0 }, .items = &.{
+            .{ .weapon = .{ .name = "Bamboo Spear", .weapon_type = .spear, .weapon_damage = 4 } },
+            .{ .boots = .{ .name = "Comfortable Boots", .speed_bonus = 1 } },
+        } },
+    };
+    level.ground_items = &ground_items;
 
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const zoom: f32 = 1.0;
@@ -1412,6 +1513,20 @@ test "dumpText level: the active world with clickable highlights + entities" {
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 1: none\n") != null);
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 4: bash cooldown 2\n") != null);
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 5: none\n") != null);
+
+    // Ground stacks (walk onto the tile to pick up) + the inventory.
+    const spear_center = view.tileClickCenter(.{ .x = 2, .y = 0 }, camera, zoom);
+    try std_testing.expect(std.mem.indexOf(
+        u8,
+        text,
+        std.fmt.allocPrint(
+            arena,
+            "ground (2, 0) center {d} {d}: weapon \"Bamboo Spear\" (spear, damage 4), boots \"Comfortable Boots\" (health 0, speed 1)\n",
+            .{ spear_center.x, spear_center.y },
+        ) catch unreachable,
+    ) != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "inventory: 1/96 slots\n") != null);
+    try std_testing.expect(std.mem.indexOf(u8, text, "inventory 0: skill tome bash (value 3)\n") != null);
 
     // The click-center contract: a dumped center resolves back to its tile
     // through screenToTile — the exact resolution a console `move` + press

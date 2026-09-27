@@ -14856,3 +14856,14 @@ aggroes) dies in three rounds. The counterplay exists (retreat, fight one
 at a time — the skeletons' approach was slow enough to kite), but the
 first mission punishes aggroing early. Flagged for playtest triage, not
 changed.
+
+## Console input — ground stacks + inventory in the level dump
+
+The last two knowledge gaps for gameplay-driven testing (the user's
+reminder: "you have an inventory and can pick up items"): the level dump
+now lists GROUND STACKS (tile + click center — walking onto the tile
+picks up; a pants' pickup_radius_bonus widens the radius — kind + name +
+stats per item, one line per stack) and the player's INVENTORY
+(occupied/total slots, one line per item, same summaries). Also fixed a
+formatting nit the projection test caught: no space after the stack
+line's colon.

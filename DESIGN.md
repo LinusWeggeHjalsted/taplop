@@ -1386,7 +1386,9 @@ the reader thread exits, zero cost.
   (the game's own computed move/skill-targeting tiles — a script never
   reasons about legality, it clicks a highlight), the player's full
   8-slot skill bar (weapon + utility, the Digit1-8 numbering) +
-  cooldowns, and the level-end flag / mission exits — each
+  cooldowns, the ground stacks (walk onto the tile to pick up —
+  kind + name + stats per item), the player's inventory, and the
+  level-end flag / mission exits — each
   tile line with its CENTER, a click point projected through the frame's
   LIVE camera (`view.tileClickCenter`, the inverse of screenToTile, so a
   coordinate off the dump line resolves back to its tile). That is why
