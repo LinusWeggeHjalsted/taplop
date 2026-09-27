@@ -241,6 +241,16 @@ pub fn parseConfigFile(
         });
     }
 
+    // Reclaim working-list backing memory for content that never made it
+    // into a section (pairs/groups before any header, or a group pending at
+    // EOF with no header open). Everything attached to a section was
+    // toOwnedSlice'd above, so these are either empty or hold only the
+    // orphaned remainders — leaking them is invisible in the arena-wrapped
+    // parses but flagged under `testing.allocator`.
+    current_pairs.deinit(allocator);
+    current_entry_groups.deinit(allocator);
+    current_raw_lines.deinit(allocator);
+
     return try sections.toOwnedSlice(allocator);
 }
 

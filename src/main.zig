@@ -462,7 +462,7 @@ fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) vo
     const requested = history.settings.render_resolution;
     const kept = history.session.last_applied_render_resolution;
     history.settings.render_resolution = kept;
-    input_handlers.markSettingsDirty(history);
+    state.markSettingsDirty(history);
     const message = std.fmt.allocPrint(
         history.history_arena.allocator(),
         "{s} rendering is not supported on this system — kept {s}.",

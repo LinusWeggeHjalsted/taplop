@@ -67,22 +67,6 @@ fn cameraZoomAllowed(screen: state.Screen) bool {
     };
 }
 
-/// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
-/// errors are swallowed since a failed preferences write is not critical;
-/// the preference just doesn't persist). Called as a `PendingWrite` writer
-/// when the settings debounce fires. See DESIGN → Input.
-pub fn writeSettingsToFile(history: *GameStateHistory) void {
-    const allocator = history.backing_allocator;
-    const bytes = writers.writeSettings(history.settings, allocator) catch return;
-    defer allocator.free(bytes);
-    history.file_source.writeFile("settings.txt", bytes) catch return;
-}
-
-/// Mark settings as dirty for debounced persistence. Called after a tunable
-/// setting changes (currently `camera_zoom`). See DESIGN → Input.
-pub fn markSettingsDirty(history: *GameStateHistory) void {
-    history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
-}
 const PlayerInput = input.PlayerInput;
 const Vector2 = types.Vector2;
 const Entity = types.Entity;
@@ -1074,7 +1058,7 @@ pub fn handleAnytimeInput(
                     => return,
                 }
                 if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
-                markSettingsDirty(history);
+                state.markSettingsDirty(history);
             },
             // Editor palette group header (expand/collapse). The group
             // index rode in `anytime.clicked_editor_group`. View-side
@@ -2395,7 +2379,7 @@ pub fn handleAnytimeInput(
             const clamped: u32 = @intCast(@max(@as(i32, @intCast(min_camera_zoom)), @min(@as(i32, @intCast(max_camera_zoom)), @as(i32, @intCast(history.settings.camera_zoom)) + delta)));
             if (clamped != history.settings.camera_zoom) {
                 history.settings.camera_zoom = clamped;
-                markSettingsDirty(history);
+                state.markSettingsDirty(history);
             }
         }
     }
@@ -2407,20 +2391,20 @@ pub fn handleAnytimeInput(
         const new_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
         if (new_zoom != history.settings.camera_zoom) {
             history.settings.camera_zoom = new_zoom;
-            markSettingsDirty(history);
+            state.markSettingsDirty(history);
         }
     }
     if (anytime.zoom_out and cameraZoomAllowed(history.current_state.screen)) {
         const new_zoom = @max(min_camera_zoom, history.settings.camera_zoom - camera_zoom_step);
         if (new_zoom != history.settings.camera_zoom) {
             history.settings.camera_zoom = new_zoom;
-            markSettingsDirty(history);
+            state.markSettingsDirty(history);
         }
     }
     if (anytime.zoom_reset and cameraZoomAllowed(history.current_state.screen)) {
         if (history.settings.camera_zoom != default_camera_zoom) {
             history.settings.camera_zoom = default_camera_zoom;
-            markSettingsDirty(history);
+            state.markSettingsDirty(history);
         }
     }
 

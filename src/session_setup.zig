@@ -149,15 +149,22 @@ pub fn loadSettingsFromDisk(
 /// default); InputBindings overlay PER-ACTION — bindings for actions the
 /// user file names are authoritative (replacing the defaults' bindings for
 /// those actions), while actions it doesn't name fall back to their default
-/// bindings (injected on load; the next debounced write persists them —
+/// bindings (injected on load; persisted by the next debounced write —
 /// see DESIGN → Input → Binding overlay semantics). A missing or
 /// unparseable user file leaves the defaults untouched (with a warning).
+/// `repair_write_needed` (out-param) is set when the user file PARSED and
+/// LOADED but produced warnings (dropped bindings, unknown keys) — the merged
+/// settings are authoritative there, so a full-format write repairs the
+/// file and the warnings don't repeat next launch. NOT set when the user
+/// file failed to parse or load: the overlay fell back to defaults, and
+/// rewriting the file would overwrite possibly hand-recoverable content.
 /// Replay-safe: settings are loaded once at startup, never during replay.
 pub fn overlayUserSettings(
     defaults: Settings,
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
     warnings: Warnings,
+    repair_write_needed: *bool,
 ) Settings {
     const user_bytes = file_source.readFile(allocator, "settings.txt") catch {
         return defaults; // No user settings file → defaults are authoritative.
@@ -184,6 +191,7 @@ pub fn overlayUserSettings(
     // binding strings are freed on replace). A file_format_version mismatch
     // or parse failure is recoverable (warn + keep defaults) per DESIGN →
     // Error Handling.
+    const warnings_before = warnings.items.len;
     const merged = loaders.loadSettings(user_sections, allocator, defaults, warnings) catch {
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
@@ -192,6 +200,13 @@ pub fn overlayUserSettings(
         return defaults;
     };
     parser.validateKeys(user_sections, parser.settings_key_map, "settings.txt", allocator, warnings);
+    if (warnings.items.len > warnings_before) {
+        repair_write_needed.* = true;
+        warnings.append(allocator, std.fmt.allocPrint(allocator,
+            "settings.txt was out of date; a repaired copy is saved automatically (these settings warnings won't repeat).", .{}) catch
+            @panic("failed to allocate startup warning")) catch
+            @panic("failed to append startup warning");
+    }
     return merged;
 }
 
@@ -276,7 +291,8 @@ pub fn createSessionSetup(
     var warnings: std.ArrayList([]const u8) = .empty;
 
     const default_settings = loadSettingsFromDisk(file_source, allocator, &warnings);
-    const settings = overlayUserSettings(default_settings, file_source, allocator, &warnings);
+    var repair_write_needed = false;
+    const settings = overlayUserSettings(default_settings, file_source, allocator, &warnings, &repair_write_needed);
     backend.applyVsync(settings.vsync);
     const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator, &warnings);
     const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &warnings);
@@ -317,6 +333,14 @@ pub fn createSessionSetup(
         io,
     );
     history.session.autosave_available = autosave_available;
+
+    // Repair write: a user settings.txt that loaded but had stale entries
+    // (dropped bindings, unknown keys) is rewritten full-format through the
+    // same debounced path as preference changes (fires ~1s after boot; the
+    // shutdown flushes cover a quick quit), so the startup warnings don't
+    // repeat every launch. An unparseable user file does NOT trigger this —
+    // see overlayUserSettings. See DESIGN → Input → Binding overlay semantics.
+    if (repair_write_needed) state.markSettingsDirty(&history);
 
     // Surface startup warnings as a single pending error popup (see DESIGN →
     // Error Handling). The popup is modal: the player dismisses it (Escape /
@@ -411,6 +435,26 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
     try testing.expectEqual(@as(usize, 0), warnings.items.len);
 }
 
+/// Build self-owned defaults WITHOUT going through loadConfigWithFallback
+/// (which intentionally leaks the raw bytes for process lifetime — a leak
+/// `testing.allocator` would flag). readEmbeddedFile + parse + loadSettings
+/// (dupes) + free bytes + free sections gives owned defaults with no leak.
+/// The defaults base for the overlay tests below.
+fn loadOwnedDefaults(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+) Settings {
+    const defaults_bytes = file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch
+        @panic("embedded default settings missing");
+    const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
+        @panic("failed to parse embedded default settings");
+    const defaults = loaders.loadSettings(defaults_sections, allocator, null, null) catch
+        @panic("failed to load embedded default settings");
+    parser.freeParsedSections(defaults_sections, allocator);
+    allocator.free(defaults_bytes);
+    return defaults;
+}
+
 // Leak-checked regression test for overlayUserSettings under `testing.allocator`
 // (no arena). Arena-wrapping masks two classes of bug: leaks (arena free is a
 // no-op, so a forgotten free is invisible) and use-after-free (freed memory
@@ -436,18 +480,7 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Build self-owned defaults WITHOUT going through loadConfigWithFallback
-    // (which intentionally leaks the raw bytes for process lifetime — a leak
-    // testing.allocator would flag). readEmbeddedFile + parse + loadSettings
-    // (dupes) + free bytes + free sections gives owned defaults with no leak.
-    const defaults_bytes = file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch
-        @panic("embedded default settings missing");
-    const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
-        @panic("failed to parse embedded default settings");
-    const defaults = loaders.loadSettings(defaults_sections, allocator, null, null) catch
-        @panic("failed to load embedded default settings");
-    parser.freeParsedSections(defaults_sections, allocator);
-    allocator.free(defaults_bytes);
+    const defaults = loadOwnedDefaults(&file_source, allocator);
     try testing.expect(defaults.input_bindings.len > 0);
 
     // Write a user settings.txt with a couple of distinct, checkable bindings.
@@ -470,10 +503,13 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
         @panic("failed to write user settings.txt");
 
     var warnings: std.ArrayList([]const u8) = .empty;
-    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings);
+    var repair_write_needed = false;
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
     // No warnings on a valid user file — so no warning strings were allocated
-    // into `allocator` (which would leak since the test doesn't free them).
+    // into `allocator` (which would leak since the test doesn't free them) —
+    // and no repair write is scheduled (nothing to repair).
     try testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try testing.expect(!repair_write_needed);
 
     // Overlay is PER-ACTION: the user's bindings for undo/redo win (owned
     // strings, duped by loadSettings; the defaults' undo/redo bindings are
@@ -518,4 +554,216 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     // loadSettings forgot to free user_bytes / the old base strings / the
     // parsed sections — the arena-wrapped tests can't see those.
     loaders.freeSettings(merged, allocator);
+}
+
+// Stale user settings (pre-rename binding + unknown key): the overlay sets
+// the repair flag, and the heal write (exactly what writeSettingsToFile
+// persists) produces a file that re-overlays with ZERO warnings — the
+// idempotency contract that makes the startup popup not repeat next launch.
+// Under testing.allocator (no arena): the warning strings are allocPrint'd
+// single allocations, freed by the test, so the leak checker still covers the
+// overlay path itself (same discipline as the leak test above).
+test "overlayUserSettings: stale entries set repair flag; heal write is idempotent" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir so no settings.txt lands in the project root.
+    const scratch = "zig-cache/test-startup-repair";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Stale user file: `toggle_options_menu` is the pre-rename name of
+    // `escape` (warned + dropped at load), `camra_zoom` is an unknown key
+    // (warned), plus one valid binding so the file isn't only garbage.
+    const user_settings =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\Display
+        \\camra_zoom 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name KeyZ
+        \\action undo
+        \\context anytime
+        \\
+        \\input_type key
+        \\input_name KeyO
+        \\action toggle_options_menu
+        \\context anytime
+    ;
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
+        @panic("failed to write user settings.txt");
+
+    const defaults = loadOwnedDefaults(&file_source, allocator);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer warnings.deinit(allocator);
+    var repair_write_needed = false;
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
+    defer for (warnings.items) |warning| allocator.free(warning);
+
+    // The stale binding was warned by name, the repair flag is set, and the
+    // reassurance line was appended (the popup tells the player it's fixed).
+    var found_stale_warning = false;
+    var found_repair_note = false;
+    for (warnings.items) |warning| {
+        if (std.mem.indexOf(u8, warning, "toggle_options_menu") != null) found_stale_warning = true;
+        if (std.mem.indexOf(u8, warning, "repaired copy") != null) found_repair_note = true;
+    }
+    try testing.expect(found_stale_warning);
+    try testing.expect(repair_write_needed);
+    try testing.expect(found_repair_note);
+    // The dropped binding's action (renamed to `escape`) got its default
+    // injected — the stale entry costs the player nothing.
+    var found_escape = false;
+    for (merged.input_bindings) |binding| {
+        if (binding.action == .escape) found_escape = true;
+    }
+    try testing.expect(found_escape);
+
+    // Heal write: exactly what writeSettingsToFile persists. Write to disk,
+    // re-overlay with fresh defaults: zero warnings, no repair flag.
+    const written = try writers.writeSettings(merged, allocator);
+    defer allocator.free(written);
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data = written }) catch
+        @panic("failed to write repaired settings.txt");
+    loaders.freeSettings(merged, allocator);
+
+    const fresh_defaults = loadOwnedDefaults(&file_source, allocator);
+    var warnings_after: std.ArrayList([]const u8) = .empty;
+    var repair_write_needed_after = false;
+    const remerged = overlayUserSettings(fresh_defaults, &file_source, allocator, &warnings_after, &repair_write_needed_after);
+    try testing.expectEqual(@as(usize, 0), warnings_after.items.len);
+    try testing.expect(!repair_write_needed_after);
+    loaders.freeSettings(remerged, allocator);
+}
+
+// The data-loss guard: a user file that fails to load must NOT set the
+// repair flag — the overlay fell back to defaults, and rewriting the file
+// would overwrite possibly hand-recoverable content. (The garbage content
+// actually parses — lowercase lines become header-less key-value pairs —
+// and then fails to load: no Metadata/file_format_version. Both the
+// parse-fail and load-fail branches share this guard.) The warning still
+// repeats (deliberately) until the player fixes or deletes the file.
+test "overlayUserSettings: invalid user file sets no repair flag" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-startup-repair-no-write";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data = "this is not valid config" }) catch
+        @panic("failed to write broken settings.txt");
+
+    const defaults = loadOwnedDefaults(&file_source, allocator);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer warnings.deinit(allocator);
+    var repair_write_needed = false;
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
+    defer for (warnings.items) |warning| allocator.free(warning);
+
+    // Warned (load failure → defaults), and NO repair write scheduled.
+    try testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try testing.expect(!repair_write_needed);
+    // The broken file was left untouched on disk (the observable half of the
+    // guard: no write fired over it).
+    const disk_bytes = file_source.readFile(allocator, "settings.txt") catch
+        @panic("failed to read back settings.txt");
+    defer allocator.free(disk_bytes);
+    try testing.expectEqualStrings("this is not valid config", disk_bytes);
+    loaders.freeSettings(merged, allocator);
+}
+
+// The wiring contract: createSessionSetup schedules the repair write when
+// the startup overlay repaired stale entries, and firing it (frame()'s
+// path, clock advanced past the 1s debounce) rewrites settings.txt into a
+// file that re-overlays warning-free. Arena-wrapped: createSessionSetup
+// intentionally leaks config bytes + warnings for the session (production
+// lifetime), and the write itself goes through the real FileSource into the
+// scratch persistent dir.
+test "createSessionSetup: stale settings.txt schedules the repair write" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-startup-repair-wiring";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Same stale shape as the overlay test: a pre-rename binding.
+    const user_settings =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name KeyO
+        \\action toggle_options_menu
+        \\context anytime
+    ;
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
+        @panic("failed to write user settings.txt");
+
+    // Minimal fake backend: createSessionSetup only applies vsync + reads
+    // the clock.
+    const FakeBackend = struct {
+        fn applyVsync(_: *const @This(), _: bool) void {}
+        fn realClockMicroseconds(_: *const @This()) u64 {
+            return 0;
+        }
+    };
+    var fake_backend = FakeBackend{};
+    var setup = createSessionSetup(allocator, &file_source, io, &fake_backend);
+
+    // The repair write was scheduled on the debounced-write machinery.
+    var settings_write_scheduled = false;
+    for (setup.frame_state.history.session.pending_writes) |slot| {
+        if (slot) |entry| {
+            if (entry.tag == .settings) settings_write_scheduled = true;
+        }
+    }
+    try testing.expect(settings_write_scheduled);
+
+    // Fire it (frame()'s path; the clock is past the 1s debounce deadline
+    // markWriteDirty set from session_clock = 0), then re-overlay: the
+    // on-disk file is warning-free — the popup won't repeat next launch.
+    setup.frame_state.history.session.fireElapsedWrites(&setup.frame_state.history, 2 * std.time.us_per_s);
+
+    var warnings_after: std.ArrayList([]const u8) = .empty;
+    var repair_write_needed_after = false;
+    const remerged = overlayUserSettings(
+        loadOwnedDefaults(&file_source, allocator),
+        &file_source,
+        allocator,
+        &warnings_after,
+        &repair_write_needed_after,
+    );
+    try testing.expectEqual(@as(usize, 0), warnings_after.items.len);
+    try testing.expect(!repair_write_needed_after);
+    // The stale name is gone from disk: the written file's undo binding
+    // round-trips (any default binding present proves the full-format write;
+    // the stale line would fail the overlay above if it survived).
+    var found_undo = false;
+    for (remerged.input_bindings) |binding| {
+        if (binding.action == .undo) found_undo = true;
+    }
+    try testing.expect(found_undo);
 }

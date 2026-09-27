@@ -27,7 +27,7 @@ const PlayerInput = input.PlayerInput;
 const Vector2 = types.Vector2;
 const Entity = types.Entity;
 const SkillId = types.SkillId;
-const markSettingsDirty = @import("input_handlers.zig").markSettingsDirty;
+const markSettingsDirty = @import("state.zig").markSettingsDirty;
 /// True when the pointer is over a skills-browser slot (a ref-bearing
 /// element whose ref is `.learned_skill`). Used to route the mouse wheel to
 /// skills-browser scroll instead of camera zoom. The skills panel's slots

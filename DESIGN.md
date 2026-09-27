@@ -1094,8 +1094,8 @@ combat-log UI rendering + replay-viewer UI still TODO)
   screens where nothing consumes it — a dead binding). A dropped entry
   leaves its action unmentioned, so the per-action overlay injects the
   action's default binding (context included) — a pre-migration
-  context-less user file self-heals on the next debounced full-format
-  write. `settings_file_format_version` did NOT bump: old files parse
+  context-less user file self-heals via the startup repair write (see
+  Binding overlay semantics below). `settings_file_format_version` did NOT bump: old files parse
   (bindings warn+drop+re-inject, scalars untouched) rather than being
   rejected wholesale.
 - **New keybind wiring sites (five, easily forgotten).** A new keybind
@@ -1186,19 +1186,31 @@ combat-log UI rendering + replay-viewer UI still TODO)
   shadowed by the user file. A dropped entry (missing/invalid context,
   unknown action — see Action↔context validity) equally counts as
   unmentioned, so its default is injected: a pre-migration context-less
-  user file loses nothing permanently. Idempotent by construction: the next
-  debounced settings write (always full-format, context lines included)
-  persists the injected bindings, so later loads see those actions as
-  mentioned and nothing re-injects; no write-on-load. An old-name binding
-  for a RENAMED action parses to nothing (unknown enum value, dropped at
-  load with a warning) — the renamed action then counts as unmentioned and
-  its new default is injected; the next write drops the stale line from the
+  user file loses nothing permanently. Idempotent by construction: when the
+  overlay SUCCEEDS but produces warnings (dropped bindings, unknown keys —
+  `overlayUserSettings` sets `repair_write_needed`), `createSessionSetup`
+  marks settings dirty (`state.markSettingsDirty`), so the next debounced
+  write (always full-format, context lines included) fires ~1s after boot
+  and persists the injected bindings + drops the stale lines — later loads
+  see those actions as mentioned and nothing re-injects, so the startup
+  warnings don't repeat every launch. The repair write is NOT triggered
+  when the user file failed to parse or load (the overlay fell back to
+  defaults; overwriting the file would discard possibly hand-recoverable
+  content — the warning deliberately repeats until the player fixes or
+  deletes the file), nor when the file is clean or missing (no
+  write-on-load outside a repair). An old-name binding for a RENAMED
+  action parses to nothing (unknown enum value, dropped at load with a
+  warning) — the renamed action then counts as unmentioned and its new
+  default is injected; the repair write drops the stale line from the
   file. Pre-release (one existing install), no alias map is carried for old
   names; if a rename ever touches a heavily customized action, add a
   one-time old-name→new-name alias step at load.
 - **Debounced writes (`PendingWrite`).** A general debounce primitive on
   `SessionState` (settings, future editor autosave). `markWriteDirty(tag,
-  write_fn, now)` coalesces by tag (a burst of changes → one write). Debounce
+  write_fn, now)` coalesces by tag (a burst of changes → one write); the
+  settings writer pair (`writeSettingsToFile` + `markSettingsDirty`) lives
+  in `state.zig` next to the machinery, shared by preference-change
+  persistence and the startup repair write. Debounce
   1s + max-wait 5s: a dirty mark fires after 1s of quiet, or immediately if
   dirty for >5s (so a continuous stream can't starve the write forever).
   `session_clock` (non-pause-gated, on SessionState) drives deadlines so
@@ -1316,7 +1328,11 @@ view's `lineHeight` — see DONE.md.)
    embedded fail → panic (real bug). All four loaders use
    `loadConfigWithFallback` + `FileSource.readEmbeddedFile`; warnings are
    collected and surfaced as a single `pending_error` popup after the history
-   is created.
+   is created. Settings-overlay warnings additionally self-heal: the startup
+   repair write rewrites the user's settings.txt full-format, so those
+   warnings don't repeat next launch (see Input → Binding overlay semantics);
+   warnings from the other config files (and from a user settings.txt that
+   failed to load) deliberately persist until the underlying file is fixed.
 2. **In-event reconstruction reads** (`start_mission` / `start_level` /
    `start_hub` / `load_save` / `open_editor`): these handlers return `!void`;
    a read OR parse failure is recoverable — `readReconstructionFile`

@@ -14233,3 +14233,50 @@ Docs: DESIGN → Modal overlays gains the ladder section (with the
 never-co-rendered ordering note + the reserved full-screen slot); DESIGN →
 Escape overlay chain's arm list reordered to match; the chain code + its
 arm comments now point at the census as the pinner.
+
+## Startup settings repair write — stale settings.txt self-heals on launch
+
+The popup-repeat bug: an install whose user settings.txt carries stale
+entries (a renamed action's old name, an unknown key) saw the startup
+warning popup EVERY launch, because the on-disk heal only happened via the
+next debounced settings write — which only fires when the player changes a
+tunable. In-memory the overlay already self-healed (warn + drop + inject
+the default); the disk never learned.
+
+Fix: when `overlayUserSettings` SUCCEEDS (the user file parsed + loaded)
+but produces warnings, it sets a `repair_write_needed` out-param, appends a
+reassurance line to the popup ("settings.txt was out of date; a repaired
+copy is saved automatically (these settings warnings won't repeat)"), and
+`createSessionSetup` marks settings dirty — the SAME debounced path as
+preference changes, so the full-format write fires ~1s after boot (the
+native defer + web beforeunload flushes cover a quick quit). Next launch:
+no warnings.
+
+Scoping (the deliberate non-writes):
+- A user file that FAILED to parse or load sets NO repair flag — the overlay
+  fell back to defaults, and rewriting would overwrite possibly
+  hand-recoverable content. That warning deliberately repeats until the
+  player fixes or deletes the file (data-loss guard, tested).
+- Warnings from the other startup config files (themes, weapon types,
+  salvage, shadow fallbacks) are unaffected — rewriting settings heals
+  nothing there.
+
+Structural note: `writeSettingsToFile` + `markSettingsDirty` moved from
+`input_handlers.zig` to `state.zig` (next to the `PendingWrite` machinery
+they serve) — `session_setup` is a leaf module and can't import
+`input_handlers`; all callers already import state.
+
+Drive-by fix (exposed by the new tests running the garbage-file path under
+`testing.allocator` for the first time): `parseConfigFile` leaked the
+working-list backing memory for content that never made it into a section
+(pairs/groups before any header, or pending at EOF with no header open) —
+invisible in the arena-wrapped parses. Now deinit'd before return.
+
+Tests (session_setup.zig): stale-entries overlay sets the flag + injects
+the renamed action's default + the heal write is idempotent (write →
+re-overlay → zero warnings); invalid-user-file guard (no flag, broken file
+left untouched on disk); the `createSessionSetup` wiring contract (fake
+backend: the write is scheduled on `pending_writes`, fires past the 1s
+debounce, and the rewritten file overlays warning-free). DESIGN → Input →
+Binding overlay semantics + Error Handling → three contexts updated (the
+old "no write-on-load" prose replaced by the repair-write rule).

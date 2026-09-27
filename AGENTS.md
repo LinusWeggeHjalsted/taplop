@@ -462,7 +462,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   the test-root scan skips it wholesale (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
   replay timeline: recordEvent/discardFutureTimeline/replayTo/
-  reconstructFromEventLog/validatePlayerAction), Screen
+  reconstructFromEventLog/validatePlayerAction, + the debounced settings
+  persistence: PendingWrite/writeSettingsToFile/markSettingsDirty), Screen
 - `src/types.zig` — all game data types, Entity with getEffective* methods
 - `src/events.zig` — event hierarchy (Meta, Super, Player, Level, SubLevel,
   Editor, PlayerInput, ReplayViewer categories)

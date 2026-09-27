@@ -2,9 +2,11 @@
 //! live, undoable world (current screen, level/hub, entities, player data).
 //! `GameStateHistory` wraps it with the append-only `event_history`, the
 //! snapshot/checkpoint rings, the reconstruction cache, and `SessionState`
-//! (transient view/input state off the undo timeline). All undo/redo/replay
-//! flows through `recordEvent`/`replayTo`/`restoreTo`/`reconstructFromEventLog`.
-//! See DESIGN → Replay & Side Effects, Architecture (Allocator model).
+//! (transient view/input state off the undo timeline, plus the debounced
+//! settings persistence — `PendingWrite`/`markSettingsDirty`). All undo/redo/
+//! replay flows through `recordEvent`/`replayTo`/`restoreTo`/`reconstructFromEventLog`.
+//! See DESIGN → Replay & Side Effects, Architecture (Allocator model), Input
+//! (Debounced writes).
 
 const std = @import("std");
 const utility_skills = @import("utility_skills.zig");
@@ -14,6 +16,7 @@ const deep_copy = @import("deep_copy.zig");
 const input = @import("input.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
+const writers = @import("writers.zig");
 const build_info = @import("build_info");
 
 const FileSource = file_source_mod.FileSource;
@@ -604,6 +607,25 @@ pub const PendingWrite = struct {
     dirty_since: u64,
     deadline: u64,
 };
+
+/// Write the current settings to `settings.txt` in the persistent dir
+/// (best-effort — errors are swallowed since a failed preferences write is
+/// not critical; the preference just doesn't persist). The settings
+/// `PendingWrite` writer fn, shared by preference-change persistence and
+/// the startup repair write. See DESIGN → Input → Debounced writes.
+pub fn writeSettingsToFile(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    const bytes = writers.writeSettings(history.settings, allocator) catch return;
+    defer allocator.free(bytes);
+    history.file_source.writeFile("settings.txt", bytes) catch return;
+}
+
+/// Mark settings as dirty for debounced persistence. Called after a tunable
+/// setting changes, and once at startup when the user-settings overlay
+/// repaired stale entries (see DESIGN → Input → Binding overlay semantics).
+pub fn markSettingsDirty(history: *GameStateHistory) void {
+    history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
+}
 
 /// The world point grabbed at the start of a camera-pan drag, in float tile
 /// units so the cursor tracks it at sub-tile precision (an integer-tile
