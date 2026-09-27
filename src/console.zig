@@ -110,6 +110,14 @@ pub const ParseOutcome = union(enum) {
     /// The line's shape is wrong; the message names the problem (printed by
     /// the reader thread).
     err: MessageText,
+
+    /// The err arm's message text (valid only when the outcome is `.err` —
+    /// the reader thread's stderr report). Pointer self: the returned slice
+    /// must point into the CALLER's outcome, not a by-value copy's dead
+    /// frame.
+    pub fn errorMessage(self: *const ParseOutcome) []const u8 {
+        return self.err.view();
+    }
 };
 
 // ============================================================
@@ -266,11 +274,16 @@ fn formattedMessage(comptime fmt: []const u8, args: anytype) ParseOutcome {
 pub const ConsoleQueue = struct {
     commands: [queue_capacity]ConsoleCommand = undefined,
     /// Total commands ever pushed (reader thread). Monotonic; slot index is
-    /// `write_counter % queue_capacity`.
-    write_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    /// `write_counter % queue_capacity`. u32 (wasm32 rejects 64-bit
+    /// atomics): the counter wraps, but the wrap-SAFE invariant is the
+    /// occupied count (`write_counter -% read_counter`), which stays
+    /// correct across wraparound because the capacity (64) is far below
+    /// 2^32.
+    write_counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// Total commands ever popped (game thread). Monotonic; slot index is
-    /// `read_counter % queue_capacity`.
-    read_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    /// `read_counter % queue_capacity` (see write_counter for the u32
+    /// wrap-safety reasoning).
+    read_counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// Idle frames remaining from a popped `wait` (game thread only).
     wait_frames_remaining: u32 = 0,
     /// Dump output goes here (stdout), wired by the native driver. Without a
@@ -290,13 +303,14 @@ pub const ConsoleQueue = struct {
     pub fn push(self: *ConsoleQueue, command: ConsoleCommand) void {
         const write = self.write_counter.load(.monotonic);
         // Full: the slot at `write % capacity` is still pending consumption.
-        while (write - self.read_counter.load(.acquire) >= queue_capacity) {
+        // Wrapping subtraction: the occupied count, valid across wraparound.
+        while (write -% self.read_counter.load(.acquire) >= queue_capacity) {
             std.Thread.yield() catch {};
         }
         self.commands[write % queue_capacity] = command;
         // Release: the slot write is visible to the consumer before the
         // counter that publishes it.
-        self.write_counter.store(write + 1, .release);
+        self.write_counter.store(write +% 1, .release);
     }
 
     /// Pop this frame's command (at most one per frame, game thread). A
@@ -314,7 +328,7 @@ pub const ConsoleQueue = struct {
         const command = self.commands[read % queue_capacity];
         // Release: the slot is consumed before the counter that frees it for
         // the producer's reuse.
-        self.read_counter.store(read + 1, .release);
+        self.read_counter.store(read +% 1, .release);
         if (command == .wait) {
             self.wait_frames_remaining = command.wait;
             return null;

@@ -8,8 +8,10 @@
 //! main.run with a RaylibBackend. Optional flags: `--replay <path>` loads a
 //! session log and reconstructs the session before the loop starts;
 //! `--diagnostics` activates the platform diagnostics log in ANY build
-//! (release included — dev-mode builds default active). See DESIGN →
-//! File System & IO + Logging & Replay + Platform Seam → Diagnostics.
+//! (release included — dev-mode builds default active). Also spawns the
+//! console reader thread (stdin — always on; see DESIGN → Input → Console
+//! input). See DESIGN → File System & IO + Logging & Replay + Platform Seam
+//! → Diagnostics.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -19,6 +21,7 @@ const RaylibBackend = @import("raylib/backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
 const crash_dump = @import("crash_dump.zig");
+const console = @import("console.zig");
 
 /// Panic handler: dumps the live session log before trapping. See
 /// crash_dump.zig.
@@ -100,11 +103,63 @@ pub fn main(init: std.process.Init.Minimal) void {
     if (replay_path) |path| {
         game.loadAndReconstructSession(&setup.frame_state.history, path, io);
     }
+    // Console input (stdin — always on, native only; see DESIGN → Input →
+    // Console input): the dump output writer goes on the queue first (the
+    // MAIN thread's Io — dumps are written from frame()), then the reader
+    // thread blocks on stdin lines and parses them into the queue. The
+    // game's frame drain (main.frame's applyFrameCommand call) consumes one
+    // command per frame. An stdin-less launch (double-click, the mac app
+    // bundle) is immediate EOF — the thread exits, zero cost.
+    setup.frame_state.console_queue.output = std.Io.File.stdout().writer(
+        io,
+        &setup.frame_state.console_queue.output_buffer,
+    );
+    const console_reader = std.Thread.spawn(
+        .{},
+        consoleReaderThread,
+        .{&setup.frame_state.console_queue},
+    ) catch null;
+    if (console_reader) |thread| {
+        // Detached: a quit while the reader is blocked on stdin leaves the
+        // thread to die with the process — joining would hang the exit
+        // waiting for input that never comes.
+        thread.detach();
+    } else {
+        std.debug.print("warning: could not spawn the console reader thread; stdin input disabled\n", .{});
+    }
+
     // Open the audio device + load sfx/music after settings are available.
     // No-op-safe if the device can't open (the game runs silent). See
     // DESIGN → Audio.
     backend.initAudio(setup.frame_state.history.settings);
     game.run(&backend, &setup);
+}
+
+/// The console reader thread: blocks on stdin lines, parses each into the
+/// session's console queue (the game's frame drain consumes one command per
+/// frame). EOF — or a read error / oversized line — exits the thread; parse
+/// errors report on stderr and keep reading. The queue outlives the thread
+/// (it lives on the SessionSetup, which lives in main's frame for the whole
+/// process).
+fn consoleReaderThread(queue: *console.ConsoleQueue) void {
+    // The reader thread's own Io (an Io handle is not shared across threads);
+    // libc malloc backs it (libc is linked via raylib).
+    var threaded_io = std.Io.Threaded.init(std.heap.c_allocator, .{});
+    defer threaded_io.deinit();
+    var read_buffer: [4096]u8 = undefined;
+    var stdin_reader = std.Io.File.stdin().reader(threaded_io.io(), &read_buffer);
+    while (true) {
+        const line = stdin_reader.interface.takeDelimiter('\n') catch |err| {
+            std.debug.print("console: stdin read ended ({s})\n", .{@errorName(err)});
+            break;
+        } orelse break; // EOF
+        const outcome = console.parseCommandLine(line);
+        switch (outcome) {
+            .skip => {},
+            .command => |command| queue.push(command),
+            .err => std.debug.print("console: {s}\n", .{outcome.errorMessage()}),
+        }
+    }
 }
 
 /// Scan argv for a string flag (`--name <value>` or `--name=<value>`) and

@@ -14637,3 +14637,55 @@ because only native spawns a reader; and the action cadence is keybind
 semantics (per-update-call through the drain), not the button path's
 once-per-frame guard — identical to a real key edge, deterministic either
 way.
+
+## Console input slice 2 — native wiring (reader thread + stdout dumps)
+
+The console channel's native side (settled design: DESIGN → Input → Console
+input; slice 1 — the raylib-free core — is the previous entry).
+
+- `native.main` wires the queue's dump output FIRST (the main thread's Io —
+  dumps are written from `frame()`, so the writer belongs to the main
+  thread's Io + the queue's own 4096-byte buffer), then spawns the reader
+  thread. Always on, no flag. Spawn failure warns on stderr and the game
+  runs without the console.
+- `consoleReaderThread`: its OWN `std.Io.Threaded` (an Io handle is not
+  shared across threads; libc malloc backs it), a 4096-byte read buffer,
+  `File.stdin().reader(...).interface.takeDelimiter('\n')` for lines (null
+  on EOF), `parseCommandLine` per line — skip skips, command pushes, err
+  reports on stderr. EOF / read error / oversized line exits the thread
+  (an stdin-less launch — double-click, the mac app bundle — is immediate
+  EOF, zero cost). Detached, never joined: a quit while blocked on stdin
+  leaves the thread to die with the process — joining would hang the exit
+  waiting for input that never comes.
+- **The wasm32 counter fix**: wasm32 rejects 64-bit atomics
+  (`std/atomic.zig: expected 32-bit integer type or smaller`), so the SPSC
+  ring's counters are u32 with wrapping arithmetic (`-%` / `+%`). Wrap-safe:
+  the ring's invariant is the occupied count (`write_counter -%
+  read_counter`), which stays correct across counter wraparound because the
+  capacity (64) is far below 2^32 — the classic ring-counter trick.
+- **The by-value-self dangling-slice bug (caught by the runtime smoke, not
+  the suite)**: `ParseOutcome.errorMessage` originally took `self` by
+  value, so the returned `.err.view()` pointed into errorMessage's own
+  dead stack frame — the subsequent `std.debug.print` read a frame that
+  print's own call machinery was concurrently reusing, producing
+  DETERMINISTIC mangled stderr (message fragments interleaved with print's
+  stack pointers). The headless suite passed the same path (the outcome
+  lived in a live caller frame there) — same bug class as the
+  `inputEventFor` by-value id fixed in slice 1: any function returning a
+  `.view()` slice must take the owner by POINTER. Rule of thumb for
+  `BoundedText`: views are only as alive as the caller's copy.
+- **Script edge discipline (verified live)**: a second `press` of a key
+  that was never `release`d produces NO edge — held-state persistence means
+  the key is (synthetically) held, exactly like a physical key held down.
+  Scripts that need repeated presses must press/release per press. This is
+  by design (chords across frames depend on it), not a bug.
+- Runtime checks (native, piped): `dump state/ui/bindings/history` to
+  stdout (bindings listing derived from the same list the picker iterates;
+  history = the session-log body); parse errors on stderr clean;
+  `press Escape`/`release Escape` open then close the options menu (dump
+  ui before/after); `quit` exits 0; `< /dev/null` runs until killed (EOF
+  path); web build compiles (WEB OK).
+
+Follow-up candidate: a real TAS fixture script (menu click-through via
+`move` + `press left`, a level start, `dump history` → a `--replay`
+fixture) once there's a need for one — the machinery is in place.

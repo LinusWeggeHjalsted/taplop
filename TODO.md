@@ -95,10 +95,10 @@ Test by running `zig build run` and clicking through.
         holds the handler-level regression pins: press Escape end-to-end;
         scroll with the options menu open moves the keybind offset) — DONE
         (see DONE.md, console input slice 1).
-  - [ ] 2. Native wiring: the reader thread (spawns + reads stdin lines,
-        EOF-safe), the stdout dump writer on the queue, always-on (no
-        flag). The per-frame drain + merge already landed in slice 1
-        (frame()'s `applyFrameCommand` call).
+  - [x] 2. Native wiring: the reader thread (spawns + reads stdin lines,
+        EOF-safe, detached), the stdout dump writer on the queue, always-on
+        (no flag) — DONE (see DONE.md, console input slice 2; includes the
+        wasm32 u32-atomic counter fix). Console input is COMPLETE.
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through
