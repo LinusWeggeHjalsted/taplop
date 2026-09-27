@@ -13,6 +13,7 @@ const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const file_source_mod = @import("file_source.zig");
+const console = @import("console.zig");
 
 const FileSource = file_source_mod.FileSource;
 const GameState = state.GameState;
@@ -37,6 +38,11 @@ pub const FrameState = struct {
     frame_arena: std.heap.ArenaAllocator,
     /// Last render time (real-clock microseconds) for the render-interval gate.
     last_render_time: u64,
+    /// The console input queue (stdin — see DESIGN → Input → Console input).
+    /// Empty without a reader thread (web, or a native launch without stdin,
+    /// which is immediate EOF); the native driver spawns the reader and wires
+    /// the dump output writer.
+    console_queue: console.ConsoleQueue = .{},
 };
 
 /// Collected startup warnings (one per config file that fell back to its

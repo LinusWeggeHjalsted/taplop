@@ -89,14 +89,16 @@ Test by running `zig build run` and clicking through.
   path). Console sessions produce ordinary session logs → valid
   `--replay` fixtures. Full settled design: DESIGN → Input → Console
   input. Slices:
-  - [ ] 1. `src/console.zig` (raylib-free): command parser
-        (press/release/move/scroll/type/action/wait/dump/quit), the
-        queue, the merge helper, the applyAction injection, the dump
-        projections + unit tests — including the regression pins this
-        unlocks (press Escape end-to-end; scroll with the options menu
-        open moves the keybind offset, at the handler level).
-  - [ ] 2. Native wiring: the reader thread, the per-frame queue drain,
-        always-on stdin (EOF-safe), stdout dumps.
+  - [x] 1. `src/console.zig` (raylib-free): command parser, queue (SPSC
+        ring — no Io-free mutex in 0.16 std), merge helper, applyAction
+        injection, dump projections + unit tests (`src/input_tests_console.zig`
+        holds the handler-level regression pins: press Escape end-to-end;
+        scroll with the options menu open moves the keybind offset) — DONE
+        (see DONE.md, console input slice 1).
+  - [ ] 2. Native wiring: the reader thread (spawns + reads stdin lines,
+        EOF-safe), the stdout dump writer on the queue, always-on (no
+        flag). The per-frame drain + merge already landed in slice 1
+        (frame()'s `applyFrameCommand` call).
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through

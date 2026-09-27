@@ -1316,21 +1316,40 @@ An stdin-less launch (double-click, the mac app bundle) is immediate EOF —
 the reader thread exits, zero cost.
 
 - **Injection mirrors the engine's own synthetic-input model.** A reader
-  thread blocks on stdin lines → parses → a mutex-guarded queue; the native
-  driver drains ONE COMMAND PER FRAME and merges its events into that
-  frame's `PlatformInput` (right after the raylib poll) — the same
-  per-frame, per-event cadence the synthetic key-repeat machinery uses.
+  thread blocks on stdin lines → parses → a queue; the frame driver (the
+  shared `frame()`, right after the backend poll — native-only in effect,
+  because only the native driver spawns a reader; on web the queue stays
+  empty and the drain is a no-op) drains ONE COMMAND PER FRAME and merges
+  its events into that frame's `PlatformInput` — the same per-frame,
+  per-event cadence the synthetic key-repeat machinery uses. The queue is
+  a single-producer single-consumer ring with atomic counters, not a
+  mutex: Zig 0.16's std locks need an `Io` handle on BOTH threads and the
+  game thread has none to give inside `frame()`; a SPSC ring needs none,
+  and a full queue blocks the reader (yield-spin backpressure — a piped
+  script faster than the drain can never drop or reorder commands).
   Everything downstream is the identical pipeline (`translateInput`,
   held-state tracking, context gating, `checkAction`, `frame()`'s gate
   ordering, drains, recorded events) — no parallel path, no different
   rate, so console-driven gameplay is identical to played gameplay.
+  Merged string payloads (key ids, typed text) are duped into the frame
+  arena — queue slots are reusable reader-thread memory, so merged events
+  must not alias them.
   Chords work across frames (`press ControlLeft`, then `press KeyQ` next
   frame — held-state persistence supplies the modifier, like a human
   pressing across a frame boundary); `release <id>` completes the held
   model (a key never released stays held — like holding a physical key).
-- **Actions inject at the button seam.** `action <name>` runs
-  `applyAction` on the frame's PlayerInput — literally the button-click
-  path (context-free by design; the consumption sites gate themselves).
+- **Actions inject at the button seam, with KEYBIND firing cadence.**
+  `action <name>` runs `applyAction` on the frame's PlayerInput — the
+  same call the button-click path uses (context-free by design; the
+  consumption sites gate themselves). ONE difference from a button click:
+  the button path is once-per-frame (the release block clears
+  `session.pressed_button`, so a second drain iteration can't re-fire),
+  while the injected flag rides the frame's PlayerInput through every
+  `update()` call in the drain — exactly the semantics a real key edge
+  has (`translateInput` sets the flag once; the drain passes the same
+  by-value copy to each `update()`; `handleAnytimeInput` runs per call).
+  Deterministic either way; a script that wants to avoid landing on a
+  multi-event drain frame spaces its commands with `wait`.
 - **The command set** (human readable + writable, both directions):
   `press <id>` / `release <id>` (any producible input id — the
   `producible_key_ids`/`producible_mouse_ids` vocabulary; an unknown id
@@ -1340,7 +1359,9 @@ the reader thread exits, zero cost.
   the normal paths: `press Enter` or the M2 click rule), `action <name>`,
   `wait <n>` (skip n frames — the pacing primitive), `dump <thing>`
   (state / ui / settings / bindings / history — plain text on stdout),
-  `quit`.
+  `quit`. Blank lines and `#` comments skip — scripts are annotatable.
+  Verbs, ids, action names, and dump kinds are exact-match (they name
+  enum values the engine consumes).
 - **Console sessions are ordinary sessions**: injected events produce
   normal recorded events, so a console-driven session's log is a valid
   `--replay` artifact — scripted setup doubles as fixture generation.
@@ -1354,7 +1375,13 @@ the reader thread exits, zero cost.
   territory.
 - Key files: `src/console.zig` (raylib-free: parser + queue + merge +
   applyAction injection + dump projections — unit-tested in the test
-  root), the reader thread + the per-frame drain in `src/native.zig`.
+  root), the per-frame drain + action fold in `main.frame` (the
+  `applyFrameCommand` call right after the backend poll, the
+  `foldInjectedActions` call right after `translateInput`), and the
+  reader thread + stdout writer wiring in `src/native.zig`. Dump output
+  is stored on the queue as the concrete `File.Writer` parent (the
+  interface's vtable resolves its parent via `fieldParentPtr`, so an
+  interface copy would dangle).
 
 ## Error Handling
 

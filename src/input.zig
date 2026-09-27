@@ -82,6 +82,12 @@ pub const PlatformInput = struct {
     /// text field is focused; the backend drains the queue unconditionally
     /// so it can't back up. See DESIGN → UI Framework → Text input widget.
     text_characters: []const u8 = &.{},
+    /// Semantic actions injected by the platform layer itself (the console
+    /// input channel's `action` command — see DESIGN → Input → Console
+    /// input): folded into the frame's PlayerInput via `applyAction` right
+    /// after `translateInput`, the same seam button clicks use. Empty for
+    /// every hardware frame; only the console merge fills it.
+    actions: []const types.Action = &.{},
 };
 
 // ============================================================

@@ -27,6 +27,7 @@ const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 const file_source_mod = @import("file_source.zig");
 const crash_dump = @import("crash_dump.zig");
+const console = @import("console.zig");
 
 const FileSource = file_source_mod.FileSource;
 
@@ -543,7 +544,19 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     applyRenderResolutionSetting(backend, history);
 
-    const platform_input = backend.pollInput();
+    const backend_input = backend.pollInput();
+    // Console input (stdin — a scripted/TAS channel): drain one command per
+    // frame and merge it into this frame's PlatformInput, so injected input
+    // rides the identical pipeline as hardware input from here down (see
+    // DESIGN → Input → Console input). No reader thread (web, or a
+    // stdin-less native launch) → empty queue → the backend input passes
+    // through unchanged.
+    const platform_input = console.applyFrameCommand(
+        &frame_state.console_queue,
+        backend_input,
+        frame_state.frame_arena.allocator(),
+        history,
+    );
     // Camera is derived (centered on the player + clamped to the view
     // region — see DESIGN → Platform Seam → Camera clamping), computed
     // each frame so input (screenToTile) and rendering stay in sync.
@@ -577,7 +590,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         .main_menu => .{ .anytime = true, .menu = true },
         .replay_viewer => .{ .anytime = true },
     };
-    const player_input = input.translateInput(
+    var player_input = input.translateInput(
         platform_input,
         &history.session.input_state,
         history.settings,
@@ -598,6 +611,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             null,
         active_contexts,
     );
+    // Console `action <name>` commands (merged into PlatformInput.actions
+    // above): fold via applyAction — the same seam button clicks use.
+    // Keybind-path firing cadence (the flag rides the frame's PlayerInput
+    // through the drain), NOT the button path's pressed_button guard. See
+    // DESIGN → Input → Console input.
+    console.foldInjectedActions(&player_input, platform_input);
 
     // Text-field keyboard resolution (Enter commits, Escape discards). Once
     // per frame HERE, before the drain — update() re-runs per drain

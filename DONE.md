@@ -14577,3 +14577,63 @@ is an ordinary capturable key). Tests pin both directions.
 Docs: the convention bullet lives in DESIGN → Input (where a new modal
 state's builder will find it); the Settings screen's pending paragraph
 points at it.
+
+## Console input slice 1 — src/console.zig (parser, SPSC queue, merge, action fold, dumps)
+
+The scripted/TAS stdin channel's raylib-free core (settled design:
+DESIGN → Input → Console input; slice 2 — the native reader thread + stdout
+writer wiring — is next).
+
+- `ConsoleCommand` union over the full vocabulary
+  (press/release/move/scroll/type/action/wait/dump/quit); payloads are
+  fixed-buffer bounded strings (`BoundedText`), so parse→queue→merge
+  allocates nothing — the only allocations are the drain-time frame-arena
+  dupes on the game thread.
+- Parser: exact-match verbs/ids/actions/dump kinds; unknown input ids error
+  with the dead-binding advisory's message shape; blank lines + `#` comments
+  skip (scripts are annotatable); `type`'s payload is the rest of the line
+  verbatim (the verb split consumed exactly one separator, so a doubled
+  space types a leading space).
+- The queue is a single-producer single-consumer ring with atomic
+  monotonic counters — NOT a mutex. Zig 0.16 removed the self-contained
+  `std.Thread.Mutex`: std locks (`std.Io.Mutex`/`Condition`) need an `Io`
+  handle on BOTH threads, and the game thread has none inside `frame()`.
+  An SPSC ring needs none. Full-queue backpressure is a yield-spin in the
+  reader (a piped script faster than the drain can never drop or reorder
+  commands; the reader paces the game).
+- `applyFrameCommand` (frame()'s drain, called right after the backend
+  poll): input commands merge into the frame's `PlatformInput` (string
+  payloads duped into the frame arena — queue slots are reusable
+  reader-thread memory, so merged events must not alias them); `quit` sets
+  `session.quit_requested`; `dump` writes via `writeDumpText`. The action
+  fold (`foldInjectedActions`, called right after `translateInput`) runs
+  `applyAction` — the same call the button path uses, with KEYBIND firing
+  cadence (see DESIGN for the pressed_button-guard difference).
+- `PlatformInput` gained `actions: []const types.Action = &.{}` — the
+  semantic-action seam the console merge fills; empty for every hardware
+  frame. `FrameState` gained the `console_queue` (empty/no-op without a
+  reader — web).
+- Dump output is stored as the concrete `std.Io.File.Writer` PARENT, not
+  the interface: the vtable resolves the parent via `fieldParentPtr`, so an
+  interface copy would dangle (a segfault the first test iteration caught).
+- Dumps: state (screen/world/stack/history/waiting/entities), ui (overlay
+  flags, scroll offsets, tile cursor, camera pan), settings (the writer's
+  own full-file text), bindings (one line per binding, count derived from
+  the same list), history (the session-log body via `writeEventLog`).
+- Tests: console.zig inline tests (parser table incl. every error message,
+  queue roundtrip + wait pacing, merge correctness + the arena-ownership
+  pin, action fold, dumps, `writeDumpText` through an Allocating writer
+  passed by real parent pointer) + `src/input_tests_console.zig`
+  (handler-level pins: `press Escape` closes the options menu end-to-end
+  through merge → translateInput → handleAnytimeInput; `scroll 1` with the
+  options menu + keybinds tab open moves `keybind_scroll_offset`;
+  `action escape` via the fold; chords across frames via held-state
+  persistence; release completes the held model; quit).
+
+Two design wrinkles settled before code (recorded in DESIGN): the per-frame
+drain lives in the shared `frame()` (the poll happens inside it, and the
+action fold needs the frame's PlayerInput there) — native-only in effect
+because only native spawns a reader; and the action cadence is keybind
+semantics (per-update-call through the drain), not the button path's
+once-per-frame guard — identical to a real key edge, deterministic either
+way.
