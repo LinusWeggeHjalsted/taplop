@@ -15007,3 +15007,39 @@ Files:
 
 DESIGN → Architecture → Level Editor → Active-tool model's selection-MOVE
 paragraph carries the settled semantics.
+
+## Level-end flag: the banner waves only while no active enemies remain
+
+The level-end flag previously always rendered the wavy animated banner over
+the pole, which read as "the exit is open" even while enemies remained — but
+levels can only be completed when no active enemies are left. Now the level
+screen renders the banner only while the level is completable; with active
+enemies up, the pole stands bare. The banner is the completability signal:
+it waves ⇔ stepping on the exit would end the level. Hub mission-start and
+editor '=' markers keep waving (they're not levels — no enemies concept).
+
+The rule is deliberately ONE predicate: the win condition
+(`check_level_end`) and the attack-step auto-skip each carried an identical
+inline "active enemies" loop (skip entity 0, `current_health > 0`,
+`is_active`, `team != player team`); those two loops were extracted into
+`Level.hasActiveEnemies()` (types.zig) and the flag gate uses the same
+method. The flag therefore cannot drift from the actual win rule — they are
+the same code. Defensive guard: an empty entities slice returns false
+(levels always carry the player first, but the method must not read
+`entities[0]` unguarded).
+
+Plumbing was already in place: `LevelEndDrawable.banner_source_rectangle`
+was an optional ("null when there is no banner") that both the renderer and
+the occlusion-inset compositing already handle, so the change is
+`levelEndDrawable` gaining a `banner_visible` parameter (nulls the rect when
+false) with the level-screen call site passing `!level.hasActiveEnemies()`;
+hub and editor call sites pass `true`.
+
+Tests: `Level.hasActiveEnemies` unit test (alive+active+hostile, and the
+awkward negatives — dead, inactive, same-team helper, player-only, empty);
+the flag frame test gains the `banner_visible = false` → null case; a new
+view() test pins the level-screen gating end-to-end (active enemy → banner
+null; dead enemy / no enemies → waving; hub marker always waving).
+
+DESIGN → Animation (the flag banner paragraph) and the win-condition prose
+(`check_level_end`) carry the settled rule.

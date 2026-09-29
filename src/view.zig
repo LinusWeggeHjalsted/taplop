@@ -110,7 +110,7 @@ pub fn view(
             ground_entries.append(frame_allocator, .{
                 .sort_y = end_position.y,
                 .sort_x = end_position.x,
-                .drawable = .{ .level_end = levelEndDrawable(end_position, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps) },
+                .drawable = .{ .level_end = levelEndDrawable(end_position, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps, !level.hasActiveEnemies()) },
             }) catch @panic("failed to append level-end entry");
         }
         // Level entities: build a pointer slice for the unified collector.
@@ -139,7 +139,7 @@ pub fn view(
             ground_entries.append(frame_allocator, .{
                 .sort_y = exit.position.y,
                 .sort_x = exit.position.x,
-                .drawable = .{ .level_end = levelEndDrawable(exit.position, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps) },
+                .drawable = .{ .level_end = levelEndDrawable(exit.position, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps, true) },
             }) catch @panic("failed to append mission-start entry");
         }
         // Hub entities: the player + NPCs as a pointer slice.
@@ -1372,6 +1372,7 @@ fn levelEndDrawable(
     zoom: f32,
     animation_clock_microseconds: u64,
     animation_fps: u32,
+    banner_visible: bool,
 ) types.LevelEndDrawable {
     const tile_top_left = tileToScreen(tile, camera, zoom);
     const tile_pixels = input.tile_size_pixels * zoom;
@@ -1394,12 +1395,17 @@ fn levelEndDrawable(
         },
         .color = worldGradientColor(active_theme, 5),
         .banner_color = worldGradientColor(active_theme, 0),
-        .banner_source_rectangle = .{
+        // The banner waves only while the level is completable — on the
+        // level screen `!level.hasActiveEnemies()`, the SAME rule the win
+        // condition checks (`Level.hasActiveEnemies`); hub mission-start
+        // and editor markers always wave (not levels — no enemies).
+        // See DESIGN → Animation.
+        .banner_source_rectangle = if (banner_visible) .{
             .x = @as(i32, @intCast(frame_index)) * flag_banner_frame_width,
             .y = 0,
             .width = flag_banner_frame_width,
             .height = flag_banner_frame_height,
-        },
+        } else null,
     };
 }
 
@@ -2944,7 +2950,7 @@ fn buildEditorScene(
         ground_entries.append(allocator, .{
             .sort_y = end_position.y,
             .sort_x = end_position.x,
-            .drawable = .{ .level_end = levelEndDrawable(end_position, active_theme, camera, camera_zoom, animation_clock, animation_fps) },
+            .drawable = .{ .level_end = levelEndDrawable(end_position, active_theme, camera, camera_zoom, animation_clock, animation_fps, true) },
         }) catch @panic("failed to append editor level-end entry");
     }
 
@@ -3042,7 +3048,7 @@ test "flag banner: frame advances with the animation clock and wraps" {
         .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
     };
 
-    const d0 = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 0, 8);
+    const d0 = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 0, 8, true);
     const rect0 = d0.banner_source_rectangle.?;
     try std.testing.expectEqual(@as(i32, 0), rect0.x);
     try std.testing.expectEqual(@as(i32, 0), rect0.y);
@@ -3050,24 +3056,140 @@ test "flag banner: frame advances with the animation clock and wraps" {
     try std.testing.expectEqual(@as(i32, 512), rect0.height);
 
     // 500ms / 125ms = frame 4.
-    const d4 = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 8);
+    const d4 = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 8, true);
     try std.testing.expectEqual(@as(i32, 4 * 256), d4.banner_source_rectangle.?.x);
 
     // 1000ms = 8 frames elapsed → wraps to frame 0.
-    const d_wrap = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 1_000_000, 8);
+    const d_wrap = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 1_000_000, 8, true);
     try std.testing.expectEqual(@as(i32, 0), d_wrap.banner_source_rectangle.?.x);
 
     // fps=16 → frame_duration 62.5ms (integer div → 62ms); 500_000/62 = 8064
     // frames elapsed, % 8 = 0. Just assert it doesn't divide-by-zero and
     // produces a valid frame index (the exact frame at a fractional-duration
     // boundary isn't worth pinning).
-    const d_fast = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 16);
+    const d_fast = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 16, true);
     try std.testing.expect(d_fast.banner_source_rectangle.?.x >= 0);
     try std.testing.expect(d_fast.banner_source_rectangle.?.x < 8 * 256);
 
     // fps=0 is treated as 8 (no divide-by-zero).
-    const d_zero = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 0);
+    const d_zero = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 0, true);
     try std.testing.expectEqual(@as(i32, 4 * 256), d_zero.banner_source_rectangle.?.x);
+
+    // banner_visible = false → NO banner (pole only): the level-screen
+    // flag while active enemies remain — see the level-end flag test for
+    // the view() gating.
+    const d_hidden = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 8, false);
+    try std.testing.expect(d_hidden.banner_source_rectangle == null);
+}
+
+test "level-end flag: the banner waves only while no active enemies remain" {
+    // The banner is the completability signal (DESIGN → Animation): on the
+    // level screen it renders only while `Level.hasActiveEnemies` is false
+    // — the SAME rule the win condition checks, so the flag can never lie
+    // about completability. The pole always renders; hub mission-start
+    // markers always wave (not levels — no enemies).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const camera_for = struct {
+        fn call(state__: *const GameState) types.Camera {
+            return computeCamera(state__, 1.0, null, null);
+        }
+    }.call;
+    const runView = struct {
+        fn call(
+            state__: *const GameState,
+            session__: *state.SessionState,
+            arena__: std.mem.Allocator,
+            harness__: *test_harness.Harness,
+        ) types.ViewState {
+            return view(
+                state__,
+                session__,
+                .{ .input_bindings = &.{} },
+                harness__.color_theme_definitions,
+                &harness__.weapon_type_definitions,
+                .{
+                    .camera = camera_for(state__),
+                    .camera_zoom = 1.0,
+                    .event_history = &.{},
+                    .level_start_index = null,
+                    .current_event_index = 0,
+                    .frame_allocator = arena__,
+                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .sprite_bounds = .{},
+                    .can_undo = false,
+                    .can_redo = false,
+                },
+            );
+        }
+    }.call;
+    const levelEndMarker = struct {
+        fn call(view_state: types.ViewState) ?types.LevelEndDrawable {
+            for (view_state.ground_drawables) |drawable| switch (drawable) {
+                .level_end => |marker| return marker,
+                else => {},
+            };
+            return null;
+        }
+    }.call;
+
+    // An alive, active, hostile enemy → pole only (the banner is null).
+    {
+        const enemy = types.Entity{ .team = 1, .is_active = true };
+        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{ .{ .x = 0, .y = 0 } });
+        state_.level.?.level_end = .{ .x = 2, .y = 2 };
+        var session = state.SessionState{};
+        const view_state = runView(&state_, &session, arena, &harness);
+        const marker = levelEndMarker(view_state);
+        try std.testing.expect(marker != null);
+        try std.testing.expect(marker.?.banner_source_rectangle == null);
+    }
+    // The enemy dead → the banner waves.
+    {
+        var enemy = types.Entity{ .team = 1, .is_active = true };
+        enemy.current_health = 0;
+        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{ .{ .x = 0, .y = 0 } });
+        state_.level.?.level_end = .{ .x = 2, .y = 2 };
+        var session = state.SessionState{};
+        const view_state = runView(&state_, &session, arena, &harness);
+        const marker = levelEndMarker(view_state);
+        try std.testing.expect(marker != null);
+        try std.testing.expect(marker.?.banner_source_rectangle != null);
+    }
+    // No enemies at all → the banner waves.
+    {
+        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{ .{ .x = 0, .y = 0 } });
+        state_.level.?.level_end = .{ .x = 2, .y = 2 };
+        var session = state.SessionState{};
+        const view_state = runView(&state_, &session, arena, &harness);
+        const marker = levelEndMarker(view_state);
+        try std.testing.expect(marker != null);
+        try std.testing.expect(marker.?.banner_source_rectangle != null);
+    }
+    // Hub mission-start markers always wave (not levels — no enemies).
+    {
+        const exits = [_]types.MissionExit{.{ .mission_id = "m1", .position = .{ .x = 1, .y = 1 } }};
+        const state_ = GameState{
+            .screen = .hub,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = .{ .mission_exits = &exits },
+        };
+        var session = state.SessionState{};
+        const view_state = runView(&state_, &session, arena, &harness);
+        const marker = levelEndMarker(view_state);
+        try std.testing.expect(marker != null);
+        try std.testing.expect(marker.?.banner_source_rectangle != null);
+    }
 }
 
 test "skill range outline: range/radius/none/drag" {

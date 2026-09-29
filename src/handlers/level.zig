@@ -429,17 +429,7 @@ pub fn handleLevelEvent(
             // is carried through the orchestrator so the override is
             // replay-safe (recorded in the event).
             if (history.settings.auto_skip_attack_step_out_of_combat and !attack.force_attack_step) {
-                var has_active_enemies = false;
-                for (level.entities, 0..) |entity, entity_index| {
-                    if (entity_index == 0) continue;
-                    if (entity.current_health == 0) continue;
-                    if (!entity.is_active) continue;
-                    if (entity.team != level.entities[0].team) {
-                        has_active_enemies = true;
-                        break;
-                    }
-                }
-                if (!has_active_enemies) {
+                if (!level.hasActiveEnemies()) {
                     pushEvents(current, &.{
                         .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
                     }, allocator);
@@ -731,17 +721,7 @@ pub fn handleSubLevelEvent(
             const player = level.entities[0];
             if (level.level_end) |level_end| {
                 if (player.position.x == level_end.x and player.position.y == level_end.y) {
-                    var has_active_enemies = false;
-                    for (level.entities, 0..) |entity, entity_index| {
-                        if (entity_index == 0) continue;
-                        if (entity.current_health == 0) continue;
-                        if (!entity.is_active) continue;
-                        if (entity.team != player.team) {
-                            has_active_enemies = true;
-                            break;
-                        }
-                    }
-                    if (!has_active_enemies) {
+                    if (!level.hasActiveEnemies()) {
                         pushEvents(current, &.{
                             .{ .meta_event = .{ .end_level = .{ .continuation = .default } } },
                         }, allocator);

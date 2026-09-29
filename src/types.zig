@@ -2507,6 +2507,24 @@ pub const Level = struct {
     highlighted_tiles: []const Vector2 = &.{},
     prepared_skill: ?SkillId = null,
     turn_phase: ?TurnPhase = null,
+
+    /// Does the level still hold active enemies — anything alive,
+    /// active, and on a team other than the player's (entity 0)? The one
+    /// completability rule: shared by the win condition
+    /// (`check_level_end`), the attack-step auto-skip, and the flag
+    /// banner rendering (the banner waves only while this is false —
+    /// see DESIGN → Animation).
+    pub fn hasActiveEnemies(self: *const Level) bool {
+        if (self.entities.len == 0) return false;
+        const player_team = self.entities[0].team;
+        for (self.entities, 0..) |entity, entity_index| {
+            if (entity_index == 0) continue;
+            if (entity.current_health == 0) continue;
+            if (!entity.is_active) continue;
+            if (entity.team != player_team) return true;
+        }
+        return false;
+    }
 };
 
 pub const MissionExit = struct {
@@ -2527,6 +2545,49 @@ pub const Hub = struct {
 pub const NPC = struct {
     entity: Entity,
 };
+
+test "Level.hasActiveEnemies: alive + active + hostile; dead / inactive / same-team are not" {
+    // The one completability rule: an enemy counts only when ALL THREE
+    // hold — alive, active, hostile team. The win condition
+    // (`check_level_end`), the attack-step auto-skip, and the flag banner
+    // gate on it (see the method's doc).
+    const enemy = Entity{ .team = 1, .is_active = true };
+
+    // Alive + active + hostile → true.
+    {
+        const entities = [_]Entity{ .{}, enemy };
+        try std.testing.expect((Level{ .entities = &entities }).hasActiveEnemies());
+    }
+    // Dead → not an active enemy.
+    {
+        var dead = enemy;
+        dead.current_health = 0;
+        const entities = [_]Entity{ .{}, dead };
+        try std.testing.expect(!(Level{ .entities = &entities }).hasActiveEnemies());
+    }
+    // Inactive → not an active enemy.
+    {
+        var inactive = enemy;
+        inactive.is_active = false;
+        const entities = [_]Entity{ .{}, inactive };
+        try std.testing.expect(!(Level{ .entities = &entities }).hasActiveEnemies());
+    }
+    // Same team as the player (a helper) → not an enemy.
+    {
+        var helper = enemy;
+        helper.team = 0;
+        const entities = [_]Entity{ .{}, helper };
+        try std.testing.expect(!(Level{ .entities = &entities }).hasActiveEnemies());
+    }
+    // Only the player → false; no entities at all → false (defensive —
+    // levels always carry the player first, but the method must not read
+    // entities[0] on an empty slice).
+    {
+        const entities = [_]Entity{.{}};
+        try std.testing.expect(!(Level{ .entities = &entities }).hasActiveEnemies());
+        try std.testing.expect(!(Level{ .entities = &.{} }).hasActiveEnemies());
+    }
+}
 
 // ============================================================
 // View state — output of view(), input to renderer

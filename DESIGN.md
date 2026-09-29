@@ -606,7 +606,12 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   The flag banner (`world/flag.png`, 8 frames of 256×512, same pivot as the
   pole) is drawn over `world/flag_pole` at the same screen position via
   `LevelEndDrawable.banner_source_rectangle`. Used for both level-end and hub
-  mission-start markers.
+  mission-start markers. On the LEVEL screen the banner is the
+  completability signal: it renders only while `Level.hasActiveEnemies` is
+  false — the SAME rule the win condition checks, so the waving banner
+  means "stepping on the exit would end the level" and the bare pole means
+  "enemies remain". Hub mission-start and editor markers always wave (not
+  levels — no enemies).
 - **One-shot anims** (attack swings, hit flashes, death dissolves): the
   trigger lives in **event handlers** — exactly where one-shot sounds live
   (see Audio). A handler calls `session.queueAnim(allocator, PendingAnim{
@@ -2708,7 +2713,9 @@ the game cheating):
   may be "activated" by enemy attacks — harmless by convention (loops skip
   entity 0).
   `check_level_end` (no payload) is the win condition: if the player is on
-  `level_end` and no active enemies remain → push `end_level`. Pushed after
+  `level_end` and no active enemies remain → push `end_level` (the shared
+  predicate `Level.hasActiveEnemies` — the same one the attack-step
+  auto-skip and the flag banner gate on; see Animation). Pushed after
   `aggro_check` (LIFO → runs after, so newly-aggroed enemies are counted)
   and after `death` (killing the last enemy while standing on the exit ends
   the level without an extra move). Not pushed at level start (player spawn
