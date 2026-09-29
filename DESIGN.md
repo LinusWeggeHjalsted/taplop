@@ -4511,7 +4511,10 @@ draws BEFORE the base, showing through its transparent pixels (e.g. the
 trees' `grass_back`: grass meant to sit behind the trunk). The writer emits
 `behind true` only when set; the picker's ADD commit adopts a registry
 prefab's authored draw side for the stem, a re-pick keeps the layer's, and
-the color-swatch commit keeps the whole layer (behind included).
+the color-swatch commit keeps the whole layer (behind included). The
+inspector's layer slot row carries a Back/Front toggle (the draw side at a
+glance next to the stem) — a flip commits the whole layer through the set
+event, the color swatch's commit shape.
 
 **Sprite id convention: bare stems.** All config `sprite` values store the
 BARE STEM (e.g. `tree_1`, `skeleton_1`, `player`), not the full asset path.

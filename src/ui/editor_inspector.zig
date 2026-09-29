@@ -1824,6 +1824,7 @@ fn buildEditorInspectorContent(
                     layer_index,
                     .open_editor_entity_layer_picker,
                     .delete_editor_entity_layer,
+                    null,
                     button_color,
                     control_rect,
                     active_theme,
@@ -1891,6 +1892,7 @@ fn buildEditorInspectorContent(
                     layer_index,
                     .open_editor_decoration_layer_picker,
                     .delete_editor_decoration_layer,
+                    decoration_context.?.type_definition.layers[layer_index].behind,
                     button_color,
                     control_rect,
                     active_theme,
@@ -2788,6 +2790,10 @@ fn emitInspectorLayerRow(
     layer_index: u32,
     open_action: types.Action,
     delete_action: types.Action,
+    /// The layer's current draw side (decoration layers — Back/Front
+    /// button), or null when the row's kind has no draw side (entity
+    /// layers are overlays only).
+    behind: ?bool,
     button_color: Color,
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
@@ -2844,6 +2850,29 @@ fn emitInspectorLayerRow(
         button_color,
         active_theme.lightest,
     );
+
+    // The draw-side toggle (decoration layers only): fills the row's
+    // remaining space after Delete — the label carries the state
+    // ("Back" draws before the base, "Front" over it).
+    if (behind) |current_behind| {
+        const behind_rect: Rectangle = .{
+            .x = delete_rect.x + delete_rect.width + ui_gap,
+            .y = control_rect.y,
+            .width = control_rect.x + control_rect.width - (delete_rect.x + delete_rect.width + ui_gap),
+            .height = control_rect.height,
+        };
+        try emitInspectorLayerButton(
+            elements,
+            allocator,
+            font_metrics,
+            behind_rect,
+            if (current_behind) "Back" else "Front",
+            .toggle_editor_decoration_layer_behind,
+            layer_index,
+            button_color,
+            active_theme.lightest,
+        );
+    }
 }
 
 /// A panel-backed layer button with a centered label (Delete / Pick

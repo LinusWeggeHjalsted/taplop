@@ -15306,3 +15306,23 @@ pins add-adoption + re-pick/color-swatch preservation end-to-end; the
 writer test pins `behind true` emission (exactly once, after
 color_index); the session-log pins cover the flat + indexed encodings
 of the new field.
+
+## Editor: the per-layer Back/Front draw-side toggle in the inspector
+
+The decoration layer's slot row gained a draw-side toggle, filling the
+row's dead space after Delete: a small "Back"/"Front" button whose label
+carries the current state (Back = draws before the base, Front =
+overlay). A flip commits the WHOLE layer through the existing
+`player_set_editor_decoration_layer` event (sprite + color + dims kept,
+behind flipped) — the color swatch's commit shape, so no new events and
+no session-log format change; always changes (a flip), so no
+would-change gate.
+
+Wiring: `toggle_editor_decoration_layer_behind` (button-only; classified
+editor-only in actionBindingContexts), applyAction → options_action,
+one arm in handleAnytimeInput. `emitInspectorLayerRow` takes the layer's
+current `behind` (null for entity layers — they have no draw side, so
+the row stays sprite + Delete). The handler test pins the flip end-to-
+end (behind flips, sprite + color kept); DESIGN → Decorations &
+Footprint records the toggle alongside the behind key's other commit
+semantics.

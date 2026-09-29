@@ -2228,6 +2228,29 @@ pub fn handleAnytimeInput(
                     .pixel_dims = current_layer.pixel_dims,
                 } });
             },
+            // A decoration layer's draw-side toggle (the Back/Front button
+            // on the layer's slot row): flip the layer's `behind` flag,
+            // committing the WHOLE layer value through the set event
+            // (sprite + color + dims kept — the color swatch's commit
+            // shape). Always changes (a flip), so no would-change gate.
+            .toggle_editor_decoration_layer_behind => {
+                const layer_index = anytime.clicked_editor_layer orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .item_type, .player => return,
+                };
+                if (layer_index >= editor.decoration_types[type_id].layers.len) return;
+                const current_layer = editor.decoration_types[type_id].layers[layer_index];
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
+                    .type_id = type_id,
+                    .layer_index = layer_index,
+                    .sprite = current_layer.sprite,
+                    .color_index = current_layer.color_index,
+                    .behind = !current_layer.behind,
+                    .pixel_dims = current_layer.pixel_dims,
+                } });
+            },
             // Inspector displays-weapons toggle: flip the edited type's flag.
             // Always changes (a flip), so no would-change gate.
             .toggle_editor_entity_displays_weapons => {

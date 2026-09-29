@@ -7256,6 +7256,17 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     runToIdle(&history);
     // The color swatch commit kept the whole layer — behind included.
     try testing.expect(history.current_state.editor.?.decoration_types[0].layers[0].behind);
+    // The draw-side toggle (the Back/Front button): flips behind,
+    // committing the whole layer (sprite + color kept).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_decoration_layer_behind,
+        .clicked_editor_layer = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expect(!definition.layers[0].behind);
+    try testing.expectEqualStrings("tree_1", definition.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_decoration_layer,
         .clicked_editor_layer = 1,

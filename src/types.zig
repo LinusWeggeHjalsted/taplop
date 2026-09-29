@@ -458,6 +458,10 @@ pub const Action = enum {
     toggle_editor_entity_displays_weapons,
     toggle_editor_entity_keep_original_colors,
     toggle_editor_decoration_keep_original_colors,
+    // The inspector's per-layer draw-side toggle (decoration layers): flip
+    // the layer's `behind` flag (back layers draw before the base). The
+    // layer index rides in `AnytimeInput.clicked_editor_layer`.
+    toggle_editor_decoration_layer_behind,
     // An inspector weapon-type cell was clicked (create the slot's weapon
     // while empty, or retype in place keeping name/damage). The hand
     // (`GearSlot`, main/off) rides in `AnytimeInput.clicked_editor_gear_slot`
@@ -955,6 +959,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .toggle_editor_entity_displays_weapons,
         .toggle_editor_entity_keep_original_colors,
         .toggle_editor_decoration_keep_original_colors,
+        .toggle_editor_decoration_layer_behind,
         .select_editor_weapon_type,
         .add_editor_item,
         .delete_editor_item,
