@@ -59,10 +59,11 @@ pub const error_dismiss_button_font_size: i32 = 64;
 /// lines only (the region height is the visible count × line height, so
 /// text placement is identical at every scroll offset).
 pub const error_popup_max_body_height: i32 = 1600;
-/// Scrollbar geometry (reference-space pixels). Drawn only when the body
-/// content overflows the visible region.
-pub const error_scrollbar_width: i32 = 12;
-pub const error_scrollbar_gap: i32 = 16; // gap between body text and scrollbar
+/// Scrollbar geometry — the shared scrollbar constants (see element.zig);
+/// the error popup keeps its historical names as aliases. Drawn only when
+/// the body content overflows the visible region.
+pub const error_scrollbar_width: i32 = ui_element.scrollbar_width;
+pub const error_scrollbar_gap: i32 = ui_element.scrollbar_gap;
 
 /// Build a modal, centered, scrollable error popup showing `message` with
 /// a Dismiss button. Appended last in view() so it draws on top of

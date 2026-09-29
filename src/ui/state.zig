@@ -161,6 +161,13 @@ pub const UiState = struct {
     /// other scrolls.
     load_save_scroll_offset: i32 = 0,
 
+    /// Editor theme-picker list scroll, in gradient ROWS — one wheel notch
+    /// = one row; set on open to keep the level's CURRENT gradient visible.
+    /// Lower clamp at the wheel arm, upper clamp authoritative in
+    /// `buildEditorThemePicker` (the load-save scroll's split). Off the
+    /// undo timeline like the other scrolls.
+    editor_theme_picker_scroll_offset: i32 = 0,
+
     /// Which entity is being inspected (for entity inspect panel).
     inspected_entity_index: ?u32 = null,
 

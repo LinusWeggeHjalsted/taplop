@@ -195,6 +195,7 @@ pub const allInspectorSectionsExpanded = ui_editor_inspector.allInspectorSection
 pub const buildEditorSkillPicker = ui_editor_pickers.buildEditorSkillPicker;
 pub const buildEditorSpritePicker = ui_editor_pickers.buildEditorSpritePicker;
 pub const buildEditorThemePicker = ui_editor_pickers.buildEditorThemePicker;
+pub const editorThemePickerVisibleRowLimit = ui_editor_pickers.editorThemePickerVisibleRowLimit;
 pub const buildEditorFootprintEditor = ui_editor_pickers.buildEditorFootprintEditor;
 pub const buildBottomBar = ui_bottom_bar.buildBottomBar;
 pub const playerEntity = ui_panels.playerEntity;

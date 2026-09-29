@@ -15370,3 +15370,37 @@ TWO REPEATED COLORS across gradients shipped as-sent, flagged for the
 artist in TODO (Cross-cutting polish): #c1cde8 (color_0 of gradients 8
 and 9) and #d89656 (color_3 of gradients 20 and 21). DESIGN → Level
 theme records the wheel layout (24 gradients, clockwise from top).
+
+## Theme picker: 128px swatches, scrollable windowed list + scrollbar
+
+The metadata sidebar's level-gradient picker outgrew its panel with the
+24-gradient wheel. The strips shrank from 256px to 128px swatch blocks
+(6 × 128 = 768 wide), and the list now WINDOWS to the panel:
+
+- `editorThemePickerVisibleRowLimit` (editor_pickers) — the pure
+  fixed-geometry row count, the single source both the builder's window
+  and the open arm's scroll-to-current read.
+- The builder (`buildEditorThemePicker`, now taking `*i32` scroll
+  offset) emits only the visible rows, clamps the offset (upper clamp
+  authoritative — the load-save scroll's split), and draws a scrollbar
+  (the error popup's track + thumb convention: fixed gray 12px track +
+  proportional thumb beside the strip cluster, centered as a unit).
+  The scrollbar geometry constants moved to element.zig
+  (`scrollbar_width`/`scrollbar_gap`) with screens.zig aliasing its
+  historical `error_scrollbar_*` names — one home for the convention.
+- UiState gained `editor_theme_picker_scroll_offset` (gradient ROWS,
+  off the undo timeline like the other scrolls). The wheel scrolls one
+  row per notch while the picker owns the screen (the keybind action
+  picker's rule — the branch sits before the metadata-sidebar/level-tab
+  region routing and the camera-zoom fallthrough). OPENING scrolls the
+  level's CURRENT gradient (override or derived) into view — the
+  smallest offset whose window contains it (the level-tab follow's
+  rule): an offscreen highlight reads as broken.
+
+Tests: the picker builder test pins the 128px geometry; a new overflow
+test pins the windowing (only visible rows emit), the authoritative
+clamp (beyond-the-end → the last window; below 0 → the top), the
+current-row-in-window framing, and the track + thumb pair; the
+theme-picker handler test pins the open's scroll-to-current and the
+wheel's row arithmetic + lower clamp. DESIGN → Level Editor's picker
+section records the new shape.

@@ -3867,10 +3867,14 @@ Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
 (see the Inspector fields above) + the THEME PICKER (the metadata
 sidebar's gradient rows — every gradient as a fixed-size strip of
-6 × `slot_size` blocks, one pick per row, the current index framed in
+6 × 128px swatch blocks, one pick per row, the current index framed in
 lightest; a pick while an enemy/player role is on AUTO flips it to
 manual in the same commit, and an auto-role picker highlights its
-DERIVED index) are the editor's centered panels; everything else stays
+DERIVED index; the list WINDOWS to the overlay and scrolls — the wheel
+scrolls one row per notch while the picker owns the screen, a scrollbar
+(the error popup's track + thumb convention) shows the window's
+position, and opening scrolls the level's CURRENT gradient into view)
+are the editor's centered panels; everything else stays
 inline in the inspector / metadata sidebar.
 
 **The picker OVERLAY (settled):** every centered picker renders in ONE

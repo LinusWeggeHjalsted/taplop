@@ -410,8 +410,8 @@ pub fn view(
                         &session.ui_state,
                     ) catch @panic("failed to build editor footprint editor"),
                     // The metadata sidebar's theme picker: every gradient
-                    // as a full-width strip (the level index + role ride
-                    // the picker target).
+                    // as a strip (the level index + role ride the picker
+                    // target; the list scrolls — see UiState).
                     .level_gradient => |gradient_target| ui.buildEditorThemePicker(
                         &ui_elements,
                         frame_allocator,
@@ -420,6 +420,7 @@ pub fn view(
                         color_theme_definitions,
                         active_theme,
                         .{ .level_index = gradient_target.level_index, .role = gradient_target.role },
+                        &session.ui_state.editor_theme_picker_scroll_offset,
                     ) catch @panic("failed to build editor theme picker"),
                 }
             }

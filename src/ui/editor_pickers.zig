@@ -37,6 +37,8 @@ const Image = ui_element.Image;
 const SolidRect = ui_element.SolidRect;
 const slot_size = ui_element.slot_size;
 const ui_gap = ui_element.ui_gap;
+const scrollbar_width = ui_element.scrollbar_width;
+const scrollbar_gap = ui_element.scrollbar_gap;
 const slot_padding = ui_element.slot_padding;
 const small_icon_size = ui_element.small_icon_size;
 const default_tint = ui_element.default_tint;
@@ -690,10 +692,29 @@ pub fn buildEditorSpritePicker(
 /// `UiState.editor_footprint_draft`; the type id rides the picker target
 /// (see the union). Custom-stem art renders too — its ids resolve to the
 /// mission dir at the texture store (see assetPathFor).
+/// Swatch block size in the theme picker's gradient strips (one block per
+/// gradient color) — 128px blocks keep the 24-gradient wheel listy rather
+/// than hero-sized.
+const theme_picker_swatch_size: i32 = 128;
+
+/// Rows the theme picker can show at once in its fixed overlay — the same
+/// geometry the builder windows by (single source, so the open arm's
+/// scroll-to-current and the builder's window can't drift).
+pub fn editorThemePickerVisibleRowLimit() usize {
+    const bounds = editorPickerOverlayRect();
+    const content_height = bounds.height - middle_panel_header_height;
+    const row_pitch = theme_picker_swatch_size + ui_gap;
+    const visible: i32 = @divFloor(content_height + ui_gap, row_pitch);
+    return @intCast(@max(visible, 1));
+}
+
 /// The metadata sidebar's THEME PICKER (the `.level_gradient` target):
 /// a centered panel listing every gradient in `color_themes.txt` as a
-/// full-width swatch strip — one row per gradient, bare strips (no
+/// swatch strip — one row per gradient (6 × 128px blocks, bare strips, no
 /// labels — the colors ARE the content), a close button top-right. The
+/// list WINDOWS to the panel (the wheel outgrew it): only visible rows
+/// emit, the wheel scrolls one row per notch, and a scrollbar (the error
+/// popup's track + thumb convention) shows the window's position. The
 /// row for the level's CURRENT index (the world pick, or the override —
 /// the DERIVED index while a role is on auto) carries a lightest frame
 /// (the unified 8px outline convention). A pick commits through the
@@ -708,18 +729,28 @@ pub fn buildEditorThemePicker(
     color_theme_definitions: types.ColorThemeDefinitions,
     active_theme: types.ActiveColorTheme,
     target: struct { level_index: u32, role: types.LevelGradientRole },
+    scroll_offset: *i32,
 ) !void {
     _ = font_metrics;
     const gradients = color_theme_definitions.gradients;
-    // FIXED-SIZE rows: full-gradient strips at 6 × `slot_size` blocks
-    // (1536 wide, one row of `slot_size` height), centered in the FIXED
-    // picker overlay (the band between the sidebars) — the overlay never
-    // resizes with the wheel's gradient count. See
+    // FIXED-SIZE rows: full-gradient strips at 6 × 128px blocks, centered
+    // (with the scrollbar) in the FIXED picker overlay — the overlay never
+    // resizes with the wheel's gradient count. The list windows to the
+    // visible rows; the scroll offset is clamped HERE (authoritative — the
+    // input arm's lower clamp is the coarse half). See
     // `editorPickerOverlayRect`.
-    const row_height = slot_size;
-    const strip_width = types.gradient_color_count * slot_size;
+    const row_height = theme_picker_swatch_size;
+    const row_pitch = row_height + ui_gap;
+    const strip_width = types.gradient_color_count * theme_picker_swatch_size;
     const rows: i32 = @intCast(gradients.len);
-    const grid_height = rows * row_height + @max(rows - 1, 0) * ui_gap;
+    const visible_rows: i32 = @intCast(editorThemePickerVisibleRowLimit());
+    const max_offset: i32 = @max(rows - visible_rows, 0);
+    scroll_offset.* = @min(@max(scroll_offset.*, 0), max_offset);
+    const first: usize = @intCast(scroll_offset.*);
+    const last: usize = @min(@as(usize, @intCast(rows)), first + @as(usize, @intCast(visible_rows)));
+    const shown_rows: i32 = @intCast(last - first);
+    const window_height = shown_rows * row_pitch - ui_gap;
+    const scrolls = max_offset > 0;
     const bounds = editorPickerOverlayRect();
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -735,7 +766,12 @@ pub fn buildEditorThemePicker(
         .player => "Player colors",
     }});
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
-    const rows_origin_y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2));
+    // Top-aligned (a scrolling list — no centering) with the strip +
+    // scrollbar cluster centered as a unit.
+    const rows_origin_y = content.y + ui_gap;
+    const cluster_width = strip_width +
+        (if (scrolls) scrollbar_gap + scrollbar_width else 0);
+    const strip_x = content.x + @divFloor(content.width - cluster_width, 2);
 
     // The level's current index for the role (the DERIVED one while an
     // enemy/player role is on auto — it's what's in effect). A stale
@@ -753,10 +789,10 @@ pub fn buildEditorThemePicker(
         };
     }
 
-    for (gradients, 0..) |gradient, index| {
+    for (gradients[first..last], first..) |gradient, index| {
         const row_rect: Rectangle = .{
-            .x = content.x + @divFloor(content.width - strip_width, 2),
-            .y = rows_origin_y + @as(i32, @intCast(index)) * (row_height + ui_gap),
+            .x = strip_x,
+            .y = rows_origin_y + @as(i32, @intCast(index - first)) * row_pitch,
             .width = strip_width,
             .height = row_height,
         };
@@ -810,6 +846,37 @@ pub fn buildEditorThemePicker(
                 .color = active_theme.lightest,
             } });
         }
+    }
+
+    // The scrollbar (only when the list overflows the window) — the error
+    // popup's convention: a fixed-gray track + thumb beside the content,
+    // the thumb proportional to the visible/total ratio and positioned by
+    // the scroll offset.
+    if (scrolls) {
+        const track_x = strip_x + strip_width + scrollbar_gap;
+        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = rows_origin_y },
+            .width = scrollbar_width,
+            .height = window_height,
+            .color = track_color,
+        } });
+        const grid_height: i32 = rows * row_pitch - ui_gap;
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(window_height * window_height, grid_height),
+        );
+        const thumb_y = rows_origin_y + @divTrunc(
+            scroll_offset.* * (window_height - thumb_height),
+            max_offset,
+        );
+        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = thumb_y },
+            .width = scrollbar_width,
+            .height = thumb_height,
+            .color = thumb_color,
+        } });
     }
 }
 
@@ -2031,8 +2098,10 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
     const editor: types.Editor = .{ .levels = &levels };
 
     // World role: the current index is the wheel index (2) — row 2 framed.
+    // 3 gradients fit the window — no scrollbar, the plain strip layout.
     {
         var elements: UiElementList = .empty;
+        var scroll: i32 = 0;
         try buildEditorThemePicker(
             &elements,
             arena.allocator(),
@@ -2041,6 +2110,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             definitions,
             theme,
             .{ .level_index = 0, .role = .world },
+            &scroll,
         );
         // The FIXED picker overlay + header label + close + 3 rows ×
         // (6 blocks + button) + 4 frame rects on the current row = 28.
@@ -2061,13 +2131,13 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             @as(usize, 3 + definitions.gradients.len * (types.gradient_color_count + 1) + 4),
             elements.items.len,
         );
-        // The strips are FIXED-SIZE (6 × slot_size wide, slot_size tall),
+        // The strips are FIXED-SIZE (6 × 128px swatch blocks, 128px tall),
         // not stretched to the overlay — the row's button spans the whole
-        // strip (the 6 blocks beneath it are slot_size/6 each).
+        // strip (the 6 blocks beneath it are 128px each).
         try std.testing.expectEqual(@as(?u32, 0), elements.items[9].button.editor_gradient);
-        try std.testing.expectEqual(6 * slot_size, elements.items[9].button.width);
-        try std.testing.expectEqual(slot_size, elements.items[9].button.height);
-        try std.testing.expectEqual(@as(i32, 256), elements.items[3].solid_rect.width);
+        try std.testing.expectEqual(6 * theme_picker_swatch_size, elements.items[9].button.width);
+        try std.testing.expectEqual(theme_picker_swatch_size, elements.items[9].button.height);
+        try std.testing.expectEqual(theme_picker_swatch_size, elements.items[3].solid_rect.width);
 
         var pick_buttons: usize = 0;
         var current_button: ?Button = null;
@@ -2098,6 +2168,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
     // 3 gradients → enemy = 2 + 1 = 0 mod 3).
     {
         var elements: UiElementList = .empty;
+        var scroll: i32 = 0;
         try buildEditorThemePicker(
             &elements,
             arena.allocator(),
@@ -2106,6 +2177,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             definitions,
             theme,
             .{ .level_index = 0, .role = .enemy },
+            &scroll,
         );
         var current_button: ?Button = null;
         for (elements.items) |element| switch (element) {
@@ -2117,4 +2189,104 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         try std.testing.expect(current_button != null);
         try std.testing.expectEqual(@as(?u32, 0), current_button.?.editor_gradient);
     }
+}
+
+test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clamped" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 1, .g = 1, .b = 1 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const gradient_count = 30;
+    const gradients = try arena.allocator().alloc(types.ColorGradient, gradient_count);
+    for (gradients, 0..) |*gradient, index| {
+        const value: u8 = @intCast(index * 8 + 10);
+        gradient.* = .{ .colors = .{types.Color{ .r = value, .g = value, .b = value }} ** types.gradient_color_count };
+    }
+    const definitions: types.ColorThemeDefinitions = .{
+        .lightest = lightest,
+        .darkest = black,
+        .gradients = gradients,
+    };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = gradients[0],
+        .enemy_gradient = gradients[1],
+        .player_gradient = gradients[2],
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    // The current gradient is the LAST one — only a scrolled-to-bottom
+    // window shows it.
+    const levels = [_]types.EditorLevel{.{ .color_wheel_index = gradient_count - 1 }};
+    const editor: types.Editor = .{ .levels = &levels };
+
+    const visible = editorThemePickerVisibleRowLimit();
+    try std.testing.expect(gradient_count > visible); // the overflow precondition
+
+    // An offset beyond the end: the builder clamps it (upper clamp
+    // authoritative) to the max — the last window.
+    var elements: UiElementList = .empty;
+    var scroll: i32 = 999;
+    try buildEditorThemePicker(
+        &elements,
+        arena.allocator(),
+        metrics,
+        editor,
+        definitions,
+        theme,
+        .{ .level_index = 0, .role = .world },
+        &scroll,
+    );
+    const max_offset: i32 = @intCast(gradient_count - visible);
+    try std.testing.expectEqual(max_offset, scroll);
+
+    // Only the visible window emits: one pick button per visible row, the
+    // current (last) gradient is the last VISIBLE row, and the scrollbar's
+    // track + thumb are present (12px-wide solid rects — no other element
+    // is 12px wide: swatch blocks are 128, frame edges 8).
+    var pick_buttons: usize = 0;
+    var current_button: ?Button = null;
+    var scrollbar_rects: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_level_gradient) {
+            pick_buttons += 1;
+            if (button.highlighted) current_button = button;
+        },
+        .solid_rect => |rect| if (rect.width == scrollbar_width) {
+            scrollbar_rects += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(visible, pick_buttons);
+    try std.testing.expect(current_button != null);
+    try std.testing.expectEqual(@as(?u32, gradient_count - 1), current_button.?.editor_gradient);
+    try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
+
+    // An offset below 0: clamps to the top — the first row is the first
+    // emitted pick, and no row highlights (the current one is offscreen).
+    var top_elements: UiElementList = .empty;
+    scroll = -5;
+    try buildEditorThemePicker(
+        &top_elements,
+        arena.allocator(),
+        metrics,
+        editor,
+        definitions,
+        theme,
+        .{ .level_index = 0, .role = .world },
+        &scroll,
+    );
+    try std.testing.expectEqual(@as(i32, 0), scroll);
+    var top_first: ?u32 = null;
+    var top_highlighted: usize = 0;
+    for (top_elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_level_gradient) {
+            if (top_first == null) top_first = button.editor_gradient;
+            if (button.highlighted) top_highlighted += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(?u32, 0), top_first);
+    try std.testing.expectEqual(@as(usize, 0), top_highlighted);
 }

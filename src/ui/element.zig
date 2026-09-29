@@ -250,6 +250,11 @@ pub const top_bar_slot_size: i32 = 128;
 pub const slot_size: i32 = 256;
 /// Weapon-swap button — half a normal button, centered vertically.
 pub const swap_button_size: i32 = 128;
+/// Scrollbar geometry (reference-space pixels), shared by every scrollbar
+/// surface (the error popup's, the editor theme picker's): a 12px track with
+/// a 16px gap from the scrolled content, drawn only when content overflows.
+pub const scrollbar_width: i32 = 12;
+pub const scrollbar_gap: i32 = 16;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
 pub const menu_button_font_size: i32 = 96;

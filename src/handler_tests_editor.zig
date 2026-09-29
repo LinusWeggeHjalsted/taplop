@@ -7668,6 +7668,25 @@ test "theme picker: open targets the active level, picks commit per role, auto f
         history.session.ui_state.editor_picker.?,
     );
 
+    // The open scrolled the CURRENT gradient into view (enemy on auto,
+    // wheel 2 with 24 gradients → derived enemy 10; the smallest offset
+    // whose window still contains it), and the wheel scrolls the list
+    // while the picker owns the screen — one notch = one row, wheel-up
+    // clamps at 0 (the builder owns the upper clamp).
+    const visible_rows: i32 = @intCast(ui.editorThemePickerVisibleRowLimit());
+    const gradient_count: i32 = @intCast(history.color_theme_definitions.gradients.len);
+    const derived_enemy: i32 = 2 + @divTrunc(gradient_count, 3);
+    const expected_open_scroll: i32 = @max(derived_enemy + 1 - visible_rows, 0);
+    try testing.expectEqual(expected_open_scroll, history.session.ui_state.editor_theme_picker_scroll_offset);
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        expected_open_scroll + 1,
+        history.session.ui_state.editor_theme_picker_scroll_offset,
+    );
+    history.session.ui_state.editor_theme_picker_scroll_offset = 0;
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_theme_picker_scroll_offset);
+
     // A pick commits the override (auto → manual in the same commit) and
     // closes the picker.
     input_handlers.handleAnytimeInput(&history, .{

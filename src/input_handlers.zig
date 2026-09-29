@@ -1604,10 +1604,27 @@ pub fn handleAnytimeInput(
                 const editor: *types.Editor = &current.editor.?;
                 const role = anytime.clicked_editor_gradient_role orelse return;
                 if (editor.levels.len == 0) return;
+                const level_index = @min(editor.active_level_index, editor.levels.len - 1);
                 history.session.ui_state.editor_picker = .{ .level_gradient = .{
-                    .level_index = @intCast(@min(editor.active_level_index, editor.levels.len - 1)),
+                    .level_index = @intCast(level_index),
                     .role = role,
                 } };
+                // Scroll the CURRENT gradient into view on open (the level
+                // tab follow's rule — the highlight is the point of the
+                // list, an offscreen one reads as broken): the smallest
+                // offset whose window still contains it. The builder clamps
+                // authoritatively next frame.
+                const level = editor.levels[level_index];
+                const current_gradient: i32 = @intCast(switch (role) {
+                    .world => level.color_wheel_index,
+                    .enemy => level.enemy_gradient_index orelse
+                        loaders.autoDerivedGradientIndex(history.color_theme_definitions, level.color_wheel_index, .enemy),
+                    .player => level.player_gradient_index orelse
+                        loaders.autoDerivedGradientIndex(history.color_theme_definitions, level.color_wheel_index, .player),
+                });
+                const visible_rows: i32 = @intCast(ui.editorThemePickerVisibleRowLimit());
+                history.session.ui_state.editor_theme_picker_scroll_offset =
+                    @max(current_gradient + 1 - visible_rows, 0);
             },
             // A theme-picker row: set the level's index for the picker's
             // role and close. Same-value picks close without recording;
@@ -2659,6 +2676,20 @@ pub fn handleAnytimeInput(
             history.session.ui_state.editor_inspector_scroll -= delta_rows;
             if (history.session.ui_state.editor_inspector_scroll < 0) {
                 history.session.ui_state.editor_inspector_scroll = 0;
+            }
+        } else if (history.current_state.screen == .editor and
+            history.session.ui_state.editor_picker != null and
+            history.session.ui_state.editor_picker.? == .level_gradient)
+        {
+            // The theme picker owns the wheel while it's open (the keybind
+            // action picker's rule — a modal picker's list scrolls, not the
+            // world behind it): one notch = one gradient row, wheel-up =
+            // earlier rows. Lower clamp here; the builder clamps the upper
+            // bound (authoritative — it knows the visible row count).
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.editor_theme_picker_scroll_offset -= delta_rows;
+            if (history.session.ui_state.editor_theme_picker_scroll_offset < 0) {
+                history.session.ui_state.editor_theme_picker_scroll_offset = 0;
             }
         } else if (history.current_state.screen == .editor and
             history.current_state.editor != null and
