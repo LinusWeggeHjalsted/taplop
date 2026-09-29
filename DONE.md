@@ -15126,3 +15126,14 @@ downgrade", red = "somewhere is a strict downgrade, nowhere is an upgrade",
 lightest = "no hand changes anything" (full tie) or "one hand up, one hand
 down" (strictly between). The author's verdict on the tie: a weapon
 identical to what you hold says nothing useful in green.
+
+## Inventory item stat numbers: moved to the bottom-left corner
+
+Placement correction, same session: the first stat's number (single-stat
+items' only number; armor's health bonus) moved from the icon's TOP-LEFT
+to the BOTTOM-LEFT — the top-left area carries defining sprite art
+(weapon silhouettes especially) that the numbers were obscuring. Both
+stats now sit bottom-aligned (bottom-left health/first stat, bottom-right
+item-specific stat — the material-count row), out of the art entirely.
+The material-count label recipe is unchanged; only the y offset flipped
+to the bottom alignment.

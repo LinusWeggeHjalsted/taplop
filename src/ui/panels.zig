@@ -942,7 +942,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // Slot 2: weapon 4 beats the off hand (3), strictly loses to the main
     // (5) → lightest (strictly between the two hands: no clear upgrade).
     inventory.slots[2] = .{ .weapon = .{ .weapon_damage = 4 } };
-    // Slot 3: boots — health 4 equal → lightest (top-left), speed 2 > 1 →
+    // Slot 3: boots — health 4 equal → lightest (bottom-left), speed 2 > 1 →
     // green (bottom-right).
     inventory.slots[3] = .{ .boots = .{ .health_bonus = 4, .speed_bonus = 2 } };
     // Slot 4: amulet 3 vs nothing equipped (0) → green.
@@ -990,9 +990,12 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // Expected label positions for the two corners (the emitter's own
     // formula — the bottom-right one measures the label's width through
     // the same metrics).
-    const topLeft = struct {
+    const bottomLeft = struct {
         fn call(cell: ScreenPosition) ScreenPosition {
-            return .{ .x = cell.x + material_count_inset, .y = cell.y + material_count_inset };
+            return .{
+                .x = cell.x + material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
         }
     }.call;
     const bottomRight = struct {
@@ -1038,14 +1041,14 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // green; equals the main hand (inclusive ≥) → green; strictly between
     // → lightest; equals the off hand (inclusive ≤) → red; loses to both
     // → red.
-    try assertLabel(elements.items, "7", topLeft(slotCell(elements.items, 0)), positive_color);
-    try assertLabel(elements.items, "5", topLeft(slotCell(elements.items, 1)), positive_color);
-    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 2)), lightest);
-    try assertLabel(elements.items, "3", topLeft(slotCell(elements.items, 6)), negative_color);
-    try assertLabel(elements.items, "2", topLeft(slotCell(elements.items, 7)), negative_color);
-    // The boots' two stats: health equal → lightest top-left, speed
+    try assertLabel(elements.items, "7", bottomLeft(slotCell(elements.items, 0)), positive_color);
+    try assertLabel(elements.items, "5", bottomLeft(slotCell(elements.items, 1)), positive_color);
+    try assertLabel(elements.items, "4", bottomLeft(slotCell(elements.items, 2)), lightest);
+    try assertLabel(elements.items, "3", bottomLeft(slotCell(elements.items, 6)), negative_color);
+    try assertLabel(elements.items, "2", bottomLeft(slotCell(elements.items, 7)), negative_color);
+    // The boots' two stats: health equal → lightest bottom-left, speed
     // better → green bottom-right.
-    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 3)), lightest);
+    try assertLabel(elements.items, "4", bottomLeft(slotCell(elements.items, 3)), lightest);
     try assertLabel(
         elements.items,
         "2",
@@ -1053,7 +1056,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         positive_color,
     );
     // The amulet vs nothing equipped (baseline 0) → green.
-    try assertLabel(elements.items, "3", topLeft(slotCell(elements.items, 4)), positive_color);
+    try assertLabel(elements.items, "3", bottomLeft(slotCell(elements.items, 4)), positive_color);
 
     // Census: the stat numbers over the item GRID are exactly the eight
     // above (the material sidebar's count labels sit beyond the grid's
@@ -1097,9 +1100,9 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             .{},
             null,
         );
-        try assertLabel(elements_tie.items, "5", topLeft(slotCell(elements_tie.items, 1)), lightest);
+        try assertLabel(elements_tie.items, "5", bottomLeft(slotCell(elements_tie.items, 1)), lightest);
         // And strictly-below-both stays red under the inclusive operators.
-        try assertLabel(elements_tie.items, "4", topLeft(slotCell(elements_tie.items, 2)), negative_color);
+        try assertLabel(elements_tie.items, "4", bottomLeft(slotCell(elements_tie.items, 2)), negative_color);
     }
 
     // Drag-source suppression: the dragged slot's item reads as in

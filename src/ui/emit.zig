@@ -507,10 +507,13 @@ fn statComparisonColor(
     return active_theme.lightest;
 }
 
-/// Which icon corner a stat number sits in: top-left for the first stat
-/// (single-stat items' only stat; armor's health bonus), bottom-right for
-/// armor's item-specific stat (the material-count corner).
-const StatNumberCorner = enum { top_left, bottom_right };
+/// Which icon corner a stat number sits in: the first stat (single-stat
+/// items' only stat; armor's health bonus) sits BOTTOM-LEFT and armor's
+/// item-specific stat BOTTOM-RIGHT — both bottom-aligned (the material-
+/// count row), never top-left: the icons' top-left carries defining
+/// sprite art (weapon silhouettes especially) that numbers must not
+/// cover.
+const StatNumberCorner = enum { bottom_left, bottom_right };
 
 /// One corner stat number on an inventory item icon: the stat VALUE (not
 /// the signed difference — the tooltip carries that), colored by the
@@ -530,9 +533,9 @@ fn emitItemStatNumber(
     const value_text = try std.fmt.allocPrint(allocator, "{d}", .{value});
     const label_width = font_metrics.measureSpanWidth(text(value_text), material_count_font_size);
     const position: ScreenPosition = switch (corner) {
-        .top_left => .{
+        .bottom_left => .{
             .x = cell_position.x + material_count_inset,
-            .y = cell_position.y + material_count_inset,
+            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
         },
         .bottom_right => .{
             .x = cell_position.x + cell_size - label_width - material_count_inset,
@@ -565,8 +568,10 @@ fn emitItemStatNumber(
 /// empty equipped slot compares against 0
 /// (an item beats nothing — green), matching the tooltip. Single-stat
 /// items (weapons: damage, amulets: spell damage) show the number
-/// top-left; armor shows the health bonus top-left and the item-specific
-/// stat (defense / damage / pickup radius / speed) bottom-right. Skill
+/// bottom-left; armor shows the health bonus bottom-left and the
+/// item-specific stat (defense / damage / pickup radius / speed)
+/// bottom-right — both bottom-aligned, out of the icons' defining
+/// top-left art. Skill
 /// tomes have no stats. `equipped == null` (comparison suppressed) emits
 /// nothing. The caller suppresses on the drag source (rides the item
 /// icon — the item reads as in flight).
@@ -608,7 +613,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 weapon.weapon_damage,
                 color,
-                .top_left,
+                .bottom_left,
             );
         },
         .amulet => |amulet| {
@@ -621,7 +626,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 amulet.spell_damage,
                 statComparisonColor(amulet.spell_damage, baseline, active_theme),
-                .top_left,
+                .bottom_left,
             );
         },
         .coat => |coat| {
@@ -635,7 +640,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 coat.health_bonus,
                 statComparisonColor(coat.health_bonus, health_baseline, active_theme),
-                .top_left,
+                .bottom_left,
             );
             try emitItemStatNumber(
                 elements,
@@ -659,7 +664,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 gloves.health_bonus,
                 statComparisonColor(gloves.health_bonus, health_baseline, active_theme),
-                .top_left,
+                .bottom_left,
             );
             try emitItemStatNumber(
                 elements,
@@ -683,7 +688,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 pants.health_bonus,
                 statComparisonColor(pants.health_bonus, health_baseline, active_theme),
-                .top_left,
+                .bottom_left,
             );
             try emitItemStatNumber(
                 elements,
@@ -707,7 +712,7 @@ pub fn emitItemStatLabels(
                 cell_size,
                 boots.health_bonus,
                 statComparisonColor(boots.health_bonus, health_baseline, active_theme),
-                .top_left,
+                .bottom_left,
             );
             try emitItemStatNumber(
                 elements,
