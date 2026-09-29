@@ -15239,3 +15239,30 @@ editor_pickers.zig gained the `@setEvalBranchQuota(20000)` its sibling
 decoration block already carried — the 28 new PNGs pushed its comptime
 sorted-insert walk past the default 1000 backwards branches and broke
 the build.
+
+## Tree + tent prefabs registered in the decoration registry
+
+data/decorations.txt now carries all five tree prefabs plus tent (the
+art landed with the 2026-09-29 delivery above):
+
+- **Trees** — all share tree_1's footprint (sprite-grid `(1,2)`, the
+  bottom-center trunk tile), color 4 base, and four layers each (canopy,
+  moss, grass, grass_back) at color 2 — the canopy's index, the artist's
+  default for the new layers. Layer order in the entries follows the
+  artist's sort offsets (0B, 1, 3, -1). tree_1's existing entry was
+  extended in place (its footprint geometry is unchanged, so shipped
+  levels referencing it round-trip untouched).
+- **Tent** — footprint on its bottom tile (`(0,1)`, the stone_6 1x2
+  shape), color 0, no layers.
+
+The editor decoration palette grew automatically (registry prefabs, 28
+now). The loader test's shipped-file pins updated to match: 28 entries,
+tree_1's four layers asserted in config order with color + dims, tree_5
+(the new-tree prefab shape: same footprint/colors, own-namespaced layer
+stems) and tent (1x2 bbox, bottom-tile footprint) asserted.
+
+grass_back registered as a NORMAL layer for now — it draws over the
+trunk where they overlap (1-16% of its pixels per tree, from alpha
+bbox/overlap analysis; moss is ~90% on-trunk and grass 37-70% front, so
+their over-the-base draw order is correct). The behind-the-base
+render-model question stays open: TODO → Decoration Footprint.

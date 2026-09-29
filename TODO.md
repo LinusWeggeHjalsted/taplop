@@ -262,13 +262,14 @@ Settled + wired — see DESIGN → Decorations & Footprint (history in
 DONE.md). Open:
 - [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
       resolve dims → `editor_add_decoration_type` event).
-- [ ] Tree + tent prefab registration — art shipped (tree_1..tree_5, each
-      trunk base + canopy/moss/grass/grass_back layers; tent). Author the
-      footprints + layer composition into `data/decorations.txt` (the editor
-      registry prefabs). OPEN: `grass_back` is meant to render BEHIND the
-      trunk base, but the current model draws every `layer` on top of the
-      base — needs a back-layer slot in the render model (loader + view +
-      draw), or the behind intent is dropped; decide at prefab time.
+- [x] Tree + tent prefab registration — DONE (see DONE.md, art delivery
+      2026-09-29): footprints + layer composition in `data/decorations.txt`.
+- [ ] `grass_back` behind-the-base rendering — the tree prefabs registered
+      `tree_*_grass_back` as a normal layer (draws over the trunk where they
+      overlap — only 1–16% of its pixels per tree). Meant to render BEHIND
+      the trunk base: needs a back-layer slot in the render model (loader +
+      view + draw), or the intent is dropped; decide by looking at it
+      in-game.
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 

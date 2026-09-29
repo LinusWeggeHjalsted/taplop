@@ -3601,22 +3601,42 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     const registry = try loadDecorationRegistry(sections, &file_source, allocator);
     defer freeDecorationRegistry(registry, allocator);
 
-    // One entry per shipped decoration sprite: tree_1 + 11 ruins + 5 statues
-    // + 6 stones = 23. (tree_1_canopy is a layer of tree_1, not its own entry.)
-    try std.testing.expectEqual(@as(usize, 23), registry.len);
+    // One entry per shipped decoration base sprite: 5 trees + tent + 11
+    // ruins + 5 statues + 6 stones = 28. (Layer stems — canopy, moss, grass,
+    // grass_back — belong to their base's entry, not their own.)
+    try std.testing.expectEqual(@as(usize, 28), registry.len);
 
-    // Find the tree entry (first, with a layer) and a stone (single-tile).
+    // Find the tree entry (first, with a layer), a stone (single-tile), a
+    // new-tree prefab, and the tent (the footprint-on-bottom-tile shape).
     var tree: ?types.DecorationTypeDef = null;
     var stone_6: ?types.DecorationTypeDef = null;
+    var tree_5: ?types.DecorationTypeDef = null;
+    var tent: ?types.DecorationTypeDef = null;
     for (registry) |def| {
         if (std.mem.eql(u8, def.sprite, "tree_1")) tree = def;
         if (std.mem.eql(u8, def.sprite, "stone_6")) stone_6 = def;
+        if (std.mem.eql(u8, def.sprite, "tree_5")) tree_5 = def;
+        if (std.mem.eql(u8, def.sprite, "tent")) tent = def;
     }
     try std.testing.expect(tree != null);
     try std.testing.expect(stone_6 != null);
+    try std.testing.expect(tree_5 != null);
+    try std.testing.expect(tent != null);
 
-    // tree_1: 3x3 bbox (768x768), footprint at (1,2), color 4, one canopy
-    // layer (color 2, same dims).
+    // tree_5 (a new-tree prefab): same footprint + colors as tree_1, the
+    // same four layer stems under its own namespace.
+    const t5 = tree_5.?;
+    try std.testing.expectEqual(@as(usize, 1), t5.footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, t5.footprint[0]);
+    try std.testing.expectEqual(@as(u32, 4), t5.color_index);
+    try std.testing.expectEqual(@as(usize, 4), t5.layers.len);
+    for ([_][]const u8{ "tree_5_canopy", "tree_5_moss", "tree_5_grass", "tree_5_grass_back" }, t5.layers) |expected, layer| {
+        try std.testing.expectEqualStrings(expected, layer.sprite);
+    }
+
+    // tree_1: 3x3 bbox (768x768), footprint at (1,2), color 4, four layers
+    // in config order (canopy, moss, grass, grass_back — each color 2, the
+    // canopy's index, same dims).
     const t = tree.?;
     try std.testing.expectEqual(@as(i32, 768), t.pixel_dims.x);
     try std.testing.expectEqual(@as(i32, 768), t.pixel_dims.y);
@@ -3624,9 +3644,16 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(i32, 1), t.footprint[0].x);
     try std.testing.expectEqual(@as(i32, 2), t.footprint[0].y);
     try std.testing.expectEqual(@as(u32, 4), t.color_index);
-    try std.testing.expectEqual(@as(usize, 1), t.layers.len);
+    try std.testing.expectEqual(@as(usize, 4), t.layers.len);
     try std.testing.expectEqualStrings("tree_1_canopy", t.layers[0].sprite);
-    try std.testing.expectEqual(@as(u32, 2), t.layers[0].color_index);
+    try std.testing.expectEqualStrings("tree_1_moss", t.layers[1].sprite);
+    try std.testing.expectEqualStrings("tree_1_grass", t.layers[2].sprite);
+    try std.testing.expectEqualStrings("tree_1_grass_back", t.layers[3].sprite);
+    for (t.layers) |layer| {
+        try std.testing.expectEqual(@as(u32, 2), layer.color_index);
+        try std.testing.expectEqual(@as(i32, 768), layer.pixel_dims.x);
+        try std.testing.expectEqual(@as(i32, 768), layer.pixel_dims.y);
+    }
     try std.testing.expect(std.mem.eql(u8, "tree_1", t.id));
 
     // stone_6: 1x2 bbox (256x512), footprint at (0,1), color 5, no layers.
@@ -3638,6 +3665,15 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(i32, 1), s.footprint[0].y);
     try std.testing.expectEqual(@as(u32, 5), s.color_index);
     try std.testing.expectEqual(@as(usize, 0), s.layers.len);
+
+    // tent: 1x2 bbox (256x512), footprint on the BOTTOM tile, no layers.
+    const tent_def = tent.?;
+    try std.testing.expectEqual(@as(i32, 256), tent_def.pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 512), tent_def.pixel_dims.y);
+    try std.testing.expectEqual(@as(usize, 1), tent_def.footprint.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 1 }, tent_def.footprint[0]);
+    try std.testing.expectEqual(@as(u32, 0), tent_def.color_index);
+    try std.testing.expectEqual(@as(usize, 0), tent_def.layers.len);
 }
 
 test "loadEditorDefaults parses the shipped palette defaults" {

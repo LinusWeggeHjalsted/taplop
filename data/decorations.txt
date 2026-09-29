@@ -14,6 +14,79 @@ footprint 1 2
 layer
 sprite tree_1_canopy
 color_index 2
+layer
+sprite tree_1_moss
+color_index 2
+layer
+sprite tree_1_grass
+color_index 2
+layer
+sprite tree_1_grass_back
+color_index 2
+
+sprite tree_2
+color_index 4
+footprint 1 2
+layer
+sprite tree_2_canopy
+color_index 2
+layer
+sprite tree_2_moss
+color_index 2
+layer
+sprite tree_2_grass
+color_index 2
+layer
+sprite tree_2_grass_back
+color_index 2
+
+sprite tree_3
+color_index 4
+footprint 1 2
+layer
+sprite tree_3_canopy
+color_index 2
+layer
+sprite tree_3_moss
+color_index 2
+layer
+sprite tree_3_grass
+color_index 2
+layer
+sprite tree_3_grass_back
+color_index 2
+
+sprite tree_4
+color_index 4
+footprint 1 2
+layer
+sprite tree_4_canopy
+color_index 2
+layer
+sprite tree_4_moss
+color_index 2
+layer
+sprite tree_4_grass
+color_index 2
+layer
+sprite tree_4_grass_back
+color_index 2
+
+sprite tree_5
+color_index 4
+footprint 1 2
+layer
+sprite tree_5_canopy
+color_index 2
+layer
+sprite tree_5_moss
+color_index 2
+layer
+sprite tree_5_grass
+color_index 2
+layer
+sprite tree_5_grass_back
+color_index 2
 
 sprite ruin_1
 color_index 0
@@ -116,4 +189,8 @@ footprint 0 0
 
 sprite stone_6
 color_index 5
+footprint 0 1
+
+sprite tent
+color_index 0
 footprint 0 1
