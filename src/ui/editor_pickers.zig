@@ -71,6 +71,7 @@ const close_button_sprite_id = ui_element.close_button_sprite_id;
 /// (the player sprite isn't an enemy base-sprite option). Comptime from
 /// the sprite-metadata table; sorted for a stable picker order.
 const official_entity_sprite_stems: []const []const u8 = build: {
+    @setEvalBranchQuota(20000);
     var stems: []const []const u8 = &.{};
     for (sprite_metadata.map.kvs.keys[0..sprite_metadata.map.kvs.len]) |key| {
         if (!std.mem.startsWith(u8, key, "entities/")) continue;
