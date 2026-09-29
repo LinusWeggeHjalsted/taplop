@@ -43,6 +43,7 @@ const buildSkillTooltip = ui_tooltip.buildSkillTooltip;
 const EquippedGear = ui_tooltip.EquippedGear;
 const positive_color = ui_tooltip.positive_color;
 const negative_color = ui_tooltip.negative_color;
+const isSkillLearnedIn = ui_tooltip.isSkillLearnedIn;
 const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 
@@ -520,6 +521,27 @@ const StatNumberCorner = enum { bottom_left, bottom_right };
 /// equipped comparison, black-outlined. The material-count label recipe:
 /// same font size + inset, non-blocking so hover/click reach the slot
 /// beneath (the slot keeps its tooltip).
+/// The bottom-aligned corner position for a stat number label:
+/// bottom-left fixed at the inset, bottom-right right-aligned on the
+/// measured `label_width`.
+fn statNumberPosition(
+    cell_position: ScreenPosition,
+    cell_size: i32,
+    corner: StatNumberCorner,
+    label_width: i32,
+) ScreenPosition {
+    return switch (corner) {
+        .bottom_left => .{
+            .x = cell_position.x + material_count_inset,
+            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
+        },
+        .bottom_right => .{
+            .x = cell_position.x + cell_size - label_width - material_count_inset,
+            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
+        },
+    };
+}
+
 fn emitItemStatNumber(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -532,19 +554,9 @@ fn emitItemStatNumber(
 ) !void {
     const value_text = try std.fmt.allocPrint(allocator, "{d}", .{value});
     const label_width = font_metrics.measureSpanWidth(text(value_text), material_count_font_size);
-    const position: ScreenPosition = switch (corner) {
-        .bottom_left => .{
-            .x = cell_position.x + material_count_inset,
-            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
-        },
-        .bottom_right => .{
-            .x = cell_position.x + cell_size - label_width - material_count_inset,
-            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
-        },
-    };
     try elements.append(allocator, .{ .text_label = .{
         .text = value_text,
-        .screen_position = position,
+        .screen_position = statNumberPosition(cell_position, cell_size, corner, label_width),
         .color = color,
         .font_size = material_count_font_size,
         .outlined = true,
@@ -571,9 +583,13 @@ fn emitItemStatNumber(
 /// bottom-left; armor shows the health bonus bottom-left and the
 /// item-specific stat (defense / damage / pickup radius / speed)
 /// bottom-right — both bottom-aligned, out of the icons' defining
-/// top-left art. Skill
-/// tomes have no stats. `equipped == null` (comparison suppressed) emits
-/// nothing. The caller suppresses on the drag source (rides the item
+/// top-left art. An UNLEARNED skill tome wears a green outlined "!" in
+/// the bottom-left corner (the at-a-glance version of the tooltip's
+/// "Activate to learn" line; a learned tome shows nothing — its skill
+/// is known, its only remaining value is salvaging) — baseline-
+/// independent, so it emits even while the stat comparison is suppressed.
+/// `equipped == null` (comparison suppressed) emits no stat numbers. The
+/// caller suppresses on the drag source (rides the item
 /// icon — the item reads as in flight).
 pub fn emitItemStatLabels(
     elements: *UiElementList,
@@ -582,9 +598,34 @@ pub fn emitItemStatLabels(
     cell_position: ScreenPosition,
     cell_size: i32,
     item: types.Item,
+    learned_skills: []const SkillId,
     equipped: ?EquippedGear,
     active_theme: types.ActiveColorTheme,
 ) !void {
+    // The unlearned-tome marker comes first: it depends only on the
+    // learned-skill set, not on the equipped baseline.
+    switch (item) {
+        .skill_tome => |tome| {
+            if (!isSkillLearnedIn(learned_skills, tome.skill)) {
+                const label_width = font_metrics.measureSpanWidth(text("!"), material_count_font_size);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "!",
+                    .screen_position = statNumberPosition(
+                        cell_position,
+                        cell_size,
+                        .bottom_left,
+                        label_width,
+                    ),
+                    .color = positive_color,
+                    .font_size = material_count_font_size,
+                    .outlined = true,
+                    .blocks_input = false,
+                } });
+            }
+            return;
+        },
+        else => {},
+    }
     const e = equipped orelse return;
     switch (item) {
         .weapon => |weapon| {
@@ -725,7 +766,7 @@ pub fn emitItemStatLabels(
                 .bottom_right,
             );
         },
-        .skill_tome => {},
+        .skill_tome => {}, // handled by the marker path above (returns there)
     }
 }
 

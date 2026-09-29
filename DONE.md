@@ -15137,3 +15137,28 @@ stats now sit bottom-aligned (bottom-left health/first stat, bottom-right
 item-specific stat — the material-count row), out of the art entirely.
 The material-count label recipe is unchanged; only the y offset flipped
 to the bottom alignment.
+
+## Inventory skill tomes: a green outlined "!" for unlearned skills
+
+The stat-number surface gained its one non-numeric corner mark: a skill
+tome whose skill the player has NOT learned wears a green outlined "!"
+in the bottom-left corner (the first-stat corner, the stat numbers'
+recipe: `material_count_font_size`, black outline, non-blocking so the
+slot keeps its tooltip, suppressed on the drag source) — the at-a-glance
+version of the tooltip's "Activate to learn" line. A learned tome shows
+nothing: its skill is known, its only remaining value is salvaging.
+
+Baseline-independent by construction: the marker depends only on the
+learned-skill set (`isSkillLearnedIn`, promoted pub in tooltip.zig for
+the emit import), so it renders even while the equipped comparison is
+suppressed (`equipped == null` now suppresses only the stat numbers).
+The corner-position math was extracted into `statNumberPosition` so the
+marker and the numbers share the bottom-left formula. `emitItemStatLabels`
+gained the `learned_skills` parameter (mirroring `buildItemTooltip`'s
+signature).
+
+Tests: the panel test pins the marker (green "!" at the tome slot's
+bottom-left cell corner, full recipe), the learned case (tome's skill in
+the learned set → nothing reads "!"), the census (9 grid labels), and
+drag-source suppression (9 → 7). DESIGN → UI Framework's bullet carries
+the rule.

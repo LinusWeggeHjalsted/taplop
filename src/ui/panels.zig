@@ -218,8 +218,9 @@ pub fn buildInventoryPanel(
                     .blocks_input = false,
                 } });
                 // The item's stat numbers, colored by the equipped
-                // comparison — the at-a-glance version of the slot
-                // tooltip's stat rows (see emitItemStatLabels).
+                // comparison (plus the unlearned-tome "!" marker) — the
+                // at-a-glance version of the slot tooltip's stat rows
+                // (see emitItemStatLabels).
                 try emitItemStatLabels(
                     elements,
                     allocator,
@@ -227,6 +228,7 @@ pub fn buildInventoryPanel(
                     cell.position(),
                     inventory_slot_size,
                     item,
+                    learned_skills,
                     equipped,
                     active_theme,
                 );
@@ -895,7 +897,9 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // The stat numbers ride the item icons (see emitItemStatLabels): the
     // stat VALUE (not the signed difference — the tooltip carries that),
     // material-count label recipe (font size + inset + outlined,
-    // non-blocking so the slot keeps its tooltip). Colors: green while
+    // non-blocking so the slot keeps its tooltip). An unlearned skill
+    // tome wears a green outlined "!" (a learned one shows nothing).
+    // Colors: green while
     // better than equipped, red while worse, lightest while equal; a
     // weapon compares INCLUSIVELY against both hands — green while ≥ each
     // hand and strictly better than at least one, red while ≤ each hand
@@ -947,7 +951,8 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     inventory.slots[3] = .{ .boots = .{ .health_bonus = 4, .speed_bonus = 2 } };
     // Slot 4: amulet 3 vs nothing equipped (0) → green.
     inventory.slots[4] = .{ .amulet = .{ .spell_damage = 3 } };
-    // Slot 5: skill tome — no stats, no numbers.
+    // Slot 5: skill tome (default skill .slice, NOT in the empty learned
+    // set) — a green outlined "!" bottom-left, no stat numbers.
     inventory.slots[5] = .{ .skill_tome = .{} };
     // Slot 6: weapon 3 EQUALS the off hand, strictly loses to the main →
     // red (the inclusive red: ≤ each hand — no hand is an upgrade).
@@ -1057,10 +1062,13 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     );
     // The amulet vs nothing equipped (baseline 0) → green.
     try assertLabel(elements.items, "3", bottomLeft(slotCell(elements.items, 4)), positive_color);
+    // The UNLEARNED skill tome: a green outlined "!" bottom-left (the
+    // learned set is empty — see the tie pass for the learned case).
+    try assertLabel(elements.items, "!", bottomLeft(slotCell(elements.items, 5)), positive_color);
 
-    // Census: the stat numbers over the item GRID are exactly the eight
+    // Census: the stat numbers over the item GRID are exactly the nine
     // above (the material sidebar's count labels sit beyond the grid's
-    // right edge, the tome + empty slots contribute none).
+    // right edge, the empty slots contribute none).
     {
         const grid_left = slotCell(elements.items, 0).x;
         const grid_right = grid_left + types.inventory_columns * inventory_slot_size;
@@ -1075,7 +1083,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 8), stat_labels);
+        try std.testing.expectEqual(@as(usize, 9), stat_labels);
     }
 
     // The FULL-TIE case (weapon 5 vs hands 5/5): swapping changes
@@ -1083,6 +1091,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // better than at least one hand).
     {
         var elements_tie: UiElementList = .empty;
+        const learned = [_]SkillId{.slice};
         try buildInventoryPanel(
             &elements_tie,
             arena.allocator(),
@@ -1090,7 +1099,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             bounds,
             inventory,
             .{},
-            &.{},
+            &learned,
             EquippedGear{
                 .main_hand_weapon = .{ .weapon_damage = 5 },
                 .off_hand_weapon = .{ .weapon_damage = 5 },
@@ -1103,11 +1112,17 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         try assertLabel(elements_tie.items, "5", bottomLeft(slotCell(elements_tie.items, 1)), lightest);
         // And strictly-below-both stays red under the inclusive operators.
         try assertLabel(elements_tie.items, "4", bottomLeft(slotCell(elements_tie.items, 2)), negative_color);
+        // A LEARNED skill tome (slice ∈ learned) shows NO marker —
+        // nothing in the grid reads "!".
+        for (elements_tie.items) |element| switch (element) {
+            .text_label => |label| try std.testing.expect(!std.mem.eql(u8, label.text, "!")),
+            else => {},
+        };
     }
 
     // Drag-source suppression: the dragged slot's item reads as in
-    // flight — icon + stat numbers both suppressed (two fewer: the
-    // boots' health + speed — 8 → 6).
+    // flight — icon + stat numbers + the tome marker all suppressed
+    // (two fewer: the boots' health + speed — 9 → 7).
     {
         var elements_dragged: UiElementList = .empty;
         try buildInventoryPanel(
@@ -1137,7 +1152,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 6), stat_labels);
+        try std.testing.expectEqual(@as(usize, 7), stat_labels);
     }
 }
 
