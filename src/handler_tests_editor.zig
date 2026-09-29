@@ -7155,11 +7155,10 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         .footprint = &footprint,
         .pixel_dims = .{ .x = 768, .y = 768 },
     }};
-    const registry_layers = [_]types.DecorationLayer{.{
-        .sprite = "tree_1_canopy",
-        .color_index = 2,
-        .pixel_dims = .{ .x = 768, .y = 768 },
-    }};
+    const registry_layers = [_]types.DecorationLayer{
+        .{ .sprite = "tree_1_canopy", .color_index = 2, .pixel_dims = .{ .x = 768, .y = 768 } },
+        .{ .sprite = "tree_1_grass_back", .color_index = 2, .behind = true, .pixel_dims = .{ .x = 768, .y = 768 } },
+    };
     const registry = [_]types.DecorationTypeDef{.{
         .id = "tree_1",
         .sprite = "tree_1",
@@ -7178,7 +7177,8 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     runToIdle(&history);
 
     // ADD via an official stem that is a registry prefab's authored layer:
-    // the color adopts the authored value (2), dims match the base.
+    // the color adopts the authored value (2) — and so does `behind`
+    // (grass_back is authored behind the base); dims match the base.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
@@ -7188,13 +7188,14 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
-        .clicked_editor_sprite = "tree_1_canopy",
+        .clicked_editor_sprite = "tree_1_grass_back",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     var definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(usize, 1), definition.layers.len);
-    try testing.expectEqualStrings("tree_1_canopy", definition.layers[0].sprite);
+    try testing.expectEqualStrings("tree_1_grass_back", definition.layers[0].sprite);
     try testing.expectEqual(@as(u32, 2), definition.layers[0].color_index);
+    try testing.expect(definition.layers[0].behind);
     try testing.expectEqual(types.Vector2{ .x = 768, .y = 768 }, definition.layers[0].pixel_dims);
 
     // ADD via a custom stem with MATCHING dims: resolved from the PNG,
@@ -7227,8 +7228,8 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     try testing.expectEqual(events_before, history.event_history.items.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].layers.len);
 
-    // EDIT re-pick keeps the layer's color; the color swatch commits the
-    // whole layer; delete compacts.
+    // EDIT re-pick keeps the layer's color AND draw side; the color
+    // swatch commits the whole layer (behind included); delete compacts.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
@@ -7244,6 +7245,8 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqualStrings("tree_1", definition.layers[0].sprite);
     try testing.expectEqual(@as(u32, 2), definition.layers[0].color_index);
+    // The re-pick kept the layer's draw side (grass_back was behind).
+    try testing.expect(definition.layers[0].behind);
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer_color,
@@ -7251,6 +7254,8 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         .clicked_editor_color = 5,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
+    // The color swatch commit kept the whole layer — behind included.
+    try testing.expect(history.current_state.editor.?.decoration_types[0].layers[0].behind);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_decoration_layer,
         .clicked_editor_layer = 1,

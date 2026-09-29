@@ -264,12 +264,9 @@ DONE.md). Open:
       resolve dims → `editor_add_decoration_type` event).
 - [x] Tree + tent prefab registration — DONE (see DONE.md, art delivery
       2026-09-29): footprints + layer composition in `data/decorations.txt`.
-- [ ] `grass_back` behind-the-base rendering — the tree prefabs registered
-      `tree_*_grass_back` as a normal layer (draws over the trunk where they
-      overlap — only 1–16% of its pixels per tree). Meant to render BEHIND
-      the trunk base: needs a back-layer slot in the render model (loader +
-      view + draw), or the intent is dropped; decide by looking at it
-      in-game.
+- [x] `grass_back` behind-the-base rendering — DONE: the `behind`
+      decoration-layer flag (config key + the back-layer render slot; see
+      DESIGN → Decorations & Footprint + DONE.md).
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 

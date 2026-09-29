@@ -1149,6 +1149,10 @@ pub const ActiveColorTheme = struct {
 pub const DecorationLayer = struct {
     sprite: []const u8,
     color_index: u32,
+    /// Draws BEHIND the base sprite (before it) instead of over it — the
+    /// `behind` config key (e.g. the trees' grass_back layer). Default false:
+    /// a layer is an overlay unless authored otherwise.
+    behind: bool = false,
     /// Pixel dims (validated == base pixel_dims at load; stored so view() stays
     /// pure and replay reproduces without re-reading).
     pixel_dims: Vector2,
@@ -2865,9 +2869,13 @@ pub const DecorationPieceDrawable = struct {
     draw_offset: ScreenPosition,
     source_rectangle: Rectangle,
     color: Color,
+    /// Back layer chunks (`behind` layers) drawn BEFORE the base at the same
+    /// position + source rect, each with its own sprite + color. Config
+    /// order preserved within the slice. Empty for single-sprite decorations.
+    back_layers: []const SpriteDrawable = &.{},
     /// Overlay layer chunks drawn over the base at the same position + source
     /// rect, each with its own sprite + color. Empty for single-sprite
-    /// decorations. Drawn in slice order (base first, then layers).
+    /// decorations. Drawn in slice order after the base.
     layers: []const SpriteDrawable = &.{},
 };
 

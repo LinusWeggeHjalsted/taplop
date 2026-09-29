@@ -2317,11 +2317,16 @@ fn buildDecorationPieces(
                 .height = tile_size_pixels,
             };
 
-            // Build overlay layer chunks for this bbox tile (same source
-            // rect + screen position, different sprite + color).
+            // Build layer chunks for this bbox tile (same source rect +
+            // screen position, different sprite + color), split into back
+            // layers (drawn before the base — the `behind` config key) and
+            // overlay layers (drawn after it); config order preserved
+            // within each slice.
+            var back_layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
             var layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
             for (decoration.layers) |layer| {
-                layer_sprites.append(allocator, .{
+                const target = if (layer.behind) &back_layer_sprites else &layer_sprites;
+                target.append(allocator, .{
                     .sprite_id = decorationLayerSpriteId(layer.sprite, allocator),
                     .screen_position = screen_top_left,
                     .draw_offset = .{ .x = 0, .y = 0 },
@@ -2332,6 +2337,8 @@ fn buildDecorationPieces(
                         worldGradientColor(active_theme, layer.color_index),
                 }) catch @panic("failed to append layer sprite");
             }
+            const back_layer_slice = back_layer_sprites.toOwnedSlice(allocator) catch
+                @panic("failed to own back layer sprites");
             const layer_slice = layer_sprites.toOwnedSlice(allocator) catch
                 @panic("failed to own layer sprites");
 
@@ -2341,6 +2348,7 @@ fn buildDecorationPieces(
                 .draw_offset = .{ .x = 0, .y = 0 },
                 .source_rectangle = source_rect,
                 .color = base_color,
+                .back_layers = back_layer_slice,
                 .layers = layer_slice,
             };
             entries.append(allocator, .{
@@ -4283,6 +4291,52 @@ test "decoration pieces: keep_original_colors untints base + layers" {
     const tinted_piece = tinted[0].drawable.decoration_piece;
     try std.testing.expect(std.meta.eql(world_four, tinted_piece.color));
     try std.testing.expect(std.meta.eql(world_four, tinted_piece.layers[0].color));
+}
+
+test "decoration pieces: behind layers split into back_layers, config order kept" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+    };
+    const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    // Config order: canopy (front), grass_back (behind), grass (front),
+    // moss (behind) — interleaved, so order WITHIN each side is what's
+    // under test, not just the split.
+    const layers = [_]types.DecorationLayer{
+        .{ .sprite = "tree_1_canopy", .color_index = 2, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .sprite = "tree_1_grass_back", .color_index = 2, .behind = true, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .sprite = "tree_1_grass", .color_index = 2, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .sprite = "tree_1_moss", .color_index = 2, .behind = true, .pixel_dims = .{ .x = 256, .y = 256 } },
+    };
+
+    const pieces = buildDecorationPieces(.{
+        .name = "tree_1",
+        .position = .{ .x = 0, .y = 0 },
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+        .color_index = 4,
+        .layers = &layers,
+    }, theme, camera, 1.0, arena);
+    const piece = pieces[0].drawable.decoration_piece;
+    try std.testing.expectEqual(@as(usize, 2), piece.back_layers.len);
+    try std.testing.expectEqual(@as(usize, 2), piece.layers.len);
+    try std.testing.expectEqualStrings("decorations/tree_1_grass_back", piece.back_layers[0].sprite_id);
+    try std.testing.expectEqualStrings("decorations/tree_1_moss", piece.back_layers[1].sprite_id);
+    try std.testing.expectEqualStrings("decorations/tree_1_canopy", piece.layers[0].sprite_id);
+    try std.testing.expectEqualStrings("decorations/tree_1_grass", piece.layers[1].sprite_id);
+    // Back layers share the piece's position + source rect (the same
+    // chunking, just drawn before the base).
+    try std.testing.expectEqual(piece.screen_position, piece.back_layers[0].screen_position);
+    try std.testing.expectEqual(piece.source_rectangle, piece.back_layers[0].source_rectangle);
 }
 
 // ============================================================

@@ -23,6 +23,7 @@ color_index 2
 layer
 sprite tree_1_grass_back
 color_index 2
+behind true
 
 sprite tree_2
 color_index 4
@@ -39,6 +40,7 @@ color_index 2
 layer
 sprite tree_2_grass_back
 color_index 2
+behind true
 
 sprite tree_3
 color_index 4
@@ -55,6 +57,7 @@ color_index 2
 layer
 sprite tree_3_grass_back
 color_index 2
+behind true
 
 sprite tree_4
 color_index 4
@@ -71,6 +74,7 @@ color_index 2
 layer
 sprite tree_4_grass_back
 color_index 2
+behind true
 
 sprite tree_5
 color_index 4
@@ -87,6 +91,7 @@ color_index 2
 layer
 sprite tree_5_grass_back
 color_index 2
+behind true
 
 sprite ruin_1
 color_index 0

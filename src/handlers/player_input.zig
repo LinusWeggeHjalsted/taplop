@@ -848,6 +848,7 @@ pub fn handlePlayerInputEvent(
                 .type_id = set.type_id,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
+                .behind = set.behind,
                 .pixel_dims = set.pixel_dims,
             } } }}, allocator);
         },
@@ -863,6 +864,7 @@ pub fn handlePlayerInputEvent(
                 .layer_index = set.layer_index,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
+                .behind = set.behind,
                 .pixel_dims = set.pixel_dims,
             } } }}, allocator);
         },

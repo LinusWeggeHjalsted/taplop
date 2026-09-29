@@ -389,6 +389,20 @@ fn emitEditorDecorationToolCell(
         default_tint
     else
         world_gradient[base_color_index];
+
+    // The scene's draw order (draw.zig): back layers (`behind`), then the
+    // base, then overlay layers — element order in the flat list.
+    for (type_definition.layers) |layer| {
+        if (!layer.behind) continue;
+        try appendDecorationLayerCellImage(
+            elements,
+            allocator,
+            layer,
+            fitted,
+            type_definition.keep_original_colors,
+            world_gradient,
+        );
+    }
     try appendCellGraphicImage(
         elements,
         allocator,
@@ -397,23 +411,45 @@ fn emitEditorDecorationToolCell(
         base_color,
         false,
     );
-
     for (type_definition.layers) |layer| {
-        const layer_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{layer.sprite});
-        const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
-        const layer_color = if (type_definition.keep_original_colors)
-            default_tint
-        else
-            world_gradient[layer_color_index];
-        try appendCellGraphicImage(
+        if (layer.behind) continue;
+        try appendDecorationLayerCellImage(
             elements,
             allocator,
-            layer_sprite_id,
+            layer,
             fitted,
-            layer_color,
-            false,
+            type_definition.keep_original_colors,
+            world_gradient,
         );
     }
+}
+
+/// One decoration layer's image in a palette tool cell (the fitted rect
+/// shared with the base — layers match the base's pixel dims). Tinted with
+/// the layer's own color_index into the world gradient, or untinted when
+/// the type keeps its original colors.
+fn appendDecorationLayerCellImage(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    layer: types.DecorationLayer,
+    fitted: Rectangle,
+    keep_original_colors: bool,
+    world_gradient: [types.gradient_color_count]types.Color,
+) !void {
+    const layer_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{layer.sprite});
+    const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+    const layer_color = if (keep_original_colors)
+        default_tint
+    else
+        world_gradient[layer_color_index];
+    try appendCellGraphicImage(
+        elements,
+        allocator,
+        layer_sprite_id,
+        fitted,
+        layer_color,
+        false,
+    );
 }
 
 /// The small delete button flush in a palette tool cell's top-right corner

@@ -700,6 +700,9 @@ fn writeEditorLevel(
                 try buffer.appendSlice(allocator, "layer\n");
                 try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_dir_name, allocator)});
                 try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
+                if (layer.behind) {
+                    try buffer.appendSlice(allocator, "behind true\n");
+                }
             }
         }
     }
@@ -1375,6 +1378,7 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
     };
     const decoration_layers = [_]types.DecorationLayer{
         .{ .sprite = "custom/old_dir/tree_top", .color_index = 2, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .sprite = "custom/old_dir/tree_base", .color_index = 5, .behind = true, .pixel_dims = .{ .x = 256, .y = 256 } },
     };
     const levels = [_]types.EditorLevel{.{
         .level_tiles = &[_]types.Vector2{.{ .x = 0, .y = 0 }},
@@ -1422,6 +1426,11 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/tree\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/tree_top") != null);
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "old_dir") == null);
+    // The behind layer's flag rides the sub-group (sprite, color_index,
+    // then `behind true` — emitted only when set, so exactly once for
+    // the one behind layer).
+    try std.testing.expect(std.mem.indexOf(u8, level_txt, "sprite custom/u_New Name/tree_base\ncolor_index 5\nbehind true\n") != null);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, level_txt, "behind true\n"));
     // Shipped stems pass through (the load defaults + the decoration's
     // defaulted keys are part of the same contract — normalization only
     // ever touches custom stems).

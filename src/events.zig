@@ -534,6 +534,10 @@ pub const EditorEvent = union(enum) {
         type_id: u32,
         sprite: []const u8,
         color_index: u32,
+        /// Draws behind the base — the picker commit adopts the registry
+        /// prefab's authored draw side for the stem (tree_*_grass_back is
+        /// true), else false (an overlay). Defaults false for pre-field logs.
+        behind: bool = false,
         pixel_dims: Vector2,
     },
     editor_remove_decoration_layer: struct {
@@ -545,6 +549,10 @@ pub const EditorEvent = union(enum) {
         layer_index: u32,
         sprite: []const u8,
         color_index: u32,
+        /// The layer's draw side, kept from the replaced layer at the
+        /// picker commit (a re-pick edits the visual identity, not the
+        /// placement). Defaults false for pre-field logs.
+        behind: bool = false,
         pixel_dims: Vector2,
     },
 
@@ -1151,6 +1159,7 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         sprite: []const u8,
         color_index: u32,
+        behind: bool = false,
         pixel_dims: Vector2,
     },
     player_remove_editor_decoration_layer: struct {
@@ -1162,6 +1171,7 @@ pub const PlayerInputEvent = union(enum) {
         layer_index: u32,
         sprite: []const u8,
         color_index: u32,
+        behind: bool = false,
         pixel_dims: Vector2,
     },
 

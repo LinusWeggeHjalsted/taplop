@@ -15266,3 +15266,43 @@ trunk where they overlap (1-16% of its pixels per tree, from alpha
 bbox/overlap analysis; moss is ~90% on-trunk and grass 37-70% front, so
 their over-the-base draw order is correct). The behind-the-base
 render-model question stays open: TODO → Decoration Footprint.
+
+## Behind layers: the `behind` decoration-layer flag (grass renders behind the trunk)
+
+Decoration layers gained a draw side: a layer sub-group may carry
+`behind true` to draw BEFORE the base sprite instead of over it (the
+base's transparent pixels are what let it show through). Design: DESIGN
+→ Decorations & Footprint (config format + the per-piece draw order).
+
+- **Config**: `behind true|false` (optional, default false = overlay)
+  inside a layer sub-group; whitelisted in the level/hub + registry
+  decoration key lists. `DecorationLayer.behind: bool = false`. The
+  mission writer emits `behind true` only when set (compact). The
+  shipped trees' `grass_back` layers carry it in data/decorations.txt.
+- **Render**: `DecorationPieceDrawable.back_layers` —
+  buildDecorationPieces splits the config layers into back + overlay
+  slices (config order kept within each); draw.zig draws back layers,
+  base, then overlays per bbox tile. The two composed-preview sites
+  (editor palette cell, sprite-picker cell) follow the same order.
+- **Editor**: the picker's ADD commit adopts a registry prefab's
+  authored draw side for the picked stem (like its authored color —
+  adding `tree_N_grass_back` art lands behind); a re-pick and the
+  color-swatch commit keep the layer's side (a visual-identity edit,
+  not a placement edit). The registry dupe, cloneDecorationOwned, and
+  decorationLayersEqual all carry the flag.
+- **Events**: `editor_add/set_decoration_layer` + the player mirrors
+  gained `behind: bool = false`. Payload-field addition → old
+  editor-session logs with those events (or with a
+  player_set_editor_decoration_def layers slice — the indexed-slice
+  reader requires every element field) now fail to parse: the
+  re-record-until-release policy (Logging & Replay), same precedent as
+  keep_original_colors. Shipped validation replays are play sessions —
+  unaffected.
+
+Tests: the registry loader pins grass_back behind=true + the rest
+false; a buildDecorationPieces split test (interleaved config order,
+back/overlay slices, shared position + source rect); the handler test
+pins add-adoption + re-pick/color-swatch preservation end-to-end; the
+writer test pins `behind true` emission (exactly once, after
+color_index); the session-log pins cover the flat + indexed encodings
+of the new field.

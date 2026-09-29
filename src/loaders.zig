@@ -842,6 +842,7 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
     for (a, b) |la, lb| {
         if (!std.mem.eql(u8, la.sprite, lb.sprite)) return false;
         if (la.color_index != lb.color_index) return false;
+        if (la.behind != lb.behind) return false;
     }
     return true;
 }
@@ -1457,6 +1458,7 @@ fn parseDecorationEntry(
     var layers: std.ArrayList(types.DecorationLayer) = .empty;
     var current_layer_sprite: ?[]const u8 = null;
     var current_layer_color: u32 = 0;
+    var current_layer_behind: bool = false;
     var in_layer = false;
 
     for (pairs) |pair| {
@@ -1465,6 +1467,7 @@ fn parseDecorationEntry(
             if (in_layer) finishLayer(
                 current_layer_sprite,
                 current_layer_color,
+                current_layer_behind,
                 base_sprite,
                 base_pixel_dims,
                 mission_path,
@@ -1478,6 +1481,7 @@ fn parseDecorationEntry(
             in_layer = true;
             current_layer_sprite = null;
             current_layer_color = 0;
+            current_layer_behind = false;
             continue;
         }
 
@@ -1486,6 +1490,8 @@ fn parseDecorationEntry(
                 current_layer_sprite = pair.value;
             } else if (std.mem.eql(u8, pair.key, "color_index")) {
                 current_layer_color = asU32(pair.value) orelse 0;
+            } else if (std.mem.eql(u8, pair.key, "behind")) {
+                current_layer_behind = asBool(pair.value) orelse false;
             }
             // Other keys (footprint, character_code) are ignored inside a
             // layer sub-group.
@@ -1511,6 +1517,7 @@ fn parseDecorationEntry(
     if (in_layer) finishLayer(
         current_layer_sprite,
         current_layer_color,
+        current_layer_behind,
         base_sprite,
         base_pixel_dims,
         mission_path,
@@ -1542,6 +1549,7 @@ fn parseDecorationEntry(
 fn finishLayer(
     layer_sprite: ?[]const u8,
     layer_color: u32,
+    layer_behind: bool,
     base_sprite: []const u8,
     base_pixel_dims: types.Vector2,
     mission_path: []const u8,
@@ -1562,6 +1570,7 @@ fn finishLayer(
         layers.append(allocator, .{
             .sprite = sprite,
             .color_index = layer_color,
+            .behind = layer_behind,
             .pixel_dims = .{ .x = 0, .y = 0 },
         }) catch @panic("failed to append decoration layer");
         return;
@@ -1578,6 +1587,7 @@ fn finishLayer(
     layers.append(allocator, .{
         .sprite = sprite,
         .color_index = layer_color,
+        .behind = layer_behind,
         .pixel_dims = floored_layer_dims,
     }) catch @panic("failed to append decoration layer");
 }
@@ -1591,6 +1601,7 @@ fn finishLayer(
 ///   layer                (delimiter — starts a layer sub-group)
 ///     sprite <name>      (layer sprite, must be same pixel dims as base)
 ///     color_index N      (layer color index)
+///     behind true|false  (optional — draw behind the base instead of over)
 /// A `layer` line is a delimiter: the following `sprite`/`color_index` pairs
 /// belong to that layer until the next `layer` or end of entry. Pixel dims
 /// are resolved from the comptime sprite-metadata table (shipped) or the file
@@ -1891,6 +1902,7 @@ fn cloneDecorationOwned(decoration: *types.Decoration, allocator: std.mem.Alloca
         duped_layers[i] = .{
             .sprite = dupeString(allocator, layer.sprite),
             .color_index = layer.color_index,
+            .behind = layer.behind,
             .pixel_dims = layer.pixel_dims,
         };
     }
@@ -3633,6 +3645,7 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     for ([_][]const u8{ "tree_5_canopy", "tree_5_moss", "tree_5_grass", "tree_5_grass_back" }, t5.layers) |expected, layer| {
         try std.testing.expectEqualStrings(expected, layer.sprite);
     }
+    try std.testing.expectEqual(true, t5.layers[3].behind);
 
     // tree_1: 3x3 bbox (768x768), footprint at (1,2), color 4, four layers
     // in config order (canopy, moss, grass, grass_back — each color 2, the
@@ -3654,6 +3667,12 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
         try std.testing.expectEqual(@as(i32, 768), layer.pixel_dims.x);
         try std.testing.expectEqual(@as(i32, 768), layer.pixel_dims.y);
     }
+    // The `behind` key: grass_back is the one behind layer; the rest are
+    // overlays (the flag defaults false when the key is absent).
+    try std.testing.expectEqual(false, t.layers[0].behind);
+    try std.testing.expectEqual(false, t.layers[1].behind);
+    try std.testing.expectEqual(false, t.layers[2].behind);
+    try std.testing.expectEqual(true, t.layers[3].behind);
     try std.testing.expect(std.mem.eql(u8, "tree_1", t.id));
 
     // stone_6: 1x2 bbox (256x512), footprint at (0,1), color 5, no layers.

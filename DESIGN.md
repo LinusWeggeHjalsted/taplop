@@ -4488,6 +4488,10 @@ footprint 1 2
 layer
 sprite tree_canopy
 color_index 2
+layer
+sprite tree_grass_back
+color_index 2
+behind true
 
 character_code R
 sprite ruin_1
@@ -4499,9 +4503,15 @@ footprint 0 1
 The footprint list is in sprite-grid coords (NOT anchor-relative):
 unambiguous and authorable by marking the solid tiles of the sprite. Blank
 lines end an entry (as everywhere). A `layer` line is a DELIMITER: the
-following `sprite`/`color_index` pairs belong to that layer until the next
-`layer` or end of entry. The base's own `sprite`/`color_index` are top-level
-keys on the entry (the base owns the footprint).
+following `sprite`/`color_index`/`behind` pairs belong to that layer until
+the next `layer` or end of entry. The base's own `sprite`/`color_index` are
+top-level keys on the entry (the base owns the footprint). A layer is an
+OVERLAY (drawn over the base) unless it carries `behind true` — then it
+draws BEFORE the base, showing through its transparent pixels (e.g. the
+trees' `grass_back`: grass meant to sit behind the trunk). The writer emits
+`behind true` only when set; the picker's ADD commit adopts a registry
+prefab's authored draw side for the stem, a re-pick keeps the layer's, and
+the color-swatch commit keeps the whole layer (behind included).
 
 **Sprite id convention: bare stems.** All config `sprite` values store the
 BARE STEM (e.g. `tree_1`, `skeleton_1`, `player`), not the full asset path.
@@ -4554,7 +4564,10 @@ tile, an entity/item placement, or another decoration's footprint.
 **Rendering: split per bbox tile, sort by assigned footprint y.** The sprite
 is split into one `DecorationPieceDrawable` per **bbox** tile (9 for the tree:
 footprint + 7 overhang). Footprint is NOT used to decide what gets drawn —
-overhang tiles still draw — it's a layout-reservation field only.
+overhang tiles still draw — it's a layout-reservation field only. Each piece
+draws its back layers (`behind true`) first, then the base, then its overlay
+layers in config order — the base's transparent pixels are what let a back
+layer show.
 
 Overhang bbox tiles (art but not footprint) are **assigned to a footprint
 tile** at load so the piece sorts at that footprint tile's `y`, not its own.

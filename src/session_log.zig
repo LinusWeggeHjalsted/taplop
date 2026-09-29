@@ -752,7 +752,7 @@ test "writeEventLog serializes representative event shapes" {
             .color_index = 3,
             .layers = &.{
                 .{ .sprite = "custom/My Mission/canopy", .color_index = 2, .pixel_dims = .{ .x = 512, .y = 768 } },
-                .{ .sprite = "tree_1_canopy", .color_index = 1, .pixel_dims = .{ .x = 512, .y = 768 } },
+                .{ .sprite = "tree_1_canopy", .color_index = 1, .behind = true, .pixel_dims = .{ .x = 512, .y = 768 } },
             },
         } } },
     };
@@ -807,11 +807,11 @@ test "writeEventLog serializes representative event shapes" {
     // The layer events: flat top-level sprite fields — spaces ride the
     // sprite's own line verbatim.
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_layer\ntarget entity_type 0\nlayer_index 1\nsprite custom/My Mission/canopy\ncolor_index 2\n") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_add_decoration_layer\ntype_id 0\nsprite custom/My Mission/moss\ncolor_index 1\npixel_dims 512 256\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_add_decoration_layer\ntype_id 0\nsprite custom/My Mission/moss\ncolor_index 1\nbehind false\npixel_dims 512 256\n") != null);
     // The def's layers slice: the INDEXED encoding — one line per element
     // field, each string on its own line (the footprint slice stays a
     // single flattened line — no strings inside).
-    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nkeep_original_colors false\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_pixel_dims 512 768\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nkeep_original_colors false\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_behind false\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_behind true\nlayers_1_pixel_dims 512 768\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.

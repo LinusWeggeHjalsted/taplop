@@ -195,6 +195,12 @@ pub fn drawGroundDrawable(
             if (entity.health_bar) |bar| drawHealthBar(backend, bar, world_scale);
         },
         .decoration_piece => |decoration| {
+            // Back layers (`behind` config key) draw BEFORE the base; the
+            // base's transparent pixels let them show through. Then the
+            // base, then overlay layers in slice order.
+            for (decoration.back_layers) |layer| {
+                drawSpriteDrawable(backend, layer, world_scale);
+            }
             drawSpriteDrawable(backend, .{
                 .sprite_id = decoration.sprite_id,
                 .screen_position = decoration.screen_position,
@@ -202,8 +208,6 @@ pub fn drawGroundDrawable(
                 .source_rectangle = decoration.source_rectangle,
                 .color = decoration.color,
             }, world_scale);
-            // Overlay layers: same position + source rect, different
-            // sprite + color, drawn in slice order (base first).
             for (decoration.layers) |layer| {
                 drawSpriteDrawable(backend, layer, world_scale);
             }

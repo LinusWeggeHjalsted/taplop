@@ -380,6 +380,7 @@ pub fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.m
                 .sprite = backing.dupe(u8, layer.sprite) catch
                     @panic("failed to dupe decoration layer sprite"),
                 .color_index = layer.color_index,
+                .behind = layer.behind,
                 .pixel_dims = layer.pixel_dims,
             };
         }
@@ -774,6 +775,7 @@ pub fn handleEditorEvent(
             layerListAppend(types.DecorationLayer, &definition.layers, .{
                 .sprite = add.sprite,
                 .color_index = add.color_index,
+                .behind = add.behind,
                 .pixel_dims = add.pixel_dims,
             }, allocator);
         },
@@ -795,6 +797,7 @@ pub fn handleEditorEvent(
             layerListReplaceAt(types.DecorationLayer, &definition.layers, set.layer_index, .{
                 .sprite = set.sprite,
                 .color_index = set.color_index,
+                .behind = set.behind,
                 .pixel_dims = set.pixel_dims,
             }, allocator);
         },

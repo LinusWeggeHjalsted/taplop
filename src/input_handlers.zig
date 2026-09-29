@@ -1936,7 +1936,10 @@ pub fn handleAnytimeInput(
             // tab already filters to matching dims, so this only guards
             // mission-local picks). A new layer's color adopts a registry
             // prefab's authored layer color when the stem is one (tree_1's
-            // canopy is 2), else 0; a re-pick keeps the layer's color.
+            // canopy is 2), else 0; a re-pick keeps the layer's color. Same
+            // for `behind`: a new layer adopts the authored stem's draw
+            // side (tree_1's grass_back is true), else false; a re-pick
+            // keeps the layer's.
             .select_editor_decoration_layer => {
                 // Gate: only a pick while the DECORATION LAYER picker is
                 // open.
@@ -1984,11 +1987,25 @@ pub fn handleAnytimeInput(
                     }
                     break :blk 0;
                 };
+                const behind: bool = if (layer_index) |index| blk: {
+                    if (index >= current_definition.layers.len) return;
+                    break :blk current_definition.layers[index].behind;
+                } else blk: {
+                    // A registry prefab's authored layer draw side, if the
+                    // stem is one; else false (an overlay).
+                    for (history.session.editor_decoration_registry) |definition| {
+                        for (definition.layers) |layer| {
+                            if (std.mem.eql(u8, layer.sprite, sprite)) break :blk layer.behind;
+                        }
+                    }
+                    break :blk false;
+                };
                 const sprite_value = arena.dupe(u8, sprite) catch
                     @panic("failed to allocate layer sprite commit value");
                 const new_layer: types.DecorationLayer = .{
                     .sprite = sprite_value,
                     .color_index = color_index,
+                    .behind = behind,
                     .pixel_dims = pixel_dims,
                 };
                 if (layer_index) |index| {
@@ -1999,6 +2016,7 @@ pub fn handleAnytimeInput(
                         .layer_index = index,
                         .sprite = new_layer.sprite,
                         .color_index = new_layer.color_index,
+                        .behind = new_layer.behind,
                         .pixel_dims = new_layer.pixel_dims,
                     } });
                 } else {
@@ -2006,6 +2024,7 @@ pub fn handleAnytimeInput(
                         .type_id = type_id,
                         .sprite = new_layer.sprite,
                         .color_index = new_layer.color_index,
+                        .behind = new_layer.behind,
                         .pixel_dims = new_layer.pixel_dims,
                     } });
                 }
@@ -2205,6 +2224,7 @@ pub fn handleAnytimeInput(
                     .layer_index = layer_index,
                     .sprite = current_layer.sprite,
                     .color_index = color_index,
+                    .behind = current_layer.behind,
                     .pixel_dims = current_layer.pixel_dims,
                 } });
             },

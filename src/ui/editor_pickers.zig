@@ -1054,6 +1054,15 @@ fn emitPickerSpriteCell(
     } });
     if (graphic_sprite_id) |graphic_id| {
         const fitted = scaleToFit(cell_rect, frame_width, frame_height);
+        // Registry-prefab layers: same fitted rect (layer dims are
+        // validated equal to the base's at load), each tinted at its own
+        // index — the scene's decoration composition, in its draw order:
+        // back layers (`behind`) before the base, overlay layers after
+        // (see draw.zig).
+        for (layers) |layer| {
+            if (!layer.behind) continue;
+            try emitPickerDecorationLayerImage(elements, allocator, layer, fitted, layers_gradient);
+        }
         try elements.append(allocator, .{ .image = .{
             .sprite_id = graphic_id,
             .screen_position = fitted.position(),
@@ -1062,24 +1071,9 @@ fn emitPickerSpriteCell(
             .color = graphic_color,
             .blocks_input = false,
         } });
-        // Registry-prefab layers: same fitted rect (layer dims are
-        // validated equal to the base's at load), each tinted at its own
-        // index — the scene's decoration composition.
         for (layers) |layer| {
-            const layer_sprite_id = try std.fmt.allocPrint(
-                allocator,
-                "decorations/{s}",
-                .{layer.sprite},
-            );
-            const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = layer_sprite_id,
-                .screen_position = fitted.position(),
-                .width = fitted.width,
-                .height = fitted.height,
-                .color = layers_gradient[layer_color_index],
-                .blocks_input = false,
-            } });
+            if (layer.behind) continue;
+            try emitPickerDecorationLayerImage(elements, allocator, layer, fitted, layers_gradient);
         }
     } else {
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
@@ -1093,6 +1087,32 @@ fn emitPickerSpriteCell(
             .blocks_input = false,
         } });
     }
+}
+
+/// One registry-prefab layer image in a sprite-picker cell — the fitted
+/// rect shared with the base (layer dims are validated equal to the base's
+/// at load), tinted at the layer's own color_index into the world gradient.
+fn emitPickerDecorationLayerImage(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    layer: types.DecorationLayer,
+    fitted: Rectangle,
+    layers_gradient: [types.gradient_color_count]types.Color,
+) !void {
+    const layer_sprite_id = try std.fmt.allocPrint(
+        allocator,
+        "decorations/{s}",
+        .{layer.sprite},
+    );
+    const layer_color_index = @min(layer.color_index, types.gradient_color_count - 1);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = layer_sprite_id,
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = layers_gradient[layer_color_index],
+        .blocks_input = false,
+    } });
 }
 
 /// One picker cell: the frame button (carrying the pick; null skill_id =

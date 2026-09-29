@@ -514,6 +514,7 @@ const level_decorations_keys = [_][]const u8{
     "keep_original_colors",
     "footprint",
     "layer",
+    "behind",
 };
 
 /// Same as level_decorations_keys but without `character_code` — registry
@@ -524,6 +525,7 @@ const decoration_registry_decorations_keys = [_][]const u8{
     "keep_original_colors",
     "footprint",
     "layer",
+    "behind",
 };
 
 const level_items_keys = [_][]const u8{
