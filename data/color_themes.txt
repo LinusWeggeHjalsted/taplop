@@ -2,30 +2,199 @@ Metadata
 file_format_version 1
 
 GlobalColors
-lightest #fef9ee
-darkest #4c3f4e
+lightest #fffcf4
+darkest #4c3f4f
 
 Gradients
 gradient_index 0
-color_0 #f5f8d4
-color_1 #d6da7b
-color_2 #bec761
-color_3 #aaae56
-color_4 #969446
-color_5 #767253
+color_0 #f6f6bb
+color_1 #f2ef90
+color_2 #f2eb82
+color_3 #d7cb71
+color_4 #bcad67
+color_5 #95896a
 
 gradient_index 1
-color_0 #ecf1f9
-color_1 #96a9d5
-color_2 #8097cd
-color_3 #7183b7
-color_4 #606daa
-color_5 #565872
+color_0 #eceea7
+color_1 #e1e177
+color_2 #dcd964
+color_3 #c4bd57
+color_4 #a89f53
+color_5 #877e58
 
 gradient_index 2
-color_0 #fef1e8
-color_1 #f3a56c
+color_0 #e6eaa9
+color_1 #d7da7c
+color_2 #ced169
+color_3 #b9b65e
+color_4 #a19a51
+color_5 #807858
+
+gradient_index 3
+color_0 #dfe5a3
+color_1 #c9d173
+color_2 #bec761
+color_3 #aaae57
+color_4 #979546
+color_5 #767253
+
+gradient_index 4
+color_0 #d6e2a2
+color_1 #becd6f
+color_2 #afc15b
+color_3 #9da950
+color_4 #8a8f42
+color_5 #6e6f4e
+
+gradient_index 5
+color_0 #b7dec6
+color_1 #91cfa8
+color_2 #79c89d
+color_3 #6baf8b
+color_4 #529a78
+color_5 #587065
+
+gradient_index 6
+color_0 #b5e1ee
+color_1 #87cdda
+color_2 #6fc1d5
+color_3 #60a8bd
+color_4 #568ea6
+color_5 #556d7b
+
+gradient_index 7
+color_0 #b8daf2
+color_1 #87bee4
+color_2 #6eb0de
+color_3 #6099c6
+color_4 #5681a9
+color_5 #52647b
+
+gradient_index 8
+color_0 #c1cde8
+color_1 #86b0db
+color_2 #6ea0d5
+color_3 #608bbe
+color_4 #5575a6
+color_5 #505c75
+
+gradient_index 9
+color_0 #c1cde8
+color_1 #96aad5
+color_2 #8097cd
+color_3 #7184b7
+color_4 #606eaa
+color_5 #575873
+
+gradient_index 10
+color_0 #cbc8e2
+color_1 #a4a0cc
+color_2 #938ec5
+color_3 #817cb1
+color_4 #7465a9
+color_5 #5e576f
+
+gradient_index 11
+color_0 #d3c0dc
+color_1 #b499c6
+color_2 #a585bd
+color_3 #9373a9
+color_4 #875ba1
+color_5 #64516c
+
+gradient_index 12
+color_0 #dfb9d6
+color_1 #c690be
+color_2 #ba79b4
+color_3 #a669a0
+color_4 #9b5391
+color_5 #6d4f69
+
+gradient_index 13
+color_0 #ebbad0
+color_1 #d88daf
+color_2 #d077a4
+color_3 #ba6792
+color_4 #a55781
+color_5 #754f64
+
+gradient_index 14
+color_0 #f1bcc1
+color_1 #e28e94
+color_2 #dc7785
+color_3 #c66877
+color_4 #aa5967
+color_5 #7b5059
+
+gradient_index 15
+color_0 #f5bdb4
+color_1 #ec9180
+color_2 #e6796e
+color_3 #cf6a63
+color_4 #ae5c59
+color_5 #7f5050
+
+gradient_index 16
+color_0 #f7c0ab
+color_1 #f09370
+color_2 #ea7b5c
+color_3 #d36b51
+color_4 #aa5f4f
+color_5 #80524a
+
+gradient_index 17
+color_0 #f9c6a9
+color_1 #f39c6d
+color_2 #ed8659
+color_3 #d4764f
+color_4 #ac664f
+color_5 #83584a
+
+gradient_index 18
+color_0 #f9ccab
+color_1 #f3a56d
 color_2 #ee9159
-color_3 #d57f4f
-color_4 #af6e50
-color_5 #845d4c
+color_3 #d67f4f
+color_4 #af6f51
+color_5 #855d4c
+
+gradient_index 19
+color_0 #faceaa
+color_1 #f4aa6d
+color_2 #ef9759
+color_3 #d6844f
+color_4 #ae7251
+color_5 #855f4c
+
+gradient_index 20
+color_0 #fbd2aa
+color_1 #f6b16c
+color_2 #f19f58
+color_3 #d89656
+color_4 #b17950
+color_5 #87634d
+
+gradient_index 21
+color_0 #f9d7ad
+color_1 #f5bb74
+color_2 #f1ac63
+color_3 #d89656
+color_4 #b48157
+color_5 #896854
+
+gradient_index 22
+color_0 #fadfb3
+color_1 #f5c67e
+color_2 #f0bb6e
+color_3 #d6a261
+color_4 #b78b5e
+color_5 #8c715b
+
+gradient_index 23
+color_0 #faecaf
+color_1 #f8dc7d
+color_2 #f7d46c
+color_3 #ddb75e
+color_4 #bc9d5f
+color_5 #947e5f
+

@@ -4259,11 +4259,12 @@ test "color_themes.txt parses from disk" {
     const theme = try loadColorThemeDefinitions(parsed.sections, allocator);
     defer allocator.free(theme.gradients);
 
-    // Should have 3 gradients (world / enemy / player for the first full theme).
-    try std.testing.expectEqual(3, theme.gradients.len);
+    // The full color wheel: 24 gradients, clockwise from the top spoke
+    // (index 0 = the wheel's top; see DESIGN → Entity & UI Coloring).
+    try std.testing.expectEqual(24, theme.gradients.len);
 
     // Lightest and darkest should be parsed
-    try std.testing.expectEqual(0xfe, theme.lightest.r);
+    try std.testing.expectEqual(0xff, theme.lightest.r);
     try std.testing.expectEqual(0x4c, theme.darkest.r);
 }
 

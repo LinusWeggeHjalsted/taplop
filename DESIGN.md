@@ -3888,8 +3888,10 @@ DOWN (never up) for oversized custom art; the Confirm button is pinned
 bottom-center.
 
 **Level theme (gradient picking).** A level's theme is composed from the
-authoritative gradient list in `color_themes.txt` (currently 3 gradients;
-will grow to a full handpicked color wheel). The level stores:
+authoritative gradient list in `color_themes.txt` — the full color wheel
+(24 gradients, one per 15° spoke, INDEX 0 at the wheel's top increasing
+CLOCKWISE — machine-extracted from the artist's wheel asset; gradient i =
+the spoke at CCW angle 90° − 15°·i). The level stores:
 - **world gradient index** — picked from the list (the role
   `color_wheel_index` plays today).
 - **enemy / player gradient overrides** — optional indices; when unset

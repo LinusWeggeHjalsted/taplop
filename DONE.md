@@ -15326,3 +15326,47 @@ the row stays sprite + Delete). The handler test pins the flip end-to-
 end (behind flips, sprite + color kept); DESIGN → Decorations &
 Footprint records the toggle alongside the behind key's other commit
 semantics.
+
+## The full color wheel: 24 gradients, programmatically extracted from the artist's asset
+
+data/color_themes.txt regenerated from the artist's wheel graphic
+(ColorPalette-01.png, 2026-09-29 delivery). The wheel decoded cleanly:
+two big global squares (lightest #fffcf4, darkest #4c3f4f — the #554a58
+on the light square is just its border frame) + 24 spokes at exact 15°
+steps, each a 6-circle gradient ramp from light (outer ring, r≈1066) to
+dark (inner, r≈522). Extraction: per-color connected regions (each circle
+is a uniform fill, so every circle = one distinct high-count color with
+its pixel centroid), then slot assignment per (spoke angle, ring radius)
+around the wheel center — no hand color-picking. Interference handled:
+the decorative dark arc + the numbers stamped on the outer circles and
+the black center triangle only reduce fill counts / nudge centroids, and
+two same-colored adjacent-spoke circle PAIRS merge into single blobs
+(#c1cde8 on spokes 315°+330°, #d89656 on 135°+150°) — merged blobs are
+assigned via bbox containment gated on the blob's own ring + angle.
+Validation: 24×6 slots all filled, every spoke darkens monotonically
+outward→inward, shared colors only at the two genuine artist repeats.
+
+**Indexing** (user decision): index 0 = the gradient going straight up
+(the yellow spoke), increasing CLOCKWISE — gradient i = the spoke at CCW
+angle 90° − 15°·i. The old file's three gradients were spokes 45°/315°/
+180° → now indices 3/9/18. With the auto-derivation rule unchanged
+(enemy = wheel + N/3, player = wheel + 2N/3; N=24 → +8/+16), the DEFAULT
+unthemed look (wheel 0) stays close to the old one: world = yellow
+(index 0), enemy = 330° blue (index 8), player = 210° orange (index 16).
+
+The current file's values were hand-altered per playtest feedback and
+superseded by the wheel (the user confirmed the asset is the new source
+of truth); the extraction also surfaced two hand-copy typos it fixes
+(#969446 → #979546, #aaae56 → #aaae57). Globals: #fef9ee/#4c3f4e →
+#fffcf4/#4c3f4f.
+
+Old session logs / validation replays unaffected (theme colors ride in
+color_themes.txt, re-read at reconstruction — old replays just render
+with the new palette). Test updates: the loader disk test pins 24
+gradients + the new lightest byte; the theme-picker test's auto-flip
+derivation pins re-derived for N=24 (wheel 2 → enemy 2+8=10).
+
+TWO REPEATED COLORS across gradients shipped as-sent, flagged for the
+artist in TODO (Cross-cutting polish): #c1cde8 (color_0 of gradients 8
+and 9) and #d89656 (color_3 of gradients 20 and 21). DESIGN → Level
+theme records the wheel layout (24 gradients, clockwise from top).

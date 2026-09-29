@@ -126,7 +126,10 @@ Test by running `zig build run` and clicking through.
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global
   top bar's redo button flips icon_undo as its glyph until icon_redo
-  lands), and
+  lands), the color wheel's two REPEATED colors across gradients (artist to
+  correct: `#c1cde8` — color_0 of both gradient 8 (330° spoke) and gradient 9
+  (315°); `#d89656` — color_3 of both gradient 20 (150°) and gradient 21
+  (135°); shipped as-sent until the corrected wheel arrives), and
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons, the inventory icon stat numbers, and combat
