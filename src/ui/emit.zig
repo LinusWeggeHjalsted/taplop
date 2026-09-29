@@ -555,11 +555,13 @@ fn emitItemStatNumber(
 /// number per stat, colored by the equipped comparison: green while
 /// better, red while worse, lightest while equal; a weapon compares
 /// INCLUSIVELY against both hands — green while it at least matches each
-/// hand (≥ each: a weapon equal to your best hand is still green, any
-/// hand it goes into is fine-or-better), red while it at most matches
-/// each hand (≤ each: no hand is an upgrade — green takes the
-/// equal-to-both-hands tie), lightest when it strictly beats one hand
-/// and strictly loses to the other: no clear upgrade either way. An
+/// hand AND strictly beats at least one (≥ each + > one: a weapon equal
+/// to your best hand is still green — it upgrades the other), red while
+/// it at most matches each hand AND strictly loses to at least one (≤
+/// each + < one: no hand is an upgrade), lightest when it changes
+/// nothing (equal to BOTH hands — a pure sidegrade) or strictly beats
+/// one hand and strictly loses to the other: no clear upgrade either
+/// way. An
 /// empty equipped slot compares against 0
 /// (an item beats nothing — green), matching the tooltip. Single-stat
 /// items (weapons: damage, amulets: spell damage) show the number
@@ -584,14 +586,17 @@ pub fn emitItemStatLabels(
             const main_hand: u32 = if (e.main_hand_weapon) |w| w.weapon_damage else 0;
             const off_hand: u32 = if (e.off_hand_weapon) |w| w.weapon_damage else 0;
             // Inclusive both-hands comparison (see the doc above): ≥ each
-            // hand → green (equality is good enough — a weapon matching
-            // your best hand upgrades the other), ≤ each hand → red, with
-            // green taking the equal-to-both tie; strictly between the
-            // two hands → lightest (no clear upgrade).
+            // hand + strictly beats at least one → green (a weapon matching
+            // your best hand upgrades the other); ≤ each hand + strictly
+            // loses to at least one → red; equal to BOTH hands (changes
+            // nothing) or strictly between them → lightest (no clear
+            // upgrade).
             const color: Color =
-                if (weapon.weapon_damage >= main_hand and weapon.weapon_damage >= off_hand)
+                if (weapon.weapon_damage >= main_hand and weapon.weapon_damage >= off_hand and
+                    (weapon.weapon_damage > main_hand or weapon.weapon_damage > off_hand))
                     positive_color
-                else if (weapon.weapon_damage <= main_hand and weapon.weapon_damage <= off_hand)
+                else if (weapon.weapon_damage <= main_hand and weapon.weapon_damage <= off_hand and
+                    (weapon.weapon_damage < main_hand or weapon.weapon_damage < off_hand))
                     negative_color
                 else
                     active_theme.lightest;

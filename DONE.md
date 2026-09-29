@@ -15114,3 +15114,15 @@ Tests: the panel test's weapon band against hands (5,3) now walks all five
 colors (7 green / 5 green-equal / 4 lightest-between / 3 red-equal / 2 red),
 plus a full-tie pass (hands 5/5: weapon 5 → green, weapon 4 → red).
 DESIGN → UI Framework's bullet carries the rule.
+
+## Inventory item stat numbers: the equal-to-both-hands tie resolved to lightest
+
+Correction to the inclusive weapon rule above, same session: green needs ≥
+each hand AND strictly better than at least one hand; red mirrors it (≤ each
+AND strictly worse than at least one). Equal to BOTH hands — swapping it in
+changes nothing — is LIGHTEST (a pure sidegrade), not green. The rule now
+reads symmetrically: green = "somewhere is a strict upgrade, nowhere is a
+downgrade", red = "somewhere is a strict downgrade, nowhere is an upgrade",
+lightest = "no hand changes anything" (full tie) or "one hand up, one hand
+down" (strictly between). The author's verdict on the tie: a weapon
+identical to what you hold says nothing useful in green.

@@ -898,8 +898,10 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // non-blocking so the slot keeps its tooltip). Colors: green while
     // better than equipped, red while worse, lightest while equal; a
     // weapon compares INCLUSIVELY against both hands — green while ≥ each
-    // hand, red while ≤ each hand (green wins the equal-to-both tie),
-    // lightest when strictly between the two hands. Expected positions are
+    // hand and strictly better than at least one, red while ≤ each hand
+    // and strictly worse than at least one, lightest when equal to BOTH
+    // hands (a pure sidegrade) or strictly between them. Expected
+    // positions are
     // DERIVED from the emitted slot elements' own cells (not re-derived
     // layout math).
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1073,9 +1075,9 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         try std.testing.expectEqual(@as(usize, 8), stat_labels);
     }
 
-    // The FULL-TIE case (weapon 5 vs hands 5/5): both inclusive checks
-    // hold — green wins (≥ each hand is the user-facing rule, the same
-    // one that greens a weapon equal to only the best hand).
+    // The FULL-TIE case (weapon 5 vs hands 5/5): swapping changes
+    // nothing — lightest, not green (the inclusive ≥ rule needs strictly
+    // better than at least one hand).
     {
         var elements_tie: UiElementList = .empty;
         try buildInventoryPanel(
@@ -1095,7 +1097,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             .{},
             null,
         );
-        try assertLabel(elements_tie.items, "5", topLeft(slotCell(elements_tie.items, 1)), positive_color);
+        try assertLabel(elements_tie.items, "5", topLeft(slotCell(elements_tie.items, 1)), lightest);
         // And strictly-below-both stays red under the inclusive operators.
         try assertLabel(elements_tie.items, "4", topLeft(slotCell(elements_tie.items, 2)), negative_color);
     }
