@@ -15197,3 +15197,45 @@ plain lightest (positions derived from the item-slot frames in emission
 order — the inspect slots are read-only images with no refs).
 DESIGN → UI Framework's bullet now scopes the numbers to all three
 panels and records the per-panel baseline rule.
+
+## Art delivery 2026-09-29: entities, NPCs, all skill icons, trees, tent
+
+The full artist delivery (Downloads/Delivery20260929) imported at display
+resolution. Art names were corrected where the artist's file names were
+wrong for the shipped ids (same class as earlier deliveries):
+
+- **Entities (2x downscale → 512x640, the entity-frame convention):**
+  updated bear, crab, skeleton (the un-numbered one — the numbered
+  variants await their own delivery), wolf, and player (the body moved up
+  so the feet center on the tile); NEW frog, ghoul, mushroom, snake,
+  specter (art spelled "Spector" — corrected). The enemy base-sprite
+  picker's Official tab derives comptime from the sprite metadata, so the
+  five new enemies became editor-pickable with zero code changes.
+- **NPCs (new assets/npcs/, 2x):** dream_guide, gear_upgrader — files
+  only; no code type consumes them yet (NPC Interaction is still TODO).
+  The folder stays out of the enemy picker automatically (that tab
+  derives from entities/*).
+- **Skill icons (direct copy — already 256x256):** 20 icons — the 19
+  skills that drew magenta placeholders plus meteor (the Daze-47 art; the
+  skill was renamed daze → meteor on staff slot 2). Mapping corrections:
+  Mediate → meditate, Crossbow1/2/3 → shoot/powerful_shot/head_shot
+  (crossbow skills in slot order), Idol1/2/3 → heal/absorb/drain (idol
+  skills in slot order). All 44 skills now have real icons — verified
+  both ways (no skill without an icon, no icon without a skill).
+- **Trees + tent (2x → 768x768 matching the old tree_1, tent → 256x512):**
+  tree_1..tree_5 trunks (Layer0A; tree_1 replaces the old delivery, same
+  footprint geometry) + _canopy (Layer0B) + _moss (Layer1) + _grass
+  (Layer3) + _grass_back (LayerMinus1). The artist's layer numbers are
+  sort offsets around the trunk (confirmed via the layers' alpha bboxes
+  on Tree3): moss sits ON the lower trunk, grass at the trunk base,
+  grass_back extends below the trunk's bottom edge — the
+  behind-the-trunk intent. decorations.txt registry entries (footprints
+  + layer composition = the editor prefabs) are the follow-up (TODO →
+  Decoration Footprint); grass_back needs a back-layer slot in the
+  render model to draw behind the base, decided at prefab time.
+
+The only code change: the official-entity-stems comptime block in
+editor_pickers.zig gained the `@setEvalBranchQuota(20000)` its sibling
+decoration block already carried — the 28 new PNGs pushed its comptime
+sorted-insert walk past the default 1000 backwards branches and broke
+the build.

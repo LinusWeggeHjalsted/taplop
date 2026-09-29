@@ -126,8 +126,7 @@ Test by running `zig build run` and clicking through.
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global
   top bar's redo button flips icon_undo as its glyph until icon_redo
-  lands; skills/meteor icon is the renamed daze.png placeholder — artist
-  to draw a real meteor icon), and
+  lands), and
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons, the inventory icon stat numbers, and combat
@@ -263,6 +262,13 @@ Settled + wired — see DESIGN → Decorations & Footprint (history in
 DONE.md). Open:
 - [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
       resolve dims → `editor_add_decoration_type` event).
+- [ ] Tree + tent prefab registration — art shipped (tree_1..tree_5, each
+      trunk base + canopy/moss/grass/grass_back layers; tent). Author the
+      footprints + layer composition into `data/decorations.txt` (the editor
+      registry prefabs). OPEN: `grass_back` is meant to render BEHIND the
+      trunk base, but the current model draws every `layer` on top of the
+      base — needs a back-layer slot in the render model (loader + view +
+      draw), or the behind intent is dropped; decide at prefab time.
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 
@@ -285,6 +291,8 @@ multi-salvage — all DONE (DONE.md). Open:
 - NPC dialogue system
 - NPC types (shopkeeper, quest giver, etc.). The upgrade vendor (see
   "Gear Upgrading" below) is `interact_with_npc`'s first real consumer.
+  NPC art shipped (assets/npcs/ — dream_guide, gear_upgrader); files
+  only, no code type consumes them yet.
 
 ## Gear Upgrading
 
