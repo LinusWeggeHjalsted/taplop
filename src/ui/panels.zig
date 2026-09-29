@@ -388,6 +388,8 @@ pub fn buildGearPanel(
         fn run(
             elems: *UiElementList,
             alloc: std.mem.Allocator,
+            metrics: FontMetrics,
+            theme: types.ActiveColorTheme,
             cell_pos: ScreenPosition,
             gear_slot: GearSlot,
             pl: Entity,
@@ -424,6 +426,20 @@ pub fn buildGearPanel(
                         .color = i_color,
                         .blocks_input = false,
                     } });
+                    // The equipped item's stat numbers — plain LIGHTEST (no
+                    // baseline: this gear IS the baseline, the same
+                    // convention as the suppressed tooltip comparisons).
+                    try emitItemStatLabels(
+                        elems,
+                        alloc,
+                        metrics,
+                        cell_pos,
+                        cell_size,
+                        it,
+                        skills,
+                        null,
+                        theme,
+                    );
                 }
             }
         }
@@ -433,15 +449,15 @@ pub fn buildGearPanel(
     const top_y = origin.y + ui_gap;
     const col0_x = origin.x + ui_gap;
     const col1_x = col0_x + cell_size + ui_gap;
-    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = top_y }, .main_hand, player, learned_skills, slot_color, item_color, drag_source);
-    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = top_y }, .off_hand, player, learned_skills, slot_color, item_color, drag_source);
+    try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col0_x, .y = top_y }, .main_hand, player, learned_skills, slot_color, item_color, drag_source);
+    try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col1_x, .y = top_y }, .off_hand, player, learned_skills, slot_color, item_color, drag_source);
 
     // Gear stack: amulet → coat → gloves → pants → boots, each one row below
     // the weapons, under the main-hand column.
     const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
     var row_y = top_y + cell_size + ui_gap;
     for (gear_slots) |gs| {
-        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, player, learned_skills, slot_color, item_color, drag_source);
+        try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col0_x, .y = row_y }, gs, player, learned_skills, slot_color, item_color, drag_source);
         row_y += cell_size + ui_gap;
     }
 
@@ -475,7 +491,6 @@ pub fn buildGearPanel(
         } });
         stat_y += stat_line_height;
     }
-    _ = font_metrics;
 }
 
 /// Entity-inspect panel (right-click an entity in a level). Read-only
@@ -652,6 +667,8 @@ pub fn buildEntityInspectPanel(
         fn run(
             elems: *UiElementList,
             alloc: std.mem.Allocator,
+            metrics: FontMetrics,
+            theme: types.ActiveColorTheme,
             cell_pos: ScreenPosition,
             gear_slot: GearSlot,
             ent: Entity,
@@ -682,17 +699,33 @@ pub fn buildEntityInspectPanel(
                     .color = i_color,
                     .blocks_input = false,
                 } });
+                // The item's stat numbers, the same baseline as the slot
+                // tooltip's comparisons: the PLAYER's equipped gear when
+                // inspecting an enemy (dropped enemy gear is directly
+                // usable), plain lightest when inspecting the player (no
+                // baseline — its own gear).
+                try emitItemStatLabels(
+                    elems,
+                    alloc,
+                    metrics,
+                    cell_pos,
+                    gear_cell_size,
+                    it,
+                    skills,
+                    item_equipped,
+                    theme,
+                );
             }
         }
     }.run;
 
-    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = gear_top_y }, .main_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
-    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = gear_top_y }, .off_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
+    try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col0_x, .y = gear_top_y }, .main_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
+    try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col1_x, .y = gear_top_y }, .off_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
 
     const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
     var row_y = gear_top_y + gear_cell_size + ui_gap;
     for (gear_slots) |gs| {
-        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
+        try emitGearSlot(elements, allocator, font_metrics, active_theme, .{ .x = col0_x, .y = row_y }, gs, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
         row_y += gear_cell_size + ui_gap;
     }
 
@@ -1153,6 +1186,308 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 7), stat_labels);
+    }
+}
+
+test "buildGearPanel: equipped items wear plain-lightest stat numbers, suppressed on the drag source" {
+    // The gear panel's own items have NO comparison baseline (this gear IS
+    // the baseline — the same convention as its suppressed tooltip
+    // comparisons), so every stat number renders plain lightest. Same
+    // recipe as the inventory numbers (corners, font size, outline,
+    // non-blocking), suppressed on the drag source with the icon.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 9, .g = 9, .b = 9 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // The player's equipped gear: main-hand weapon (damage 5) + coat
+    // (health 4, defense 2).
+    const player = Entity{
+        .main_hand_weapon = .{ .weapon_damage = 5 },
+        .coat = .{ .health_bonus = 4, .defense_bonus = 2 },
+    };
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = gearPanelWidth(metrics),
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildGearPanel(&elements, arena.allocator(), metrics, bounds, player, &.{}, theme, null);
+
+    // A gear slot's cell position, read off the emitted slot element by
+    // its ref (no re-derived layout math).
+    const gearCell = struct {
+        fn call(items: []const ui_element.UiElement, gear_slot: GearSlot) ScreenPosition {
+            for (items) |element| switch (element) {
+                .slot => |slot| if (slot.ref) |slot_ref| switch (slot_ref) {
+                    .gear => |gs| {
+                        if (gs == gear_slot) return slot.screen_position;
+                    },
+                    else => {},
+                },
+                else => {},
+            };
+            @panic("gear slot element not found");
+        }
+    }.call;
+    const bottomLeft = struct {
+        fn call(cell: ScreenPosition) ScreenPosition {
+            return .{
+                .x = cell.x + material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
+        }
+    }.call;
+    const bottomRight = struct {
+        fn call(cell: ScreenPosition, label_text: []const u8) ScreenPosition {
+            const width = metrics.measureSpanWidth(text(label_text), material_count_font_size);
+            return .{
+                .x = cell.x + inventory_slot_size - width - material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
+        }
+    }.call;
+    const assertLabel = struct {
+        fn call(
+            items: []const ui_element.UiElement,
+            expected_text: []const u8,
+            expected_position: ScreenPosition,
+            expected_color: Color,
+        ) !void {
+            var matches: usize = 0;
+            for (items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, expected_text) and
+                        label.screen_position.x == expected_position.x and
+                        label.screen_position.y == expected_position.y)
+                    {
+                        matches += 1;
+                        try std.testing.expectEqual(expected_color, label.color);
+                        try std.testing.expectEqual(material_count_font_size, label.font_size);
+                        try std.testing.expect(label.outlined);
+                        try std.testing.expect(!label.blocks_input);
+                    }
+                },
+                else => {},
+            };
+            try std.testing.expectEqual(@as(usize, 1), matches);
+        }
+    }.call;
+
+    // Plain lightest — no baseline, this gear IS the baseline.
+    try assertLabel(elements.items, "5", bottomLeft(gearCell(elements.items, .main_hand)), lightest);
+    try assertLabel(elements.items, "4", bottomLeft(gearCell(elements.items, .coat)), lightest);
+    try assertLabel(
+        elements.items,
+        "2",
+        bottomRight(gearCell(elements.items, .coat), "2"),
+        lightest,
+    );
+
+    // Drag-source suppression: dragging the main hand suppresses its
+    // icon + number; the coat's pair remains.
+    {
+        var elements_dragged: UiElementList = .empty;
+        try buildGearPanel(
+            &elements_dragged,
+            arena.allocator(),
+            metrics,
+            bounds,
+            player,
+            &.{},
+            theme,
+            .{ .gear = .main_hand },
+        );
+        for (elements_dragged.items) |element| switch (element) {
+            .text_label => |label| {
+                if (label.font_size == material_count_font_size) {
+                    try std.testing.expect(!std.mem.eql(u8, label.text, "5"));
+                }
+            },
+            else => {},
+        };
+        try assertLabel(
+            elements_dragged.items,
+            "4",
+            bottomLeft(gearCell(elements_dragged.items, .coat)),
+            lightest,
+        );
+    }
+}
+
+test "buildEntityInspectPanel: item stat numbers colored against the player's equipped gear" {
+    // The inspect panel's numbers use the SAME baseline as its slot
+    // tooltips: the PLAYER's equipped gear when inspecting an enemy
+    // (dropped enemy gear is directly usable), plain lightest when
+    // inspecting the player itself (no baseline). The inspect slots are
+    // read-only IMAGES (no SlotRef), so cell positions come from the
+    // item-slot FRAMES in emission order: main hand, off hand, then
+    // amulet, coat, gloves, pants, boots.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 9, .g = 9, .b = 9 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const weapon_types = testWeaponTypeDefinitions();
+
+    // An enemy with a weapon (damage 6) and a coat (health 2, defense 3).
+    var enemy: Entity = .{};
+    enemy.team = 1;
+    enemy.main_hand_weapon = .{ .weapon_damage = 6 };
+    enemy.coat = .{ .health_bonus = 2, .defense_bonus = 3 };
+
+    // The player's equipped gear — the baseline: main hand 5, off hand 3,
+    // coat (health 4, defense 1).
+    const player_equipped = EquippedGear{
+        .main_hand_weapon = .{ .weapon_damage = 5 },
+        .off_hand_weapon = .{ .weapon_damage = 3 },
+        .coat = .{ .health_bonus = 4, .defense_bonus = 1 },
+    };
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = entity_inspect_panel_width,
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildEntityInspectPanel(
+        &elements,
+        arena.allocator(),
+        metrics,
+        bounds,
+        enemy,
+        &.{},
+        player_equipped,
+        theme,
+        &weapon_types,
+    );
+
+    const inspectCell = struct {
+        fn call(items: []const ui_element.UiElement, ordinal: usize) ScreenPosition {
+            var seen: usize = 0;
+            for (items) |element| switch (element) {
+                .image => |img| {
+                    if (std.mem.eql(u8, img.sprite_id, "ui/item_slot")) {
+                        if (seen == ordinal) return img.screen_position;
+                        seen += 1;
+                    }
+                },
+                else => {},
+            };
+            @panic("inspect gear frame not found");
+        }
+    }.call;
+    const bottomLeft = struct {
+        fn call(cell: ScreenPosition) ScreenPosition {
+            return .{
+                .x = cell.x + material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
+        }
+    }.call;
+    const bottomRight = struct {
+        fn call(cell: ScreenPosition, label_text: []const u8) ScreenPosition {
+            const width = metrics.measureSpanWidth(text(label_text), material_count_font_size);
+            return .{
+                .x = cell.x + inventory_slot_size - width - material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
+        }
+    }.call;
+    const assertLabel = struct {
+        fn call(
+            items: []const ui_element.UiElement,
+            expected_text: []const u8,
+            expected_position: ScreenPosition,
+            expected_color: Color,
+        ) !void {
+            var matches: usize = 0;
+            for (items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, expected_text) and
+                        label.screen_position.x == expected_position.x and
+                        label.screen_position.y == expected_position.y)
+                    {
+                        matches += 1;
+                        try std.testing.expectEqual(expected_color, label.color);
+                        try std.testing.expectEqual(material_count_font_size, label.font_size);
+                        try std.testing.expect(label.outlined);
+                        try std.testing.expect(!label.blocks_input);
+                    }
+                },
+                else => {},
+            };
+            try std.testing.expectEqual(@as(usize, 1), matches);
+        }
+    }.call;
+
+    // The enemy's weapon (6) vs the player's hands (5, 3): ≥ each +
+    // strictly better than both → green. The coat vs the player's coat:
+    // health 2 < 4 → red bottom-left; defense 3 > 1 → green bottom-right.
+    try assertLabel(elements.items, "6", bottomLeft(inspectCell(elements.items, 0)), positive_color);
+    try assertLabel(elements.items, "2", bottomLeft(inspectCell(elements.items, 3)), negative_color);
+    try assertLabel(
+        elements.items,
+        "3",
+        bottomRight(inspectCell(elements.items, 3), "3"),
+        positive_color,
+    );
+
+    // Inspecting the PLAYER itself: no baseline → plain-lightest numbers.
+    {
+        var elements_player: UiElementList = .empty;
+        var player_entity: Entity = .{};
+        player_entity.main_hand_weapon = .{ .weapon_damage = 5 };
+        player_entity.coat = .{ .health_bonus = 4, .defense_bonus = 2 };
+        try buildEntityInspectPanel(
+            &elements_player,
+            arena.allocator(),
+            metrics,
+            bounds,
+            player_entity,
+            &.{},
+            null,
+            theme,
+            &weapon_types,
+        );
+        try assertLabel(
+            elements_player.items,
+            "5",
+            bottomLeft(inspectCell(elements_player.items, 0)),
+            lightest,
+        );
+        try assertLabel(
+            elements_player.items,
+            "4",
+            bottomLeft(inspectCell(elements_player.items, 3)),
+            lightest,
+        );
+        try assertLabel(
+            elements_player.items,
+            "2",
+            bottomRight(inspectCell(elements_player.items, 3), "2"),
+            lightest,
+        );
     }
 }
 

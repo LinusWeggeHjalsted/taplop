@@ -496,15 +496,37 @@ pub fn emitMaterialIcons(
 
 /// The comparison color for one item stat number against its equipped
 /// baseline: green while better, red while worse, lightest while equal.
-/// Weapons compare against BOTH hands and need the two-baseline rule —
-/// see `emitItemStatLabels`.
+/// A NULL baseline (no comparison — the gear panel / player inspect,
+/// where the items ARE the baseline) is lightest, plain. Weapons compare
+/// against BOTH hands and need the two-baseline rule — see
+/// `emitItemStatLabels` / `weaponComparisonColor`.
 fn statComparisonColor(
     value: u32,
-    baseline: u32,
+    baseline: ?u32,
     active_theme: types.ActiveColorTheme,
 ) Color {
-    if (value > baseline) return positive_color;
-    if (value < baseline) return negative_color;
+    const b = baseline orelse return active_theme.lightest;
+    if (value > b) return positive_color;
+    if (value < b) return negative_color;
+    return active_theme.lightest;
+}
+
+/// The weapon's inclusive both-hands comparison color (the rule — see
+/// `emitItemStatLabels`' doc). Strictly-baseline callers pass `null`
+/// (no comparison) as either hand — a null in EITHER hand is lightest,
+/// plain (the rule needs both baselines live).
+fn weaponComparisonColor(
+    weapon_damage: u32,
+    main_hand: ?u32,
+    off_hand: ?u32,
+    active_theme: types.ActiveColorTheme,
+) Color {
+    const main = main_hand orelse return active_theme.lightest;
+    const off = off_hand orelse return active_theme.lightest;
+    if (weapon_damage >= main and weapon_damage >= off and
+        (weapon_damage > main or weapon_damage > off)) return positive_color;
+    if (weapon_damage <= main and weapon_damage <= off and
+        (weapon_damage < main or weapon_damage < off)) return negative_color;
     return active_theme.lightest;
 }
 
@@ -588,7 +610,9 @@ fn emitItemStatNumber(
 /// "Activate to learn" line; a learned tome shows nothing — its skill
 /// is known, its only remaining value is salvaging) — baseline-
 /// independent, so it emits even while the stat comparison is suppressed.
-/// `equipped == null` (comparison suppressed) emits no stat numbers. The
+/// `equipped == null` (comparison suppressed — the gear panel / player
+/// inspect, where the items ARE the baseline) renders the stat numbers
+/// plain LIGHTEST, no comparison. The
 /// caller suppresses on the drag source (rides the item
 /// icon — the item reads as in flight).
 pub fn emitItemStatLabels(
@@ -626,26 +650,17 @@ pub fn emitItemStatLabels(
         },
         else => {},
     }
-    const e = equipped orelse return;
     switch (item) {
         .weapon => |weapon| {
-            const main_hand: u32 = if (e.main_hand_weapon) |w| w.weapon_damage else 0;
-            const off_hand: u32 = if (e.off_hand_weapon) |w| w.weapon_damage else 0;
-            // Inclusive both-hands comparison (see the doc above): ≥ each
-            // hand + strictly beats at least one → green (a weapon matching
-            // your best hand upgrades the other); ≤ each hand + strictly
-            // loses to at least one → red; equal to BOTH hands (changes
-            // nothing) or strictly between them → lightest (no clear
-            // upgrade).
-            const color: Color =
-                if (weapon.weapon_damage >= main_hand and weapon.weapon_damage >= off_hand and
-                    (weapon.weapon_damage > main_hand or weapon.weapon_damage > off_hand))
-                    positive_color
-                else if (weapon.weapon_damage <= main_hand and weapon.weapon_damage <= off_hand and
-                    (weapon.weapon_damage < main_hand or weapon.weapon_damage < off_hand))
-                    negative_color
-                else
-                    active_theme.lightest;
+            // No comparison (equipped null — both baselines null) → lightest
+            // inside weaponComparisonColor; an empty equipped hand within a
+            // live comparison is baseline 0 (an item beats nothing).
+            const color: Color = if (equipped) |e| weaponComparisonColor(
+                weapon.weapon_damage,
+                if (e.main_hand_weapon) |w| w.weapon_damage else 0,
+                if (e.off_hand_weapon) |w| w.weapon_damage else 0,
+                active_theme,
+            ) else active_theme.lightest;
             try emitItemStatNumber(
                 elements,
                 allocator,
@@ -658,7 +673,7 @@ pub fn emitItemStatLabels(
             );
         },
         .amulet => |amulet| {
-            const baseline: u32 = if (e.amulet) |a| a.spell_damage else 0;
+            const baseline: ?u32 = if (equipped) |e| (if (e.amulet) |a| a.spell_damage else 0) else null;
             try emitItemStatNumber(
                 elements,
                 allocator,
@@ -671,8 +686,8 @@ pub fn emitItemStatLabels(
             );
         },
         .coat => |coat| {
-            const health_baseline: u32 = if (e.coat) |c| c.health_bonus else 0;
-            const defense_baseline: u32 = if (e.coat) |c| c.defense_bonus else 0;
+            const health_baseline: ?u32 = if (equipped) |e| (if (e.coat) |c| c.health_bonus else 0) else null;
+            const defense_baseline: ?u32 = if (equipped) |e| (if (e.coat) |c| c.defense_bonus else 0) else null;
             try emitItemStatNumber(
                 elements,
                 allocator,
@@ -695,8 +710,8 @@ pub fn emitItemStatLabels(
             );
         },
         .gloves => |gloves| {
-            const health_baseline: u32 = if (e.gloves) |g| g.health_bonus else 0;
-            const damage_baseline: u32 = if (e.gloves) |g| g.damage_bonus else 0;
+            const health_baseline: ?u32 = if (equipped) |e| (if (e.gloves) |g| g.health_bonus else 0) else null;
+            const damage_baseline: ?u32 = if (equipped) |e| (if (e.gloves) |g| g.damage_bonus else 0) else null;
             try emitItemStatNumber(
                 elements,
                 allocator,
@@ -719,8 +734,8 @@ pub fn emitItemStatLabels(
             );
         },
         .pants => |pants| {
-            const health_baseline: u32 = if (e.pants) |p| p.health_bonus else 0;
-            const pickup_baseline: u32 = if (e.pants) |p| p.pickup_radius_bonus else 0;
+            const health_baseline: ?u32 = if (equipped) |e| (if (e.pants) |p| p.health_bonus else 0) else null;
+            const pickup_baseline: ?u32 = if (equipped) |e| (if (e.pants) |p| p.pickup_radius_bonus else 0) else null;
             try emitItemStatNumber(
                 elements,
                 allocator,
@@ -743,8 +758,8 @@ pub fn emitItemStatLabels(
             );
         },
         .boots => |boots| {
-            const health_baseline: u32 = if (e.boots) |b| b.health_bonus else 0;
-            const speed_baseline: u32 = if (e.boots) |b| b.speed_bonus else 0;
+            const health_baseline: ?u32 = if (equipped) |e| (if (e.boots) |b| b.health_bonus else 0) else null;
+            const speed_baseline: ?u32 = if (equipped) |e| (if (e.boots) |b| b.speed_bonus else 0) else null;
             try emitItemStatNumber(
                 elements,
                 allocator,

@@ -15162,3 +15162,38 @@ bottom-left cell corner, full recipe), the learned case (tome's skill in
 the learned set → nothing reads "!"), the census (9 grid labels), and
 drag-source suppression (9 → 7). DESIGN → UI Framework's bullet carries
 the rule.
+
+## Item stat numbers on the gear + entity-inspect panels
+
+The stat numbers spread from the inventory to the other two item surfaces
+(the gear panel + the entity-inspect gear mirror), each with the SAME
+baseline its tooltips already use:
+
+- **Gear panel**: the player's own equipped items — NO baseline (this gear
+  IS the baseline, the same convention as the panel's suppressed tooltip
+  comparisons) → every number renders plain LIGHTEST. The numbers ride the
+  item icons, suppressed on the drag source together with them (the
+  closure gains font_metrics + active_theme; the panel's vestigial
+  `_ = font_metrics` went with it).
+- **Entity inspect**: the player's equipped gear when inspecting an ENEMY
+  (dropped enemy gear is directly usable — the actionable comparison its
+  tooltips already make), plain lightest when inspecting the player
+  itself (equipped null).
+
+The enabler was a contract change in `emitItemStatLabels`:
+`equipped == null` previously emitted NOTHING (no comparison → no
+numbers); now it renders the numbers plain LIGHTEST (no comparison → no
+COLOR). The baselines became `?u32` per stat (null → lightest inside
+`statComparisonColor`), and the weapon's inclusive both-hands rule moved
+into `weaponComparisonColor` (a null in either hand → lightest — the rule
+needs both baselines live).
+
+Tests: a new buildGearPanel structure test (the panel had none): plain
+lightest numbers at the corners (positions derived from the emitted slot
+elements' gear refs), full recipe, drag-source suppression. A new
+entity-inspect test: the enemy's weapon green vs the player's hands, its
+coat split (health red / defense green), and the player-inspect case
+plain lightest (positions derived from the item-slot frames in emission
+order — the inspect slots are read-only images with no refs).
+DESIGN → UI Framework's bullet now scopes the numbers to all three
+panels and records the per-panel baseline rule.
