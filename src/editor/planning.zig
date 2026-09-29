@@ -630,6 +630,20 @@ fn editorClickGroup(
     return entries;
 }
 
+/// Would a select-tool click at `position` grab anything — i.e. is the
+/// click group there nonempty (a tile, an entity / item placement, a
+/// covering decoration, or a '!' / '=' singleton; empty ground is not)?
+/// Thin wrapper over the group resolution so the claim condition and the
+/// click semantics share one source of truth. Used by the move-drag
+/// gesture (`handleEditorMoveDrag`) — pub for that import only.
+pub fn editorClickGroupNonempty(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    return editorClickGroup(editor, position, allocator).len > 0;
+}
+
 pub fn planEditorSelectionActions(
     editor: *const types.Editor,
     position: Vector2,

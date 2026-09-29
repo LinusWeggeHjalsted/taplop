@@ -969,17 +969,29 @@ pub fn handleEditorMarquee(
 }
 
 /// Editor-screen selection MOVE drag (select tool, plain left press on a
-/// selected thing). Press claims the gesture when the press tile hits the
-/// selection (a selected tile / entity / item, a selected decoration's
-/// footprint, or a selected '!' / '=' — see `editorSelectionContainsPosition`);
-/// the drag threshold promotes it (the view translates the selection
-/// OUTLINES by the live delta — the world stays put); release commits the
-/// move when the delta is nonzero (`player_move_editor_selection` — see
-/// its doc for the clear + chained-place semantics) and CLEARS the
-/// selection (a move deselects). An UNPROMOTED release (no movement) acts
-/// as a plain click — the REPLACE fires at the press tile (the select arm
-/// in `handleIdleInput` defers while a move drag is in progress; usually
-/// a no-op, since the pressed thing is selected). Shift+press never claims (the
+/// selected thing OR on an unselected-but-selectable thing). Press claims
+/// the gesture when the press tile hits the selection (a selected tile /
+/// entity / item, a selected decoration's footprint, or a selected '!' /
+/// '=' — see `editorSelectionContainsPosition`) or has a nonempty click
+/// group (`editorClickGroupNonempty`; empty ground never claims, so the
+/// click-to-deselect and a drag from empty ground are unchanged); the
+/// drag threshold promotes it (the view translates the OUTLINES by the
+/// live delta — the selection for a `selected_at_press` claim, the
+/// grabbed group for an unselected one — the world stays put). Release
+/// commits the move when the delta is nonzero
+/// (`player_move_editor_selection` — see its doc for the clear +
+/// chained-place semantics) and CLEARS the selection (a move deselects).
+/// An unselected-claim release fires the replace + move CHAIN: the
+/// replace is pushed SECOND (on top) so the LIFO drain selects the group
+/// FIRST and the move orchestrator plans against the replaced selection;
+/// both actions are pushed in the same frame, so the pair drains in one
+/// drain and shares one idle point — a single undo step reverts the
+/// whole drag. A zero delta drops just the replace (the
+/// grab-and-drop-in-place = selected, like a click). An UNPROMOTED
+/// release (no movement) acts as a plain click — the REPLACE fires at the
+/// press tile (the select arm in `handleIdleInput` defers while a move
+/// drag is in progress; usually a no-op for a selected-at-press claim,
+/// since the pressed thing is selected). Shift+press never claims (the
 /// marquee owns it); a press over blocking UI never claims.
 pub fn handleEditorMoveDrag(
     history: *GameStateHistory,
@@ -1013,7 +1025,15 @@ pub fn handleEditorMoveDrag(
             viewport,
         );
         const arena = history.current_arena.allocator();
-        const claims = planning.editorSelectionContainsPosition(
+        const selected_at_press = planning.editorSelectionContainsPosition(
+            &current.editor.?,
+            press_tile,
+            arena,
+        );
+        // A press on an UNSELECTED thing claims too when it is
+        // selectable (a nonempty click group). Empty ground claims
+        // nothing — its click-to-deselect stays the plain release path.
+        const claims = selected_at_press or planning.editorClickGroupNonempty(
             &current.editor.?,
             press_tile,
             arena,
@@ -1025,6 +1045,7 @@ pub fn handleEditorMoveDrag(
             .current_position_tile = press_tile,
             .press_position = pointer.position.toScreenPosition(),
             .promoted = false,
+            .selected_at_press = selected_at_press,
         };
         return;
     }
@@ -1056,18 +1077,53 @@ pub fn handleEditorMoveDrag(
 
     if (pointer.released) {
         if (ui_state.editor_move_drag) |move_drag| {
+            const arena = history.current_arena.allocator();
             if (move_drag.promoted) {
                 const delta = types.Vector2{
                     .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
                     .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
                 };
-                // Zero delta → nothing to move — no event (no dead undo
-                // step). The commit machinery handles everything else.
-                if (delta.x != 0 or delta.y != 0) {
+                const nonzero_delta = delta.x != 0 or delta.y != 0;
+                if (!move_drag.selected_at_press) {
+                    // An unselected-claim drag: select the grabbed group
+                    // AND move it. The replace is pushed SECOND (on top of
+                    // the move) so the LIFO drain runs it first and the
+                    // move orchestrator then plans against the replaced
+                    // selection. Both actions push in this one frame, so
+                    // they drain together and share one idle point — a
+                    // single undo step reverts the whole drag. Zero delta
+                    // is the grab-and-drop-in-place: just the replace (the
+                    // thing ends up selected, like a click). An empty
+                    // replace plan (the selection already IS the group —
+                    // reachable only via a mid-drag selection change)
+                    // skips the replace; the move still runs.
+                    if (current.editor) |*editor| {
+                        const replace_plan_nonempty =
+                            planning.planEditorReplaceSelectionActions(
+                                editor,
+                                move_drag.press_position_tile,
+                                arena,
+                            ).len > 0;
+                        if (nonzero_delta) {
+                            event_push.pushPlayerAction(
+                                current,
+                                .{ .player_move_editor_selection = .{ .delta = delta } },
+                                arena,
+                            );
+                        }
+                        if (replace_plan_nonempty) {
+                            event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
+                                .position = move_drag.press_position_tile,
+                            } }, arena);
+                        }
+                    }
+                } else if (nonzero_delta) {
+                    // Zero delta → nothing to move — no event (no dead undo
+                    // step). The commit machinery handles everything else.
                     event_push.pushPlayerAction(
                         current,
                         .{ .player_move_editor_selection = .{ .delta = delta } },
-                        history.current_arena.allocator(),
+                        arena,
                     );
                 }
             } else {
@@ -1076,7 +1132,6 @@ pub fn handleEditorMoveDrag(
                 // plain click on the whole current selection changes
                 // nothing and never fires).
                 if (current.editor) |*editor| {
-                    const arena = history.current_arena.allocator();
                     if (planning.planEditorReplaceSelectionActions(
                         editor,
                         move_drag.press_position_tile,

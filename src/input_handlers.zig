@@ -3840,7 +3840,7 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     try std.testing.expect(history.session.ui_state.editor_marquee == null);
 }
 
-test "handleEditorMoveDrag: press on a selected thing moves it, plain click toggles, unselected press does nothing" {
+test "handleEditorMoveDrag: selected press moves, unselected press claims and drags select-and-move, empty ground never claims" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -3888,6 +3888,7 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     );
     try std.testing.expect(history.session.ui_state.editor_move_drag != null);
     try std.testing.expect(!history.session.ui_state.editor_move_drag.?.promoted);
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.selected_at_press);
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
@@ -3994,9 +3995,12 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
         history.current_state.event_stack[0].player_input_event.player_replace_editor_selection.position,
     );
 
-    // --- A press NOT on a selected thing never claims (the normal click
-    // path owns it). After the replace, only the (4,4) tile is selected —
-    // press the player-start tile. ---
+    // --- An UNSELECTED-but-selectable press CLAIMS: the player-start
+    // marker at (0,0) is not selected (the selection is the (4,4) group
+    // after the replace above), but dragging it selects it and moves it
+    // in one gesture. The release pushes the move + replace PAIR — the
+    // replace on top, so the LIFO drain selects the grabbed group before
+    // the move orchestrator plans against it. ---
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
     handleEditorMoveDrag(
@@ -4007,7 +4011,178 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
         1.0,
         viewport,
     );
+    try std.testing.expect(history.session.ui_state.editor_move_drag != null);
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.event_stack.len);
+    // The push order is the correctness mechanism: the replace sits ON
+    // TOP of the move, so the drain selects the group first (a flipped
+    // order would plan the move against the unreplaced selection).
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.event_stack[1].player_input_event.player_replace_editor_selection.position,
+    );
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 1, .y = 1 },
+        history.current_state.event_stack[0].player_input_event.player_move_editor_selection.delta,
+    );
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    // The marker moved to (1,1) and the move deselects (the move
+    // machinery's clear + chained-commit semantics have their own tests
+    // — this pins that the gesture's push order delivers them a replaced
+    // selection).
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 1, .y = 1 },
+        history.current_state.editor.?.levels[0].player_start,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    // --- ONE undo step reverts the whole drag: both actions were pushed
+    // in the same frame, drained together, and share one idle point (it
+    // is recorded when the stack EMPTIES, not per action). Back to the
+    // post-replace selection of the plain click above. ---
+    try std.testing.expect(history.undo(@import("event_handlers.zig").processEvent));
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.editor.?.levels[0].player_start,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+    try std.testing.expectEqual(
+        types.Selectable{ .tile = .{ .x = 4, .y = 4 } },
+        history.current_state.editor.?.selection[0],
+    );
+
+    // --- A zero-delta unselected-claim drag (the grab-and-drop-in-place
+    // wobble): just the replace fires — the thing ends up selected, like
+    // a click. ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 0, .y = 0 }).x + ui.drag_threshold_pixels + 10, .y = tilePosition(.{ .x = 0, .y = 0 }).y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.event_stack[0].player_input_event.player_replace_editor_selection.position,
+    );
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+    try std.testing.expectEqual(types.Selectable.player_start, history.current_state.editor.?.selection[0]);
+
+    // --- An UNPROMOTED unselected-claim release acts as a plain click
+    // (the claim is invisible without a drag): press the unselected
+    // (4,4) tile group and release without moving. ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag != null);
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 4, .y = 4 },
+        history.current_state.event_stack[0].player_input_event.player_replace_editor_selection.position,
+    );
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+
+    // --- EMPTY GROUND never claims (the click-to-deselect stays the
+    // plain release path's job; a drag from empty ground does nothing).
+    // (2,2) has no tile, marker, or decoration. ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 2, .y = 2 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 3, .y = 3 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 3, .y = 3 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    // The plain click on empty ground still deselects (the idle arm's
+    // replace fires the clear alone).
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 }
 
 test "camera zoom (wheel + keys): gated to camera-bearing screens" {

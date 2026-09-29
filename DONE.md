@@ -14942,3 +14942,68 @@ What the run surfaced (each verified against source or the event log):
 Session hygiene: the fifo + sleep-holder session pattern, quit + cleanup,
 and the whole second run's recorded history remains a valid --replay
 fixture by construction (the first run's log was replay-verified).
+
+## Editor select tool: drag-to-select-and-move (one gesture instead of click-then-drag)
+
+The select tool previously required click-then-drag: a plain left press only
+claimed the move drag when the press tile already hit the selection
+(`editorSelectionContainsPosition`), so moving an unselected thing needed a
+click (replace) followed by a second press-and-drag. Now a press on an
+unselected-but-selectable thing (a nonempty click group —
+`planning.editorClickGroupNonempty`, a thin wrapper over `editorClickGroup`
+so the claim condition and click semantics share one source of truth) claims
+the same drag: dragging it selects it and moves it in one gesture. Empty
+ground still never claims — the click-to-deselect and a drag from empty
+ground are unchanged.
+
+The design decision that shaped the implementation is WHEN the select
+fires. Firing the replace at press/promotion (making the selection real
+during the drag, so the existing translated-outline render works untouched)
+was rejected: the move pushed at release lands ON TOP of the replace's
+still-draining sub-batch and pops first under LIFO — planning against a
+selection that doesn't contain the dragged thing — and the leftover
+`editor_select` events then land on placement indices the move just
+shifted. The window is narrow (the drain loop empties a small stack within
+a frame) but the failure mode is silent (a fast flick either no-ops the
+move or moves the wrong things). Instead the release fires BOTH existing
+actions, pushed in drain-correct order: `player_move_editor_selection`
+first, `player_replace_editor_selection` on top — the LIFO drain runs the
+replace's whole sub-batch (selects the grabbed group) before the move
+orchestrator plans its clear phase + chained commit against the REPLACED
+selection. The ordering is guaranteed by push order, not by drain timing.
+Both orchestrators carry pure position/delta payloads and plan at drain
+time, so replay-safety is inherited for free.
+
+Because idle points are recorded when the stack EMPTIES (not per action),
+the pair drains together and shares one idle point — a single undo step
+reverts the whole drag, one fewer than the click-then-drag it replaces.
+A zero-delta drop fires just the replace (grab-and-drop-in-place = the
+thing ends up selected, like a click); an empty replace plan (reachable
+only via a mid-drag selection change such as ctrl+A) skips the replace
+and still moves.
+
+Files:
+- `src/editor/planning.zig` — `editorClickGroupNonempty` (pub for the
+  `input_gestures.zig` import only).
+- `src/ui/state.zig` — `EditorMoveDrag.selected_at_press`, recorded at
+  press so a mid-drag selection change can't flip a claim's semantics.
+- `src/input_gestures.zig` — `handleEditorMoveDrag`: the widened claim +
+  the release's pair-push arm.
+- `src/view.zig` — the unselected-claim preview: while such a drag is
+  promoted, the grabbed click group's outline renders translated by the
+  live delta (`buildEditorMoveDragOverlay` over the new
+  `appendEditorClickGroupOutline`, also adopted by the cursor overlay's
+  select arm — the hover-preview shape, now shared), and the OLD
+  selection's outlines stay put (it is still the real selection). The
+  decoration case anchors the footprint region at `placement.position +
+  delta`; the plain-tile case lands at the current pointer tile.
+- `src/input_handlers.zig` — the gesture test rewritten for the new
+  semantics: the push-order pin (replace on top of the move), the marker
+  drag landing at its target, the one-undo-step pin, zero-delta =
+  replace only, unpromoted = plain click, empty ground never claims.
+- `src/view.zig` — a preview test covering both claim kinds (this was
+  the first view test for the move-drag translation at all, including
+  the pre-existing selected-claim path).
+
+DESIGN → Architecture → Level Editor → Active-tool model's selection-MOVE
+paragraph carries the settled semantics.

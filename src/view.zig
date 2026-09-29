@@ -193,15 +193,30 @@ pub fn view(
             &tile_overlays,
             frame_allocator,
             editor,
-            // While a selection move drag is promoted, the outlines preview
-            // the translation (null otherwise).
+            // While a selection move drag is promoted on a
+            // selected-at-press claim, the outlines preview the
+            // translation (null otherwise — an unselected claim previews
+            // via buildEditorMoveDragOverlay below, and its old selection
+            // must NOT slide around: it is still the real selection).
             if (session.ui_state.editor_move_drag) |move_drag| blk: {
-                if (!move_drag.promoted) break :blk null;
+                if (!move_drag.promoted or !move_drag.selected_at_press) break :blk null;
                 break :blk Vector2{
                     .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
                     .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
                 };
             } else null,
+            active_theme,
+            camera,
+            camera_zoom,
+        );
+        // The unselected-claim move-drag preview: the grabbed click
+        // group's outline follows the pointer (see
+        // buildEditorMoveDragOverlay).
+        buildEditorMoveDragOverlay(
+            &tile_overlays,
+            frame_allocator,
+            editor,
+            session.ui_state.editor_move_drag,
             active_theme,
             camera,
             camera_zoom,
@@ -2491,6 +2506,50 @@ fn buildCursorOverlay(
 /// covering decoration's footprint region, else the single tile.
 /// Same replay-safe shape as `buildCursorOverlay` (pure over
 /// SessionState).
+/// The select tool's click-group outline at `position`: what a click there
+/// would grab — the FIRST covering decoration's footprint region, else
+/// the single tile (the hover preview ≡ click; the group resolution is
+/// `editorClickGroup`'s, kept in step by sharing the same
+/// first-covering-decoration rule). Rendered translated by `delta` (zero
+/// for the hover preview; the live drag delta for the unselected-claim
+/// move preview — the grabbed group follows the pointer before the
+/// release's replace + move events select it). Shared by
+/// buildEditorCursorOverlay (select arm, at the cursor) and
+/// buildEditorMoveDragOverlay (at the press tile).
+fn appendEditorClickGroupOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    editor: *const Editor,
+    position: Vector2,
+    delta: Vector2,
+    outline_color: types.Color,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (selectEditorLevel(editor)) |level| {
+        for (level.decoration_placements) |placement| {
+            const type_definition = editor.decoration_types[placement.type_id];
+            if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+                const region_tiles = loaders.decorationFootprintWorldTiles(
+                    type_definition.footprint,
+                    .{ .x = placement.position.x + delta.x, .y = placement.position.y + delta.y },
+                    allocator,
+                );
+                appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);
+                return;
+            }
+        }
+    }
+    appendSingleTileOutline(
+        list,
+        allocator,
+        .{ .x = position.x + delta.x, .y = position.y + delta.y },
+        outline_color,
+        camera,
+        zoom,
+    );
+}
+
 fn buildEditorCursorOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2515,22 +2574,19 @@ fn buildEditorCursorOverlay(
     }
 
     if (tool == .select) {
-        // Hover preview ≡ click: the FIRST covering decoration's footprint
-        // region, else the single tile (see selectAtEditorPosition).
-        if (selectEditorLevel(editor)) |level| {
-            for (level.decoration_placements) |placement| {
-                const type_definition = editor.decoration_types[placement.type_id];
-                if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, cursor, allocator)) {
-                    const region_tiles = loaders.decorationFootprintWorldTiles(
-                        type_definition.footprint,
-                        placement.position,
-                        allocator,
-                    );
-                    appendRegionOutline(list, allocator, region_tiles, active_theme.lightest, camera, zoom);
-                    return;
-                }
-            }
-        }
+        // Hover preview ≡ click: what a click at the cursor would grab,
+        // outlined (see appendEditorClickGroupOutline).
+        appendEditorClickGroupOutline(
+            list,
+            allocator,
+            editor,
+            cursor,
+            Vector2{ .x = 0, .y = 0 },
+            active_theme.lightest,
+            camera,
+            zoom,
+        );
+        return;
     }
 
     list.append(allocator, .{
@@ -2635,6 +2691,44 @@ fn buildEditorMarqueeOverlay(
     appendRegionOutline(list, allocator, region_tiles.items, active_theme.lightest, camera, zoom);
 }
 
+/// The unselected-claim selection MOVE drag preview (see
+/// `handleEditorMoveDrag`): while the drag is promoted on a press that
+/// claimed an UNSELECTED thing, the grabbed click group's outline renders
+/// translated by the live delta — the world stays put, the thing follows
+/// the pointer before the release's replace + move events select it.
+/// Mirrors the selected-claim preview (buildEditorSelectionOverlay's
+/// translated outlines — the same shape the group renders as once
+/// selected). Nothing renders before promotion (an unpromoted release is
+/// a plain click) or on a selected-at-press claim.
+fn buildEditorMoveDragOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    editor: *const Editor,
+    move_drag: ?ui.EditorMoveDrag,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const drag = move_drag orelse return;
+    if (!drag.promoted or drag.selected_at_press) return;
+    appendEditorClickGroupOutline(
+        list,
+        allocator,
+        editor,
+        drag.press_position_tile,
+        // The delta anchors the grabbed group's ANCHOR at the pointer —
+        // `current_position_tile` keeps the last valid tile over blocking
+        // UI, so the preview pauses there like the marquee's corner.
+        Vector2{
+            .x = drag.current_position_tile.x - drag.press_position_tile.x,
+            .y = drag.current_position_tile.y - drag.press_position_tile.y,
+        },
+        active_theme.lightest,
+        camera,
+        zoom,
+    );
+}
+
 /// The active editor level (clamped), or null when there are no levels —
 /// the select tool's click + rendering resolution target.
 fn selectEditorLevel(editor: *const Editor) ?*const types.EditorLevel {
@@ -2660,7 +2754,8 @@ fn appendSingleTileOutline(
 /// One `region_edge` segment per boundary edge of `region_tiles` (a side
 /// whose neighbor is outside the region) — any region shape renders as a
 /// continuous closed outline. Shared by the decoration-tool preview, the
-/// select-tool hover preview, and the selection overlay.
+/// select-tool hover preview, the selection overlay, and the move-drag
+/// preview.
 fn appendRegionOutline(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -3752,6 +3847,197 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     try std.testing.expectEqual(@as(usize, 4), tile_outlines);
     // The 2-wide decoration's region = 6 boundary edges.
     try std.testing.expectEqual(@as(usize, 6), region_edges);
+}
+
+test "editor move-drag preview: unselected claim translates the grabbed group, selected claim the selection" {
+    // A promoted move drag previews its move: a selected-at-press claim
+    // translates the SELECTION outlines (the pre-existing path); an
+    // unselected claim renders the grabbed click group translated instead
+    // — the selection is not in state yet, and the OLD selection must NOT
+    // slide around (it is still the real selection). Nothing previews
+    // before promotion (an unpromoted release is a plain click). See
+    // `handleEditorMoveDrag` / `buildEditorMoveDragOverlay`.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "ruin_1",
+        .sprite = "ruin_1",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const tiles = [_]types.Vector2{ .{ .x = 5, .y = 5 }, .{ .x = 7, .y = 7 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .decoration_placements = &decoration_placements,
+    }};
+    var state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels, .decoration_types = &decoration_types },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+    state_.editor.?.active_tool = .select;
+    // The OLD selection (a tile elsewhere) — an unselected-claim drag
+    // must not slide it around. Cursor null so only the selection + drag
+    // overlays emit.
+    const old_selection = [_]types.Selectable{.{ .tile = .{ .x = 5, .y = 5 } }};
+    state_.editor.?.selection = &old_selection;
+    session.tile_cursor = null;
+
+    const camera = computeCamera(&state_, 1.0, null, null);
+    const runView = struct {
+        fn call(
+            state__: *const GameState,
+            session__: *state.SessionState,
+            arena__: std.mem.Allocator,
+            harness__: *test_harness.Harness,
+            camera__: types.Camera,
+        ) types.ViewState {
+            return view(
+                state__,
+                session__,
+                .{ .input_bindings = &.{} },
+                harness__.color_theme_definitions,
+                &harness__.weapon_type_definitions,
+                .{
+                    .camera = camera__,
+                    .camera_zoom = 1.0,
+                    .event_history = &.{},
+                    .level_start_index = null,
+                    .current_event_index = 0,
+                    .frame_allocator = arena__,
+                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .sprite_bounds = .{},
+                    .can_undo = false,
+                    .can_redo = false,
+                },
+            );
+        }
+    }.call;
+
+    // --- Before promotion nothing previews — the old selection renders
+    // where it is. ---
+    session.ui_state.editor_move_drag = .{
+        .press_position_tile = .{ .x = 1, .y = 1 },
+        .current_position_tile = .{ .x = 3, .y = 1 },
+        .press_position = .{ .x = 0, .y = 0 },
+        .promoted = false,
+        .selected_at_press = false,
+    };
+    const unpromoted = runView(&state_, &session, arena, &harness, camera);
+    try std.testing.expectEqual(@as(usize, 1), unpromoted.tile_overlays.len);
+    try std.testing.expectEqual(
+        tileToScreen(.{ .x = 5, .y = 5 }, camera, 1.0),
+        unpromoted.tile_overlays[0].screen_position,
+    );
+
+    // --- Promoted UNSELECTED claim on a covering decoration (press its
+    // anchor tile (1,1), drag to (3,1)): the grabbed footprint region
+    // renders translated (anchor (3,1)-(4,1)) and the old selection
+    // stays put. ---
+    session.ui_state.editor_move_drag.?.promoted = true;
+    const promoted_decoration = runView(&state_, &session, arena, &harness, camera);
+    var region_edges: usize = 0;
+    var at_translated_anchor: usize = 0;
+    var at_original_anchor: usize = 0;
+    var selection_outlines: usize = 0;
+    for (promoted_decoration.tile_overlays) |overlay| {
+        switch (overlay.overlay_type) {
+            .region_edge => {
+                region_edges += 1;
+                if (std.meta.eql(
+                    tileToScreen(.{ .x = 3, .y = 1 }, camera, 1.0),
+                    overlay.screen_position,
+                ) or std.meta.eql(
+                    tileToScreen(.{ .x = 4, .y = 1 }, camera, 1.0),
+                    overlay.screen_position,
+                )) at_translated_anchor += 1;
+                if (std.meta.eql(
+                    tileToScreen(.{ .x = 1, .y = 1 }, camera, 1.0),
+                    overlay.screen_position,
+                ) or std.meta.eql(
+                    tileToScreen(.{ .x = 2, .y = 1 }, camera, 1.0),
+                    overlay.screen_position,
+                )) at_original_anchor += 1;
+            },
+            .cursor => {
+                selection_outlines += 1;
+                try std.testing.expectEqual(
+                    tileToScreen(.{ .x = 5, .y = 5 }, camera, 1.0),
+                    overlay.screen_position,
+                );
+            },
+            else => {},
+        }
+    }
+    // The 2-wide region's 6 boundary edges, ALL on the translated
+    // anchor — none at the original.
+    try std.testing.expectEqual(@as(usize, 6), region_edges);
+    try std.testing.expectEqual(@as(usize, 6), at_translated_anchor);
+    try std.testing.expectEqual(@as(usize, 0), at_original_anchor);
+    try std.testing.expectEqual(@as(usize, 1), selection_outlines);
+
+    // --- Promoted UNSELECTED claim on a plain tile (press (7,7), drag to
+    // (7,9)): the grabbed tile's outline follows the pointer; the old
+    // selection stays put. ---
+    session.ui_state.editor_move_drag = .{
+        .press_position_tile = .{ .x = 7, .y = 7 },
+        .current_position_tile = .{ .x = 7, .y = 9 },
+        .press_position = .{ .x = 0, .y = 0 },
+        .promoted = true,
+        .selected_at_press = false,
+    };
+    const promoted_tile = runView(&state_, &session, arena, &harness, camera);
+    try std.testing.expectEqual(@as(usize, 2), promoted_tile.tile_overlays.len);
+    {
+        var at_drag_target: usize = 0;
+        var at_old_selection: usize = 0;
+        for (promoted_tile.tile_overlays) |overlay| {
+            if (std.meta.eql(
+                tileToScreen(.{ .x = 7, .y = 9 }, camera, 1.0),
+                overlay.screen_position,
+            )) at_drag_target += 1;
+            if (std.meta.eql(
+                tileToScreen(.{ .x = 5, .y = 5 }, camera, 1.0),
+                overlay.screen_position,
+            )) at_old_selection += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), at_drag_target);
+        try std.testing.expectEqual(@as(usize, 1), at_old_selection);
+    }
+
+    // --- Promoted SELECTED-at-press claim (press the selected (5,5)
+    // tile, drag to (6,5)): the selection outline translates — today's
+    // path, no group preview on top. ---
+    session.ui_state.editor_move_drag = .{
+        .press_position_tile = .{ .x = 5, .y = 5 },
+        .current_position_tile = .{ .x = 6, .y = 5 },
+        .press_position = .{ .x = 0, .y = 0 },
+        .promoted = true,
+        .selected_at_press = true,
+    };
+    const promoted_selected = runView(&state_, &session, arena, &harness, camera);
+    try std.testing.expectEqual(@as(usize, 1), promoted_selected.tile_overlays.len);
+    try std.testing.expectEqual(
+        tileToScreen(.{ .x = 6, .y = 5 }, camera, 1.0),
+        promoted_selected.tile_overlays[0].screen_position,
+    );
 }
 
 test "entity body color: gradient by team, index by player-vs-helper" {

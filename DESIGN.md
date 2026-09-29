@@ -4019,13 +4019,30 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   select tool active). The selection MOVE is landed:
   a plain left press on a selected thing (tile / entity / item, a selected
   decoration's footprint, or a selected marker —
-  `editorSelectionContainsPosition`) claims a drag; the threshold promotes
-  it (the view translates the selection OUTLINES by the live delta — the
-  world stays put); release with a nonzero delta fires
+  `editorSelectionContainsPosition`) OR on an unselected-but-selectable
+  thing (a nonempty click group — `editorClickGroupNonempty`; empty ground
+  never claims, so the click-to-deselect stays the plain release path)
+  claims a drag; the threshold promotes it (the view translates the
+  OUTLINES by the live delta — the selection for a selected-at-press
+  claim, the grabbed click group for an unselected one (`selected_at_press`
+  on the drag struct records which; the old selection must NOT slide
+  around — it is still the real selection) — the world stays put); a
+  selected-at-press release with a nonzero delta fires
   `player_move_editor_selection { delta }`, a zero delta fires nothing,
   and an unpromoted release acts as a plain click (the REPLACE — the
   select arm defers to the gesture; usually a no-op, since the pressed
-  thing is selected). The commit: the handler backs the selection
+  thing is selected). An UNSELECTED-claim release — drag-to-select-and-
+  move, one gesture instead of click-then-drag — fires the replace +
+  move PAIR, pushed in drain-correct order: the move first, the replace
+  ON TOP, so the LIFO drain runs the replace's whole sub-batch (select
+  the grabbed group) before the move orchestrator plans its clear phase
+  + chained commit against the REPLACED selection — the ordering is
+  guaranteed by push order, not by drain timing, so a fast flick can't
+  interleave them; both actions push in the same frame, drain together,
+  and share one idle point (recorded when the stack EMPTIES, not per
+  action), so a single undo step reverts the whole drag. A zero delta
+  drops just the replace (the grab-and-drop-in-place = selected, like a
+  click). The commit: the handler backs the selection
   up as concrete things (`EditorSelectionMoveEntry` — kind + type_id +
   target), pushes the clear plan
   (`planEditorSelectionMoveDeleteActions` — like the Delete key but an

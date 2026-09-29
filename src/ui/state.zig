@@ -505,19 +505,26 @@ pub const EditorMarquee = struct {
 };
 
 /// In-progress selection MOVE drag (select tool, plain left press on a
-/// selected thing). `press_position_tile` anchors the delta;
-/// `current_position_tile` tracks the pointer live once the drag
-/// threshold promotes the press (keeping the last valid tile over
-/// blocking UI); the promoted delta drives the view's translated
-/// selection outlines. Cleared on release (fires
-/// `player_move_editor_selection` when the delta is nonzero — an
-/// unpromoted release acts as a plain click instead) or cancel. See
+/// selected thing OR on an unselected-but-selectable thing — dragging
+/// such a thing selects it and moves it in one gesture).
+/// `press_position_tile` anchors the delta; `current_position_tile`
+/// tracks the pointer live once the drag threshold promotes the press
+/// (keeping the last valid tile over blocking UI); the promoted delta
+/// drives the view's translated outlines (the selection for a
+/// `selected_at_press` claim, the grabbed click group for an
+/// unselected one). `selected_at_press` records which kind of claim was
+/// made — the release path keys on it, so a mid-drag selection change
+/// (e.g. ctrl+A) can't flip a claim's semantics. Cleared on release
+/// (fires the move — for an unselected claim chained after the replace,
+/// see `handleEditorMoveDrag` — when the delta is nonzero; an unpromoted
+/// release acts as a plain click instead) or cancel. See
 /// `UiState.editor_move_drag`.
 pub const EditorMoveDrag = struct {
     press_position_tile: types.Vector2,
     current_position_tile: types.Vector2,
     press_position: ScreenPosition,
     promoted: bool,
+    selected_at_press: bool,
 };
 
 

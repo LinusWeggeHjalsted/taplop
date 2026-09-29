@@ -404,9 +404,10 @@ fn update(
     input_gestures.handleEditorMarquee(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor select-tool selection move (plain left press on a selected
-    // thing, drag, release). Runs after the marquee (a Shift press is the
-    // marquee's; a plain press on a selected thing is the move's — the
-    // two gestures are exclusive by press modifier + selection hit).
+    // thing OR on an unselected-but-selectable thing, drag, release).
+    // Runs after the marquee (a Shift press is the marquee's; a plain
+    // press on a claimable thing is the move's — the two gestures are
+    // exclusive by press modifier + claimability).
     input_gestures.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor tile-tool paint drag (plain left press paints the press tile;
