@@ -15089,3 +15089,28 @@ math.
 
 DESIGN → UI Framework carries the bullet; TODO's comparison-color polish
 note now lists the icon stat numbers among the shared colors' consumers.
+
+## Inventory item stat numbers: the weapon comparison made inclusive
+
+Follow-up to the stat-number feature above, same session: the weapon's
+both-hands comparison became INCLUSIVE on both sides — green while the
+weapon at least matches each equipped hand (≥ each: a weapon equal to your
+best hand is still green, it upgrades the other), red while it at most
+matches each hand (≤ each: equal to one hand and strictly worse than the
+other is red — no hand is an upgrade), lightest only when strictly between
+the two hands (beats one, strictly loses to the other). The equal-to-BOTH
+hands case satisfies both inclusive checks; green wins it there (≥ each
+hand is the user-facing rule — the same one that greens a weapon equal to
+only the best hand). Motivation (the author's example): hands 4/5 with a
+5 in inventory must read green — a strict rule would lightest it, which
+says nothing useful about an obvious upgrade for the weaker hand.
+
+The single-stat items (armor, amulets) keep the strict rule — "equal →
+lightest" is well-defined there (one equipped slot, one baseline), only the
+weapon's two-baseline case needed the inclusive operators. The tooltip's
+signed per-hand differences are untouched.
+
+Tests: the panel test's weapon band against hands (5,3) now walks all five
+colors (7 green / 5 green-equal / 4 lightest-between / 3 red-equal / 2 red),
+plus a full-tie pass (hands 5/5: weapon 5 → green, weapon 4 → red).
+DESIGN → UI Framework's bullet carries the rule.

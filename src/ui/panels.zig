@@ -897,8 +897,9 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // material-count label recipe (font size + inset + outlined,
     // non-blocking so the slot keeps its tooltip). Colors: green while
     // better than equipped, red while worse, lightest while equal; a
-    // weapon is green only when it beats BOTH hands, red only when worse
-    // than both — a mixed result is lightest. Expected positions are
+    // weapon compares INCLUSIVELY against both hands — green while ≥ each
+    // hand, red while ≤ each hand (green wins the equal-to-both tie),
+    // lightest when strictly between the two hands. Expected positions are
     // DERIVED from the emitted slot elements' own cells (not re-derived
     // layout math).
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -932,11 +933,13 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     var inventory = types.Inventory{};
     // Slot 0: weapon 7 beats both hands → green.
     inventory.slots[0] = .{ .weapon = .{ .weapon_damage = 7 } };
-    // Slot 1: weapon 4 beats the off hand, loses to the main → mixed →
-    // lightest (no clear upgrade).
-    inventory.slots[1] = .{ .weapon = .{ .weapon_damage = 4 } };
-    // Slot 2: weapon 2 loses to both → red.
-    inventory.slots[2] = .{ .weapon = .{ .weapon_damage = 2 } };
+    // Slot 1: weapon 5 EQUALS the main hand, beats the off hand → green
+    // (the inclusive rule: ≥ each hand — a weapon matching your best
+    // hand is still green, it upgrades the other).
+    inventory.slots[1] = .{ .weapon = .{ .weapon_damage = 5 } };
+    // Slot 2: weapon 4 beats the off hand (3), strictly loses to the main
+    // (5) → lightest (strictly between the two hands: no clear upgrade).
+    inventory.slots[2] = .{ .weapon = .{ .weapon_damage = 4 } };
     // Slot 3: boots — health 4 equal → lightest (top-left), speed 2 > 1 →
     // green (bottom-right).
     inventory.slots[3] = .{ .boots = .{ .health_bonus = 4, .speed_bonus = 2 } };
@@ -944,6 +947,11 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     inventory.slots[4] = .{ .amulet = .{ .spell_damage = 3 } };
     // Slot 5: skill tome — no stats, no numbers.
     inventory.slots[5] = .{ .skill_tome = .{} };
+    // Slot 6: weapon 3 EQUALS the off hand, strictly loses to the main →
+    // red (the inclusive red: ≤ each hand — no hand is an upgrade).
+    inventory.slots[6] = .{ .weapon = .{ .weapon_damage = 3 } };
+    // Slot 7: weapon 2 strictly loses to both → red.
+    inventory.slots[7] = .{ .weapon = .{ .weapon_damage = 2 } };
 
     var elements: UiElementList = .empty;
     try buildInventoryPanel(
@@ -1024,11 +1032,15 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         }
     }.call;
 
-    // The three weapon comparison colors (beats both / mixed / worse
-    // than both).
+    // The weapon comparison band against hands (5, 3): beats both →
+    // green; equals the main hand (inclusive ≥) → green; strictly between
+    // → lightest; equals the off hand (inclusive ≤) → red; loses to both
+    // → red.
     try assertLabel(elements.items, "7", topLeft(slotCell(elements.items, 0)), positive_color);
-    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 1)), lightest);
-    try assertLabel(elements.items, "2", topLeft(slotCell(elements.items, 2)), negative_color);
+    try assertLabel(elements.items, "5", topLeft(slotCell(elements.items, 1)), positive_color);
+    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 2)), lightest);
+    try assertLabel(elements.items, "3", topLeft(slotCell(elements.items, 6)), negative_color);
+    try assertLabel(elements.items, "2", topLeft(slotCell(elements.items, 7)), negative_color);
     // The boots' two stats: health equal → lightest top-left, speed
     // better → green bottom-right.
     try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 3)), lightest);
@@ -1041,7 +1053,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // The amulet vs nothing equipped (baseline 0) → green.
     try assertLabel(elements.items, "3", topLeft(slotCell(elements.items, 4)), positive_color);
 
-    // Census: the stat numbers over the item GRID are exactly the six
+    // Census: the stat numbers over the item GRID are exactly the eight
     // above (the material sidebar's count labels sit beyond the grid's
     // right edge, the tome + empty slots contribute none).
     {
@@ -1058,12 +1070,39 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 6), stat_labels);
+        try std.testing.expectEqual(@as(usize, 8), stat_labels);
+    }
+
+    // The FULL-TIE case (weapon 5 vs hands 5/5): both inclusive checks
+    // hold — green wins (≥ each hand is the user-facing rule, the same
+    // one that greens a weapon equal to only the best hand).
+    {
+        var elements_tie: UiElementList = .empty;
+        try buildInventoryPanel(
+            &elements_tie,
+            arena.allocator(),
+            metrics,
+            bounds,
+            inventory,
+            .{},
+            &.{},
+            EquippedGear{
+                .main_hand_weapon = .{ .weapon_damage = 5 },
+                .off_hand_weapon = .{ .weapon_damage = 5 },
+            },
+            theme,
+            null,
+            .{},
+            null,
+        );
+        try assertLabel(elements_tie.items, "5", topLeft(slotCell(elements_tie.items, 1)), positive_color);
+        // And strictly-below-both stays red under the inclusive operators.
+        try assertLabel(elements_tie.items, "4", topLeft(slotCell(elements_tie.items, 2)), negative_color);
     }
 
     // Drag-source suppression: the dragged slot's item reads as in
     // flight — icon + stat numbers both suppressed (two fewer: the
-    // boots' health + speed).
+    // boots' health + speed — 8 → 6).
     {
         var elements_dragged: UiElementList = .empty;
         try buildInventoryPanel(
@@ -1093,7 +1132,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 4), stat_labels);
+        try std.testing.expectEqual(@as(usize, 6), stat_labels);
     }
 }
 
