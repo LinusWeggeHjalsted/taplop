@@ -15043,3 +15043,49 @@ null; dead enemy / no enemies → waving; hub marker always waving).
 
 DESIGN → Animation (the flag banner paragraph) and the win-condition prose
 (`check_level_end`) carry the settled rule.
+
+## Inventory item icons: stat numbers in the corners, colored by the equipped comparison
+
+The item tooltip already showed each stat with its signed difference to the
+equipped gear; now every item icon in the INVENTORY panel carries its stats
+directly — one outlined number per stat in the icon's corners, colored by the
+same comparison so the grid reads at a glance without hovering:
+
+- single-stat items (weapons: damage; amulets: spell damage) — top-left
+- armor (coat/gloves/pants/boots) — health bonus top-left, the item-specific
+  stat (defense / damage / pickup radius / speed) bottom-right
+- skill tomes — no stats, no numbers
+
+The number shown is the stat VALUE (not the signed difference — the tooltip
+carries that). Colors: green (`ui.positive_color`) while better than
+equipped, red (`ui.negative_color`) while worse, the theme's lightest while
+equal — and a weapon is green only when it beats BOTH equipped hands, red
+only when worse than both; a mixed result (beats one hand, loses to the
+other) is lightest, since a single number would otherwise have to make a
+call the comparison can't support (the decision came out of discussion: any
+per-hand rule leaves a well-defined color only under both-hands-or-neither).
+An empty equipped slot compares against 0 (an item beats nothing — green),
+matching the tooltip's baseline rule.
+
+Recipe and placement reuse the material-count corner label exactly
+(`material_count_font_size` 48 + `material_count_inset` 8, `outlined` for the
+black outline, non-blocking so hover/click reach the slot beneath and the
+slot's tooltip survives): `emitItemStatLabels` (+ `emitItemStatNumber` +
+`statComparisonColor`) in src/ui/emit.zig, called from `buildInventoryPanel`
+inside the item-icon block — so the numbers are suppressed on the drag source
+together with the icon (the item reads as in flight). No renderer changes:
+`TextLabel` already carried `color` + `outlined`. Scope: the inventory panel
+only — the gear panel is its own baseline (equipped vs equipped = all equal,
+meaningless) and ground items aren't the inventory.
+
+Tests: a new `buildInventoryPanel` structure test (the panel had none): the
+three weapon comparison colors (beats both / mixed / worse than both), the
+boots' two stats (equal health → lightest top-left, better speed → green
+bottom-right), the amulet-vs-empty-slot green, a grid-wide census (exactly
+the six stat numbers, the sidebar's count labels excluded), and drag-source
+suppression (the dragged slot's numbers vanish). Expected positions are
+derived from the emitted slot elements' own cells, not re-derived layout
+math.
+
+DESIGN → UI Framework carries the bullet; TODO's comparison-color polish
+note now lists the icon stat numbers among the shared colors' consumers.

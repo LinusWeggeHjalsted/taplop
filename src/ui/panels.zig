@@ -44,6 +44,8 @@ const entity_inspect_panel_width = ui_element.entity_inspect_panel_width;
 const buildItemTooltip = tooltip.buildItemTooltip;
 const buildSkillTooltip = tooltip.buildSkillTooltip;
 const EquippedGear = tooltip.EquippedGear;
+const positive_color = tooltip.positive_color;
+const negative_color = tooltip.negative_color;
 const spanRow = tooltip.spanRow;
 const emitCenteredNumber = emit.emitCenteredNumber;
 const emitCornerNumber = emit.emitCornerNumber;
@@ -53,6 +55,9 @@ const skillIconSpriteId = emit.skillIconSpriteId;
 const itemIconSpriteId = emit.itemIconSpriteId;
 const effectIconSpriteId = emit.effectIconSpriteId;
 const emitMaterialIcons = emit.emitMaterialIcons;
+const emitItemStatLabels = emit.emitItemStatLabels;
+const material_count_font_size = emit.material_count_font_size;
+const material_count_inset = emit.material_count_inset;
 const material_kinds = emit.material_kinds;
 const Grid = ui_element.Grid;
 const SalvageRegion = @import("state.zig").SalvageRegion;
@@ -212,6 +217,19 @@ pub fn buildInventoryPanel(
                     .color = item_color,
                     .blocks_input = false,
                 } });
+                // The item's stat numbers, colored by the equipped
+                // comparison — the at-a-glance version of the slot
+                // tooltip's stat rows (see emitItemStatLabels).
+                try emitItemStatLabels(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    cell.position(),
+                    inventory_slot_size,
+                    item,
+                    equipped,
+                    active_theme,
+                );
             }
         }
     }
@@ -871,6 +889,212 @@ pub fn buildSkillsPanel(
     }
 
     _ = font_metrics;
+}
+
+test "buildInventoryPanel: item stat numbers in the icon corners, colored by the equipped comparison" {
+    // The stat numbers ride the item icons (see emitItemStatLabels): the
+    // stat VALUE (not the signed difference — the tooltip carries that),
+    // material-count label recipe (font size + inset + outlined,
+    // non-blocking so the slot keeps its tooltip). Colors: green while
+    // better than equipped, red while worse, lightest while equal; a
+    // weapon is green only when it beats BOTH hands, red only when worse
+    // than both — a mixed result is lightest. Expected positions are
+    // DERIVED from the emitted slot elements' own cells (not re-derived
+    // layout math).
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 9, .g = 9, .b = 9 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = ui_element.inventory_panel_width,
+        .height = middle_panel_height,
+    };
+
+    // Equipped baseline: main hand 5, off hand 3, boots (health 4,
+    // speed 1), no amulet (empty slot compares against 0).
+    const equipped = EquippedGear{
+        .main_hand_weapon = .{ .weapon_damage = 5 },
+        .off_hand_weapon = .{ .weapon_damage = 3 },
+        .boots = .{ .health_bonus = 4, .speed_bonus = 1 },
+    };
+
+    var inventory = types.Inventory{};
+    // Slot 0: weapon 7 beats both hands → green.
+    inventory.slots[0] = .{ .weapon = .{ .weapon_damage = 7 } };
+    // Slot 1: weapon 4 beats the off hand, loses to the main → mixed →
+    // lightest (no clear upgrade).
+    inventory.slots[1] = .{ .weapon = .{ .weapon_damage = 4 } };
+    // Slot 2: weapon 2 loses to both → red.
+    inventory.slots[2] = .{ .weapon = .{ .weapon_damage = 2 } };
+    // Slot 3: boots — health 4 equal → lightest (top-left), speed 2 > 1 →
+    // green (bottom-right).
+    inventory.slots[3] = .{ .boots = .{ .health_bonus = 4, .speed_bonus = 2 } };
+    // Slot 4: amulet 3 vs nothing equipped (0) → green.
+    inventory.slots[4] = .{ .amulet = .{ .spell_damage = 3 } };
+    // Slot 5: skill tome — no stats, no numbers.
+    inventory.slots[5] = .{ .skill_tome = .{} };
+
+    var elements: UiElementList = .empty;
+    try buildInventoryPanel(
+        &elements,
+        arena.allocator(),
+        metrics,
+        bounds,
+        inventory,
+        .{},
+        &.{},
+        equipped,
+        theme,
+        null,
+        .{},
+        null,
+    );
+
+    // A slot's cell position, read off the emitted slot element (the
+    // grid layout itself is not re-derived here).
+    const slotCell = struct {
+        fn call(items: []const ui_element.UiElement, index: u32) ScreenPosition {
+            for (items) |element| switch (element) {
+                .slot => |slot| if (slot.ref) |slot_ref| switch (slot_ref) {
+                    .inventory => |slot_index| {
+                        if (slot_index == index) return slot.screen_position;
+                    },
+                    else => {},
+                },
+                else => {},
+            };
+            @panic("inventory slot element not found");
+        }
+    }.call;
+    // Expected label positions for the two corners (the emitter's own
+    // formula — the bottom-right one measures the label's width through
+    // the same metrics).
+    const topLeft = struct {
+        fn call(cell: ScreenPosition) ScreenPosition {
+            return .{ .x = cell.x + material_count_inset, .y = cell.y + material_count_inset };
+        }
+    }.call;
+    const bottomRight = struct {
+        fn call(cell: ScreenPosition, label_text: []const u8) ScreenPosition {
+            const width = metrics.measureSpanWidth(text(label_text), material_count_font_size);
+            return .{
+                .x = cell.x + inventory_slot_size - width - material_count_inset,
+                .y = cell.y + inventory_slot_size - material_count_font_size - material_count_inset,
+            };
+        }
+    }.call;
+    // Exactly one stat label at the expected position with the expected
+    // text + color, carrying the full recipe (font size, outline,
+    // non-blocking).
+    const assertLabel = struct {
+        fn call(
+            items: []const ui_element.UiElement,
+            expected_text: []const u8,
+            expected_position: ScreenPosition,
+            expected_color: Color,
+        ) !void {
+            var matches: usize = 0;
+            for (items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, expected_text) and
+                        label.screen_position.x == expected_position.x and
+                        label.screen_position.y == expected_position.y)
+                    {
+                        matches += 1;
+                        try std.testing.expectEqual(expected_color, label.color);
+                        try std.testing.expectEqual(material_count_font_size, label.font_size);
+                        try std.testing.expect(label.outlined);
+                        try std.testing.expect(!label.blocks_input);
+                    }
+                },
+                else => {},
+            };
+            try std.testing.expectEqual(@as(usize, 1), matches);
+        }
+    }.call;
+
+    // The three weapon comparison colors (beats both / mixed / worse
+    // than both).
+    try assertLabel(elements.items, "7", topLeft(slotCell(elements.items, 0)), positive_color);
+    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 1)), lightest);
+    try assertLabel(elements.items, "2", topLeft(slotCell(elements.items, 2)), negative_color);
+    // The boots' two stats: health equal → lightest top-left, speed
+    // better → green bottom-right.
+    try assertLabel(elements.items, "4", topLeft(slotCell(elements.items, 3)), lightest);
+    try assertLabel(
+        elements.items,
+        "2",
+        bottomRight(slotCell(elements.items, 3), "2"),
+        positive_color,
+    );
+    // The amulet vs nothing equipped (baseline 0) → green.
+    try assertLabel(elements.items, "3", topLeft(slotCell(elements.items, 4)), positive_color);
+
+    // Census: the stat numbers over the item GRID are exactly the six
+    // above (the material sidebar's count labels sit beyond the grid's
+    // right edge, the tome + empty slots contribute none).
+    {
+        const grid_left = slotCell(elements.items, 0).x;
+        const grid_right = grid_left + types.inventory_columns * inventory_slot_size;
+        var stat_labels: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (label.font_size == material_count_font_size and
+                    label.screen_position.x >= grid_left and label.screen_position.x < grid_right)
+                {
+                    stat_labels += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 6), stat_labels);
+    }
+
+    // Drag-source suppression: the dragged slot's item reads as in
+    // flight — icon + stat numbers both suppressed (two fewer: the
+    // boots' health + speed).
+    {
+        var elements_dragged: UiElementList = .empty;
+        try buildInventoryPanel(
+            &elements_dragged,
+            arena.allocator(),
+            metrics,
+            bounds,
+            inventory,
+            .{},
+            &.{},
+            equipped,
+            theme,
+            .{ .inventory = 3 },
+            .{},
+            null,
+        );
+        const grid_left = slotCell(elements_dragged.items, 0).x;
+        const grid_right = grid_left + types.inventory_columns * inventory_slot_size;
+        var stat_labels: usize = 0;
+        for (elements_dragged.items) |element| switch (element) {
+            .text_label => |label| {
+                if (label.font_size == material_count_font_size and
+                    label.screen_position.x >= grid_left and label.screen_position.x < grid_right)
+                {
+                    stat_labels += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 4), stat_labels);
+    }
 }
 
 test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {

@@ -130,7 +130,8 @@ Test by running `zig build run` and clicking through.
   to draw a real meteor icon), and
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
-  tooltip comparisons and combat damage/heal numbers).
+  tooltip comparisons, the inventory icon stat numbers, and combat
+  damage/heal numbers).
 - **Larger systems (beyond MVP)** — the world-map overlay + NPC
   interaction/dialogue (see "NPC Interaction" below). Middle panels
   (inventory/gear/skills/inspect), options/settings/top bar, drag-drop, and

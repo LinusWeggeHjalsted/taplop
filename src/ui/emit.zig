@@ -40,6 +40,9 @@ const Entity = types.Entity;
 const SkillId = types.SkillId;
 const spanRow = @import("tooltip.zig").spanRow;
 const buildSkillTooltip = ui_tooltip.buildSkillTooltip;
+const EquippedGear = ui_tooltip.EquippedGear;
+const positive_color = ui_tooltip.positive_color;
+const negative_color = ui_tooltip.negative_color;
 const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 
@@ -487,6 +490,223 @@ pub fn emitMaterialIcons(
             .vertical => pos.y += icon_size,
             .horizontal => pos.x += icon_size + ui_gap,
         }
+    }
+}
+
+/// The comparison color for one item stat number against its equipped
+/// baseline: green while better, red while worse, lightest while equal.
+/// Weapons compare against BOTH hands and need the two-baseline rule —
+/// see `emitItemStatLabels`.
+fn statComparisonColor(
+    value: u32,
+    baseline: u32,
+    active_theme: types.ActiveColorTheme,
+) Color {
+    if (value > baseline) return positive_color;
+    if (value < baseline) return negative_color;
+    return active_theme.lightest;
+}
+
+/// Which icon corner a stat number sits in: top-left for the first stat
+/// (single-stat items' only stat; armor's health bonus), bottom-right for
+/// armor's item-specific stat (the material-count corner).
+const StatNumberCorner = enum { top_left, bottom_right };
+
+/// One corner stat number on an inventory item icon: the stat VALUE (not
+/// the signed difference — the tooltip carries that), colored by the
+/// equipped comparison, black-outlined. The material-count label recipe:
+/// same font size + inset, non-blocking so hover/click reach the slot
+/// beneath (the slot keeps its tooltip).
+fn emitItemStatNumber(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell_position: ScreenPosition,
+    cell_size: i32,
+    value: u32,
+    color: Color,
+    corner: StatNumberCorner,
+) !void {
+    const value_text = try std.fmt.allocPrint(allocator, "{d}", .{value});
+    const label_width = font_metrics.measureSpanWidth(text(value_text), material_count_font_size);
+    const position: ScreenPosition = switch (corner) {
+        .top_left => .{
+            .x = cell_position.x + material_count_inset,
+            .y = cell_position.y + material_count_inset,
+        },
+        .bottom_right => .{
+            .x = cell_position.x + cell_size - label_width - material_count_inset,
+            .y = cell_position.y + cell_size - material_count_font_size - material_count_inset,
+        },
+    };
+    try elements.append(allocator, .{ .text_label = .{
+        .text = value_text,
+        .screen_position = position,
+        .color = color,
+        .font_size = material_count_font_size,
+        .outlined = true,
+        .blocks_input = false,
+    } });
+}
+
+/// Emit an inventory item's stat numbers directly on its icon — the
+/// at-a-glance version of the item tooltip's stat rows (same stats, same
+/// equipped baseline; the tooltip carries the signed differences). One
+/// number per stat, colored by the equipped comparison: green while
+/// better, red while worse, lightest while equal; a weapon is green only
+/// when it beats BOTH equipped hands and red only when worse than both —
+/// a mixed result (beats one hand, loses to the other) is lightest: no
+/// clear upgrade either way. An empty equipped slot compares against 0
+/// (an item beats nothing — green), matching the tooltip. Single-stat
+/// items (weapons: damage, amulets: spell damage) show the number
+/// top-left; armor shows the health bonus top-left and the item-specific
+/// stat (defense / damage / pickup radius / speed) bottom-right. Skill
+/// tomes have no stats. `equipped == null` (comparison suppressed) emits
+/// nothing. The caller suppresses on the drag source (rides the item
+/// icon — the item reads as in flight).
+pub fn emitItemStatLabels(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell_position: ScreenPosition,
+    cell_size: i32,
+    item: types.Item,
+    equipped: ?EquippedGear,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const e = equipped orelse return;
+    switch (item) {
+        .weapon => |weapon| {
+            const main_hand: u32 = if (e.main_hand_weapon) |w| w.weapon_damage else 0;
+            const off_hand: u32 = if (e.off_hand_weapon) |w| w.weapon_damage else 0;
+            const color: Color =
+                if (weapon.weapon_damage > main_hand and weapon.weapon_damage > off_hand)
+                    positive_color
+                else if (weapon.weapon_damage < main_hand and weapon.weapon_damage < off_hand)
+                    negative_color
+                else
+                    active_theme.lightest;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                weapon.weapon_damage,
+                color,
+                .top_left,
+            );
+        },
+        .amulet => |amulet| {
+            const baseline: u32 = if (e.amulet) |a| a.spell_damage else 0;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                amulet.spell_damage,
+                statComparisonColor(amulet.spell_damage, baseline, active_theme),
+                .top_left,
+            );
+        },
+        .coat => |coat| {
+            const health_baseline: u32 = if (e.coat) |c| c.health_bonus else 0;
+            const defense_baseline: u32 = if (e.coat) |c| c.defense_bonus else 0;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                coat.health_bonus,
+                statComparisonColor(coat.health_bonus, health_baseline, active_theme),
+                .top_left,
+            );
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                coat.defense_bonus,
+                statComparisonColor(coat.defense_bonus, defense_baseline, active_theme),
+                .bottom_right,
+            );
+        },
+        .gloves => |gloves| {
+            const health_baseline: u32 = if (e.gloves) |g| g.health_bonus else 0;
+            const damage_baseline: u32 = if (e.gloves) |g| g.damage_bonus else 0;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                gloves.health_bonus,
+                statComparisonColor(gloves.health_bonus, health_baseline, active_theme),
+                .top_left,
+            );
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                gloves.damage_bonus,
+                statComparisonColor(gloves.damage_bonus, damage_baseline, active_theme),
+                .bottom_right,
+            );
+        },
+        .pants => |pants| {
+            const health_baseline: u32 = if (e.pants) |p| p.health_bonus else 0;
+            const pickup_baseline: u32 = if (e.pants) |p| p.pickup_radius_bonus else 0;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                pants.health_bonus,
+                statComparisonColor(pants.health_bonus, health_baseline, active_theme),
+                .top_left,
+            );
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                pants.pickup_radius_bonus,
+                statComparisonColor(pants.pickup_radius_bonus, pickup_baseline, active_theme),
+                .bottom_right,
+            );
+        },
+        .boots => |boots| {
+            const health_baseline: u32 = if (e.boots) |b| b.health_bonus else 0;
+            const speed_baseline: u32 = if (e.boots) |b| b.speed_bonus else 0;
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                boots.health_bonus,
+                statComparisonColor(boots.health_bonus, health_baseline, active_theme),
+                .top_left,
+            );
+            try emitItemStatNumber(
+                elements,
+                allocator,
+                font_metrics,
+                cell_position,
+                cell_size,
+                boots.speed_bonus,
+                statComparisonColor(boots.speed_bonus, speed_baseline, active_theme),
+                .bottom_right,
+            );
+        },
+        .skill_tome => {},
     }
 }
 
