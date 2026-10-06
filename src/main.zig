@@ -1352,6 +1352,30 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
         arena,
     );
 
+    // The motivating regression: the file the session read CHANGES between
+    // record and replay. Here the mutation rides the mod-shadowing seam —
+    // a persistent-dir copy of data/new_player.txt that overrides the
+    // embedded map (the in-game case is the autosave: overwritten by every
+    // later session). Under the old lazy-disk fallback the replay would
+    // read the shadow and diverge (verifyReplayMatch panic); the bundle's
+    // embedded copy keeps the replay exact. The shadow must stay parseable,
+    // so it's derived from the real bytes (the name field differs).
+    const real_new_player = file_source.readFile(arena, "data/new_player.txt") catch
+        @panic("read new_player for shadow");
+    const shadow_new_player = try std.mem.replaceOwned(
+        u8,
+        arena,
+        real_new_player,
+        "player_name New Player",
+        "player_name Shadow Player",
+    );
+    try std.testing.expect(shadow_new_player.len != real_new_player.len);
+    try scratch_dir.createDirPath(io, "data");
+    try scratch_dir.writeFile(io, .{
+        .sub_path = "data/new_player.txt",
+        .data = shadow_new_player,
+    });
+
     // Load + reconstruct into a fresh history2 via the CLI glue (the
     // cwd-relative path to the bundle dir under the scratch tree).
     var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);

@@ -420,12 +420,11 @@ work:
 Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 → Logging & Replay; history in DONE.md). Remaining:
 
-- file_format_version now rides every config file's Metadata section (all
-  at 1 — wiring DONE, DONE.md). The remaining work is policy, not wiring:
-  bump the relevant per-type constant in parser.zig whenever a serialized
-  format changes shape, and give the session log its v2
-  (ReconstructionCache section) when custom-mission sharing lands (see
-  below).
+- [x] file_format_version now rides every config file's Metadata section
+      (wiring DONE, DONE.md). Policy: bump the relevant per-type constant
+      in parser.zig whenever a serialized format changes shape. The session
+      log's v2 (ReconstructionCache manifest + `content/` copies — the
+      session-log BUNDLE) is DONE — see DONE.md, "session-log bundle".
 - Pre-release replay-compat policy: handler changes that push new child
   events (e.g. the `damage`-event split, effect pacing) break strict
   verification of OLD session logs / validation replays — re-record rather
@@ -434,16 +433,13 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   reconstructFromEventLog/restoreTo at successive targets. Steps = the
   combat-log filter (derived, not idle_points). Needs the projection (DONE) +
   replay-viewer UI.
-- Replay verification cross-session: natural-stack verification
-  (`verifyReplayMatch`) runs on cross-session `reconstructFromEventLog`
-  reconstructions too, and the replay CHECKING mode
-  (`reconstructFromEventLogChecking`) makes the same check catchable for
-  revalidate / server validation (DONE.md). The remaining gap is
-  custom-mission cross-session replay where the mission files changed since
-  the original session — that fails until the reconstruction cache is
-  serialized into the session log (`file_format_version` 2, lands with
-  custom-mission sharing). See DESIGN →
-  Determinism & Tiebreaking → Replay VERIFICATION.
+- [x] Replay verification cross-session: natural-stack verification
+      (`verifyReplayMatch`) runs on cross-session `reconstructFromEventLog`
+      reconstructions too, and the replay CHECKING mode
+      (`reconstructFromEventLogChecking`) makes the same check catchable for
+      revalidate / server validation (DONE.md). The custom-mission
+      cross-session gap is CLOSED — session-log bundles embed the content
+      (see DONE.md, "session-log bundle").
 - Exhaustive comptime round-trip test for the session-log writer/reader:
   inline-for over every Event category/variant, synthesize a payload (0 /
   false / first enum / "" / empty slice / null optional / recurse structs),
@@ -670,10 +666,10 @@ looking:
 - Async wrinkle: online fetch / zip read is async on web. Acquisition must
   fully populate the source ("loading mission…") before emitting
   start_mission.
-- Cross-session replay reproducibility: a shared/saved replay of a custom
-  mission is only reproducible with the exact mission bytes. Mission refs
-  should eventually be content-addressed (hash) or pinned to an immutable
-  version id — matters for recorded-history-as-test and replay sharing.
+- [x] Cross-session replay reproducibility: session-log bundles embed the
+      exact bytes the session read (manifest + `content/` copies; see
+      DESIGN → Logging & Replay → Session-log bundle) — DONE. The sharing/
+      download packaging lands with the database.
 - **Custom-asset dimension validation** — DONE, all layers (load
   warn+degrade, render magenta gate, picker filter + commit backstops,
   Revalidate art report). Settled design + the layer inventory: DESIGN →

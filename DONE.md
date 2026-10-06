@@ -15404,3 +15404,64 @@ current-row-in-window framing, and the track + thumb pair; the
 theme-picker handler test pins the open's scroll-to-current and the
 wheel's row arithmetic + lower clamp. DESIGN → Level Editor's picker
 section records the new shape.
+
+## Session-log bundle: v2 — cross-session replay over mutable content
+
+The cross-session replay gap: a saved session log replayed against
+"whatever is on disk now" — a log recorded against the autosave diverged
+the moment any later session's end_hub/end_level overwrote it, custom
+missions broke after an editor re-save, and mod-shadowing could change
+even shipped paths. Strict verifyReplayMatch then panicked. Design
+discussion settled: a folder artifact with EXACT byte copies of every
+reconstruction read (readability — no escaping, the copies open as-is),
+always embed (mod-shadowing means any path can change; no shipped-vs-
+mutable classification), no backwards compatibility (dev-only playerbase
+— v1 logs and v1 validation replays are unreadable, re-record).
+
+- **The bundle** (`src/session_log_bundle.zig`, DESIGN → Logging &
+  Replay → Session-log bundle): `session_log.txt` (the ordinary
+  session-log body + a `ReconstructionCache` manifest section — one entry
+  group per cached read: `event_index`, `path` (verbatim, spaces OK),
+  `hash` (SHA-256 hex), `file`) + `content/` holding the copies, named
+  `<first 8 hex>_<original file name>`. Dedup by hash: identical bytes
+  stored once (a level file read on every re-entry); distinct bytes of
+  the SAME path (the mid-session autosave write + re-load shape) are
+  distinct copies. Writer: content files FIRST, session_log.txt LAST (a
+  half-written bundle fails to load cleanly). Loader: the manifest
+  section is REQUIRED (a bare session log — e.g. the validation replay —
+  is not a bundle), every copy is verified against its recorded hash
+  (missing/tampered → error.ContentMismatch, never a silent disk
+  fallback), non-monotonic event_index rejects (a hand-merged manifest
+  would break the replay-side binary search).
+- **Read policy** (state.zig): the blanket `cross_session_replay` flag
+  became an explicit `ReconstructionReadPolicy` on reconstructFromEventLog.
+  `.authoritative` (bundles: `loadReconstructionCache` pre-populates the
+  cache from the manifest, a miss is a broken/hand-edited bundle → panic,
+  disk is never consulted) vs `.lazy_disk` (revalidate ONLY). This is the
+  one deviation from the session plan: the disk fallback could NOT be
+  deleted — `reconstructFromEventLogChecking` (revalidate) needs it,
+  because the validation replay deliberately carries no embedded cache
+  and replays against the mission's CURRENT files, hash-gated upstream.
+  The fallback survives, scoped to exactly that path.
+- **Writers migrated**: the ctrl+L dev dump writes
+  `logs/session_<YYYYMMDD_HHMMSS>/`, the crash dump writes
+  `crashes/crash_<ts>/` (a crash report now carries the embedded content
+  — exactly reproducible on any machine). `--replay` takes a bundle dir
+  (`session_log_bundle.loadSessionLogBundle` via
+  `main.loadAndReconstructSession`). The console `history` stdout dump
+  stays a bare writeEventLog projection (inspection text, not an
+  artifact).
+- **The regression pin** (main.zig, the loadAndReconstructSession test):
+  record a real session, write its bundle, then MUTATE the file the
+  session read via the mod-shadowing seam (a persistent-dir
+  `data/new_player.txt` shadow, derived from the real bytes with the
+  player name changed so it stays parseable) — replay stays exact
+  (deepEqual) because it serves the embedded copy. Falsified the honest
+  way: removing ONLY the preload (keeping .authoritative) fails the
+  test with "Shadow Player" vs "New Player" — the mutation genuinely
+  reaches a disk read. Side lesson: flipping .authoritative → .lazy_disk
+  alone proves nothing (the preload, not the flag, serves the bytes; the
+  policy only governs misses).
+- Version bump fallout: session-log fixtures are all writeEventLog-
+  generated (zero churn); the `file_format_version 1` literals elsewhere
+  are mission/level/save files with their own per-type versions.

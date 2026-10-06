@@ -868,16 +868,20 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - There is ONE log: `event_history` (see Replay & Side Effects). The session
   dump, the combat log, and the future replay viewer are all it plus
   projections — not separate capture systems.
-- Session dump (ctrl+L → `dump_event_log` → `main.dumpEventLog`): serialize
-  `event_history` to config format via `parser.writeEventLog` — a
-  comptime-generic serializer over the `Event` union (lives in parser.zig with
-  the other writers; new events need no changes). `Metadata` header carries
-  file_format_version + game_version + created timestamp; an `EventLog` section
-  holds one entry group per event (`event <category> <variant>` discriminator +
-  one line per payload field; optionals omit their line when null;
-  Vector2/Materials/slices space-separated). Events alone reproduce a session —
-  do NOT also log player input (the input→event translation is deterministic
-  and would be redundant/divergent).
+- Session dump (ctrl+L → `dump_event_log` → `input_handlers.dumpEventLog`):
+  serialize `event_history` to config format via
+  `session_log.writeEventLog` — a comptime-generic serializer over the
+  `Event` union (lives in session_log.zig; new events need no changes).
+  `Metadata` header carries file_format_version + game_version + created
+  timestamp; an `EventLog` section holds one entry group per event
+  (`event <category> <variant>` discriminator + one line per payload field;
+  optionals omit their line when null; Vector2/Materials/slices
+  space-separated). Events alone reproduce a session — do NOT also log
+  player input (the input→event translation is deterministic and would be
+  redundant/divergent). The dump lands as a session-log BUNDLE (see the
+  Session-log bundle subsection below) — events alone reproduce the state
+  TRANSITIONS, but the bundle's embedded content is what makes the
+  reconstruction reads reproduce.
 - **String safety (the encoding rule):** a NESTED string (inside a struct or
   union payload field) can't contain spaces — nested values serialize as
   one space-separated token stream, and a string's spaces would break the
@@ -893,10 +897,10 @@ combat-log UI rendering + replay-viewer UI still TODO)
   string-bearing slice ever reaches the one-line path). This is what lets
   mission directories / custom asset stems carry spaces
   (`custom/My Mission/canopy`).
-- Reader: `parser.loadEventLog(sections)` → `SessionLog { file_format_version,
-  game_version, created, events }`, the comptime-generic inverse.
-  file_format_version is a HARD gate; game_version is advisory (caller warns via
-  `main.warnIfSessionLogFromDifferentBuild`).
+- Reader: `session_log.loadEventLog(sections)` → `SessionLog {
+  file_format_version, game_version, created, events }`, the
+  comptime-generic inverse. file_format_version is a HARD gate; game_version
+  is advisory (caller warns via `input_handlers.warnIfSessionLogFromDifferentBuild`).
 - Reload does NOT re-drive events through the input path. `event_history` is the
   fully-linearized event stream; `GameStateHistory.reconstructFromEventLog`
   deep-copies the loaded events into `history_arena` and drives the existing
@@ -920,6 +924,48 @@ combat-log UI rendering + replay-viewer UI still TODO)
   the future and the hub shows no log). Remaining work is RENDERING (top-bar
   coarse recent-icons view + full-screen detailed log) and replay-viewer
   stepping.
+
+### Session-log bundle (the cross-session artifact)
+
+A saved session must replay against the exact bytes it originally read —
+later file changes (the autosave overwritten by every subsequent session,
+custom missions re-saved by the editor, mod-shadowing of shipped content)
+must not diverge a replay. The BUNDLE is the folder artifact that makes
+that true (`src/session_log_bundle.zig`):
+
+- Layout: `<bundle>/session_log.txt` (the ordinary session-log body plus a
+  `ReconstructionCache` manifest section — one entry group per cached read:
+  `event_index`, `path` (verbatim, spaces allowed), `hash` (SHA-256 hex of the
+  bytes), `file`) + `<bundle>/content/<first 8 hex>_<original file name>` —
+  EXACT raw byte copies, openable as-is.
+- EVERY cached read is embedded, shipped content included (mod-shadowing
+  means any path can change between sessions). Deduped by hash: identical
+  bytes stored once; distinct bytes of the SAME path (the autosave written
+  mid-session, then re-loaded) hash differently → distinct copies.
+- Writer (`writeSessionLogBundle`): content files FIRST, session_log.txt
+  LAST — a half-written bundle fails to load cleanly instead of replaying
+  against missing bytes. Consumers: the ctrl+L dev dump
+  (`logs/session_<timestamp>/`), the crash dump
+  (`crashes/crash_<timestamp>/` — the crash report carries the embedded
+  content, so it is exactly reproducible on any machine).
+- Loader (`loadSessionLogBundle`): the manifest section is REQUIRED (a
+  bare session log — e.g. the validation replay — is not a bundle); every
+  content copy is verified against its recorded hash; a missing or tampered
+  copy is an error, never a silent fallback to some other file on disk. A
+  non-monotonic `event_index` (a hand-merged manifest) rejects — the
+  replay-side binary search depends on cache order.
+- Replay path: `GameStateHistory.loadReconstructionCache` pre-populates
+  the cache from the manifest (order preserved), then
+  `reconstructFromEventLog(.authoritative)` — a cache miss is a broken or
+  hand-edited bundle and panics; the files on disk are never consulted.
+  (`--replay` CLI: `main.loadAndReconstructSession`.)
+- The validation replay deliberately does NOT use bundles: it stays a
+  single file inside the mission dir it validates and replays against the
+  mission's CURRENT files (hash-gated upstream) via
+  `reconstructFromEventLogChecking` — the `.lazy_disk` read policy, the
+  ONLY user of the disk fallback in `readReconstructionFile`.
+- file_format_version 2 (no compat — pre-release, no playerbase): v1 logs
+  and v1 validation replays are unreadable; re-record.
 
 ## Determinism & Tiebreaking
 
@@ -951,12 +997,13 @@ combat-log UI rendering + replay-viewer UI still TODO)
   field (`deep_copy.firstDiffField` recurses through the union payload
   struct). Runs for ALL replay origins including cross-session
   (`reconstructFromEventLog`) — a divergence is a nondeterminism bug we want
-  surfaced, not silently rebuilt state. (Cross-session replay of a custom
-  mission whose files changed since the original session WILL panic —
-  accepted as fail-fast; the reconstruction cache is deterministic for
-  shipped content and within-session replay. Closing the custom-mission
-  cross-session gap lands with cache serialization into the session log, the
-  planned `file_format_version` 2 work.) **Semantic shift:** replay is now
+  surfaced, not silently rebuilt state. (Cross-session replay runs from a
+  session-log BUNDLE with the content embedded — the exact bytes the
+  original session read — so a divergence is a genuine bug, not a changed
+  file; see Logging & Replay → Session-log bundle. The revalidate path
+  replays against the mission's current files BY DESIGN, hash-gated — a
+  mismatch there is a benign answer via checking mode, below.)
+  **Semantic shift:** replay is now
   strict-verification, not robust-rebuild — a nondeterministic handler
   panics instead of the state silently staying correct via the recording.
   This is the point of validation. Idle-point derivation in
@@ -1424,9 +1471,9 @@ the reader thread exits, zero cost.
 
 ## Error Handling
 
-A `@panic` (unrecoverable failure) dumps the live `event_history` to
-`crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent dir before trapping —
-see "Crash dump" below.
+A `@panic` (unrecoverable failure) dumps the live session as a session-log
+BUNDLE to `crashes/crash_YYYYMMDD_HHMMSS/` in the persistent dir before
+trapping — see "Crash dump" below.
 
 Two error classes, with different responses:
 
@@ -1506,8 +1553,9 @@ view's `lineHeight` — see DONE.md.)
    still panics. The other ~90 handlers stay `void` — invariant unwraps +
    gameplay logic failures are bugs → panic. (The cache-miss `@panic` in
    `readReconstructionFile` is a SEPARATE policy — it covers REPLAY cache
-   misses, which are a bug or genuinely unrecoverable cross-session log
-   reload, not live reads. Don't conflate the two.)
+   misses, which are a bug (a live read that didn't cache, or a broken
+   session-log bundle) or a genuinely unrecoverable read on the lazy-disk
+   revalidate path, not live reads. Don't conflate the two.)
    - **Autosave-specific touch:** when `load_save` fails reading the
      autosave path, `session.autosave_available` is cleared so the
      Continue button disappears after the user dismisses the popup (no
@@ -1538,12 +1586,14 @@ verification code where a subtle bug is most damaging.
 ### Crash dump (panic → session log)
 
 A `@panic` (invariant failure, OOM panic, replay-verification mismatch,
-force-unwrap, safety check) dumps the live `event_history` to
-`crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent dir before trapping.
-`event_history` is always a complete real-time log (B-simple per-dispatch
-recording), so a crash file carries every event up to the crash and is a
-replayable session log (standard format, loadable by `parser.loadEventLog` +
-`reconstructFromEventLog`) — just named `crash_*` instead of `session_log_*`.
+force-unwrap, safety check) dumps the live `event_history` + reconstruction
+cache as a session-log BUNDLE to `crashes/crash_YYYYMMDD_HHMMSS/` in the
+persistent dir before trapping. `event_history` is always a complete
+real-time log (B-simple per-dispatch recording), so a crash bundle carries
+every event up to the crash plus the embedded content of everything it
+read — a fully reproducible, replayable session log (loadable by
+`session_log_bundle.loadSessionLogBundle` — see Logging & Replay →
+Session-log bundle) — just named `crash_*` instead of `session_*`.
 
 - **Mechanism:** `src/crash_dump.zig` is a custom panic namespace installed
   as `pub const panic = crash_dump.panic;` in BOTH entry files (native.zig,
@@ -1847,27 +1897,24 @@ history**, so replay is deterministic regardless of later file changes.
   `current_event_index` before dispatch, so the event under handling is at
   `current_event_index - 1` (identical in live and replay). A single handler
   may read several files; the path distinguishes them.
-- **Cache-miss policy:** in-session undo/redo (`replayTo`) never misses — live
-  play always cached before replay can reach the same index — so a miss is a
-  bug → `@panic` (fail fast, never silently fall back to disk, which would
-  reintroduce divergence quieter). Cross-session reconstruction
-  (`reconstructFromEventLog`, flagged by `cross_session_replay`) starts with an
-  empty cache because no live play ever ran; there a miss falls back to
-  `file_source` and caches the result (establishing the cache retroactively).
-  For shipped content the bytes match the original session; for custom
-  missions they're whatever is on disk now — the known cross-session
-  limitation until the cache is serialized into the session log.
+- **Cache-miss policy:** a miss is always a bug → `@panic` (fail fast, never
+  silently fall back to disk, which would reintroduce divergence quieter)
+  — EXCEPT the lazy-disk policy (`reconstruction_disk_fallback`, set only by
+  `reconstructFromEventLog(.lazy_disk)` — the revalidate path). There the
+  validation replay deliberately carries no embedded cache: a miss reads
+  the mission's CURRENT file (the intended content, hash-gated upstream)
+  and caches it retroactively. Session-log bundles
+  (`reconstructFromEventLog(.authoritative)`) pre-populate the cache from
+  the bundle's embedded copies via `loadReconstructionCache`, so a miss
+  means a broken or hand-edited bundle — see Logging & Replay →
+  Session-log bundle.
 - `discardFutureTimeline` trims cache entries ahead of a branch (monotonic by
   event index, so shrink from the end), alongside `event_history` /
   `idle_points` / snapshots / checkpoints.
-- **Not serialized yet** (within-session only). Cross-session log reload
-  needs the cache serialized into the session log (a new `ReconstructionCache`
-  section, `file_format_version` → 2), pre-populated by `reconstructFromEventLog`
-  before replay. This is the same property wanted for custom-mission shared-
-  replay reproducibility (content-addressed / pinned version); lands together
-  with custom-mission sharing. The current in-memory cache doesn't paint us
-  into a corner — adding serialization is a localized change to the log
-  writer/reader + `reconstructFromEventLog`.
+- **Serialized into the session-log bundle** (Logging & Replay →
+  Session-log bundle): the manifest is the cache's on-disk form — every
+  cached read as `content/` byte copies — and cross-session replay
+  pre-populates the in-memory cache from it before replaying.
 
 Editor consequence: editor-open reads go through the cache → undo past
 editor-open replays the reads → cache hits → original bytes, regardless of
@@ -1965,11 +2012,12 @@ Two distinct IDs, serving different needs:
   for now (our files are authored consistently); tighten only if
   cross-platform drift shows up. The hash is a DERIVED property (computed
   on demand), not a stored field on Mission. It is load-bearing for replay
-  pinning: a session log records the mission content hash, and on
-  cross-session replay the exact version is fetched/cached so handler
-  outputs match the recording (closes the reconstruction-cache cross-session
-  gap — see Replay & Side Effects / Logging & Replay). This is pure local,
-  no server needed, and is the first piece to build.
+  pinning in two places: the session-log bundle's manifest carries a
+  PER-FILE SHA-256 (the integrity check + dedup key of the embedded copies
+  — see Logging & Replay → Session-log bundle), and this mission-level
+  content hash gates the validation replay's staleness (a mission edited
+  since its replay was recorded shows "unvalidated" — see Validation
+  replay below). This is pure local, no server needed.
 - **Publishable ID (server-assigned, stable across versions):** a UUID/slug
   assigned at publish time, with each version carrying its own content hash.
   A leaderboard entry pins to a version (content hash); a mission's profile

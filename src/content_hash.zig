@@ -4,10 +4,12 @@
 //!
 //! See DESIGN → Custom Missions & Online Services → Content identity.
 //! The hash is a DERIVED property (computed on demand from the file set),
-//! not a stored field on Mission. It is load-bearing for replay pinning: a
-//! session log records the mission content hash, and on cross-session replay
-//! the exact version is fetched/cached so handler outputs match the
-//! recording.
+//! not a stored field on Mission. It is load-bearing for replay pinning:
+//! the session-log bundle's manifest carries a per-file SHA-256 (the
+//! integrity + dedup key of its embedded content copies — see
+//! session_log_bundle.zig), and this mission-level content hash gates the
+//! validation replay's staleness (a mission edited since its replay was
+//! recorded shows "unvalidated").
 //!
 //! v1 scope: hashes CONFIG files only (mission.txt + player.txt if present +
 //! level_1..level_{count}.txt). Custom assets (sprites/audio under the

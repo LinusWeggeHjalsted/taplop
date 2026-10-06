@@ -28,7 +28,7 @@ const pushEvents = event_push.pushEvents;
 /// revert) + the `load_error` flag (the drain loop checks it and reverts).
 /// During replay, panics instead (fail-fast — a reconstruction-read
 /// failure during replay is unexpected; in-session replay has cached bytes,
-/// cross-session replay of changed content is the known accepted fail-fast).
+/// and cross-session bundle replay serves the embedded copies).
 /// See DESIGN → Error Handling → three contexts.
 pub fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void {
     if (history.replaying) @panic("replay: reconstruction read failed (content changed?)");

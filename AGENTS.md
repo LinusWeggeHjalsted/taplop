@@ -484,6 +484,11 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/writers.zig` — save/settings writers (typed objects → config text):
   `writePlayerSave`/`writeSettings`/`writePlayerSaveToFile`. The inverse of
   `loaders.zig`.
+- `src/session_log_bundle.zig` — the session-log BUNDLE (the folder
+  artifact: session_log.txt + a ReconstructionCache manifest + `content/`
+  byte copies of every reconstruction read; writer via FileSource, loader via
+  std.Io.Dir with per-copy sha256 verification). See DESIGN → Logging &
+  Replay → Session-log bundle.
 - `src/session_log.zig` — session-log serializer/deserializer
   (`writeEventLog`/`loadEventLog`/`SessionLog`, comptime-generic over the
   `Event` union) + the shared session-log timestamp formatter. See
@@ -528,7 +533,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   identity). v1 hashes config files only; extends to custom assets when the
   VFS lands with directory listing.
 - `src/crash_dump.zig` — custom panic namespace installed in both entry files;
-  dumps `event_history` to `crashes/crash_*.txt` before `@trap`. See
+  dumps the live session as a session-log bundle to `crashes/crash_*/`
+  before `@trap`. See
   DESIGN → Error Handling → Crash dump.
 - `src/diagnostics.zig` — the raylib-free diagnostics type (buffer + section
   one-shot policy + end-of-frame flush scheduling), runtime-gated by the
