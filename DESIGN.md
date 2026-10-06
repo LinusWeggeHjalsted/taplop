@@ -966,6 +966,14 @@ that true (`src/session_log_bundle.zig`):
   ONLY user of the disk fallback in `readReconstructionFile`.
 - file_format_version 2 (no compat — pre-release, no playerbase): v1 logs
   and v1 validation replays are unreadable; re-record.
+- Custom ASSETS (sprites/audio) are deliberately NOT embedded — only the
+  config bytes the reconstruction reads. Sprite identity travels as stems +
+  dims in events and level files (dims resolve at the pick-commit input
+  path, never in a handler), so state replay is byte-exact with zero PNG
+  bytes involved. At render time the texture cache loads whatever art is
+  on disk NOW (missing → magenta gate) — the replay is state-exact, art is
+  presentational. Embedding referenced PNGs was considered and rejected:
+  it would multiply the bundle's size for viewer fidelity only.
 
 ## Determinism & Tiebreaking
 
