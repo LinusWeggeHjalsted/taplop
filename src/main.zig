@@ -1077,6 +1077,7 @@ pub fn loadAndReconstructSession(
         log.events,
         @intCast(log.events.len),
         &event_handlers.processEvent,
+        .lazy_disk,
     );
 }
 
@@ -1271,7 +1272,7 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     // Reconstruct into a fresh history2 from the loaded log and compare the
     // final states: faithful reconstruction means replay == forward play.
     var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
-    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
 
     try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
 
@@ -1542,7 +1543,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     const log = try session_log.loadEventLog(sections, arena);
 
     var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
-    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
 
     // (1) No stale `waiting` after reconstruction.
     try std.testing.expect(history2.current_state.waiting == null);
@@ -1708,8 +1709,8 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
     // file changes (the editor-saves-overwrite-mid-session case). A live
     // reconstruction read caches its bytes; a replay of that event returns the
     // cached bytes, not whatever is on disk now. This is the within-session
-    // guarantee; cross-session (reconstructFromEventLog) falls back to disk
-    // because the cache starts empty (see cross_session_replay).
+    // guarantee; cross-session replay pre-populates the cache from a
+    // session-log bundle (see session_log_bundle.zig).
     const allocator = std.testing.allocator;
 
     var threaded_io = std.Io.Threaded.init(allocator, .{});
@@ -1730,7 +1731,7 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
     file_source.writeFile("custom_mission.txt", "version1") catch @panic("failed to write v1");
 
     // Minimal history: readReconstructionFile touches current_event_index,
-    // replaying, cross_session_replay, reconstruction_cache, history_arena,
+    // replaying, reconstruction_disk_fallback, reconstruction_cache, history_arena,
     // and file_source — the rest is left undefined (the method never reads it).
     var history: GameStateHistory = undefined;
     history.backing_allocator = allocator;
@@ -1739,7 +1740,7 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
     history.reconstruction_cache = .empty;
     history.file_source = &file_source;
     history.replaying = false;
-    history.cross_session_replay = false;
+    history.reconstruction_disk_fallback = false;
 
     // Simulate a live reconstruction read at event index 0: processEvent
     // increments current_event_index to 1 before dispatching the handler, so

@@ -716,6 +716,22 @@ pub const ReconstructionCacheEntry = struct {
     bytes: []const u8,
 };
 
+/// How a cross-session reconstruction (reconstructFromEventLog) resolves
+/// reconstruction reads. In-session replay (replayTo) is always
+/// authoritative — live play populated the cache.
+pub const ReconstructionReadPolicy = enum {
+    /// Every read the replay will make is already cached (a session-log
+    /// bundle pre-populated the cache via loadReconstructionCache). A
+    /// cache miss is a broken or hand-edited bundle — fail fast, never
+    /// silently fall back to disk.
+    authoritative,
+    /// Misses fall back to file_source and cache the result (the
+    /// revalidate path): the validation replay deliberately carries no
+    /// embedded cache — it replays against the mission's CURRENT files,
+    /// hash-gated upstream — so the disk is the intended source.
+    lazy_disk,
+};
+
 pub const snapshot_count = 8; // snapshots saved in each direction from current position
 pub const checkpoint_count = 8; // checkpoints kept in ring buffer
 
@@ -837,17 +853,18 @@ pub const GameStateHistory = struct {
     // cached bytes). See DESIGN → Error Handling → three contexts.
     load_error: bool = false,
 
-    // True only during cross-session reconstruction (reconstructFromEventLog):
-    // the cache starts empty because no live play ever populated it. On a
-    // reconstruction-cache miss in this mode, readReconstructionFile falls
-    // back to file_source and caches the result (establishing the cache
-    // retroactively), instead of panicking. For shipped/immutable content the
-    // bytes are identical to the original session; for custom missions they
-    // are whatever is on disk now (the cache is not serialized into the
-    // session log). In-session undo/redo (replayTo) never sets this and
-    // stays panic-on-miss, since live play always cached before replay can
-    // reach the same index.
-    cross_session_replay: bool = false,
+    // True only during lazy-disk cross-session reconstruction
+    // (reconstructFromEventLog with .lazy_disk — the revalidate path): the
+    // validation replay deliberately carries no embedded cache, so on a
+    // reconstruction-cache miss, readReconstructionFile falls back to
+    // file_source and caches the result (establishing the cache
+    // retroactively) instead of panicking — the mission's CURRENT files
+    // are the intended content there, hash-gated upstream. Session-log
+    // bundles (.authoritative — the cache pre-populated from the bundle
+    // via loadReconstructionCache) and in-session replay never set this:
+    // their caches cover every read, so a miss is a bug — fail fast
+    // rather than silently fall back to disk.
+    reconstruction_disk_fallback: bool = false,
 
     // Replay-verification CHECKING mode (the revalidate path — see
     // `rejectReplay`). False (normal replay/undo/redo/cross-session
@@ -933,13 +950,14 @@ pub const GameStateHistory = struct {
     /// handler whose read result becomes part of the reconstructed state.
     ///
     /// Cache-miss during replay is a bug (live always populates before
-    /// replay can reach the same index), so we fail fast with a descriptive
-    /// panic rather than silently falling back to disk (which would
-    /// reintroduce divergence, just quieter). The only legitimate miss is
-    /// cross-session log reload, which starts with an empty cache — that
-    /// path (reconstructFromEventLog) falls back to file_source and caches
-    /// retroactively; a read failure THERE is genuinely unrecoverable (the
-    /// log references files that no longer exist) and panics.
+    /// replay can reach the same index; a session-log bundle pre-populates
+    /// the cache via loadReconstructionCache), so we fail fast with a
+    /// descriptive panic rather than silently falling back to disk (which
+    /// would reintroduce divergence, just quieter). The only legitimate
+    /// miss is lazy-disk reconstruction (.lazy_disk — the revalidate
+    /// path), which reads the current files and caches retroactively; a
+    /// read failure THERE is genuinely unrecoverable (the log references
+    /// files that no longer exist) and panics.
     pub fn readReconstructionFile(
         self: *GameStateHistory,
         path: []const u8,
@@ -963,17 +981,16 @@ pub const GameStateHistory = struct {
             while (index < items.len and items[index].event_index == event_index) : (index += 1) {
                 if (std.mem.eql(u8, items[index].path, path)) return items[index].bytes;
             }
-            // Miss. In-session undo/redo (replayTo) never misses — live play
-            // cached before replay could reach this index — so that's a bug we
-            // fail fast on. Cross-session reconstruction
-            // (reconstructFromEventLog) starts with an empty cache; there a
-            // miss is expected, so fall back to file_source and cache the
-            // result (establishing the cache retroactively). For shipped
-            // content the bytes match the original session; for custom
-            // missions they're whatever is on disk now — the known cross-
-            // session limitation until the cache is serialized (format v2).
-            if (!self.cross_session_replay) {
-                @panic("reconstruction cache miss: no cached bytes for this event+path (live read did not cache — cross-session reload not supported)");
+            // Miss. In-session replay (replayTo) never misses — live play
+            // cached before replay could reach this index — and a
+            // session-log bundle pre-populated the cache from its
+            // embedded copies, so a miss there means a broken or
+            // hand-edited bundle: fail fast. Lazy-disk reconstruction
+            // (.lazy_disk — the revalidate path) starts with an empty
+            // cache BY DESIGN: fall back to file_source and cache the
+            // result (establishing the cache retroactively).
+            if (!self.reconstruction_disk_fallback) {
+                @panic("reconstruction cache miss: no cached bytes for this event+path (a live read did not cache, or the replayed session-log bundle is missing its cache entry — broken or hand-edited bundle)");
             }
             const arena = self.history_arena.allocator();
             const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
@@ -2602,19 +2619,37 @@ pub const GameStateHistory = struct {
     /// timeline to branch from). Intended for session-log replay — the test
     /// harness reconstructs to the end; the replay viewer steps by calling
     /// this (or restoreTo) at successive targets.
+    /// Populate the reconstruction cache for cross-session bundle replay
+    /// (the authoritative policy): append entries in manifest order
+    /// (monotonic by event_index — the binary-search invariant). Entries
+    /// must outlive the replayed session: the bundle loader
+    /// (session_log_bundle.loadSessionLogBundle) allocates them in the
+    /// caller's allocator — pass the history arena in production.
+    pub fn loadReconstructionCache(
+        self: *GameStateHistory,
+        entries: []const ReconstructionCacheEntry,
+    ) void {
+        const arena = self.history_arena.allocator();
+        for (entries) |entry| {
+            self.reconstruction_cache.append(arena, entry) catch
+                @panic("failed to append reconstruction cache entry");
+        }
+    }
+
     pub fn reconstructFromEventLog(
         self: *GameStateHistory,
         event_log: []const Event,
         target_event_index: u32,
         apply_event: *const fn (*GameStateHistory) void,
+        read_policy: ReconstructionReadPolicy,
     ) void {
         const arena = self.history_arena.allocator();
         for (event_log) |event| {
             const durable_event = deepCopy(Event, event, arena);
             self.event_history.append(arena, durable_event) catch @panic("failed to append event");
         }
-        self.cross_session_replay = true;
-        defer self.cross_session_replay = false;
+        self.reconstruction_disk_fallback = (read_policy == .lazy_disk);
+        defer self.reconstruction_disk_fallback = false;
         self.replayToWithIdleTracking(target_event_index, apply_event);
     }
 
@@ -2634,7 +2669,9 @@ pub const GameStateHistory = struct {
     ) ?ReplayRejection {
         self.replay_checking = true;
         defer self.replay_checking = false;
-        self.reconstructFromEventLog(event_log, target_event_index, apply_event);
+        // The validation replay has no embedded cache — the mission's current
+        // files are the content (hash-gated upstream).
+        self.reconstructFromEventLog(event_log, target_event_index, apply_event, .lazy_disk);
         return self.replay_rejection;
     }
 };

@@ -6328,7 +6328,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     var reconstruction_start = test_harness.defaultStartingState();
     reconstruction_start.event_stack = &.{};
     var history2 = harness.newHistory(reconstruction_start);
-    history2.reconstructFromEventLog(log.events, @intCast(log.events.len - 1), &event_handlers.processEvent);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len - 1), &event_handlers.processEvent, .lazy_disk);
     try testing.expect(history2.current_state.mission != null);
     try testing.expect(history2.current_state.mission.?.validation_run);
     try testing.expectEqual(@as(u32, 4), history2.current_state.mission.?.turns_spent);
@@ -6336,7 +6336,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     // The full slice (end_validation included) lands on the main menu,
     // exactly as the live no-editor run did.
     var history3 = harness.newHistory(reconstruction_start);
-    history3.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+    history3.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
     try testing.expect(history3.current_state.screen == .main_menu);
     try testing.expect(history3.current_state.editor == null);
     try testing.expect(history3.current_state.mission == null);
@@ -6851,10 +6851,10 @@ test "the Validate button saves first and the finished run writes a reconstructa
     var reconstruction_start = test_harness.defaultStartingState();
     reconstruction_start.event_stack = &.{};
     var history2 = harness.newHistory(reconstruction_start);
-    history2.reconstructFromEventLog(replay.events, @intCast(replay.events.len - 1), &event_handlers.processEvent);
+    history2.reconstructFromEventLog(replay.events, @intCast(replay.events.len - 1), &event_handlers.processEvent, .lazy_disk);
     try testing.expectEqual(@as(u32, 4), history2.current_state.mission.?.turns_spent);
     var history3 = harness.newHistory(reconstruction_start);
-    history3.reconstructFromEventLog(replay.events, @intCast(replay.events.len), &event_handlers.processEvent);
+    history3.reconstructFromEventLog(replay.events, @intCast(replay.events.len), &event_handlers.processEvent, .lazy_disk);
     try testing.expect(history3.current_state.screen == .main_menu);
     try testing.expect(history3.current_state.mission == null);
 }
