@@ -4261,6 +4261,130 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 }
 
+test "handleEditorMoveDrag: a marker dragged onto the other marker never fires the move" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    // '!' at (0,0), '=' at (3,3). Dragging '=' onto (0,0) would leave both
+    // markers on one tile — no file representation — so the move is
+    // VETOED at the input gate (no dead undo step). The unselected-claim
+    // path still fires its replace (the selection change is legal on its
+    // own); the selected-at-press path fires nothing at all.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 3 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 3, .y = 3 },
+    }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = input.PointerPosition{ .x = 1920, .y = 1080 };
+    const tilePosition = struct {
+        fn call(tile: types.Vector2) input.PointerPosition {
+            return .{
+                .x = center.x + @as(f32, @floatFromInt(tile.x)) * 256,
+                .y = center.y + @as(f32, @floatFromInt(tile.y)) * 256,
+            };
+        }
+    }.call;
+
+    // --- Unselected-claim drag of the '=' onto the '!': the move never
+    // fires; the replace (the legal half of the gesture) does. ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 3, .y = 3 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag != null);
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 3, .y = 3 },
+        history.current_state.event_stack[0].player_input_event.player_replace_editor_selection.position,
+    );
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    // The '=' never moved; the replace left it selected.
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 3, .y = 3 },
+        history.current_state.editor.?.levels[0].level_end.?,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+    try std.testing.expectEqual(types.Selectable.level_end, history.current_state.editor.?.selection[0]);
+
+    // --- Selected-at-press drag of the '=' onto the '!': nothing fires at
+    // all (the move is vetoed; this path has no replace). ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 3, .y = 3 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 3, .y = 3 },
+        history.current_state.editor.?.levels[0].level_end.?,
+    );
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.editor.?.levels[0].player_start,
+    );
+}
+
 test "camera zoom (wheel + keys): gated to camera-bearing screens" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();

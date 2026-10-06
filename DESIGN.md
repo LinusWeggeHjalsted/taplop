@@ -4227,6 +4227,21 @@ the `player_toggle_editor_selection` click orchestrator (see the
 selection tool above for the granularity + undo semantics; the delete
 arms prune deleted entries and remap shifted indices within the same
 event, so the set stays consistent across edits AND across undo/redo).
+
+**Marker invariant (`player_start != level_end`).** The layout format
+  gives '!' and '=' one cell each, so both markers on one tile has no file
+  representation — the move framework makes it unrepresentable in-game
+  too: `planning.editorSelectionMoveVetoed` (pure, final-positions — a
+  move of BOTH markers together preserves their offset and never vetoes;
+  a pre-existing overlap, constructible only in crafted states, is only
+  ever resolved by moving one marker alone, never created) gates the drag
+  at the input layer, and `planEditorSelectionMoveActions` (the move
+  orchestrator's whole plan — translated entries as the commit-chain
+  worklist + the clear phase) returns empty when vetoed. The commit chain's
+  marker arm is the defensive third layer for crafted worklists — a marker
+  entry targeting the STAYING other marker's cell plans empty (a LATER
+  entry may still move the other away — a crossing is not an overlap).
+
 The click resolution (see the
 selection tool above) is the landed hit-testing: '!' / '=' singletons,
 first covering decoration, else tile + occupants; the render-order

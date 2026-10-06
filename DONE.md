@@ -15465,3 +15465,51 @@ mutable classification), no backwards compatibility (dev-only playerbase
 - Version bump fallout: session-log fixtures are all writeEventLog-
   generated (zero churn); the `file_format_version 1` literals elsewhere
   are mission/level/save files with their own per-type versions.
+
+## Editor: the marker-overlap veto — selection moves never land '!' on '='
+
+The bug: dragging the level-end flag onto the player-start tile (or vice
+versa) moved the marker onto the other marker, leaving both on one tile
+— a layout the file format cannot represent ('!' and '=' are one symbol
+per cell; the save round-trip silently dropped one marker) with undefined
+playtest semantics (spawn on the exit). The selection move was the SOLE
+creation path (no marker placement tool exists; right-click delete never
+touches markers; the file format can't carry the state in).
+
+- `planning.editorSelectionMoveVetoed` (pure): would a selection move by
+  delta land a marker on the other? Veto on FINAL positions (translated
+  when selected, current when not) — moving both markers together
+  preserves their offset (never vetoes; a pre-existing overlap —
+  constructible only via crafted states — is only ever RESOLVED by
+  moving one marker alone, never created), while moving one onto the
+  stationary other vetoes the WHOLE move (not a filtered partial move:
+  the flag silently staying behind while the rest moves would be easy to
+  miss).
+- `planning.planEditorSelectionMoveActions` (new): the move
+  orchestrator's whole plan (the translated entries as the commit-chain
+  worklist + the clear phase) — the entries build moved out of the
+  player_input handler into the pure planner, the other tools' shape
+  (the clear phase was already pure; the asymmetry is gone). Empty when
+  vetoed.
+- Input gate (`handleEditorMoveDrag`): a vetoed drag never pushes the
+  move (no dead undo step). The wrinkle: the unselected-claim drag path
+  pushes a replace-selection that drains FIRST, so the move plans against
+  the POST-replace selection — the gate evaluates the veto against the
+  click group at the press tile (`editorClickGroup`, made pub for it),
+  not the pre-replace selection; the selected-at-press path evaluates
+  the current selection. The replace still fires on its own (a
+  selection change is legal even when the move isn't).
+- Defensive third layer (the commit chain's marker arm): a crafted
+  worklist entry targeting the STAYING other marker's cell plans empty
+  (the marker simply doesn't place — it stays where it stands). A LATER
+  entry may still move the other away (`markerMovesLater` — a CROSSING
+  is not an overlap: '!' landing on '=''s old cell while '=' has not
+  moved yet is transient mid-chain and legal). Found the honest way: the
+  naive current-position check breaks the legal crossing — the lookahead
+  is load-bearing, not just defensive.
+- Tests, each falsified against its layer: the veto tests fail with the
+  planner veto disabled; the crossing test fails with the lookahead
+  stubbed; the crafted-worklist test fails with the marker arm's block
+  disabled. The gesture test pins the input gate — it survived the
+  planner-veto falsification BY DESIGN (the gate calls the predicate
+  directly, an independent layer).

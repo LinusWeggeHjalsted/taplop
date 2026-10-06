@@ -909,10 +909,16 @@ pub const PlayerInputEvent = union(enum) {
     player_clear_editor_selection: void,
     // Select-tool move drag release: move the whole selection by `delta`
     // (release tile − press tile). No payload beyond the delta — the
-    // handler reads `editor.selection` from reconstructable state, backs
-    // it up as concrete things (`EditorSelectionMoveEntry`), and pushes
-    // the delete plan + the chained `editor_commit_selection_move`
-    // worklist. The delete phase does NOT sweep occupants of selected
+    // handler is thin over the shared planner
+    // (planning.planEditorSelectionMoveActions), which reads
+    // `editor.selection` from reconstructable state, backs it up as
+    // concrete things (`EditorSelectionMoveEntry`), and pushes the delete
+    // plan + the chained `editor_commit_selection_move` worklist. A move
+    // that would land a MARKER on the other marker is VETOED whole (empty
+    // plan; the input gate never fires it — see
+    // planning.editorSelectionMoveVetoed): '!' and '=' take one cell each
+    // in the layout format, so `player_start == level_end` has no file
+    // representation. The delete phase does NOT sweep occupants of selected
     // tiles (unlike the Delete key): an unselected occupant pins its tile
     // — the tile stays underneath it and the moved tile lands at the
     // target instead. A selected MARKER takes its old ground with it (the

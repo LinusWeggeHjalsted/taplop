@@ -569,8 +569,11 @@ pub fn planEditorDeleteActions(
 /// exactly what the hover preview outlines); or the tile INCLUDING
 /// anything standing on it (entity / ground-item placements). Empty ground
 /// → an empty group. Shared by the toggle (shift+click) and replace (plain
-/// click) planners; the group order is tile, entity, item.
-fn editorClickGroup(
+/// click) planners; the group order is tile, entity, item. Also the
+/// would-be POST-REPLACE selection the move-drag gate evaluates an
+/// unselected-claim drag against (see `editorSelectionMoveVetoed`) — pub
+/// for that import.
+pub fn editorClickGroup(
     editor: *const types.Editor,
     position: Vector2,
     allocator: std.mem.Allocator,
@@ -831,6 +834,112 @@ pub fn editorSelectionContainsPosition(
 
 pub fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
     return .{ .x = position.x + delta.x, .y = position.y + delta.y };
+}
+
+/// Would a selection move by `delta` land a marker on the other marker?
+/// '!' and '=' take one cell each in the layout format, so a
+/// `player_start == level_end` level has no file representation — the
+/// move is vetoed whole. The veto is on the FINAL positions (translated
+/// when selected, current when not): moving both markers together
+/// preserves their offset (never vetoed — and a pre-existing overlap can
+/// only ever be resolved by moving one marker alone, never created),
+/// while moving one onto the stationary other vetoes. `selection` is the
+/// selection the move will actually plan against — the current one, or
+/// the click group an unselected-claim drag's replace will have installed
+/// by the time the move runs (the move-drag gate's two call sites).
+pub fn editorSelectionMoveVetoed(
+    editor: *const types.Editor,
+    selection: []const types.Selectable,
+    delta: Vector2,
+) bool {
+    const level = activeEditorLevel(editor) orelse return false;
+    const level_end_position = level.level_end orelse return false;
+    const final_player_start = if (selectionContains(selection, .player_start))
+        translatedPosition(level.player_start, delta)
+    else
+        level.player_start;
+    const final_level_end = if (selectionContains(selection, .level_end))
+        translatedPosition(level_end_position, delta)
+    else
+        level_end_position;
+    return final_player_start.x == final_level_end.x and
+        final_player_start.y == final_level_end.y;
+}
+
+/// The selection-move plan — the move orchestrator's whole push list: the
+/// translated selection as the commit-chain worklist
+/// (`editor_commit_selection_move`), then the clear phase
+/// (`planEditorSelectionMoveDeleteActions`). Shared by the
+/// `player_move_editor_selection` handler (the entries build lives here,
+/// not inline in the handler — the other tools' shape) and the input-side
+/// no-op gate (via `editorSelectionMoveVetoed`). EMPTY when the move is
+/// vetoed — the drag never fires (no dead undo step), not a partial move
+/// (the flag silently staying behind while the rest moves would be easy
+/// to miss).
+pub fn planEditorSelectionMoveActions(
+    editor: *const types.Editor,
+    delta: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    if (editorSelectionMoveVetoed(editor, editor.selection, delta)) return &.{};
+
+    var entries: std.ArrayList(types.EditorSelectionMoveEntry) = .empty;
+    for (editor.selection) |selected| {
+        switch (selected) {
+            .entity_placement => |index| {
+                if (index < level.entity_placements.len) {
+                    const placement = level.entity_placements[index];
+                    entries.append(allocator, .{ .entity = .{
+                        .type_id = placement.type_id,
+                        .position = translatedPosition(placement.position, delta),
+                    } }) catch @panic("failed to allocate editor selection move entries");
+                }
+            },
+            .decoration_placement => |index| {
+                if (index < level.decoration_placements.len) {
+                    const placement = level.decoration_placements[index];
+                    entries.append(allocator, .{ .decoration = .{
+                        .type_id = placement.type_id,
+                        .position = translatedPosition(placement.position, delta),
+                    } }) catch @panic("failed to allocate editor selection move entries");
+                }
+            },
+            .ground_item_placement => |index| {
+                if (index < level.item_placements.len) {
+                    const placement = level.item_placements[index];
+                    entries.append(allocator, .{ .item = .{
+                        .type_id = placement.type_id,
+                        .position = translatedPosition(placement.position, delta),
+                    } }) catch @panic("failed to allocate editor selection move entries");
+                }
+            },
+            .tile => |position| {
+                entries.append(allocator, .{ .tile = translatedPosition(position, delta) }) catch
+                    @panic("failed to allocate editor selection move entries");
+            },
+            .player_start => {
+                entries.append(allocator, .{ .player_start = translatedPosition(level.player_start, delta) }) catch
+                    @panic("failed to allocate editor selection move entries");
+            },
+            .level_end => {
+                if (level.level_end) |level_end_position| {
+                    entries.append(allocator, .{ .level_end = translatedPosition(level_end_position, delta) }) catch
+                        @panic("failed to allocate editor selection move entries");
+                }
+            },
+        }
+    }
+
+    var plan: std.ArrayList(Event) = .empty;
+    plan.append(allocator, .{ .editor_event = .{ .editor_commit_selection_move = .{
+        .entries = entries.items,
+        .next_index = 0,
+    } } }) catch @panic("failed to allocate editor selection move plan");
+    plan.appendSlice(allocator, planEditorSelectionMoveDeleteActions(editor, allocator)) catch
+        @panic("failed to allocate editor selection move plan");
+    return plan.items;
 }
 
 pub fn planEditorSelectionMoveDeleteActions(

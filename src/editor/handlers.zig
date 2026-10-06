@@ -1263,24 +1263,47 @@ pub fn handleEditorEvent(
                     ) catch @panic("failed to allocate editor selection move plan");
                 },
                 .player_start, .level_end => |position| {
-                    // A tile is ensured under the moved marker (paint = the
-                    // current replacement rules), then the marker moves.
-                    plan.appendSlice(
-                        allocator,
-                        planning.planEditorTilePaintActions(editor, position, allocator),
-                    ) catch @panic("failed to allocate editor selection move plan");
-                    const marker_variant: events.EditorEvent = if (entry == .player_start)
-                        .{ .editor_set_player_start = .{
-                            .level_index = @intCast(editor.active_level_index),
-                            .position = position,
-                        } }
-                    else
-                        .{ .editor_set_level_end = .{
-                            .level_index = @intCast(editor.active_level_index),
-                            .position = position,
-                        } };
-                    plan.append(allocator, .{ .editor_event = marker_variant }) catch
-                        @panic("failed to allocate editor selection move plan");
+                    // Defensive (a crafted worklist — the live plan is vetoed
+                    // upstream in planning.planEditorSelectionMoveActions): a
+                    // marker never lands on the STAYING other marker's cell
+                    // ('!' and '=' take one cell each in the layout format).
+                    // A LATER entry may still move the other marker away (a
+                    // swap — each marker lands where the other stood), so
+                    // only a staying other blocks. A blocked entry plans
+                    // empty: the marker simply doesn't place (it stays where
+                    // it stands — markers are never deletable, and rendering
+                    // and the layout writer need no floor tile under it).
+                    var blocked = false;
+                    if (planning.activeEditorLevel(editor)) |level| {
+                        const other_position: ?types.Vector2 = if (entry == .player_start)
+                            level.level_end
+                        else
+                            level.player_start;
+                        if (other_position) |other| {
+                            blocked = other.x == position.x and other.y == position.y and
+                                !markerMovesLater(commit.entries, @as(usize, commit.next_index) + 1, if (entry == .player_start) .level_end else .player_start);
+                        }
+                    }
+                    if (!blocked) {
+                        // A tile is ensured under the moved marker (paint = the
+                        // current replacement rules), then the marker moves.
+                        plan.appendSlice(
+                            allocator,
+                            planning.planEditorTilePaintActions(editor, position, allocator),
+                        ) catch @panic("failed to allocate editor selection move plan");
+                        const marker_variant: events.EditorEvent = if (entry == .player_start)
+                            .{ .editor_set_player_start = .{
+                                .level_index = @intCast(editor.active_level_index),
+                                .position = position,
+                            } }
+                        else
+                            .{ .editor_set_level_end = .{
+                                .level_index = @intCast(editor.active_level_index),
+                                .position = position,
+                            } };
+                        plan.append(allocator, .{ .editor_event = marker_variant }) catch
+                            @panic("failed to allocate editor selection move plan");
+                    }
                 },
             }
 
@@ -1299,6 +1322,22 @@ pub fn handleEditorEvent(
         },
         else => @panic("editor event handler not implemented"),
     }
+}
+
+/// Does the move worklist still move `marker_tag` at or after `from_index`?
+/// A later move vacates that marker's current cell (a swap — each marker
+/// lands where the other stood), so a target overlapping the other
+/// marker's CURRENT position is legal after all. Used by the commit
+/// chain's marker arm (see `editor_commit_selection_move`).
+fn markerMovesLater(
+    entries: []const types.EditorSelectionMoveEntry,
+    from_index: usize,
+    marker_tag: std.meta.Tag(types.EditorSelectionMoveEntry),
+) bool {
+    for (entries[from_index..]) |later| {
+        if (later == marker_tag) return true;
+    }
+    return false;
 }
 
 /// Set or erase one tile in a level's tile list, returning the new list.

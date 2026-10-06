@@ -1084,6 +1084,22 @@ pub fn handleEditorMoveDrag(
                     .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
                 };
                 const nonzero_delta = delta.x != 0 or delta.y != 0;
+                // The move's no-op gate (the planners-shared-with-the-input
+                // convention): a VETOED move — the drag would land a marker
+                // on the other marker — never fires (no dead undo step). The
+                // unselected-claim path evaluates against the click group at
+                // the press tile (the replace drains first, so THAT is the
+                // selection the move will plan against); the selected path
+                // evaluates against the current selection. See
+                // planning.editorSelectionMoveVetoed. The editor is
+                // non-null here (the gesture's context guard).
+                const editor = &current.editor.?;
+                const selection_to_move: []const types.Selectable = if (move_drag.selected_at_press)
+                    editor.selection
+                else
+                    planning.editorClickGroup(editor, move_drag.press_position_tile, arena);
+                const move_fires = nonzero_delta and
+                    !planning.editorSelectionMoveVetoed(editor, selection_to_move, delta);
                 if (!move_drag.selected_at_press) {
                     // An unselected-claim drag: select the grabbed group
                     // AND move it. The replace is pushed SECOND (on top of
@@ -1097,28 +1113,26 @@ pub fn handleEditorMoveDrag(
                     // replace plan (the selection already IS the group —
                     // reachable only via a mid-drag selection change)
                     // skips the replace; the move still runs.
-                    if (current.editor) |*editor| {
-                        const replace_plan_nonempty =
-                            planning.planEditorReplaceSelectionActions(
-                                editor,
-                                move_drag.press_position_tile,
-                                arena,
-                            ).len > 0;
-                        if (nonzero_delta) {
-                            event_push.pushPlayerAction(
-                                current,
-                                .{ .player_move_editor_selection = .{ .delta = delta } },
-                                arena,
-                            );
-                        }
-                        if (replace_plan_nonempty) {
-                            event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
-                                .position = move_drag.press_position_tile,
-                            } }, arena);
-                        }
+                    const replace_plan_nonempty =
+                        planning.planEditorReplaceSelectionActions(
+                            editor,
+                            move_drag.press_position_tile,
+                            arena,
+                        ).len > 0;
+                    if (move_fires) {
+                        event_push.pushPlayerAction(
+                            current,
+                            .{ .player_move_editor_selection = .{ .delta = delta } },
+                            arena,
+                        );
                     }
-                } else if (nonzero_delta) {
-                    // Zero delta → nothing to move — no event (no dead undo
+                    if (replace_plan_nonempty) {
+                        event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
+                            .position = move_drag.press_position_tile,
+                        } }, arena);
+                    }
+                } else if (move_fires) {
+                    // A vetoed or zero-delta move → no event (no dead undo
                     // step). The commit machinery handles everything else.
                     event_push.pushPlayerAction(
                         current,

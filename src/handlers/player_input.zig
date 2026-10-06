@@ -939,63 +939,17 @@ pub fn handlePlayerInputEvent(
         // …clear plan] — LIFO runs the clear phase first, then the commit
         // chain places the worklist one entry at a time against the live
         // post-clear state (see editor_commit_selection_move).
+        // Select-tool move drag release: thin over the shared planner (the
+        // plan covers the marker-overlap veto — an empty plan is a move
+        // that never happened; see
+        // planning.planEditorSelectionMoveActions).
         .player_move_editor_selection => |move| {
             if (current.editor) |*editor| {
-                const level = planning.activeEditorLevel(editor) orelse return;
-                var entries: std.ArrayList(types.EditorSelectionMoveEntry) = .empty;
-                for (editor.selection) |selected| {
-                    switch (selected) {
-                        .entity_placement => |index| {
-                            if (index < level.entity_placements.len) {
-                                const placement = level.entity_placements[index];
-                                entries.append(allocator, .{ .entity = .{
-                                    .type_id = placement.type_id,
-                                    .position = planning.translatedPosition(placement.position, move.delta),
-                                } }) catch @panic("failed to allocate editor selection move entries");
-                            }
-                        },
-                        .decoration_placement => |index| {
-                            if (index < level.decoration_placements.len) {
-                                const placement = level.decoration_placements[index];
-                                entries.append(allocator, .{ .decoration = .{
-                                    .type_id = placement.type_id,
-                                    .position = planning.translatedPosition(placement.position, move.delta),
-                                } }) catch @panic("failed to allocate editor selection move entries");
-                            }
-                        },
-                        .ground_item_placement => |index| {
-                            if (index < level.item_placements.len) {
-                                const placement = level.item_placements[index];
-                                entries.append(allocator, .{ .item = .{
-                                    .type_id = placement.type_id,
-                                    .position = planning.translatedPosition(placement.position, move.delta),
-                                } }) catch @panic("failed to allocate editor selection move entries");
-                            }
-                        },
-                        .tile => |position| {
-                            entries.append(allocator, .{ .tile = planning.translatedPosition(position, move.delta) }) catch
-                                @panic("failed to allocate editor selection move entries");
-                        },
-                        .player_start => {
-                            entries.append(allocator, .{ .player_start = planning.translatedPosition(level.player_start, move.delta) }) catch
-                                @panic("failed to allocate editor selection move entries");
-                        },
-                        .level_end => {
-                            if (level.level_end) |level_end_position| {
-                                entries.append(allocator, .{ .level_end = planning.translatedPosition(level_end_position, move.delta) }) catch
-                                    @panic("failed to allocate editor selection move entries");
-                            }
-                        },
-                    }
-                }
-                var push: std.ArrayList(Event) = .empty;
-                push.append(allocator, .{ .editor_event = .{ .editor_commit_selection_move = .{
-                    .entries = entries.items,
-                    .next_index = 0,
-                } } }) catch @panic("failed to allocate editor selection move plan");
-                push.appendSlice(allocator, planning.planEditorSelectionMoveDeleteActions(editor, allocator)) catch
-                    @panic("failed to allocate editor selection move plan");
-                pushEvents(current, push.items, allocator);
+                pushEvents(
+                    current,
+                    planning.planEditorSelectionMoveActions(editor, move.delta, allocator),
+                    allocator,
+                );
             }
         },
         // Tile-paint click: thin over the shared planner (the input layer

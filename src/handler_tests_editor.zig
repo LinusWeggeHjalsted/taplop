@@ -5321,6 +5321,192 @@ test "player_move_editor_selection: a target on a marker drops the thing entirel
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 }
 
+test "player_move_editor_selection: a marker onto the other marker vetoes the whole move" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // '!' at (0,0), '=' at (3,0). Moving '=' left onto (0,0) would leave
+    // both markers on one tile — no file representation ('!' and '=' take
+    // one cell each in the layout format) — so the whole move is VETOED:
+    // nothing moves, nothing is cleared, the selection survives.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 3, .y = 0 },
+    }};
+    const seeded_selection = [_]types.Selectable{
+        .level_end,
+        .{ .tile = .{ .x = 3, .y = 0 } },
+    };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = -3, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 3, .y = 0 }, level.level_end.?);
+        try testing.expect(hasTile(level, .{ .x = 3, .y = 0 }));
+        try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+    }
+
+    // The reverse: moving '!' right onto the stationary '=' vetoes too.
+    const reverse_selection = [_]types.Selectable{ .{ .tile = .{ .x = 0, .y = 0 } }, .player_start };
+    history.current_state.editor.?.selection = &reverse_selection;
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 3, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 3, .y = 0 }, level.level_end.?);
+        try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+    }
+}
+
+test "player_move_editor_selection: both markers moving together is legal (a crossing is not an overlap)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Both markers selected: the veto is on the FINAL positions, so moving
+    // both together never vetoes (their offset is preserved) — including
+    // the CROSSING, where '!' lands on '=''s OLD cell while '=' has not
+    // moved yet. The commit chain's marker arm must not mistake the
+    // crossing for an overlap: '=' moves later in the same worklist, so
+    // its old cell is being vacated.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 2, .y = 0 },
+    }};
+    const seeded_selection = [_]types.Selectable{ .player_start, .level_end };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 2, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    // '!' landed on '=''s old cell (the crossing), '=' moved past it;
+    // the old '!' ground is gone, both new positions are ensured.
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.player_start);
+    try testing.expectEqual(types.Vector2{ .x = 4, .y = 0 }, level.level_end.?);
+    try testing.expect(!hasTile(level, .{ .x = 0, .y = 0 }));
+    try testing.expect(hasTile(level, .{ .x = 2, .y = 0 }));
+    try testing.expect(hasTile(level, .{ .x = 4, .y = 0 }));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+}
+
+test "player_move_editor_selection: a pre-existing marker overlap is never moved-together, only resolved" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A crafted/broken level with both markers already on one tile
+    // (unreachable from files — one cell, one symbol — but constructible
+    // in memory). Moving BOTH together is vetoed (their final positions
+    // still coincide — a same-delta translation can't separate them
+    // anyway); moving ONE alone is legal and RESOLVES the overlap.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 0, .y = 0 },
+    }};
+    const both_markers = [_]types.Selectable{ .player_start, .level_end };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &both_markers;
+    runToIdle(&history);
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 1, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.level_end.?);
+        try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+    }
+
+    // One marker alone moves OFF the shared cell — legal, and the level
+    // is well-defined again.
+    const one_marker = [_]types.Selectable{.level_end};
+    history.current_state.editor.?.selection = &one_marker;
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 2, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.level_end.?);
+        try testing.expect(hasTile(level, .{ .x = 2, .y = 0 }));
+    }
+}
+
+test "editor_commit_selection_move: a crafted marker entry onto the staying other marker doesn't place" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The live plan is vetoed upstream (planning.planEditorSelectionMoveActions)
+    // — a crafted worklist is the only way here. A marker entry targeting
+    // the STAYING other marker's cell plans empty: the marker simply
+    // doesn't place — it stays where it stands (markers are never
+    // deletable; no tile is painted at the blocked target).
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 2, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    runToIdle(&history);
+
+    const entries = [_]types.EditorSelectionMoveEntry{.{ .level_end = .{ .x = 0, .y = 0 } }};
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_commit_selection_move = .{
+            .entries = &entries,
+            .next_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.level_end.?);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+    try testing.expect(!hasTile(level, .{ .x = 0, .y = 0 }));
+    // The worklist still exhausts → the selection is cleared.
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+}
+
 test "player_move_editor_selection: chained placement handles targets sharing a covering decoration" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
