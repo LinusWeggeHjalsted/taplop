@@ -6,7 +6,9 @@
 //! Linux, `$HOME/Library/Application Support/ziglop` on macOS — overridable
 //! via --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
 //! main.run with a RaylibBackend. Optional flags: `--replay <path>` loads a
-//! session log and reconstructs the session before the loop starts;
+//! session-log bundle (a directory containing session_log.txt + content/ —
+//! see session_log_bundle.zig) and reconstructs the session before the loop
+//! starts;
 //! `--diagnostics` activates the platform diagnostics log in ANY build
 //! (release included — dev-mode builds default active). Also spawns the
 //! console reader thread (stdin — always on; see DESIGN → Input → Console
@@ -94,12 +96,14 @@ pub fn main(init: std.process.Init.Minimal) void {
     // User-facing persistent path (Export Save tooltip). Web leaves this
     // null (see SessionState.persistent_dir_path).
     setup.frame_state.history.session.persistent_dir_path = persistent_dir_path;
-    // Replay a session log from the command line (--replay <path>): load +
-    // reconstruct the session from the event history before entering the
-    // game loop. The game resumes at the end of the log. Recoverable — a
-    // bad path / corrupt file surfaces a dismissible popup and the game
-    // falls back to the main menu instead of crashing. See DESIGN → Logging
-    // & Replay.
+    // Replay a session-log bundle from the command line (--replay <path>):
+    // load + reconstruct the session from the event history before entering
+    // the game loop, with the bundle's embedded content as the authority
+    // (the exact bytes the original session read, regardless of later file
+    // changes). The game resumes at the end of the log. Recoverable — a bad
+    // path / corrupt bundle surfaces a dismissible popup and the game falls
+    // back to the main menu instead of crashing. See DESIGN → Logging &
+    // Replay.
     if (replay_path) |path| {
         game.loadAndReconstructSession(&setup.frame_state.history, path, io);
     }

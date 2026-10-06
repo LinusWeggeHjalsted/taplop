@@ -26,7 +26,7 @@
 const std = @import("std");
 const state = @import("state.zig");
 const parser = @import("parser.zig");
-const session_log = @import("session_log.zig");
+const session_log_bundle = @import("session_log_bundle.zig");
 const transient_allocator = @import("transient_allocator.zig");
 
 const GameStateHistory = state.GameStateHistory;
@@ -49,11 +49,15 @@ pub fn uninstall() void {
     crash_history = null;
 }
 
-/// Best-effort dump of `event_history` to `crashes/crash_<timestamp>.txt` in
-/// the persistent dir. Every failure is swallowed (returns silently). The
-/// output is the standard session-log format, loadable by `session_log.loadEventLog`
-/// and reconstructable via the existing replay path — so a crash file is a
-/// replayable session log, just named differently. `pub` for testing.
+/// Best-effort dump of `event_history` + the reconstruction cache to
+/// `crashes/crash_<timestamp>/` in the persistent dir — a full session-log
+/// BUNDLE (session_log.txt + content/ byte copies; see
+/// session_log_bundle.writeSessionLogBundle). Every failure is swallowed
+/// (returns silently). The output is loadable by
+/// `session_log_bundle.loadSessionLogBundle` and reconstructable via the
+/// existing replay path, with the embedded content making the crash report
+/// exactly reproducible — a crash bundle is a replayable session log, just
+/// named differently. `pub` for testing.
 pub fn dump(history: *GameStateHistory) void {
     const allocator = transient_allocator.allocator;
 
@@ -61,24 +65,25 @@ pub fn dump(history: *GameStateHistory) void {
     // clock read can't corrupt state; if it errors, fall back to "unknown"
     // so we still write SOMETHING rather than abort the dump.
     const created = formatTimestamp(allocator, history.io) catch "unknown";
-    const file_name = std.fmt.allocPrint(
+    const bundle_dir = std.fmt.allocPrint(
         allocator,
-        "crashes/crash_{s}.txt",
+        "crashes/crash_{s}",
         .{created},
     ) catch return;
 
-    const body = session_log.writeEventLog(
+    session_log_bundle.writeSessionLogBundle(
+        history.file_source,
         history.event_history.items,
+        history.reconstruction_cache.items,
+        bundle_dir,
         created,
         allocator,
     ) catch return;
 
-    history.file_source.writeFile(file_name, body) catch return;
-
     // Best-effort feedback to stderr (the panic message itself is printed by
     // `call` before this). On web, stderr goes to the browser console.
-    std.debug.print("wrote crash session log: {s} ({d} events)\n", .{
-        file_name,
+    std.debug.print("wrote crash session log bundle: {s} ({d} events)\n", .{
+        bundle_dir,
         history.event_history.items.len,
     });
 }
@@ -269,22 +274,24 @@ test "dump writes a parseable crash session log to crashes/" {
 
     dump(&history);
 
-    // A crash file should exist under crashes/. Read it back, parse it, and
-    // confirm it round-trips into the same event count (it's a real session
-    // log, just named differently).
+    // One crash BUNDLE directory should exist under crashes/. Load it back
+    // through the bundle loader and confirm it round-trips: the same event
+    // count, plus the same reconstruction cache the history held (the
+    // embedded content is what makes the crash report reproducible).
     const crashes_dir = dir.openDir(io, "crashes", .{ .access_sub_paths = true, .iterate = true }) catch
         @panic("open crashes dir");
     var entries: std.ArrayList([]const u8) = .empty;
     defer entries.deinit(arena);
     var it = crashes_dir.iterate();
     while (it.next(io) catch null) |entry| {
-        if (entry.kind == .file) entries.append(arena, entry.name) catch @panic("append");
+        if (entry.kind == .directory) entries.append(arena, entry.name) catch @panic("append");
     }
     try testing.expectEqual(@as(usize, 1), entries.items.len);
-    const file_bytes = crashes_dir.readFileAlloc(io, entries.items[0], arena, std.Io.Limit.limited(1 << 20)) catch @panic("read crash file");
-    const sections = @import("parser.zig").parseConfigFile(file_bytes, arena) catch @panic("parse crash file");
-    const log = @import("session_log.zig").loadEventLog(sections, arena) catch @panic("loadEventLog");
-    try testing.expectEqual(history.event_history.items.len, log.events.len);
+    const bundle_path = std.fmt.allocPrint(arena, "crashes/{s}", .{entries.items[0]}) catch @panic("format bundle path");
+    const bundle = session_log_bundle.loadSessionLogBundle(dir, bundle_path, io, arena) catch
+        @panic("load crash bundle");
+    try testing.expectEqual(history.event_history.items.len, bundle.log.events.len);
+    try testing.expectEqual(history.reconstruction_cache.items.len, bundle.cache_entries.len);
 }
 
 test "install/uninstall: set and clear the crash history pointer" {

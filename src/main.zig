@@ -17,6 +17,7 @@ const functions = @import("functions.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
 const session_log = @import("session_log.zig");
+const session_log_bundle = @import("session_log_bundle.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
@@ -1019,65 +1020,50 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     }
 }
 
-/// Upper bound on a single replay-file read. Session logs are small (a few
-/// KB for a typical session), but this matches `FileSource`'s read limit so
-/// an unusually long session can't trip it. The bytes land in `history_arena`
-/// (process-lifetime) — they outlive the parse but that's the same residency
-/// the reconstruction cache has, and the arena is never the bottleneck.
-const replay_read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
-
-/// Load a session log from `path` (cwd-relative or absolute) and reconstruct
-/// the session from its event history, resuming at the end of the log. Used
-/// by the native `--replay <path>` CLI flag. Raylib-free so it's unit-
-/// testable.
+/// Load a session-log BUNDLE from `path` (cwd-relative or absolute; a
+/// directory containing `session_log.txt` + `content/` — see
+/// session_log_bundle.zig) and reconstruct the session from its event
+/// history, resuming at the end of the log. Used by the native `--replay
+/// <path>` CLI flag. Raylib-free so it's unit-testable.
 ///
-/// Recoverable: on any load failure (file missing, corrupt, unsupported
-/// `file_format_version`), sets a dismissible `pending_error` popup and
-/// returns WITHOUT reconstructing — the game falls back to the seeded
-/// main-menu state the caller already set up. Reconstruction divergence
-/// (the log doesn't match this build's shipped content — e.g. a custom
-/// mission whose files changed since the original session) still panics per
-/// the replay-verification policy; that's a real bug, not a bad flag. See
-/// DESIGN → Logging & Replay.
+/// The bundle's embedded content pre-populates the reconstruction cache, so
+/// the replay is AUTHORITATIVE: the exact bytes the original session read
+/// (the autosave it loaded, the mission files as they were then) are what
+/// the reconstruction applies, regardless of what the files on disk say
+/// now.
+///
+/// Recoverable: on any load failure (bundle missing, session_log.txt
+/// corrupt, unsupported `file_format_version`, missing/tampered content
+/// copy), sets a dismissible `pending_error` popup and returns WITHOUT
+/// reconstructing — the game falls back to the seeded main-menu state the
+/// caller already set up. Reconstruction divergence still panics per the
+/// replay-verification policy; with the content embedded, a divergence is a
+/// real bug, not a changed file. See DESIGN → Logging & Replay.
 pub fn loadAndReconstructSession(
     history: *state.GameStateHistory,
     path: []const u8,
     io: std.Io,
 ) void {
     const allocator = history.history_arena.allocator();
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, replay_read_limit) catch |err| {
+    const bundle = session_log_bundle.loadSessionLogBundle(std.Io.Dir.cwd(), path, io, allocator) catch |err| {
         const msg = std.fmt.allocPrint(
             allocator,
-            "Could not load replay file '{s}': {s}",
+            "Could not load replay bundle '{s}': {s}",
             .{ path, @errorName(err) },
         ) catch "failed to format replay load error";
         history.session.setPendingError(allocator, msg);
         return;
     };
-    const sections = parser.parseConfigFile(bytes, allocator) catch |err| {
-        const msg = std.fmt.allocPrint(
-            allocator,
-            "Could not parse replay file '{s}': {s}",
-            .{ path, @errorName(err) },
-        ) catch "failed to format replay parse error";
-        history.session.setPendingError(allocator, msg);
-        return;
-    };
-    const log = session_log.loadEventLog(sections, allocator) catch |err| {
-        const msg = std.fmt.allocPrint(
-            allocator,
-            "Could not load session log from '{s}': {s}",
-            .{ path, @errorName(err) },
-        ) catch "failed to format replay load error";
-        history.session.setPendingError(allocator, msg);
-        return;
-    };
-    input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version);
+    input_handlers.warnIfSessionLogFromDifferentBuild(bundle.log.game_version);
+    // Populate the cache from the bundle's embedded copies (manifest order
+    // preserved), then replay authoritatively — every reconstruction read
+    // serves the bundle's bytes.
+    history.loadReconstructionCache(bundle.cache_entries);
     history.reconstructFromEventLog(
-        log.events,
-        @intCast(log.events.len),
+        bundle.log.events,
+        @intCast(bundle.log.events.len),
         &event_handlers.processEvent,
-        .lazy_disk,
+        .authoritative,
     );
 }
 
@@ -1296,14 +1282,16 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     try std.testing.expectEqual(@as(u32, 0), history2.current_idle_index);
 }
 
-test "loadAndReconstructSession: resumes at the end of a loaded log file" {
-    // The --replay CLI path reads a session log from disk and reconstructs
-    // the session from its event history, landing at the end of the log.
-    // This mirrors the round-trip test above but exercises the file-based
-    // glue (`loadAndReconstructSession`) instead of calling
-    // `reconstructFromEventLog` directly: serialize a session, write it to
-    // a temp file, load + reconstruct into a fresh history, assert the
-    // final state matches forward play. See DESIGN → Logging & Replay.
+test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
+    // The --replay CLI path reads a session-log BUNDLE from disk and
+    // reconstructs the session from its event history, landing at the end
+    // of the log. This mirrors the round-trip test above but exercises the
+    // real artifact path (`writeSessionLogBundle` → `loadAndReconstructSession`)
+    // instead of calling `reconstructFromEventLog` directly: forward-play a
+    // session, write its bundle, load + reconstruct into a fresh history,
+    // assert the final state matches forward play — including the embedded
+    // reconstruction cache (the authoritative-replay input). See DESIGN →
+    // Logging & Replay.
     const allocator = std.testing.allocator;
 
     var backing = std.heap.ArenaAllocator.init(allocator);
@@ -1313,7 +1301,16 @@ test "loadAndReconstructSession: resumes at the end of a loaded log file" {
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
-    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    // Scratch persistent dir: history1's reconstruction reads fall through
+    // to the embedded map, and the bundle lands under zig-cache (not the
+    // project cwd).
+    const scratch = "zig-cache/test-recon-load";
+    const scratch_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, scratch_dir);
 
     var warnings: std.ArrayList([]const u8) = .empty;
     const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
@@ -1344,18 +1341,21 @@ test "loadAndReconstructSession: resumes at the end of a loaded log file" {
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
-    // Serialize the session log and write it to a temp file under zig-cache.
-    const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
-    const scratch = "zig-cache/test-recon-load";
-    std.Io.Dir.cwd().createDirPath(io, scratch) catch @panic("failed to create scratch dir");
-    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
-    const file_path = "zig-cache/test-recon-load/session.txt";
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file_path, .data = body }) catch
-        @panic("failed to write replay file");
+    // Serialize the session as a bundle (the artifact the CLI consumes):
+    // session_log.txt + the content copies of everything it read.
+    try session_log_bundle.writeSessionLogBundle(
+        &file_source,
+        history1.event_history.items,
+        history1.reconstruction_cache.items,
+        "logs/test_bundle",
+        "20260101_000000",
+        arena,
+    );
 
-    // Load + reconstruct into a fresh history2 via the CLI glue.
+    // Load + reconstruct into a fresh history2 via the CLI glue (the
+    // cwd-relative path to the bundle dir under the scratch tree).
     var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
-    loadAndReconstructSession(&history2, file_path, io);
+    loadAndReconstructSession(&history2, "zig-cache/test-recon-load/logs/test_bundle", io);
 
     // No pending error (a clean load surfaces no popup).
     try std.testing.expect(history2.session.pendingError() == null);
@@ -1363,6 +1363,12 @@ test "loadAndReconstructSession: resumes at the end of a loaded log file" {
     try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
     // The reconstructed idle points match (undo/redo works as if played live).
     try std.testing.expectEqualSlices(u32, history1.idle_points.items, history2.idle_points.items);
+    // The embedded reconstruction cache came through whole: the
+    // authoritative replay ran on exactly the recorded reads.
+    try std.testing.expectEqual(
+        history1.reconstruction_cache.items.len,
+        history2.reconstruction_cache.items.len,
+    );
 }
 
 test "loadAndReconstructSession: missing file sets pending_error, stays at main menu" {
@@ -1401,7 +1407,7 @@ test "loadAndReconstructSession: missing file sets pending_error, stays at main 
 
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
 
-    loadAndReconstructSession(&history, "zig-cache/nonexistent-replay-file.txt", io);
+    loadAndReconstructSession(&history, "zig-cache/nonexistent-replay-bundle", io);
 
     // A pending error popup is set (the dismissible warning).
     try std.testing.expect(history.session.pendingError() != null);

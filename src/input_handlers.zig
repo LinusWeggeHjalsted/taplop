@@ -20,6 +20,7 @@ const input = @import("input.zig");
 const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
+const session_log_bundle = @import("session_log_bundle.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
@@ -88,44 +89,45 @@ pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
     }
 }
 
-/// Write the full session event history to `logs/session_log_YYYYMMDD_HHMMSS.txt`
-/// in the persistent data dir (config format; see session_log.writeEventLog). A dev
-/// tool bound to ctrl+L. Runs only from the input path, so it never fires during
-/// replay. The timestamp is UTC (no timezone handling) — fine for a filename.
+/// Write the full session event history + reconstruction cache as a
+/// session-log bundle to `logs/session_<YYYYMMDD_HHMMSS>/` in the persistent
+/// data dir (session_log.txt + content/ byte copies; see
+/// session_log_bundle.writeSessionLogBundle) — the bundle embeds every file
+/// the session's reconstruction reads, so it replays deterministically
+/// regardless of later file changes (the autosave is overwritten by later
+/// sessions; custom missions are re-saved by the editor). A dev tool bound
+/// to ctrl+L. Runs only from the input path, so it never fires during replay.
+/// The timestamp is UTC (no timezone handling) — fine for a folder name.
 pub fn dumpEventLog(history: *GameStateHistory) void {
     var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
     const created = session_log.formatSessionTimestamp(allocator, history.io);
-    const file_name = std.fmt.allocPrint(
+    const bundle_dir = std.fmt.allocPrint(
         allocator,
-        "logs/session_log_{s}.txt",
+        "logs/session_{s}",
         .{created},
-    ) catch @panic("failed to format session-log file name");
-    const body = session_log.writeEventLog(
+    ) catch @panic("failed to format session-log bundle dir name");
+    session_log_bundle.writeSessionLogBundle(
+        history.file_source,
         history.event_history.items,
+        history.reconstruction_cache.items,
+        bundle_dir,
         created,
         allocator,
     ) catch {
         history.session.setPendingError(
             history.history_arena.allocator(),
-            "failed to serialize session log",
-        );
-        return;
-    };
-    history.file_source.writeFile(file_name, body) catch {
-        history.session.setPendingError(
-            history.history_arena.allocator(),
-            "failed to write session log file",
+            "failed to write session log bundle",
         );
         return;
     };
 
-    // Feedback for this dev tool: the file lands in the persistent data dir
-    // (~/.ziglop/logs/).
-    std.debug.print("wrote session log: {s} ({d} events)\n", .{
-        file_name,
+    // Feedback for this dev tool: the bundle lands in the persistent data
+    // dir (~/.ziglop/logs/).
+    std.debug.print("wrote session log bundle: {s} ({d} events)\n", .{
+        bundle_dir,
         history.event_history.items.len,
     });
 }
