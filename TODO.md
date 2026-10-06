@@ -360,6 +360,17 @@ Most of it is implemented (DESIGN's Level Editor section has the
 Implemented paragraph; the landed-slice history is in DONE.md). Remaining
 work:
 
+- **OPEN (playtest-watch) — a selection move that crosses a marker
+      DELETES the crossing thing.** An entity/item/tile whose move target
+      is the '!' / '=' cell plans empty and is removed by the move
+      (documented, intended — DESIGN → Level Editor → the commit chain's
+      per-entry re-planning). But dragging a large marquee selection ACROSS
+      a marker silently eats its members — a UX trap. Options when it
+      bites: veto the whole move (the marker-overlap veto's shape —
+      planning.editorSelectionMoveVetoed), or make the drag ghost surface
+      the loss (the view already draws the translated outlines). The
+      marker-on-marker case is already vetoed; this is the non-marker
+      members' case. Decide from playtest texture.
 - **Hub editor + campaign editor** — the long-term plan is THREE editors
   (missions, hubs, campaigns); the mission editor is the only one built,
   and the editor browser is already the shared front door (kind tabs +
@@ -756,6 +767,16 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **Doc-symbol staleness checker (machine-walked truth for doc prose).**
+      DESIGN/AGENTS name code symbols (`main.dumpEventLog`,
+      `parser.writeEventLog`, ...) and drift silently when symbols move —
+      two stale refs were found + fixed during the session-log bundle work
+      (nobody re-reads settled prose). The sound_report / art_report
+      pattern applied to docs: a script that extracts
+      backtick-quoted dot-paths from DESIGN/AGENTS/TODO and flags the ones
+      no src file contains (`rg -F` per candidate). Cheap to build,
+      self-maintaining, catches the whole class. Wire into scripts/
+      alongside test.sh; run manually or in CI-if-ever.
 - **Style pass over the Tier A session's lines — DEFERRED (owner
       undecided).** Scope discovery (cleanup session): the "~95-char wrap
       convention" isn't an enforced convention — it's in no doc, ~2,000+
