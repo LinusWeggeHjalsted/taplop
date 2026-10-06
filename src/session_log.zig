@@ -22,7 +22,11 @@ const findValue = parser.findValue;
 const asU32 = parser.asU32;
 
 /// Session-log file format version (hard-gate on load; emitted on write).
-pub const session_log_file_format_version: u32 = 1;
+/// v2: the session-log BUNDLE adds its `ReconstructionCache` manifest
+/// section + `content/` byte copies (session_log_bundle.zig). Bare v2
+/// logs without the manifest section are legal (the validation replay is
+/// one — the manifest is bundle-required, not format-required).
+pub const session_log_file_format_version: u32 = 2;
 
 // ============================================================
 // Session log writer (event history serialization)
@@ -761,7 +765,7 @@ test "writeEventLog serializes representative event shapes" {
     defer allocator.free(output);
 
     // Metadata header
-    try std.testing.expect(std.mem.indexOf(u8, output, "file_format_version 1\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "file_format_version 2\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "game_version ") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "created 20260815_143022\n") != null);
 

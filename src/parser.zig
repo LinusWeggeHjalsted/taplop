@@ -87,6 +87,7 @@ const valid_section_headers = [_][]const u8{
     "GlobalColors",
     "Gradients",
     "EventLog",
+    "ReconstructionCache",
     "PlayerLoadout",
     "Sword",
     "Shield",
