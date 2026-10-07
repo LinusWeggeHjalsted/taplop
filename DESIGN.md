@@ -771,11 +771,18 @@ gameplay — not in snapshots, not touched by replay.
   `state.SessionState` (`input_state`, `ui_state`, `tile_cursor`) hangs on
   `GameStateHistory` next to `settings` — never deep-copied into snapshots,
   never touched by replay. Clean rule: **in `GameState` → change via events; in
-  `SessionState` → change directly in the input/update path.** The screen-
-  transition UI reset lives in the live loop (`gameLoop` clears
-  `session.ui_state` when `screen` changes across `update()`, covering both
-  event transitions and undo/redo across a screen boundary), NOT in
-  `transitionScreen`. `input_state` is never reset — it is live hardware
+  `SessionState` → change directly in the input/update path.** The line is
+  the UI state classification (see UI Framework → UI state classification):
+  class-1 SEMANTIC SURFACE state (what's open — panels, modals, pickers)
+  lives on `GameState.ui_surfaces` behind `toggle_ui_surface`-family events,
+  because replay must reproduce it and `validatePlayerAction` must gate
+  gameplay orchestrators on it; classes 2–4 (tabs, scrolls, gesture
+  lifecycles) stay here. The screen/world-change reset splits by the same
+  rule: surface closing is handler work (`transitionScreen` /
+  `start_level` / `start_hub`), while the classes-2–4 wholesale reset lives
+  in the live loop (`gameLoop` clears `session.ui_state` when `screen` or
+  `world_generation` changes across `update()`, covering both event
+  transitions and undo/redo across a boundary), NOT in `transitionScreen`. `input_state` is never reset — it is live hardware
   state. `tile_cursor` is the logical cursor (mouse or arrow-key driven);
   `auto_target_at_cursor` reads it in the input path, and the resulting
   `player_use_skill` event is what replay reproduces — the cursor value at
@@ -1054,7 +1061,13 @@ that true (`src/session_log_bundle.zig`):
   (skill on bar + off cooldown + valid target); and the meta exit/skip
   orchestrators (screen must match — e.g. `player_restart_mission` only legal
   at `.level`, `player_exit_to_menu` at `.level`/`.hub`, `player_replay_mission`
-  requires `last_completed_mission != null`).
+  requires `last_completed_mission != null`). The inventory/gear/skills
+  click + drag orchestrators additionally require their trigger panel OPEN
+  (`ui_surfaces`) — the live pointer path can't click an unrendered slot, and
+  the validator mirrors that gate (a salvaged item in a log whose inventory
+  was never opened is an illegal log — hand-crafted or otherwise). Surface
+  toggles themselves are scope-checked (a middle-panel toggle outside
+  level/hub is illegal).
 
   **Orchestrator convention.** Input handlers push orchestrator events;
   orchestrator handlers push machinery events as children. The whitelist =
@@ -4957,13 +4970,70 @@ streamed at runtime but still downloaded).
 - **Text coloring.** `ui.default_tint` (pure white) is the default `color` on every UI element. For sprites (Button/Slot/Image) it means "no tint" (show original art). For TEXT it's the "unset" sentinel: the text renderer's `drawTextLabel` (src/raylib/text.zig) substitutes the active theme's `lightest` (the artist's offwhite) so uncolored text inherits the theme without builders needing a runtime color. Explicitly colored text (via `ui.colored(...)`) passes a non-`default_tint` color and is unaffected. Damage/heal numbers (`floating_text`) already pass `active_theme.lightest` explicitly at their call sites. The substitution is text-only — sprite tints keep `default_tint` = "no tint."
 - **Text measurement seam.** `ui.FontMetrics` (raylib-free value type: `base_size` + `[95]i32` per-ASCII-glyph advances) is the single layout-side authority for text width. The backend extracts it from the loaded `rl.Font` (`RaylibBackend.fontMetrics`, a thin wrapper over src/raylib/text.zig's `TextRenderer.fontMetrics`) and threads it through `RenderContext.font_metrics` into the builders. Its contract: **mirror the renderer's cursor advance exactly.** `measureSpanWidth` reproduces `rl.drawTextEx`'s per-glyph step (`advanceX × font_size/base_size + spacing`, float-accumulated), so laid-out width == drawn width and multi-span emit (`x += measureSpanWidth`) flows like one continuous string. The shared `glyph_spacing_font_divisor` constant is the one source of truth for the spacing both read — any new draw parameter the layout needs to know (letter-spacing, kerning) must be added there, not re-derived in the seam. Vertical: **center on the `font_size` glyph cell, stack on `lineHeight`** — raylib draws a glyph from the top of a `font_size`-tall cell, so centering that cell (not the 1.2× `lineHeight` box) puts the visual mass on the element's center; `lineHeight` is for multi-line y-advance only.
 
+### UI state classification (GameState vs UiState)
+
+UI state splits into four classes, and the class decides where the state
+lives — a rule, not per-field judgment. (Settled after the editor inspector
+toggle and the in-game middle-panel toggles had drifted into two conventions
+— the editor flags moved onto GameState only because handlers needed to
+mutate them; the rule generalizes that precedent to all surface state.)
+
+1. **Semantic surface state — what's open.** Lives on GameState
+   (`types.UiSurfaceState`): the middle panels + full-screen overlays
+   (ordered sets — open order IS display order), the modal overlays (options
+   menu, settings, load-save, credits, editor browser), the entity-inspect
+   target, and the editor's centered picker (on `Editor.picker`, the
+   `Editor.inspector_open` convention). ALL of it changes via events
+   (`toggle_ui_surface` / `inspect_entity` / `editor_open_picker` /
+   `editor_close_picker`, pushed by their `player_*` orchestrators) so it
+   rides the undo timeline and replays — which is what lets
+   `validatePlayerAction` gate gameplay orchestrators on the surface that
+   supplies their trigger (a salvage without the inventory open is an
+   illegal log — see Determinism → Replay PLAYER-ACTION LEGALITY) and what
+   lets a reconstructed session show the surfaces the player had open.
+2. **View affordances within a surface** (settings tab, editor-browser kind
+   tabs, mission-browser tab, sprite-picker tab, palette accordion,
+   inspector section expansion, the editor inventory's selected slot) —
+   `UiState` (SessionState, off the timeline), direct writes in the input
+   layer. Gates nothing gameplay-relevant.
+3. **Scroll offsets** — `UiState`, direct writes. Unbounded frequency (one
+   per wheel notch), semantically empty, never gates an action.
+4. **Mid-interaction lifecycles** (drag / pending presses / marquee /
+   text + keybind edit buffers / the footprint draft / the active slider) —
+   `UiState`, direct writes. The COMMIT is the event; the gesture or buffer
+   never needs replay.
+
+**Idle points: surface toggles are ordinary player actions.** A toggle
+fired while idle creates its own idle point (one click/key = one undo
+step — the same anytime semantics as `swap_weapons`); a toggle fired
+mid-drain rides inside the surrounding subtree (the anytime-interjection
+pattern — no idle point of its own; undo reverts to the drain's idle
+point, discarding the toggle with the partial drain). No special
+idle-point machinery — the existing anytime-action recording covers both.
+
+**The screen/world-change reset splits by the same rule.** Class-1 surface
+closing is HANDLER work (`transitionScreen` clears surfaces on screen
+change; `start_level` / `start_hub` close them when installing a world at
+the same screen), so replay reproduces it. Classes 2–4 reset wholesale in
+the live loop (`gameLoop` clears `session.ui_state` on screen or
+world-generation change) — off the timeline, the live reset is the only
+reset they need.
+
+`pending_error` (SessionState) is deliberately NOT a surface — the
+recoverable-error popup is environmental, not player action (see Error
+Handling). The mission-complete overlay stays payload-carrying GameState
+(`last_completed_mission` + `dismiss_mission_complete`); the mission-fail
+overlay stays DERIVED (`playerDead`) — both already satisfy the rule's
+goal, so they keep their existing shapes.
+
 ### Entity inspect
 
 The entity-inspect middle panel (`buildEntityInspectPanel`, opened by right-
 -clicking a world tile with an entity — levels only) is a READ-ONLY mirror of
 the player's skill bar + active effects + gear panel. It shares the middle-
 panel band + `middle_panel_height` with inventory/gear/skills; which entity
-it shows is `UiState.inspected_entity_index`. Middle panels are TOP-ANCHORED
+it shows is the entity-inspect surface's target on `UiSurfaceState`.
+Middle panels are TOP-ANCHORED
 in the band: `middle_panel_height` is the inventory grid's exact-fit content
 height (derived: header + gaps + rows×slot), not the band height — the strip
 between the panels' bottom edge and the bottom bar is the indicator row's

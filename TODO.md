@@ -99,6 +99,43 @@ Test by running `zig build run` and clicking through.
         EOF-safe, detached), the stdout dump writer on the queue, always-on
         (no flag) — DONE (see DONE.md, console input slice 2; includes the
         wasm32 u32-atomic counter fix). Console input is COMPLETE.
+- **UI surface state unification (design SETTLED — see DESIGN → UI Framework
+  → UI state classification).** Class-1 semantic surface state (what's open:
+  middle panels, full-screen overlays, the options/settings/load-save/
+  credits/editor-browser modals, the entity-inspect target, the editor's
+  centered picker) moves from `UiState` (SessionState, off the timeline) onto
+  `GameState.ui_surfaces` behind `toggle_ui_surface` / `inspect_entity` /
+  `editor_open_picker` / `editor_close_picker` events pushed by their
+  `player_*` orchestrators. Idle-point policy: toggles are ordinary player
+  actions (fired while idle = own undo step; mid-drain = absorbed into the
+  surrounding subtree — the swap_weapons anytime semantics; no new
+  idle-point machinery). Motivation: `validatePlayerAction` can then gate
+  inventory/gear/skills orchestrators on their trigger panel being open
+  (legality = the current UI supplies the trigger — the console/TAS/
+  server-validation seam), and reconstruction reproduces the surfaces the
+  player had open. Slices:
+  - [x] 1. Design records (DESIGN classification + the Replay & Side
+        Effects rule line + the Determinism panel gates) — DONE.
+  - [ ] 2. Scaffolding: `UiSurfaceId` + `UiSurfaceState` on GameState
+        (`types.zig`) + the `toggle_ui_surface` / `inspect_entity` meta
+        events + their `player_*` orchestrators + handler arms + the
+        session-log `file_format_version` bump (2→3). No behavior change.
+  - [ ] 3. Input migration: escape chain, in_game toggle arms, options_action
+        modal arms (open_settings / open_credits / editor browser / load-save
+        toggle), right-click inspect → events; pause gates + `view()` +
+        console reads move to `GameState.ui_surfaces`; the live-loop wholesale
+        reset splits (class-1 closing → `transitionScreen` / `start_level` /
+        `start_hub`); `UiState` loses the class-1 fields; test updates
+        (input_tests_escape / input_tests_console / view tests).
+  - [ ] 4. Editor picker migration: `Editor.picker` + the
+        `editor_open_picker` / `editor_close_picker` events + the picker input
+        arms + UI readers. `editor_footprint_draft` STAYS UiState (class 4 —
+        the draft-buffer pattern).
+  - [ ] 5. Validator: inventory/gear/skills orchestrator panel gates +
+        surface-scope legality; fixtures that drain those orchestrators open
+        their panel first.
+  - [ ] 6. Sweep: stale `ui_state` prose in AGENTS/DESIGN/code comments, the
+        session-log version-bump fallout (re-record fixtures), DONE.md entry.
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through
@@ -315,7 +352,7 @@ panel). Implementation deferred; slices when it lands:
 - [ ] panel builder (two-column: item list = every item with a nonempty
       `itemStatSet`, no skill tomes; per-stat rows with cost + button) +
       selection UiState + panel toggle on the unified GameState convention
-      (see Tech Debt → Unify the panel-toggle convention).
+      (see DESIGN → UI Framework → UI state classification).
 - [ ] tail-price generation script (the sound_report.sh pattern) — BLOCKED
       on the boss drop table (content not yet authored).
 - [ ] tuning follow-ups: re-measure R when enemy-gear richness or
@@ -802,17 +839,6 @@ Done items in DONE.md. Open:
   treat any new frame-level action with suspicion: it must PROVE it can't
   run inside update().
 
-- **Unify the panel-toggle convention into GameState.** The in-game middle
-  panel toggles (inventory/gear/skills/entity-inspect, hub + level
-  screens) are direct `UiState` writes — off the undo timeline — while the
-  editor inspector toggle rides GameState via `editor_toggle_inspector`
-  (on the timeline; required there for auto-open-on-creation + replay
-  reproduction — see DESIGN → Architecture → Level Editor → Editor UI
-  layout). We want ONE convention: migrate the middle-panel open/close
-  flags onto GameState events (undo over panel toggles comes with it) the
-  next time that subsystem is touched. The palette accordion
-  (`editor_palette_collapsed`) can stay UiState — it's a pure view
-  affordance with no handler-mutated state.
 
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
