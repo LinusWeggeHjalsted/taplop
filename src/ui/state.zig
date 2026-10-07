@@ -24,40 +24,6 @@ const TextEditState = text_input.TextEditState;
 // `UiSurfaceState` / `Editor.picker`), event-driven, on the undo timeline.
 // ============================================================
 
-/// Which field the editor's centered picker is assigning (see
-/// DESIGN → Architecture → Level Editor → Editor UI layout — the
-/// centered sprite picker section; the skill picker is the first
-/// consumer).
-pub const EditorPickerTarget = union(enum) {
-    utility_skill_slot: u32,
-    /// The edited entity type's base sprite (the inspector's Sprite row).
-    entity_sprite: void,
-    /// The edited decoration type's base sprite (the decoration
-    /// inspector's Sprite row — official tab adopts a registry prefab,
-    /// mission tab picks a custom stem).
-    decoration_sprite: void,
-    /// An ENTITY layer sprite (the enemy content's Layers section): the
-    /// layer index being edited, null = add-new (the skill picker's slot
-    /// pattern).
-    entity_layer: ?u32,
-    /// A DECORATION layer sprite — same shape; the official tab filters
-    /// to the base type's dims (the load-time layer invariant).
-    decoration_layer: ?u32,
-    /// The decoration type's FOOTPRINT editor (the Footprint row): the
-    /// full-size sprite with toggleable 256×256 grid cells; the draft
-    /// rides `UiState.editor_footprint_draft`. Carries the TYPE ID it was
-    /// opened on — the editor stays self-contained while tools switch
-    /// mid-edit (the dropdown convention), and toggles/confirm can never
-    /// silently apply to a different type.
-    decoration_footprint: u32,
-    /// The metadata sidebar's THEME PICKER (a gradient row's swatch):
-    /// every gradient as a full-width strip, one pick per row. Carries
-    /// the LEVEL INDEX it was opened on + the ROLE being picked (the
-    /// world index, or an enemy/player override) — a mid-edit tab switch
-    /// can't retarget the pick.
-    level_gradient: struct { level_index: u32, role: types.LevelGradientRole },
-};
-
 /// The footprint editor's draft-grid capacity: 8×8 sprite-grid tiles
 /// (2048px sprites). Shipped decoration art is 3×3 at most; a custom
 /// sprite beyond the limit doesn't open the editor (custom dims
@@ -170,13 +136,6 @@ pub const UiState = struct {
     /// the window) — running it every frame would snap the window back to
     /// the active tab and make manual scrolling impossible.
     editor_level_tab_last_active: i32 = -1,
-
-    /// The editor's centered picker, if open — which field is being
-    /// picked (first consumer: the utility-skill picker; the sprite picker
-    /// joins later). A MODAL overlay: while set, the input layer runs only
-    /// the picker's own actions (see handleAnytimeInput). Off the undo
-    /// timeline — picking is what records, opening is an affordance.
-    editor_picker: ?EditorPickerTarget = null,
 
     /// The footprint editor's DRAFT grid (the `.decoration_footprint`
     /// picker): one bool per sprite-grid tile, row-major. Seeded from the

@@ -1754,6 +1754,44 @@ pub const GameStateHistory = struct {
                     }
                 },
                 // Structural legality: same shape as the inspector toggle —
+                // the live path is the picker's own open buttons, with the
+                // target's bounds validated here (type ids / level indices
+                // / layer indices in range against the palette).
+                .player_open_editor_picker => |open| {
+                    if (self.current_state.screen != .editor) {
+                        self.rejectReplay("replay validation: player_open_editor_picker outside editor screen");
+                        return;
+                    }
+                    const editor = self.current_state.editor orelse {
+                        self.rejectReplay("replay validation: player_open_editor_picker with no editor");
+                        return;
+                    };
+                    const target_legal = switch (open.target) {
+                        .utility_skill_slot => |slot_index| slot_index < types.utility_skill_count,
+                        .entity_sprite, .decoration_sprite => true,
+                        // A layer index is bounds-checked downstream — the
+                        // pick/commit handlers guard against
+                        // `template.layers.len` (a stale index no-ops).
+                        .entity_layer, .decoration_layer => true,
+                        .decoration_footprint => |type_id| type_id < editor.decoration_types.len,
+                        .level_gradient => |gradient| gradient.level_index < editor.levels.len,
+                    };
+                    if (!target_legal) {
+                        self.rejectReplay("replay validation: player_open_editor_picker target out of range");
+                        return;
+                    }
+                },
+                .player_close_editor_picker => {
+                    if (self.current_state.screen != .editor) {
+                        self.rejectReplay("replay validation: player_close_editor_picker outside editor screen");
+                        return;
+                    }
+                    if (self.current_state.editor == null) {
+                        self.rejectReplay("replay validation: player_close_editor_picker with no editor");
+                        return;
+                    }
+                },
+                // Structural legality: same shape as the inspector toggle —
                 // the live path is the player inspector's Import buttons
                 // (the session data + the max-player loadout).
                 .player_import_editor_player, .player_import_editor_max_player => {

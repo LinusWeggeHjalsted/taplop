@@ -336,9 +336,20 @@ fn appendEventScalar(
                         // `tag` is a comptime-known enum value, so indexing
                         // union_info.fields (a comptime tuple) works. A void
                         // payload (e.g. EntityEditTarget.player_def) writes
-                        // just the tag — no payload fields appended.
+                        // just the tag — no payload fields appended. An
+                        // OPTIONAL payload (e.g. EditorPickerTarget
+                        // .entity_layer, null = add-new) writes just the tag
+                        // when null — absence encodes null, the same
+                        // convention writeEventField uses for struct fields.
                         const field_info = union_info.fields[@intFromEnum(tag)];
-                        if (field_info.type != void) {
+                        if (field_info.type == void) {
+                            // void payload: just the tag.
+                        } else if (comptime @typeInfo(field_info.type) == .optional) {
+                            if (payload) |inner| {
+                                try buffer.appendSlice(allocator, " ");
+                                try appendEventScalar(buffer, allocator, inner);
+                            }
+                        } else {
                             try buffer.appendSlice(allocator, " ");
                             try appendEventScalar(buffer, allocator, payload);
                         }
@@ -617,6 +628,18 @@ fn parseScalarTokens(
                     if (std.mem.eql(u8, tag_token, field.name)) {
                         if (field.type == void) {
                             return @unionInit(T, field.name, {});
+                        } else if (comptime @typeInfo(field.type) == .optional) {
+                            // OPTIONAL payload (e.g. EditorPickerTarget
+                            // .entity_layer, null = add-new): the tag alone
+                            // (no remaining token) is null — absence encodes
+                            // null, mirroring appendEventScalar's union branch
+                            // + writeEventField's struct-field convention.
+                            if (tokens.peek() == null) {
+                                return @unionInit(T, field.name, null);
+                            }
+                            const optional_info = @typeInfo(field.type).optional;
+                            const payload = try parseScalarTokens(optional_info.child, tokens, allocator);
+                            return @unionInit(T, field.name, payload);
                         } else {
                             const payload = try parseScalarTokens(field.type, tokens, allocator);
                             return @unionInit(T, field.name, payload);
@@ -689,6 +712,23 @@ test "writeEventLog serializes representative event shapes" {
         // index tag (EditorToolId.entity_type 2)
         .{ .editor_event = .{ .editor_set_tool = .{ .tool = .select } } },
         .{ .editor_event = .{ .editor_set_tool = .{ .tool = .{ .entity_type = 2 } } } },
+        // OPTIONAL union-variant payloads (EditorPickerTarget.entity_layer,
+        // null = add-new): the tag alone encodes null, a present inner
+        // writes the scalar (the union branch's optional handling).
+        .{ .player_input_event = .{ .player_open_editor_picker = .{
+            .target = .{ .entity_layer = null },
+        } } },
+        .{ .player_input_event = .{ .player_open_editor_picker = .{
+            .target = .{ .entity_layer = 3 },
+        } } },
+        // Optional struct-field payloads (inspect_entity.entity_index):
+        // null omits the line, a present value writes it (the
+        // writeEventField convention).
+        .{ .meta_event = .{ .inspect_entity = .{ .entity_index = null } } },
+        .{ .meta_event = .{ .inspect_entity = .{ .entity_index = 2 } } },
+        .{ .player_input_event = .{ .player_toggle_ui_surface = .{
+            .surface = .inventory,
+        } } },
         .{ .player_input_event = .{ .player_set_editor_tool = .{ .tool = .tile } } },
         // Selectable union payloads: struct tag (tile → Vector2 fields),
         // index tag, void tag (singletons)
@@ -784,6 +824,14 @@ test "writeEventLog serializes representative event shapes" {
     // Slice of Vector2 flattened; empty slice writes an empty value.
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event highlight_tiles\ntile_positions 1 2 3 4\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event highlight_tiles\ntile_positions \n") != null);
+    // The optional-union-payload + surface-toggle shapes added above: null
+    // = tag alone, present inner = the scalar; the optional struct field
+    // omits its line when null.
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_open_editor_picker\ntarget entity_layer\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_open_editor_picker\ntarget entity_layer 3\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event meta_event inspect_entity\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event meta_event inspect_entity\nentity_index 2\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_toggle_ui_surface\nsurface inventory\n") != null);
 
     // Null optional omits its line: only the PRESENT use_skill's group
     // carries a target line (the null one's `skill_id` line is directly

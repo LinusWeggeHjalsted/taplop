@@ -3466,8 +3466,8 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker != null);
-    try testing.expectEqual(ui.EditorPickerTarget.entity_sprite, history.session.ui_state.editor_picker.?);
+    try testing.expect(history.current_state.editor.?.picker != null);
+    try testing.expectEqual(types.EditorPickerTarget.entity_sprite, history.current_state.editor.?.picker.?);
     try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
     try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0].file_name);
@@ -3480,7 +3480,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
         .clicked_editor_sprite = "custom/artists_den/boss",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqualStrings(
         "custom/artists_den/boss",
         history.current_state.editor.?.entity_types[0].template.sprite,
@@ -3505,7 +3505,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
         .options_action = .select_editor_entity_sprite,
         .clicked_editor_sprite = "skeleton_1",
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // An OFFICIAL pick commits with the flag off (official art is
@@ -3536,7 +3536,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
 }
 
 test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
@@ -3575,7 +3575,7 @@ test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
 
     // The pick visibly didn't take: the sprite is unchanged and no undo
     // step exists (undo at the initial idle point returns false).
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqualStrings(
         "skeleton_1",
         history.current_state.editor.?.entity_types[0].template.sprite,
@@ -3618,8 +3618,8 @@ test "palette + click: default type creation, tool switch, picker routing" {
         ));
     }
     try testing.expectEqual(
-        ui.EditorPickerTarget.entity_sprite,
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget.entity_sprite,
+        history.current_state.editor.?.picker.?,
     );
     try testing.expectEqual(
         types.EditorSpritePickerTab.mission_local,
@@ -3644,8 +3644,8 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.current_state.editor.?.decoration_types[0].sprite,
     );
     try testing.expectEqual(
-        ui.EditorPickerTarget.decoration_sprite,
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget.decoration_sprite,
+        history.current_state.editor.?.picker.?,
     );
     try testing.expectEqual([3]bool{ true, false, true }, history.session.ui_state.editor_palette_collapsed);
 
@@ -3661,7 +3661,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         "New Sword",
         history.current_state.editor.?.item_types[0].item.weapon.name,
     );
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual([3]bool{ true, true, false }, history.session.ui_state.editor_palette_collapsed);
 
     // A crafted out-of-range group index does nothing (no event, no
@@ -4199,8 +4199,8 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
         .options_action = .open_editor_sprite_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget.decoration_sprite,
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget.decoration_sprite,
+        history.current_state.editor.?.picker.?,
     );
 
     // Official pick: the WHOLE prefab adopts — sprite, footprint, dims,
@@ -4210,7 +4210,7 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
         .clicked_editor_sprite = "tree_1",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     const adopted = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqualStrings("tree_1", adopted.id);
     try testing.expectEqualStrings("tree_1", adopted.sprite);
@@ -4225,8 +4225,9 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     try testing.expectEqualStrings("stone_2", history.current_state.editor.?.decoration_types[0].sprite);
 
     // Re-adopt (the post-undo state differs from the prefab), then a
-    // SAME-DEFINITION re-pick closes without recording (no dead undo
-    // step) — reopen first (the pick closed the picker).
+    // SAME-DEFINITION re-pick closes WITHOUT COMMITTING — the close is
+    // the recorded change now (the picker surface event; one open + one
+    // close, no commit) — reopen first (the pick closed the picker).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
@@ -4246,18 +4247,21 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
         .clicked_editor_sprite = "tree_1",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
-    try testing.expectEqual(events_after_adopt, history.event_history.items.len);
+    try testing.expect(history.current_state.editor.?.picker == null);
+    // The open + the close-only pick recorded exactly the four surface
+    // events (orchestrator + machinery each; no commit in between).
+    try testing.expectEqual(events_after_adopt + 4, history.event_history.items.len);
 
     // Gate: the decoration action with the ENTITY picker open is a no-op
-    // (a crafted click — the cells never emit it).
-    history.session.ui_state.editor_picker = .{ .entity_sprite = {} };
+    // (a crafted click — the cells never emit it). Direct state write — a
+    // scripted precondition, not an action under test.
+    history.current_state.editor.?.picker = .{ .entity_sprite = {} };
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
         .clicked_editor_sprite = "tree_1",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
 }
 
@@ -5713,8 +5717,8 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
         .options_action = .open_editor_skill_picker,
         .clicked_editor_utility_slot = 0,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker != null);
-    try testing.expectEqual(@as(u32, 0), history.session.ui_state.editor_picker.?.utility_skill_slot);
+    try testing.expect(history.current_state.editor.?.picker != null);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.picker.?.utility_skill_slot);
 
     // The picker is a DROPDOWN, not a modal: other actions stay live
     // while it's open (and it survives them).
@@ -5723,14 +5727,14 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(!history.current_state.editor.?.inspector_open);
-    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expect(history.current_state.editor.?.picker != null);
 
     // Pick blink: assigned + the picker closes; one undo step.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_utility_skill,
         .clicked_editor_skill = .blink,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(
         types.SkillId.blink,
         history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
@@ -5754,7 +5758,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
         .options_action = .select_editor_utility_skill,
         .clicked_editor_skill = null,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Assign, reopen, pick None: clears the slot (one event).
@@ -5793,7 +5797,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -7245,8 +7249,8 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
         .options_action = .open_editor_entity_layer_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget{ .entity_layer = null },
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget{ .entity_layer = null },
+        history.current_state.editor.?.picker.?,
     );
 
     // Pick: a new layer, color 0 (no authored source for entity layers).
@@ -7277,8 +7281,8 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
         .clicked_editor_layer = 0,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget{ .entity_layer = 0 },
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget{ .entity_layer = 0 },
+        history.current_state.editor.?.picker.?,
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer,
@@ -7289,7 +7293,8 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     try testing.expectEqualStrings("wolf", template.layers[0].sprite);
     try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
 
-    // Same-sprite re-pick closes without recording.
+    // Same-sprite re-pick closes WITHOUT COMMITTING — the close is the
+    // recorded change now (the picker surface event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_entity_layer_picker,
         .clicked_editor_layer = 0,
@@ -7300,7 +7305,8 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
         .clicked_editor_sprite = "wolf",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expectEqual(events_before, history.event_history.items.len);
+    // Exactly the two close events (orchestrator + machinery; no commit).
+    try testing.expectEqual(events_before + 2, history.event_history.items.len);
 
     // Delete: the layer is removed, one undo restores it.
     input_handlers.handleAnytimeInput(&history, .{
@@ -7369,8 +7375,8 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         .options_action = .open_editor_decoration_layer_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget{ .decoration_layer = null },
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget{ .decoration_layer = null },
+        history.current_state.editor.?.picker.?,
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
@@ -7410,7 +7416,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         .clicked_editor_sprite = "custom/artists_den/small",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqual(events_before, history.event_history.items.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].layers.len);
 
@@ -7570,8 +7576,8 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
         .options_action = .open_editor_footprint_picker,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget{ .decoration_footprint = 0 },
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget{ .decoration_footprint = 0 },
+        history.current_state.editor.?.picker.?,
     );
     try testing.expect(history.session.ui_state.editor_footprint_draft[0]);
     try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
@@ -7596,14 +7602,15 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
 
-    // Confirm an UNCHANGED draft: closes, nothing records.
+    // Confirm an UNCHANGED draft: closes WITHOUT COMMITTING — the close
+    // is the recorded change now (the picker surface event).
     const events_before = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
-    try testing.expectEqual(events_before, history.event_history.items.len);
+    try testing.expect(history.current_state.editor.?.picker == null);
+    try testing.expectEqual(events_before + 2, history.event_history.items.len);
 
     // Re-open, deselect everything: the confirm STAYS OPEN (a footprint
     // needs >= 1 tile), nothing records.
@@ -7622,8 +7629,11 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
         .options_action = .confirm_editor_footprint,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker != null);
-    try testing.expectEqual(events_before, history.event_history.items.len);
+    try testing.expect(history.current_state.editor.?.picker != null);
+    // Nothing beyond the close + reopen surface events (four events:
+    // orchestrator + machinery each) — the empty-draft confirm records
+    // nothing (a footprint needs >= 1 tile).
+    try testing.expectEqual(events_before + 4, history.event_history.items.len);
 
     // A CHANGED draft commits: select (0,0) only → footprint {(0,0)},
     // row-major, on the undo timeline.
@@ -7635,7 +7645,7 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
         .options_action = .confirm_editor_footprint,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     const definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(usize, 1), definition.footprint.len);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, definition.footprint[0]);
@@ -7850,8 +7860,8 @@ test "theme picker: open targets the active level, picks commit per role, auto f
         .clicked_editor_gradient_role = .enemy,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        ui.EditorPickerTarget{ .level_gradient = .{ .level_index = 1, .role = .enemy } },
-        history.session.ui_state.editor_picker.?,
+        types.EditorPickerTarget{ .level_gradient = .{ .level_index = 1, .role = .enemy } },
+        history.current_state.editor.?.picker.?,
     );
 
     // The open scrolled the CURRENT gradient into view (enemy on auto,
@@ -7880,16 +7890,18 @@ test "theme picker: open targets the active level, picks commit per role, auto f
         .clicked_editor_gradient = 4,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index);
     // Level 0 untouched (the index rode the target).
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[0].enemy_gradient_index);
 
-    // Same-value pick while MANUAL: closes without RECORDING — the event
-    // history is the precise no-op proof (runToIdle's idle points don't
-    // dedupe, so undo-step counting can't distinguish a dead step from a
-    // duplicate point at an unchanged state).
+    // Same-value pick while MANUAL: closes WITHOUT COMMITTING — the
+    // recorded delta is exactly the surface toggles (the reopen 2 + the
+    // close-only pick 2; the event history is the precise no-op proof —
+    // runToIdle's idle points don't dedupe, so undo-step counting can't
+    // distinguish a dead step from a duplicate point at an unchanged
+    // state).
     const history_len_after_pick = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
@@ -7899,10 +7911,10 @@ test "theme picker: open targets the active level, picks commit per role, auto f
         .options_action = .select_editor_level_gradient,
         .clicked_editor_gradient = 4,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
     runToIdle(&history);
-    try testing.expectEqual(history_len_after_pick, history.event_history.items.len);
+    try testing.expectEqual(history_len_after_pick + 4, history.event_history.items.len);
 
     // The Auto button reverts the override to null (one undo step back to
     // the manual pick).

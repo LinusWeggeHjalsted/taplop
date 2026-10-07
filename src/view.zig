@@ -371,8 +371,11 @@ pub fn view(
                 editor.active_tool,
             ) catch @panic("failed to build editor bottom bar");
             // The centered picker draws LAST, above every editor surface
-            // (modal — see handleAnytimeInput's gate).
-            if (session.ui_state.editor_picker) |picker_target| {
+            // (modal — see handleAnytimeInput's gate). The picker's open
+            // state rides GameState (Editor.picker — see DESIGN → UI
+            // Framework → UI state classification); the view-side tab +
+            // draft state stays on UiState.
+            if (editor.picker) |picker_target| {
                 switch (picker_target) {
                     .utility_skill_slot => ui.buildEditorSkillPicker(
                         &ui_elements,

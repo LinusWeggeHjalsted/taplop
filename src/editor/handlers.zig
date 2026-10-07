@@ -599,6 +599,17 @@ pub fn handleEditorEvent(
         .editor_toggle_metadata_sidebar => {
             editor.metadata_sidebar_open = !editor.metadata_sidebar_open;
         },
+        // The centered picker's open/close — class-1 surface state on the
+        // Editor (see DESIGN → UI Framework → UI state classification).
+        // Opening REPLACES any stale picker still open (the palette-group
+        // dropdown semantics — one action, not a close+open pair); closing
+        // a closed picker is a graceful no-op (crafted logs).
+        .editor_open_picker => |open| {
+            editor.picker = open.target;
+        },
+        .editor_close_picker => {
+            editor.picker = null;
+        },
         // Inspector field edit (entity name). The target's palette index
         // is guarded defensively (a crafted log could name a deleted
         // type; the live path resolves the target from the still-focused

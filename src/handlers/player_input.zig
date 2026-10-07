@@ -553,6 +553,20 @@ pub fn handlePlayerInputEvent(
                 .entity_index = inspect.entity_index,
             } } }}, allocator);
         },
+        // Editor picker open/close (the picker's own buttons, the rows
+        // that open it, a no-change pick's close): thin — the
+        // `editor_open_picker` / `editor_close_picker` events own the
+        // mutation. The picker state rides GameState (`Editor.picker`),
+        // so it rides the undo timeline. See DESIGN → UI Framework → UI
+        // state classification.
+        .player_open_editor_picker => |open| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_open_picker = .{
+                .target = open.target,
+            } } }}, allocator);
+        },
+        .player_close_editor_picker => {
+            pushEvents(current, &.{.{ .editor_event = .editor_close_picker }}, allocator);
+        },
         // Top-bar Test button: start a playtest of the ACTIVE level (the
         // machinery handler owns instantiation + dormancy + the screen
         // transition). validatePlayerAction guarantees the editor screen +
@@ -646,22 +660,24 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         .player_set_editor_level_color_wheel => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_color_wheel = .{
+            // The theme-picker commit closes its picker in the same action
+            // (pick + close = one undo step).
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_level_color_wheel = .{
                 .level_index = set.level_index,
                 .color_wheel_index = set.color_wheel_index,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_set_editor_level_enemy_gradient => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_enemy_gradient = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_level_enemy_gradient = .{
                 .level_index = set.level_index,
                 .gradient_index = set.gradient_index,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_set_editor_level_player_gradient => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_player_gradient = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_level_player_gradient = .{
                 .level_index = set.level_index,
                 .gradient_index = set.gradient_index,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         // Inspector entity-name commit: thin forward (the EditorEvent owns
         // the mutation; recordEvent deep-copies the value slice into the
@@ -676,11 +692,11 @@ pub fn handlePlayerInputEvent(
         // plain text field in v1 — the centered sprite picker replaces it
         // later; see DESIGN → Level Editor → Editor UI layout).
         .player_set_editor_entity_sprite => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_sprite = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_entity_sprite = .{
                 .target = set.target,
                 .value = set.value,
                 .keep_original_colors = set.keep_original_colors,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         // Inspector scalar commits (swatch pick, toggle flip, stat fields):
         // thin forwards — the EditorEvents own the mutations.
@@ -739,17 +755,17 @@ pub fn handlePlayerInputEvent(
         },
         // Inspector utility-skill commit: thin forward.
         .player_set_editor_entity_utility_skill => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_entity_utility_skill = .{
                 .target = set.target,
                 .slot_index = set.slot_index,
                 .value = set.value,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         // Inspector decoration commits: thin forwards (the EditorEvents own
         // the mutations — the def event's handler also prunes the type's
         // now-invalid placements).
         .player_set_editor_decoration_def => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_def = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_decoration_def = .{
                 .type_id = set.type_id,
                 .sprite = set.sprite,
                 .footprint = set.footprint,
@@ -757,7 +773,7 @@ pub fn handlePlayerInputEvent(
                 .color_index = set.color_index,
                 .keep_original_colors = set.keep_original_colors,
                 .layers = set.layers,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_set_editor_decoration_color_index => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_color_index = .{
@@ -774,10 +790,10 @@ pub fn handlePlayerInputEvent(
         // The footprint editor's confirm: thin forward (the EditorEvent
         // owns the mutation + the placement prune).
         .player_set_editor_decoration_footprint => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_footprint = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_decoration_footprint = .{
                 .type_id = set.type_id,
                 .value = set.value,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         // Inspector item commits (the Items palette group): thin forwards
         // — the EditorEvents own the mutations + the id sync.
@@ -841,11 +857,11 @@ pub fn handlePlayerInputEvent(
         // player_def entity-layer target (validation rejects it at the
         // replay seam).
         .player_add_editor_entity_layer => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_add_entity_layer = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_add_entity_layer = .{
                 .target = set.target,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_remove_editor_entity_layer => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_remove_entity_layer = .{
@@ -854,21 +870,21 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         .player_set_editor_entity_layer => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_layer = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_entity_layer = .{
                 .target = set.target,
                 .layer_index = set.layer_index,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_add_editor_decoration_layer => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_add_decoration_layer = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_add_decoration_layer = .{
                 .type_id = set.type_id,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
                 .behind = set.behind,
                 .pixel_dims = set.pixel_dims,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         .player_remove_editor_decoration_layer => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_remove_decoration_layer = .{
@@ -877,14 +893,14 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         .player_set_editor_decoration_layer => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_layer = .{
+            pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_decoration_layer = .{
                 .type_id = set.type_id,
                 .layer_index = set.layer_index,
                 .sprite = set.sprite,
                 .color_index = set.color_index,
                 .behind = set.behind,
                 .pixel_dims = set.pixel_dims,
-            } } }}, allocator);
+            } } } }, allocator);
         },
         // Select-tool click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planning.planEditorSelectionActions).

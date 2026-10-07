@@ -1427,17 +1427,27 @@ pub fn handleAnytimeInput(
                         @intCast(group_size -| ui.editor_palette_max_tools);
                 }
                 // The tool switch the handler made retargets the inspector —
-                // any picker still open is stale, so it closes (dropdown
-                // semantics; groups 0/1 immediately open the fresh one).
-                history.session.ui_state.editor_picker = null;
+                // any picker still open is stale, so a group 0/1 click
+                // OPENS the fresh picker (the open event REPLACES the stale
+                // one — dropdown semantics, one action); a group 2 click
+                // closes any stale picker. The picker state rides
+                // GameState (`Editor.picker`) — see DESIGN → UI Framework
+                // → UI state classification.
                 if (group_index <= 1) {
                     const editor = &(history.current_state.editor orelse return);
                     mission_io.rescanEditorMissionSprites(history, editor.*);
-                    history.session.ui_state.editor_picker = if (group_index == 0)
+                    const picker_target: types.EditorPickerTarget = if (group_index == 0)
                         .{ .entity_sprite = {} }
                     else
                         .{ .decoration_sprite = {} };
                     history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                    pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                        .target = picker_target,
+                    } });
+                } else if (history.current_state.editor != null and
+                    history.current_state.editor.?.picker != null)
+                {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
                 }
             },
             // Palette tool-cell delete button: push the per-kind
@@ -1510,7 +1520,7 @@ pub fn handleAnytimeInput(
             .open_editor_sprite_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker = switch (ui.editorInspectorTarget(editor.*)) {
+                const picker_target: types.EditorPickerTarget = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => .{ .decoration_sprite = {} },
                     .entity_type, .player => .{ .entity_sprite = {} },
                     // No sprite row in the item content — a crafted click
@@ -1518,6 +1528,9 @@ pub fn handleAnytimeInput(
                     .item_type => return,
                 };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = picker_target,
+                } });
             },
             // A Layers-section sprite button (add + per-layer re-pick): the
             // same open path — the mission rescan, the Mission-tab reset —
@@ -1526,18 +1539,18 @@ pub fn handleAnytimeInput(
             .open_editor_entity_layer_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker = .{
-                    .entity_layer = anytime.clicked_editor_layer,
-                };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = .{ .entity_layer = anytime.clicked_editor_layer },
+                } });
             },
             .open_editor_decoration_layer_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker = .{
-                    .decoration_layer = anytime.clicked_editor_layer,
-                };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = .{ .decoration_layer = anytime.clicked_editor_layer },
+                } });
             },
             // The Footprint row's button: open the centered footprint
             // editor — seed the draft grid from the type's current
@@ -1568,7 +1581,9 @@ pub fn handleAnytimeInput(
                         @intCast(tile.y * grid_width + tile.x)
                     ] = true;
                 }
-                history.session.ui_state.editor_picker = .{ .decoration_footprint = type_id };
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = .{ .decoration_footprint = type_id },
+                } });
             },
             // A footprint-editor tile cell: flip that draft cell — a
             // direct UiState write (off the undo timeline; the confirm is
@@ -1577,13 +1592,12 @@ pub fn handleAnytimeInput(
             // the live buttons — the builder re-derives the grid every
             // frame).
             .toggle_editor_footprint_tile => {
-                const type_id = switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const type_id = switch (editor.picker orelse return) {
                     .decoration_footprint => |stored_type_id| stored_type_id,
                     else => return,
                 };
                 const cell_index = anytime.clicked_editor_footprint_tile orelse return;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
                 const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
@@ -1600,12 +1614,11 @@ pub fn handleAnytimeInput(
             // take. The handler prunes the type's now-invalid placements
             // (an edited footprint re-anchors).
             .confirm_editor_footprint => {
-                const type_id = switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const type_id = switch (editor.picker orelse return) {
                     .decoration_footprint => |stored_type_id| stored_type_id,
                     else => return,
                 };
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
                 const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
@@ -1623,11 +1636,15 @@ pub fn handleAnytimeInput(
                     }
                 }
                 if (footprint.items.len == 0) return;
+                // An UNCHANGED draft closes without committing — the close
+                // itself is the recorded change (the picker surface event;
+                // a changed draft commits, and the commit orchestrator's
+                // handler pushes the close as a child — pick+close is one
+                // undo step).
                 if (loaders.decorationFootprintEqual(definition.footprint, footprint.items)) {
-                    history.session.ui_state.editor_picker = null;
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
                     return;
                 }
-                history.session.ui_state.editor_picker = null;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_footprint = .{
                     .type_id = type_id,
                     .value = footprint.items,
@@ -1643,10 +1660,12 @@ pub fn handleAnytimeInput(
                 const role = anytime.clicked_editor_gradient_role orelse return;
                 if (editor.levels.len == 0) return;
                 const level_index = @min(editor.active_level_index, editor.levels.len - 1);
-                history.session.ui_state.editor_picker = .{ .level_gradient = .{
-                    .level_index = @intCast(level_index),
-                    .role = role,
-                } };
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = .{ .level_gradient = .{
+                        .level_index = @intCast(level_index),
+                        .role = role,
+                    } },
+                } });
                 // Scroll the CURRENT gradient into view on open (the level
                 // tab follow's rule — the highlight is the point of the
                 // list, an offscreen one reads as broken): the smallest
@@ -1665,25 +1684,29 @@ pub fn handleAnytimeInput(
                     @max(current_gradient + 1 - visible_rows, 0);
             },
             // A theme-picker row: set the level's index for the picker's
-            // role and close. Same-value picks close without recording;
-            // a pick while an enemy/player role is on AUTO flips it to
-            // manual in the same commit (the explicit pick IS the manual
+            // role and close. Same-value picks close WITHOUT COMMITTING
+            // (the close itself is the recorded change — the picker surface
+            // event); a changed pick commits, and the commit orchestrator's
+            // handler pushes the close as a child (pick+close is one undo
+            // step). A pick while an enemy/player role is on AUTO flips it
+            // to manual in the same commit (the explicit pick IS the manual
             // choice — the state change null→index records even when the
             // derived gradient was visually the same).
             .select_editor_level_gradient => {
-                const target = switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const target = switch (editor.picker orelse return) {
                     .level_gradient => |stored| stored,
                     else => return,
                 };
                 const gradient_index = anytime.clicked_editor_gradient orelse return;
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 if (target.level_index >= editor.levels.len) return;
                 const level = editor.levels[target.level_index];
                 switch (target.role) {
                     .world => {
-                        if (level.color_wheel_index == gradient_index) return;
+                        if (level.color_wheel_index == gradient_index) {
+                            pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                            return;
+                        }
                         pushPlayerActionAndDrain(history, .{ .player_set_editor_level_color_wheel = .{
                             .level_index = target.level_index,
                             .color_wheel_index = gradient_index,
@@ -1691,7 +1714,11 @@ pub fn handleAnytimeInput(
                     },
                     .enemy => {
                         if (level.enemy_gradient_index != null and
-                            level.enemy_gradient_index.? == gradient_index) return;
+                            level.enemy_gradient_index.? == gradient_index)
+                        {
+                            pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                            return;
+                        }
                         pushPlayerActionAndDrain(history, .{ .player_set_editor_level_enemy_gradient = .{
                             .level_index = target.level_index,
                             .gradient_index = gradient_index,
@@ -1699,7 +1726,11 @@ pub fn handleAnytimeInput(
                     },
                     .player => {
                         if (level.player_gradient_index != null and
-                            level.player_gradient_index.? == gradient_index) return;
+                            level.player_gradient_index.? == gradient_index)
+                        {
+                            pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                            return;
+                        }
                         pushPlayerActionAndDrain(history, .{ .player_set_editor_level_player_gradient = .{
                             .level_index = target.level_index,
                             .gradient_index = gradient_index,
@@ -1757,27 +1788,28 @@ pub fn handleAnytimeInput(
             },
             // A sprite picker cell: set the edited type's base sprite (the
             // stem rode in `anytime.clicked_editor_sprite`) and close the
-            // picker. Same-value picks close without recording.
+            // picker. Same-value picks close WITHOUT COMMITTING (the close
+            // itself is the recorded change); a changed pick commits, and
+            // the commit orchestrator's handler pushes the close as a
+            // child (pick+close is one undo step).
             .select_editor_entity_sprite => {
                 // Gate: only a pick while the ENTITY sprite picker is open
                 // (crafted clicks with no picker — or another picker kind —
                 // are a no-op, the skill arm's posture).
-                switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                switch (editor.picker orelse return) {
                     .entity_sprite => {},
                     .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 // Pick-commit backstop (the picker filter's defense-in-depth
                 // — a stale scan or crafted input): a custom sprite that
-                // doesn't resolve to exactly the fixed 512x640 frame no-ops,
-                // nothing recorded. The load + render sides degrade the
-                // same art anyway; committing it would only mint a
-                // guaranteed-magenta type.
+                // doesn't resolve to exactly the fixed 512x640 frame no-ops
+                // the COMMIT — only the close records. The load + render
+                // sides degrade the same art anyway; committing it would
+                // only mint a guaranteed-magenta type.
                 if (std.mem.startsWith(u8, sprite, "custom/") and
                     !loaders.customEntitySpriteConforms(
                         history.file_source,
@@ -1786,9 +1818,13 @@ pub fn handleAnytimeInput(
                         history.current_arena.allocator(),
                     ))
                 {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
                     return;
                 }
-                if (std.mem.eql(u8, template.sprite, sprite)) return;
+                if (std.mem.eql(u8, template.sprite, sprite)) {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                    return;
+                }
                 // Pick-time default follows the art source: official stems
                 // tint (false), mission-local custom art keeps its own
                 // colors (true) — see DESIGN → Entity & UI Coloring,
@@ -1815,21 +1851,22 @@ pub fn handleAnytimeInput(
             // BOTTOM-LEFT corner (the authored footprint editor is a later
             // slice; dims verification for custom art is a TODO). The def
             // commit prunes the type's now-invalid placements (see the
-            // handler). Same-definition picks close without recording — a
+            // handler). Same-definition picks close WITHOUT COMMITTING (the
+            // close itself is the recorded change) — a
             // re-pick of the current prefab AFTER a color tweak does record
-            // (it re-adopts the authored color).
+            // (it re-adopts the authored color). A pick that fails its dims
+            // resolution keeps the picker OPEN, nothing recorded — the
+            // pick visibly didn't take (the decoration-LAYER arm's semantic).
             .select_editor_decoration_sprite => {
                 // Gate: only a pick while the DECORATION picker is open
                 // (crafted clicks with no picker — or another picker kind —
                 // are a no-op, the skill arm's posture).
-                switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                switch (editor.picker orelse return) {
                     .decoration_sprite => {},
                     .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
@@ -1905,7 +1942,10 @@ pub fn handleAnytimeInput(
                     current_definition.color_index == new_definition.color_index and
                     current_definition.keep_original_colors == new_definition.keep_original_colors and
                     loaders.decorationLayersEqual(current_definition.layers, new_definition.layers);
-                if (unchanged) return;
+                if (unchanged) {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                    return;
+                }
 
                 // Dupe into the current arena BEFORE pushing (the
                 // entity-sprite commit's ordering rule). The registry /
@@ -1932,18 +1972,17 @@ pub fn handleAnytimeInput(
             // re-pick the edited layer's sprite (edit mode — the layer's
             // color is kept, the weapon-retype semantics). A new layer
             // starts at color 0 (no authored source for entity layers).
-            // Same-layer picks close without recording. Entities share the
+            // Same-layer picks close WITHOUT COMMITTING (the close itself
+            // is the recorded change). Entities share the
             // fixed 512×640 frame — no dims to check.
             .select_editor_entity_layer => {
                 // Gate: only a pick while the ENTITY LAYER picker is open.
-                const layer_index = switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const layer_index = switch (editor.picker orelse return) {
                     .entity_layer => |index| index,
                     else => return,
                 };
                 const sprite = anytime.clicked_editor_sprite orelse return;
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 const arena = history.current_arena.allocator();
@@ -1958,6 +1997,7 @@ pub fn handleAnytimeInput(
                         arena,
                     ))
                 {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
                     return;
                 }
                 const sprite_value = arena.dupe(u8, sprite) catch
@@ -1965,7 +2005,10 @@ pub fn handleAnytimeInput(
                 if (layer_index) |index| {
                     if (index >= template.layers.len) return;
                     const current_layer = template.layers[index];
-                    if (std.mem.eql(u8, current_layer.sprite, sprite)) return;
+                    if (std.mem.eql(u8, current_layer.sprite, sprite)) {
+                        pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                        return;
+                    }
                     pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_layer = .{
                         .target = target,
                         .layer_index = index,
@@ -1998,13 +2041,12 @@ pub fn handleAnytimeInput(
             .select_editor_decoration_layer => {
                 // Gate: only a pick while the DECORATION LAYER picker is
                 // open.
-                const layer_index = switch (history.session.ui_state.editor_picker orelse return) {
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const layer_index = switch (editor.picker orelse return) {
                     .decoration_layer => |index| index,
                     else => return,
                 };
                 const sprite = anytime.clicked_editor_sprite orelse return;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
@@ -2028,7 +2070,6 @@ pub fn handleAnytimeInput(
                 if (pixel_dims.x != current_definition.pixel_dims.x or
                     pixel_dims.y != current_definition.pixel_dims.y) return;
 
-                history.session.ui_state.editor_picker = null;
                 const color_index: u32 = if (layer_index) |index| blk: {
                     if (index >= current_definition.layers.len) return;
                     break :blk current_definition.layers[index].color_index;
@@ -2065,7 +2106,10 @@ pub fn handleAnytimeInput(
                 };
                 if (layer_index) |index| {
                     const current_layer = current_definition.layers[index];
-                    if (std.mem.eql(u8, current_layer.sprite, sprite)) return;
+                    if (std.mem.eql(u8, current_layer.sprite, sprite)) {
+                        pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                        return;
+                    }
                     pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
                         .type_id = type_id,
                         .layer_index = index,
@@ -2433,35 +2477,40 @@ pub fn handleAnytimeInput(
             // no-op — the button isn't rendered then, but the gate holds
             // for crafted input).
             // An inspector utility-slot button: open the centered skill
-            // picker for that slot (pure UiState — opening is an
-            // affordance; the PICK is what records).
+            // picker for that slot — the open is the recorded surface
+            // event (the picker state rides GameState; the PICK is a
+            // separate action).
             .open_editor_skill_picker => {
                 const slot_index = anytime.clicked_editor_utility_slot orelse return;
                 if (slot_index >= types.utility_skill_count) return;
-                history.session.ui_state.editor_picker = .{ .utility_skill_slot = slot_index };
+                pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
+                    .target = .{ .utility_skill_slot = slot_index },
+                } });
             },
             // A picker cell: assign to the picker's slot (the skill rode in
             // `clicked_editor_skill`; no payload = the None cell) and close.
             // The picker is a DROPDOWN, not a modal — everything else stays
             // live while it's open (see DESIGN → Level Editor → Editor UI
             // layout); this arm just no-ops when no picker is open.
-            // Same-value picks (incl. None-on-empty) close without recording.
+            // Same-value picks (incl. None-on-empty) close WITHOUT
+            // COMMITTING (the close itself is the recorded change).
             .select_editor_utility_skill => {
-                const target = history.session.ui_state.editor_picker orelse return;
+                const editor: *types.Editor = &(history.current_state.editor orelse return);
+                const target = editor.picker orelse return;
                 const slot_index = switch (target) {
                     .utility_skill_slot => |index| index,
                     // The sprite/footprint pickers' picks route through
                     // their own arms — not a skill-slot assignment.
                     .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 };
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
                 const entity_target = editorEntityEditTarget(editor.*) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
                 const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
                 const picked = anytime.clicked_editor_skill;
-                if (template.equipped_utility_skills[slot_index] == picked) return;
+                if (template.equipped_utility_skills[slot_index] == picked) {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                    return;
+                }
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_utility_skill = .{
                     .target = entity_target,
                     .slot_index = slot_index,
@@ -2469,7 +2518,8 @@ pub fn handleAnytimeInput(
                 } });
             },
             // The picker's close button.
-            .close_editor_picker => history.session.ui_state.editor_picker = null,
+            .close_editor_picker =>
+                pushPlayerActionAndDrain(history, .player_close_editor_picker),
             .delete_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
@@ -2716,8 +2766,9 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_inspector_scroll = 0;
             }
         } else if (history.current_state.screen == .editor and
-            history.session.ui_state.editor_picker != null and
-            history.session.ui_state.editor_picker.? == .level_gradient)
+            history.current_state.editor != null and
+            history.current_state.editor.?.picker != null and
+            history.current_state.editor.?.picker.? == .level_gradient)
         {
             // The theme picker owns the wheel while it's open (the keybind
             // action picker's rule — a modal picker's list scrolls, not the

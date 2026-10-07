@@ -130,10 +130,14 @@ Test by running `zig build run` and clicking through.
         test updates (input_tests_escape / input_tests_console / view tests,
         + the right-click release→event + transitionScreen-closes pins) —
         DONE.
-  - [ ] 4. Editor picker migration: `Editor.picker` + the
+  - [x] 4. Editor picker migration: `Editor.picker` + the
         `editor_open_picker` / `editor_close_picker` events + the picker input
-        arms + UI readers. `editor_footprint_draft` STAYS UiState (class 4 —
-        the draft-buffer pattern).
+        arms + UI readers; the picker-commit handlers push the close as a
+        child of the commit (pick+close = one undo step); a no-change pick
+        records the close alone; session-log writer/reader gained
+        OPTIONAL-union-variant payloads (round-trip covered).
+        `editor_footprint_draft` STAYS UiState (class 4 — the draft-buffer
+        pattern) — DONE.
   - [ ] 5. Validator: inventory/gear/skills orchestrator panel gates +
         surface-scope legality; fixtures that drain those orchestrators open
         their panel first.

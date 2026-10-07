@@ -2771,10 +2771,10 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         player_input.pointer.released = true;
         player_input.pointer.position = sprite_click;
         update(&history, player_input, view_state, 0, camera, 1.0, viewport);
-        try std.testing.expect(history.session.ui_state.editor_picker != null);
+        try std.testing.expect(history.current_state.editor.?.picker != null);
         try std.testing.expectEqual(
-            ui.EditorPickerTarget.entity_sprite,
-            history.session.ui_state.editor_picker.?,
+            types.EditorPickerTarget.entity_sprite,
+            history.current_state.editor.?.picker.?,
         );
         try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
         // Close it — the drag-off block below needs a clean slate.

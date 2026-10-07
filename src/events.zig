@@ -222,6 +222,19 @@ pub const EditorEvent = union(enum) {
     // convention as `editor_toggle_inspector`: the flag lives on the
     // Editor, the toggle rides the undo timeline).
     editor_toggle_metadata_sidebar: void,
+    // Open the centered picker on a target — class-1 surface state (the
+    // picker is a modal surface; see DESIGN → UI Framework → UI state
+    // classification). Sets `Editor.picker`, REPLACING any stale picker
+    // still open (the palette-group dropdown semantics — the open event is
+    // the close of whatever it replaces, one action).
+    editor_open_picker: struct {
+        target: types.EditorPickerTarget,
+    },
+    // Close the centered picker. Pushed by the picker's Close button / a
+    // no-change pick AND as a child of every picker-commit orchestrator
+    // (the commit's own handler pushes it — pick+close is one undo step).
+    // Closing a closed picker is a graceful no-op (crafted logs).
+    editor_close_picker: void,
     // Import a loadout into the editor player (the player inspector's
     // Import buttons): the session's player data, or the new-game default
     // save when the session has none. Handled INLINE in processEvent —
@@ -787,6 +800,15 @@ pub const PlayerInputEvent = union(enum) {
     player_inspect_entity: struct {
         entity_index: ?u32,
     },
+    // Editor picker open/close (the picker's own buttons, the rows that
+    // open it, a no-change pick's close): thin — the handler pushes
+    // `editor_open_picker` / `editor_close_picker`. The picker state
+    // rides GameState (`Editor.picker`), so it rides the undo timeline.
+    // See DESIGN → UI Framework → UI state classification.
+    player_open_editor_picker: struct {
+        target: types.EditorPickerTarget,
+    },
+    player_close_editor_picker: void,
     // Top-bar Test/Validate button clicks: start a single-level playtest
     // of the active level / a full-mission validation run of the SAVED
     // mission dir (the input layer saves first and passes the dir).
