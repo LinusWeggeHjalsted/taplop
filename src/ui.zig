@@ -8,6 +8,7 @@
 //! re-exports below keep `ui.X` working for every consumer. See DESIGN →
 //! UI Framework.
 
+const types = @import("types.zig");
 const ui_element = @import("ui/element.zig");
 const ui_state = @import("ui/state.zig");
 const ui_keybind_edit = @import("ui/keybind_edit.zig");
@@ -95,10 +96,10 @@ pub const refAt = ui_element.refAt;
 pub const UiElementList = ui_element.UiElementList;
 pub const wrapRow = ui_element.wrapRow;
 pub const WrappedRow = ui_element.WrappedRow;
-pub const MiddlePanelId = ui_state.MiddlePanelId;
-pub const FullScreenOverlayId = ui_state.FullScreenOverlayId;
-pub const max_middle_panels = ui_state.max_middle_panels;
-pub const max_full_screen_overlays = ui_state.max_full_screen_overlays;
+pub const MiddlePanelId = types.MiddlePanelId;
+pub const FullScreenOverlayId = types.FullScreenOverlayId;
+pub const max_middle_panels = types.max_middle_panels;
+pub const max_full_screen_overlays = types.max_full_screen_overlays;
 pub const EditorPickerTarget = ui_state.EditorPickerTarget;
 pub const editor_footprint_grid_cell_limit = ui_state.editor_footprint_grid_cell_limit;
 pub const editor_inspector_section_count = ui_state.editor_inspector_section_count;

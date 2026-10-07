@@ -3359,7 +3359,8 @@ the file is also offered as a browser download (the Export Save seam).
 front door — browsing AND creating editor content — from both the main
 menu (the Editor button) and inside the editor (the options menu's Open
 Mission button + ctrl+O); the Back button closes it (all three toggle
-`Action.toggle_editor_browser`, `UiState.editor_browser_open`; Escape
+`Action.toggle_editor_browser` → the recorded `player_toggle_ui_surface`
+(`GameState.ui_surfaces.editor_browser_open`; Escape
 steps back one layer, the options menu it opened from stays beneath).
 The window is TABBED PER EDITOR KIND — the long-term plan is three
 editors (missions, hubs, campaigns) and only the mission editor exists,
@@ -5091,7 +5092,9 @@ bar, so open panels never cover them).
 
 ### Settings screen
 
-A full-screen modal overlay (`UiState.settings_open: bool`) with TWO content
+A full-screen modal overlay (`GameState.ui_surfaces.settings_open`,
+toggled by the recorded `Action.open_settings` → `player_toggle_ui_surface`)
+with TWO content
 tabs (`UiState.settings_tab`: **Settings** / **Keybinds** — tab buttons
 under the header, `.select_settings_tab` + `AnytimeInput
 .clicked_settings_tab`; a switch is a view affordance off the undo timeline

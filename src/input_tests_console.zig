@@ -104,7 +104,7 @@ test "console press Escape closes the options menu (merge → translate → hand
     ));
     test_harness.runToIdle(&history);
 
-    history.session.ui_state.options_menu_open = true;
+    history.current_state.ui_surfaces.options_menu_open = true;
 
     var input_state: input.InputState = .{};
     const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"press Escape"});
@@ -121,7 +121,7 @@ test "console press Escape closes the options menu (merge → translate → hand
         .{ .x = -4096, .y = -4096 },
         &.{},
     );
-    try testing.expect(!history.session.ui_state.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
 }
 
 test "console scroll with the options menu open moves the keybind scroll offset" {
@@ -137,8 +137,8 @@ test "console scroll with the options menu open moves the keybind scroll offset"
 
     // The in-game settings stack: the settings overlay over the options
     // menu, keybinds tab scrolled down a few rows.
-    history.session.ui_state.options_menu_open = true;
-    history.session.ui_state.settings_open = true;
+    history.current_state.ui_surfaces.options_menu_open = true;
+    history.current_state.ui_surfaces.settings_open = true;
     history.session.ui_state.settings_tab = .keybinds;
     history.session.ui_state.keybind_scroll_offset = 4;
 
@@ -167,7 +167,7 @@ test "console action escape closes the options menu (the button seam)" {
     ));
     test_harness.runToIdle(&history);
 
-    history.session.ui_state.options_menu_open = true;
+    history.current_state.ui_surfaces.options_menu_open = true;
 
     var input_state: input.InputState = .{};
     const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"action escape"});
@@ -181,7 +181,7 @@ test "console action escape closes the options menu (the button seam)" {
         .{ .x = -4096, .y = -4096 },
         &.{},
     );
-    try testing.expect(!history.session.ui_state.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
 }
 
 test "console chords work across frames (held-state supplies the modifier)" {

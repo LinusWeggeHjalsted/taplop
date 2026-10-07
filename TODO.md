@@ -121,13 +121,15 @@ Test by running `zig build run` and clicking through.
         events + their `player_*` orchestrators + handler arms + the
         session-log `file_format_version` bump (2→3). No behavior change —
         DONE (drain tests in `handler_tests_ui_surfaces.zig`).
-  - [ ] 3. Input migration: escape chain, in_game toggle arms, options_action
+  - [x] 3. Input migration: escape chain, in_game toggle arms, options_action
         modal arms (open_settings / open_credits / editor browser / load-save
         toggle), right-click inspect → events; pause gates + `view()` +
         console reads move to `GameState.ui_surfaces`; the live-loop wholesale
-        reset splits (class-1 closing → `transitionScreen` / `start_level` /
-        `start_hub`); `UiState` loses the class-1 fields; test updates
-        (input_tests_escape / input_tests_console / view tests).
+        reset splits (class-1 closing → `transitionScreen`, which every
+        world install routes through); `UiState` loses the class-1 fields;
+        test updates (input_tests_escape / input_tests_console / view tests,
+        + the right-click release→event + transitionScreen-closes pins) —
+        DONE.
   - [ ] 4. Editor picker migration: `Editor.picker` + the
         `editor_open_picker` / `editor_close_picker` events + the picker input
         arms + UI readers. `editor_footprint_draft` STAYS UiState (class 4 —

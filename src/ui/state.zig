@@ -1,7 +1,11 @@
-//! UI interaction state: `UiState` (open panels/overlays, drag + click
-//! + marquee lifecycles, the editor picker target + footprint draft,
-//! inspector/metadata scroll + expansion) and its satellite types. Lives
-//! on `SessionState`, off the undo timeline. See DESIGN → UI Framework.
+//! UI interaction state: `UiState` — classes 2–4 of the UI state
+//! classification (view affordances: tabs, expansion, in-panel selection;
+//! scroll offsets; gesture lifecycles: drag + click + marquee + text/
+//! keybind edit buffers + the footprint draft) and its satellite types.
+//! Lives on `SessionState`, off the undo timeline. The class-1 SEMANTIC
+//! SURFACE state (what's open — panels, modals, pickers) lives on
+//! GameState (`types.UiSurfaceState`), event-driven. See DESIGN → UI
+//! Framework → UI state classification.
 
 const std = @import("std");
 const types = @import("../types.zig");
@@ -13,23 +17,12 @@ const ScreenPosition = types.ScreenPosition;
 const SlotRef = element.SlotRef;
 const TextEditState = text_input.TextEditState;
 
-// UI state — lives on GameState, tracks what's open
+// UI state — classes 2–4 of the UI state classification (see DESIGN → UI
+// Framework → UI state classification): view affordances, scrolls, and
+// gesture lifecycles. The class-1 SEMANTIC SURFACE state (what's open —
+// panels, modals, the editor picker) lives on GameState (`types.zig`
+// `UiSurfaceState` / `Editor.picker`), event-driven, on the undo timeline.
 // ============================================================
-
-pub const MiddlePanelId = enum {
-    inventory,
-    gear,
-    skills,
-    entity_inspect,
-};
-
-pub const FullScreenOverlayId = enum {
-    world_map,
-    full_combat_log,
-};
-
-pub const max_middle_panels = 4;
-pub const max_full_screen_overlays = 2;
 
 /// Which field the editor's centered picker is assigning (see
 /// DESIGN → Architecture → Level Editor → Editor UI layout — the
@@ -75,42 +68,6 @@ pub const editor_inspector_section_count: usize =
     @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len;
 
 pub const UiState = struct {
-    /// Middle section panels, ordered by open time (first opened =
-    /// leftmost). The open panels always occupy a contiguous prefix of the
-    /// slots (closing compacts), so slot order IS display order and a
-    /// reopened panel lands rightmost instead of recalling its pre-close
-    /// slot.
-    open_middle_panels: [max_middle_panels]?MiddlePanelId = .{null} ** max_middle_panels,
-
-    /// Full-screen overlays that can stack (world map, full combat log).
-    open_full_screen_overlays: [max_full_screen_overlays]?FullScreenOverlayId = .{null} ** max_full_screen_overlays,
-
-    /// Options menu is separate — always on top, locks input.
-    options_menu_open: bool = false,
-
-    /// Load-save browser (main menu, full screen). Like the options menu
-    /// it's a modal overlay; the panel itself blocks input to the main-menu
-    /// buttons behind it. Auto-cleared by the screen-transition UI reset
-    /// when a load succeeds (screen leaves main_menu).
-    load_save_menu_open: bool = false,
-
-    /// Credits screen (main menu, full screen). Modal overlay like the
-    /// load-save browser; the panel blocks input to the main-menu buttons
-    /// behind it. Toggled by the `.open_credits` action (the Credits button
-    /// opens, the Back button closes — same action, toggle semantics).
-    /// Auto-cleared by the screen-transition UI reset.
-    credits_open: bool = false,
-
-    /// Settings screen (full screen). Modal overlay; opens ON TOP OF the
-    /// options menu (in-game, via the options-menu "Settings" button) or
-    /// directly over the main menu (via the main-menu "Settings" button).
-    /// Back button closes it. The options menu stays open underneath when
-    /// opened in-game, so its top-of-`update()` gate keeps the world paused
-    /// — no separate gating for this overlay. Toggled by `Action.open_settings`.
-    /// Auto-cleared by the screen-transition UI reset. See DESIGN → UI
-    /// Framework → Settings screen.
-    settings_open: bool = false,
-
     /// Which content tab the open settings screen shows (Settings /
     /// Keybinds). A view affordance — direct UiState write, off the undo
     /// timeline (the editor-browser tab convention). A tab switch resets
@@ -167,9 +124,6 @@ pub const UiState = struct {
     /// `buildEditorThemePicker` (the load-save scroll's split). Off the
     /// undo timeline like the other scrolls.
     editor_theme_picker_scroll_offset: i32 = 0,
-
-    /// Which entity is being inspected (for entity inspect panel).
-    inspected_entity_index: ?u32 = null,
 
     /// Middle section horizontal scroll offset (for when panels exceed width).
     middle_section_scroll_offset: i32 = 0,
@@ -268,16 +222,6 @@ pub const UiState = struct {
     /// shipped ones).
     editor_picker_sprite_tab: types.EditorSpritePickerTab = .mission_local,
 
-    /// Editor browser (the main-menu Editor button, the options-menu Open
-    /// Mission button / ctrl+O): a full-screen modal over the editor OR
-    /// the main menu, mirroring the load-save browser. Like the options
-    /// menu it locks input (the input layer gates on it); the panel itself
-    /// blocks input to the UI behind it. Auto-cleared by the
-    /// screen-transition UI reset — open_editor bumps world_generation on
-    /// every successful open, so the reset fires even editor-to-editor.
-    /// See DESIGN → Architecture → Level Editor → The editor browser.
-    editor_browser_open: bool = false,
-
     /// Which editor kind the browser is showing (the kind tab row —
     /// Mission today; Hub / Campaign append when those editors land).
     /// View affordance — a direct UiState write, off the undo timeline
@@ -354,68 +298,6 @@ pub const UiState = struct {
     /// set lives on SessionState (`editor_tile_drag_visited`). While set,
     /// the idle-input tile arm defers (the gesture owns the press).
     editor_tile_drag: bool = false,
-
-    pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
-        // If already open, close it and compact the remaining panels down
-        // (the contiguous-prefix invariant above).
-        for (&self.open_middle_panels) |*slot| {
-            if (slot.*) |open| {
-                if (open == panel_id) {
-                    slot.* = null;
-                    var write_index: usize = 0;
-                    for (self.open_middle_panels) |maybe_panel| {
-                        if (maybe_panel) |remaining| {
-                            self.open_middle_panels[write_index] = remaining;
-                            write_index += 1;
-                        }
-                    }
-                    while (write_index < max_middle_panels) : (write_index += 1) {
-                        self.open_middle_panels[write_index] = null;
-                    }
-                    return;
-                }
-            }
-        }
-        // Not open — append after the last open panel (rightmost in display
-        // order). No-op when all slots are open.
-        var target_index: usize = 0;
-        for (self.open_middle_panels, 0..) |maybe_panel, index| {
-            if (maybe_panel != null) target_index = index + 1;
-        }
-        if (target_index < max_middle_panels) {
-            self.open_middle_panels[target_index] = panel_id;
-        }
-    }
-
-    /// Whether `panel_id` is currently open. The read-side companion of
-    /// `toggleMiddlePanel` (view-side producers, e.g. the inspected-entity
-    /// aggro outline, need to know a panel is showing without walking the
-    /// slot array themselves).
-    pub fn isMiddlePanelOpen(self: *const UiState, panel_id: MiddlePanelId) bool {
-        for (self.open_middle_panels) |maybe_panel| {
-            if (maybe_panel) |open| {
-                if (open == panel_id) return true;
-            }
-        }
-        return false;
-    }
-
-    pub fn toggleFullScreenOverlay(self: *UiState, overlay_id: FullScreenOverlayId) void {
-        for (&self.open_full_screen_overlays) |*slot| {
-            if (slot.*) |open| {
-                if (open == overlay_id) {
-                    slot.* = null;
-                    return;
-                }
-            }
-        }
-        for (&self.open_full_screen_overlays) |*slot| {
-            if (slot.* == null) {
-                slot.* = overlay_id;
-                return;
-            }
-        }
-    }
 };
 
 
@@ -533,70 +415,3 @@ pub const EditorMoveDrag = struct {
     promoted: bool,
     selected_at_press: bool,
 };
-
-
-test "toggleMiddlePanel: open order is display order; reopen lands rightmost" {
-    const Panels = [max_middle_panels]?MiddlePanelId;
-    var ui_state = UiState{};
-
-    // Open order = slot order (leftmost first).
-    ui_state.toggleMiddlePanel(.inventory);
-    ui_state.toggleMiddlePanel(.skills);
-    try std.testing.expectEqual(
-        Panels{ .inventory, .skills, null, null },
-        ui_state.open_middle_panels,
-    );
-
-    // Closing a middle panel compacts the rest (contiguous prefix).
-    ui_state.toggleMiddlePanel(.inventory);
-    try std.testing.expectEqual(
-        Panels{ .skills, null, null, null },
-        ui_state.open_middle_panels,
-    );
-
-    // Reopening appends rightmost — it does not recall its pre-close slot.
-    ui_state.toggleMiddlePanel(.inventory);
-    try std.testing.expectEqual(
-        Panels{ .skills, .inventory, null, null },
-        ui_state.open_middle_panels,
-    );
-
-    // Closing the rightmost panel leaves the prefix intact.
-    ui_state.toggleMiddlePanel(.inventory);
-    try std.testing.expectEqual(
-        Panels{ .skills, null, null, null },
-        ui_state.open_middle_panels,
-    );
-    ui_state.toggleMiddlePanel(.skills);
-    try std.testing.expectEqual(
-        Panels{ null, null, null, null },
-        ui_state.open_middle_panels,
-    );
-}
-
-test "toggleMiddlePanel: a full panel strip ignores a new open" {
-    const Panels = [max_middle_panels]?MiddlePanelId;
-    var ui_state = UiState{};
-    for ([_]MiddlePanelId{ .inventory, .gear, .skills, .entity_inspect }) |panel_id| {
-        ui_state.toggleMiddlePanel(panel_id);
-    }
-    // All four are open — a fifth panel id cannot be stored, so this
-    // close-then-reopen pair must not clobber anything.
-    ui_state.toggleMiddlePanel(.inventory);
-    try std.testing.expectEqual(
-        Panels{ .gear, .skills, .entity_inspect, null },
-        ui_state.open_middle_panels,
-    );
-    ui_state.toggleMiddlePanel(.inventory);
-    try std.testing.expectEqual(
-        Panels{ .gear, .skills, .entity_inspect, .inventory },
-        ui_state.open_middle_panels,
-    );
-    // The strip is full again; toggling a panel that is already open still
-    // closes it, and the freed slot is usable.
-    ui_state.toggleMiddlePanel(.entity_inspect);
-    try std.testing.expectEqual(
-        Panels{ .gear, .skills, .inventory, null },
-        ui_state.open_middle_panels,
-    );
-}

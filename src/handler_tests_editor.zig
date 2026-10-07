@@ -8018,7 +8018,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_browser_open);
+    try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     try testing.expect(history.session.editor_official_missions.len > 0);
@@ -8026,12 +8026,12 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
 
     // The browser opens ON TOP of the options menu (the settings-screen
     // stacking): Escape steps back one layer — only the browser closes.
-    history.session.ui_state.options_menu_open = true;
+    history.current_state.ui_surfaces.options_menu_open = true;
     input_handlers.handleAnytimeInput(&history, .{
         .escape = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_browser_open);
-    try testing.expect(history.session.ui_state.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
+    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
 
     // Re-toggle while a stale scroll + tab linger: both reset on open.
     history.session.ui_state.editor_mission_scroll_offset = 7;
@@ -8039,13 +8039,13 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_browser_open);
+    try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_browser_open);
+    try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 
     // Reachable screens: the toggle ALSO opens from the main menu (the
     // Editor button's entry path — same scan + reset-on-open).
@@ -8054,18 +8054,18 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_browser_open);
+    try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_browser_open);
+    try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 
     // Every other screen no-ops (the save_editor_mission discipline).
     history.current_state.screen = .hub;
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_browser_open);
+    try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 }
 
 test "mission browser: row click opens the mission, tab switch resets scroll, wheel scrolls rows" {
@@ -8119,14 +8119,14 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(types.EditorKind.mission, history.session.ui_state.editor_browser_kind);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
-    history.session.ui_state.editor_browser_open = false;
+    history.current_state.ui_surfaces.editor_browser_open = false;
     history.session.ui_state.editor_mission_scroll_offset = 5;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_kind_tab,
         .clicked_editor_kind = .mission,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(i32, 5), history.session.ui_state.editor_mission_scroll_offset);
-    history.session.ui_state.editor_browser_open = true;
+    history.current_state.ui_surfaces.editor_browser_open = true;
 
     // The row click: pushes open_editor with the row's path and drains —
     // the editor swaps to the opened mission, world_generation bumps (the
@@ -8178,7 +8178,7 @@ test "mission import: a picked zip extracts into missions/, the row appears, the
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_browser_open);
+    try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
 
     // The row: name + the save-convention dir path derived from the zip's

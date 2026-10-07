@@ -924,17 +924,21 @@ fn dumpUiText(
     var buffer: std.ArrayList(u8) = .empty;
     const session = &history.session;
     const ui_state = &session.ui_state;
-    buffer.print(allocator, "options_menu_open: {}\n", .{ui_state.options_menu_open}) catch
+    // Class-1 surface state lives on GameState (see DESIGN → UI Framework
+    // → UI state classification); the classes-2–4 view state below stays on
+    // SessionState.
+    const ui_surfaces = &history.current_state.ui_surfaces;
+    buffer.print(allocator, "options_menu_open: {}\n", .{ui_surfaces.options_menu_open}) catch
         @panic("failed to format ui dump");
-    buffer.print(allocator, "settings_open: {}\n", .{ui_state.settings_open}) catch
+    buffer.print(allocator, "settings_open: {}\n", .{ui_surfaces.settings_open}) catch
         @panic("failed to format ui dump");
     buffer.print(allocator, "settings_tab: {s}\n", .{@tagName(ui_state.settings_tab)}) catch
         @panic("failed to format ui dump");
-    buffer.print(allocator, "credits_open: {}\n", .{ui_state.credits_open}) catch
+    buffer.print(allocator, "credits_open: {}\n", .{ui_surfaces.credits_open}) catch
         @panic("failed to format ui dump");
-    buffer.print(allocator, "load_save_menu_open: {}\n", .{ui_state.load_save_menu_open}) catch
+    buffer.print(allocator, "load_save_menu_open: {}\n", .{ui_surfaces.load_save_menu_open}) catch
         @panic("failed to format ui dump");
-    buffer.print(allocator, "editor_browser_open: {}\n", .{ui_state.editor_browser_open}) catch
+    buffer.print(allocator, "editor_browser_open: {}\n", .{ui_surfaces.editor_browser_open}) catch
         @panic("failed to format ui dump");
     buffer.print(allocator, "keybind_scroll_offset: {d}\n", .{ui_state.keybind_scroll_offset}) catch
         @panic("failed to format ui dump");
@@ -1376,8 +1380,9 @@ test "dumpText: projections report the state they are handed" {
     try std_testing.expect(std.mem.indexOf(u8, state_text, "screen: main_menu") != null);
     try std_testing.expect(std.mem.indexOf(u8, state_text, "entities: none (no world)") != null);
 
-    // ui: reflects the session's UI flags.
-    history.session.ui_state.options_menu_open = true;
+    // ui: reflects the surface state (GameState) + the view flags
+    // (SessionState).
+    history.current_state.ui_surfaces.options_menu_open = true;
     history.session.ui_state.keybind_scroll_offset = 4;
     const ui_text = dumpText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);

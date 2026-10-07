@@ -105,7 +105,7 @@ pub fn view(
         buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
         buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
-        buildInspectedAggroOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
+        buildInspectedAggroOutline(&tile_overlays, frame_allocator, level, &current_state.ui_surfaces, active_theme, camera, camera_zoom);
         if (level.level_end) |end_position| {
             ground_entries.append(frame_allocator, .{
                 .sort_y = end_position.y,
@@ -510,8 +510,8 @@ pub fn view(
     // Options menu: full-screen modal panel with a context-specific button
     // stack. Drawn on top of normal UI (bottom/top bars) but under the error
     // popup (which is the most-modal surface). Pure over
-    // SessionState.ui_state.options_menu_open. See DESIGN → UI Framework.
-    if (session.ui_state.options_menu_open) {
+    // GameState.ui_surfaces.options_menu_open. See DESIGN → UI Framework.
+    if (current_state.ui_surfaces.options_menu_open) {
         ui.buildOptionsMenu(
             &ui_elements,
             frame_allocator,
@@ -532,7 +532,7 @@ pub fn view(
     // lives on SessionState (scanned from the input path — view stays
     // file-free; see SessionState.save_files).
     if (current_state.screen == .main_menu) {
-        if (session.ui_state.load_save_menu_open) {
+        if (current_state.ui_surfaces.load_save_menu_open) {
             ui.buildLoadSavePanel(
                 &ui_elements,
                 frame_allocator,
@@ -546,7 +546,7 @@ pub fn view(
 
         // Modal like the load-save browser — the panel blocks input to the
         // buttons behind it.
-        if (session.ui_state.credits_open) {
+        if (current_state.ui_surfaces.credits_open) {
             ui.buildCreditsPanel(
                 &ui_elements,
                 frame_allocator,
@@ -610,7 +610,7 @@ pub fn view(
     // menu Settings button). Drawn under the error popup so a recoverable
     // error still surfaces on top. `blocks_input` panel shields the surface
     // behind it. See DESIGN → UI Framework → Settings screen.
-    if (session.ui_state.settings_open) {
+    if (current_state.ui_surfaces.settings_open) {
         ui.buildSettingsPanel(
             &ui_elements,
             frame_allocator,
@@ -635,7 +635,7 @@ pub fn view(
     // most-modal surface). The lists live on SessionState (scanned from
     // the input path when the browser opens — view stays file-free; see
     // SessionState.editor_local_missions).
-    if (session.ui_state.editor_browser_open) {
+    if (current_state.ui_surfaces.editor_browser_open) {
         ui.buildEditorBrowser(
             &ui_elements,
             frame_allocator,
@@ -797,7 +797,6 @@ fn middleSectionRect() Rectangle {
 /// the two stay in lockstep.
 fn middlePanelWidth(
     panel_id: ui.MiddlePanelId,
-    session: *const state.SessionState,
     current_state: *const GameState,
     font_metrics: ui.FontMetrics,
 ) ?i32 {
@@ -811,7 +810,7 @@ fn middlePanelWidth(
         // press site gates NEW inspects on alive; this only hides a target
         // that died while inspected.
         .entity_inspect => blk: {
-            const entity_index = session.ui_state.inspected_entity_index orelse break :blk null;
+            const entity_index = current_state.ui_surfaces.inspected_entity_index orelse break :blk null;
             const level = current_state.level orelse break :blk null;
             if (entity_index >= level.entities.len) break :blk null;
             if (level.entities[entity_index].current_health == 0) break :blk null;
@@ -825,15 +824,14 @@ fn middlePanelWidth(
 /// panels) — the x extent the camera clamp region excludes. 0 when nothing
 /// renders.
 fn middlePanelsOccupiedWidth(
-    session: *const state.SessionState,
     current_state: *const GameState,
     font_metrics: ui.FontMetrics,
 ) i32 {
     var occupied: i32 = 0;
     var rendered: u32 = 0;
-    for (session.ui_state.open_middle_panels) |maybe_panel| {
+    for (current_state.ui_surfaces.open_middle_panels) |maybe_panel| {
         const panel_id = maybe_panel orelse continue;
-        const panel_width = middlePanelWidth(panel_id, session, current_state, font_metrics) orelse continue;
+        const panel_width = middlePanelWidth(panel_id, current_state, font_metrics) orelse continue;
         if (rendered > 0) occupied += ui.ui_gap;
         occupied += panel_width;
         rendered += 1;
@@ -863,9 +861,9 @@ fn buildMiddlePanels(
 ) !void {
     const section = middleSectionRect();
     var cursor_x: i32 = 0;
-    for (session.ui_state.open_middle_panels) |maybe_panel| {
+    for (current_state.ui_surfaces.open_middle_panels) |maybe_panel| {
         const panel_id = maybe_panel orelse continue;
-        const panel_width = middlePanelWidth(panel_id, session, current_state, font_metrics) orelse continue;
+        const panel_width = middlePanelWidth(panel_id, current_state, font_metrics) orelse continue;
         const bounds = Rectangle{
             .x = cursor_x,
             .y = section.y,
@@ -933,7 +931,7 @@ fn buildMiddlePanels(
             .entity_inspect => {
                 // `middlePanelWidth` returned non-null above, so the target
                 // resolves (fail-fast unwrap, the level-handler precedent).
-                const entity_index = session.ui_state.inspected_entity_index.?;
+                const entity_index = current_state.ui_surfaces.inspected_entity_index.?;
                 const level = current_state.level.?;
                 const entity = level.entities[entity_index];
                 try ui.buildEntityInspectPanel(
@@ -1207,7 +1205,6 @@ const camera_pan_void_tiles: i32 = 4;
 /// camera). Null outside levels/hubs/the editor. See DESIGN → Platform
 /// Seam → Camera clamping.
 pub fn cameraViewRegion(
-    session: *const state.SessionState,
     current_state: *const GameState,
     font_metrics: ui.FontMetrics,
     zoom: f32,
@@ -1218,7 +1215,7 @@ pub fn cameraViewRegion(
     }
     if (current_state.screen != .level and current_state.screen != .hub) return null;
     if (current_state.level == null and current_state.hub == null) return null;
-    return cameraViewRegionFor(middlePanelsOccupiedWidth(session, current_state, font_metrics), zoom);
+    return cameraViewRegionFor(middlePanelsOccupiedWidth(current_state, font_metrics), zoom);
 }
 
 /// Pure core of `cameraViewRegion`. The panels' occupied width is dropped
@@ -2905,13 +2902,13 @@ fn buildInspectedAggroOutline(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
     level: *const types.Level,
-    session: *const state.SessionState,
+    surfaces: *const types.UiSurfaceState,
     active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
 ) void {
-    if (!session.ui_state.isMiddlePanelOpen(.entity_inspect)) return;
-    const entity_index = session.ui_state.inspected_entity_index orelse return;
+    if (!surfaces.isMiddlePanelOpen(.entity_inspect)) return;
+    const entity_index = surfaces.inspected_entity_index orelse return;
     if (entity_index >= level.entities.len) return;
     const entity = level.entities[entity_index];
     // The panel's dead-target gate (see the .entity_inspect view arm): a
@@ -3398,11 +3395,10 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
     // Case 1: panel open + entity 1 inspected -> aggro_outline, extent 7.
     {
         const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
-        var session = state.SessionState{};
-        session.ui_state.toggleMiddlePanel(.entity_inspect);
-        session.ui_state.inspected_entity_index = 1;
+        var surfaces = types.UiSurfaceState{};
+        surfaces.inspectEntity(1);
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &surfaces, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
         const ov = overlays.items[0];
         try std.testing.expectEqual(types.TileOverlayType.aggro_outline, ov.overlay_type);
@@ -3413,20 +3409,20 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
     // Case 2: panel closed -> no outline (even with an inspected index set).
     {
         const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
-        var session = state.SessionState{};
-        session.ui_state.inspected_entity_index = 1;
+        var surfaces = types.UiSurfaceState{};
+        surfaces.inspected_entity_index = 1;
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &surfaces, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 
     // Case 3: panel open but no inspected entity -> no outline.
     {
         const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
-        var session = state.SessionState{};
-        session.ui_state.toggleMiddlePanel(.entity_inspect);
+        var surfaces = types.UiSurfaceState{};
+        surfaces.toggle(.entity_inspect);
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &surfaces, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 
@@ -3434,11 +3430,10 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
     // no crash.
     {
         const state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
-        var session = state.SessionState{};
-        session.ui_state.toggleMiddlePanel(.entity_inspect);
-        session.ui_state.inspected_entity_index = 9;
+        var surfaces = types.UiSurfaceState{};
+        surfaces.inspectEntity(9);
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &surfaces, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 }
@@ -4348,7 +4343,7 @@ test "middle panel width: inspect panel renders only for a live in-range target"
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
     const level = types.Level{ .entities = &entities };
-    const level_state = GameState{
+    var level_state = GameState{
         .screen = .level,
         .event_stack = &.{},
         .player_data = .{},
@@ -4372,40 +4367,39 @@ test "middle panel width: inspect panel renders only for a live in-range target"
         .level = null,
         .hub = types.Hub{},
     };
-    var session = state.SessionState{};
 
-    session.ui_state.inspected_entity_index = 0;
+    level_state.ui_surfaces.inspected_entity_index = 0;
     try std.testing.expectEqual(
         ui.entity_inspect_panel_width,
-        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+        middlePanelWidth(.entity_inspect, &level_state, font_metrics),
     );
     // Dead target: no panel, no space.
-    session.ui_state.inspected_entity_index = 1;
+    level_state.ui_surfaces.inspected_entity_index = 1;
     try std.testing.expectEqual(
         @as(?i32, null),
-        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+        middlePanelWidth(.entity_inspect, &level_state, font_metrics),
     );
     // Out-of-range target index: no panel.
-    session.ui_state.inspected_entity_index = 5;
+    level_state.ui_surfaces.inspected_entity_index = 5;
     try std.testing.expectEqual(
         @as(?i32, null),
-        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+        middlePanelWidth(.entity_inspect, &level_state, font_metrics),
     );
     // Inspect is level-only: a hub screen reserves no space.
-    session.ui_state.inspected_entity_index = 0;
+    level_state.ui_surfaces.inspected_entity_index = 0;
     try std.testing.expectEqual(
         @as(?i32, null),
-        middlePanelWidth(.entity_inspect, &session, &hub_state, font_metrics),
+        middlePanelWidth(.entity_inspect, &hub_state, font_metrics),
     );
 
     // The unconditional panels have fixed widths.
     try std.testing.expectEqual(
         @as(?i32, ui.inventory_panel_width),
-        middlePanelWidth(.inventory, &session, &level_state, font_metrics),
+        middlePanelWidth(.inventory, &level_state, font_metrics),
     );
     try std.testing.expectEqual(
         @as(?i32, ui.skills_panel_width),
-        middlePanelWidth(.skills, &session, &level_state, font_metrics),
+        middlePanelWidth(.skills, &level_state, font_metrics),
     );
 }
 
@@ -4413,7 +4407,7 @@ test "middle panels occupied width: gaps only between rendered panels" {
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
     const level = types.Level{ .entities = &entities };
-    const level_state = GameState{
+    var level_state = GameState{
         .screen = .level,
         .event_stack = &.{},
         .player_data = .{},
@@ -4425,35 +4419,34 @@ test "middle panels occupied width: gaps only between rendered panels" {
         .level = level,
         .hub = null,
     };
-    var session = state.SessionState{};
 
     // Two rendered panels: one ui_gap between them.
-    session.ui_state.open_middle_panels = .{ .inventory, .skills, null, null };
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .skills, null, null };
     try std.testing.expectEqual(
         ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
-        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+        middlePanelsOccupiedWidth(&level_state, font_metrics),
     );
 
     // A dead inspect target renders nothing, so it contributes neither
     // width nor a gap on either side.
-    session.ui_state.inspected_entity_index = 1;
-    session.ui_state.open_middle_panels = .{ .inventory, .entity_inspect, .skills, null };
+    level_state.ui_surfaces.inspected_entity_index = 1;
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, .entity_inspect, .skills, null };
     try std.testing.expectEqual(
         ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
-        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+        middlePanelsOccupiedWidth(&level_state, font_metrics),
     );
 
     // A live inspect target: width plus the gap.
-    session.ui_state.inspected_entity_index = 0;
+    level_state.ui_surfaces.inspected_entity_index = 0;
     try std.testing.expectEqual(
         ui.inventory_panel_width + 2 * ui.ui_gap + ui.skills_panel_width + ui.entity_inspect_panel_width,
-        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+        middlePanelsOccupiedWidth(&level_state, font_metrics),
     );
 }
 
 test "camera view region: bars bound vertically, panels bound horizontally" {
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
-    const level_state = GameState{
+    var level_state = GameState{
         .screen = .level,
         .event_stack = &.{},
         .player_data = .{},
@@ -4465,10 +4458,9 @@ test "camera view region: bars bound vertically, panels bound horizontally" {
         .level = types.Level{},
         .hub = null,
     };
-    var session = state.SessionState{};
 
     // No panels: the full band between the bars.
-    const full = cameraViewRegion(&session, &level_state, font_metrics, 1.0).?;
+    const full = cameraViewRegion(&level_state, font_metrics, 1.0).?;
     try std.testing.expectEqual(types.Rectangle{
         .x = 0,
         .y = ui.top_bar_height,
@@ -4477,8 +4469,8 @@ test "camera view region: bars bound vertically, panels bound horizontally" {
     }, full);
 
     // Panels open: the region starts at the occupied right edge.
-    session.ui_state.open_middle_panels = .{ .inventory, null, null, null };
-    const occupied = cameraViewRegion(&session, &level_state, font_metrics, 1.0).?;
+    level_state.ui_surfaces.open_middle_panels = .{ .inventory, null, null, null };
+    const occupied = cameraViewRegion(&level_state, font_metrics, 1.0).?;
     try std.testing.expectEqual(ui.inventory_panel_width, occupied.x);
     try std.testing.expectEqual(types.reference_width - ui.inventory_panel_width, occupied.width);
     // The vertical bounds are the same either way.
@@ -4545,11 +4537,10 @@ test "camera view region: null outside levels, hubs, and the editor" {
         .level = null,
         .hub = null,
     };
-    var session = state.SessionState{};
 
     try std.testing.expectEqual(
         @as(?types.Rectangle, null),
-        cameraViewRegion(&session, &main_menu_state, font_metrics, 1.0),
+        cameraViewRegion(&main_menu_state, font_metrics, 1.0),
     );
 
     // The editor viewport gets the same band as the game (top row + tool
@@ -4562,7 +4553,7 @@ test "camera view region: null outside levels, hubs, and the editor" {
             .width = types.reference_width,
             .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
         },
-        cameraViewRegion(&session, &editor_state, font_metrics, 1.0).?,
+        cameraViewRegion(&editor_state, font_metrics, 1.0).?,
     );
 
     // A hub screen gets the same full band as a level.
@@ -4585,7 +4576,7 @@ test "camera view region: null outside levels, hubs, and the editor" {
             .width = types.reference_width,
             .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
         },
-        cameraViewRegion(&session, &hub_state, font_metrics, 1.0).?,
+        cameraViewRegion(&hub_state, font_metrics, 1.0).?,
     );
 }
 
@@ -5173,7 +5164,7 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
     const arena = backing.allocator();
     var harness = test_harness.Harness.init(arena);
 
-    const main_menu_state = GameState{
+    var main_menu_state = GameState{
         .screen = .main_menu,
         .event_stack = &.{},
         .player_data = .{},
@@ -5186,8 +5177,8 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
         .hub = null,
     };
     var session = state.SessionState{};
-    session.ui_state.options_menu_open = true;
-    session.ui_state.credits_open = true;
+    main_menu_state.ui_surfaces.options_menu_open = true;
+    main_menu_state.ui_surfaces.credits_open = true;
 
     const view_state = view(
         &main_menu_state,
@@ -5313,7 +5304,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     // settings screen < editor browser < error popup < top bar < tooltip
     // < FPS label.
     {
-        const main_menu_state = GameState{
+        var main_menu_state = GameState{
             .screen = .main_menu,
             .event_stack = &.{},
             .player_data = .{},
@@ -5326,11 +5317,11 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
             .hub = null,
         };
         var session = state.SessionState{};
-        session.ui_state.options_menu_open = true;
-        session.ui_state.load_save_menu_open = true;
-        session.ui_state.credits_open = true;
-        session.ui_state.settings_open = true;
-        session.ui_state.editor_browser_open = true;
+        main_menu_state.ui_surfaces.options_menu_open = true;
+        main_menu_state.ui_surfaces.load_save_menu_open = true;
+        main_menu_state.ui_surfaces.credits_open = true;
+        main_menu_state.ui_surfaces.settings_open = true;
+        main_menu_state.ui_surfaces.editor_browser_open = true;
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 
@@ -5390,9 +5381,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         var level_state = test_harness.levelStateWithEntities(arena, &.{dead_player}, &.{});
         level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
         var session = state.SessionState{};
-        session.ui_state.options_menu_open = true;
-        session.ui_state.settings_open = true;
-        session.ui_state.editor_browser_open = true;
+        level_state.ui_surfaces.options_menu_open = true;
+        level_state.ui_surfaces.settings_open = true;
+        level_state.ui_surfaces.editor_browser_open = true;
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 

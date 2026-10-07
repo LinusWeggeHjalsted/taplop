@@ -97,8 +97,12 @@ pub const WaitState = struct {
 
 // Transient view/input state. Deliberately NOT part of the undoable GameState:
 // it never affects gameplay outcomes and is not reconstructed by event replay.
-// Lives on GameStateHistory alongside settings. UI panels are reset on screen
-// transition by the live loop (see gameLoop), not by an event.
+// Lives on GameStateHistory alongside settings. This is classes 2–4 of the
+// UI state classification (view affordances, scrolls, gesture lifecycles —
+// see DESIGN → UI Framework → UI state classification); the class-1 SEMANTIC
+// SURFACE state lives on GameState (`ui_surfaces`, event-driven). These
+// classes reset wholesale on screen/world change in the live loop (see
+// gameLoop), not by an event.
 //
 // `tile_cursor` is the tile currently under the logical cursor (mouse or
 // arrow-key driven). It lives here, not on GameState, because it is transient
@@ -686,6 +690,16 @@ pub const GameState = struct {
     /// previous screen (e.g. level events lingering after exit to menu).
     pub fn transitionScreen(self: *GameState, new_screen: Screen) void {
         self.event_stack = &.{};
+
+        // Close every UI surface — class-1 surface state lives on
+        // GameState, so the close runs HERE (inside the handlers that
+        // install worlds / change screens) for replay to reproduce it;
+        // the classes-2–4 wholesale reset stays in the live loop. Every
+        // world install routes through this (start_level / start_hub /
+        // start_playtest call it even when the screen enum stays the
+        // same), so same-screen world swaps close surfaces too. See
+        // DESIGN → UI Framework → UI state classification.
+        self.ui_surfaces.closeAll();
 
         const old_scope = self.screen.scope();
         const new_scope = new_screen.scope();
@@ -2755,6 +2769,32 @@ fn historyForTimelineTest(allocator: std.mem.Allocator) GameStateHistory {
     history.idle_points.append(arena, 2) catch unreachable;
     history.idle_points.append(arena, 5) catch unreachable;
     return history;
+}
+
+test "transitionScreen closes every UI surface" {
+    // The class-1 surface state lives on GameState, so its screen/world-
+    // change reset runs INSIDE the handlers (transitionScreen + the
+    // start_* world installs), not the live loop — replay reproduces it.
+    // See DESIGN → UI Framework → UI state classification.
+    var current = GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+        .ui_surfaces = .{
+            .options_menu_open = true,
+            .open_middle_panels = .{ .inventory, .skills, null, null },
+            .inspected_entity_index = 3,
+        },
+    };
+    current.transitionScreen(.main_menu);
+    try std.testing.expectEqual(types.UiSurfaceState{}, current.ui_surfaces);
 }
 
 test "discardFutureTimeline trims the log, idle points, and stale snapshots" {

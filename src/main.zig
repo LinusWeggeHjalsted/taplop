@@ -367,8 +367,8 @@ fn update(
     // pause: drag / camera pan / viewport gestures + idle input are blocked
     // while it's open. Its own interactions were consumed in
     // handleAnytimeInput above.
-    if (history.session.ui_state.options_menu_open or
-        history.session.ui_state.editor_browser_open) return;
+    if (history.current_state.ui_surfaces.options_menu_open or
+        history.current_state.ui_surfaces.editor_browser_open) return;
 
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
@@ -554,7 +554,6 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // tiles through the frame's live camera.
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
     const view_region = view_mod.cameraViewRegion(
-        &history.session,
         &history.current_state,
         backend.fontMetrics(),
         camera_zoom,
@@ -698,18 +697,21 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
         const has_events = history.current_state.event_stack.len > 0;
 
-        // UI panels/drag and the tile cursor are transient view/input state,
-        // not part of the undoable GameState. Reset them whenever the screen
-        // changes OR a new world is installed (start_hub / start_level /
-        // start_playtest all bump world_generation even
-        // when the Screen enum stays the same — e.g. level-to-level keeps
-        // screen == .level, so the screen check alone would leave a stale
-        // tile cursor positioned in the old level's grid; start_validation
-        // chains start_level, so its world installs bump the same way).
-        // undo/redo across
-        // a screen boundary runs through update() too, so both signals fire
-        // there as well. Input state is deliberately left alone — it is live
-        // hardware state.
+        // Classes-2–4 UI state (view affordances, scrolls, gesture
+        // lifecycles), the tile cursor, and the camera/pressed-button
+        // transients are view/input state off the undoable GameState. Reset
+        // them whenever the screen changes OR a new world is installed
+        // (start_hub / start_level / start_playtest all bump
+        // world_generation even when the Screen enum stays the same — e.g.
+        // level-to-level keeps screen == .level, so the screen check alone
+        // would leave a stale tile cursor positioned in the old level's
+        // grid; start_validation chains start_level, so its world installs
+        // bump the same way). undo/redo across a screen boundary runs
+        // through update() too, so both signals fire there as well. The
+        // class-1 SURFACE state is NOT reset here — it lives on GameState
+        // and is closed by the handlers (transitionScreen / start_level /
+        // start_hub), so replay reproduces it. Input state is deliberately
+        // left alone — it is live hardware state.
         if (history.current_state.screen != screen_before_update or
             history.current_state.world_generation != world_generation_before_update)
         {
@@ -846,7 +848,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // off the undoable GameState, so looping anims wave continuously across
     // undo/redo without phase jumps, and pausing freezes anims in place. Read
     // by view() for sprite-animation frame selection. See DESIGN → Animation.
-    if (!history.session.ui_state.options_menu_open and history.session.pending_error == null) {
+    if (!history.current_state.ui_surfaces.options_menu_open and history.session.pending_error == null) {
         history.session.animation_clock +%= delta_microseconds;
     }
 
@@ -902,7 +904,6 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // recomputed too — panels can open/close mid-drain (UiState writes
         // are immediate), and the clamp must match the state being drawn.
         const render_view_region = view_mod.cameraViewRegion(
-            &history.session,
             &history.current_state,
             backend.fontMetrics(),
             camera_zoom,

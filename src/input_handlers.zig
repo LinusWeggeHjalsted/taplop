@@ -907,27 +907,36 @@ fn resetKeybindsToDefaults(history: *GameStateHistory) void {
 
 fn handleEscapeKey(history: *GameStateHistory) void {
     const current = &history.current_state;
-    const ui_state = &history.session.ui_state;
+    const surfaces = &current.ui_surfaces;
 
     // The chain is ordered to mirror the view's z-order (topmost first);
     // the census test in view.zig pins the emission ladder this mirrors.
+    // Every close/open is a `player_toggle_ui_surface` push + drain (the
+    // class-1 surface state rides the undo timeline — see DESIGN → UI
+    // Framework → UI state classification); the immediate drain is what
+    // lets this frame's own options-menu gate below see the flipped state
+    // (the swap_weapons interjection discipline).
 
     // Editor browser (opens over the editor, on top of the options menu,
     // or over the main menu): Escape steps back one layer — only the
     // browser closes. Above the settings screen in the ladder (the
     // browser block emits after it in view()).
-    if (ui_state.editor_browser_open) {
+    if (surfaces.editor_browser_open) {
         queueEscapeSound(history);
-        ui_state.editor_browser_open = false;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = .editor_browser,
+        } });
         return;
     }
 
     // Settings overlay. In-game
     // it opens on top of the options menu, so Escape steps back to the menu
     // underneath — only the settings layer closes.
-    if (ui_state.settings_open) {
+    if (surfaces.settings_open) {
         queueEscapeSound(history);
-        ui_state.settings_open = false;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = .settings,
+        } });
         return;
     }
 
@@ -955,34 +964,42 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Main-menu overlays (load-save browser, credits — both reachable
     // from the main menu's own stack/options menu; they open on top of
     // the options menu, so they sit topmost whenever they're up).
-    if (ui_state.load_save_menu_open) {
+    if (surfaces.load_save_menu_open) {
         queueEscapeSound(history);
-        ui_state.load_save_menu_open = false;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = .load_save_menu,
+        } });
         return;
     }
-    if (ui_state.credits_open) {
+    if (surfaces.credits_open) {
         queueEscapeSound(history);
-        ui_state.credits_open = false;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = .credits,
+        } });
         return;
     }
 
     // Options menu (always-on-top modal): close it, leaving any full-screen
     // overlay beneath it open.
-    if (ui_state.options_menu_open) {
+    if (surfaces.options_menu_open) {
         queueEscapeSound(history);
-        ui_state.options_menu_open = false;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = .options_menu,
+        } });
         return;
     }
 
     // Full-screen overlays (world map, full combat log): close the topmost
     // open one (the last occupied slot draws on top).
-    var topmost_overlay_slot: ?usize = null;
-    for (ui_state.open_full_screen_overlays, 0..) |overlay, slot_index| {
-        if (overlay != null) topmost_overlay_slot = slot_index;
+    var topmost_overlay: ?types.FullScreenOverlayId = null;
+    for (surfaces.open_full_screen_overlays) |maybe_overlay| {
+        if (maybe_overlay) |overlay| topmost_overlay = overlay;
     }
-    if (topmost_overlay_slot) |slot_index| {
+    if (topmost_overlay) |overlay_id| {
         queueEscapeSound(history);
-        ui_state.open_full_screen_overlays[slot_index] = null;
+        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+            .surface = fullScreenOverlaySurfaceId(overlay_id),
+        } });
         return;
     }
 
@@ -990,7 +1007,19 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // — the main menu's carries Settings/Credits/Exit Game instead of the
     // session verbs (see buildOptionsMenu).
     queueEscapeSound(history);
-    ui_state.options_menu_open = true;
+    pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+        .surface = .options_menu,
+    } });
+}
+
+/// Map a full-screen overlay id to its surface-event id (the two enums
+/// name the same surfaces; the overlay enum is the state representation,
+/// the surface enum is the event vocabulary).
+fn fullScreenOverlaySurfaceId(overlay_id: types.FullScreenOverlayId) types.UiSurfaceId {
+    return switch (overlay_id) {
+        .world_map => .world_map,
+        .full_combat_log => .full_combat_log,
+    };
 }
 
 pub fn handleAnytimeInput(
@@ -1082,17 +1111,20 @@ pub fn handleAnytimeInput(
         // on the editor + main-menu screens; every other screen no-ops (the
         // save_editor_mission discipline).
         if (editorBrowserReachableScreen(&history.current_state)) {
-            const ui_state = &history.session.ui_state;
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_editor_browser);
-            ui_state.editor_browser_open = !ui_state.editor_browser_open;
-            if (ui_state.editor_browser_open) {
-                // Fresh view state on every open (the load-save browser's
-                // reset-on-open pattern): scroll to the top + the local tab
-                // (your collection is the primary target), then scan now.
-                ui_state.editor_mission_scroll_offset = 0;
-                ui_state.editor_mission_browser_tab = .local;
+            // Fresh view state on every open (the load-save browser's
+            // reset-on-open pattern): scroll to the top + the local tab
+            // (your collection is the primary target), then scan now —
+            // decided from the pre-toggle state (class-2 view state, direct
+            // writes; the open/close itself is the recorded surface event).
+            if (!history.current_state.ui_surfaces.editor_browser_open) {
+                history.session.ui_state.editor_mission_scroll_offset = 0;
+                history.session.ui_state.editor_mission_browser_tab = .local;
                 mission_io.rescanEditorMissionsNow(history);
             }
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .editor_browser,
+            } });
         }
     }
 
@@ -1197,13 +1229,17 @@ pub fn handleAnytimeInput(
             // over the menu directly. Routed through `options_action` so
             // one handler serves both contexts. See DESIGN → UI Framework
             // → Settings screen.
-            .open_settings => history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
+            .open_settings => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .settings,
+            } }),
             // Credits (the main-menu options menu variant): toggle the
             // overlay — it opens on top of this menu, and the Back button
             // reuses this action to close (the load-save browser's toggle
             // pattern). Routed through `options_action` because idle input
             // is gated while the options menu is open.
-            .open_credits => history.session.ui_state.credits_open = !history.session.ui_state.credits_open,
+            .open_credits => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .credits,
+            } }),
             // Exit Game (the main-menu options menu variant, native only —
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's
@@ -1225,7 +1261,7 @@ pub fn handleAnytimeInput(
             // `resolveKeybindCaptureOutcome`; the builder renders the
             // phases. See DESIGN → UI Framework → Settings screen.
             .edit_keybind => {
-                if (!history.session.ui_state.settings_open) return;
+                if (!history.current_state.ui_surfaces.settings_open) return;
                 if (history.session.ui_state.settings_tab != .keybinds) return;
                 const command = anytime.clicked_keybind_command orelse return;
                 const ui_state = &history.session.ui_state;
@@ -1290,7 +1326,7 @@ pub fn handleAnytimeInput(
             // and an active keybind edit is discarded (a hidden surface
             // must not carry edit state).
             .select_settings_tab => {
-                if (!history.session.ui_state.settings_open) return;
+                if (!history.current_state.ui_surfaces.settings_open) return;
                 const settings_tab = anytime.clicked_settings_tab orelse return;
                 if (history.session.ui_state.settings_tab == settings_tab) return;
                 if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
@@ -2525,7 +2561,7 @@ pub fn handleAnytimeInput(
             // write, off the undo timeline; the scroll resets like a
             // list-tab switch (the other kind's list has its own extent).
             .select_editor_kind_tab => {
-                if (!history.session.ui_state.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.editor_browser_open) return;
                 const kind = anytime.clicked_editor_kind orelse return;
                 history.session.ui_state.editor_browser_kind = kind;
                 history.session.ui_state.editor_mission_scroll_offset = 0;
@@ -2535,7 +2571,7 @@ pub fn handleAnytimeInput(
             // write, off the undo timeline (the sprite-picker tab's
             // convention).
             .select_editor_mission_tab => {
-                if (!history.session.ui_state.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.editor_browser_open) return;
                 const tab = anytime.clicked_editor_mission_tab orelse return;
                 history.session.ui_state.editor_mission_browser_tab = tab;
                 // A tab switch resets the scroll — the other tab's list has
@@ -2552,7 +2588,7 @@ pub fn handleAnytimeInput(
             // surfaces and the browser stays open (the revert restores
             // world_generation, so the transition UI reset never fires).
             .open_editor_mission_row => {
-                if (!history.session.ui_state.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.editor_browser_open) return;
                 const row = anytime.clicked_editor_mission_row orelse return;
                 const missions = switch (history.session.ui_state.editor_mission_browser_tab) {
                     .local => history.session.editor_local_missions,
@@ -2583,7 +2619,7 @@ pub fn handleAnytimeInput(
     // No periodic rescan while open (see SessionState.editor_local_missions).
     // The zip-import marker is polled here: a completed web upload extracts
     // into missions/ + rescans, so the new row appears immediately.
-    if (history.session.ui_state.editor_browser_open) {
+    if (history.current_state.ui_surfaces.editor_browser_open) {
         // The Import trigger (web-only effect at the seam; native no-ops —
         // the button is never emitted there and the binding parses +
         // no-ops, the skip_level discipline).
@@ -2607,7 +2643,7 @@ pub fn handleAnytimeInput(
     // pattern in main's frame). One wheel notch = one row (whole visible
     // rows); lower clamp here, upper clamp authoritative in the builder.
     // The Settings tab has no scrollable content — the wheel no-ops there.
-    if (history.session.ui_state.settings_open and
+    if (history.current_state.ui_surfaces.settings_open and
         history.session.ui_state.settings_tab == .keybinds and
         anytime.scroll_delta != 0)
     {
@@ -2631,7 +2667,7 @@ pub fn handleAnytimeInput(
     }
 
     // When options menu is open, block all other input
-    if (history.session.ui_state.options_menu_open) return;
+    if (history.current_state.ui_surfaces.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
         // Editor palette group under the pointer, if any. Computed up front
@@ -2656,7 +2692,7 @@ pub fn handleAnytimeInput(
         // while it's open belongs to the list — never the camera (which has
         // no meaning on the main menu anyway). Upper clamp is authoritative
         // in the builder; the lower clamp here prevents negative drift.
-        if (history.session.ui_state.load_save_menu_open) {
+        if (history.current_state.ui_surfaces.load_save_menu_open) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.load_save_scroll_offset -= delta_rows;
             if (history.session.ui_state.load_save_scroll_offset < 0) {
@@ -2783,29 +2819,40 @@ pub fn handleAnytimeInput(
     // In-game inputs only apply when in a hub or level
     const current = &history.current_state;
     const allocator = history.current_arena.allocator();
-    const ui_state = &history.session.ui_state;
     if (current.screen == .hub or current.screen == .level) {
         const in_game = anytime.in_game;
 
+        // Middle-panel + overlay toggles: one `player_toggle_ui_surface`
+        // per key (the surface state rides GameState — see DESIGN → UI
+        // Framework → UI state classification). The push+drain is the
+        // swap_weapons interjection shape: processed inside this update
+        // call, so the frame's own gates below see the flipped state.
         if (in_game.toggle_inventory) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_inventory);
-            ui_state.toggleMiddlePanel(.inventory);
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .inventory,
+            } });
         }
 
         if (in_game.toggle_gear) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_gear);
-            ui_state.toggleMiddlePanel(.gear);
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .gear,
+            } });
         }
 
         if (in_game.toggle_skills) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_skills);
-            ui_state.toggleMiddlePanel(.skills);
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .skills,
+            } });
         }
 
         if (in_game.toggle_entity_inspect) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_entity_inspect);
-            ui_state.toggleMiddlePanel(.entity_inspect);
-            ui_state.inspected_entity_index = null;
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .entity_inspect,
+            } });
         }
 
         // Entity inspect is also right-click driven (handleRightClickInspect,
@@ -2813,8 +2860,11 @@ pub fn handleAnytimeInput(
 
         if (in_game.toggle_world_map) {
             if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_world_map);
-            ui_state.toggleFullScreenOverlay(.world_map);
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .world_map,
+            } });
         }
+
         // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
         // dedicated step in update(), after UI arbitration — it needs
         // ui_elements + world tiles, which live in main.zig's world.
@@ -2992,11 +3042,17 @@ pub fn handleIdleInput(
                 // reset the scroll (the list may be stale from a previous
                 // open or never scanned this session).
                 .toggle_load_save_menu => {
-                    history.session.ui_state.load_save_menu_open = !history.session.ui_state.load_save_menu_open;
-                    if (history.session.ui_state.load_save_menu_open) {
+                    // On open, scan now + reset the scroll (the list may be
+                    // stale from a previous open or never scanned this
+                    // session) — decided from the pre-toggle state; the
+                    // open/close itself is the recorded surface event.
+                    if (!history.current_state.ui_surfaces.load_save_menu_open) {
                         history.session.ui_state.load_save_scroll_offset = 0;
                         rescanSaveFilesNow(history);
                     }
+                    pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                        .surface = .load_save_menu,
+                    } });
                 },
                 // A save row was clicked. The row index rode in
                 // clicked_save_row (set by the button-release dispatch in
@@ -3007,7 +3063,7 @@ pub fn handleIdleInput(
                 // Bounds-checked against the current list as a belt-and-
                 // suspenders stale guard.
                 .load_save_row => {
-                    if (!history.session.ui_state.load_save_menu_open) return;
+                    if (!history.current_state.ui_surfaces.load_save_menu_open) return;
                     const row = idle.clicked_save_row orelse return;
                     if (row >= history.session.save_files.len) return;
                     // Dupe the path into the current arena: the session
@@ -3038,7 +3094,7 @@ pub fn handleIdleInput(
         // outside appear live. Both are acquisition steps in idle input —
         // never in an event handler (see DESIGN → Custom Missions for the
         // replay-safety rationale).
-        if (history.session.ui_state.load_save_menu_open) {
+        if (history.current_state.ui_surfaces.load_save_menu_open) {
             pollImportMarker(history);
             rescanSaveFilesIfDue(history);
         }

@@ -612,7 +612,7 @@ pub fn handleSliderDrag(
     ui_elements: []const ui.UiElement,
 ) void {
     const session = &history.session;
-    if (!session.ui_state.settings_open) {
+    if (!history.current_state.ui_surfaces.settings_open) {
         if (session.ui_state.active_slider != null) session.ui_state.active_slider = null;
         return;
     }
@@ -721,20 +721,27 @@ pub fn handleRightClickInspect(
         if (ui_state.pending_right_click) |press| {
             switch (press) {
                 .inspect => |pending| {
-                    if (ui_state.inspected_entity_index) |current_inspected| {
-                        if (current_inspected == pending.entity_index) {
-                            // Same entity — close the panel.
-                            ui_state.toggleMiddlePanel(.entity_inspect);
-                            ui_state.inspected_entity_index = null;
-                        } else {
-                            // Different entity — switch target.
-                            ui_state.inspected_entity_index = pending.entity_index;
-                        }
-                    } else {
-                        // Not inspecting — open the panel.
-                        ui_state.inspected_entity_index = pending.entity_index;
-                        ui_state.toggleMiddlePanel(.entity_inspect);
-                    }
+                    // Resolve the gesture's intent against the current
+                    // surface state (GameState — the entity-inspect surface
+                    // rides the undo timeline): same target → close,
+                    // different → retarget, none → open. One orchestrator
+                    // carries the RESOLVED intent; the update() stack branch
+                    // processes it this frame. See DESIGN → UI Framework →
+                    // UI state classification.
+                    const surfaces = &history.current_state.ui_surfaces;
+                    const resolved: ?u32 =
+                        if (surfaces.isSurfaceOpen(.entity_inspect) and
+                            surfaces.inspected_entity_index == pending.entity_index)
+                            null
+                        else
+                            pending.entity_index;
+                    event_push.pushPlayerAction(
+                        &history.current_state,
+                        .{ .player_inspect_entity = .{
+                            .entity_index = resolved,
+                        } },
+                        history.current_arena.allocator(),
+                    );
                 },
                 else => {},
             }
@@ -1409,4 +1416,56 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
         viewport,
     );
     try std.testing.expect(history.session.ui_state.pending_right_click == null);
+
+    // Release resolution: a clean release on the living entity's tile
+    // pushes `player_inspect_entity` (the resolved intent) — drained, it
+    // opens the entity-inspect surface on that entity. A second
+    // press+release on the SAME entity resolves to CLOSE. See DESIGN →
+    // UI Framework → UI state classification.
+    const event_handlers_mod = @import("event_handlers.zig");
+    const press_release = struct {
+        fn call(
+            history_ptr: *state.GameStateHistory,
+            position: input.PointerPosition,
+        ) void {
+            handleRightClickInspect(
+                history_ptr,
+                .{ .right_pressed = true, .position = position },
+                &.{},
+                camera,
+                1.0,
+                viewport,
+            );
+            handleRightClickInspect(
+                history_ptr,
+                .{ .right_released = true, .position = position },
+                &.{},
+                camera,
+                1.0,
+                viewport,
+            );
+        }
+    }.call;
+
+    const living_tile: types.Vector2 = .{ .x = 1, .y = 1 };
+    press_release(&history, at(living_tile));
+    while (history.current_state.event_stack.len > 0) {
+        event_handlers_mod.processEvent(&history);
+    }
+    try std.testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(
+        @as(?u32, 2),
+        history.current_state.ui_surfaces.inspected_entity_index,
+    );
+
+    // Same entity again — the resolved intent is CLOSE.
+    press_release(&history, at(living_tile));
+    while (history.current_state.event_stack.len > 0) {
+        event_handlers_mod.processEvent(&history);
+    }
+    try std.testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(
+        @as(?u32, null),
+        history.current_state.ui_surfaces.inspected_entity_index,
+    );
 }

@@ -2592,6 +2592,72 @@ pub const UiSurfaceState = struct {
     }
 };
 
+test "UiSurfaceState.toggleMiddlePanel: open order is display order; reopen lands rightmost" {
+    const Panels = [max_middle_panels]?MiddlePanelId;
+    var surfaces = UiSurfaceState{};
+
+    // Open order = slot order (leftmost first).
+    surfaces.toggleMiddlePanel(.inventory);
+    surfaces.toggleMiddlePanel(.skills);
+    try std.testing.expectEqual(
+        Panels{ .inventory, .skills, null, null },
+        surfaces.open_middle_panels,
+    );
+
+    // Closing a middle panel compacts the rest (contiguous prefix).
+    surfaces.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, null, null, null },
+        surfaces.open_middle_panels,
+    );
+
+    // Reopening appends rightmost — it does not recall its pre-close slot.
+    surfaces.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, .inventory, null, null },
+        surfaces.open_middle_panels,
+    );
+
+    // Closing the rightmost panel leaves the prefix intact.
+    surfaces.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .skills, null, null, null },
+        surfaces.open_middle_panels,
+    );
+    surfaces.toggleMiddlePanel(.skills);
+    try std.testing.expectEqual(
+        Panels{ null, null, null, null },
+        surfaces.open_middle_panels,
+    );
+}
+
+test "UiSurfaceState.toggleMiddlePanel: a full panel strip ignores a new open" {
+    const Panels = [max_middle_panels]?MiddlePanelId;
+    var surfaces = UiSurfaceState{};
+    for ([_]MiddlePanelId{ .inventory, .gear, .skills, .entity_inspect }) |panel_id| {
+        surfaces.toggleMiddlePanel(panel_id);
+    }
+    // All four are open — a fifth panel id cannot be stored, so this
+    // close-then-reopen pair must not clobber anything.
+    surfaces.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .entity_inspect, null },
+        surfaces.open_middle_panels,
+    );
+    surfaces.toggleMiddlePanel(.inventory);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .entity_inspect, .inventory },
+        surfaces.open_middle_panels,
+    );
+    // The strip is full again; toggling a panel that is already open still
+    // closes it, and the freed slot is usable.
+    surfaces.toggleMiddlePanel(.entity_inspect);
+    try std.testing.expectEqual(
+        Panels{ .gear, .skills, .inventory, null },
+        surfaces.open_middle_panels,
+    );
+}
+
 test "UiSurfaceState.toggle routes each surface id to its field" {
     var surfaces = UiSurfaceState{};
     surfaces.toggle(.options_menu);

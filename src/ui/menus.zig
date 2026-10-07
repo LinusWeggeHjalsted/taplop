@@ -49,7 +49,8 @@ const emitPanelButton = emit.emitPanelButton;
 /// enough of a close path, and a "Continue" button would collide with
 /// resume-game meanings on some screens.
 /// Save carries `.save_game`. Rendered on top of the bottom bar when
-/// `options_menu_open` is set, like the error popup. See DESIGN → UI
+/// the options-menu surface is open (`GameState.ui_surfaces
+/// .options_menu_open`), like the error popup. See DESIGN → UI
 /// Framework.
 pub fn buildOptionsMenu(
     elements: *UiElementList,
