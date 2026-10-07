@@ -139,6 +139,23 @@ pub const MetaEvent = union(enum) {
     end_validation: struct {
         success: bool,
     },
+    // UI surface toggles (class-1 semantic surface state — see DESIGN →
+    // UI Framework → UI state classification). The state lives on
+    // GameState.ui_surfaces so it rides the undo timeline and replays —
+    // which is what lets validatePlayerAction gate gameplay orchestrators
+    // on the surface that supplies their trigger. Flip one surface (the
+    // keyboard / menu-button semantics; the entity-inspect toggle also
+    // drops the panel's target).
+    toggle_ui_surface: struct {
+        surface: types.UiSurfaceId,
+    },
+    // The right-click entity-inspect verb: a non-null index OPENS (or
+    // retargets) the entity-inspect panel on that entity, null CLOSES it.
+    // The gesture resolves same/different/none against current state and
+    // pushes the resolved intent — the event itself is unconditional.
+    inspect_entity: struct {
+        entity_index: ?u32,
+    },
     // The remaining MetaEvent variants are machinery-only (handler-pushed,
     // never seeded at an idle point). Player-pushable events that used to
     // live here (start_new_game, save_game, open_editor,
@@ -755,6 +772,21 @@ pub const PlayerInputEvent = union(enum) {
     // inspector toggle's height, flush to the right screen edge): flip the
     // metadata sidebar. The handler pushes `editor_toggle_metadata_sidebar`.
     player_toggle_editor_metadata_sidebar: void,
+    // Surface-toggle orchestrator (the escape chain, panel keybinds, modal
+    // Back/Settings buttons): push the meta `toggle_ui_surface`. The open
+    // state rides GameState (`ui_surfaces`), so a toggle fired while idle
+    // is its own undo step; fired mid-drain it rides the surrounding
+    // subtree (the anytime-interjection pattern). See DESIGN → UI Framework
+    // → UI state classification.
+    player_toggle_ui_surface: struct {
+        surface: types.UiSurfaceId,
+    },
+    // Right-click entity inspect (levels only): the RESOLVED intent —
+    // non-null opens/retargets the entity-inspect panel, null closes it.
+    // The handler pushes the meta `inspect_entity` verb.
+    player_inspect_entity: struct {
+        entity_index: ?u32,
+    },
     // Top-bar Test/Validate button clicks: start a single-level playtest
     // of the active level / a full-mission validation run of the SAVED
     // mission dir (the input layer saves first and passes the dir).

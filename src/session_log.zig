@@ -26,7 +26,11 @@ const asU32 = parser.asU32;
 /// section + `content/` byte copies (session_log_bundle.zig). Bare v2
 /// logs without the manifest section are legal (the validation replay is
 /// one — the manifest is bundle-required, not format-required).
-pub const session_log_file_format_version: u32 = 2;
+/// v3: the UI-surface toggle events (`toggle_ui_surface` / `inspect_entity`)
+/// — class-1 surface state moved onto GameState (see DESIGN → UI Framework
+/// → UI state classification). Old logs re-record rather than migrate
+/// (pre-release policy).
+pub const session_log_file_format_version: u32 = 3;
 
 // ============================================================
 // Session log writer (event history serialization)
@@ -765,7 +769,7 @@ test "writeEventLog serializes representative event shapes" {
     defer allocator.free(output);
 
     // Metadata header
-    try std.testing.expect(std.mem.indexOf(u8, output, "file_format_version 2\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "file_format_version 3\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "game_version ") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "created 20260815_143022\n") != null);
 

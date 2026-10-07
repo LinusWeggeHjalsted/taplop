@@ -673,6 +673,13 @@ pub const GameState = struct {
     /// (the Continue button). See DESIGN → Architecture.
     last_completed_mission: ?types.MissionCompleteInfo = null,
 
+    /// Class-1 semantic surface state — what UI is open. On the undo timeline
+    /// behind the `toggle_ui_surface` / `inspect_entity` events so replay
+    /// reproduces it and `validatePlayerAction` can gate gameplay
+    /// orchestrators on the surface that supplies their trigger. See
+    /// DESIGN → UI Framework → UI state classification.
+    ui_surfaces: types.UiSurfaceState = .{},
+
     /// Transition to a new screen, clearing any data that was in scope
     /// for the old screen but is not in scope for the new one.
     /// Also clears the event stack to prevent dangling events from the
@@ -1701,6 +1708,37 @@ pub const GameStateHistory = struct {
                         return;
                     }
                 },
+                // Structural legality: a surface toggle is legal only on
+                // the screens that surface exists on (mirrors the live
+                // gates: the in_game arms run at level/hub, the modal
+                // buttons render in their contexts, escape works everywhere).
+                .player_toggle_ui_surface => |toggle| {
+                    if (!surfaceToggleLegal(self.current_state.screen, toggle.surface)) {
+                        var buf: [128]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf,
+                            "replay validation: player_toggle_ui_surface .{s} outside its screens",
+                            .{@tagName(toggle.surface)},
+                        ) catch "replay validation: player_toggle_ui_surface outside its screens";
+                        self.rejectReplay(msg);
+                        return;
+                    }
+                },
+                // Structural legality: right-click inspect is level-only (the
+                // gesture's scope — hubs are excluded by design) and the
+                // target index must name a live entity.
+                .player_inspect_entity => |inspect| {
+                    if (self.current_state.screen != .level) {
+                        self.rejectReplay("replay validation: player_inspect_entity outside level screen");
+                        return;
+                    }
+                    if (inspect.entity_index) |index| {
+                        const level = self.current_state.level orelse return;
+                        if (index >= level.entities.len) {
+                            self.rejectReplay("replay validation: player_inspect_entity index out of range");
+                            return;
+                        }
+                    }
+                },
                 // Structural legality: same shape as the inspector toggle —
                 // the live path is the player inspector's Import buttons
                 // (the session data + the max-player loadout).
@@ -2268,6 +2306,23 @@ pub const GameStateHistory = struct {
             self.rejectReplay("replay validation: utility skill slot index out of range");
             return;
         }
+    }
+
+    /// A surface toggle is legal only on the screens that surface exists
+    /// on — mirrors the live input gates (the in_game arms run at level/
+    /// hub, the main-menu-only modals' buttons render on the main menu,
+    /// the editor browser is reachable on editor + main menu, and the
+    /// options menu / settings are reachable from every screen via the
+    /// options menu). See DESIGN → UI Framework → UI state classification.
+    fn surfaceToggleLegal(screen: Screen, surface: types.UiSurfaceId) bool {
+        return switch (surface) {
+            .options_menu, .settings => true,
+            .credits, .load_save_menu => screen == .main_menu,
+            .editor_browser => screen == .main_menu or screen == .editor,
+            .inventory, .gear, .skills, .entity_inspect,
+            .world_map, .full_combat_log,
+            => screen == .level or screen == .hub,
+        };
     }
 
     /// If the skill uses targeting, the target tile must be in the skill's

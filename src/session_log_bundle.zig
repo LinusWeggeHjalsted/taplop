@@ -541,7 +541,7 @@ test "non-monotonic manifest event_index rejects with MalformedManifest" {
     // must reject it before the replay's binary search is lied to.
     const bytes = try std.fmt.allocPrint(allocator,
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\game_version test
         \\created 20260815_143022
         \\

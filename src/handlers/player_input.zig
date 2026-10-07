@@ -535,6 +535,24 @@ pub fn handlePlayerInputEvent(
         .player_toggle_editor_metadata_sidebar => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_metadata_sidebar }}, allocator);
         },
+        // Surface-toggle orchestrator (escape chain, panel keybinds, modal
+        // buttons): thin — the meta `toggle_ui_surface` owns the flip; the
+        // surface state rides GameState (`ui_surfaces`), so a toggle fired
+        // while idle is its own undo step. See DESIGN → UI Framework → UI
+        // state classification.
+        .player_toggle_ui_surface => |toggle| {
+            pushEvents(current, &.{.{ .meta_event = .{ .toggle_ui_surface = .{
+                .surface = toggle.surface,
+            } } }}, allocator);
+        },
+        // Right-click entity inspect: thin — the meta `inspect_entity` verb
+        // owns the open/retarget/close (the resolved intent rides the
+        // payload; the gesture computed same/different/none).
+        .player_inspect_entity => |inspect| {
+            pushEvents(current, &.{.{ .meta_event = .{ .inspect_entity = .{
+                .entity_index = inspect.entity_index,
+            } } }}, allocator);
+        },
         // Top-bar Test button: start a playtest of the ACTIVE level (the
         // machinery handler owns instantiation + dormancy + the screen
         // transition). validatePlayerAction guarantees the editor screen +

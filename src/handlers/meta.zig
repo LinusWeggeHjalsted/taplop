@@ -807,6 +807,16 @@ pub fn handleMetaEvent(
             } } }) catch @panic("failed to append build_data_from_player");
             pushEvents(current, exit_events.items, allocator);
         },
+        // UI surface toggles — the class-1 surface state on GameState
+        // (`ui_surfaces`); the methods own the grouped representation
+        // (middle-panel order, overlay stacking). See DESIGN → UI
+        // Framework → UI state classification.
+        .toggle_ui_surface => |toggle| {
+            current.ui_surfaces.toggle(toggle.surface);
+        },
+        .inspect_entity => |inspect| {
+            current.ui_surfaces.inspectEntity(inspect.entity_index);
+        },
         .wait => |wait_event| {
             // Begin a real-time pause; update() drains it as frames
             // elapse before the next event is processed. Record the

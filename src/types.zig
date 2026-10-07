@@ -2349,6 +2349,333 @@ pub const TileBounds = struct {
     max_y: i32,
 };
 
+/// The in-game middle-panel ids (the middle band between the world and
+/// the bottom bar). Ordered by open time inside `UiSurfaceState` — slot
+/// order IS display order.
+pub const MiddlePanelId = enum {
+    inventory,
+    gear,
+    skills,
+    entity_inspect,
+};
+
+/// The stackable full-screen overlays (drawn over the world + panels;
+/// the last occupied slot draws on top).
+pub const FullScreenOverlayId = enum {
+    world_map,
+    full_combat_log,
+};
+
+pub const max_middle_panels: usize = 4;
+pub const max_full_screen_overlays: usize = 2;
+
+/// One semantic UI surface the player can open/close — the event
+/// vocabulary for `toggle_ui_surface`. The enum names the surface;
+/// `UiSurfaceState` owns the grouped representation (display order,
+/// stacking) behind these ids.
+pub const UiSurfaceId = enum {
+    options_menu,
+    settings,
+    load_save_menu,
+    credits,
+    editor_browser,
+    inventory,
+    gear,
+    skills,
+    entity_inspect,
+    world_map,
+    full_combat_log,
+};
+
+/// Class-1 semantic surface state: WHAT UI is open. Lives on GameState
+/// (`ui_surfaces`) so it rides the undo timeline, replays, and is
+/// reconstructable from the event log — which is what lets
+/// `validatePlayerAction` gate gameplay orchestrators on the surface
+/// that supplies their trigger. All mutation flows through the surface
+/// events (`toggle_ui_surface` / `inspect_entity`); the handlers call
+/// these methods. View affordances (tabs, scrolls, gesture lifecycles)
+/// stay on `SessionState.ui_state` — see DESIGN → UI Framework → UI
+/// state classification.
+pub const UiSurfaceState = struct {
+    /// Middle section panels, ordered by open time (first opened =
+    /// leftmost). The open panels always occupy a contiguous prefix of
+    /// the slots (closing compacts), so slot order IS display order and a
+    /// reopened panel lands rightmost instead of recalling its pre-close
+    /// slot.
+    open_middle_panels: [max_middle_panels]?MiddlePanelId =
+        .{null} ** max_middle_panels,
+
+    /// Full-screen overlays that can stack (world map, full combat log).
+    open_full_screen_overlays: [max_full_screen_overlays]?FullScreenOverlayId =
+        .{null} ** max_full_screen_overlays,
+
+    /// Options menu — always-on-top modal, locks input + pauses the world.
+    options_menu_open: bool = false,
+
+    /// Settings screen — modal overlay; opens on top of the options menu
+    /// (in-game) or over the main menu.
+    settings_open: bool = false,
+
+    /// Load-save browser (main menu, full screen).
+    load_save_menu_open: bool = false,
+
+    /// Credits screen (main menu, full screen).
+    credits_open: bool = false,
+
+    /// Editor browser (main menu or editor, full screen).
+    editor_browser_open: bool = false,
+
+    /// The entity-inspect panel's target (null = no target). Bounds-
+    /// checked at every read — a stale index (the entity died and the
+    /// array shrank) renders nothing, never crashes.
+    inspected_entity_index: ?u32 = null,
+
+    /// Flip one surface — the verb behind `toggle_ui_surface` (the
+    /// keyboard / menu-button semantics). The entity-inspect toggle also
+    /// drops the panel's target (opens untargeted, like the keybind
+    /// always did).
+    pub fn toggle(self: *UiSurfaceState, surface: UiSurfaceId) void {
+        switch (surface) {
+            .options_menu => self.options_menu_open = !self.options_menu_open,
+            .settings => self.settings_open = !self.settings_open,
+            .load_save_menu => self.load_save_menu_open = !self.load_save_menu_open,
+            .credits => self.credits_open = !self.credits_open,
+            .editor_browser => self.editor_browser_open = !self.editor_browser_open,
+            .inventory => self.toggleMiddlePanel(.inventory),
+            .gear => self.toggleMiddlePanel(.gear),
+            .skills => self.toggleMiddlePanel(.skills),
+            .entity_inspect => {
+                self.toggleMiddlePanel(.entity_inspect);
+                self.inspected_entity_index = null;
+            },
+            .world_map => self.toggleFullScreenOverlay(.world_map),
+            .full_combat_log => self.toggleFullScreenOverlay(.full_combat_log),
+        }
+    }
+
+    pub fn isSurfaceOpen(self: *const UiSurfaceState, surface: UiSurfaceId) bool {
+        return switch (surface) {
+            .options_menu => self.options_menu_open,
+            .settings => self.settings_open,
+            .load_save_menu => self.load_save_menu_open,
+            .credits => self.credits_open,
+            .editor_browser => self.editor_browser_open,
+            .inventory => self.isMiddlePanelOpen(.inventory),
+            .gear => self.isMiddlePanelOpen(.gear),
+            .skills => self.isMiddlePanelOpen(.skills),
+            .entity_inspect => self.isMiddlePanelOpen(.entity_inspect),
+            .world_map => self.isFullScreenOverlayOpen(.world_map),
+            .full_combat_log => self.isFullScreenOverlayOpen(.full_combat_log),
+        };
+    }
+
+    /// The right-click inspect verb: a non-null index OPENS (or retargets)
+    /// the entity-inspect panel, null CLOSES it. The gesture resolves
+    /// same/different/none against current state and pushes the resolved
+    /// intent — the event itself is unconditional.
+    pub fn inspectEntity(self: *UiSurfaceState, entity_index: ?u32) void {
+        if (entity_index) |index| {
+            self.openMiddlePanel(.entity_inspect);
+            self.inspected_entity_index = index;
+        } else {
+            self.closeMiddlePanel(.entity_inspect);
+            self.inspected_entity_index = null;
+        }
+    }
+
+    /// Close every surface. The screen-transition / world-install reset —
+    /// HANDLER-side (`transitionScreen` / the start_* world installs) so
+    /// replay reproduces it; the classes-2–4 wholesale reset stays in the
+    /// live loop. See DESIGN → UI Framework → UI state classification.
+    pub fn closeAll(self: *UiSurfaceState) void {
+        self.open_middle_panels = .{null} ** max_middle_panels;
+        self.open_full_screen_overlays = .{null} ** max_full_screen_overlays;
+        self.options_menu_open = false;
+        self.settings_open = false;
+        self.load_save_menu_open = false;
+        self.credits_open = false;
+        self.editor_browser_open = false;
+        self.inspected_entity_index = null;
+    }
+
+    pub fn toggleMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
+        if (self.isMiddlePanelOpen(panel_id)) {
+            self.closeMiddlePanel(panel_id);
+        } else {
+            self.openMiddlePanel(panel_id);
+        }
+    }
+
+    /// Open a panel (no-op when already open or all slots are taken).
+    pub fn openMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
+        if (self.isMiddlePanelOpen(panel_id)) return;
+        var target_index: usize = 0;
+        for (self.open_middle_panels, 0..) |maybe_panel, index| {
+            if (maybe_panel != null) target_index = index + 1;
+        }
+        if (target_index < max_middle_panels) {
+            self.open_middle_panels[target_index] = panel_id;
+        }
+    }
+
+    /// Close a panel and compact the remaining ones down (the
+    /// contiguous-prefix invariant above).
+    pub fn closeMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
+        for (&self.open_middle_panels) |*slot| {
+            if (slot.*) |open| {
+                if (open == panel_id) {
+                    slot.* = null;
+                    var write_index: usize = 0;
+                    for (self.open_middle_panels) |maybe_panel| {
+                        if (maybe_panel) |remaining| {
+                            self.open_middle_panels[write_index] = remaining;
+                            write_index += 1;
+                        }
+                    }
+                    while (write_index < max_middle_panels) : (write_index += 1) {
+                        self.open_middle_panels[write_index] = null;
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Whether `panel_id` is currently open (the read-side companion of
+    /// the toggles; view-side producers need to know a panel is showing
+    /// without walking the slot array themselves).
+    pub fn isMiddlePanelOpen(self: *const UiSurfaceState, panel_id: MiddlePanelId) bool {
+        for (self.open_middle_panels) |maybe_panel| {
+            if (maybe_panel) |open| {
+                if (open == panel_id) return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn toggleFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+        if (self.isFullScreenOverlayOpen(overlay_id)) {
+            self.closeFullScreenOverlay(overlay_id);
+        } else {
+            self.openFullScreenOverlay(overlay_id);
+        }
+    }
+
+    pub fn openFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+        if (self.isFullScreenOverlayOpen(overlay_id)) return;
+        for (&self.open_full_screen_overlays) |*slot| {
+            if (slot.* == null) {
+                slot.* = overlay_id;
+                return;
+            }
+        }
+    }
+
+    pub fn closeFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+        for (&self.open_full_screen_overlays) |*slot| {
+            if (slot.*) |open| {
+                if (open == overlay_id) {
+                    slot.* = null;
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
+        for (self.open_full_screen_overlays) |maybe_overlay| {
+            if (maybe_overlay) |open| {
+                if (open == overlay_id) return true;
+            }
+        }
+        return false;
+    }
+};
+
+test "UiSurfaceState.toggle routes each surface id to its field" {
+    var surfaces = UiSurfaceState{};
+    surfaces.toggle(.options_menu);
+    surfaces.toggle(.settings);
+    surfaces.toggle(.load_save_menu);
+    surfaces.toggle(.credits);
+    surfaces.toggle(.editor_browser);
+    surfaces.toggle(.inventory);
+    surfaces.toggle(.gear);
+    surfaces.toggle(.world_map);
+    surfaces.toggle(.full_combat_log);
+    try std.testing.expect(surfaces.options_menu_open);
+    try std.testing.expect(surfaces.settings_open);
+    try std.testing.expect(surfaces.load_save_menu_open);
+    try std.testing.expect(surfaces.credits_open);
+    try std.testing.expect(surfaces.editor_browser_open);
+    try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
+    try std.testing.expectEqualSlices(
+        ?MiddlePanelId,
+        &.{ .inventory, .gear, null, null },
+        &surfaces.open_middle_panels,
+    );
+    try std.testing.expectEqualSlices(
+        ?FullScreenOverlayId,
+        &.{ .world_map, .full_combat_log },
+        &surfaces.open_full_screen_overlays,
+    );
+    // isSurfaceOpen agrees with every route above.
+    try std.testing.expect(surfaces.isSurfaceOpen(.options_menu));
+    try std.testing.expect(surfaces.isSurfaceOpen(.settings));
+    try std.testing.expect(surfaces.isSurfaceOpen(.inventory));
+    try std.testing.expect(surfaces.isSurfaceOpen(.world_map));
+    // Toggle flips back.
+    surfaces.toggle(.options_menu);
+    try std.testing.expect(!surfaces.options_menu_open);
+}
+
+test "UiSurfaceState.toggle entity_inspect drops the target (the keyboard shape)" {
+    var surfaces = UiSurfaceState{};
+    surfaces.inspectEntity(2);
+    try std.testing.expect(surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(@as(?u32, 2), surfaces.inspected_entity_index);
+    // The keyboard toggle closes a targeted panel...
+    surfaces.toggle(.entity_inspect);
+    try std.testing.expect(!surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
+    // ...and opens it UNTARGETED (the panel shows no entity).
+    surfaces.toggle(.entity_inspect);
+    try std.testing.expect(surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
+}
+
+test "UiSurfaceState.inspectEntity opens, retargets, and closes" {
+    var surfaces = UiSurfaceState{};
+    surfaces.inspectEntity(1);
+    try std.testing.expect(surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(@as(?u32, 1), surfaces.inspected_entity_index);
+    // A retarget keeps one panel slot (never a second copy).
+    surfaces.inspectEntity(4);
+    try std.testing.expectEqual(@as(?u32, 4), surfaces.inspected_entity_index);
+    try std.testing.expectEqualSlices(
+        ?MiddlePanelId,
+        &.{ .entity_inspect, null, null, null },
+        &surfaces.open_middle_panels,
+    );
+    // Close.
+    surfaces.inspectEntity(null);
+    try std.testing.expect(!surfaces.isSurfaceOpen(.entity_inspect));
+    try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
+}
+
+test "UiSurfaceState.closeAll clears every surface" {
+    var surfaces = UiSurfaceState{};
+    surfaces.toggle(.options_menu);
+    surfaces.toggle(.settings);
+    surfaces.toggle(.credits);
+    surfaces.toggle(.inventory);
+    surfaces.toggle(.skills);
+    surfaces.toggle(.world_map);
+    surfaces.inspectEntity(3);
+    surfaces.closeAll();
+    try std.testing.expectEqual(UiSurfaceState{}, surfaces);
+}
+
 pub const Editor = struct {
     mission: Mission = .{}, // metadata + path (the mission being edited)
     levels: []const EditorLevel = &.{}, // all levels, reference-based

@@ -116,10 +116,11 @@ Test by running `zig build run` and clicking through.
   player had open. Slices:
   - [x] 1. Design records (DESIGN classification + the Replay & Side
         Effects rule line + the Determinism panel gates) — DONE.
-  - [ ] 2. Scaffolding: `UiSurfaceId` + `UiSurfaceState` on GameState
+  - [x] 2. Scaffolding: `UiSurfaceId` + `UiSurfaceState` on GameState
         (`types.zig`) + the `toggle_ui_surface` / `inspect_entity` meta
         events + their `player_*` orchestrators + handler arms + the
-        session-log `file_format_version` bump (2→3). No behavior change.
+        session-log `file_format_version` bump (2→3). No behavior change —
+        DONE (drain tests in `handler_tests_ui_surfaces.zig`).
   - [ ] 3. Input migration: escape chain, in_game toggle arms, options_action
         modal arms (open_settings / open_credits / editor browser / load-save
         toggle), right-click inspect → events; pause gates + `view()` +
