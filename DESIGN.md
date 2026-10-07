@@ -3399,10 +3399,12 @@ shape). Three settled points:
 - **`open_editor` bumps `world_generation`** in BOTH branches: the
   driver's transition UI reset fires on screen-change OR generation-bump,
   and an editor→editor open changes neither screen — without the bump the
-  browser (a UiState flag) and stale view state (scroll offsets, open
-  panels) would survive the mission swap. On a failed open the revert
-  restores the generation, no reset fires, the browser stays open + the
-  popup surfaces (exactly the load-save browser's failure shape).
+  stale classes-2–4 view state (scroll offsets, in-progress edits) would
+  survive the mission swap (the class-1 surface state closes via
+  transitionScreen, which open_editor's handler reaches). On a failed open
+  the revert restores the generation, no reset fires, the browser stays
+  open + the popup surfaces (exactly the load-save browser's failure
+  shape).
 - **Undo across the swap works** — `open_editor` is on the timeline, so
   undo restores the previously-edited mission. Accepted as a feature.
 
@@ -3654,10 +3656,12 @@ layout + a left inspector + a right metadata sidebar:
   visual class: panel-backed, 128 high), open by default; the button is
   highlighted while open. The open flag lives on the Editor
   (`Editor.inspector_open`) and flips via `editor_toggle_inspector` — on
-  the undo timeline, NOT a UiState write like the in-game middle-panel
-  toggles or the palette accordion: the auto-open-on-creation behavior
-  below mutates it from the `editor_add_*_type` handlers (handler purity
-  — events can't write session-side UiState), and replay must reproduce
+  the undo timeline, per the general UI state classification (all
+  class-1 surface state is event-driven GameState — see UI Framework);
+  unlike the palette accordion (classes 2–4, a UiState write), the
+  auto-open-on-creation behavior below mutates it from the
+  `editor_add_*_type` handlers (handler purity — events can't write
+  session-side UiState), and replay must reproduce
   it. (Unifying the in-game panel toggles onto this GameState convention
   is a tracked TODO.) The background panel (width 1024, a placeholder
   until the field layout settles) spans from below the button down to

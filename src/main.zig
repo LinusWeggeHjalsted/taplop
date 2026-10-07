@@ -901,8 +901,9 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // one-frame glitch where the player appears jumped/shifted before the
         // camera catches up next frame. computeCamera is cheap; recompute it
         // here so render never lags the state by a frame. The view region is
-        // recomputed too — panels can open/close mid-drain (UiState writes
-        // are immediate), and the clamp must match the state being drawn.
+        // recomputed too — panels can open/close mid-drain (the surface
+        // events drain immediately), and the clamp must match the state
+        // being drawn.
         const render_view_region = view_mod.cameraViewRegion(
             &history.current_state,
             backend.fontMetrics(),
@@ -2081,8 +2082,9 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     // The mission browser opens an existing mission while ALREADY in the
     // editor: the screen stays .editor, so the driver's transition UI reset
     // only fires if open_editor bumps world_generation (the same signal
-    // start_level/start_hub use). Without it, the browser itself (a UiState
-    // flag) + stale view state would survive the mission swap.
+    // start_level/start_hub use). Without it, the stale classes-2–4 view
+    // state would survive the mission swap (the class-1 surface state
+    // closes via transitionScreen, which the handler reaches).
     const allocator = std.testing.allocator;
 
     var backing = std.heap.ArenaAllocator.init(allocator);

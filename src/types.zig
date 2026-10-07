@@ -433,7 +433,7 @@ pub const Action = enum {
     open_editor_decoration_layer_picker,
     // A layer-picker cell: the stem rode in
     // `AnytimeInput.clicked_editor_sprite`; the layer identity (add vs
-    // edit index) rides in the open picker's UiState target.
+    // edit index) rides in the open picker's target on the Editor
     select_editor_entity_layer,
     select_editor_decoration_layer,
     delete_editor_entity_layer,

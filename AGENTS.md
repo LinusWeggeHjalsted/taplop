@@ -502,7 +502,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   consumers keep `ui.X` (see DESIGN → UI Framework)
 - `src/ui/element.zig` — the UiElement union + variants, Rect algebra
   (Row/Grid), layout constants, FontMetrics, hit-testing, wrapRow
-- `src/ui/state.zig` — UiState + drag/click/marquee/picker-target types
+- `src/ui/state.zig` — UiState (classes 2–4 of the UI state classification — see DESIGN → UI Framework → UI state classification) + drag/click/marquee types; the class-1 surface state lives on GameState (`types.UiSurfaceState` + `Editor.picker`)
 - `src/ui/text_input.zig` — the text-field widget core + routing
 - `src/ui/keybind_edit.zig` — the keybinds tab's edit state machine (listening/
   picker/pending) + the translateInput capture seam (`routeKeybindCapture`) —

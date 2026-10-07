@@ -99,54 +99,9 @@ Test by running `zig build run` and clicking through.
         EOF-safe, detached), the stdout dump writer on the queue, always-on
         (no flag) — DONE (see DONE.md, console input slice 2; includes the
         wasm32 u32-atomic counter fix). Console input is COMPLETE.
-- **UI surface state unification (design SETTLED — see DESIGN → UI Framework
-  → UI state classification).** Class-1 semantic surface state (what's open:
-  middle panels, full-screen overlays, the options/settings/load-save/
-  credits/editor-browser modals, the entity-inspect target, the editor's
-  centered picker) moves from `UiState` (SessionState, off the timeline) onto
-  `GameState.ui_surfaces` behind `toggle_ui_surface` / `inspect_entity` /
-  `editor_open_picker` / `editor_close_picker` events pushed by their
-  `player_*` orchestrators. Idle-point policy: toggles are ordinary player
-  actions (fired while idle = own undo step; mid-drain = absorbed into the
-  surrounding subtree — the swap_weapons anytime semantics; no new
-  idle-point machinery). Motivation: `validatePlayerAction` can then gate
-  inventory/gear/skills orchestrators on their trigger panel being open
-  (legality = the current UI supplies the trigger — the console/TAS/
-  server-validation seam), and reconstruction reproduces the surfaces the
-  player had open. Slices:
-  - [x] 1. Design records (DESIGN classification + the Replay & Side
-        Effects rule line + the Determinism panel gates) — DONE.
-  - [x] 2. Scaffolding: `UiSurfaceId` + `UiSurfaceState` on GameState
-        (`types.zig`) + the `toggle_ui_surface` / `inspect_entity` meta
-        events + their `player_*` orchestrators + handler arms + the
-        session-log `file_format_version` bump (2→3). No behavior change —
-        DONE (drain tests in `handler_tests_ui_surfaces.zig`).
-  - [x] 3. Input migration: escape chain, in_game toggle arms, options_action
-        modal arms (open_settings / open_credits / editor browser / load-save
-        toggle), right-click inspect → events; pause gates + `view()` +
-        console reads move to `GameState.ui_surfaces`; the live-loop wholesale
-        reset splits (class-1 closing → `transitionScreen`, which every
-        world install routes through); `UiState` loses the class-1 fields;
-        test updates (input_tests_escape / input_tests_console / view tests,
-        + the right-click release→event + transitionScreen-closes pins) —
-        DONE.
-  - [x] 4. Editor picker migration: `Editor.picker` + the
-        `editor_open_picker` / `editor_close_picker` events + the picker input
-        arms + UI readers; the picker-commit handlers push the close as a
-        child of the commit (pick+close = one undo step); a no-change pick
-        records the close alone; session-log writer/reader gained
-        OPTIONAL-union-variant payloads (round-trip covered).
-        `editor_footprint_draft` STAYS UiState (class 4 — the draft-buffer
-        pattern) — DONE.
-  - [x] 5. Validator: the hoisted `actionTriggerSurfaceOpen` bool gate (the
-        one mapping: inventory family → inventory panel, the cross-panel
-        drags → inventory+gear, drag-to-bar → skills; tested directly) + the
-        surface-scope legality for `player_toggle_ui_surface` (slice 2); no
-        existing fixture replayed a gated orchestrator, so no fixture needed
-        the panel open — an end-to-end pin (recorded open → salvage → undo
-        replay) landed in `handler_tests_ui_surfaces.zig` — DONE.
-  - [ ] 6. Sweep: stale `ui_state` prose in AGENTS/DESIGN/code comments, the
-        session-log version-bump fallout (re-record fixtures), DONE.md entry.
+- [x] **UI surface state unification** — DONE (all six slices; see DONE.md,
+      "UI surface state unification", + DESIGN → UI Framework → UI state
+      classification).
 - **Input dispatch convergence (planned refactor — design before code).**
   `translateInput` sets the `anytime`/`idle` input flags directly (~40
   `checkAction` lines), while button releases fold through

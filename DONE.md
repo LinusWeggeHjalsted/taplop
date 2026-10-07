@@ -15513,3 +15513,82 @@ touches markers; the file format can't carry the state in).
   disabled. The gesture test pins the input gate — it survived the
   planner-veto falsification BY DESIGN (the gate calls the predicate
   directly, an independent layer).
+
+## UI surface state unification: class-1 surface state onto GameState (slices 1–5)
+
+The UI state classification (DESIGN → UI Framework → UI state
+classification) settled after the editor inspector toggle and the
+in-game middle-panel toggles had drifted into two conventions — the
+editor flags had moved onto GameState only because handlers needed to
+mutate them, while every other surface toggle stayed a direct
+`UiState` write off the undo timeline. The unification rule: class-1
+SEMANTIC SURFACE state (what's open) lives on GameState behind events;
+classes 2–4 (view affordances, scrolls, gesture lifecycles) stay on
+`SessionState.ui_state` with direct writes.
+
+- **Why events + GameState, not a UiState split by naming:** the
+  validator (`validatePlayerAction`) sees only GameState, so gating
+  "an action is legal only if the UI supplies its trigger" (the
+  console/TAS/server seam) was STRUCTURALLY impossible with the
+  flags off the timeline — a hand-crafted log could salvage with the
+  inventory never opened and verification passed it. Also replay
+  verification can't see SessionState at all, so off-timeline UI
+  state silently diverged under undo/redo with nothing to catch it.
+- **The migration:** `types.UiSurfaceState` on `GameState.ui_surfaces`
+  (middle panels + full-screen overlays as ordered sets, the modal
+  bools, the entity-inspect target) + `Editor.picker` for the
+  editor's centered picker; `toggle_ui_surface` / `inspect_entity`
+  meta events + `editor_open_picker` / `editor_close_picker` (open
+  REPLACES a stale picker — the palette-group dropdown semantics,
+  one action) + their `player_*` orchestrators. The escape chain,
+  in_game keybind arms, options_action modal arms, and right-click
+  inspect all push+drain via `pushPlayerActionAndDrain` (the
+  `swap_weapons` interjection shape — processed inside the same
+  update call so this frame's own options-menu gate sees the flipped
+  state; the pre-migration direct-write ordering survives).
+- **Idle points (the settled (a) choice):** toggles are ORDINARY
+  player actions — fired while idle they create their own undo step
+  (one click/key = one step); fired mid-drain they ride the
+  surrounding subtree (no own idle point). Zero new idle-point
+  machinery — the existing anytime-action recording covers both.
+  The (b) alternative (UI events without idle points) was rejected
+  for now: it needs action-ROOT-aware recording at two sites (the
+  naive "emptying event is UI" predicate is wrong — Plan A makes
+  `exit_mission`'s subtree END with a handler-pushed surface close),
+  and idle points are DERIVED (virtual stack depth), not serialized,
+  so downgrading later is a contained derivation-policy change with
+  no log-format impact. Playtest friction decides.
+- **Reset split by the same rule:** `transitionScreen` closes every
+  surface (every world install routes through it — start_level /
+  start_hub call it even when the screen enum stays the same), so
+  replay reproduces surface closing; the classes-2–4 wholesale reset
+  stays in the live loop (`gameLoop` on screen or world_generation
+  change).
+- **Editor picker commits keep one-action shape:** the 11
+  picker-commit orchestrator handlers push `editor_close_picker` as
+  a CHILD of the commit (pick+close = one undo step); a no-change
+  pick (same value / unchanged draft / same definition) records the
+  close ALONE (the close is a change now — "closes without
+  recording" became "closes without committing"). A pick that fails
+  its backstop/dims check keeps the picker OPEN, nothing recorded —
+  the pick visibly didn't take (the decoration-layer arm's semantic,
+  now uniform; the decoration-sprite arm used to close silently on
+  backstop because the null happened at the arm top).
+- **Session log v3:** the toggle events; the writer/reader gained
+  OPTIONAL UNION-VARIANT payloads (tag alone = null — the
+  `EditorPickerTarget.entity_layer` shape) in both the union branches
+  (the struct-field optional convention already existed at
+  `writeEventField`/`parseEventFieldValue`).
+- **Legality (the motivation):** one hoisted gate in
+  `validatePlayerAction` over the bool core
+  `actionTriggerSurfaceOpen` (tested directly, the no-expectPanics
+  convention): inventory family → inventory panel, the cross-panel
+  drags (equip/unequip) → inventory AND gear, drag-to-bar → skills;
+  everything else's trigger always renders. Surface toggles are
+  scope-checked (`surfaceToggleLegal`). `player_inspect_entity` is
+  level-only with a live-entity target. No existing fixture replayed
+  a gated orchestrator, so the sweep was an end-to-end pin, not
+  fixture repairs.
+- Session-log version 2→3 (hard gate — old logs re-record, pre-release
+  policy; no shipped replay fixtures existed, so the fallout was two
+  hand-crafted test fixtures' version lines).
