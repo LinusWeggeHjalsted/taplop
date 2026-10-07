@@ -1522,7 +1522,19 @@ pub const GameStateHistory = struct {
 
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
-            .player_input_event => |pi| switch (pi) {
+            .player_input_event => |pi| {
+                // Surface-supply gate, hoisted: a click/drag orchestrator
+                // is only legal while the panel that renders its trigger
+                // is open — the legality mirror of the live pointer gate (a
+                // slot only renders inside its open panel). The per-family
+                // mapping lives in `actionTriggerSurfaceOpen` (the bool
+                // core, tested directly — the no-expectPanics convention).
+                // See DESIGN → Determinism → Replay PLAYER-ACTION LEGALITY.
+                if (!actionTriggerSurfaceOpen(&self.current_state, pi)) {
+                    self.rejectReplay("replay validation: click/drag action without its trigger panel open");
+                    return;
+                }
+                switch (pi) {
                 // Exit/skip orchestrators: screen-context legality.
                 .player_skip_level,
                 .player_restart_mission,
@@ -2307,6 +2319,7 @@ pub const GameStateHistory = struct {
                     self.validateInventoryScreenAndSlot(swap.slot_a_index);
                     self.validateInventoryScreenAndSlot(swap.slot_b_index);
                 },
+                }
             },
             else => {},
         }
@@ -2341,6 +2354,8 @@ pub const GameStateHistory = struct {
 
     /// Inventory/gear orchestrators only run from a level or hub (panels are
     /// shown nowhere else) and the inventory slot index must be in range.
+    /// (The panels-open half of the family's legality is the hoisted
+    /// `actionTriggerSurfaceOpen` gate.)
     fn validateInventoryScreenAndSlot(self: *GameStateHistory, inventory_slot_index: u32) void {
         if (self.current_state.screen != .level and self.current_state.screen != .hub) {
             self.rejectReplay("replay validation: inventory action outside level/hub screen");
@@ -2358,6 +2373,40 @@ pub const GameStateHistory = struct {
             self.rejectReplay("replay validation: utility skill slot index out of range");
             return;
         }
+    }
+
+    /// Whether the surface state supplies the trigger for a click/drag
+    /// orchestrator — the legality mirror of the LIVE pointer gate (a
+    /// slot only renders inside its open panel; the skill bar and world
+    /// tiles always render, so their actions need no panel). The bool
+    /// core under the hoisted gate in `validatePlayerAction` (the
+    /// no-expectPanics convention — tested directly). See DESIGN →
+    /// Determinism → Replay PLAYER-ACTION LEGALITY.
+    fn actionTriggerSurfaceOpen(current: *const GameState, action: events.PlayerInputEvent) bool {
+        const surfaces = &current.ui_surfaces;
+        return switch (action) {
+            // Inventory clicks + drags (use / salvage / salvage-region /
+            // swap): the source and target slots render in the inventory
+            // panel.
+            .player_use_inventory_item,
+            .player_salvage_inventory_item,
+            .player_salvage_inventory_region,
+            .player_swap_inventory_items,
+            => surfaces.isMiddlePanelOpen(.inventory),
+            // The cross-panel drags (inventory → gear slot, gear slot →
+            // inventory): BOTH panels render — the drag's source and
+            // target.
+            .player_equip_to_gear,
+            .player_unequip_from_gear,
+            => surfaces.isMiddlePanelOpen(.inventory) and surfaces.isMiddlePanelOpen(.gear),
+            // Drag-to-bar (a learned-skill cell → a bar slot): the source
+            // renders in the skills panel; the bar always renders.
+            .player_assign_utility_skill => surfaces.isMiddlePanelOpen(.skills),
+            // Everything else's trigger always renders (the skill bar, the
+            // world, the buttons of whatever surface gated it) or carries
+            // its own legality in the arms below.
+            else => true,
+        };
     }
 
     /// A surface toggle is legal only on the screens that surface exists
@@ -2807,6 +2856,94 @@ fn historyForTimelineTest(allocator: std.mem.Allocator) GameStateHistory {
     history.idle_points.append(arena, 2) catch unreachable;
     history.idle_points.append(arena, 5) catch unreachable;
     return history;
+}
+
+test "actionTriggerSurfaceOpen: the click/drag families need their panels" {
+    // The legality mirror of the live pointer gate: a slot only renders
+    // inside its open panel, so a click/drag orchestrator whose trigger
+    // panel is closed is an illegal log entry. See DESIGN → Determinism →
+    // Replay PLAYER-ACTION LEGALITY.
+    var current = GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // No panels open: every gated family is illegal; the bar-only family
+    // (the skill bar always renders) and everything else stay legal.
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_use_inventory_item = .{ .inventory_slot_index = 0 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_salvage_inventory_item = .{ .inventory_slot_index = 0 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_salvage_inventory_region = .{ .start_slot = 0, .end_slot = 1 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_swap_inventory_items = .{ .slot_a_index = 0, .slot_b_index = 1 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_equip_to_gear = .{ .inventory_slot_index = 0, .gear_slot = .main_hand } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_unequip_from_gear = .{ .gear_slot = .main_hand, .inventory_slot_index = 0 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_assign_utility_skill = .{ .skill_id = .heal, .slot_index = 4 } },
+    ));
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_swap_utility_skills = .{ .slot_a_index = 4, .slot_b_index = 5 } },
+    ));
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_clear_utility_skill = .{ .slot_index = 4 } },
+    ));
+
+    // Inventory open: the inventory-only family legal; the cross-panel
+    // drags and the skills-source drag still gated.
+    current.ui_surfaces.openMiddlePanel(.inventory);
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_use_inventory_item = .{ .inventory_slot_index = 0 } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_equip_to_gear = .{ .inventory_slot_index = 0, .gear_slot = .main_hand } },
+    ));
+    try std.testing.expect(!GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_assign_utility_skill = .{ .skill_id = .heal, .slot_index = 4 } },
+    ));
+
+    // Inventory + gear: the cross-panel drags legal.
+    current.ui_surfaces.openMiddlePanel(.gear);
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_unequip_from_gear = .{ .gear_slot = .main_hand, .inventory_slot_index = 0 } },
+    ));
+
+    // Skills open: the drag-to-bar assignment legal.
+    current.ui_surfaces.openMiddlePanel(.skills);
+    try std.testing.expect(GameStateHistory.actionTriggerSurfaceOpen(
+        &current,
+        .{ .player_assign_utility_skill = .{ .skill_id = .heal, .slot_index = 4 } },
+    ));
 }
 
 test "transitionScreen closes every UI surface" {

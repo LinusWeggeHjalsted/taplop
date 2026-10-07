@@ -22,6 +22,7 @@ const state = @import("state.zig");
 const session_setup = @import("session_setup.zig");
 const file_source_mod = @import("file_source.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const shared = @import("handlers/shared.zig");
 
 const FileSource = file_source_mod.FileSource;
@@ -169,6 +170,27 @@ pub fn runToIdle(history: *GameStateHistory) void {
         history.current_state.waiting = null;
     }
     history.maybeRecordIdlePoint(true);
+}
+
+/// Open a middle panel through the real event path (the recorded
+/// `player_toggle_ui_surface`), so a fixture's later
+/// inventory/gear/skills orchestrators pass the panel-open legality gate
+/// on replay/undo (the check mirrors the live gate — see DESIGN →
+/// Determinism → Replay PLAYER-ACTION LEGALITY).
+pub fn openMiddlePanel(history: *GameStateHistory, panel_id: types.MiddlePanelId) void {
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+            .surface = switch (panel_id) {
+                .inventory => .inventory,
+                .gear => .gear,
+                .skills => .skills,
+                .entity_inspect => .entity_inspect,
+            },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(history);
 }
 
 test "harness: newHistory reaches the main menu and idles" {

@@ -46,6 +46,58 @@ test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
     try testing.expect(history.current_state.ui_surfaces.options_menu_open);
 }
 
+test "surface-gated orchestrators: a recorded panel open makes the action replay-legal" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The legality mirror of the live pointer gate (see DESIGN →
+    // Determinism → Replay PLAYER-ACTION LEGALITY): a salvage whose
+    // inventory panel was never OPENED is an illegal log — so the panel
+    // open must be a RECORDED action for the replay to pass validation.
+    var history = harness.newHistory(.{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{ .player = .{} },
+    });
+    runToIdle(&history);
+    const weapon: types.Weapon = .{ .name = "salvage pin", .weapon_type = .sword, .weapon_damage = 4 };
+    history.current_state.hub.?.player.inventory.slots[0] = .{ .weapon = weapon };
+
+    // Open the inventory panel through the recorded surface event, then
+    // salvage — the replay (undo below) re-runs the recorded open + the
+    // salvage and the legality gate passes.
+    test_harness.openMiddlePanel(&history, .inventory);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_salvage_inventory_item = .{
+            .inventory_slot_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(
+        @as(?types.Item, null),
+        history.current_state.hub.?.player.inventory.slots[0],
+    );
+
+    // The undo replays through the recorded open + salvage (validation
+    // included) and restores the item.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.hub.?.player.inventory.slots[0] != null);
+    try testing.expectEqualStrings(
+        "salvage pin",
+        history.current_state.hub.?.player.inventory.slots[0].?.weapon.name,
+    );
+}
+
 test "player_inspect_entity: opens, retargets, and closes via the machinery" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

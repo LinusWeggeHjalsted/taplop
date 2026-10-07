@@ -138,9 +138,13 @@ Test by running `zig build run` and clicking through.
         OPTIONAL-union-variant payloads (round-trip covered).
         `editor_footprint_draft` STAYS UiState (class 4 — the draft-buffer
         pattern) — DONE.
-  - [ ] 5. Validator: inventory/gear/skills orchestrator panel gates +
-        surface-scope legality; fixtures that drain those orchestrators open
-        their panel first.
+  - [x] 5. Validator: the hoisted `actionTriggerSurfaceOpen` bool gate (the
+        one mapping: inventory family → inventory panel, the cross-panel
+        drags → inventory+gear, drag-to-bar → skills; tested directly) + the
+        surface-scope legality for `player_toggle_ui_surface` (slice 2); no
+        existing fixture replayed a gated orchestrator, so no fixture needed
+        the panel open — an end-to-end pin (recorded open → salvage → undo
+        replay) landed in `handler_tests_ui_surfaces.zig` — DONE.
   - [ ] 6. Sweep: stale `ui_state` prose in AGENTS/DESIGN/code comments, the
         session-log version-bump fallout (re-record fixtures), DONE.md entry.
 - **Input dispatch convergence (planned refactor — design before code).**
