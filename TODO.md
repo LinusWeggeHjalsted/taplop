@@ -116,7 +116,13 @@ Test by running `zig build run` and clicking through.
   for per-action behavior (action sound layers now; analytics/policy
   later). Fold the `input_handlers.zig` SPLIT (2800+ lines, ten concerns)
   into this work — if the convergence lands well, the file may split
-  naturally or not need it; don't split as a separate chore first.
+  naturally or not need it; don't split as a separate chore first. Also
+  fold the NO-OP-PROOF COUNT ASSERTIONS while there: the picker tests in
+  `handler_tests_editor.zig` assert recorded-event COUNT deltas (four of
+  them broke by hand during the ui-surface migration, one fix was wrong on
+  the first try) — assert WHAT recorded ("the last two events are the
+  close pair") instead of counting (the derived-expectations discipline;
+  counts of things that grow by design are churn).
 - [x] **New-keybind pipeline friction** — DONE. The wiring-site map
       shrank (four sites — DESIGN → Input → New keybind wiring sites; the
       backend key table + the derived `context` line are no longer sites),
@@ -461,7 +467,15 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   (new events covered automatically). Structural drift is already prevented
   by comptime + @compileError else-arms; this guards VALUE fidelity + the
   field-presence contract (writer emits every field; reader requires every
-  non-optional field).
+  non-optional field). CONCRETE CASE (the ui-surface session): "comptime-
+  generic" has SEAMS you only discover by instantiating — optionals were
+  handled at the struct-field layer (writeEventField/parseEventFieldValue)
+  but NOT at the union-variant layer (appendEventScalar/parseScalarTokens),
+  so the first event with an optional union-variant payload
+  (`EditorPickerTarget.entity_layer: ?u32`) hit a compile error in generic
+  code nobody thought they were touching; the representative-shapes test
+  only covers what a human thought to add. The exhaustive variant walk
+  catches the whole class for free.
 - Combat reconstruction test: extend the runToIdle harness to enter
   beginnings' level and script a few combat actions with ADAPTIVE
   targeting (read enemy position from live state), then serialize → load →
@@ -770,6 +784,18 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **Shared picker-kind gate helper for the input arms.** The picker-pick
+      arms in `input_handlers.zig` (entity/decoration sprite, entity/
+      decoration layer, footprint tile + confirm, utility skill — 8 arms)
+      each open with a hand-written "gate: the open picker must be kind X,
+      else return" — a switch enumerating the other `EditorPickerTarget`
+      variants that must stay in lockstep whenever a picker kind is added
+      (the ui-surface session re-wrote all eight while migrating onto
+      `Editor.picker`; each edit is another chance for a missed variant).
+      One helper — `expectPickerKind(editor, .entity_sprite) or
+      return`-shaped — deletes the whole seam (a new variant is a comptime
+      exhaustiveness error in ONE place instead of a silent gap in
+      seven).
 - **Doc-symbol staleness checker (machine-walked truth for doc prose).**
       DESIGN/AGENTS name code symbols (`main.dumpEventLog`,
       `parser.writeEventLog`, ...) and drift silently when symbols move —
