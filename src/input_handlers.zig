@@ -5259,3 +5259,120 @@ test "findKeybindSteal: co-firing conflicts + duplicates steal; cross-context is
     const cross_context: types.InputBinding = .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 };
     try std.testing.expectEqual(@as(?usize, null), findKeybindSteal(&bindings, cross_context, 2));
 }
+
+test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
+    // The rebuild path frees + dupes binding strings via the history's
+    // BACKING allocator, so the leak check only fires when the history
+    // runs on std.testing.allocator AND the binding strings are
+    // SELF-OWNED under it (the overlay-test model — an arena would mask
+    // a forgotten free). The harness arena carries only the config
+    // bootstrap, untouched by this flow; the history itself runs on
+    // testing.allocator, so any allocation anywhere in the confirm/
+    // remove flow that isn't freed surfaces at test end — the flow must
+    // be pure settings/ui mutation.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = state.GameStateHistory.init(
+        std.testing.allocator,
+        @import("test_harness.zig").defaultStartingState(),
+        harness.settings,
+        &harness.weapon_type_definitions,
+        harness.color_theme_definitions,
+        harness.salvage_definitions,
+        &harness.file_source,
+        harness.file_source.io,
+    );
+
+    // Self-owned bindings: escape/Escape, skip/Enter, undo/ctrl+KeyZ.
+    const binding_count = 3;
+    const owned_bindings = try std.testing.allocator.alloc(types.InputBinding, binding_count);
+    owned_bindings[0] = .{
+        .input = .{ .key = try std.testing.allocator.dupe(u8, "Escape") },
+        .action = .escape,
+    };
+    owned_bindings[1] = .{
+        .input = .{ .key = try std.testing.allocator.dupe(u8, "Enter") },
+        .action = .skip,
+    };
+    owned_bindings[2] = .{
+        .input = .{ .key = try std.testing.allocator.dupe(u8, "KeyZ") },
+        .modifiers = .{ .ctrl = true },
+        .action = .undo,
+    };
+    history.settings.input_bindings = owned_bindings;
+
+    // --- A rekey that STEALS: keep (row 2 moves) + drop (the stolen row's
+    // string + the old slice freed) + replace (the new combo duped onto
+    // the replaced row's slot). Listening on row 0 (escape), capture
+    // Enter — Enter currently fires skip (game); escape is anytime, so
+    // the contexts intersect and the proposal steals row 1.
+    history.session.ui_state.keybind_edit = .{
+        .edit = .{ .listening = .{ .binding = 0 } },
+    };
+    history.session.ui_state.keybind_edit.?.capture.store(.key, "Enter", .{});
+    resolveKeybindCaptureOutcome(&history, .captured);
+    const stolen_proposal = switch (history.session.ui_state.keybind_edit.?.edit) {
+        .pending => |proposal| proposal,
+        else => return error.TestExpectedPendingProposal,
+    };
+    try std.testing.expectEqual(@as(?usize, 0), stolen_proposal.replace_index);
+    try std.testing.expectEqual(@as(?usize, 1), stolen_proposal.stolen_index);
+    resolveKeybindCaptureOutcome(&history, .confirmed);
+    try std.testing.expect(history.session.ui_state.keybind_edit == null);
+    // REPLACE is drop + append: the rekeyed row moves to the END of the
+    // list (the keybinds tab sorts its rows by action, and the conflict
+    // rule leaves no co-firing same-combo pair whose order could matter
+    // for first-match-wins — list order carries no meaning).
+    try std.testing.expectEqual(@as(usize, 2), history.settings.input_bindings.len);
+    try std.testing.expectEqualStrings("KeyZ", history.settings.input_bindings[0].input.key);
+    try std.testing.expectEqual(types.Action.undo, history.settings.input_bindings[0].action);
+    try std.testing.expectEqualStrings("Enter", history.settings.input_bindings[1].input.key);
+    try std.testing.expectEqual(types.Action.escape, history.settings.input_bindings[1].action);
+
+    // --- A clean ADD: every row kept, one entry appended (its id duped
+    // from the capture buffer into the settings allocation).
+    history.session.ui_state.keybind_edit = .{
+        .edit = .{ .listening = .{ .add = .skill_slot_1 } },
+    };
+    history.session.ui_state.keybind_edit.?.capture.store(.key, "KeyQ", .{});
+    resolveKeybindCaptureOutcome(&history, .captured);
+    const added_proposal = switch (history.session.ui_state.keybind_edit.?.edit) {
+        .pending => |proposal| proposal,
+        else => return error.TestExpectedPendingProposal,
+    };
+    try std.testing.expectEqual(@as(?usize, null), added_proposal.replace_index);
+    try std.testing.expectEqual(@as(?usize, null), added_proposal.stolen_index);
+    resolveKeybindCaptureOutcome(&history, .confirmed);
+    try std.testing.expectEqual(@as(usize, 3), history.settings.input_bindings.len);
+    try std.testing.expectEqualStrings("KeyQ", history.settings.input_bindings[2].input.key);
+    try std.testing.expectEqual(types.Action.skill_slot_1, history.settings.input_bindings[2].action);
+
+    // --- REMOVE a row (its string + the old slice freed); an
+    // out-of-range index is a no-op (the gate holds for crafted input).
+    removeKeybindBinding(&history, 0);
+    removeKeybindBinding(&history, binding_count);
+    try std.testing.expectEqual(@as(usize, 2), history.settings.input_bindings.len);
+    try std.testing.expectEqualStrings("Enter", history.settings.input_bindings[0].input.key);
+    try std.testing.expectEqual(types.Action.escape, history.settings.input_bindings[0].action);
+    try std.testing.expectEqualStrings("KeyQ", history.settings.input_bindings[1].input.key);
+    try std.testing.expectEqual(types.Action.skill_slot_1, history.settings.input_bindings[1].action);
+
+    // Each mutation marks settings dirty (the mutate + mark-dirty
+    // discipline) — one debounced settings write is pending.
+    var settings_write_pending = false;
+    for (history.session.pending_writes) |slot| {
+        if (slot) |entry| {
+            if (entry.tag == .settings) settings_write_pending = true;
+        }
+    }
+    try std.testing.expect(settings_write_pending);
+
+    // Teardown balances the ownership ledger: the final list's kept
+    // entries MOVED from the self-owned set, the replaced/added entries
+    // were duped by the rebuild, and the slice is rebuild-allocated —
+    // freeSettings frees exactly those under testing.allocator. Any
+    // imbalance (a rebuild that forgot a free, freed a moved string, or
+    // leaked the slice) fails the leak check at test end.
+    loaders.freeSettings(history.settings, std.testing.allocator);
+}

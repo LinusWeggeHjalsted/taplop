@@ -75,11 +75,9 @@ Test by running `zig build run` and clicking through.
         the Settings tab's 12 rows went two-column to fit)
   - [x] 4. Editing flows (listening state, pending confirm/cancel +
         steal warning, right-column action picker, add/remove/reset) — DONE
-        (see DONE.md, keybind editor slice 4). FOLLOW-UP: an end-to-end
-        harness test for `applyKeybindEdit`/`removeKeybindBinding`'s
-        rebuild-ownership path (leak-checked) — the arms are thin + the
-        steal scan + capture seam are unit-covered, but the mutation path
-        itself is not.
+        (see DONE.md, keybind editor slice 4; the rebuild-ownership
+        follow-up test is DONE too — DONE.md, keybind rebuild-ownership
+        test).
 - **Console input (stdin — a scripted/TAS input channel)** — the game
   reads stdin while it runs: always-on, native only; piped scripts drive
   the game, launching from a terminal gives terminal control. Mirrors the

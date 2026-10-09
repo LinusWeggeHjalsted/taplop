@@ -15616,3 +15616,34 @@ file-private helper:
 - Per-arm gate comments dropped (the helper's doc comment carries the
   why once); behavior unchanged — the picker tests in
   `handler_tests_editor.zig` pass unmodified.
+
+## Keybind editing: the rebuild-ownership end-to-end test (follow-up)
+
+The keybind editor slice 4 left the mutation path untested — the arms
+were thin and the steal scan + capture seam were unit-covered, but
+`applyKeybindEdit`/`removeKeybindBinding`'s `rebuildInputBindings`
+ownership ledger (kept strings MOVE, dropped strings + the old slice
+free, appended strings dupe from the capture buffer) had no coverage.
+
+- The test (inline in `input_handlers.zig`, next to the
+  `findKeybindSteal` unit test) drives the REAL confirm seam
+  (`resolveKeybindCaptureOutcome` captured → confirmed) plus
+  `removeKeybindBinding` through three scenarios on one history: a
+  rekey-that-steals (keep + drop + replace), a clean add, a remove
+  (+ out-of-range no-op), and pins the mutate + mark-dirty discipline
+  (a settings `PendingWrite` lands).
+- LEAK-CHECKED per the settings-ownership convention: the harness
+  arena carries only the config bootstrap; the history runs on
+  `std.testing.allocator` as its backing (any allocation anywhere in
+  the flow that isn't freed surfaces at test end — the flow must be
+  pure settings/ui mutation), and the binding strings are SELF-OWNED
+  under `testing.allocator` (an arena would mask a forgotten free).
+  Teardown frees the final list via `loaders.freeSettings` — every
+  remaining string is either a moved self-owned original or a
+  rebuild-duped one, so any imbalance fails the leak check.
+- The test's first draft asserted IN-PLACE replacement and failed:
+  replace is DROP + APPEND by design — the rekeyed row moves to the
+  END of the list. Harmless: the keybinds tab sorts rows by action,
+  and the conflict rule leaves no co-firing same-combo pair whose
+  order could matter for first-match-wins. Noted in the test comment
+  (list order carries no meaning).
