@@ -443,15 +443,16 @@ work:
     lean) vs no rename in v1;
   - the Editor-state split — `Editor` + content union (mission /
     campaign payloads on the shared spine; the lean) vs a parallel
-    CampaignEditor state; UNDECIDED;
+    CampaignEditor state; UNDECIDED — settle with a dedicated design
+    spike against the real `Editor` code BEFORE slice 3 (it shapes
+    slices 3–5; cheap to revisit on paper, expensive in code);
   - what the mission editor's campaign context changes beyond the
     options-menu return (the "slightly different setup" — e.g. no
     standalone-dream export surface while campaign-owned).
   Future surfaces riding this work: the pre-mission briefing overlay
   (leaderboards, clone info + medal — before ANY mission start, map
   edge / exit tile / re-run alike); fog-of-war hiding as a possible
-  refinement of the dim-undiscovered mirror; campaign VALIDATION
-  (dangling edges, unreachable hubs, every referenced mission exists).
+  refinement of the dim-undiscovered mirror.
   Artist dependency: a plain world-map background image for the official
   campaign (a placeholder unblocks the editor meanwhile).
   Slices (rough, re-cut at implementation):
@@ -464,7 +465,20 @@ work:
         the edge; dreams = entering-hub fallback) + `level_count`
         becomes derived (writer/loader round-trip + tests; consumers:
         start_mission's level loop, the mission-browser scan,
-        content_hash).
+        content_hash). RIDERS while the load layer is open:
+        - `loadHub` + `loadCampaign` become SELF-OWNED (the
+          arena-blind-spots policy — AGENTS → Build & Test: the ownership
+          fix is the prerequisite for leak-checked tests, deferred until
+          a load change lands; THIS is the load change) so the new
+          format tests run leak-checked from the start, not
+          arena-wrapped with the blind spot inherited.
+        - Campaign graph INTEGRITY checks at load (dangling
+          destination names, exits naming missing missions, no start
+          hub placed, unreachable hubs — warn, the loader convention):
+          the dangling format is save-legal BY DESIGN, so the catch
+          belongs at load/validation time from day one, not as a
+          trailing afterthought (a hand-edited campaign must not
+          silently misresolve).
   - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
         new_game, discovered on arrival), `start_mission.end_hub_id`
         populated from the exit's destination_hub by the exit-click
@@ -860,16 +874,30 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **Vestigial `!replaying` gates at input-layer sound sites.** The
+      `queueActionSound`/`queueSound` call sites gate on
+      `!history.replaying`, but the input handlers (`handleAnytimeInput` /
+      `handleIdleInput`) appear to run ONLY in the live path (replay drives
+      `processEvent` directly on recorded events) — making the gates dead
+      defense. Confirm once, then either drop them or record WHY the
+      convention stands at the choke point (`dispatchFiredActionSounds`
+      kept its gate for convention) so the gate isn't cargo-culted onto new
+      sites. Do NOT churn the per-site gates on their own — fold into the
+      next touch of each site.
 - **Doc-symbol staleness checker (machine-walked truth for doc prose).**
       DESIGN/AGENTS name code symbols (`main.dumpEventLog`,
       `parser.writeEventLog`, ...) and drift silently when symbols move —
       two stale refs were found + fixed during the session-log bundle work
-      (nobody re-reads settled prose). The sound_report / art_report
-      pattern applied to docs: a script that extracts
-      backtick-quoted dot-paths from DESIGN/AGENTS/TODO and flags the ones
-      no src file contains (`rg -F` per candidate). Cheap to build,
-      self-maintaining, catches the whole class. Wire into scripts/
-      alongside test.sh; run manually or in CI-if-ever.
+      (nobody re-reads settled prose), and two more surfaced by accident
+      during the dispatch-convergence session (the stale "blocked on NPC
+      art" line; a "silent gap in seven" vs 8 picker arms). The
+      sound_report / art_report pattern applied to docs: a script that
+      extracts backtick-quoted dot-paths from DESIGN/AGENTS/TODO and flags
+      the ones no src file contains (`rg -F` per candidate). Cheap to
+      build, self-maintaining, catches the whole class. Wire into scripts/
+      alongside test.sh; run manually or in CI-if-ever. Build it BEFORE the
+      campaign editor work — that work adds a wave of new symbols + doc
+      prose, and the checker's value compounds from the first new line.
 - **Style pass over the Tier A session's lines — DEFERRED (owner
       undecided).** Scope discovery (cleanup session): the "~95-char wrap
       convention" isn't an enforced convention — it's in no doc, ~2,000+

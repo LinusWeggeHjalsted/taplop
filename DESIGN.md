@@ -2482,8 +2482,10 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   two hubs). Deliberate — it keeps `start_hub` derivable and the graph
   honest; duplication or redesign is the author's answer.
 - Dangling end hubs are tolerated (forward references), so a campaign can
-  be SAVED in a state that does not fully resolve — validation (a later
-  slice) is the catch, not the save.
+  be SAVED in a state that does not fully resolve — the load-time graph
+  integrity checks (slice 1: dangling destinations, exits naming missing
+  missions, no placed start hub, unreachable hubs) + the eventual editor
+  validation are the catch, not the save.
 
 ## Clones (clone system)
 

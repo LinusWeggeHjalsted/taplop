@@ -112,7 +112,9 @@ construction (owned strings, no borrows); the leak class is now catchable.
 
 Loaders that still borrow into leaked bytes (levels, hubs, themes — not yet
 self-owned) stay arena-wrapped; their ownership fix is the prerequisite for
-leak-checked testing, deferred until a load change lands. `scripts/test.sh`
+leak-checked testing, deferred until a load change lands (the campaign
+editor's slice 1 is the load change that opens `loadHub` + `loadCampaign` —
+see TODO → Level Editor → campaign editor). `scripts/test.sh`
 cleans `crashes/` before and after a passing run so a panicking test's crash
 dump doesn't pollute the tree.
 
