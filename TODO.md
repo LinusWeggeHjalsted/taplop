@@ -784,18 +784,6 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
-- **Shared picker-kind gate helper for the input arms.** The picker-pick
-      arms in `input_handlers.zig` (entity/decoration sprite, entity/
-      decoration layer, footprint tile + confirm, utility skill — 8 arms)
-      each open with a hand-written "gate: the open picker must be kind X,
-      else return" — a switch enumerating the other `EditorPickerTarget`
-      variants that must stay in lockstep whenever a picker kind is added
-      (the ui-surface session re-wrote all eight while migrating onto
-      `Editor.picker`; each edit is another chance for a missed variant).
-      One helper — `expectPickerKind(editor, .entity_sprite) or
-      return`-shaped — deletes the whole seam (a new variant is a comptime
-      exhaustiveness error in ONE place instead of a silent gap in
-      seven).
 - **Doc-symbol staleness checker (machine-walked truth for doc prose).**
       DESIGN/AGENTS name code symbols (`main.dumpEventLog`,
       `parser.writeEventLog`, ...) and drift silently when symbols move —

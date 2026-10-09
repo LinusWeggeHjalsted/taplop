@@ -15592,3 +15592,27 @@ classes 2–4 (view affordances, scrolls, gesture lifecycles) stay on
 - Session-log version 2→3 (hard gate — old logs re-record, pre-release
   policy; no shipped replay fixtures existed, so the fallout was two
   hand-crafted test fixtures' version lines).
+
+## Editor picker arms: the shared expectPickerKind gate (tech debt)
+
+The eight picker-pick arms in `input_handlers.zig` each opened with a
+hand-written "gate: the open picker must be kind X, else return" switch —
+payload sites used `else => return` (a new picker kind would silently
+no-op) and void sites enumerated every other variant (compile-checked,
+but eight copies to re-edit in lockstep; the ui-surface session re-wrote
+all eight while migrating onto `Editor.picker`). Collapsed into ONE
+file-private helper:
+
+- `expectPickerKind(editor, comptime kind) ?@FieldType(EditorPickerTarget,
+  @tagName(kind))` — returns the payload when the open picker is `kind`,
+  else null (no picker open, or another kind — a crafted click while the
+  wrong picker is open no-ops, the pick arms' standing posture). The
+  helper's switch enumerates every variant explicitly, so adding a new
+  `EditorPickerTarget` kind is a compile error in ONE place instead of a
+  silent no-op gap (payload sites) or eight hand-edits (void sites).
+- Zig 0.16 note: `std.meta.TagPayload` doesn't exist —
+  `@FieldType(T, @tagName(kind))` is the 0.16 shape for "payload type of
+  this union tag".
+- Per-arm gate comments dropped (the helper's doc comment carries the
+  why once); behavior unchanged — the picker tests in
+  `handler_tests_editor.zig` pass unmodified.

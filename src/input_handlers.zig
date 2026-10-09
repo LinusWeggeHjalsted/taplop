@@ -404,6 +404,28 @@ fn defaultItemForSlot(history: *GameStateHistory, slot: types.GearSlot) ?types.I
     };
 }
 
+/// The shared gate for the picker-pick arms: the open picker must be
+/// kind `kind`, else null (no picker open, or another kind — each pick
+/// arm handles its own kind; a crafted click while the wrong picker is
+/// open no-ops). The switch enumerates every EditorPickerTarget variant
+/// so adding a kind is a compile error HERE, not a silent no-op gap in
+/// the eight pick arms.
+fn expectPickerKind(
+    editor: *const types.Editor,
+    comptime kind: std.meta.Tag(types.EditorPickerTarget),
+) ?@FieldType(types.EditorPickerTarget, @tagName(kind)) {
+    const picker = editor.picker orelse return null;
+    return switch (picker) {
+        .utility_skill_slot => |slot_index| if (kind == .utility_skill_slot) slot_index else null,
+        .entity_sprite => if (kind == .entity_sprite) {} else null,
+        .decoration_sprite => if (kind == .decoration_sprite) {} else null,
+        .entity_layer => |layer_index| if (kind == .entity_layer) layer_index else null,
+        .decoration_layer => |layer_index| if (kind == .decoration_layer) layer_index else null,
+        .decoration_footprint => |type_id| if (kind == .decoration_footprint) type_id else null,
+        .level_gradient => |target| if (kind == .level_gradient) target else null,
+    };
+}
+
 pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     if (history.session.ui_state.text_edit == null) return;
     const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
@@ -1593,10 +1615,7 @@ pub fn handleAnytimeInput(
             // frame).
             .toggle_editor_footprint_tile => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const type_id = switch (editor.picker orelse return) {
-                    .decoration_footprint => |stored_type_id| stored_type_id,
-                    else => return,
-                };
+                const type_id = expectPickerKind(editor, .decoration_footprint) orelse return;
                 const cell_index = anytime.clicked_editor_footprint_tile orelse return;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
@@ -1615,10 +1634,7 @@ pub fn handleAnytimeInput(
             // (an edited footprint re-anchors).
             .confirm_editor_footprint => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const type_id = switch (editor.picker orelse return) {
-                    .decoration_footprint => |stored_type_id| stored_type_id,
-                    else => return,
-                };
+                const type_id = expectPickerKind(editor, .decoration_footprint) orelse return;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
                 const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
@@ -1694,10 +1710,7 @@ pub fn handleAnytimeInput(
             // derived gradient was visually the same).
             .select_editor_level_gradient => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const target = switch (editor.picker orelse return) {
-                    .level_gradient => |stored| stored,
-                    else => return,
-                };
+                const target = expectPickerKind(editor, .level_gradient) orelse return;
                 const gradient_index = anytime.clicked_editor_gradient orelse return;
                 if (target.level_index >= editor.levels.len) return;
                 const level = editor.levels[target.level_index];
@@ -1793,14 +1806,8 @@ pub fn handleAnytimeInput(
             // the commit orchestrator's handler pushes the close as a
             // child (pick+close is one undo step).
             .select_editor_entity_sprite => {
-                // Gate: only a pick while the ENTITY sprite picker is open
-                // (crafted clicks with no picker — or another picker kind —
-                // are a no-op, the skill arm's posture).
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                switch (editor.picker orelse return) {
-                    .entity_sprite => {},
-                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
-                }
+                expectPickerKind(editor, .entity_sprite) orelse return;
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -1858,14 +1865,8 @@ pub fn handleAnytimeInput(
             // resolution keeps the picker OPEN, nothing recorded — the
             // pick visibly didn't take (the decoration-LAYER arm's semantic).
             .select_editor_decoration_sprite => {
-                // Gate: only a pick while the DECORATION picker is open
-                // (crafted clicks with no picker — or another picker kind —
-                // are a no-op, the skill arm's posture).
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                switch (editor.picker orelse return) {
-                    .decoration_sprite => {},
-                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
-                }
+                expectPickerKind(editor, .decoration_sprite) orelse return;
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -1976,12 +1977,8 @@ pub fn handleAnytimeInput(
             // is the recorded change). Entities share the
             // fixed 512×640 frame — no dims to check.
             .select_editor_entity_layer => {
-                // Gate: only a pick while the ENTITY LAYER picker is open.
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const layer_index = switch (editor.picker orelse return) {
-                    .entity_layer => |index| index,
-                    else => return,
-                };
+                const layer_index = expectPickerKind(editor, .entity_layer) orelse return;
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2039,13 +2036,8 @@ pub fn handleAnytimeInput(
             // side (tree_1's grass_back is true), else false; a re-pick
             // keeps the layer's.
             .select_editor_decoration_layer => {
-                // Gate: only a pick while the DECORATION LAYER picker is
-                // open.
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const layer_index = switch (editor.picker orelse return) {
-                    .decoration_layer => |index| index,
-                    else => return,
-                };
+                const layer_index = expectPickerKind(editor, .decoration_layer) orelse return;
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -2496,13 +2488,7 @@ pub fn handleAnytimeInput(
             // COMMITTING (the close itself is the recorded change).
             .select_editor_utility_skill => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
-                const target = editor.picker orelse return;
-                const slot_index = switch (target) {
-                    .utility_skill_slot => |index| index,
-                    // The sprite/footprint pickers' picks route through
-                    // their own arms — not a skill-slot assignment.
-                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
-                };
+                const slot_index = expectPickerKind(editor, .utility_skill_slot) orelse return;
                 const entity_target = editorEntityEditTarget(editor.*) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
                 const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
