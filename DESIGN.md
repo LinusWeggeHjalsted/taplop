@@ -1191,7 +1191,10 @@ that true (`src/session_log_bundle.zig`):
   touches: (1) the binding entry in `data/default_settings.txt` (including
   its informational `context` line), (2) the `Action` enum + its
   `actionBindingContexts` case, (3) the `AnytimeInput`/`IdleInput` field +
-  `applyAction` + the consumption site. The dispatch itself is NO LONGER a
+  `applyAction` + the consumption site — the action-layer SOUND is automatic
+  (the fired-actions choke point covers every non-excluded action; only an
+  OUTCOME-gated sound needs a consumption-site queue). The dispatch itself
+  is NO LONGER a
   site: the one dispatch pass (see Dispatch convergence below) fires every
   binding automatically — the old per-action `checkAction` line is gone,
   and with it the ctrl+S missing-dispatch-line bug class. The backend's

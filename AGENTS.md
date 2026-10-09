@@ -426,9 +426,11 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (player verbs, entity↔PlayerData sync) + gear/salvage helpers + clone
   harvest math.
 - `src/input_handlers.zig` — input consumption: `handleAnytimeInput`,
-  `handleIdleInput`, `resolveTileCursor`, the text-field commit sites, and
-  session-log dev tooling (dumpEventLog, build-version warn, timestamp
-  formatter).
+  `handleIdleInput`, `resolveTileCursor`, the text-field commit sites, the
+  keybind-edit mutation machinery (`applyKeybindEdit`/`removeKeybindBinding`/
+  `rebuildInputBindings`), the per-action sound choke point
+  (`dispatchFiredActionSounds`), and session-log dev tooling (dumpEventLog,
+  build-version warn, timestamp formatter).
 - `src/input_gestures.zig` — pointer gesture resolution: the drag
   lifecycle + click intents, camera pan, settings sliders, right-click
   inspect, and the editor viewport gestures (right-click delete, marquee,
