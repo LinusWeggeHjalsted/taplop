@@ -15647,3 +15647,61 @@ free, appended strings dupe from the capture buffer) had no coverage.
   and the conflict rule leaves no co-firing same-combo pair whose
   order could matter for first-match-wins. Noted in the test comment
   (list order carries no meaning).
+
+## Input dispatch convergence: slice 1 — the one dispatch pass
+
+The planned convergence refactor (design settled in session, then landed
+— see DESIGN → Input → Dispatch convergence): `translateInput` set the
+anytime/idle flags via ~40 per-action `checkAction` lines while button
+releases + console commands folded through `applyAction` — two
+hand-maintained copies of the same action→flag mapping, and the
+keybind-picker-vs-dispatch inconsistency that came with it.
+
+- **The one dispatch pass:** `translateInput`'s action section is ONE
+  loop over the bindings — every binding that passes `bindingFires`'
+  gates (derived-context intersection, required-modifier subset, a real
+  press edge or a whitelisted synthetic repeat, not suppressed) folds
+  through `applyAction`. Iterating the bindings, not the actions, keeps
+  the pass O(bindings) — actions with no binding are never touched
+  (the rejected alternative, a comptime loop over all 175 Action
+  variants, was 175×bindings of mostly-wasted enum compares). The five
+  keyboard-bridge arms (editor tools/palette groups — no button carries
+  them) moved INTO `applyAction` (the payload is the keyboard action's
+  own identity), so keybind, click, and console share the consumption
+  sites with zero residue in translateInput.
+- **Behavior fix folded in (user-approved):** every action is now
+  uniformly keybindable. The keybinds tab's action picker lists the
+  whole enum, but the old per-action dispatch lines never checked the
+  menu commands or several click actions — a binding on `new_game` (or
+  `toggle_entity_inspect`, `save_game`, ...) was silently dead. The
+  derived binding-context gate keeps each to its screens, so nothing
+  fires where it shouldn't; a binding pinned by test
+  (menu-action binding fires on the main-menu set only).
+- **`actionRepeats`** — the repeat whitelist (undo/redo, skip,
+  error-scroll, movement cursors) named as one function; the per-binding
+  gate consults it for synthetic edges (previously each call site chose
+  its `keys_repeated` slice — the whitelist lived in ~9 lines' worth of
+  arg choices).
+- **`action_binding_contexts_lut`** (types.zig) — the 175-way
+  `actionBindingContexts` switch (the single source of truth, still
+  compile-enforced exhaustive) materialized into a comptime table the
+  pub fn reads; the context gate runs once per binding in the dispatch
+  pass and once per competitor inside `isSuppressed`, so the switch was
+  the most-executed line of the input path (the generated-lookups
+  pattern).
+- **Same-frame degeneracies resolve first-listed-wins** (the conflict
+  rule's tiebreak): equal-specificity same-combo competitors are
+  suppressed inside the pass (unchanged); the skill-slot guard keeps one
+  slot selection — a same-frame double-slot press keeps the
+  FIRST-LISTED binding's slot (previously lowest slot number won; the
+  new tiebreak matches the conflict rule's convention). `applyAction`
+  is idempotent per arm, so a same action on two inputs both firing is
+  a non-event.
+- Tests: the seven `checkAction` unit tests rewritten against the
+  per-binding predicate (same assertions, same semantics; the
+  equal-specificity test's "regardless of query order" note died with
+  the query), plus two new tests — the repeat-whitelist gate inside the
+  predicate, and the menu-action fix.
+- Slice 1 of the convergence; slices 2–4 (fired_actions record + the
+  sound choke point; the count-assertion rewrite; the input_handlers
+  split evaluation) stay in TODO.

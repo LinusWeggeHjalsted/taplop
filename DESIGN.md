@@ -1139,7 +1139,7 @@ that true (`src/session_log_bundle.zig`):
   active contexts ARE `actionBindingContexts(action)` — the single,
   compiler-enforced declaration (see the next bullet). `frame()` computes
   the frame's active `BindingContextSet` and hands it to `translateInput`;
-  `checkAction`/`isActionHeld`/`isSuppressed` skip a binding unless its
+  `bindingFires`/`isActionHeld`/`isSuppressed` skip a binding unless its
   action's contexts intersect the active set (an inactive binding is not a
   precedence competitor either). Bindings on actions in DIFFERENT contexts
   may share the same combo (Digit1 = skill 1 in game, select tool in editor)
@@ -1179,19 +1179,48 @@ that true (`src/session_log_bundle.zig`):
   still validates per entry: the `action` itself (unknown → warn + drop).
   `settings_file_format_version` did NOT bump: old files parse (context
   lines ignored, scalars untouched) rather than being rejected wholesale.
-- **New keybind wiring sites (four, easily forgotten).** A new keybind
+- **New keybind wiring sites (three, easily forgotten).** A new keybind
   touches: (1) the binding entry in `data/default_settings.txt` (including
   its informational `context` line), (2) the `Action` enum + its
   `actionBindingContexts` case, (3) the `AnytimeInput`/`IdleInput` field +
-  `applyAction` + the consumption site, (4) the `translateInput`
-  `checkAction` dispatch line. The backend's key table is NO LONGER a site:
-  `key_mappings` in src/raylib/input_poll.zig maps the FULL W3C id set
-  (every key raylib can report), so any binding name reaches
-  `translateInput` with no backend edit. Two historical instances of a site
-  being forgotten: ctrl+A select-all (missing backend entry) and ctrl+S
-  save-mission (missing dispatch line). The startup warning for bindings
-  naming inputs no backend mapping can produce is still TODO (see TODO →
+  `applyAction` + the consumption site. The dispatch itself is NO LONGER a
+  site: the one dispatch pass (see Dispatch convergence below) fires every
+  binding automatically — the old per-action `checkAction` line is gone,
+  and with it the ctrl+S missing-dispatch-line bug class. The backend's
+  key table is NO LONGER a site either: `key_mappings` in
+  src/raylib/input_poll.zig maps the FULL W3C id set (every key raylib can
+  report), so any binding name reaches `translateInput` with no backend
+  edit. Historical instance of a site being forgotten: ctrl+A select-all
+  (missing backend entry). The startup warning for bindings naming inputs
+  no backend mapping can produce is still TODO (see TODO →
   New-keybind pipeline friction).
+- **Dispatch convergence — one pass, one seam.** `translateInput`'s action
+  section is ONE pass over the bindings: every binding that passes its
+  gates (`bindingFires`: derived-context intersection, required-modifier
+  subset, a real press edge or a whitelisted synthetic repeat, not
+  suppressed) fires its action through `applyAction` — the ONE
+  action→PlayerInput mapping, shared by UI button releases (main.zig),
+  fired keybinds, and console `action` commands, so a binding and its
+  button land on the exact same fields and EVERY action is uniformly
+  keybindable (the keybinds tab's action picker lists the whole enum; the
+  derived-context gate keeps each action to its screens — menu commands
+  included, which the old per-action dispatch lines never checked, so a
+  binding on `new_game` was silently dead until the convergence).
+  Iterating the bindings, not the actions, keeps the pass O(bindings) —
+  actions with no binding are never touched — and the context gate reads
+  a comptime-materialized table (`action_binding_contexts_lut` in
+  types.zig, the generated-lookups pattern: the switch stays the single
+  source of truth, materialized at comptime because the gate runs once
+  per binding and once per competitor inside `isSuppressed`). Same-frame
+  degeneracies resolve first-listed-wins (the conflict rule's tiebreak):
+  equal-specificity same-combo competitors are suppressed inside the
+  pass; the skill-slot guard keeps one slot selection (a same-frame
+  double-slot press keeps the first-listed binding's slot). The
+  keyboard-only editor shortcuts (Digit1–5 tools/palette groups — no
+  button carries them) BRIDGE onto the click paths' options_action +
+  payload pairs inside `applyAction` (the payload is the keyboard
+  action's own identity), so keybind, click, and console all share the
+  consumption sites.
 - **macOS: Command reports as the Control ids.** Mac convention is Command
   for app shortcuts, so on macos targets the backend key table maps
   `left_super`/`right_super` to `ControlLeft`/`ControlRight`
@@ -1205,7 +1234,7 @@ that true (`src/session_log_bundle.zig`):
   REQUIREMENTS, not an exact match: a plain binding fires regardless of held
   modifiers (so ctrl+key works for any plain-bound action — e.g. ctrl+Space
   skip with `force_attack_step`); a ctrl binding fires only when ctrl is held.
-  `checkAction` skips only when a REQUIRED modifier is NOT held. This matches
+  `bindingFires` skips only when a REQUIRED modifier is NOT held. This matches
   the button-click path (`applyAction` sets the action directly with no
   modifier filtering) so keyboard chords and clicks behave the same.
 - **Hybrid precedence — most-specific chord wins within the active
@@ -1222,7 +1251,7 @@ that true (`src/session_log_bundle.zig`):
   via a hand-edited file, since `loadSettings` warns + drops conflicts
   (the later entry) and the keybind UI prevents them. Same-combo
   different-context pairs are NOT ties — the context gate resolves them
-  upstream (see Binding contexts). `checkAction` / `isActionHeld` suppress
+  upstream (see Binding contexts). `bindingFires` / `isActionHeld` suppress
   a matching binding when another ACTIVE binding on the same input either
   matches the held modifiers with strictly more required modifiers, or
   equals them on a different action from an earlier list position
@@ -1250,8 +1279,9 @@ that true (`src/session_log_bundle.zig`):
   real-time advantage by twiddling OS key-repeat settings. Only the repeat
   whitelist fires on a synthetic edge: movement cursors, undo/redo, skip,
   error-scroll. Non-whitelisted bindings (skill slots, toggles, confirm/cancel)
-  are press-only — `checkAction` is passed an empty `keys_repeated` slice for
-  them so a held key never repeats. Mouse buttons have no repeat.
+  are press-only — the per-binding gate consults the whitelist
+  (`actionRepeats`) for synthetic edges, so a held key never repeats them.
+  Mouse buttons have no repeat.
 - **Replay safety.** Repeat state lives on `InputState` (off the undoable
   GameState), and the resulting actions produce the same events a single
   press would — replay records events, not input timing, so a held-key
@@ -1401,7 +1431,7 @@ the reader thread exits, zero cost.
   and a full queue blocks the reader (yield-spin backpressure — a piped
   script faster than the drain can never drop or reorder commands).
   Everything downstream is the identical pipeline (`translateInput`,
-  held-state tracking, context gating, `checkAction`, `frame()`'s gate
+  held-state tracking, context gating, `bindingFires`, `frame()`'s gate
   ordering, drains, recorded events) — no parallel path, no different
   rate, so console-driven gameplay is identical to played gameplay.
   Merged string payloads (key ids, typed text) are duped into the frame

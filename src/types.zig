@@ -855,17 +855,10 @@ pub fn primaryBindingContext(action: Action) BindingContext {
     return .error_popup;
 }
 
-/// Which `BindingContext`s an action fires in — the single declaration of
-/// "where does this action fire" (consumption sites mirror it). DERIVED:
-/// a binding's active contexts ARE this set (there is no per-binding
-/// context). Exhaustive by construction (no else-arm): adding an Action
-/// variant is a compile error until it's classified here. Button clicks
-/// are NOT context-gated (`applyAction` sets actions directly) — buttons
-/// only render in their context, so this map governs keyboard/gamepad
-/// bindings only. Actions valid on multiple screens carry multiple flags
-/// (e.g. `exit_to_menu` fires from the level/hub options menu and the
-/// editor's).
-pub fn actionBindingContexts(action: Action) BindingContextSet {
+/// The switch body of `actionBindingContexts` — the single source of
+/// truth the comptime table below is derived from (kept as a separate fn
+/// so the table can call it at comptime).
+fn actionBindingContextsSwitch(action: Action) BindingContextSet {
     return switch (action) {
         // Always active (except during the error popup, where everything
         // except `error` is inactive).
@@ -1020,6 +1013,36 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .continue_after_mission,
         => .{ .game = true, .editor = true },
     };
+}
+
+/// Comptime-materialized action→contexts table (the generated-lookups
+/// pattern), derived from the switch above: `actionBindingContexts` reads
+/// this instead of running the 175-way switch — the context gate runs once
+/// per binding in `translateInput`'s dispatch loop and once per competitor
+/// inside `isSuppressed`, so the switch was the most-executed line of the
+/// input path. A new Action variant still fails compilation until the
+/// switch classifies it.
+const action_binding_contexts_lut: [@typeInfo(Action).@"enum".fields.len]BindingContextSet = blk: {
+    var table: [@typeInfo(Action).@"enum".fields.len]BindingContextSet = undefined;
+    for (&table, 0..) |*slot, index| {
+        slot.* = actionBindingContextsSwitch(@enumFromInt(index));
+    }
+    break :blk table;
+};
+
+/// Which `BindingContext`s an action fires in — the single declaration of
+/// "where does this action fire" (consumption sites mirror it). DERIVED:
+/// a binding's active contexts ARE this set (there is no per-binding
+/// context). Exhaustive by construction (no else-arm): adding an Action
+/// variant is a compile error until it's classified here. Button clicks
+/// are NOT context-gated (`applyAction` sets actions directly) — buttons
+/// only render in their context, so this map governs keyboard/gamepad
+/// bindings only. Actions valid on multiple screens carry multiple flags
+/// (e.g. `exit_to_menu` fires from the level/hub options menu and the
+/// editor's). Reads the comptime-materialized table above (one array read
+/// per call).
+pub fn actionBindingContexts(action: Action) BindingContextSet {
+    return action_binding_contexts_lut[@intFromEnum(action)];
 }
 
 /// The settings screen's content tabs (the Keybinds tab is the in-game

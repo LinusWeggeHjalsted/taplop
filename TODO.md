@@ -40,9 +40,11 @@ Test by running `zig build run` and clicking through.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as an
-  `Action.inspect_cursor` bool via `checkAction`, consumed in
-  `handleIdleInput` where the tile cursor is resolved; right-click is the
-  only inspect path today). (Camera clamping + editor viewport framing
+  `Action.inspect_cursor` bool — the applyAction arm + the AnytimeInput
+  field + the consumption site are the whole wiring (the dispatch fires
+  it automatically — DESIGN → Input → New keybind wiring sites) —
+  consumed in `handleIdleInput` where the tile cursor is resolved;
+  right-click is the only inspect path today). (Camera clamping + editor viewport framing
   DONE — DONE.md; design: DESIGN → Platform Seam → Camera clamping.)
 - **Keybind editor (settings → Keybinds tab)** — in-game rebinding UI.
   Settled design: contexts are DERIVED from `actionBindingContexts` (the
@@ -100,27 +102,30 @@ Test by running `zig build run` and clicking through.
 - [x] **UI surface state unification** — DONE (all six slices; see DONE.md,
       "UI surface state unification", + DESIGN → UI Framework → UI state
       classification).
-- **Input dispatch convergence (planned refactor — design before code).**
-  `translateInput` sets the `anytime`/`idle` input flags directly (~40
-  `checkAction` lines), while button releases fold through
-  `applyAction` — TWO hand-maintained copies of the same action→flag
-  mapping. Consequences: no single consumption choke point (the button-layer
-  sound wiring was a ~25-site hunt across `handleAnytimeInput`'s flag
-  sections; the `options_action`/`menu_action` switches covered ~50 actions
-  in one line each because they already converge), and every new keybind
-  keeps the five-places pipeline above. Plan: route `translateInput`'s
-  keyboard actions through `applyAction` (the one mapping) + a
-  fired-actions record on `PlayerInput`, giving ONE dispatch choke point
-  for per-action behavior (action sound layers now; analytics/policy
-  later). Fold the `input_handlers.zig` SPLIT (2800+ lines, ten concerns)
-  into this work — if the convergence lands well, the file may split
-  naturally or not need it; don't split as a separate chore first. Also
-  fold the NO-OP-PROOF COUNT ASSERTIONS while there: the picker tests in
-  `handler_tests_editor.zig` assert recorded-event COUNT deltas (four of
-  them broke by hand during the ui-surface migration, one fix was wrong on
-  the first try) — assert WHAT recorded ("the last two events are the
-  close pair") instead of counting (the derived-expectations discipline;
-  counts of things that grow by design are churn).
+- **Input dispatch convergence.** Design DONE (see DESIGN → Input →
+  Dispatch convergence + New keybind wiring sites): `translateInput` is
+  one pass over the bindings — a binding that passes `bindingFires`'
+  gates folds through `applyAction`, the one action→PlayerInput mapping
+  shared by button releases + console commands; every action is uniformly
+  keybindable (menu commands included — dead bindings became live);
+  same-frame degeneracies resolve first-listed-wins. Remaining slices:
+  - [x] 1. The dispatch pass (bindingFires + actionRepeats + the
+        skill-slot guard + the applyAction bridge arms + the comptime
+        context table) — DONE (see DONE.md, input dispatch convergence
+        slice 1).
+  - [ ] 2. `fired_actions` record on `PlayerInput` (set by `applyAction`,
+        all three seams record uniformly) → the per-action sound choke
+        point: one loop over fired actions replaces the ~25 per-flag
+        sound sites in `handleAnytimeInput` (sites needing more than
+        the action stay per-site). Button base down/up stays at main.zig's
+        press/release (the button layer, not the action layer).
+  - [ ] 3. The no-op-proof count assertions in `handler_tests_editor.zig`
+        → assert WHAT recorded ("the last two events are the close pair")
+        instead of counting (the derived-expectations discipline; counts
+        of things that grow by design are churn).
+  - [ ] 4. EVALUATE only: whether `input_handlers.zig` (2800+ lines, ten
+        concerns) splits naturally after the convergence — don't split
+        as a separate chore first.
 - [x] **New-keybind pipeline friction** — DONE. The wiring-site map
       shrank (four sites — DESIGN → Input → New keybind wiring sites; the
       backend key table + the derived `context` line are no longer sites),

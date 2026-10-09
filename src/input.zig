@@ -515,11 +515,13 @@ pub const IdleInput = struct {
     clicked_save_row: ?u32 = null,
 };
 
-/// Fold a UI Button's Action into `player_input` so a click drives the exact
-/// same path as the equivalent keybind (buttons carry the same Action enum).
-/// Actions with an existing input field set that field; main-menu commands
-/// (which have no keybind) go to idle.menu_action. This is the one bridge from
-/// "button was clicked" to the semantic input the handlers already consume.
+/// THE action→PlayerInput mapping — the one dispatch seam. All three input
+/// paths fold through it: UI button releases (main.zig), fired keybinds
+/// (translateInput's one dispatch pass), and console `action` commands. A
+/// binding and its button land on the exact same fields, and every action is
+/// uniformly keybindable (the keybinds tab's action picker lists the whole
+/// enum; the derived binding-context gate keeps each action to its screens).
+/// Main-menu commands (no default keybind) go to idle.menu_action.
 pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
     switch (action) {
         .undo => player_input.anytime.undo = true,
@@ -609,15 +611,35 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         // Keyboard-only editor shortcuts — no button carries these (the
-        // palette cells use the payload-carrying click actions), so the
-        // click bridge never sees them; the translateInput dispatch owns
-        // the keybind→click-action bridging.
-        .editor_select_tool,
-        .editor_tile_tool,
-        .toggle_editor_entity_group,
-        .toggle_editor_decoration_group,
-        .toggle_editor_item_group,
-        => {},
+        // palette cells use the payload-carrying click actions). The
+        // keybind→click-action BRIDGE lives here: the keyboard action folds
+        // onto the click paths' options_action + payload pair so keybind and
+        // click share the consumption sites exactly, and the console `action`
+        // commands get the same bridge (the console mirrors the keybind
+        // path). The payload is the keyboard action's own identity — no
+        // runtime payload to ride along. A same-frame keypress + button
+        // release on the same action is degenerate (the button's payload
+        // lands last, at main.zig's release dispatch, and wins).
+        .editor_select_tool => {
+            player_input.anytime.options_action = .select_editor_tool;
+            player_input.anytime.clicked_editor_tool = .select;
+        },
+        .editor_tile_tool => {
+            player_input.anytime.options_action = .select_editor_tool;
+            player_input.anytime.clicked_editor_tool = .tile;
+        },
+        .toggle_editor_entity_group => {
+            player_input.anytime.options_action = .toggle_editor_palette_group;
+            player_input.anytime.clicked_editor_group = 0;
+        },
+        .toggle_editor_decoration_group => {
+            player_input.anytime.options_action = .toggle_editor_palette_group;
+            player_input.anytime.clicked_editor_group = 1;
+        },
+        .toggle_editor_item_group => {
+            player_input.anytime.options_action = .toggle_editor_palette_group;
+            player_input.anytime.clicked_editor_group = 2;
+        },
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
@@ -796,12 +818,40 @@ fn isActionHeld(
     return false;
 }
 
-/// Check if an action was triggered by any just-pressed input this tick.
-/// `keys_repeated` carries synthetic key-repeat edges for held keys (see
-/// `InputState.advanceKeyRepeats`); callers pass a non-empty slice only for
-/// actions in the repeat whitelist so non-whitelisted bindings never repeat.
-fn checkAction(
-    action: types.Action,
+/// Whether `action`'s bindings may fire on synthetic key-repeat edges (see
+/// `InputState.advanceKeyRepeats`): the repeated-firing whitelist —
+/// undo/redo, skip, error-scroll, and the movement cursors. Everything else
+/// is press-only (a toggle firing every repeat interval of a held key would
+/// flip panels on repeat).
+fn actionRepeats(action: types.Action) bool {
+    return switch (action) {
+        .undo,
+        .redo,
+        .skip,
+        .error_scroll_up,
+        .error_scroll_down,
+        .move_cursor_up,
+        .move_cursor_down,
+        .move_cursor_left,
+        .move_cursor_right,
+        => true,
+        else => false,
+    };
+}
+
+/// Whether `binding` fires this tick — the per-binding gate of
+/// translateInput's ONE dispatch pass (the loop inverted from the old
+/// per-action queries: the fired set is defined by the bindings, so iterate
+/// bindings, not actions — actions with no binding are never touched).
+/// Gates in order: the action's derived binding contexts must intersect the
+/// frame's active set; the binding's required modifiers must be held; the
+/// bound input must have a real press edge (or a synthetic repeat edge,
+/// whitelist-permitting via `actionRepeats`); and no more-specific or earlier
+/// same-combo binding suppresses it (hybrid precedence — see DESIGN →
+/// Input).
+fn bindingFires(
+    binding: InputBinding,
+    binding_index: usize,
     bindings: []const InputBinding,
     keys_pressed: []const ?[]const u8,
     keys_repeated: []const ?[]const u8,
@@ -810,45 +860,39 @@ fn checkAction(
     modifiers: Modifiers,
     active_contexts: types.BindingContextSet,
 ) bool {
-    for (bindings, 0..) |binding, binding_index| {
-        if (binding.action != action) continue;
+    // Derived binding-context gate (see DESIGN → Input → Binding
+    // contexts): a binding is active iff its action's contexts
+    // (`actionBindingContexts`) intersect the frame's active set —
+    // same-combo cross-context pairs (Digit1 = skill 1 in game /
+    // select tool in editor) never co-fire; the active set + the
+    // derived contexts are the single disambiguator.
+    if (!actionContextsActive(binding.action, active_contexts)) return false;
 
-        // Derived binding-context gate (see DESIGN → Input → Binding
-        // contexts): a binding is active iff its action's contexts
-        // (`actionBindingContexts`) intersect the frame's active set —
-        // same-combo cross-context pairs (Digit1 = skill 1 in game /
-        // select tool in editor) never co-fire; the active set + the
-        // derived contexts are the single disambiguator.
-        if (!actionContextsActive(action, active_contexts)) continue;
+    // A binding's modifiers are REQUIREMENTS, not an exact match: a plain
+    // binding fires regardless of held modifiers (so ctrl+key works for
+    // any plain-bound action, e.g. ctrl+Space skip with force-attack);
+    // a ctrl binding fires only when ctrl is held. Fail only when a
+    // REQUIRED modifier is not held.
+    if (binding.modifiers.ctrl and !modifiers.ctrl) return false;
+    if (binding.modifiers.shift and !modifiers.shift) return false;
+    if (binding.modifiers.alt and !modifiers.alt) return false;
 
-        // A binding's modifiers are REQUIREMENTS, not an exact match: a plain
-        // binding fires regardless of held modifiers (so ctrl+key works for
-        // any plain-bound action, e.g. ctrl+Space skip with force-attack);
-        // a ctrl binding fires only when ctrl is held. Skip only when a
-        // REQUIRED modifier is not held.
-        if (binding.modifiers.ctrl and !modifiers.ctrl) continue;
-        if (binding.modifiers.shift and !modifiers.shift) continue;
-        if (binding.modifiers.alt and !modifiers.alt) continue;
+    // The bound input was just pressed (real edge) or repeated (synthetic
+    // edge for held keys, whitelist-permitting).
+    const pressed = switch (binding.input) {
+        .key => |key| InputState.isHeld(keys_pressed, key) or
+            (actionRepeats(binding.action) and InputState.isHeld(keys_repeated, key)),
+        .mouse_button => |button| InputState.isHeld(mouse_pressed, button),
+        .gamepad_button => |gamepad| InputState.isHeld(gamepad_pressed, gamepad),
+    };
+    if (!pressed) return false;
 
-        // Check if the bound input was just pressed (real edge) or repeated
-        // (synthetic edge for held keys, whitelist-permitting).
-        const pressed = switch (binding.input) {
-            .key => |key| InputState.isHeld(keys_pressed, key) or
-                InputState.isHeld(keys_repeated, key),
-            .mouse_button => |button| InputState.isHeld(mouse_pressed, button),
-            .gamepad_button => |gamepad| InputState.isHeld(gamepad_pressed, gamepad),
-        };
-
-        if (pressed) {
-            // Hybrid precedence — see DESIGN → Input. A more-specific chord
-            // on the same input suppresses this binding; an equal-
-            // specificity different-action conflict is won by the earlier
-            // list entry (first-match-wins — see isSuppressed).
-            if (isSuppressed(binding, binding_index, bindings, modifiers, active_contexts)) continue;
-            return true;
-        }
-    }
-    return false;
+    // Hybrid precedence — see DESIGN → Input. A more-specific chord
+    // on the same input suppresses this binding; an equal-
+    // specificity different-action conflict is won by the earlier
+    // list entry (first-match-wins — see isSuppressed).
+    if (isSuppressed(binding, binding_index, bindings, modifiers, active_contexts)) return false;
+    return true;
 }
 
 /// Derived binding-context gate: `action`'s binding is active this frame
@@ -886,9 +930,6 @@ pub fn translateInput(
     var mouse_pressed: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
     var mouse_released: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
     var gamepad_pressed: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
-    // Empty slice for non-whitelisted actions: checkAction never sees a
-    // synthetic edge for them. (isHeld on a zero-length slice is always false.)
-    const no_repeat: [0]?[]const u8 = .{};
 
     // Accumulate scroll delta across all events this tick
     var scroll_delta: f32 = 0;
@@ -1031,62 +1072,51 @@ pub fn translateInput(
         return result;
     }
 
-    // Anytime actions. Repeat whitelist: undo, redo, skip, error-scroll.
-    // Toggles / dump_event_log / dismiss_error are press-only.
-    result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.escape = checkAction(.escape, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.toggle_editor_browser = checkAction(.toggle_editor_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.new_editor_mission = checkAction(.new_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    // Editor tool/palette keybinds (Digit1–5, editor context — see the
-    // Action docs): bridged onto the click paths' options_action + payload
-    // pairs so keybind and click share the consumption sites exactly. The
-    // payload fields are otherwise set only at the button-release dispatch
-    // in main.zig; a same-frame keypress + button release on the same
-    // action is degenerate (the button's payload lands last and wins).
-    if (checkAction(.editor_select_tool, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-        result.anytime.options_action = .select_editor_tool;
-        result.anytime.clicked_editor_tool = .select;
+    // The ONE dispatch pass: every binding that passes its gates fires its
+    // action through `applyAction` — the same seam UI button releases
+    // (main.zig) and console `action` commands fold through, so a binding
+    // and its button land on the exact same fields, and every action is
+    // uniformly keybindable (the keybinds tab's action picker lists the
+    // whole enum — a binding on ANY action, main-menu commands and click
+    // actions included, is live; the derived binding-context gate keeps
+    // each to its screens). Same-frame degeneracies resolve
+    // first-listed-wins (the conflict rule's tiebreak): equal-specificity
+    // same-combo competitors are suppressed inside the pass, and the
+    // skill-slot guard below keeps one slot selection. Non-action input
+    // facts (scroll delta, held-cursor direction, raw pointer/tile) are
+    // assigned below the pass.
+    for (bindings, 0..) |binding, binding_index| {
+        if (!bindingFires(
+            binding,
+            binding_index,
+            bindings,
+            &keys_pressed,
+            &keys_repeated,
+            &mouse_pressed,
+            &gamepad_pressed,
+            modifiers,
+            active_contexts,
+        )) continue;
+        // Skill slots assign by overwrite, and skill-slot bindings are
+        // press-only (the repeat whitelist — repeating would queue uses
+        // by accident): a same-frame double-slot press keeps the
+        // FIRST-listed binding's slot.
+        switch (binding.action) {
+            .skill_slot_1,
+            .skill_slot_2,
+            .skill_slot_3,
+            .skill_slot_4,
+            .skill_slot_5,
+            .skill_slot_6,
+            .skill_slot_7,
+            .skill_slot_8,
+            => if (result.idle.skill_slot_selected != null) continue,
+            else => {},
+        }
+        applyAction(&result, binding.action);
     }
-    if (checkAction(.editor_tile_tool, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-        result.anytime.options_action = .select_editor_tool;
-        result.anytime.clicked_editor_tool = .tile;
-    }
-    if (checkAction(.toggle_editor_entity_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-        result.anytime.options_action = .toggle_editor_palette_group;
-        result.anytime.clicked_editor_group = 0;
-    }
-    if (checkAction(.toggle_editor_decoration_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-        result.anytime.options_action = .toggle_editor_palette_group;
-        result.anytime.clicked_editor_group = 1;
-    }
-    if (checkAction(.toggle_editor_item_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-        result.anytime.options_action = .toggle_editor_palette_group;
-        result.anytime.clicked_editor_group = 2;
-    }
-    result.anytime.save_editor_mission = checkAction(.save_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.export_editor_mission = checkAction(.export_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.scroll_delta = scroll_delta;
-    result.anytime.zoom_in = checkAction(.zoom_in, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.zoom_out = checkAction(.zoom_out, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.zoom_reset = checkAction(.zoom_reset, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
 
-    // In-game anytime actions. Repeat whitelist: movement cursors only.
-    // Toggles / swap_weapons are press-only.
-    result.anytime.in_game.toggle_inventory = checkAction(.toggle_inventory, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.toggle_gear = checkAction(.toggle_gear, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.scroll_delta = scroll_delta;
     // Cursor direction from HELD cursor keys (not edges) so a diagonal nudge
     // fires when any one of the two held keys edges/repeats. Opposite keys on
     // one axis cancel.
@@ -1103,27 +1133,6 @@ pub fn translateInput(
     // moved this tick (mouse owns the cursor when it moved; arrows otherwise).
     result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
     result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
-
-    // Idle actions. Repeat whitelist: skip. confirm/cancel are press-only.
-    result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.delete_editor_selection = checkAction(.delete_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.clear_editor_selection = checkAction(.clear_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-    result.idle.select_editor_all = checkAction(.select_editor_all, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
-
-    // Skill slots 1-8 (press-only — repeating would queue uses by accident).
-    const skill_slot_actions = [_]types.Action{
-        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
-        .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8,
-    };
-    for (skill_slot_actions, 1..) |action, slot| {
-        if (checkAction(action, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
-            result.idle.skill_slot_selected = @intCast(slot);
-            break;
-        }
-    }
 
     // Left mouse click → tile_clicked
     if (InputState.isHeld(&mouse_pressed, "left")) {
@@ -1234,7 +1243,7 @@ fn keysPressedOne(comptime id: []const u8) [InputState.max_held_keys]?[]const u8
     return arr;
 }
 
-test "checkAction: more-specific chord suppresses plain binding on same key" {
+test "bindingFires: more-specific chord suppresses plain binding on same key" {
     // Enter → confirm (plain); Enter+ctrl → dump_event_log (ctrl).
     // Pressing ctrl+Enter fires dump_event_log only.
     const bindings = [_]InputBinding{
@@ -1243,11 +1252,11 @@ test "checkAction: more-specific chord suppresses plain binding on same key" {
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
-    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
-    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
-test "checkAction: plain press (no chord modifiers) fires plain binding only" {
+test "bindingFires: plain press (no chord modifiers) fires plain binding only" {
     // Same bindings, but ctrl NOT held. The ctrl binding's requirement isn't
     // met, so only the plain confirm fires.
     const bindings = [_]InputBinding{
@@ -1256,11 +1265,11 @@ test "checkAction: plain press (no chord modifiers) fires plain binding only" {
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{};
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
-    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
-test "checkAction: same key, different contexts — exactly one fires" {
+test "bindingFires: same key, different contexts — exactly one fires" {
     // The shipped ArrowUp pattern under binding contexts: move_cursor_up
     // (game) + error_scroll_up (error_popup) share ArrowUp. The active
     // context set is the single disambiguator — with the game set active
@@ -1275,14 +1284,14 @@ test "checkAction: same key, different contexts — exactly one fires" {
     const pressed = keysPressedOne("ArrowUp");
     const mods = Modifiers{};
     const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
-    try std.testing.expect(checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
-    try std.testing.expect(!checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
     const error_contexts: types.BindingContextSet = .{ .error_popup = true };
-    try std.testing.expect(!checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
-    try std.testing.expect(checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
+    try std.testing.expect(!bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
+    try std.testing.expect(bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
 }
 
-test "checkAction: editor bindings inactive on the level screen" {
+test "bindingFires: editor bindings inactive on the level screen" {
     // Digit1 bound twice — skill_slot_1 (game) + the editor select tool
     // (editor). On the level screen only the skill slot fires; on the
     // editor screen only the tool shortcut fires.
@@ -1293,21 +1302,21 @@ test "checkAction: editor bindings inactive on the level screen" {
     const pressed = keysPressedOne("Digit1");
     const mods = Modifiers{};
     const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
-    try std.testing.expect(checkAction(.skill_slot_1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
-    try std.testing.expect(!checkAction(.select_editor_tool, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
     const editor_contexts: types.BindingContextSet = .{ .anytime = true, .editor = true };
-    try std.testing.expect(!checkAction(.skill_slot_1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
-    try std.testing.expect(checkAction(.select_editor_tool, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
+    try std.testing.expect(!bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
+    try std.testing.expect(bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
 }
 
-test "checkAction: equal-specificity conflict — earlier binding wins, one action fires" {
+test "bindingFires: equal-specificity conflict — earlier binding wins, one action fires" {
     // The conflict-rule fallback: one combo fires ONE action per context.
     // Two same-combo equal-specificity bindings on different actions
     // (both game-context) would co-fire — the EARLIER list entry wins and
-    // the later never fires, regardless of query order. Reachable only via
-    // a hand-edited file (`loadSettings` warns + drops conflicts; the
-    // keybind UI prevents them) — the deterministic fallback keeps replay
-    // safe. See DESIGN → Input → Hybrid precedence + binding conflicts.
+    // the later is suppressed. Reachable only via a hand-edited file
+    // (`loadSettings` warns + drops conflicts; the keybind UI prevents
+    // them) — the deterministic fallback keeps replay safe. See DESIGN →
+    // Input → Hybrid precedence + binding conflicts.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
         .{ .input = .{ .key = "Enter" }, .action = .skip },
@@ -1315,14 +1324,15 @@ test "checkAction: equal-specificity conflict — earlier binding wins, one acti
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{};
     const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
-    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
 }
 
-test "checkAction: same action twice on one combo — both entries fire it" {
+test "bindingFires: same action twice on one combo — both entries fire it" {
     // Duplicate entries on the SAME action are redundant, not conflicting:
-    // neither suppresses the other (both set the same flag — the loader
-    // warns + drops the duplicate; the engine stays permissive).
+    // neither suppresses the other (both set the same flag — `applyAction`
+    // is idempotent — the loader warns + drops the duplicate; the engine
+    // stays permissive).
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
@@ -1330,10 +1340,11 @@ test "checkAction: same action twice on one combo — both entries fire it" {
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{};
     const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
 }
 
-test "checkAction: a chord requiring an un-held modifier does not suppress" {
+test "bindingFires: a chord requiring an un-held modifier does not suppress" {
     // Enter → confirm (plain); Enter+shift → dump_event_log (shift). Pressing
     // Enter with ctrl held (not shift): the shift binding doesn't match the
     // held modifiers, so it is NOT a competitor — confirm still fires.
@@ -1343,11 +1354,11 @@ test "checkAction: a chord requiring an un-held modifier does not suppress" {
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
-    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
-test "checkAction: most specific among three wins" {
+test "bindingFires: most specific among three wins" {
     // Enter → confirm (plain, spec0), Enter+ctrl → skip (ctrl, spec1),
     // Enter+ctrl+shift → dump_event_log (ctrl+shift, spec2).
     // ctrl+shift+Enter fires dump_event_log only.
@@ -1358,9 +1369,62 @@ test "checkAction: most specific among three wins" {
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true, .shift = true };
-    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
-    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
-    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(bindingFires(bindings[2], 2, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!bindingFires(bindings[0], 0, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+}
+
+test "bindingFires: synthetic repeat edges fire only repeat-whitelisted actions" {
+    // The repeat whitelist (`actionRepeats`) gates synthetic key-repeat
+    // edges inside the per-binding gate (the old shape passed a per-action
+    // repeat slice at each call site). Held keys crossing their repeat
+    // threshold fire undo/redo, skip, error-scroll, and the movement
+    // cursors; everything else is press-only — escape held must NOT fire
+    // on repeat.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyZ" }, .action = .undo },
+        .{ .input = .{ .key = "Escape" }, .action = .escape },
+    };
+    const no_keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
+    const repeated_undo = keysPressedOne("KeyZ");
+    const repeated_escape = keysPressedOne("Escape");
+    const mods = Modifiers{};
+    // A repeat edge on the undo binding: fires (whitelisted).
+    try std.testing.expect(bindingFires(bindings[0], 0, &bindings, &no_keys_pressed, &repeated_undo, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    // A repeat edge on the escape binding: does not fire (press-only).
+    try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &no_keys_pressed, &repeated_escape, &empty_mouse, &empty_gamepad, mods, test_contexts));
+}
+
+test "translateInput: a menu-action binding fires on the main-menu set only" {
+    // The convergence fix: the keybinds tab's action picker lists the whole
+    // Action enum, but the old per-action dispatch lines never checked the
+    // menu commands — a binding on `new_game` was silently dead (the picker
+    // let you make it; translateInput never fired it). With the one
+    // dispatch pass every action is live; the derived binding-context
+    // gate (menu context, active only on the main-menu screen) keeps it
+    // to its screens — dormant on the level screen like any editor/menu
+    // action.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .new_game },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const platform = PlatformInput{
+        .events = &.{.{ .key_down = "Enter" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    // Main menu: fires, folding to menu_action (the button path's field).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .menu = true });
+        try std.testing.expectEqual(types.Action.new_game, result.idle.menu_action);
+    }
+    // Level screen: the menu context is dormant — no fire.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expectEqual(@as(?types.Action, null), result.idle.menu_action);
+    }
 }
 
 test "translateInput: editor tool/palette keybinds bridge onto the click actions" {
