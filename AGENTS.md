@@ -610,6 +610,12 @@ stay here in AGENTS; this map is the seam between the two.
 - **Custom missions & online services** — DESIGN → Custom Missions & Online
   Services: dreams, browser, content identity/hash, balance bounds, turn
   counters + author medals, auth/server seam.
+- **Campaigns & the campaign editor** — DESIGN → Campaigns & the Campaign
+  Editor: the hub/mission graph model (missions as unique hub→hub edges),
+  campaign/hub/mission file formats, NPC = type + position, discovery +
+  travel, the world-map mirror, the campaign view + hub drill-in + mission
+  hand-off. Design settled, NOT YET BUILT — slices + open questions in
+  TODO → Level Editor → campaign editor.
 - **Clones (clone system)** — DESIGN → Clones: mission-completion material
   harvesting, the pickup accumulator, clone keying + overwrite rule.
   Key: `src/handlers/level.zig` (end_level completion flow),

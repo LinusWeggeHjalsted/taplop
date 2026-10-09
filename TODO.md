@@ -16,6 +16,12 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered — pick what progresses)
 
+- **Campaign editor + world map** — the next major work: design SETTLED
+  (DESIGN → Campaigns & the Campaign Editor — the hub/mission graph,
+  discovery + travel, the world-map mirror, the campaign view + hub
+  drill-in + mission hand-off). Slices + open questions (map position
+  units, hub rename, the Editor-state split, the mission-editor campaign
+  context) in Level Editor → campaign editor below.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
@@ -170,8 +176,10 @@ Test by running `zig build run` and clicking through.
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons, the inventory icon stat numbers, and combat
   damage/heal numbers).
-- **Larger systems (beyond MVP)** — the world-map overlay + NPC
-  interaction/dialogue (see "NPC Interaction" below). Middle panels
+- **Larger systems (beyond MVP)** — the world-map overlay (the campaign
+  view's read-side mirror — DESIGN → Campaigns & the Campaign Editor;
+  campaign-editor slice 2) + NPC interaction/dialogue (see "NPC
+  Interaction" below). Middle panels
   (inventory/gear/skills/inspect), options/settings/top bar, drag-drop, and
   the audio architecture are DONE (history in DONE.md); the full combat-log
   overlay is the Combat-log UI item above.
@@ -254,7 +262,12 @@ Open:
   DONE.md).
 - buildSkillsPanel: sorting / grouping / search deferred (display slice +
   drag-to-bar DONE — DONE.md).
-- buildWorldMap: campaign graph visualization, clickable hubs/missions.
+- buildWorldMap: the campaign view's READ-side mirror (DESIGN → Campaigns
+  & the Campaign Editor → Discovery + travel): background + all hubs +
+  edges, undiscovered hubs / unavailable missions dimmed; hub click
+  travels (backtrack to discovered), edge click starts the mission (the
+  start hub discovered) — deliberately equivalent to the exit tile.
+  Rides campaign-editor slice 2.
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
 - **Settings screen** — settled design: DESIGN → UI Framework → Settings
@@ -326,10 +339,14 @@ multi-salvage — all DONE (DONE.md). Open:
   the click→push site is marked in handleIdleInput's hub branch). When the
   handler lands, re-wire that site and drop the move-blocker comment.
 - NPC dialogue system
-- NPC types (shopkeeper, quest giver, etc.). The upgrade vendor (see
-  "Gear Upgrading" below) is `interact_with_npc`'s first real consumer.
-  NPC art shipped (assets/npcs/ — dream_guide, gear_upgrader); files
-  only, no code type consumes them yet.
+- NPC types — SETTLED (see DESIGN → Campaigns & the Campaign Editor →
+  File formats): `NpcType = { gear_upgrader, dream_guide }` — the whole
+  cast for the foreseeable future; NPCs are `{ npc_type, position }`
+  (NOT entities — the entity-ness is stale scaffolding, removed in
+  campaign-editor slice 1), sprite derived from the type (the shipped
+  assets/npcs/ files). `interact_with_npc` routes on the type; the
+  upgrade vendor (see "Gear Upgrading" below) is its first real
+  consumer, the dream guide is the dreams-browser entry.
 
 ## Gear Upgrading
 
@@ -345,9 +362,10 @@ panel). Implementation deferred; slices when it lands:
 - [ ] config + loader + the derived mid-ladder price table (model constants;
       `s_stat` derived from new_player.txt; the floor + largest-remainder
       split rule), tests.
-- [ ] vendor NPC authoring (a hub-format marker — shape decided at
-      implementation) + `interact_with_npc` wiring: re-wire the hub click
-      site + drop the move-blocker comment (see NPC Interaction above).
+- [ ] vendor NPC authoring (SETTLED: a `gear_upgrader` NPC placed in a
+      hub — DESIGN → Campaigns & the Campaign Editor; no extra hub-format
+      marker) + `interact_with_npc` wiring: re-wire the hub click site +
+      drop the move-blocker comment (see NPC Interaction above).
 - [ ] panel builder (two-column: item list = every item with a nonempty
       `itemStatSet`, no skill tomes; per-stat rows with cost + button) +
       selection UiState + panel toggle on the unified GameState convention
@@ -407,14 +425,64 @@ work:
       the loss (the view already draws the translated outlines). The
       marker-on-marker case is already vetoed; this is the non-marker
       members' case. Decide from playtest texture.
-- **Hub editor + campaign editor** — the long-term plan is THREE editors
-  (missions, hubs, campaigns); the mission editor is the only one built,
-  and the editor browser is already the shared front door (kind tabs +
-  per-kind content — see DESIGN → Architecture → Level Editor → The
-  editor browser; a kind appears as a tab only when its editor lands).
-  Hub editing is blocked on NPC art; campaign editing = map background +
-  placing hubs + connecting hubs with missions. Design sessions before
-  any code.
+- **Campaign editor (hub editing inside) — design SETTLED, build not
+  started.** TWO editors, not three (see DESIGN → Campaigns & the
+  Campaign Editor for the full model): the mission editor (built) + the
+  campaign editor — the campaign view (background, freely-placed
+  draggable hubs, rendered mission edges, dangling ends tolerated);
+  click a hub → the hub editor drill-in (tile/decoration/spawn reuse,
+  exit + NPC tools, no entity tooling, no player.txt, no playtest); click
+  an edge → the mission editor hand-off. The in-game world map is the
+  READ-side mirror of the same view (discovery + travel semantics
+  settled in DESIGN). OPEN questions (inline, decide at the
+  corresponding slices):
+  - map position units — normalized (0–1, survives a background
+    re-skin; the lean) vs background pixels;
+  - hub rename — rewrite references (destination_hub values +
+    start_hub; the mission editor's stem-normalization precedent; the
+    lean) vs no rename in v1;
+  - the Editor-state split — `Editor` + content union (mission /
+    campaign payloads on the shared spine; the lean) vs a parallel
+    CampaignEditor state; UNDECIDED;
+  - what the mission editor's campaign context changes beyond the
+    options-menu return (the "slightly different setup" — e.g. no
+    standalone-dream export surface while campaign-owned).
+  Future surfaces riding this work: the pre-mission briefing overlay
+  (leaderboards, clone info + medal — before ANY mission start, map
+  edge / exit tile / re-run alike); fog-of-war hiding as a possible
+  refinement of the dim-undiscovered mirror; campaign VALIDATION
+  (dangling edges, unreachable hubs, every referenced mission exists).
+  Artist dependency: a plain world-map background image for the official
+  campaign (a placeholder unblocks the editor meanwhile).
+  Slices (rough, re-cut at implementation):
+  - [ ] 1. Formats + model: campaign.txt gains `background` + a `Hubs`
+        section (version bump); hub.txt exits gain `destination_hub`,
+        NPCs become `npc_type` (+ position; the NPC entity-ness removed
+        — types.zig, loadHub, view, the hub-click path) (version bump);
+        hub bundled custom decoration art (the mission-bundle pattern);
+        mission.txt drops `start_hub`/`end_hub` (the campaign graph owns
+        the edge; dreams = entering-hub fallback) + `level_count`
+        becomes derived (writer/loader round-trip + tests; consumers:
+        start_mission's level loop, the mission-browser scan,
+        content_hash).
+  - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
+        new_game, discovered on arrival), `start_mission.end_hub_id`
+        populated from the exit's destination_hub by the exit-click
+        path, world-map travel (backtrack to discovered) + mission
+        starts (edge clickable when the start hub is discovered) —
+        buildWorldMap renders the mirror (dim undiscovered hubs /
+        unavailable missions).
+  - [ ] 3. The campaign editor state + framing + the editor browser's
+        Campaign tab (scan `campaigns/`, New Campaign) + the campaign
+        view (background, hub place/free-move/drag, edge rendering,
+        dangling rendering).
+  - [ ] 4. The hub editor drill-in: the reused viewport machinery +
+        exit + NPC tools with inspector fields (mission pick / import
+        COPY-AT-PICK / new blank mission; destination picks placed hubs
+        or a free-typed name).
+  - [ ] 5. The mission-editor hand-off (campaign context) + campaign
+        save/export bundling (the STORE-zip pattern).
+- **Revalidate Mission follow-ups** (the button itself is DONE — DONE.md;
 - **Revalidate Mission follow-ups** (the button itself is DONE — DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
@@ -424,35 +492,15 @@ work:
   warn+degrade, render magenta gate, picker filter, pick-commit backstops,
   Revalidate report — see DESIGN → Custom Missions & Online Services →
   Custom-asset dimensions; history in DONE.md).
-- **Mission metadata cleanup — derive start_hub / end_hub /
-  level_count.** mission.txt's Metadata carries three fields that
-  restate the campaign graph or the mission directory — drift-prone
-  duplicates (a mission exit moved to another hub, or a level_4.txt
-  added, leaves them stale). All three should be DERIVED, not authored;
-  the editor's mission-writer slice is the natural landing point:
-  - `level_count` — count the `level_N.txt` files in the mission dir.
-    Needs embedded-map enumeration (FileSource lists persistent dirs
-    already; embedded keys are comptime-known) or a sequential
-    load-until-missing probe. Consumers reading the authored value
-    today: start_mission's level loop, FileSource's mission-browser
-    scan, content_hash.
-  - `start_hub` — derivable from the campaign graph (the hub whose
-    `mission_exits` name this mission). OPEN: a mission referenced by
-    multiple hubs has no single start hub; the runtime already knows the
-    entering hub (`player_data.current_hub`; the exit_mission path
-    already falls back to it). Decide: always entering-hub (drop the
-    field) vs keep an authored fallback for the multi-hub case.
-  - `end_hub` — the return hub after completion; NOT derivable from the
-    current graph shape (`mission_exits` are hub→mission only, no
-    mission→hub edge). All four shipped missions start + end at the
-    same hub. OPEN: (a) return-to-entering-hub semantics (drop the
-    field; the `start_mission.end_hub_id` runtime override stays for
-    dreams), or (b) the graph gains a return edge if progression
-    missions ending at a NEW hub are wanted. Decide before the
-    mission-writer slice.
-  Dropping the keys: remove from the shipped files + the parser
-  whitelist (an old file still carrying them would warn — free
-  pre-release, official data ships embedded with the exe).
+- **Mission metadata cleanup — SETTLED** (see DESIGN → Campaigns & the
+  Campaign Editor → The graph model): mission.txt DROPS `start_hub` and
+  `end_hub` outright (no authored copy, no derivation — the campaign
+  graph owns the edge: the from-hub is the exit's file, the to-hub
+  rides `start_mission.end_hub_id` from the exit's `destination_hub`;
+  dreams = the existing entering-hub fallback); `level_count` becomes
+  DERIVED (count the mission dir's `level_N.txt` files). Lands as
+  campaign-editor slice 1 (formats + model, above) — one version bump
+  + writer/loader round-trip, not a standalone slice.
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
 - **Editor browser polish** (the browser itself — kind tabs + New

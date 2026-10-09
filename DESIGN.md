@@ -2341,6 +2341,150 @@ PASSES — violations degrade at runtime).
   backend. The client only needs a thin HTTP fetch/submit seam + an auth
   token stored in the persistent dir.
 
+## Campaigns & the Campaign Editor
+
+The campaign model + the second editor. The mission editor (see
+Architecture → Level Editor) edits any mission; the campaign editor edits
+the CAMPAIGN as a whole — map, hubs, edges. Hub editing lives INSIDE the
+campaign editor (there is no standalone hub editor): a hub only makes
+sense in its campaign's context (every exit needs the campaign's missions
+to reference + its hubs as destinations), and the exit entry IS the edge
+— the graph and the hub files are the same data, so they cannot drift.
+
+### The graph model
+
+- **Hubs are nodes; missions are unique EDGES (hub → hub).** One edge per
+  mission (the one-edge rule: a mission is referenced by exactly ONE hub's
+  exit; a mission enterable from two places is two missions or a redesign).
+  The edge's from-end is the hub file it lives in; the mission ends at the
+  edge's destination. Self-loops are legal (the prototype's camp→camp
+  missions — destination = the from-hub; there is only one hub today).
+- **Missions carry NO hub metadata.** mission.txt has no `start_hub` /
+  `end_hub`: campaign missions are real geographical connections (the
+  graph owns the edge), and custom missions (dreams) always end in the hub
+  they were started from — the existing runtime fallback (`end_mission` →
+  the entering hub when `start_mission.end_hub_id` is null) IS the dream
+  story. `start_mission.end_hub_id` (the existing override seam) is
+  populated by the hub-exit click path from the exit's `destination_hub`;
+  the dreams-browser path leaves it null. The EVENT, not a completion-time
+  lookup, is the replay-safe record of the edge. `level_count` is DERIVED
+  (count the mission dir's `level_N.txt` files) — all three drift-prone
+  authored duplicates die.
+- **References are NAMES (hub dir names), never indices.** Names
+  forward-reference (an end hub not placed yet is a plain string — an exit
+  is authored before its destination exists), dangle LOUDLY (a vanished hub
+  is a visibly dangling edge + a validation catch — an index would
+  silently RETARGET on reorder/delete, the worst failure class in a
+  deliberately hand-editable format), stay hand-readable, and match
+  `mission_id` (the mission dir name) + every runtime identifier
+  (`player_data.current_hub`, the `start_hub` event's hub id, saves,
+  session logs).
+
+### File formats (each change bumps its per-type file_format_version)
+
+- **campaign.txt gains the map layer**: `background` (a plain world-map
+  image bundled in the campaign dir) + a `Hubs` section, one group per hub
+  (dir name + map position). Positions live HERE, not in hub.txt — the map
+  is campaign-level data: moving a hub edits one file, and the world map
+  loads the whole graph geometry in one read without touching every hub
+  file. Position units (normalized vs background pixels) are an OPEN
+  question — see TODO.
+- **hub.txt**: `Exits` entries gain `destination_hub`; the `NPCs` section
+  becomes `character_code` + `npc_type`. Hubs bundle their own custom
+  decoration art — `hubs/<hub>/` gains the art folder, custom stems resolve
+  as `custom/<hub-dir>/<stem>` (the exact mission-bundle pattern). The
+  official campaign ships no custom art, but fully custom campaigns are
+  possible and self-contained.
+- **NPCs are NOT entities** (the old `NPC { entity }` was stale scaffolding):
+  `NPC = { npc_type, position }` — the sprite DERIVES from the type (the
+  two shipped `assets/npcs/` files; `NpcType = { gear_upgrader,
+  dream_guide }` — the whole cast for the foreseeable future). Blocking
+  (NPC tiles aren't walkable; clicks on them fire nothing) needs only the
+  position. The hub PLAYER stays an Entity. `interact_with_npc` (still a
+  stub) routes on the type when it lands — the gear-upgrading vendor is
+  simply a `gear_upgrader` NPC placed in a hub (no extra hub-format
+  marker); `dream_guide` is the dreams-browser entry (already designed —
+  Custom Missions & Online Services → Browser).
+- **mission.txt drops `start_hub` + `end_hub` + `level_count`** (the writer
+  stops emitting them; the loader warns + drops old keys — free
+  pre-release, the files ship embedded with the exe).
+
+### Discovery + travel (the world map's gameplay)
+
+- **Discovered = visited, seeded with the start hub.** `new_game` discovers
+  the campaign's start hub (the official campaign for now — the only one);
+  arriving in a hub (the exit_mission → start_hub cascade) discovers it.
+  The discovered set rides PlayerData (persisted in saves).
+- **Map travel is BACKTRACKING only** — jump to any DISCOVERED hub; forward
+  movement is playing edges (the core loop: missions are the connections,
+  and the map must not skip them).
+- **Map mission-entry is deliberately EQUIVALENT to the exit tile**: an
+  edge is clickable when its start hub is discovered, and starting it is
+  the same as standing on the exit in the start hub. The world map is a
+  navigation shortcut for players who want it — never a requirement.
+- **Rendering: the simple mirror first** — the world map renders ALL hubs
+  + edges (the exact campaign-editor view) with undiscovered hubs /
+  unavailable missions DIMMED. Fog-of-war hiding is a future refinement
+  if the simple mirror proves too revealing (see TODO).
+- One data model, two renderers: `buildWorldMap` renders exactly what the
+  campaign editor renders (background + hub positions + edges) — the
+  read surface and the edit surface share the graph-derivation + layout
+  math.
+- Future surface (see TODO): a pre-mission briefing overlay (leaderboards,
+  current clone info + medal achieved) before ANY mission start — map
+  edge, exit tile, re-run alike.
+
+### The campaign editor
+
+- **The campaign view is the single surface** (no hub tabs): the background
+  image, hubs placed FREELY (no grid — float positions) and draggable,
+  mission edges rendered between well-defined hub pairs, dangling ends
+  tolerated (rendered differently). Click a HUB → drill into the hub
+  editor; click an EDGE → hand off to the mission editor for that
+  mission.
+- **The hub editor (the drill-in view)** reuses the mission editor's
+  viewport machinery — camera/clamp, selection algebra, marquee,
+  move-drag, the tile tool, decoration tools + palette, player spawn —
+  MINUS the entity/item/level machinery (no entity tooling, no player.txt,
+  no level tabs, no hub playtest: nothing to do in a hub until NPC
+  interaction lands). New tools: mission-exit placement + NPC placement,
+  with inspector fields. Custom decorations are authorable (the bundled
+  hub art above).
+- **The exit's mission choices** (the exit inspector): (a) missions
+  already in the campaign dir, (b) IMPORT from the player's custom
+  `missions/` — COPY AT PICK (the campaign owns a snapshot; the campaign
+  dir is always the source of truth — later edits to the original do not
+  propagate), (c) create a new blank/default mission (the
+  editor_defaults pattern — edit after). The destination picks placed
+  hubs OR a free-typed name (the forward reference).
+- **Saving keeps the campaign dir self-contained**: campaign.txt + map +
+  `hubs/` (+ bundled art) + `missions/` (+ their art). The mission
+  STORE-zip pattern extends to campaign export at the online-services
+  seam.
+- **The editor browser gains the Campaign kind tab** (a kind appears as a
+  tab only when its editor lands) — lists/scans `campaigns/` in the
+  persistent dir + a New Campaign button (the New-derives-from-active-kind
+  rule).
+- **The mission editor in campaign context** (the edge-click hand-off)
+  knows its campaign and returns via the options menu (a top-bar return
+  button only if/when playtesting wants one). What else differs is an
+  OPEN question — see TODO.
+
+### Known limitations
+
+- Undiscovered hubs are DIMMED, not hidden — the full geography is visible
+  on first view. Revisit for fog-of-war if the simple mirror spoils
+  (TODO).
+- Copy-at-pick imports FORK: a later edit to the original custom mission
+  does not propagate into the campaign. Deliberate — the campaign dir is
+  the source of truth; re-import is the refresh path.
+- The one-edge rule FORBIDS shared missions (one mission enterable from
+  two hubs). Deliberate — it keeps `start_hub` derivable and the graph
+  honest; duplication or redesign is the author's answer.
+- Dangling end hubs are tolerated (forward references), so a campaign can
+  be SAVED in a state that does not fully resolve — validation (a later
+  slice) is the catch, not the save.
+
 ## Clones (clone system)
 
 A **clone** is a per-mission record saved to `PlayerData.clones` on mission
@@ -3403,8 +3547,9 @@ Mission button + ctrl+O); the Back button closes it (all three toggle
 `Action.toggle_editor_browser` → the recorded `player_toggle_ui_surface`
 (`GameState.ui_surfaces.editor_browser_open`; Escape
 steps back one layer, the options menu it opened from stays beneath).
-The window is TABBED PER EDITOR KIND — the long-term plan is three
-editors (missions, hubs, campaigns) and only the mission editor exists,
+The window is TABBED PER EDITOR KIND — the plan is TWO editors
+(missions + the campaign editor, which contains hub editing — see
+Campaigns & the Campaign Editor) and only the mission editor exists,
 so the tab row shows one tab; a kind appears as a tab only when its
 editor lands (the specs list derives from `types.EditorKind` at
 comptime; the exhaustive label switches are the compile error until a
