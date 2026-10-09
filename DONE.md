@@ -15780,3 +15780,27 @@ breaks whenever a commit chain grows a step, and nothing distinguishes
 - **The `==` no-op gates KEEP their count equality** (e.g. the
   dims-mismatch pick records nothing): they assert NOTHING was
   recorded — absence, not a growing count; no churn class.
+
+## Input dispatch convergence: slice 4 — the split evaluation (decided: no split)
+
+The convergence's last open item (folded in by design — "don't split as a
+separate chore first"): does `input_handlers.zig` split naturally now?
+
+- **Decision: NO SPLIT NOW.** Post-convergence the file is ~5,400 lines:
+  ~1,900 in `handleAnytimeInput`'s switch, ~420 in `handleIdleInput`,
+  ~360 cursor resolution, ~1,100 in cohesive per-topic helper blocks
+  (the keybind-edit machinery, the text-field commit sites, the editor
+  item helpers), ~1,800 tests. The dispatcher switches are intrinsically
+  large — they enumerate the actions' consumption; splitting switch arms
+  out is mechanical churn with no design win. The per-topic blocks are
+  cohesive but heavily cross-referenced through file-private helpers
+  (`pushPlayerActionAndDrain`, `expectPickerKind`, the item-action
+  builders) — moving them means a pub/export shuffle for zero
+  correctness gain.
+- **The revisit trigger (recorded in TODO):** the hub editor + campaign
+  editor add arms to this file. If the file crosses ~7k lines or the arms
+  stop fitting one scan, the hub/campaign arms split out alongside the
+  editor arms — a real seam (new content category), not a chore split.
+- The convergence is COMPLETE (all four slices): one dispatch pass
+  (`bindingFires` → `applyAction`), `fired_actions` + the sound choke
+  point, what-recorded assertions, the split decision.
