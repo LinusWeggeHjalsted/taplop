@@ -118,10 +118,11 @@ Test by running `zig build run` and clicking through.
         collapsed, the `.change_setting`-class double-play FIXED; the
         unwired + outcome-gated exclusions documented at the choke point
         — DONE, see DONE.md, input dispatch convergence slice 2).
-  - [ ] 3. The no-op-proof count assertions in `handler_tests_editor.zig`
-        → assert WHAT recorded ("the last two events are the close pair")
-        instead of counting (the derived-expectations discipline; counts
-        of things that grow by design are churn).
+  - [x] 3. The no-op-proof count assertions in `handler_tests_editor.zig`
+        → assert WHAT recorded — DONE (see DONE.md, input dispatch
+        convergence slice 3: `expectLastEvents` + the open/close pair
+        consts; the six GROWING deltas converted, the == no-op gates keep
+        their count equality — they assert nothing was recorded).
   - [ ] 4. EVALUATE only: whether `input_handlers.zig` (2800+ lines, ten
         concerns) splits naturally after the convergence — don't split
         as a separate chore first.

@@ -15747,3 +15747,36 @@ The `fired_actions` record + the ONE per-action sound choke point — the
   the input_handlers split evaluation) stay in TODO. The Audio section's
   cue-wiring coverage item shrank accordingly (the double-play is fixed
   + pinned; the event-level cue families remain).
+
+## Input dispatch convergence: slice 3 — what-recorded assertions replace count deltas
+
+The picker tests in `handler_tests_editor.zig` asserted recorded-event
+COUNT deltas (+2/+4) — the class that broke by hand four times during
+the ui-surface migration (one fix wrong on the first try): a count
+breaks whenever a commit chain grows a step, and nothing distinguishes
+"the right events" from "the right number of events".
+
+- **`expectLastEvents(history, kinds)`** (+ `RecordedEventKind`:
+  outer category + inner variant tag, compared via the established
+  two-level `activeTag` convention; payloads stay asserted on state,
+  not re-derived) — asserts the last N recorded events ARE the expected
+  chain.
+- **Composable pair consts** — `open_picker_pair` /
+  `close_picker_pair` (`player_open_editor_picker` +
+  `editor_open_picker`, `player_close_editor_picker` +
+  `editor_close_picker` — every open/close is a PAIR: the orchestrator
+  + the machinery event it pushes) and their two concatenations; the
+  six GROWING deltas converted:
+  - the same-sprite re-pick close-only → the close pair;
+  - the unchanged-draft footprint confirm → the close pair;
+  - the reopen + empty-draft confirm → close pair + open pair;
+  - the same-definition decoration re-pick → open pair + close pair;
+  - the same-value gradient pick → open pair + close pair;
+  - the inventory delete → the delete pair
+    (`player_delete_editor_inventory_item` +
+    `editor_delete_inventory_item`) — the crafted empty-slot +
+    out-of-range deletes recording nothing is now implied by the tail
+    being exactly the real delete pair.
+- **The `==` no-op gates KEEP their count equality** (e.g. the
+  dims-mismatch pick records nothing): they assert NOTHING was
+  recorded — absence, not a growing count; no churn class.

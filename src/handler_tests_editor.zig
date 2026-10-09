@@ -28,7 +28,48 @@ const content_hash = @import("content_hash.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
+const GameStateHistory = state.GameStateHistory;
 
+/// One recorded-event kind for `expectLastEvents`: the outer category +
+/// the inner variant tag pair. Asserting WHAT recorded (the close pair,
+/// the open-then-close surface toggles) instead of COUNT deltas — the
+/// derived-expectations discipline (a count breaks by hand whenever a
+/// commit chain grows a step; the kinds stay stable).
+const RecordedEventKind = struct {
+    category: std.meta.Tag(events.Event),
+    variant: []const u8,
+};
+
+/// Assert the last `expected.len` recorded events match `expected` by
+/// category + variant (payloads are asserted on state, not re-derived
+/// here). The picker commit chains: every open/close is a PAIR (the
+/// `player_*` orchestrator + the machinery event it pushes).
+fn expectLastEvents(
+    history: *GameStateHistory,
+    expected: []const RecordedEventKind,
+) !void {
+    const recorded = history.event_history.items;
+    try testing.expect(recorded.len >= expected.len);
+    const tail = recorded[recorded.len - expected.len ..];
+    for (expected, tail) |want, got| {
+        try testing.expectEqual(want.category, std.meta.activeTag(got));
+        const got_variant: []const u8 = switch (got) {
+            inline else => |payload| @tagName(std.meta.activeTag(payload)),
+        };
+        try testing.expectEqualStrings(want.variant, got_variant);
+    }
+}
+
+const open_picker_pair = [_]RecordedEventKind{
+    .{ .category = .player_input_event, .variant = "player_open_editor_picker" },
+    .{ .category = .editor_event, .variant = "editor_open_picker" },
+};
+const close_picker_pair = [_]RecordedEventKind{
+    .{ .category = .player_input_event, .variant = "player_close_editor_picker" },
+    .{ .category = .editor_event, .variant = "editor_close_picker" },
+};
+const open_then_close_picker_pairs = open_picker_pair ++ close_picker_pair;
+const close_then_open_picker_pairs = close_picker_pair ++ open_picker_pair;
 /// A minimal editor-screen starting state (editor default: no palette, no
 /// levels).
 fn editorStartingState(levels: []const types.EditorLevel) state.GameState {
@@ -4237,7 +4278,6 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
-    const events_after_adopt = history.event_history.items.len;
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
@@ -4249,8 +4289,8 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     // The open + the close-only pick recorded exactly the four surface
-    // events (orchestrator + machinery each; no commit in between).
-    try testing.expectEqual(events_after_adopt + 4, history.event_history.items.len);
+    // events (the open pair + the close pair; no commit in between).
+    try expectLastEvents(&history, &open_then_close_picker_pairs);
 
     // Gate: the decoration action with the ENTITY picker open is a no-op
     // (a crafted click — the cells never emit it). Direct state write — a
@@ -7299,14 +7339,13 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
         .options_action = .open_editor_entity_layer_picker,
         .clicked_editor_layer = 0,
     }, .{ .x = 0, .y = 0 }, &.{});
-    const events_before = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer,
         .clicked_editor_sprite = "wolf",
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    // Exactly the two close events (orchestrator + machinery; no commit).
-    try testing.expectEqual(events_before + 2, history.event_history.items.len);
+    // Exactly the close pair (orchestrator + machinery; no commit).
+    try expectLastEvents(&history, &close_picker_pair);
 
     // Delete: the layer is removed, one undo restores it.
     input_handlers.handleAnytimeInput(&history, .{
@@ -7604,13 +7643,12 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
 
     // Confirm an UNCHANGED draft: closes WITHOUT COMMITTING — the close
     // is the recorded change now (the picker surface event).
-    const events_before = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
-    try testing.expectEqual(events_before + 2, history.event_history.items.len);
+    try expectLastEvents(&history, &close_picker_pair);
 
     // Re-open, deselect everything: the confirm STAYS OPEN (a footprint
     // needs >= 1 tile), nothing records.
@@ -7630,10 +7668,10 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker != null);
-    // Nothing beyond the close + reopen surface events (four events:
-    // orchestrator + machinery each) — the empty-draft confirm records
-    // nothing (a footprint needs >= 1 tile).
-    try testing.expectEqual(events_before + 4, history.event_history.items.len);
+    // Nothing beyond the close + reopen surface events (the close pair
+    // + the open pair) — the empty-draft confirm records nothing (a
+    // footprint needs >= 1 tile).
+    try expectLastEvents(&history, &close_then_open_picker_pairs);
 
     // A CHANGED draft commits: select (0,0) only → footprint {(0,0)},
     // row-major, on the undo timeline.
@@ -7897,12 +7935,11 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[0].enemy_gradient_index);
 
     // Same-value pick while MANUAL: closes WITHOUT COMMITTING — the
-    // recorded delta is exactly the surface toggles (the reopen 2 + the
-    // close-only pick 2; the event history is the precise no-op proof —
-    // runToIdle's idle points don't dedupe, so undo-step counting can't
-    // distinguish a dead step from a duplicate point at an unchanged
-    // state).
-    const history_len_after_pick = history.event_history.items.len;
+    // recorded delta is exactly the surface toggles (the reopen open
+    // pair + the close-only pick close pair; the event history is the
+    // precise no-op proof — runToIdle's idle points don't dedupe, so
+    // undo-step counting can't distinguish a dead step from a duplicate
+    // point at an unchanged state).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
         .clicked_editor_gradient_role = .enemy,
@@ -7914,7 +7951,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
     runToIdle(&history);
-    try testing.expectEqual(history_len_after_pick + 4, history.event_history.items.len);
+    try expectLastEvents(&history, &open_then_close_picker_pairs);
 
     // The Auto button reverts the override to null (one undo step back to
     // the manual pick).
@@ -8543,10 +8580,13 @@ test "inventory slot clicks: select/deselect toggle, Add default sword, Delete" 
         .options_action = .delete_editor_inventory_item,
         .clicked_editor_inventory_slot = types.inventory_slot_count,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expectEqual(
-        occupied_baseline + 2,
-        history.event_history.items.len,
-    );
+    // Only the real delete recorded (the delete pair: orchestrator +
+    // machinery); the crafted empty-slot + out-of-range deletes never
+    // fired.
+    try expectLastEvents(&history, &.{
+        .{ .category = .player_input_event, .variant = "player_delete_editor_inventory_item" },
+        .{ .category = .editor_event, .variant = "editor_delete_inventory_item" },
+    });
 }
 
 test "inventory item-type clicks: reset-on-change on the selected slot, same-pick and empty-selection no-ops" {
