@@ -248,6 +248,14 @@ pub const PlayerInput = struct {
     /// text-edit-outcome model). Set only while a keybind edit is active;
     /// resolved once per frame in `main.frame`.
     keybind_capture_outcome: types.KeybindCaptureOutcome = .none,
+    /// Every action that FIRED this frame (a set — a same-frame keybind +
+    /// button + console command on one action dedupes to one entry).
+    /// Recorded by `applyAction` itself, so all three input seams report
+    /// uniformly. The per-action dispatch choke point: the action-layer
+    /// sound (input_handlers.dispatchFiredActionSounds) and future
+    /// per-action policy/analytics read THIS, not the per-flag consumption
+    /// sites. See DESIGN → Input → Dispatch convergence.
+    fired_actions: std.EnumSet(types.Action) = .initEmpty(),
 };
 
 /// Synthetic key-repeat cadence (see `InputState.KeyRepeatEntry`). A held
@@ -523,6 +531,11 @@ pub const IdleInput = struct {
 /// enum; the derived binding-context gate keeps each action to its screens).
 /// Main-menu commands (no default keybind) go to idle.menu_action.
 pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
+    // The fired-actions record: the one choke point for per-action behavior
+    // (the action-layer sound now; analytics/policy later). A set — a
+    // same-frame keybind + button + console command on one action records
+    // once.
+    player_input.fired_actions.insert(action);
     switch (action) {
         .undo => player_input.anytime.undo = true,
         .redo => player_input.anytime.redo = true,

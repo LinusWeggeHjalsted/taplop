@@ -448,18 +448,26 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
     plays the `button_base_up` base plus the action's LAYER at
     `assets/audio/sfx/buttons/<action_snake_case>_layer`. Layer ownership is
     split by role, which is what keeps the layers from double-playing:
-    the release SEAM owns the base up; the consumption/effect sites own the
-    layer (`queueActionSound`) — so keyboard triggers share the layer
-    with no click sounds (the no-click-sounds-for-keys rule), and semantic
-    feedback still only fires when the action does something. The
-    `options_action` + `menu_action` dispatch switches queue their action's
-    layer in one place each (covering ~50 actions for button AND keybind
-    paths); the scattered flag sections (toggles, swap, skip, undo/redo,
-    editor save/export/new-mission, editor browser, dismiss_error) queue at
-    their sites. Skill slots: the release seam suppresses the up base
-    (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes any
-    button sound, and the prepare/unprepare path plays its own up base +
-    slot layer at the consumption site.
+    the release SEAM owns the base up; the layer is owned by ONE choke
+    point — `dispatchFiredActionSounds` (main.update, over
+    `PlayerInput.fired_actions`, the set `applyAction` records — so
+    keyboard, button, and console triggers share ONE layer queue per
+    action with no click sounds: the no-click-sounds-for-keys rule). Two
+    documented exclusions keep semantics feedback honest:
+    `types.actionSoundUnwired` (no layer by design — the same list the
+    sound report excludes) and the OUTCOME-GATED set (undo/redo,
+    swap_weapons, cancel, the skill slots — `actionLayerRidesConsumptionSite`),
+    whose layer rides the CONSUMPTION site so a no-op stays silent (an
+    undo with nothing to undo, a swap with both hands empty, a cancel
+    with nothing prepared) and an auto-fire slot cast plays the full
+    skill cue instead. Skill slots: the release seam suppresses the up
+    base (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes
+    any button sound, and the prepare/unprepare path plays its own up
+    base + slot layer at the consumption site. History: the
+    `.change_setting`/`.edit_keybind`/`.select_settings_tab` layers
+    double-played for months (the options_action top-of-switch queue +
+    the arms' own queues) until the choke point collapsed the scattered
+    sites — pinned headless by the dispatchFiredActionSounds test.
   - **Item-action cues** (equip / salvage / learn_skill) — the shared
     `item_base` base plus a per-action layer keyed by `ItemActionSound`
     (types.zig) at `assets/audio/sfx/items/<tag>_layer`. Queued at the

@@ -165,7 +165,7 @@ pub fn main() !void {
         \\
     , .{});
     for (std.meta.tags(types.Action)) |action| {
-        if (isUnwiredAction(action)) continue;
+        if (types.actionSoundUnwired(action)) continue;
         const note: []const u8 = if (types.actionIsSkillSlot(action))
             "skill slot — prepare/unprepare feedback (the cast itself plays the skill cue)"
         else
@@ -355,22 +355,6 @@ fn oneShotDescription(sound: types.SoundId) []const u8 {
         .level_complete => "a non-final level completes",
         .aggro => "an enemy notices you (per newly-aggro'd enemy)",
         else => "",
-    };
-}
-
-/// Actions with NO queue site — their consumption never queues an action
-/// layer, so listing them would promise a sound a dropped file can't
-/// deliver. The reasons live in the report's button-section preamble.
-fn isUnwiredAction(action: types.Action) bool {
-    return switch (action) {
-        .zoom_in, .zoom_out, .zoom_reset,
-        .move_cursor_up, .move_cursor_down, .move_cursor_left, .move_cursor_right,
-        .error_scroll_up, .error_scroll_down,
-        .dump_event_log,
-        .skip_level,
-        .confirm,
-        => true,
-        else => false,
     };
 }
 

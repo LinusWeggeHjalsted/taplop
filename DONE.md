@@ -15705,3 +15705,45 @@ keybind-picker-vs-dispatch inconsistency that came with it.
 - Slice 1 of the convergence; slices 2–4 (fired_actions record + the
   sound choke point; the count-assertion rewrite; the input_handlers
   split evaluation) stay in TODO.
+
+## Input dispatch convergence: slice 2 — fired_actions + the sound choke point
+
+The `fired_actions` record + the ONE per-action sound choke point — the
+"no single consumption choke point" consequence of the two-copies era.
+
+- **`PlayerInput.fired_actions: std.EnumSet(Action)`** — recorded by
+  `applyAction` itself, so all three input seams (keyboard bindings,
+  button releases, console commands) report uniformly; a set, so a
+  same-frame keybind + button + console command on one action records
+  once.
+- **`dispatchFiredActionSounds`** (input_handlers, called from
+  `main.update` before the handlers): one `queueActionSound` per fired
+  action. Replaced the ~25 scattered per-flag queue sites: the 9-site
+  escape chain (`queueEscapeSound` deleted), dismiss_error, the
+  options_action top-of-switch queue, the menu_action queue, the 4
+  editor-command sites, and the 5 in_game toggle sites.
+- **Fixed on the way: the `.change_setting` double-play class** — the
+  options_action top-of-switch queue (added later to fix the silent
+  entries) plus the arms' own queues meant `.change_setting`,
+  `.edit_keybind`, and `.select_settings_tab` each queued TWO layers
+  per click for months (only ears could catch it). The choke point makes
+  the class structurally impossible — one queue site, one layer. Pinned
+  headless by the new dispatchFiredActionSounds test (also pins both
+  exclusion classes + the set-dedup property).
+- **Two documented exclusions** at the choke point (the TODO's "sites
+  needing more than the action stay per-site"):
+  - `types.actionSoundUnwired` — moved from sound_report.zig's private
+    `isUnwiredAction` to types.zig, shared by the choke point AND the
+    report's shopping list (one list, two consumers): zoom/cursor keys,
+    error-scroll ticks, dump_event_log, skip_level, confirm.
+  - `actionLayerRidesConsumptionSite` — undo/redo (sound only when a
+    step actually happened), swap_weapons (any-weapon/prepared gate),
+    cancel (live preparation), the skill slots (prepare/unprepare only —
+    an auto-fire cast plays the full skill cue). These keep their
+    per-site queues; everything else is sound-on-fired.
+- Sound-report note: the report's button-layers preamble still documents
+  the unwired set (the same list, from the shared fn now).
+- Slice 2 of the convergence; slices 3–4 (the count-assertion rewrite,
+  the input_handlers split evaluation) stay in TODO. The Audio section's
+  cue-wiring coverage item shrank accordingly (the double-play is fixed
+  + pinned; the event-level cue families remain).

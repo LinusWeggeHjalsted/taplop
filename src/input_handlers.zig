@@ -712,13 +712,43 @@ pub fn beginFocusedTextEdit(
     ui.beginTextEdit(&history.session.ui_state, field, current_value);
 }
 
-/// Queue the feedback sound for an Escape keypress that does something (a
-/// closing overlay or a triggered action). Keybind-triggered actions have
-/// no button, so the input-handler site queues the action's texture (with
-/// its interim placeholder) — no base up, per the no-click-sounds-for-keys
-/// rule. See DESIGN → Audio (layered cues).
-fn queueEscapeSound(history: *GameStateHistory) void {
-    if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .escape);
+/// The ONE per-action sound choke point: every action that FIRED this
+/// frame queues its action layer here (once per action — `fired_actions`
+/// is a set, so a same-frame keybind + button + console command on one
+/// action queues one layer), replacing the per-flag queue sites across
+/// the input handlers. The base halves stay at the button press/release
+/// seam (main.zig) — this is the effect-site half, so keyboard-triggered
+/// actions play the layer alone (the no-click-sounds-for-keys rule).
+/// Two documented exclusions (the layer does NOT ride the firing):
+/// `types.actionSoundUnwired` — no action layer by design; and the
+/// outcome-gated set (`actionLayerRidesConsumptionSite` below) — those
+/// keep their per-site queues. See DESIGN → Audio (layered cues).
+pub fn dispatchFiredActionSounds(
+    history: *GameStateHistory,
+    fired_actions: std.EnumSet(types.Action),
+) void {
+    if (history.replaying) return;
+    var iterator = fired_actions.iterator();
+    while (iterator.next()) |action| {
+        if (types.actionSoundUnwired(action)) continue;
+        if (actionLayerRidesConsumptionSite(action)) continue;
+        history.session.queueActionSound(history.backing_allocator, action);
+    }
+}
+
+/// Actions whose action layer rides the CONSUMPTION site (excluded from the
+/// fired-actions choke point): the layer must reflect the consumption
+/// OUTCOME, not the firing — undo/redo sound only when a step actually
+/// happened (a no-op at the timeline start stays silent), swap_weapons
+/// only past its any-weapon/prepared gate, cancel only with a live
+/// preparation to cancel, and the skill slots play their layer only on
+/// prepare/unprepare (an auto-fire cast plays the full skill cue instead —
+/// see main.zig's release-seam skill-slot skip).
+fn actionLayerRidesConsumptionSite(action: types.Action) bool {
+    return switch (action) {
+        .undo, .redo, .swap_weapons, .cancel => true,
+        else => types.actionIsSkillSlot(action),
+    };
 }
 
 /// The screens where the editor browser and its in-window actions
@@ -944,7 +974,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // browser closes. Above the settings screen in the ladder (the
     // browser block emits after it in view()).
     if (surfaces.editor_browser_open) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .editor_browser,
         } });
@@ -955,7 +984,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // it opens on top of the options menu, so Escape steps back to the menu
     // underneath — only the settings layer closes.
     if (surfaces.settings_open) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .settings,
         } });
@@ -967,7 +995,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // dismisses). Above the mission-fail overlay in the ladder (never
     // co-rendered — complete shows in the hub/editor, fail on a level).
     if (current.last_completed_mission != null) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .dismiss_mission_complete);
         return;
     }
@@ -978,7 +1005,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // remains the other escape from the fail state.
     if (view_mod.playerDead(current)) {
         if (current.screen != .level) return;
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .player_exit_mission);
         return;
     }
@@ -987,14 +1013,12 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // from the main menu's own stack/options menu; they open on top of
     // the options menu, so they sit topmost whenever they're up).
     if (surfaces.load_save_menu_open) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .load_save_menu,
         } });
         return;
     }
     if (surfaces.credits_open) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .credits,
         } });
@@ -1004,7 +1028,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Options menu (always-on-top modal): close it, leaving any full-screen
     // overlay beneath it open.
     if (surfaces.options_menu_open) {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .options_menu,
         } });
@@ -1018,7 +1041,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         if (maybe_overlay) |overlay| topmost_overlay = overlay;
     }
     if (topmost_overlay) |overlay_id| {
-        queueEscapeSound(history);
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = fullScreenOverlaySurfaceId(overlay_id),
         } });
@@ -1028,7 +1050,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // Nothing to close: open the options menu. Every screen has a variant
     // — the main menu's carries Settings/Credits/Exit Game instead of the
     // session verbs (see buildOptionsMenu).
-    queueEscapeSound(history);
     pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
         .surface = .options_menu,
     } });
@@ -1070,7 +1091,6 @@ pub fn handleAnytimeInput(
     // See DESIGN → Error Handling → Recoverable error surface.
     if (history.session.pending_error != null) {
         if (anytime.dismiss_error) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .dismiss_error);
             history.session.clearPendingError();
             return;
         }
@@ -1114,7 +1134,6 @@ pub fn handleAnytimeInput(
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             // The popup on failure is surfaced inside; the return value is
             // irrelevant to the bare save button.
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .save_editor_mission);
             _ = mission_io.saveEditorMission(history);
         }
     }
@@ -1122,7 +1141,6 @@ pub fn handleAnytimeInput(
     if (anytime.export_editor_mission) {
         // The mission export — same side-effect class + gates as the save.
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .export_editor_mission);
             mission_io.exportEditorMission(history);
         }
     }
@@ -1133,7 +1151,6 @@ pub fn handleAnytimeInput(
         // on the editor + main-menu screens; every other screen no-ops (the
         // save_editor_mission discipline).
         if (editorBrowserReachableScreen(&history.current_state)) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_editor_browser);
             // Fresh view state on every open (the load-save browser's
             // reset-on-open pattern): scroll to the top + the local tab
             // (your collection is the primary target), then scan now —
@@ -1160,7 +1177,6 @@ pub fn handleAnytimeInput(
         // pickers over it. Reachable on the editor + main-menu screens;
         // every other screen no-ops (the save_editor_mission discipline).
         if (editorBrowserReachableScreen(&history.current_state)) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .new_editor_mission);
             pushPlayerActionAndDrain(history, .{ .open_editor = .{ .mission_path = null } });
         }
     }
@@ -1173,11 +1189,9 @@ pub fn handleAnytimeInput(
     // immediately despite the menu pausing the game. Draining is
     // pushPlayerActionAndDrain's job (see its doc for the baseline reasoning).
     if (anytime.options_action) |action| {
-        // The action's texture (with interim placeholder) — one effect-site
-        // queue for the options-menu / settings / editor button AND keybind
-        // paths (both fold into options_action). The release seam owns the
-        // base up. See DESIGN → Audio (layered cues).
-        if (!history.replaying) history.session.queueActionSound(history.backing_allocator, action);
+        // The action's layer queues ONCE at the fired-actions choke point
+        // (`dispatchFiredActionSounds` — see DESIGN → Audio, layered cues);
+        // the release seam owns the base up.
         const current = &history.current_state;
         const allocator = history.current_arena.allocator();
         switch (action) {
@@ -1287,7 +1301,6 @@ pub fn handleAnytimeInput(
                 if (history.session.ui_state.settings_tab != .keybinds) return;
                 const command = anytime.clicked_keybind_command orelse return;
                 const ui_state = &history.session.ui_state;
-                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
                 switch (command) {
                     .rekey => |index| {
                         if (index >= history.settings.input_bindings.len) return;
@@ -1351,7 +1364,6 @@ pub fn handleAnytimeInput(
                 if (!history.current_state.ui_surfaces.settings_open) return;
                 const settings_tab = anytime.clicked_settings_tab orelse return;
                 if (history.session.ui_state.settings_tab == settings_tab) return;
-                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
                 history.session.ui_state.settings_tab = settings_tab;
                 history.session.ui_state.keybind_scroll_offset = 0;
                 history.session.ui_state.keybind_edit = null;
@@ -1384,7 +1396,6 @@ pub fn handleAnytimeInput(
                     .animation_fps,
                     => return,
                 }
-                if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .change_setting);
                 state.markSettingsDirty(history);
             },
             // Editor palette group header (expand/collapse). The group
@@ -2865,28 +2876,24 @@ pub fn handleAnytimeInput(
         // swap_weapons interjection shape: processed inside this update
         // call, so the frame's own gates below see the flipped state.
         if (in_game.toggle_inventory) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_inventory);
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .inventory,
             } });
         }
 
         if (in_game.toggle_gear) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_gear);
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .gear,
             } });
         }
 
         if (in_game.toggle_skills) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_skills);
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .skills,
             } });
         }
 
         if (in_game.toggle_entity_inspect) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_entity_inspect);
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .entity_inspect,
             } });
@@ -2896,7 +2903,6 @@ pub fn handleAnytimeInput(
         // run later in update); a keyboard binding for it is not wired.
 
         if (in_game.toggle_world_map) {
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, .toggle_world_map);
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .world_map,
             } });
@@ -3065,10 +3071,10 @@ pub fn handleIdleInput(
     // Main menu: menu buttons emit a menu_action (no keybind path).
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
-            // Same effect-site texture rule as the options_action dispatch
-            // (menu buttons are mouse-only, so this is the release cue's
-            // texture half).
-            if (!history.replaying) history.session.queueActionSound(history.backing_allocator, action);
+            // The action's layer queues once at the fired-actions choke
+            // point (`dispatchFiredActionSounds` — the menu actions are
+            // keybindable too since the dispatch convergence); the release
+            // seam owns the base up.
             switch (action) {
                 .new_game => event_push.pushPlayerAction(current, .start_new_game, allocator),
                 // Continue: resume the last game. Two branches in the handler
@@ -5375,4 +5381,52 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     // imbalance (a rebuild that forgot a free, freed a moved string, or
     // leaked the slice) fails the leak check at test end.
     loaders.freeSettings(history.settings, std.testing.allocator);
+}
+
+test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" {
+    // The per-action sound choke point: exactly ONE action layer per
+    // fired action, and only for the non-excluded classes. The
+    // `.change_setting` DOUBLE-PLAY (the options_action top-of-switch
+    // queue + the arm's own queue — two layers per click) shipped for
+    // months because only ears could catch it; this pins it headless.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // A same-frame keybind + button + console command on ONE action fires
+    // applyAction repeatedly — the set dedupes, one layer.
+    var player_input = input.PlayerInput{};
+    input.applyAction(&player_input, .change_setting);
+    input.applyAction(&player_input, .change_setting);
+    input.applyAction(&player_input, .toggle_inventory);
+    // Exclusions: the unwired set (a dropped layer file must stay silent)
+    // and the outcome-gated set (their layer rides the consumption site).
+    input.applyAction(&player_input, .zoom_in);
+    input.applyAction(&player_input, .skip_level);
+    input.applyAction(&player_input, .undo);
+    input.applyAction(&player_input, .swap_weapons);
+
+    dispatchFiredActionSounds(&history, player_input.fired_actions);
+
+    // One layer cue per non-excluded fired action, and nothing else —
+    // layer alone, no base (keys stay click-sound-free).
+    const sounds = history.session.pending_sounds.items;
+    try std.testing.expectEqual(@as(usize, 2), sounds.len);
+    var seen_change_setting = false;
+    var seen_toggle_inventory = false;
+    for (sounds) |cue| {
+        try std.testing.expect(cue.base == null);
+        const layer = cue.layer orelse return error.TestExpectedLayerCue;
+        switch (layer) {
+            .action => |action| switch (action) {
+                .change_setting => seen_change_setting = true,
+                .toggle_inventory => seen_toggle_inventory = true,
+                else => return error.TestUnexpectedActionLayer,
+            },
+            else => return error.TestUnexpectedLayerKind,
+        }
+    }
+    try std.testing.expect(seen_change_setting);
+    try std.testing.expect(seen_toggle_inventory);
 }

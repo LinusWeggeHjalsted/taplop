@@ -113,12 +113,11 @@ Test by running `zig build run` and clicking through.
         skill-slot guard + the applyAction bridge arms + the comptime
         context table) — DONE (see DONE.md, input dispatch convergence
         slice 1).
-  - [ ] 2. `fired_actions` record on `PlayerInput` (set by `applyAction`,
-        all three seams record uniformly) → the per-action sound choke
-        point: one loop over fired actions replaces the ~25 per-flag
-        sound sites in `handleAnytimeInput` (sites needing more than
-        the action stay per-site). Button base down/up stays at main.zig's
-        press/release (the button layer, not the action layer).
+  - [x] 2. `fired_actions` record + the per-action sound choke point
+        (`dispatchFiredActionSounds`; the ~25 per-flag sound sites
+        collapsed, the `.change_setting`-class double-play FIXED; the
+        unwired + outcome-gated exclusions documented at the choke point
+        — DONE, see DONE.md, input dispatch convergence slice 2).
   - [ ] 3. The no-op-proof count assertions in `handler_tests_editor.zig`
         → assert WHAT recorded ("the last two events are the close pair")
         instead of counting (the derived-expectations discipline; counts
@@ -634,14 +633,15 @@ Open:
   stream no-ops until then by design; verify it resumes after the first click
   on the web build.
 - **Cue-wiring test coverage** — the sound queue sites live in
-  headless-testable handlers, but nothing asserts what lands on
-  `pending_sounds`: the `.change_setting` double-play and the silent
-  `releaseSoundForAction` entries shipped for months because only ears
-  could catch them. Extend the harness (`test_harness.zig`) to drive a
+  headless-testable handlers, but little asserts what lands on
+  `pending_sounds` (the `.change_setting` double-play shipped for months
+  because only ears could catch it — the fired-actions choke point fixed
+  it + pinned it headless; see DONE.md, input dispatch convergence slice
+  2). Remaining: extend the harness (`test_harness.zig`) to drive a
   trigger and assert the drained cues (skill cast = type base + skill
-  layer; skip = action layer; equip/salvage/learn = item cues; toggles =
-  action layer) — pins the base-at-the-seam / layer-at-the-effect-site
-  ownership rules so the double-play class can't regress.
+  layer; skip = action layer; equip/salvage/learn = item cues) — pins
+  the base-at-the-seam / layer-at-the-effect-site ownership rules for
+  the event-level cue sites too.
 - Tune volumes / mix against real assets (layer volumes are placeholders).
 - Per-sfx cooldown in `playSounds` if multi-hit overlap (N `attack` events
   in one frame → N damage sounds) sounds bad. Trigger sites stay clean; the

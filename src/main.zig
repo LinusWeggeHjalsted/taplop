@@ -353,6 +353,13 @@ fn update(
     // idle path sees the fresh cursor (auto_target_at_cursor reads it).
     input_handlers.resolveTileCursor(history, player_input, ui_elements);
 
+    // The per-action dispatch choke point: queue the action layer for
+    // every fired action (the set is recorded by `applyAction` — keybind,
+    // button, and console commands alike; the exclusions live at the choke
+    // point). Runs before the handlers so the layer queues ahead of
+    // consumption-produced cues. See DESIGN → Audio (layered cues).
+    input_handlers.dispatchFiredActionSounds(history, player_input.fired_actions);
+
     // Always handle anytime input first (escape always works,
     // but other inputs are blocked when the options menu is open)
     input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position.toScreenPosition(), ui_elements);

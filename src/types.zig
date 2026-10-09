@@ -649,6 +649,27 @@ pub fn actionIsSkillSlot(action: Action) bool {
     };
 }
 
+/// Actions with NO action-layer sound BY DESIGN: the input dispatch's
+/// sound choke point (input_handlers.dispatchFiredActionSounds) skips them,
+/// and the sound report excludes their layer files from the shopping list
+/// (a dropped file would not play). The reasons: the zoom + cursor keys (the
+/// wheel/mouse paths carry no sound; keys shouldn't be noisier),
+/// error-scroll ticks, `dump_event_log` + `skip_level` (dev tools), and
+/// `confirm` (the simulated tile click plays the move/skill sounds
+/// instead).
+pub fn actionSoundUnwired(action: Action) bool {
+    return switch (action) {
+        .zoom_in, .zoom_out, .zoom_reset,
+        .move_cursor_up, .move_cursor_down, .move_cursor_left, .move_cursor_right,
+        .error_scroll_up, .error_scroll_down,
+        .dump_event_log,
+        .skip_level,
+        .confirm,
+        => true,
+        else => false,
+    };
+}
+
 /// Raw input identifier — uses human-readable strings so config files
 /// are legible and editable. Key codes follow the W3C KeyboardEvent.code
 /// spec (e.g. "KeyA", "Space", "ShiftLeft"). Mouse buttons are "left",
