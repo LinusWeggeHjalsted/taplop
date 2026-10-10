@@ -146,7 +146,9 @@ d  diff before running them across the tree.** Asserted replacements catch
   commit when the change is coherent and self-contained, rather than batching
   them into a pile to sort out later. A good unit is "one thing that builds
   and is done"; if a change has no DONE.md entry, the commit body is the
-  record (see below).
+  record (see below). Don't split a landed commit after the fact when two
+  small riders share it (e.g. a cleanup pair from one reflection) — the
+  split costs more than the benefit; accept the commit as is.
 - **Commit message: one line by default.** Shape: `<area>: <summary>` (e.g.
   `error handling: slice 1 — modal error popup surface`). `<area>` is the
   conceptual bucket (matches AGENTS.md sections / TODO items); `<summary>` is

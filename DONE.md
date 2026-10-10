@@ -16079,3 +16079,27 @@ has. Regression test in handler_tests_turnflow.zig pins the repro
 (prepare flash strike → prepare bash with no targets → highlights empty +
 prepared switched). Behavior change → old session logs that switch
 prepared skills diverge on replay (pre-release: re-record).
+
+### Reflection riders: shader-status boot probe + cache-key cleanup
+
+Two riders from the closing reflection, one commit.
+
+- **Cache-key leak class**: all four TextureStore caches dupe their keys at
+  insert, but only the outline cache (fixed in passing earlier in the
+  session) freed them in deinit — `texture_cache`, `composite_inset_cache`,
+  and `sprite_bounds_cache` leaked every duped key for the process lifetime
+  (invisible to the suite: `src/raylib/` is excluded from the headless test
+  build). deinit now frees every cache's keys alongside its values.
+- **Silent-degrade visibility**: the three fallback shaders (sprite LOD →
+  plain trilinear, outline stripes → solid tint, SDF text → shadow ring)
+  degrade SILENTLY on a compile failure — by design, never a crash — and
+  nothing surfaced it (the SDF path prints to stderr, invisible in a
+  browser). The boot section of the diagnostics log now records each one's
+  compile status (compiled/FAILED + its fallback), gathered at first render
+  from the backend's three shader handles. The GLSL ES web variant is the
+  realistic failure case. Design: DESIGN → Platform Seam → Diagnostics.
+- Remaining reflection items recorded as TODO riders (the unused-pub report
+  script, the skill targeting null-vs-empty convention doc, the per-tile
+  stripe-scope batch flush note); one more convention landed in AGENTS →
+  Commit policy (don't split landed commits when the split costs more than
+  it buys).
