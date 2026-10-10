@@ -15933,3 +15933,29 @@ marching 45° diagonal stripes.
 - Verified: native + test suite + web compile; the look still needs the
   eyeball pass on both targets (band size vs. outline thickness, crawl
   speed) — tuning knobs above if it reads off.
+
+### Outline stripe shader: shared band follow-up
+
+First eyeball pass found two issues, both fixed by one move: the world
+outlines (cursor/range/radius, at the default camera_zoom 50 → 0.5) marched
+at HALF the pixel speed of the UI icon outlines, and the bands read small.
+Root cause of the speed mismatch: the band scaled with the pass's whole
+scale (world = zoom × renderScale, UI = renderScale), and the crawl rate is
+one period per cycle — a half-size band means a half-rate crawl. Fix: ONE
+shared, zoom-independent band (`outline_stripe_band_multiplier` = 2.0 × the
+shared outline thickness × renderScale — doubled, 16 reference px) for BOTH
+families: shared band → shared period → identical size and identical speed
+by construction. All stripe uniforms (dark + phase + band) are now
+frame-level; the scope helpers only bind/unbind (begin takes no param; end
+still takes the enclosing sprite pass's scale for the endShaderMode
+restore). The world bands no longer track the outline stroke's zoom-scaled
+thickness — family uniformity beats per-family thickness matching.
+
+The phase stays a ViewState field (asked whether it could be dropped): it
+already IS fully derived from the clock — a pure per-frame function of the
+pause-gated `animation_clock` + `animation_fps`, nothing accumulated; the
+field is the transport to the renderer, whose only input is ViewState (the
+same channel the tile-highlight sheet's `source_rectangle` uses). The raw
+clock cannot ride a shader time uniform directly: float mantissa loses
+µs precision after ~17s, so the u64 wrap must happen before the f32 — and
+the wrap/step math stays view-side, where it is headless-tested.

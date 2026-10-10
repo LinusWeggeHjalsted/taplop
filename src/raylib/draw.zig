@@ -74,10 +74,9 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
         // restores the DEFAULT shader, not the sprite pass (see
         // beginSpritePass).
         .cursor, .range_outline, .radius_outline, .aggro_outline => {
-            const total_scale = world_scale * backend.renderScale();
-            backend.beginOutlineStripeScope(total_scale);
+            backend.beginOutlineStripeScope();
             rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
-            backend.endOutlineStripeScope(total_scale);
+            backend.endOutlineStripeScope(world_scale * backend.renderScale());
         },
         .region_edge => {
             // One stroke segment of a tile-region outline (the editor
@@ -117,10 +116,9 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
             };
             // Same stripe treatment as the square outlines (each bar is
             // one stroke segment of the same region outline).
-            const total_scale = world_scale * backend.renderScale();
-            backend.beginOutlineStripeScope(total_scale);
+            backend.beginOutlineStripeScope();
             rl.drawRectangleRec(bar, toRaylibColor(overlay.color, 255));
-            backend.endOutlineStripeScope(total_scale);
+            backend.endOutlineStripeScope(world_scale * backend.renderScale());
         },
     }
 }
@@ -358,10 +356,9 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                     .width = dest.width + 2 * @as(f32, @floatFromInt(t)),
                     .height = dest.height + 2 * @as(f32, @floatFromInt(t)),
                 };
-                const total_scale = backend.renderScale();
-                backend.beginOutlineStripeScope(total_scale);
+                backend.beginOutlineStripeScope();
                 rl.drawRectangleLinesEx(outer, @floatFromInt(t), toRaylibColor(highlight_color, 255));
-                backend.endOutlineStripeScope(total_scale);
+                backend.endOutlineStripeScope(backend.renderScale());
             }
         },
         .text_label => |label| backend.text.drawTextLabel(backend.frame_arena.allocator(), label, highlight_color),
@@ -461,9 +458,8 @@ fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destinat
     // function is one outlined draw. The close restores the enclosing
     // per-item sprite pass (the endShaderMode trap — see
     // endOutlineStripeScope).
-    const total_scale = backend.renderScale();
-    backend.beginOutlineStripeScope(total_scale);
-    defer backend.endOutlineStripeScope(total_scale);
+    backend.beginOutlineStripeScope();
+    defer backend.endOutlineStripeScope(backend.renderScale());
     const mask = backend.textures.getOutlineTexture(sprite_id) orelse {
         // Fallback for missing sprites (or mask build failures): ring
         // the destination rectangle directly. Lets the hover highlight

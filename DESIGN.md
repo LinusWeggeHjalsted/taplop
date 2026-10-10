@@ -367,13 +367,21 @@ between the incoming tint and the theme's `darkest`. `s = gl_FragCoord.x +
 gl_FragCoord.y + phase*period` in render-target pixels; `mod(s, period) <
 stripeBandWidth` flips the RGB to the dark color at the texel's own alpha
 (premultiplied output — the pass draws under BLEND_ALPHA_PREMULTIPLY).
-50/50 duty (period = 2 bands), hard flip, band width = the shared outline
-thickness (8 source px) × the pass's whole scale so the bands match the
-outlines' drawn thickness at every zoom. The LIGHT color rides the existing
-per-draw tint; the dark color + phase are frame-level uniforms (set once
-per frame in `render`), the band is per-scope. A compile failure degrades
-exactly to the pre-shader look (solid tint) — never a crash. The SDF text
-outline shader is a SEPARATE pass, untouched by this.
+50/50 duty (period = 2 bands), hard flip, band width = `outline_stripe_band_multiplier`
+(2.0) × the shared outline thickness (8 source px) × renderScale — ONE
+band for BOTH outline families, zoom-independent: the crawl rate is one
+period per cycle, so a shared band means a shared period — both families
+march at the same size AND the same pixel speed (the first cut scaled the
+world band by the camera zoom, so at the default zoom 0.5 the world
+outlines crawled at half the UI outlines' speed — the observed mismatch).
+The world bands therefore do NOT track the outline stroke's zoom-scaled
+thickness; family uniformity beats per-family thickness matching. The
+LIGHT color rides the existing per-draw tint; ALL stripe uniforms (dark
+color + phase + band) are frame-level, set once per frame in `render` —
+the shader has no per-scope state, the scope helpers only bind/unbind.
+A compile failure degrades exactly to the pre-shader look (solid tint) —
+never a crash. The SDF text outline shader is a SEPARATE pass, untouched
+by this.
 
 The phase (0..1, `ViewState.outline_stripe_phase`) is view-side, computed in
 `view()` from `session.animation_clock` stepped at `settings.animation_fps`

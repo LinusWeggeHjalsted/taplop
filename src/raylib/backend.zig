@@ -218,6 +218,17 @@ const outline_stripe_fs_source: [:0]const u8 = if (@import("builtin").target.cpu
 else
     outline_stripe_fs_glsl330;
 
+/// The stripe band size in multiples of the shared outline thickness (8
+/// source px), in REFERENCE pixels — ONE value for both outline families
+/// (world + UI), zoom-independent: the crawl rate is one period per cycle,
+/// so a shared band means a shared period — both families march at the
+/// same size AND the same pixel speed (at the default zoom 0.5 a
+/// zoom-scaled world band was half the UI band — half the crawl speed, the
+/// observed mismatch). The world bands therefore do NOT track the outline
+/// stroke's zoom-scaled thickness; family uniformity beats per-family
+/// thickness matching. Doubled after the first eyeball pass.
+const outline_stripe_band_multiplier: f32 = 2.0;
+
 pub const RaylibBackend = struct {
     allocator: std.mem.Allocator,
     /// The texture subsystem: the lazy sprite caches (main textures,
@@ -427,12 +438,14 @@ pub const RaylibBackend = struct {
         return @as(f32, @floatFromInt(self.render_width)) / reference_width;
     }
 
-    /// Per-frame outline-stripe uniforms: the dark stripe color (the theme's
-    /// `darkest`) and the phase (0..1 of the stripe cycle — view-side, from
-    /// the animation clock via `ViewState.outline_stripe_phase`). Called once
-    /// per frame from `render`; uniform values live on the program, so the
-    /// per-scope `beginOutlineStripeScope` only sets the band width. No-op
-    /// when the shader is unavailable.
+    /// Per-frame outline-stripe uniforms — ALL of them (the shader has no
+    /// per-scope state): the dark stripe color (the theme's `darkest`), the
+    /// phase (0..1 of the stripe cycle — view-side, from the animation
+    /// clock via `ViewState.outline_stripe_phase`), and the band width (the
+    /// shared `outline_stripe_band_multiplier` × outline thickness ×
+    /// renderScale — one band for BOTH outline families, see the
+    /// multiplier's doc). Called once per frame from `render`. No-op when
+    /// the shader is unavailable.
     fn setOutlineStripeFrameUniforms(self: *RaylibBackend, dark_color: types.Color, phase: f32) void {
         const shader = self.outline_stripe_shader orelse return;
         const dark = [4]f32{
@@ -441,36 +454,34 @@ pub const RaylibBackend = struct {
             @as(f32, @floatFromInt(dark_color.b)) / 255.0,
             1.0,
         };
+        const band_width: f32 = outline_stripe_band_multiplier *
+            @as(f32, @floatFromInt(textures_mod.outline_thickness)) * self.renderScale();
         rl.setShaderValue(shader, self.outline_stripe_dark_location, &dark, .vec4);
         rl.setShaderValue(shader, self.outline_stripe_phase_location, &phase, .float);
+        rl.setShaderValue(shader, self.outline_stripe_band_location, &band_width, .float);
     }
 
-    /// Begin an outline-stripe draw scope: band width = the shared outline
-    /// thickness (8 source px) × `total_scale` — the pass's whole scale
-    /// (camera zoom × renderScale for world outlines, renderScale for UI),
-    /// so the stripe bands match the drawn outline's own thickness in
-    /// render-target pixels at every zoom. The phase + dark color are
-    /// frame-level (see `setOutlineStripeFrameUniforms`). No-op when the
-    /// shader failed to compile (the outline draws keep the plain solid
-    /// tint). Draw sites open this INSIDE an enclosing sprite pass —
+    /// Begin an outline-stripe draw scope: binds the stripe shader. Every
+    /// stripe uniform is frame-level (see `setOutlineStripeFrameUniforms`)
+    /// — there is no per-scope state, only the bind. No-op when the shader
+    /// failed to compile (the outline draws keep the plain solid tint).
+    /// Draw sites open this INSIDE an enclosing sprite pass —
     /// `endOutlineStripeScope` restores it (see the endShaderMode trap
     /// there).
-    pub fn beginOutlineStripeScope(self: *RaylibBackend, total_scale: f32) void {
+    pub fn beginOutlineStripeScope(self: *RaylibBackend) void {
         const shader = self.outline_stripe_shader orelse return;
-        const band_width: f32 = @as(f32, @floatFromInt(textures_mod.outline_thickness)) * total_scale;
-        rl.setShaderValue(shader, self.outline_stripe_band_location, &band_width, .float);
         rl.beginShaderMode(shader);
     }
 
-    /// Close a `beginOutlineStripeScope` scope — passing the SAME
-    /// `total_scale` the begin call used. THE endShaderMode TRAP: raylib's
+    /// Close a `beginOutlineStripeScope` scope — `total_scale` is the
+    /// ENCLOSING sprite pass's scale (camera zoom × renderScale for world
+    /// outlines, renderScale for UI). THE endShaderMode TRAP: raylib's
     /// endShaderMode restores the DEFAULT shader, not the sprite-pass
     /// shader the scope opened inside — the rest of the enclosing pass
     /// would silently lose its LOD snap bias (the world layers share ONE
     /// sprite-pass scope; see `beginSpritePass`). So the close RE-OPENS the
-    /// sprite pass with the same scale (uniform values persist on the
-    /// program; the re-set is a no-op cost). No-op when the stripe shader
-    /// is unavailable (nothing was opened).
+    /// sprite pass with that scale. No-op when the stripe shader is
+    /// unavailable (nothing was opened).
     pub fn endOutlineStripeScope(self: *RaylibBackend, total_scale: f32) void {
         if (self.outline_stripe_shader == null) return;
         rl.endShaderMode();
