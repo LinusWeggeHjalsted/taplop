@@ -894,3 +894,47 @@ test "player_load_save: pushes the meta load_save with the picked path" {
     try testing.expectEqual(std.meta.activeTag(top), .meta_event);
     try testing.expectEqualStrings("saves/save_x.txt", top.meta_event.load_save.save_path);
 }
+
+test "player_prepare_skill: switching skills clears the previous skill's highlights" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            // Shield main hand (skill 1 = bash, range 1) + sword off hand
+            // (skill 3 = flash strike, teleport range 3). The enemy sits at
+            // distance 2: OUTSIDE bash's range (bash has no valid targets —
+            // `hostilesInRange` returns null, not empty, so bash's prepare
+            // pushes NO highlight event) but inside flash strike's reach.
+            .{
+                .team = 0,
+                .position = .{ .x = 0, .y = 0 },
+                .main_hand_weapon = .{ .weapon_type = .shield, .weapon_damage = 1 },
+                .off_hand_weapon = .{ .weapon_type = .sword, .weapon_damage = 1 },
+            },
+            .{ .team = 1, .position = .{ .x = 2, .y = 0 }, .current_health = 10, .max_health = 10 },
+        },
+        &five_by_five,
+    ));
+    // Prepare flash strike: its teleport landing tiles highlight.
+    pushPlayerInput(&history, .{ .player_prepare_skill = .{
+        .caster_index = 0,
+        .skill_id = .flash_strike,
+    } });
+    runToIdle(&history);
+    try testing.expect(history.current_state.level.?.highlighted_tiles.len > 0);
+
+    // Click bash (shield skill 1): the observed bug — bash has no targets
+    // in range so its prepare pushes no highlight event, and the
+    // flash-strike landing tiles LINGERED (stale targeting UI for a skill
+    // that is no longer prepared). Switching skills must reset the
+    // previous skill's targeting UI.
+    pushPlayerInput(&history, .{ .player_prepare_skill = .{
+        .caster_index = 0,
+        .skill_id = .bash,
+    } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.level.?.highlighted_tiles.len);
+    try testing.expectEqual(types.SkillId.bash, history.current_state.level.?.prepared_skill.?);
+}

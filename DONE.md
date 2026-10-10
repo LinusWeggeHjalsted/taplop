@@ -16058,3 +16058,24 @@ editor_pickers).
   occlusion inset stays source-px-scaled BY DESIGN (a world-scaled shadow,
   not the outline family). Design: DESIGN → Platform Seam → Outline stripe
   shader → Constant outline width.
+
+### Prepared-skill switch: stale targeting highlights (bug fix)
+
+Repro: shield main hand + sword off hand; prepare sword skill 3 (flash
+strike — its teleport landing tiles highlight); click shield skill 1
+(bash) — ALL the flash-strike landing tiles stayed highlighted. Root
+cause: the `player_prepare_skill` handler replaced `prepared_skill` and
+relied on the NEW skill's prepare event to replace `highlighted_tiles` —
+but a no-target prepare pushes NO event (`hostilesInRange` returns null,
+not an empty slice, when nothing is in range — bash at range 1 with the
+enemies at range 2+), so the previous skill's tiles lingered as stale
+targeting UI. The cancel/use/skip paths all clear (clear_highlights +
+clear_prepared_skill); the SWITCH path was the one hole.
+
+Fix: the handler clears `highlighted_tiles` alongside setting the new
+`prepared_skill` — switching skills resets the previous skill's targeting
+UI first, then the new skill's prepare event re-highlights whatever it
+has. Regression test in handler_tests_turnflow.zig pins the repro
+(prepare flash strike → prepare bash with no targets → highlights empty +
+prepared switched). Behavior change → old session logs that switch
+prepared skills diverge on replay (pre-release: re-record).

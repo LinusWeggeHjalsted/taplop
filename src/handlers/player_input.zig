@@ -1167,6 +1167,13 @@ pub fn handlePlayerInputEvent(
         },
         .player_prepare_skill => |prepare| {
             const level = &current.level.?;
+            // Switching skills RESETS the previous skill's targeting UI:
+            // the new skill's prepare event replaces the highlights only
+            // when it has targets (a no-target prepare pushes no event —
+            // `hostilesInRange` returns null, not empty — so without this
+            // clear the previous skill's tiles would linger as stale
+            // targeting UI; the observed bug).
+            level.highlighted_tiles = &.{};
             level.prepared_skill = prepare.skill_id;
             if (lookups.getSkillDefinition(prepare.skill_id)) |skill_definition| {
                 if (skill_definition.playerPrepareSkill(prepare.caster_index, current.*, allocator)) |event| {
