@@ -16003,3 +16003,13 @@ stripe phase — one outline system, one animation.
   re-export (no external users), the asset itself, and the sheet-drawing +
   load-miss-fallback arm in draw.zig. The generated sprite metadata
   regenerates from the assets scan at build.
+
+### Outline stripe shader: pure white/black pair
+
+Eyeball experiment (user's call): the stripe flip hardcodes PURE WHITE and
+PURE BLACK bands instead of theme `lightest`/`darkest` — both branches take
+the texel's own alpha (premultiplied), so the halo-mask shapes and AA edges
+are unchanged; only the band colors move. The per-draw `lightest` tint
+plumbing stays (it is the compile-fail fallback look); the `stripeDark`
+uniform + its upload + location field were dead after the hardcode and are
+removed.
