@@ -155,23 +155,23 @@ fn spriteLodSnapBias(total_scale: f32) f32 {
 
 /// Fragment shader for the outline stripe pass (see `beginOutlineStripeScope`):
 /// raylib's default batch fragment shader plus a diagonal marching-stripe flip
-/// between PURE WHITE and PURE BLACK bands — the animated read-boost for
-/// outlines over busy art (hardcoded pair, chosen by eyeball over the earlier
-/// theme `lightest`/`darkest` tint pair; the per-draw tint stays as the
-/// compile-fail fallback look). Stripes run at 45° in render-target pixels
-/// (gl_FragCoord): `s = x - y - phase*period` (the y-flipped render target
-/// mirrors the on-screen diagonal), and `mod(s, period) < stripeBandWidth`
-/// picks the band color at the texel's own alpha (premultiplied output — the
-/// pass draws under BLEND_ALPHA_PREMULTIPLY; the halo-mask shapes and AA
-/// edges come from that alpha). Works for BOTH outline draw shapes:
-/// untextured quads (rectangle strokes bind the white 1×1 texture) and the
-/// icon halo masks. Mirrors the default shader EXACTLY otherwise. Desktop
-/// GL (GLSL 3.30).
+/// between the incoming tint (theme `lightest` at every call site) and
+/// `stripeDark` (player gradient index 5, the button-tint class) — the
+/// animated read-boost for outlines over busy art. Stripes run at 45° in
+/// render-target pixels (gl_FragCoord): `s = x - y - phase*period` (the
+/// y-flipped render target mirrors the on-screen diagonal), and
+/// `mod(s, period) < stripeBandWidth` flips the RGB to the dark color at the
+/// texel's own alpha (premultiplied output — the pass draws under
+/// BLEND_ALPHA_PREMULTIPLY). Works for BOTH outline draw shapes: untextured
+/// quads (rectangle strokes bind the white 1×1 texture) and the icon halo
+/// masks (the white band flips, the transparent interior stays). Mirrors the
+/// default shader EXACTLY otherwise. Desktop GL (GLSL 3.30).
 const outline_stripe_fs_glsl330 =
     \\#version 330
     \\in vec2 fragTexCoord;
     \\in vec4 fragColor;
     \\uniform sampler2D texture0;
+    \\uniform vec4 stripeDark;
     \\uniform float stripePhase;
     \\uniform float stripeBandWidth;
     \\out vec4 finalColor;
@@ -181,9 +181,9 @@ const outline_stripe_fs_glsl330 =
     \\    float period = 2.0*stripeBandWidth;
     \\    float s = gl_FragCoord.x - gl_FragCoord.y - stripePhase*period;
     \\    if (mod(s, period) < stripeBandWidth) {
-    \\        finalColor = vec4(0.0, 0.0, 0.0, texelColor.a);
+    \\        finalColor = vec4(stripeDark.rgb*texelColor.a, texelColor.a);
     \\    } else {
-    \\        finalColor = vec4(vec3(texelColor.a), texelColor.a);
+    \\        finalColor = texelColor;
     \\    }
     \\}
 ;
@@ -196,6 +196,7 @@ const outline_stripe_fs_glsl300es =
     \\in vec2 fragTexCoord;
     \\in vec4 fragColor;
     \\uniform sampler2D texture0;
+    \\uniform vec4 stripeDark;
     \\uniform float stripePhase;
     \\uniform float stripeBandWidth;
     \\out vec4 finalColor;
@@ -205,9 +206,9 @@ const outline_stripe_fs_glsl300es =
     \\    float period = 2.0*stripeBandWidth;
     \\    float s = gl_FragCoord.x - gl_FragCoord.y - stripePhase*period;
     \\    if (mod(s, period) < stripeBandWidth) {
-    \\        finalColor = vec4(0.0, 0.0, 0.0, texelColor.a);
+    \\        finalColor = vec4(stripeDark.rgb*texelColor.a, texelColor.a);
     \\    } else {
-    \\        finalColor = vec4(vec3(texelColor.a), texelColor.a);
+    \\        finalColor = texelColor;
     \\    }
     \\}
 ;
@@ -267,6 +268,7 @@ pub const RaylibBackend = struct {
     outline_stripe_shader: ?rl.Shader,
     /// Cached stripe uniform locations (-1 = not found; setShaderValue
     /// no-ops on -1, degrading to a solid tint, never a crash).
+    outline_stripe_dark_location: i32,
     outline_stripe_phase_location: i32,
     outline_stripe_band_location: i32,
     /// Transient per-frame allocations (null-terminated strings for raylib,
@@ -346,6 +348,10 @@ pub const RaylibBackend = struct {
         // unconditionally — a compile failure just means outline draws keep
         // the plain solid tint (the pre-shader look).
         const outline_stripe_shader = rl.loadShaderFromMemory(null, outline_stripe_fs_source) catch null;
+        const outline_stripe_dark_location: i32 = if (outline_stripe_shader) |shader|
+            rl.getShaderLocation(shader, "stripeDark")
+        else
+            -1;
         const outline_stripe_phase_location: i32 = if (outline_stripe_shader) |shader|
             rl.getShaderLocation(shader, "stripePhase")
         else
@@ -364,6 +370,7 @@ pub const RaylibBackend = struct {
             .sprite_shader = sprite_shader,
             .sprite_lod_bias_location = sprite_lod_bias_location,
             .outline_stripe_shader = outline_stripe_shader,
+            .outline_stripe_dark_location = outline_stripe_dark_location,
             .outline_stripe_phase_location = outline_stripe_phase_location,
             .outline_stripe_band_location = outline_stripe_band_location,
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
@@ -434,17 +441,25 @@ pub const RaylibBackend = struct {
     }
 
     /// Per-frame outline-stripe uniforms — ALL of them (the shader has no
-    /// per-scope state): the phase (0..1 of the stripe cycle — view-side,
-    /// from the animation clock via `ViewState.outline_stripe_phase`), and
-    /// the band width (the shared `outline_stripe_band_multiplier` × outline
-    /// thickness × renderScale — one band for BOTH outline families, see
-    /// the multiplier's doc). The band colors are hardcoded in the shader
-    /// source (pure white + pure black). Called once per frame from
-    /// `render`. No-op when the shader is unavailable.
-    fn setOutlineStripeFrameUniforms(self: *RaylibBackend, phase: f32) void {
+    /// per-scope state): the dark stripe color (player gradient index 5,
+    /// the button-tint class — the light color rides the per-draw tint),
+    /// the phase (0..1 of the stripe cycle — view-side, from the animation
+    /// clock via `ViewState.outline_stripe_phase`), and the band width (the
+    /// shared `outline_stripe_band_multiplier` × outline thickness ×
+    /// renderScale — one band for BOTH outline families, see the
+    /// multiplier's doc). Called once per frame from `render`. No-op when
+    /// the shader is unavailable.
+    fn setOutlineStripeFrameUniforms(self: *RaylibBackend, dark_color: types.Color, phase: f32) void {
         const shader = self.outline_stripe_shader orelse return;
+        const dark = [4]f32{
+            @as(f32, @floatFromInt(dark_color.r)) / 255.0,
+            @as(f32, @floatFromInt(dark_color.g)) / 255.0,
+            @as(f32, @floatFromInt(dark_color.b)) / 255.0,
+            1.0,
+        };
         const band_width: f32 = outline_stripe_band_multiplier *
             @as(f32, @floatFromInt(textures_mod.outline_thickness)) * self.renderScale();
+        rl.setShaderValue(shader, self.outline_stripe_dark_location, &dark, .vec4);
         rl.setShaderValue(shader, self.outline_stripe_phase_location, &phase, .float);
         rl.setShaderValue(shader, self.outline_stripe_band_location, &band_width, .float);
     }
@@ -630,10 +645,14 @@ pub const RaylibBackend = struct {
         // See DESIGN → Platform Seam → Render target resolution.
         rl.beginBlendMode(.alpha_premultiply);
         rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = self.renderScale() });
-        // Frame-level outline-stripe uniforms (phase + band width): set once
-        // per frame — uniform values live on the program, so the per-scope
-        // beginOutlineStripeScope only binds.
-        self.setOutlineStripeFrameUniforms(view_state.outline_stripe_phase);
+        // Frame-level outline-stripe uniforms (dark color + phase + band
+        // width): set once per frame — uniform values live on the program,
+        // so the per-scope beginOutlineStripeScope only binds. The dark
+        // color is player gradient index 5 (the button-tint class).
+        self.setOutlineStripeFrameUniforms(
+            view_state.active_color_theme.player_gradient.colors[5],
+            view_state.outline_stripe_phase,
+        );
         // Sprite passes (LOD snap; see beginSpritePass): ONE scope for the
         // text-free world layers, then per-item scopes where text can draw
         // mid-pass (combat numbers, UI labels switch to the SDF shader, and

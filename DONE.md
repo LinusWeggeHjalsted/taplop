@@ -16013,3 +16013,15 @@ are unchanged; only the band colors move. The per-draw `lightest` tint
 plumbing stays (it is the compile-fail fallback look); the `stripeDark`
 uniform + its upload + location field were dead after the hardcode and are
 removed.
+
+### Outline stripe shader: lightest + player gradient[5] pair
+
+Third eyeball iteration on the band pair (theme darkest → pure white/black
+→ this): the light branch is back to the incoming per-draw tint (theme
+`lightest` at every call site — also the compile-fail fallback look), and
+the dark branch uploads player gradient index 5 (the button-tint class)
+per frame. No new plumbing: `ActiveColorTheme` already carries
+`player_gradient`, so `render()` reads `colors[5]` straight off
+`ViewState.active_color_theme`. The `stripeDark` uniform + upload +
+location field return with the uniform-based pair (they were removed for
+the hardcoded white/black try).

@@ -368,9 +368,11 @@ halo masks, the spriteless panel-button hover rect, and the stroked
 Select tool's icon of the tile highlight) read weakly over busy art. They
 all draw through one fragment shader (`backend.zig`, the spriteLodSnapBias
 pattern): the default batch shader (texel × tint) plus a diagonal
-marching-stripe flip between hardcoded PURE WHITE and PURE BLACK bands
-(chosen by eyeball over the earlier theme `lightest`/`darkest` tint pair;
-the per-draw `lightest` tint stays as the compile-fail fallback look).
+marching-stripe flip between the incoming tint (theme `lightest` at every
+call site) and player gradient index 5 (the button-tint class — a
+frame-level uniform; the pair chosen by eyeball over the earlier
+theme-`darkest` and pure-white/black tries). The per-draw `lightest` tint
+is also the compile-fail fallback look.
 `s = gl_FragCoord.x - gl_FragCoord.y - phase*period` in render-target
 pixels (the diagonal family + crawl direction chosen by eyeball — the two
 signs in the shader source are the flip knobs); `mod(s, period) <
