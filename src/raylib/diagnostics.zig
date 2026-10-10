@@ -55,6 +55,9 @@ pub fn recordBoot(
     diagnostics: *Diagnostics,
     render_width: i32,
     render_height: i32,
+    sprite_shader_compiled: bool,
+    outline_stripe_shader_compiled: bool,
+    sdf_shader_compiled: bool,
 ) void {
     diagnostics.recordBoot(.{
         .window_width = rl.getScreenWidth(),
@@ -67,6 +70,9 @@ pub fn recordBoot(
         .gl_renderer = glString(gl_renderer),
         .gl_version = glString(gl_version),
         .gl_shading_language_version = glString(gl_shading_language_version),
+        .sprite_shader_compiled = sprite_shader_compiled,
+        .outline_stripe_shader_compiled = outline_stripe_shader_compiled,
+        .sdf_shader_compiled = sdf_shader_compiled,
     });
 }
 

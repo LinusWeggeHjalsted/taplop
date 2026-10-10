@@ -462,6 +462,12 @@ hunt; extend only when a real incident asks for more.
   mode builds default to active (`--diagnostics` ORs onto that default;
   web stays off — native-only). The code ships in all native builds — a
   few KB, zero writes when inactive.
+- **The boot section also carries the compile status of the three
+  SILENT-DEGRADE shaders** (sprite LOD → plain trilinear, outline stripes
+  → solid tint, SDF text → shadow ring): a failed compile never crashes —
+  the pass falls back to its pre-shader look — and nothing else surfaces
+  it, so the boot line is where the degrade becomes visible (the GLSL ES
+  web variant is the realistic failure case).
 - **Writing — event-driven, never per frame:** sections are one-shots
   (boot once at first render; each first-draw probe once per primitive
   per session; the readback once on the frame a probe armed) — a

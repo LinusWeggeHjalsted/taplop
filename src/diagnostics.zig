@@ -22,6 +22,11 @@ const FileSource = @import("file_source.zig").FileSource;
 /// Where the log lands (persistent dir; rewritten whole on every flush).
 pub const diagnostics_file_path = "logs/diagnostics.txt";
 
+/// "compiled" / "FAILED" for the shader-status boot lines.
+fn statusString(compiled: bool) []const u8 {
+    return if (compiled) "compiled" else "FAILED";
+}
+
 /// Boot-section values, gathered by the backend at first render (window +
 /// GL context are live there). GL identity strings are read raylib-side;
 /// only the values cross the seam.
@@ -39,6 +44,14 @@ pub const BootValues = struct {
     gl_renderer: []const u8,
     gl_version: []const u8,
     gl_shading_language_version: []const u8,
+    /// Compile status of the three silent-degrade shaders: a FAILED
+    /// compile never crashes — the pass falls back to its pre-shader look
+    /// (sprite LOD: trilinear; outline stripes: solid tint; SDF text:
+    /// shadow ring) — and nothing else surfaces it. The boot section is
+    /// where the degrade becomes visible.
+    sprite_shader_compiled: bool,
+    outline_stripe_shader_compiled: bool,
+    sdf_shader_compiled: bool,
 };
 
 /// First plain-sprite-draw probe values — the known-WORKING control the
@@ -166,6 +179,15 @@ pub const Diagnostics = struct {
         self.appendUnchecked("render target {d}x{d}\n", .{
             values.render_target_width,
             values.render_target_height,
+        });
+        self.appendUnchecked("sprite_lod_shader {s} (fallback: plain trilinear)\n", .{
+            statusString(values.sprite_shader_compiled),
+        });
+        self.appendUnchecked("outline_stripe_shader {s} (fallback: solid tint)\n", .{
+            statusString(values.outline_stripe_shader_compiled),
+        });
+        self.appendUnchecked("sdf_text_shader {s} (fallback: shadow ring)\n", .{
+            statusString(values.sdf_shader_compiled),
         });
         self.appendUnchecked("GL_VENDOR {s}\n", .{values.gl_vendor});
         self.appendUnchecked("GL_RENDERER {s}\n", .{values.gl_renderer});
@@ -339,6 +361,9 @@ fn testBootValues() BootValues {
         .gl_renderer = "Test Renderer",
         .gl_version = "4.1 Core",
         .gl_shading_language_version = "4.10",
+        .sprite_shader_compiled = true,
+        .outline_stripe_shader_compiled = true,
+        .sdf_shader_compiled = false,
     };
 }
 
@@ -360,6 +385,12 @@ test "section policy: one-shots record once, probes capture the readback destina
     diagnostics.recordBoot(testBootValues());
     try testing.expect(diagnostics.boot_logged);
     try testing.expect(diagnostics.flush_pending);
+    // The shader-status lines land in the boot section (the fixture has the
+    // SDF deliberately FAILED — the silent-degrade case the line exists
+    // to surface).
+    try testing.expect(std.mem.indexOf(u8, diagnostics.buffer.items, "sprite_lod_shader compiled") != null);
+    try testing.expect(std.mem.indexOf(u8, diagnostics.buffer.items, "outline_stripe_shader compiled") != null);
+    try testing.expect(std.mem.indexOf(u8, diagnostics.buffer.items, "sdf_text_shader FAILED (fallback: shadow ring)") != null);
     const buffer_after_boot = diagnostics.buffer.items.len;
     // One-shot: a second boot with DIFFERENT values records nothing.
     var second_boot = testBootValues();

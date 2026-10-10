@@ -103,9 +103,12 @@ pub const TextureStore = struct {
     /// Unload every cached texture + free the cache maps. No outline or
     /// inset masks outlive the textures they derive from.
     pub fn deinit(self: *TextureStore) void {
-        var textures = self.texture_cache.valueIterator();
-        while (textures.next()) |maybe_texture| {
-            if (maybe_texture.*) |texture| rl.unloadTexture(texture);
+        // Every cache dupes its keys at insert (see the ensure* loaders) —
+        // free them alongside the values, then the maps themselves.
+        var textures = self.texture_cache.iterator();
+        while (textures.next()) |entry| {
+            if (entry.value_ptr.*) |texture| rl.unloadTexture(texture);
+            self.allocator.free(entry.key_ptr.*);
         }
         self.texture_cache.deinit(self.allocator);
         var outlines = self.outline_cache.iterator();
@@ -114,11 +117,16 @@ pub const TextureStore = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.outline_cache.deinit(self.allocator);
-        var composite_insets = self.composite_inset_cache.valueIterator();
-        while (composite_insets.next()) |maybe_texture| {
-            if (maybe_texture.*) |texture| rl.unloadTexture(texture);
+        var composite_insets = self.composite_inset_cache.iterator();
+        while (composite_insets.next()) |entry| {
+            if (entry.value_ptr.*) |texture| rl.unloadTexture(texture);
+            self.allocator.free(entry.key_ptr.*);
         }
         self.composite_inset_cache.deinit(self.allocator);
+        var bounds = self.sprite_bounds_cache.iterator();
+        while (bounds.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
         self.sprite_bounds_cache.deinit(self.allocator);
     }
 

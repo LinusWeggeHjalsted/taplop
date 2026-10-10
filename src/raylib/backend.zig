@@ -624,7 +624,14 @@ pub const RaylibBackend = struct {
         _ = viewport;
         _ = self.frame_arena.reset(.retain_capacity);
         if (self.diagnostics.shouldRecordBoot())
-            diagnostics_probes.recordBoot(&self.diagnostics, self.render_width, self.render_height);
+            diagnostics_probes.recordBoot(
+                &self.diagnostics,
+                self.render_width,
+                self.render_height,
+                self.sprite_shader != null,
+                self.outline_stripe_shader != null,
+                self.text.sdf != null,
+            );
 
         // Draw all reference-space content into the offscreen target. The
         // target may be smaller than the 4K reference (the render_resolution

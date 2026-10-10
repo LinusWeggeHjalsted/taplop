@@ -32,6 +32,30 @@ Test by running `zig build run` and clicking through.
   shipped/placeholder/missing status, resolved against assets/ + the
   persistent dir — the artist's self-updating shopping list; replaces the
   hand-maintained missing-art notes scattered below.
+- **Unused-pub report (session reflection rider)** — the minimize-pub
+  discipline keeps losing to human attention: `walkingDistance` (pub, zero
+  callers) and the dead `ui.tile_highlight_frame_size` re-export both
+  survived many sessions of everyone reading the rule. A
+  scripts/unused_pub_report.sh (the sound_report.sh pattern): walk every
+  `pub` symbol in src/ + src/ui/ (excluding the src/raylib/ seam + test-only
+  pub), grep cross-file references, report the ones nothing imports — the
+  machine-walked-truth version of the rule; run it as a pre-commit hygiene
+  pass. (Both finds are from the outline-shader session — the
+  walkingDistance removal commit + DONE.md, "Tile highlight: the
+  marching-ants sheet retired".)
+- **Skill targeting null-vs-empty convention doc (session reflection rider)**
+  — the prepared-skill bug's root cause: `get_valid_targets_fn` returning
+  NULL ("push no event") vs `&.{}` ("push a clearing event") is an
+  undocumented API convention (skill.zig's Skill interface +
+  skill_helpers.highlightTargets). The prepare seam now clears first so the
+  edge is defused there, but the convention deserves a doc comment on the
+  interface so the next skill doesn't trip it elsewhere.
+- **World overlay stripe scopes batch-flush per tile (session reflection
+  rider, unmeasured)** — each highlighted tile opens its own stripe scope
+  (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
+  Almost certainly fine at this scale, but accepted-not-measured. If frame
+  time ever shows it: restructure render()'s overlay loop into two passes
+  (non-outline overlays, then ONE stripe scope for all outline draws).
 - **Palette shortcut-number surfacing (polish)** — the editor 1–5
   tool/palette keybinds could show their shortcut numbers in the palette UI
   (fixed-tool labels "1 Select", group headers "Entities 3", or tooltips).
