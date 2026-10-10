@@ -158,7 +158,8 @@ fn spriteLodSnapBias(total_scale: f32) f32 {
 /// between the incoming tint (theme `lightest` at every call site) and
 /// `stripeDark` (theme `darkest`) — the animated read-boost for outlines over
 /// busy art. Stripes run at 45° in render-target pixels (gl_FragCoord):
-/// `s = x + y + phase*period`, and `mod(s, period) < stripeBandWidth` flips the
+/// `s = x - y - phase*period` (the y-flipped render target mirrors the
+/// on-screen diagonal), and `mod(s, period) < stripeBandWidth` flips the
 /// RGB to the dark color at the texel's own alpha (premultiplied output — the
 /// pass draws under BLEND_ALPHA_PREMULTIPLY). Works for BOTH outline draw
 /// shapes: untextured quads (rectangle strokes bind the white 1×1 texture) and
@@ -177,7 +178,7 @@ const outline_stripe_fs_glsl330 =
     \\{
     \\    vec4 texelColor = texture(texture0, fragTexCoord)*fragColor;
     \\    float period = 2.0*stripeBandWidth;
-    \\    float s = gl_FragCoord.x + gl_FragCoord.y + stripePhase*period;
+    \\    float s = gl_FragCoord.x - gl_FragCoord.y - stripePhase*period;
     \\    if (mod(s, period) < stripeBandWidth) {
     \\        finalColor = vec4(stripeDark.rgb*texelColor.a, texelColor.a);
     \\    } else {
@@ -202,7 +203,7 @@ const outline_stripe_fs_glsl300es =
     \\{
     \\    vec4 texelColor = texture(texture0, fragTexCoord)*fragColor;
     \\    float period = 2.0*stripeBandWidth;
-    \\    float s = gl_FragCoord.x + gl_FragCoord.y + stripePhase*period;
+    \\    float s = gl_FragCoord.x - gl_FragCoord.y - stripePhase*period;
     \\    if (mod(s, period) < stripeBandWidth) {
     \\        finalColor = vec4(stripeDark.rgb*texelColor.a, texelColor.a);
     \\    } else {

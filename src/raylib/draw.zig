@@ -415,7 +415,15 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             if (rect.filled) {
                 rl.drawRectangleRec(r, toRaylibColor(rect.color, 255));
             } else {
+                // Stroked solid_rect IS the outline class by construction
+                // (the element doc: same drawRectangleLinesEx primitive as
+                // the world range/radius outlines; today's user is the
+                // inventory multi-salvage drag region) — same stripe
+                // treatment. The close restores the enclosing per-item
+                // sprite pass (the endShaderMode trap).
+                backend.beginOutlineStripeScope();
                 rl.drawRectangleLinesEx(r, @floatFromInt(rect.line_width), toRaylibColor(rect.color, 255));
+                backend.endOutlineStripeScope(backend.renderScale());
             }
         },
         .slider => |slider| {

@@ -15959,3 +15959,17 @@ same channel the tile-highlight sheet's `source_rectangle` uses). The raw
 clock cannot ride a shader time uniform directly: float mantissa loses
 µs precision after ~17s, so the u64 wrap must happen before the f32 — and
 the wrap/step math stays view-side, where it is headless-tested.
+
+### Outline stripe shader: diagonal/crawl flip + the salvage drag region
+
+Two follow-ups from the second eyeball pass. (1) The stripe diagonal family
+and crawl direction flipped (`s = x - y - phase*period`, was
+`x + y + phase*period`) — the two signs in the shader source are the flip
+knobs, one for the diagonal family, one for the crawl direction; GLSL `mod`
+returns [0, period) for negative s, so no wrap handling needed. (2) The
+inventory multi-salvage drag region (a stroked `.solid_rect`,
+`filled = false`, panels.zig) was the one outline-class draw still on the
+plain tint — the stroked `.solid_rect` BRANCH now draws through the stripe
+scope (the element doc already defined stroked = the outline class, same
+primitive as the world range/radius outlines, so the branch wrap covers any
+future stroked solid_rect too).

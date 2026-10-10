@@ -845,7 +845,8 @@ pub const TextFieldUi = struct {
 /// A plain rectangle (filled by default, or stroked when `filled` is
 /// false). Used for UI primitives like the error popup's scrollbar
 /// track + thumb (filled) and the inventory salvage-region outline
-/// (stroked — same `drawRectangleLinesEx` primitive as the world
+/// (stroked — the outline class by construction: same `drawRectangleLinesEx`
+/// primitive AND the same marching stripe treatment as the world
 /// range/radius outlines). `blocks_input` defaults to false (decorative);
 /// set true if used as a solid surface.
 pub const SolidRect = struct {

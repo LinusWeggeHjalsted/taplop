@@ -359,12 +359,15 @@ Key pieces (`src/raylib/text.zig`):
 ### Outline stripe shader (marching outlines)
 
 The theme-`lightest` outlines (the world tile outlines — cursor, range,
-radius, aggro, region edges — the UI icon halo masks, and the spriteless
-panel-button hover rect) read weakly over busy art. They all draw through
-one fragment shader (`backend.zig`, the spriteLodSnapBias pattern): the
-default batch shader (texel × tint) plus a diagonal marching-stripe flip
-between the incoming tint and the theme's `darkest`. `s = gl_FragCoord.x +
-gl_FragCoord.y + phase*period` in render-target pixels; `mod(s, period) <
+radius, aggro, region edges — the UI icon halo masks, the spriteless
+panel-button hover rect, and the stroked `.solid_rect` branch = the
+inventory multi-salvage drag region) read weakly over busy art. They all
+draw through one fragment shader (`backend.zig`, the spriteLodSnapBias
+pattern): the default batch shader (texel × tint) plus a diagonal
+marching-stripe flip between the incoming tint and the theme's `darkest`.
+`s = gl_FragCoord.x - gl_FragCoord.y - phase*period` in render-target
+pixels (the diagonal family + crawl direction chosen by eyeball — the two
+signs in the shader source are the flip knobs); `mod(s, period) <
 stripeBandWidth` flips the RGB to the dark color at the texel's own alpha
 (premultiplied output — the pass draws under BLEND_ALPHA_PREMULTIPLY).
 50/50 duty (period = 2 bands), hard flip, band width = `outline_stripe_band_multiplier`
