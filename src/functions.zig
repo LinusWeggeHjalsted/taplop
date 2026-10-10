@@ -205,19 +205,6 @@ pub fn shortestPath(
     return path;
 }
 
-/// Returns the walking distance between two positions (number of steps),
-/// or null if no path exists.
-pub fn walkingDistance(
-    level: Level,
-    start_position: Vector2,
-    end_position: Vector2,
-    allocator: std.mem.Allocator,
-) ?u32 {
-    const path = shortestPath(level, start_position, end_position, allocator) orelse return null;
-    defer allocator.free(path);
-    return @intCast(path.len);
-}
-
 pub fn chebyshevDistance(a: Vector2, b: Vector2) i32 {
     const dx = @as(i32, if (a.x > b.x) a.x - b.x else b.x - a.x);
     const dy = @as(i32, if (a.y > b.y) a.y - b.y else b.y - a.y);
