@@ -28,12 +28,12 @@ const caret_width: i32 = 8;
 
 // -- World drawing --
 
-/// Draw a tile overlay as a primitive (no overlay art): a translucent fill
-/// for move-range highlights, an outline for the cursor / range outlines.
-/// The outline thickness is the shared mask thickness (8 source px, see
-/// textures.zig)
-/// × `world_scale`; range/radius/aggro outlines may span multiple tiles
-/// via `extent` (side in tiles, default 1).
+/// Draw a tile overlay as an outline-class primitive (no overlay art):
+/// the clickable-tile highlight (an inset square outline), the cursor /
+/// range / radius / aggro square outlines, and the region-edge bars. The
+/// outline thickness is the shared mask thickness (8 source px, see
+/// textures.zig) × `world_scale`; range/radius/aggro outlines may span
+/// multiple tiles via `extent` (side in tiles, default 1).
 pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawable, world_scale: f32) void {
     const tile_size = input.tile_size_pixels * world_scale;
     const side: f32 = @as(f32, @floatFromInt(overlay.extent)) * tile_size;
@@ -46,25 +46,22 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
     const line_width = @as(f32, @floatFromInt(textures_mod.outline_thickness)) * world_scale;
     switch (overlay.overlay_type) {
         .highlight => {
-            // Animated marching-ants sprite over each targetable tile
-            // (`world/tile_highlight`), tinted with the overlay color.
-            // `source_rectangle` (the current animation frame) is always
-            // set by the producer (`buildHighlightOverlays`) — the
-            // pre-animation-sheet translucent-fill shape is gone; only
-            // the texture-load-miss fallback keeps the primitive draw
-            // (defensive degrade, consistent with missing-art handling).
-            const src_rect = overlay.source_rectangle.?;
-            if (backend.textures.getTexture("world/tile_highlight")) |texture| {
-                const source = rl.Rectangle{
-                    .x = @floatFromInt(src_rect.x),
-                    .y = @floatFromInt(src_rect.y),
-                    .width = @floatFromInt(src_rect.width),
-                    .height = @floatFromInt(src_rect.height),
-                };
-                rl.drawTexturePro(texture, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
-            } else {
-                rl.drawRectangleRec(rectangle, toPremultipliedColor(overlay.color, 90));
-            }
+            // The clickable-tile highlight: an inset square outline — the
+            // same outline class as the cursor/range outlines (shared
+            // thickness + marching stripe treatment), inset 1/16 of the
+            // tile: the retired `world/tile_highlight` marching-ants
+            // sheet's band position (16 source px of the 256 tile).
+            const inset = side /
+                @as(f32, @floatFromInt(ui.tile_highlight_inset_divisor));
+            const inset_rectangle = rl.Rectangle{
+                .x = rectangle.x + inset,
+                .y = rectangle.y + inset,
+                .width = rectangle.width - 2 * inset,
+                .height = rectangle.height - 2 * inset,
+            };
+            backend.beginOutlineStripeScope();
+            rl.drawRectangleLinesEx(inset_rectangle, line_width, toRaylibColor(overlay.color, 255));
+            backend.endOutlineStripeScope(world_scale * backend.renderScale());
         },
         // The square outlines (the hovered tile + the range/radius/aggro
         // region outlines — one primitive) all draw through the outline
@@ -403,11 +400,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         .fill_sprite => |fill| drawFillSprite(backend, fill),
         .image => |image| {
             const dest = referenceRectangle(image.screen_position, image.width, image.height);
-            const source: ?rl.Rectangle = if (image.source_rectangle) |rectangle|
-                referenceRectangle(rectangle.position(), rectangle.width, rectangle.height)
-            else
-                null;
-            drawSprite(backend, image.sprite_id, dest, source, image.color, image.alpha, image.flip_horizontal);
+            drawSprite(backend, image.sprite_id, dest, null, image.color, image.alpha, image.flip_horizontal);
             if (image.highlighted) drawHighlightOutline(backend, image.sprite_id, dest, highlight_color);
         },
         .solid_rect => |rect| {

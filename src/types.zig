@@ -3302,9 +3302,6 @@ pub const TileOverlayDrawable = struct {
     /// region_edge); the range/radius outline spans `extent` tiles centered
     /// on the player.
     extent: u32 = 1,
-    /// Source rectangle into the overlay sprite (for sprite-based overlays
-    /// like the animated tile highlight). Null for primitive overlays.
-    source_rectangle: ?Rectangle = null,
     /// Which side of the tile square a `region_edge` overlay strokes.
     /// Unused by the other overlay types.
     edge: TileOverlayEdge = .top,

@@ -57,10 +57,12 @@ const spanRow = @import("tooltip.zig").spanRow;
 pub const editor_entity_frame_width: i32 = types.entity_sprite_frame_width;
 pub const editor_entity_frame_height: i32 = types.entity_sprite_frame_height;
 
-/// `world/tile_highlight.png` spritesheet: 4 frames of 256x256 in a
-/// horizontal strip (frame N occupies x = N*256..N*256+256). The Select
-/// tool graphic is frame 0.
-pub const tile_highlight_frame_size: i32 = 256;
+/// Native size of the square tile-class tool graphics (the `world/tile`
+/// sprite; the Select tool's fitted square too). The retired
+/// `world/tile_highlight.png` marching-ants sheet shared the size — the
+/// Select graphic is now the inset stroked square (see the fixed-tools
+/// emission).
+pub const tool_graphic_tile_size: i32 = 256;
 
 /// Font size for the editor palette group headers ("Entities", …).
 pub const editor_group_header_font_size: i32 = 64;
@@ -204,7 +206,6 @@ fn emitEditorToolCell(
     cell: Rectangle,
     tool: types.EditorToolId,
     graphic_sprite_id: []const u8,
-    graphic_source_rectangle: ?Rectangle,
     graphic_width: i32,
     graphic_height: i32,
     graphic_scale: f32,
@@ -236,7 +237,6 @@ fn emitEditorToolCell(
         .width = fitted.width,
         .height = fitted.height,
         .color = graphic_color,
-        .source_rectangle = graphic_source_rectangle,
         .blocks_input = false,
     } });
 }
@@ -798,7 +798,8 @@ pub fn buildEditorPrimaryActions(
 /// palette type. Expanded groups put their header + "+" in the strip above
 /// the bar; collapsed (or empty) groups put them flush against the bottom
 /// of the screen. Every tool renders the shared button background plus a
-/// distinguishing graphic: Select = `world/tile_highlight` frame 0, Tile =
+/// distinguishing graphic: Select = the inset square outline (the
+/// clickable-tile highlight's look — see the fixed-tools emission), Tile =
 /// `world/tile`, entities + decorations = their FULL scene composition
 /// (base + layers, plus weapons for entities — off-hand mirrored,
 /// suppressed when `displays_weapons` is false), each layer tinted exactly
@@ -881,30 +882,44 @@ pub fn buildEditorBottomBar(
 
     // Fixed tools. The tile graphic draws at half size (the tile art is
     // busy at full cell scale).
-    try emitEditorToolCell(
-        elements,
-        allocator,
-        row.next(slot_size),
-        .select,
-        "world/tile_highlight",
-        .{ .x = 0, .y = 0, .width = tile_highlight_frame_size, .height = tile_highlight_frame_size },
-        tile_highlight_frame_size,
-        tile_highlight_frame_size,
-        1.0,
-        active_theme.lightest,
-        button_color,
-        "Select",
-        active_tool,
-    );
+    //
+    // Select: the clickable-tile highlight's look — an inset square
+    // outline, inset by the shared `tile_highlight_inset_divisor` (the
+    // prototype sheet's band position) with the outline-class stroke
+    // (side/32 — the 8-source-px thickness on a 256 tile). A stroked
+    // solid_rect IS the outline class, so it draws through the stripe
+    // shader — the icon animates exactly like the world highlight.
+    {
+        const cell = row.next(slot_size);
+        try emitEditorToolCellButton(
+            elements,
+            allocator,
+            cell,
+            .select,
+            button_color,
+            "Select",
+            active_tool,
+        );
+        const fitted = scaleToFit(cell, tool_graphic_tile_size, tool_graphic_tile_size);
+        const inset = @divTrunc(fitted.width, ui_element.tile_highlight_inset_divisor);
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = fitted.x + inset, .y = fitted.y + inset },
+            .width = fitted.width - 2 * inset,
+            .height = fitted.height - 2 * inset,
+            .color = active_theme.lightest,
+            .filled = false,
+            .line_width = @max(2, @divTrunc(fitted.width, 32)),
+            .blocks_input = false,
+        } });
+    }
     try emitEditorToolCell(
         elements,
         allocator,
         row.next(slot_size),
         .tile,
         "world/tile",
-        null,
-        tile_highlight_frame_size,
-        tile_highlight_frame_size,
+        tool_graphic_tile_size,
+        tool_graphic_tile_size,
         0.5,
         world[@min(@as(u32, 1), types.gradient_color_count - 1)],
         button_color,
@@ -1050,7 +1065,6 @@ pub fn buildEditorBottomBar(
                         cellAt(bar.y, group_left, ordinal),
                         .{ .item_type = @intCast(first_visible + ordinal) },
                         itemIconSpriteId(type_definition.item),
-                        null,
                         inventory_slot_size,
                         inventory_slot_size,
                         1.0,
@@ -1512,19 +1526,21 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     const tool_cell_count = 2 + entity_types.len + decoration_types.len + item_types.len;
     try std.testing.expectEqual(@as(usize, tool_cell_count), background_count);
 
-    // Fixed tools: Select uses tile_highlight frame 0 (a source rectangle,
-    // not the whole 1024-wide sheet); Tile uses world/tile tinted with the
+    // Fixed tools: Select draws as an inset STROKED square (the
+    // clickable-tile highlight's outline class — the retired
+    // tile_highlight sheet is gone); Tile uses world/tile tinted with the
     // world gradient index 1.
-    var found_select_frame = false;
+    var found_select_outline = false;
     var found_tile = false;
     var found_enemy = false;
     var found_decoration = false;
     var found_item = false;
     for (elements.items) |element| switch (element) {
+        .solid_rect => |rect| {
+            if (!rect.filled) found_select_outline = true;
+        },
         .image => |image| {
-            if (std.mem.eql(u8, image.sprite_id, "world/tile_highlight")) {
-                found_select_frame = image.source_rectangle != null;
-            } else if (std.mem.eql(u8, image.sprite_id, "world/tile")) {
+            if (std.mem.eql(u8, image.sprite_id, "world/tile")) {
                 found_tile = std.meta.eql(image.color, world_one);
             } else if (std.mem.eql(u8, image.sprite_id, "entities/skeleton")) {
                 found_enemy = std.meta.eql(image.color, enemy_two) and
@@ -1538,7 +1554,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         },
         else => {},
     };
-    try std.testing.expect(found_select_frame);
+    try std.testing.expect(found_select_outline);
     try std.testing.expect(found_tile);
     try std.testing.expect(found_enemy);
     try std.testing.expect(found_decoration);

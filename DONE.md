@@ -15973,3 +15973,33 @@ plain tint — the stroked `.solid_rect` BRANCH now draws through the stripe
 scope (the element doc already defined stroked = the outline class, same
 primitive as the world range/radius outlines, so the branch wrap covers any
 future stroked solid_rect too).
+
+### Tile highlight: the marching-ants sheet retired, replaced by the inset outline
+
+The clickable-tile highlight was the game's earliest-prototype art
+(`world/tile_highlight.png`, a 4-frame 256x256 marching-ants sheet,
+`buildHighlightOverlays` picking frames off the animation clock). Removed
+entirely; the highlight is now an inset square outline in the outline class
+(shared 8-source-px thickness + the marching stripe shader, theme
+`lightest`), replacing the sheet's per-frame animation with the shared
+stripe phase — one outline system, one animation.
+
+- **The inset is preserved from the sheet art**: measured the sheet with a
+  PIL probe — every frame's band sits at 16..239 of 256, i.e. inset 16
+  source px = 1/16 of the tile. The replacement outline insets by
+  `tile_highlight_inset_divisor` (16) of the tile side — shared constant in
+  element.zig, used by BOTH the world highlight draw and the Select icon.
+- **The editor Select tool icon** used the sheet's frame 0 as its palette
+  graphic — replaced with the same inset outline: a stroked `.solid_rect`
+  (the outline class by construction — it draws through the stripe shader,
+  so the icon animates exactly like the world highlight), inset 1/16 of
+  the fitted square with the outline-class stroke ratio (side/32 — 8 source
+  px on the 256 tile).
+- **Dead plumbing removed with the sheet**: `TileOverlayDrawable.source_rectangle`
+  (highlight-only), `Image.source_rectangle` (the Select frame was its last
+  non-null user — the emitEditorToolCell param too),
+  `tile_highlight_frame_*` constants (the surviving 256 renamed
+  `tool_graphic_tile_size`), the ui.zig `tile_highlight_frame_size`
+  re-export (no external users), the asset itself, and the sheet-drawing +
+  load-miss-fallback arm in draw.zig. The generated sprite metadata
+  regenerates from the assets scan at build.

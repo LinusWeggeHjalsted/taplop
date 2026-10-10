@@ -358,11 +358,15 @@ Key pieces (`src/raylib/text.zig`):
 
 ### Outline stripe shader (marching outlines)
 
-The theme-`lightest` outlines (the world tile outlines — cursor, range,
-radius, aggro, region edges — the UI icon halo masks, the spriteless
-panel-button hover rect, and the stroked `.solid_rect` branch = the
-inventory multi-salvage drag region) read weakly over busy art. They all
-draw through one fragment shader (`backend.zig`, the spriteLodSnapBias
+The theme-`lightest` outlines (the world tile outlines — the clickable-tile
+highlight (an INSET square outline, `ui.tile_highlight_inset_divisor` =
+side/16, the retired `world/tile_highlight` marching-ants sheet's band
+position; the sheet was the earliest-prototype art, replaced by the
+outline class), cursor, range, radius, aggro, region edges — the UI icon
+halo masks, the spriteless panel-button hover rect, and the stroked
+`.solid_rect` branch = the inventory multi-salvage drag region + the editor
+Select tool's icon of the tile highlight) read weakly over busy art. They
+all draw through one fragment shader (`backend.zig`, the spriteLodSnapBias
 pattern): the default batch shader (texel × tint) plus a diagonal
 marching-stripe flip between the incoming tint and the theme's `darkest`.
 `s = gl_FragCoord.x - gl_FragCoord.y - phase*period` in render-target
@@ -388,9 +392,9 @@ by this.
 
 The phase (0..1, `ViewState.outline_stripe_phase`) is view-side, computed in
 `view()` from `session.animation_clock` stepped at `settings.animation_fps`
-(8 steps per cycle — frame-quantized to match the tile-highlight sheet's
-cadence, one animation system; freezes on pause like every looping anim —
-see Animation). The clock wraps mod the cycle IN u64 before the f32
+(8 steps per cycle — frame-quantized at the shared animation clock, one
+animation system; freezes on pause like every looping anim — see
+Animation). The clock wraps mod the cycle IN u64 before the f32
 conversion (f32 mantissa holds only ~16.8s of microseconds). No game
 state involved — no replay impact.
 

@@ -102,7 +102,7 @@ pub fn view(
     var ground_entries: std.ArrayList(GroundEntry) = .empty;
     if (current_state.level) |*level| {
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
-        buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps);
+        buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
         buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
         buildInspectedAggroOutline(&tile_overlays, frame_allocator, level, &current_state.ui_surfaces, active_theme, camera, camera_zoom);
@@ -1358,18 +1358,11 @@ const flag_banner_frame_count: u32 = 8;
 const flag_banner_frame_width: i32 = 256;
 const flag_banner_frame_height: i32 = 512;
 
-/// Animated tile-highlight sprite (`world/tile_highlight.png`): a horizontal
-/// strip of 4 frames, each 256x256 (one tile). Drawn over each targetable
-/// tile, advancing at `settings.animation_fps` (looping — no per-instance
-/// state). Mirrors the flag banner animation; see DESIGN → Animation.
-const tile_highlight_sprite_id = "world/tile_highlight";
-const tile_highlight_frame_count: u32 = 4;
-
 /// Steps per full outline-stripe cycle (one light + one dark band) — the
 /// crawl speed of the outline stripe shader (see DESIGN → Platform Seam →
 /// Outline stripe shader): one full cycle per `outline_stripe_steps`
-/// animation frames, stepped (frame-quantized) to match the
-/// tile-highlight sheet's cadence — one animation system.
+/// animation frames, stepped (frame-quantized) at the shared animation
+/// clock — one animation system.
 const outline_stripe_steps: u32 = 8;
 
 /// The outline stripe phase (0..1) for `animation_clock`, stepped at
@@ -1383,9 +1376,6 @@ fn outlineStripePhase(animation_clock_microseconds: u64, animation_fps: u32) f32
     const step = elapsed_frames % outline_stripe_steps;
     return @as(f32, @floatFromInt(step)) / @as(f32, @floatFromInt(outline_stripe_steps));
 }
-const tile_highlight_frame_width: i32 = 256;
-const tile_highlight_frame_height: i32 = 256;
-
 fn levelEndDrawable(
     tile: types.Vector2,
     active_theme: types.ActiveColorTheme,
@@ -2469,10 +2459,12 @@ fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
     return anchor;
 }
 
-/// Move-range highlights: an animated marching-ants overlay on each
-/// targetable tile, tinted with the theme's `lightest`. Mirrors the flag
-/// banner animation (frame index from `session.animation_clock` /
-/// `settings.animation_fps`, looping — no per-instance state).
+/// Clickable-tile highlights: one overlay per targetable tile, drawn as an
+/// inset square outline in the outline class (shared thickness + marching
+/// stripe treatment as the cursor/range outlines; inset —
+/// `ui.tile_highlight_inset_divisor` — matching the prototype
+/// `world/tile_highlight` sheet's band position). See DESIGN → Platform
+/// Seam → Outline stripe shader.
 fn buildHighlightOverlays(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2480,25 +2472,12 @@ fn buildHighlightOverlays(
     active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
-    animation_clock_microseconds: u64,
-    animation_fps: u32,
 ) void {
-    const effective_fps: u32 = if (animation_fps == 0) 8 else animation_fps;
-    const frame_duration_us: u64 = 1_000_000 / effective_fps;
-    const elapsed_frames: u64 = animation_clock_microseconds / frame_duration_us;
-    const frame_index: u32 = @intCast(elapsed_frames % tile_highlight_frame_count);
-    const source_rectangle: types.Rectangle = .{
-        .x = @as(i32, @intCast(frame_index)) * tile_highlight_frame_width,
-        .y = 0,
-        .width = tile_highlight_frame_width,
-        .height = tile_highlight_frame_height,
-    };
     for (highlighted_tiles) |tile| {
         list.append(allocator, .{
             .screen_position = tileToScreen(tile, camera, zoom),
             .overlay_type = .highlight,
             .color = active_theme.lightest,
-            .source_rectangle = source_rectangle,
         }) catch @panic("failed to append highlight overlay");
     }
 }

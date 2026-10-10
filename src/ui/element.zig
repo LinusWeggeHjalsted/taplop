@@ -771,6 +771,13 @@ pub const FillSprite = struct {
     blocks_input: bool = true,
 };
 
+/// How far the clickable-tile highlight (and the editor Select tool's
+/// icon of it) is inset from the tile edge: the square's side divided by
+/// this. 16 = the retired `world/tile_highlight` marching-ants sheet's band
+/// position (16 source px of a 256 tile) — the inset the prototype sheet
+/// established, kept for the outline-class replacement.
+pub const tile_highlight_inset_divisor: i32 = 16;
+
 /// A sprite image (icon, decoration, etc.).
 pub const Image = struct {
     sprite_id: []const u8,
@@ -781,10 +788,6 @@ pub const Image = struct {
     /// Tint alpha (0–255). Default fully opaque; overlays like the skill
     /// cooldown wash use 128 for 50% transparency.
     alpha: u8 = 255,
-    /// Region of the sprite to draw. Null means the full sprite. Used for
-    /// spritesheet frames (e.g. the editor Select tool's
-    /// `world/tile_highlight` frame 0).
-    source_rectangle: ?Rectangle = null,
     /// Mirror horizontally (negative source width at the render seam, the
     /// world sprite path's flip trick). Used for off-hand weapon previews
     /// in editor cells — they must mirror like the scene does.
