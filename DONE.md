@@ -15804,3 +15804,45 @@ separate chore first"): does `input_handlers.zig` split naturally now?
 - The convergence is COMPLETE (all four slices): one dispatch pass
   (`bindingFires` → `applyAction`), `fired_actions` + the sound choke
   point, what-recorded assertions, the split decision.
+
+## Enemy AI movement: the straightness tiebreak (slice 1 — destination selection)
+
+The observed bug: an enemy on the player's row habitually stepped a row UP
+instead of walking the row toward the player. Root cause was NOT pathfinding —
+A* already returned the straight row path in the same-row case. It was the
+movement-destination SELECTION (`ai_movement.zig`): a basic sword enemy with
+spinblade (point-blank AoE) ready moves in `point_blank_cluster` mode, where
+the row tile (1,1) and the row-above tile (1,0) score identically (player
+within radius 1), and the `(x, y)` `tileBefore` tiebreak always picked the
+lower `y` — the top-row tile. Same tiebreak shape in `keepRangeDestination`
+and in `enemyApproachTurn`'s no-path reachable-tile fallback.
+
+- **The rule** (`functions.straighterTileBefore`): when the primary metric
+  (cluster score / Chebyshev distance) ties between candidate tiles, prefer
+  the STRAIGHTER line to the mover's nearest hostile — first by perpendicular
+  offset from the mover→hostile line (cross product; a same-row chase stays on
+  its row, a 45° chase walks the diagonal), then by squared euclidean distance
+  to the hostile, then the `(x, y)` tile convention for a total deterministic
+  order. Integer-only (squares and cross products — no floats in gameplay
+  logic). The euclidean tier alone is NOT enough: the row tile (1,1) and the
+  tile directly above the player (0,0) are euclidean-equidistant, and the
+  `(x, y)` fallback would pick (0,0) again — the cross-product tier is what
+  actually encodes "walk the line from where you stand".
+- **Anchor semantics**: the nearest hostile to the CASTER (not per candidate
+  tile — the anchor must be stable across the tie group or "straighter" is
+  ill-defined). `nearestHostilePosition` mirrors `nearestHostileDistance`
+  (which stays per-center: it answers "can I act from this tile").
+- **Keep-range reads naturally too**: among equally-far standoff tiles, the
+  kiter stays directly IN LINE with the hostle being kited (the duel line)
+  rather than off to the side.
+- All three selection sites swapped (`pointBlankClusterDestination`,
+  `keepRangeDestination`, the approach fallback); `tileBefore` stays as the
+  final fallback tier + the editor's row-major insert order. Design: DESIGN →
+  Determinism & Tiebreaking (the movement-tiebreak bullet) + Architecture →
+  AI movement modes.
+- Behavior change → old session logs diverge under strict replay verification
+  (pre-release: re-record; the policy note already lived in the TODO item).
+- Tests: `straighterTileBefore` unit tests (row/diagonal/euclid/(x,y) tiers,
+  antisymmetry), the bug layout pinned at speed 1 AND speed 2 (the wider tie
+  field including the player's column), keep-range standoff updated to the
+  in-line tile.

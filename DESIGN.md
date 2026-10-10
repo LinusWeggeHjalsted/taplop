@@ -1105,6 +1105,17 @@ that true (`src/session_log_bundle.zig`):
   - Entities: ascending `entity_index`.
   - Tiles: ascending `(x, y)` (A* `comparePathNodes` already does this).
   - Skills: slot order.
+  - **AI movement destination ties** (`functions.straighterTileBefore`):
+    when the primary metric (cluster score / Chebyshev distance) ties, the
+    STRAIGHTER line to the mover's nearest hostile wins — first by
+    perpendicular offset from the mover→hostile line (a same-row chase
+    stays on its row; a 45° chase walks the diagonal), then squared
+    euclidean distance to the hostile, then the `(x, y)` tile convention.
+    The old `(x, y)`-only tiebreak habitually stepped a row up on same-row
+    chases (the observed bug — a cluster-seeker scoring the row tile and
+    the row-above tile equally always picked the lower `y`). Applies at
+    all three movement-selection sites: both `ai_movement` destinations
+    and the approach-mode reachable-tile fallback (level.zig).
   - **AoE multi-target execution: the spiral** (`skill_helpers.spiralTilesInRadius`,
     walked by `hostileIndicesInRadius` — the one enumeration every radius AoE
     uses). Targets enumerate by TILE, not entity scan order: the innermost
@@ -3054,11 +3065,14 @@ the game cheating):
     approach (close the gap first).
   - `.approach` (the historical behavior): converge on the nearest hostile
     up to min range, pathfinding with a reachable-tile fallback — kept in
-    the handler (level.zig `enemyApproachTurn`), unchanged.
+    the handler (level.zig `enemyApproachTurn`); the fallback's distance
+    ties break by the same straightness rule.
   Destination ties: an equal-value candidate NEVER displaces the current
   tile — stay put unless a strictly better tile exists (shuffling between
   equal options reads as noise to the player); ties between reachable
-  tiles break by the (x, y) tile convention (Determinism & Tiebreaking).
+  tiles break by the straighter line to the caster's nearest hostile
+  (`functions.straighterTileBefore` — Determinism & Tiebreaking), then
+  the (x, y) tile convention.
   The modes are MOVEMENT only — the attack phase's
   ai_options evaluation is untouched; a cluster-seeker that moved in but
   has its skill stolen by slot order still attacks from the cluster tile.

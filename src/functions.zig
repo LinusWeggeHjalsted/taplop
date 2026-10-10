@@ -681,10 +681,87 @@ test "nearestTileAlongDirection: tiles behind the origin and the origin itself a
 }
 
 /// Row-major (x, then y) tile order — the canonical ordering convention
-/// for tile lists (insertions keep it; the enemy-turn reachable-tile
-/// fallback breaks distance ties with it). See DESIGN → Determinism &
-/// Tiebreaking.
+/// for tile lists (editor insertions keep it) and the FINAL fallback tier
+/// of `straighterTileBefore`. See DESIGN → Determinism & Tiebreaking.
 pub fn tileBefore(a: types.Vector2, b: types.Vector2) bool {
     if (a.x != b.x) return a.x < b.x;
     return a.y < b.y;
+}
+
+/// Squared euclidean distance — the "real" distance as an integer (no
+/// floats in gameplay logic; squaring preserves order).
+fn squaredEuclideanDistance(a: types.Vector2, b: types.Vector2) u32 {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return @abs(dx * dx + dy * dy);
+}
+
+/// Perpendicular offset of `position` from the mover→anchor line, in
+/// cross-product units — 0 means the tile is ON the line. Integer-only.
+fn crossLineOffset(
+    position: types.Vector2,
+    mover_position: types.Vector2,
+    anchor_position: types.Vector2,
+) u32 {
+    const relative_x = position.x - mover_position.x;
+    const relative_y = position.y - mover_position.y;
+    const anchor_x = anchor_position.x - mover_position.x;
+    const anchor_y = anchor_position.y - mover_position.y;
+    return @abs(relative_x * anchor_y - relative_y * anchor_x);
+}
+
+/// Movement-destination tiebreak: when the primary metric (cluster score /
+/// Chebyshev distance) ties between candidate tiles, prefer the STRAIGHTER
+/// line to the anchor — first by perpendicular offset from the
+/// mover→anchor line (a same-row chase stays on its row; a 45° chase walks
+/// the diagonal), then by squared euclidean distance to the anchor, then
+/// the (x, y) tile convention for a total deterministic order. See DESIGN →
+/// Determinism & Tiebreaking.
+pub fn straighterTileBefore(
+    candidate: types.Vector2,
+    incumbent: types.Vector2,
+    mover_position: types.Vector2,
+    anchor_position: types.Vector2,
+) bool {
+    const candidate_cross = crossLineOffset(candidate, mover_position, anchor_position);
+    const incumbent_cross = crossLineOffset(incumbent, mover_position, anchor_position);
+    if (candidate_cross != incumbent_cross) return candidate_cross < incumbent_cross;
+    const candidate_distance = squaredEuclideanDistance(candidate, anchor_position);
+    const incumbent_distance = squaredEuclideanDistance(incumbent, anchor_position);
+    if (candidate_distance != incumbent_distance) return candidate_distance < incumbent_distance;
+    return tileBefore(candidate, incumbent);
+}
+
+test "straighterTileBefore: same-row chase stays on the row" {
+    // Mover at (2,1), anchor (target) at (0,1) — the row tile (1,1) is on
+    // the mover→anchor line; the row-above/below diagonals are not.
+    const mover = Vector2{ .x = 2, .y = 1 };
+    const anchor = Vector2{ .x = 0, .y = 1 };
+    const straight = Vector2{ .x = 1, .y = 1 };
+    try std.testing.expect(straighterTileBefore(straight, .{ .x = 1, .y = 0 }, mover, anchor));
+    try std.testing.expect(straighterTileBefore(straight, .{ .x = 1, .y = 2 }, mover, anchor));
+}
+
+test "straighterTileBefore: diagonal chase walks the diagonal" {
+    // Mover at (0,0), anchor at (2,2) — the diagonal tile (1,1) is on the
+    // line; the orthogonal neighbors are equidistant in Chebyshev but off
+    // the line.
+    const mover = Vector2{ .x = 0, .y = 0 };
+    const anchor = Vector2{ .x = 2, .y = 2 };
+    try std.testing.expect(straighterTileBefore(.{ .x = 1, .y = 1 }, .{ .x = 0, .y = 1 }, mover, anchor));
+    try std.testing.expect(straighterTileBefore(.{ .x = 1, .y = 1 }, .{ .x = 1, .y = 0 }, mover, anchor));
+}
+
+test "straighterTileBefore: equal line offset falls to euclidean, then (x, y)" {
+    // Mover (0,0), anchor (4,0): (1,1) and (2,1) sit equally off the row
+    // line — the closer-in-euclid (2,1) orders first.
+    const mover = Vector2{ .x = 0, .y = 0 };
+    const anchor = Vector2{ .x = 4, .y = 0 };
+    try std.testing.expect(straighterTileBefore(.{ .x = 2, .y = 1 }, .{ .x = 1, .y = 1 }, mover, anchor));
+    try std.testing.expect(!straighterTileBefore(.{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, mover, anchor));
+    // Fully tied (mirror tiles above/below the line) → the (x, y)
+    // convention decides: lower y first.
+    try std.testing.expect(straighterTileBefore(.{ .x = 2, .y = -1 }, .{ .x = 2, .y = 1 }, mover, anchor));
+    // Incumbent orderings are antisymmetric under swap.
+    try std.testing.expect(!straighterTileBefore(.{ .x = 2, .y = 1 }, .{ .x = 2, .y = -1 }, mover, anchor));
 }

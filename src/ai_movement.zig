@@ -95,8 +95,10 @@ fn pointBlankClusterScore(
 /// approach instead — there is nothing to cluster around yet). The
 /// current tile wins ties — an equal-count candidate never displaces it;
 /// stay put unless a strictly more-targeted tile exists. Ties between
-/// reachable tiles break by the (x, y) tile convention. A destination
-/// equal to the caster's position means "stand and cast from here".
+/// reachable tiles break by the straighter line to the caster's nearest
+/// hostile (same-row chases walk the row), then the (x, y) tile
+/// convention. A destination equal to the caster's position means
+/// "stand and cast from here".
 pub fn pointBlankClusterDestination(
     caster_index: u32,
     game_state: GameState,
@@ -127,10 +129,15 @@ pub fn pointBlankClusterDestination(
         allocator,
     );
 
+    // Straightness anchor for score ties: the caster's nearest hostile —
+    // equal-count candidates order by the straighter line to it.
+    const anchor = nearestHostilePosition(caster_index, game_state) orelse caster.position;
+
     // Current tile first so it wins score ties: an equal candidate NEVER
     // displaces the current tile (stay put unless a strictly better tile
     // exists — shuffling between equal clusters reads as noise to the
-    // player); tileBefore only orders reachable-vs-reachable ties.
+    // player); straighterTileBefore only orders reachable-vs-reachable
+    // ties.
     var best_tile: Vector2 = caster.position;
     var best_score: u32 = pointBlankClusterScore(
         caster_index,
@@ -149,7 +156,8 @@ pub fn pointBlankClusterDestination(
             best_tile.y == caster.position.y;
         const is_better = tile_score > best_score or
             (tile_score == best_score and tile_score > 0 and
-                !incumbent_is_current and functions.tileBefore(tile, best_tile));
+                !incumbent_is_current and
+                functions.straighterTileBefore(tile, best_tile, caster.position, anchor));
         if (is_better) {
             best_score = tile_score;
             best_tile = tile;
@@ -180,6 +188,28 @@ fn nearestHostileDistance(
     return nearest;
 }
 
+/// The living hostile nearest to the CASTER (Chebyshev; ties keep the
+/// lowest entity_index — the scan-order convention). The straightness
+/// anchor for the movement-destination tiebreaks: metric-equal candidate
+/// tiles order by the straighter line to it.
+fn nearestHostilePosition(caster_index: u32, game_state: GameState) ?Vector2 {
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+    var nearest: ?Vector2 = null;
+    var nearest_distance: i32 = std.math.maxInt(i32);
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        const distance = functions.chebyshevDistance(caster.position, entity.position);
+        if (distance < nearest_distance) {
+            nearest_distance = distance;
+            nearest = entity.position;
+        }
+    }
+    return nearest;
+}
+
 /// The stand-off tile for a kiting entity: among the reachable tiles
 /// (current included) from which the entity can still act (some hostile
 /// within `computeMinRange`), the one FARTHEST from its nearest hostile —
@@ -188,9 +218,11 @@ fn nearestHostileDistance(
 /// is act-capable (opponents beyond reach — the caller should approach).
 /// The current tile wins ties — an equal-distance candidate never
 /// displaces it; stay put unless a strictly farther act-capable tile
-/// exists. Ties between reachable tiles break by the (x, y) tile
-/// convention. A destination equal to the caster's position means
-/// "stand and act from here" (cornered, or already at the standoff).
+/// exists. Ties between reachable tiles break by the straighter line to
+/// the caster's nearest hostile (the standoff stays in line with the
+/// hostile being kited), then the (x, y) tile convention. A destination
+/// equal to the caster's position means "stand and act from here"
+/// (cornered, or already at the standoff).
 pub fn keepRangeDestination(
     caster_index: u32,
     game_state: GameState,
@@ -209,6 +241,10 @@ pub fn keepRangeDestination(
         allocator,
     );
 
+    // Straightness anchor for distance ties: the caster's nearest hostile
+    // — equal-distance candidates order by the straighter line to it.
+    const anchor = nearestHostilePosition(caster_index, game_state) orelse caster.position;
+
     var best_tile: ?Vector2 = null;
     var best_distance: i32 = -1;
 
@@ -224,15 +260,15 @@ pub fn keepRangeDestination(
         // Act-capable only: some hostile within min range of the tile.
         if (distance > standoff) continue;
         // An equal candidate NEVER displaces the current tile (stay put
-        // unless a strictly farther act-capable tile exists); tileBefore
-        // only orders reachable-vs-reachable ties.
+        // unless a strictly farther act-capable tile exists);
+        // straighterTileBefore only orders reachable-vs-reachable ties.
         const incumbent_is_current = best_tile != null and
             best_tile.?.x == caster.position.x and
             best_tile.?.y == caster.position.y;
         const is_better = best_tile == null or
             distance > best_distance or
             (distance == best_distance and !incumbent_is_current and
-                functions.tileBefore(tile, best_tile.?));
+                functions.straighterTileBefore(tile, best_tile.?, caster.position, anchor));
         if (is_better) {
             best_tile = tile;
             best_distance = distance;
@@ -574,7 +610,9 @@ test "keepRangeDestination: an equal-distance tile never displaces the current t
     // A strictly farther act-capable tile DOES move: hostile at distance 1
     // (too close); the row 2 tiles up opens it to 3. Five reachable tiles
     // sit at distance 3 ((2,6)..(6,6)) — the reachable-vs-reachable tie
-    // breaks by the (x, y) convention to the leftmost.
+    // breaks by the straighter line to the hostile: (4,6) is directly in
+    // line with it (the standoff stays on the duel line, not off to the
+    // side).
     const too_close = test_harness.levelStateWithEntities(
         arena.allocator(),
         &.{
@@ -584,7 +622,55 @@ test "keepRangeDestination: an equal-distance tile never displaces the current t
         &nine_by_nine,
     );
     try testing.expectEqual(
-        Vector2{ .x = 2, .y = 6 },
+        Vector2{ .x = 4, .y = 6 },
         keepRangeDestination(0, too_close, definitions, arena.allocator()).?,
+    );
+}
+
+test "pointBlankClusterDestination: same-row score ties walk the row" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // The observed bug's layout (y grows downward — y=0 is the top row):
+    //   y=0:  .  .  .
+    //   y=1:  !  .  E
+    // A sword enemy (spinblade ready → cluster mode) at (2,1), the player
+    // at (0,1). The three tiles within spinblade radius 1 of the player —
+    // (1,0), (1,1), (1,2) — all score 1. The straightness tiebreak keeps
+    // the chase ON THE ROW: (1,1) is on the mover→player line; the old
+    // (x, y) tiebreak habitually picked the row-above tile (1,0).
+    const three_by_two = tileGrid(3, 2);
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 1 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 2, .y = 1 }, .main_hand_weapon = .{ .weapon_type = .sword } },
+        },
+        &three_by_two,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 1, .y = 1 },
+        pointBlankClusterDestination(1, game_state, definitions, arena.allocator()).?,
+    );
+
+    // Speed 2 widens the tie field to the player's column too: (0,0) and
+    // (0,2) (directly above/below the player) also cover the player and
+    // are euclidean-equidistant with (1,1). The perpendicular-line key
+    // still keeps the chase on the row — cutting diagonally up to the
+    // player's column loses to the straight line.
+    const five_by_three = tileGrid(5, 3);
+    const wide_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 1 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 2, .y = 1 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .sword } },
+        },
+        &five_by_three,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 1, .y = 1 },
+        pointBlankClusterDestination(1, wide_state, definitions, arena.allocator()).?,
     );
 }

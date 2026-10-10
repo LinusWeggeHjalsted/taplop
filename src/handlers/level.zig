@@ -25,7 +25,6 @@ const Event = events.Event;
 const Vector2 = types.Vector2;
 const Entity = types.Entity;
 const SkillId = types.SkillId;
-const tileBefore = functions.tileBefore;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
 
@@ -204,8 +203,10 @@ fn enemyApproachTurn(
                 // Pick the reachable tile closest to the target
                 // (but no nearer than min_range, and only if it
                 // improves on the current position). Ties in
-                // distance break by the (x, y) tile convention so
-                // the choice is defined, not scan-order-dependent.
+                // distance break by the straighter line to the
+                // target (same-row chases walk the row), then the
+                // (x, y) tile convention so the choice is defined,
+                // not scan-order-dependent.
                 var best_tile: ?Vector2 = null;
                 var best_distance: i32 = nearest_distance;
                 for (reachable) |tile| {
@@ -214,7 +215,12 @@ fn enemyApproachTurn(
                     if (distance >= nearest_distance) continue; // must improve on current
                     const is_better = best_tile == null or
                         distance < best_distance or
-                        (distance == best_distance and tileBefore(tile, best_tile.?));
+                        (distance == best_distance and functions.straighterTileBefore(
+                            tile,
+                            best_tile.?,
+                            entity.position,
+                            target_position,
+                        ));
                     if (is_better) {
                         best_distance = distance;
                         best_tile = tile;
