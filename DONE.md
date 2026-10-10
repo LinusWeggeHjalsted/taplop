@@ -16025,3 +16025,6 @@ per frame. No new plumbing: `ActiveColorTheme` already carries
 `ViewState.active_color_theme`. The `stripeDark` uniform + upload +
 location field return with the uniform-based pair (they were removed for
 the hardcoded white/black try).
+
+Kept — the settled pair (the user's pick after the three-way try: theme
+darkest → pure white/black → lightest + player gradient[5]).
