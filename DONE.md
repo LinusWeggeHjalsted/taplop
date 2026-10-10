@@ -16028,3 +16028,33 @@ the hardcoded white/black try).
 
 Kept — the settled pair (the user's pick after the three-way try: theme
 darkest → pure white/black → lightest + player gradient[5]).
+
+### Outline width unification: constant at every zoom and element size
+
+The outlines were dependent on the size of the outlined thing: the world
+strokes scaled with the camera zoom (4/8/16 ref px across the zoom range),
+the halo masks' baked band scaled with the sprite's drawn size (e.g. the
+turn-step icons at small_icon_size showed a proportionally thin halo), and
+the Select icon scaled its stroke with the cell. Unified to ONE constant:
+`types.outline_thickness` (8 reference px, moved to types.zig as the single
+source — it was textures.zig-local, plus a duplicated local in
+editor_pickers).
+
+- World rect strokes (highlight/cursor/range/radius/aggro + region edges):
+  dropped the × world_scale — the outlined thing scales with zoom, the
+  stroke does not.
+- Halo masks (the silhouette-hugging path): `getOutlineTexture(sprite_id,
+  drawn_scale)` generates the band at `ceil(8 / drawn_scale)` SOURCE px, so
+  the DRAWN band is the constant width at every element size. The outline
+  cache re-keyed (sprite, band) — a flat `"{sprite}|{band}"` composite
+  string (std's auto hash refuses slice-containing struct keys), one mask
+  per (sprite, distinct drawn scale); keys own duped strings now freed in
+  deinit (the old StringHashMap keys were never freed — a process-lifetime
+  leak, fixed in passing).
+- Rect strokes (Select icon, spriteless button hover, halo fallback,
+  footprint picker bars, the text-field caret): all reference the shared
+  constant.
+- The stripe bands were already constant (16 ref px) — unchanged; the
+  occlusion inset stays source-px-scaled BY DESIGN (a world-scaled shadow,
+  not the outline family). Design: DESIGN → Platform Seam → Outline stripe
+  shader → Constant outline width.

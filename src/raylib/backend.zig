@@ -458,7 +458,7 @@ pub const RaylibBackend = struct {
             1.0,
         };
         const band_width: f32 = outline_stripe_band_multiplier *
-            @as(f32, @floatFromInt(textures_mod.outline_thickness)) * self.renderScale();
+            @as(f32, @floatFromInt(types.outline_thickness)) * self.renderScale();
         rl.setShaderValue(shader, self.outline_stripe_dark_location, &dark, .vec4);
         rl.setShaderValue(shader, self.outline_stripe_phase_location, &phase, .float);
         rl.setShaderValue(shader, self.outline_stripe_band_location, &band_width, .float);

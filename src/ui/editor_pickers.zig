@@ -997,12 +997,12 @@ pub fn buildEditorFootprintEditor(
         } });
     }
 
-    // The draft-selected region's outline: one 8px bar per boundary side
-    // (the neighbor across it unselected or off-grid), centered on the
-    // boundary — the editor's region-edge outline, in white, so corners
-    // join seamlessly for any shape.
-    const outline_thickness: i32 = 8;
-    const half_thickness: i32 = @divFloor(outline_thickness, 2);
+    // The draft-selected region's outline: one bar per boundary side (the
+    // neighbor across it unselected or off-grid), centered on the boundary
+    // — the editor's region-edge outline, in white, so corners join
+    // seamlessly for any shape. Constant width: the shared outline
+    // thickness (types.outline_thickness).
+    const half_thickness: i32 = @divFloor(types.outline_thickness, 2);
     const draftSelected = struct {
         fn check(
             draft: *const [editor_footprint_grid_cell_limit]bool,
@@ -1026,7 +1026,7 @@ pub fn buildEditorFootprintEditor(
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x, .y = cell_y - half_thickness },
                 .width = scaled_tile,
-                .height = outline_thickness,
+                .height = types.outline_thickness,
                 .color = default_tint,
             } });
         }
@@ -1034,14 +1034,14 @@ pub fn buildEditorFootprintEditor(
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x, .y = cell_y + scaled_tile - half_thickness },
                 .width = scaled_tile,
-                .height = outline_thickness,
+                .height = types.outline_thickness,
                 .color = default_tint,
             } });
         }
         if (!draftSelected(draft, grid_width, grid_height, column - 1, row)) {
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x - half_thickness, .y = cell_y },
-                .width = outline_thickness,
+                .width = types.outline_thickness,
                 .height = scaled_tile,
                 .color = default_tint,
             } });
@@ -1049,7 +1049,7 @@ pub fn buildEditorFootprintEditor(
         if (!draftSelected(draft, grid_width, grid_height, column + 1, row)) {
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x + scaled_tile - half_thickness, .y = cell_y },
-                .width = outline_thickness,
+                .width = types.outline_thickness,
                 .height = scaled_tile,
                 .color = default_tint,
             } });

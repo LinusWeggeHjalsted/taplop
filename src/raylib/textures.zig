@@ -10,12 +10,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const types = @import("../types.zig");
 
-/// Edge-highlight outline thickness in source pixels (OUTER band sitting
-/// just outside the sprite silhouette). Drawn via a precomputed outline mask
-/// (see `getOutlineTexture`); reused by the occlusion inset (see
-/// `getCompositeInsetTexture`). Tune from in-game viewing.
-pub const outline_thickness: i32 = 8;
-
 /// Which side of the silhouette an outline mask sits on. OUTER = the band
 /// of transparent pixels within `thickness` of an opaque pixel (a halo
 /// outside the silhouette, used by highlighted UI). INNER = the morphological
@@ -23,6 +17,17 @@ pub const outline_thickness: i32 = 8;
 /// just inside the silhouette, used by the occlusion inset). See
 /// `generateOutlineMask` and DESIGN → Decorations & Footprint → Occlusion inset.
 const OutlineSide = enum { outer, inner };
+
+/// The outline-cache key string for (sprite_id, band): `"{sprite_id}|{band}""
+/// — a flat composite (std's auto hash refuses slice-containing struct
+/// keys). One entry per (sprite, distinct drawn scale): the band is
+/// scale-compensated, so one sprite drawn at two sizes gets two masks
+/// (see `getOutlineTexture`). A STORED key owns its string (duped at
+/// insert, freed in deinit); lookups may pass a stack-buffer borrow.
+fn outlineCacheKey(buffer: []u8, sprite_id: []const u8, band_source_pixels: i32) []const u8 {
+    return std.fmt.bufPrint(buffer, "{s}|{d}", .{ sprite_id, band_source_pixels }) catch
+        @panic("outline cache key overflow");
+}
 
 /// One (dx, dy) offset in a disk structuring element (see
 /// `generateOutlineMask`). Small enough that a slice of these is the disk.
@@ -68,12 +73,14 @@ pub const TextureStore = struct {
     /// failed load is not retried (and spammed) every frame. Keys are duped
     /// into `allocator`; the loaded textures live until deinit.
     texture_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
-    /// sprite_id -> precomputed edge-outline mask texture (white opaque halo
-    /// sitting just outside the silhouette). Generated lazily by
-    /// `ensureOutlineLoaded` on the first `getOutlineTexture` request, so
-    /// only sprites that actually get outlined pay the cost (the tile cursor
-    /// + highlighted UI icons). A cached `null` means the sprite is missing
-    /// (or the mask failed) -> callers skip the outline.
+    /// (sprite_id, band) composite key -> precomputed edge-outline mask
+    /// texture (white opaque halo sitting just outside the silhouette).
+    /// Generated lazily by `ensureOutlineLoaded` on the first
+    /// `getOutlineTexture` request, so only sprites that actually get
+    /// outlined pay the cost (highlighted UI icons). A cached `null` means
+    /// the sprite is missing (or the mask failed) -> callers skip the
+    /// outline. One entry per (sprite, distinct drawn scale) — see
+    /// `outlineCacheKey`. Keys own their duped strings (freed in deinit).
     outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// stack-key -> precomputed INNER outline mask texture for a COMPOSITED
     /// silhouette (entity base + layers + weapons, flag pole + banner frame,
@@ -101,9 +108,10 @@ pub const TextureStore = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.texture_cache.deinit(self.allocator);
-        var outlines = self.outline_cache.valueIterator();
-        while (outlines.next()) |maybe_texture| {
-            if (maybe_texture.*) |texture| rl.unloadTexture(texture);
+        var outlines = self.outline_cache.iterator();
+        while (outlines.next()) |entry| {
+            if (entry.value_ptr.*) |texture| rl.unloadTexture(texture);
+            self.allocator.free(entry.key_ptr.*);
         }
         self.outline_cache.deinit(self.allocator);
         var composite_insets = self.composite_inset_cache.valueIterator();
@@ -126,14 +134,22 @@ pub const TextureStore = struct {
         return self.texture_cache.get(sprite_id).?;
     }
 
-    /// The precomputed edge-outline mask for `sprite_id` (a white opaque halo
-    /// sitting just outside the silhouette). Lazily generated on first
-    /// request via `ensureOutlineLoaded`, so only sprites that actually get
-    /// outlined pay the cost (`world/tile` for the cursor, highlighted UI
-    /// icons). null if the sprite is missing or the mask could not be built.
-    pub fn getOutlineTexture(self: *TextureStore, sprite_id: []const u8) ?rl.Texture2D {
-        if (!self.outline_cache.contains(sprite_id)) self.ensureOutlineLoaded(sprite_id);
-        return self.outline_cache.get(sprite_id).?;
+    /// The precomputed edge-outline mask for `sprite_id` drawn at
+    /// `drawn_scale` (destination/source width): a white opaque halo just
+    /// outside the silhouette, generated with a scale-compensated band —
+    /// `ceil(types.outline_thickness / drawn_scale)` source pixels — so the
+    /// DRAWN band is the constant outline width (reference px) at every
+    /// element size; see `types.outline_thickness`. Lazily generated via
+    /// `ensureOutlineLoaded` (one mask per (sprite, band)). null if the
+    /// sprite is missing or the mask could not be built.
+    pub fn getOutlineTexture(self: *TextureStore, sprite_id: []const u8, drawn_scale: f32) ?rl.Texture2D {
+        const band_source_pixels: i32 = @max(1, @as(i32, @intFromFloat(@ceil(
+            @as(f32, @floatFromInt(types.outline_thickness)) / drawn_scale,
+        ))));
+        var key_buffer: [path_buffer_size]u8 = undefined;
+        const key = outlineCacheKey(&key_buffer, sprite_id, band_source_pixels);
+        if (!self.outline_cache.contains(key)) self.ensureOutlineLoaded(sprite_id, band_source_pixels);
+        return self.outline_cache.get(key).?;
     }
 
     /// The precomputed INNER outline mask for a COMPOSITED silhouette
@@ -230,7 +246,7 @@ pub const TextureStore = struct {
             self.blitSpriteAlpha(opaque_mask, frame_width, frame_height, s) catch continue;
         }
 
-        const buf = try self.dilateToMask(opaque_mask, frame_width, frame_height, outline_thickness, side);
+        const buf = try self.dilateToMask(opaque_mask, frame_width, frame_height, types.outline_thickness, side);
         defer self.allocator.free(buf);
         return self.rgbaBufToTexture(buf, frame_width, frame_height);
     }
@@ -340,17 +356,21 @@ pub const TextureStore = struct {
         self.texture_cache.put(self.allocator, key, texture) catch @panic("failed to cache texture");
     }
 
-    /// Build and cache the OUTER edge-outline mask for `sprite_id`. Re-reads
-    /// the asset bytes and decodes — outlines are requested for few sprites
-    /// (`world/tile` + a handful of UI icons), so a second read per outlined
-    /// sprite is far cheaper than holding decoded images for every sprite.
-    /// Caches null on miss/failure. Idempotent via `outline_cache` presence.
-    fn ensureOutlineLoaded(self: *TextureStore, sprite_id: []const u8) void {
-        if (self.outline_cache.contains(sprite_id)) return;
+    /// Build and cache the OUTER edge-outline mask for `sprite_id` at
+    /// `band_source_pixels` (the scale-compensated band). Re-reads the
+    /// asset bytes and decodes — outlines are requested for few sprites (a
+    /// handful of UI icons), so a second read per outlined sprite is far
+    /// cheaper than holding decoded images for every sprite. Caches null on
+    /// miss/failure. Idempotent via `outline_cache` presence. The stored
+    /// key owns its duped composite string (see `outlineCacheKey`).
+    fn ensureOutlineLoaded(self: *TextureStore, sprite_id: []const u8, band_source_pixels: i32) void {
+        var key_buffer: [path_buffer_size]u8 = undefined;
+        const lookup_key = outlineCacheKey(&key_buffer, sprite_id, band_source_pixels);
+        if (self.outline_cache.contains(lookup_key)) return;
+        const key = self.allocator.dupe(u8, lookup_key) catch @panic("failed to dupe outline cache key");
 
         var path_buffer: [path_buffer_size]u8 = undefined;
         const path = assetPathFor(sprite_id, &path_buffer);
-        const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
 
         const outline: ?rl.Texture2D = blk: {
             const bytes = self.file_source.readFile(self.allocator, path) catch
@@ -366,7 +386,7 @@ pub const TextureStore = struct {
             }
             // Normalize to RGBA so alpha is always at the same byte offset.
             image.setFormat(.uncompressed_r8g8b8a8);
-            break :blk self.generateOutlineMask(image, outline_thickness, .outer) catch null;
+            break :blk self.generateOutlineMask(image, band_source_pixels, .outer) catch null;
         };
 
         self.outline_cache.put(self.allocator, key, outline) catch @panic("failed to cache outline mask");

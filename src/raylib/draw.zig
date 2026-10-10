@@ -22,18 +22,19 @@ const toPremultipliedColor = conversions.toPremultipliedColor;
 const referenceRectangle = conversions.referenceRectangle;
 
 /// Text-field caret bar thickness (reference px) — matches the unified
-/// outline thickness so the caret reads at the same visual weight as the
-/// world outlines.
-const caret_width: i32 = 8;
+/// outline width constant (types.outline_thickness) so the caret reads at
+/// the same visual weight as the outlines.
+const caret_width: i32 = types.outline_thickness;
 
 // -- World drawing --
 
 /// Draw a tile overlay as an outline-class primitive (no overlay art):
 /// the clickable-tile highlight (an inset square outline), the cursor /
 /// range / radius / aggro square outlines, and the region-edge bars. The
-/// outline thickness is the shared mask thickness (8 source px, see
-/// textures.zig) × `world_scale`; range/radius/aggro outlines may span
-/// multiple tiles via `extent` (side in tiles, default 1).
+/// outline width is CONSTANT — `types.outline_thickness` (8 reference
+/// px) at every zoom: the outlined thing scales with the camera, the
+/// stroke does not. Range/radius/aggro outlines may span multiple tiles
+/// via `extent` (side in tiles, default 1).
 pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawable, world_scale: f32) void {
     const tile_size = input.tile_size_pixels * world_scale;
     const side: f32 = @as(f32, @floatFromInt(overlay.extent)) * tile_size;
@@ -43,7 +44,7 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
         .width = side,
         .height = side,
     };
-    const line_width = @as(f32, @floatFromInt(textures_mod.outline_thickness)) * world_scale;
+    const line_width: f32 = @floatFromInt(types.outline_thickness);
     switch (overlay.overlay_type) {
         .highlight => {
             // The clickable-tile highlight: an inset square outline — the
@@ -345,7 +346,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 // palette) — this stroked rect is their lightest hover
                 // outline, so it gets the same stripe treatment as the
                 // sprite-backed outlines above.
-                const t: i32 = textures_mod.outline_thickness;
+                const t: i32 = types.outline_thickness;
                 const dest = referenceRectangle(button.screen_position, button.width, button.height);
                 const outer = rl.Rectangle{
                     .x = dest.x - @as(f32, @floatFromInt(t)),
@@ -461,11 +462,20 @@ fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destinat
     // endOutlineStripeScope).
     backend.beginOutlineStripeScope();
     defer backend.endOutlineStripeScope(backend.renderScale());
-    const mask = backend.textures.getOutlineTexture(sprite_id) orelse {
+    // The mask's band is generated AT the drawn scale (see
+    // `getOutlineTexture`) so the halo's drawn width is the constant
+    // outline width at every element size. The scale is
+    // destination/source width; a missing sprite degrades to the
+    // rectangle fallback below (scale irrelevant).
+    const drawn_scale: f32 = if (backend.textures.getTexture(sprite_id)) |texture|
+        destination.width / @as(f32, @floatFromInt(texture.width))
+    else
+        1.0;
+    const mask = backend.textures.getOutlineTexture(sprite_id, drawn_scale) orelse {
         // Fallback for missing sprites (or mask build failures): ring
         // the destination rectangle directly. Lets the hover highlight
         // work on placeholder magenta boxes before the real asset lands.
-        rl.drawRectangleLinesEx(destination, @floatFromInt(textures_mod.outline_thickness), toRaylibColor(highlight_color, 255));
+        rl.drawRectangleLinesEx(destination, @floatFromInt(types.outline_thickness), toRaylibColor(highlight_color, 255));
         return;
     };
     const source = rl.Rectangle{

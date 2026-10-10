@@ -885,10 +885,10 @@ pub fn buildEditorBottomBar(
     //
     // Select: the clickable-tile highlight's look — an inset square
     // outline, inset by the shared `tile_highlight_inset_divisor` (the
-    // prototype sheet's band position) with the outline-class stroke
-    // (side/32 — the 8-source-px thickness on a 256 tile). A stroked
-    // solid_rect IS the outline class, so it draws through the stripe
-    // shader — the icon animates exactly like the world highlight.
+    // prototype sheet's band position) with the CONSTANT outline-class
+    // stroke (types.outline_thickness, independent of the cell size). A
+    // stroked solid_rect IS the outline class, so it draws through the
+    // stripe shader — the icon animates exactly like the world highlight.
     {
         const cell = row.next(slot_size);
         try emitEditorToolCellButton(
@@ -908,7 +908,7 @@ pub fn buildEditorBottomBar(
             .height = fitted.height - 2 * inset,
             .color = active_theme.lightest,
             .filled = false,
-            .line_width = @max(2, @divTrunc(fitted.width, 32)),
+            .line_width = types.outline_thickness,
             .blocks_input = false,
         } });
     }

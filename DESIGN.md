@@ -379,7 +379,7 @@ signs in the shader source are the flip knobs); `mod(s, period) <
 stripeBandWidth` flips the RGB to the dark color at the texel's own alpha
 (premultiplied output — the pass draws under BLEND_ALPHA_PREMULTIPLY).
 50/50 duty (period = 2 bands), hard flip, band width = `outline_stripe_band_multiplier`
-(2.0) × the shared outline thickness (8 source px) × renderScale — ONE
+(2.0) × the outline width constant × renderScale — ONE
 band for BOTH outline families, zoom-independent: the crawl rate is one
 period per cycle, so a shared band means a shared period — both families
 march at the same size AND the same pixel speed (the first cut scaled the
@@ -408,6 +408,19 @@ stripe scope INSIDE an enclosing sprite pass (`beginSpritePass`), and
 endShaderMode restores the DEFAULT shader, so the rest of the world pass
 would silently lose its LOD snap bias otherwise (the world layers share ONE
 sprite-pass scope; see Sprite-mipmap smoothing).
+
+**Constant outline width.** The outline family draws at ONE width —
+`types.outline_thickness` (8 REFERENCE px) — CONSTANT, independent of world
+zoom and of the size of the outlined thing: the world rect strokes no
+longer scale by the camera zoom (the outlined thing scales, the stroke
+does not), the Select icon / spriteless button rects / the footprint
+picker's bars all reference the same constant, and the silhouette-hugging
+halo masks COMPENSATE for the drawn scale — the band is generated at
+`ceil(outline_thickness / drawn_scale)` SOURCE px (one mask per (sprite,
+band) in the outline cache, keyed by a flat `"{sprite}|{band}"` string), so
+the DRAWN band is the constant width at every element size. The occlusion
+inset stays source-px-scaled BY DESIGN (a world-scaled shadow, not the
+outline family).
 
 ### Allocator rule for emscripten (no page_allocator on web)
 

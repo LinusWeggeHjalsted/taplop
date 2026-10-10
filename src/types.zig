@@ -1172,6 +1172,15 @@ pub const Color = struct {
     b: u8,
 };
 
+/// The ONE outline width constant: the outline family (the clickable-tile
+/// highlight, cursor/range/radius/aggro region outlines, the UI icon halo
+/// masks, the spriteless button hover rects) draws at THIS width in
+/// reference pixels, CONSTANT — independent of world zoom and of the size
+/// of the outlined thing. Mask generation (the silhouette-hugging halos)
+/// compensates for the drawn scale: the band in source pixels is
+/// ceil(outline_thickness / drawn_scale), cached per (sprite, band).
+pub const outline_thickness: i32 = 8;
+
 pub const gradient_color_count = 6;
 
 pub const ColorGradient = struct {
