@@ -1,5 +1,6 @@
-//! Pure gameplay helpers: A* pathfinding (`shortestPath`, Chebyshev +
-//! Manhattan heuristic, entity blocking), tile reachability, distance metrics,
+//! Pure gameplay helpers: A* pathfinding (`shortestPath`, Chebyshev
+//! heuristic + straightness tiebreak, entity blocking), tile reachability,
+//! distance metrics,
 //! the tile-list ray search (`nearestTileAlongDirection`), the signed-delta
 //! saturation clamp (`applySignedDelta`), salvage-value computation from
 //! `data/salvage.txt`, and world-map graph layout. All integer gameplay
@@ -11,10 +12,14 @@ const types = @import("types.zig");
 const Vector2 = types.Vector2;
 const Level = types.Level;
 
-fn manhattanDistance(a: Vector2, b: Vector2) u32 {
-    const dx: u32 = @intCast(@abs(a.x - b.x));
-    const dy: u32 = @intCast(@abs(a.y - b.y));
-    return dx + dy;
+/// The A* heuristic: Chebyshev distance to the destination — the EXACT
+/// remaining cost on open ground (every step, diagonal included, costs 1),
+/// so it never overestimates. The old Manhattan heuristic overestimated up
+/// to 2x whenever the destination sat diagonally from a node, which could
+/// pop the goal via a longer route before the shorter route's nodes were
+/// ever expanded (reproduced by fuzzing — see the admissibility test).
+fn chebyshevHeuristic(position: Vector2, destination: Vector2) u32 {
+    return @intCast(chebyshevDistance(position, destination));
 }
 
 const PathNode = struct {
@@ -22,14 +27,20 @@ const PathNode = struct {
     parent: ?Vector2,
     g_cost: u32,
     h_cost: u32,
+    /// Squared euclidean distance to the destination — the f-cost tiebreak
+    /// key (see `comparePathNodes`).
+    distance_squared: u32,
 
     fn fCost(self: PathNode) u32 {
         return self.g_cost + self.h_cost;
     }
 };
 
-/// Compare PathNodes for the priority queue: lower f-cost first,
-/// then break ties by position to ensure deterministic ordering.
+/// Compare PathNodes for the priority queue: lower f-cost first, then
+/// break ties by squared euclidean distance to the destination (with an
+/// exact heuristic f-ties are common — this keeps same-row chases on the
+/// row: the row node is really closer than the row-above diagonal), then
+/// by position for a total deterministic order.
 fn comparePathNodes(
     _: void,
     a: PathNode,
@@ -38,6 +49,9 @@ fn comparePathNodes(
     const a_f = a.fCost();
     const b_f = b.fCost();
     if (a_f != b_f) return std.math.order(a_f, b_f);
+    if (a.distance_squared != b.distance_squared) {
+        return std.math.order(a.distance_squared, b.distance_squared);
+    }
     if (a.position.x != b.position.x) return std.math.order(a.position.x, b.position.x);
     return std.math.order(a.position.y, b.position.y);
 }
@@ -53,9 +67,11 @@ const neighbor_deltas = [8]Vector2{
     .{ .x = 1, .y = 1 },
 };
 
-/// A* shortest path with Chebyshev distance for movement cost and
-/// Manhattan distance as heuristic (to prefer orthogonal movement
-/// when multiple paths have the same Chebyshev length).
+/// A* shortest path over the 8-neighborhood (every step costs 1, diagonal
+/// included). Heuristic: Chebyshev — the exact remaining cost on open ground
+/// (`chebyshevHeuristic`); f-cost ties (common with an exact heuristic)
+/// break by squared euclidean distance to the destination so ties resolve
+/// to the really-closer node — a same-row chase walks the row.
 ///
 /// Tiles occupied by entities are not traversable, except for the
 /// destination tile. The mover's own position is also excluded from
@@ -103,7 +119,8 @@ pub fn shortestPath(
         .position = start_position,
         .parent = null,
         .g_cost = 0,
-        .h_cost = manhattanDistance(start_position, end_position),
+        .h_cost = chebyshevHeuristic(start_position, end_position),
+        .distance_squared = squaredEuclideanDistance(start_position, end_position),
     };
     open_set.push(allocator,start_node) catch return null;
     node_map.put(start_position, start_node) catch return null;
@@ -150,6 +167,7 @@ pub fn shortestPath(
                         .parent = current_node.position,
                         .g_cost = new_g_cost,
                         .h_cost = existing.h_cost,
+                        .distance_squared = existing.distance_squared,
                     };
                     node_map.put(neighbor_position, updated) catch return null;
                     open_set.push(allocator,updated) catch return null;
@@ -159,7 +177,8 @@ pub fn shortestPath(
                     .position = neighbor_position,
                     .parent = current_node.position,
                     .g_cost = new_g_cost,
-                    .h_cost = manhattanDistance(neighbor_position, end_position),
+                    .h_cost = chebyshevHeuristic(neighbor_position, end_position),
+                    .distance_squared = squaredEuclideanDistance(neighbor_position, end_position),
                 };
                 node_map.put(neighbor_position, new_node) catch return null;
                 open_set.push(allocator,new_node) catch return null;
@@ -471,6 +490,125 @@ test "shortestPath allows moving onto a tile occupied by destination entity" {
     try std.testing.expectEqual(1, path.?.len);
     try std.testing.expectEqual(1, path.?[0].x);
     try std.testing.expectEqual(0, path.?[0].y);
+}
+
+test "shortestPath: same-row chase walks the row" {
+    const allocator = std.testing.allocator;
+
+    // 5x3 open grid; mover at (4,1), target at (0,1) — same row. The
+    // straight row walk is the path (not a diagonal staircase up a row:
+    // with the exact Chebyshev heuristic the row node and the row-above
+    // diagonal tie on f-cost, and the squared-euclidean tiebreak keeps
+    // the chase on the row).
+    var tiles: [15]Vector2 = undefined;
+    var index: usize = 0;
+    for (0..5) |x| {
+        for (0..3) |y| {
+            tiles[index] = .{ .x = @intCast(x), .y = @intCast(y) };
+            index += 1;
+        }
+    }
+
+    const level = Level{
+        .level_tiles = &tiles,
+        .entities = &.{
+            .{ .position = .{ .x = 4, .y = 1 } }, // mover
+            .{ .position = .{ .x = 0, .y = 1 } }, // target
+        },
+    };
+
+    const path = shortestPath(level, .{ .x = 4, .y = 1 }, .{ .x = 0, .y = 1 }, allocator);
+    try std.testing.expect(path != null);
+    defer allocator.free(path.?);
+
+    try std.testing.expectEqual(@as(usize, 4), path.?.len);
+    for (path.?, 0..) |step, step_index| {
+        try std.testing.expectEqual(@as(i32, 4) - @as(i32, @intCast(step_index + 1)), step.x);
+        try std.testing.expectEqual(@as(i32, 1), step.y);
+    }
+}
+
+test "shortestPath: diagonal chase walks the diagonal" {
+    const allocator = std.testing.allocator;
+
+    // Mover at (0,0), target at (4,4) — the pure diagonal is the path,
+    // not an axis-hugging staircase.
+    var tiles: [25]Vector2 = undefined;
+    var index: usize = 0;
+    for (0..5) |x| {
+        for (0..5) |y| {
+            tiles[index] = .{ .x = @intCast(x), .y = @intCast(y) };
+            index += 1;
+        }
+    }
+
+    const level = Level{
+        .level_tiles = &tiles,
+        .entities = &.{
+            .{ .position = .{ .x = 0, .y = 0 } }, // mover
+            .{ .position = .{ .x = 4, .y = 4 } }, // target
+        },
+    };
+
+    const path = shortestPath(level, .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 4 }, allocator);
+    try std.testing.expect(path != null);
+    defer allocator.free(path.?);
+
+    try std.testing.expectEqual(@as(usize, 4), path.?.len);
+    for (path.?, 0..) |step, step_index| {
+        const expected: i32 = @intCast(step_index + 1);
+        try std.testing.expectEqual(expected, step.x);
+        try std.testing.expectEqual(expected, step.y);
+    }
+}
+
+test "shortestPath: optimal path around obstacles (heuristic admissibility)" {
+    const allocator = std.testing.allocator;
+
+    // The counterexample found by fuzzing shortestPath against a reference
+    // BFS (with the old Manhattan heuristic — which stays suboptimal even
+    // under the new euclidean tiebreak, so this pins the HEURISTIC, not the
+    // tiebreak): Manhattan overestimates the remaining cost whenever the
+    // goal sits diagonally from a node, which can pop the goal via a longer
+    // route (6 steps here) before the optimal route's nodes are expanded.
+    // The exact Chebyshev heuristic returns the 5-step path:
+    // (1,1) (2,2) (3,3) (4,4) (4,5). Tiles ('#' floor, '.' missing):
+    //   x:  0 1 2 3 4 5 6
+    // y=0: # # # . . # #
+    // y=1: S # . # . . #
+    // y=2: # . # . # # .
+    // y=3: # # # # . # .
+    // y=4: . . . . # # .
+    // y=5: # # . G # . #
+    // y=6: # # # . . . #
+    const tiles = [_]Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 5, .y = 0 }, .{ .x = 6, .y = 0 },
+        .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 4, .y = 1 }, .{ .x = 6, .y = 1 },
+        .{ .x = 0, .y = 2 }, .{ .x = 2, .y = 2 }, .{ .x = 5, .y = 2 }, .{ .x = 6, .y = 2 },
+        .{ .x = 0, .y = 3 }, .{ .x = 1, .y = 3 }, .{ .x = 2, .y = 3 }, .{ .x = 3, .y = 3 }, .{ .x = 5, .y = 3 },
+        .{ .x = 4, .y = 4 }, .{ .x = 5, .y = 4 },
+        .{ .x = 0, .y = 5 }, .{ .x = 1, .y = 5 }, .{ .x = 3, .y = 5 }, .{ .x = 4, .y = 5 }, .{ .x = 6, .y = 5 },
+        .{ .x = 0, .y = 6 }, .{ .x = 1, .y = 6 }, .{ .x = 2, .y = 6 }, .{ .x = 6, .y = 6 },
+    };
+
+    const level = Level{
+        .level_tiles = &tiles,
+        .entities = &.{
+            .{ .position = .{ .x = 0, .y = 1 } }, // mover
+            .{ .position = .{ .x = 4, .y = 5 } }, // target
+        },
+    };
+
+    const path = shortestPath(level, .{ .x = 0, .y = 1 }, .{ .x = 4, .y = 5 }, allocator);
+    try std.testing.expect(path != null);
+    defer allocator.free(path.?);
+
+    try std.testing.expectEqual(@as(usize, 5), path.?.len);
+    try std.testing.expectEqual(Vector2{ .x = 1, .y = 1 }, path.?[0]);
+    try std.testing.expectEqual(Vector2{ .x = 2, .y = 2 }, path.?[1]);
+    try std.testing.expectEqual(Vector2{ .x = 3, .y = 3 }, path.?[2]);
+    try std.testing.expectEqual(Vector2{ .x = 4, .y = 4 }, path.?[3]);
+    try std.testing.expectEqual(Vector2{ .x = 4, .y = 5 }, path.?[4]);
 }
 
 // ============================================================

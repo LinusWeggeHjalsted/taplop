@@ -15846,3 +15846,38 @@ and in `enemyApproachTurn`'s no-path reachable-tile fallback.
   antisymmetry), the bug layout pinned at speed 1 AND speed 2 (the wider tie
   field including the player's column), keep-range standoff updated to the
   in-line tile.
+
+## Pathfinding: Chebyshev heuristic + straightness f-cost tiebreak (slice 2)
+
+The other half of the "Enemy pathing straightness" TODO item. Two paired
+changes in `shortestPath` (functions.zig) — the pairing is the point:
+
+- **Heuristic: Manhattan → Chebyshev** (`chebyshevHeuristic`). With diagonal
+  steps costing 1, Chebyshev is the EXACT remaining cost on open ground —
+  it never overestimates, so A* is guaranteed to return a
+  shortest-by-steps path. Manhattan overestimates up to 2x whenever the
+  destination sits diagonally from a node, which could pop the goal via a
+  longer route before the optimal route's nodes were ever expanded —
+  empirically confirmed by fuzzing `shortestPath` against a reference BFS
+  (7x7 grids, ~65% floor density: suboptimal paths within 100 seeds), and
+  it stays suboptimal even under the new tiebreak (re-fuzzed with the
+  Manhattan probe active: still 6-step paths where 5 is optimal). The
+  seed-92 counterexample is pinned as the "heuristic admissibility" test —
+  it fails if the heuristic regresses to Manhattan.
+- **f-cost tiebreak: position → squared euclidean distance to the
+  destination, then position** (`comparePathNodes`, via the new
+  `PathNode.distance_squared`). With an exact heuristic f-ties become
+  COMMON (on open ground f is constant along every monotone path), so the
+  tiebreak decides the path's SHAPE — and the old x-then-y tiebreak would
+  have bent same-row chases up a row (row node and row-above diagonal tie
+  on f; x-then-y picks the lower y). Pinned by the same-row
+  walk-the-row and diagonal walk-the-diagonal tests.
+- Why slice 2 was separate from the movement-selection fix (slice 1): the
+  decision sites (`ai_movement.zig`) needed the perpendicular-line key
+  (cross product — euclid alone ties the row tile with the tile directly
+  above the target), while A* nodes progress monotonically toward the goal
+  so euclidean-to-destination alone suffices there.
+- `manhattanDistance` deleted (no remaining users). Behavior change → old
+  session logs diverge under strict replay verification (pre-release:
+  re-record). Design: DESIGN → Determinism & Tiebreaking (the A* f-cost
+  tiebreak bullet).

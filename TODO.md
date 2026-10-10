@@ -153,17 +153,14 @@ Test by running `zig build run` and clicking through.
   animation (pulse / marching-ants style) so outlines stand out. Lands at
   the platform seam (`src/raylib/`, the SDF-text-outline pipeline's
   neighborhood); pure-view change (no state, no replay impact).
-- **Enemy pathing straightness** — an enemy on the player's row steps
-  DIAGONALLY up-and-back instead of walking the row: `shortestPath`
-  (functions.zig) breaks f-cost ties by position (x-then-y —
-  `comparePathNodes`), and chebyshev-equal paths can't see that the row
-  walk is straighter. Fix direction: prefer by REAL (euclidean) distance
-  to the target (same-row chases walk the row), keeping the tiebreak
-  deterministic (replay). Also note while there: the heuristic is
-  MANHATTAN while diagonal steps cost 1 — chebyshev is the true metric
-  (an overestimating heuristic can even return non-shortest-by-steps
-  paths). Update DESIGN → Determinism & Tiebreaking when it lands (a
-  rules change → old session logs re-record, pre-release policy).
+- [x] **Enemy pathing straightness** — DONE, both halves (see DONE.md,
+      "Enemy AI movement: the straightness tiebreak" + "Pathfinding:
+      Chebyshev heuristic + straightness f-cost tiebreak"; design: DESIGN →
+      Determinism & Tiebreaking). The observed same-row bug was the
+      movement-DESTINATION selection's `(x, y)` tiebreak (slice 1), not
+      pathfinding; the pathfinding half (Manhattan overestimating →
+      non-shortest paths around obstacles, pinned by fuzz-found
+      counterexample tests) was the latent half (slice 2).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
   (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global

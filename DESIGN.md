@@ -1103,8 +1103,19 @@ that true (`src/session_log_bundle.zig`):
 - Tiebreaking convention — every ordering/selection over equal keys must break
   ties EXPLICITLY (in the comparator) or by a documented scan order:
   - Entities: ascending `entity_index`.
-  - Tiles: ascending `(x, y)` (A* `comparePathNodes` already does this).
+  - Tiles: ascending `(x, y)` (A* `comparePathNodes` ends with this tier).
   - Skills: slot order.
+  - **A* f-cost ties** (`functions.comparePathNodes`): squared euclidean
+    distance to the destination first, then the `(x, y)` tile order — with
+    the exact Chebyshev heuristic f-ties are common, and the euclidean tier
+    resolves them to the really-closer node (a same-row chase walks the
+    row; a 45° chase walks the diagonal). The heuristic itself is Chebyshev
+    (`chebyshevHeuristic`) — the EXACT remaining cost on open ground, so
+    it never overestimates; the old Manhattan heuristic overestimated
+    whenever the destination sat diagonally from a node and could pop the
+    goal via a longer route before the optimal route's nodes were ever
+    expanded (reproduced by fuzzing against a reference BFS — pinned by
+    the admissibility test in functions.zig).
   - **AI movement destination ties** (`functions.straighterTileBefore`):
     when the primary metric (cluster score / Chebyshev distance) ties, the
     STRAIGHTER line to the mover's nearest hostile wins — first by
