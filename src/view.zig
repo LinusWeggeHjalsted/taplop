@@ -749,6 +749,7 @@ pub fn view(
         .background_color = worldGradientColor(active_theme, 2),
         .active_color_theme = active_theme,
         .world_scale = camera_zoom,
+        .outline_stripe_phase = outlineStripePhase(session.animation_clock, settings.animation_fps),
         .tiles = tiles.items,
         .tile_overlays = tile_overlays.items,
         .ground_drawables = ground_drawables.items,
@@ -1363,6 +1364,25 @@ const flag_banner_frame_height: i32 = 512;
 /// state). Mirrors the flag banner animation; see DESIGN → Animation.
 const tile_highlight_sprite_id = "world/tile_highlight";
 const tile_highlight_frame_count: u32 = 4;
+
+/// Steps per full outline-stripe cycle (one light + one dark band) — the
+/// crawl speed of the outline stripe shader (see DESIGN → Platform Seam →
+/// Outline stripe shader): one full cycle per `outline_stripe_steps`
+/// animation frames, stepped (frame-quantized) to match the
+/// tile-highlight sheet's cadence — one animation system.
+const outline_stripe_steps: u32 = 8;
+
+/// The outline stripe phase (0..1) for `animation_clock`, stepped at
+/// `animation_fps`. The clock wraps mod the cycle IN u64 BEFORE the f32
+/// conversion — f32 mantissa holds only ~16.8s of microseconds, so an
+/// unwrapped clock loses phase precision after minutes.
+fn outlineStripePhase(animation_clock_microseconds: u64, animation_fps: u32) f32 {
+    const effective_fps: u32 = if (animation_fps == 0) 8 else animation_fps;
+    const frame_duration_us: u64 = 1_000_000 / effective_fps;
+    const elapsed_frames = animation_clock_microseconds / frame_duration_us;
+    const step = elapsed_frames % outline_stripe_steps;
+    return @as(f32, @floatFromInt(step)) / @as(f32, @floatFromInt(outline_stripe_steps));
+}
 const tile_highlight_frame_width: i32 = 256;
 const tile_highlight_frame_height: i32 = 256;
 
@@ -5428,4 +5448,17 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         try std.testing.expect(error_popup < top_bar);
         try std.testing.expect(top_bar < fps);
     }
+}
+
+test "outlineStripePhase: steps at animation_fps, wraps per cycle" {
+    // 8 steps per cycle at 8fps (one step per 125ms).
+    try std.testing.expectEqual(0.0, outlineStripePhase(0, 8));
+    try std.testing.expectEqual(0.125, outlineStripePhase(125_000, 8));
+    try std.testing.expectEqual(0.875, outlineStripePhase(875_000, 8));
+    // Wraps: the 8th step restarts the cycle (1s at 8fps).
+    try std.testing.expectEqual(0.0, outlineStripePhase(1_000_000, 8));
+    // animation_fps 0 falls back to the default 8 (the sheet's convention).
+    try std.testing.expectEqual(0.25, outlineStripePhase(250_000, 0));
+    // Fractional frames floor to the stepped frame (750ms at 2fps = frame 1).
+    try std.testing.expectEqual(0.125, outlineStripePhase(750_000, 2));
 }

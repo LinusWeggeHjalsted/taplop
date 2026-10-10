@@ -66,13 +66,18 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
                 rl.drawRectangleRec(rectangle, toPremultipliedColor(overlay.color, 90));
             }
         },
-        .cursor => {
-            // Square outline around the hovered tile (same primitive as
-            // the range/radius/aggro outlines).
+        // The square outlines (the hovered tile + the range/radius/aggro
+        // region outlines — one primitive) all draw through the outline
+        // stripe shader: the marching flip between the outline tint and
+        // the theme's darkest (see DESIGN → Platform Seam → Outline stripe
+        // shader). The scope wraps exactly this draw — endShaderMode
+        // restores the DEFAULT shader, not the sprite pass (see
+        // beginSpritePass).
+        .cursor, .range_outline, .radius_outline, .aggro_outline => {
+            const total_scale = world_scale * backend.renderScale();
+            backend.beginOutlineStripeScope(total_scale);
             rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
-        },
-        .range_outline, .radius_outline, .aggro_outline => {
-            rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
+            backend.endOutlineStripeScope(total_scale);
         },
         .region_edge => {
             // One stroke segment of a tile-region outline (the editor
@@ -110,7 +115,12 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
                     .height = rectangle.height,
                 },
             };
+            // Same stripe treatment as the square outlines (each bar is
+            // one stroke segment of the same region outline).
+            const total_scale = world_scale * backend.renderScale();
+            backend.beginOutlineStripeScope(total_scale);
             rl.drawRectangleRec(bar, toRaylibColor(overlay.color, 255));
+            backend.endOutlineStripeScope(total_scale);
         },
     }
 }
@@ -335,7 +345,11 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 // Stroked rect OUTSIDE the bounds: inflate by the outline
                 // thickness on all sides so the stroke frames the button
                 // instead of overlapping its edge (drawRectangleLinesEx
-                // centers the stroke on the rect boundary).
+                // centers the stroke on the rect boundary). Spriteless
+                // buttons sit on 9-slice panel cells (the editor tool
+                // palette) — this stroked rect is their lightest hover
+                // outline, so it gets the same stripe treatment as the
+                // sprite-backed outlines above.
                 const t: i32 = textures_mod.outline_thickness;
                 const dest = referenceRectangle(button.screen_position, button.width, button.height);
                 const outer = rl.Rectangle{
@@ -344,7 +358,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                     .width = dest.width + 2 * @as(f32, @floatFromInt(t)),
                     .height = dest.height + 2 * @as(f32, @floatFromInt(t)),
                 };
+                const total_scale = backend.renderScale();
+                backend.beginOutlineStripeScope(total_scale);
                 rl.drawRectangleLinesEx(outer, @floatFromInt(t), toRaylibColor(highlight_color, 255));
+                backend.endOutlineStripeScope(total_scale);
             }
         },
         .text_label => |label| backend.text.drawTextLabel(backend.frame_arena.allocator(), label, highlight_color),
@@ -435,8 +452,18 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// `highlight_color`. Used by highlighted UI elements (Button/Image) to
 /// ring the sprite silhouette. Falls back to a rectangle outline when
 /// the sprite or its mask is unavailable (e.g. a placeholder magenta
-/// box) so the hover highlight still reads.
+/// box) so the hover highlight still reads. Both paths draw through the
+/// outline stripe shader (the marching flip between the highlight tint
+/// and the theme's darkest — see DESIGN → Platform Seam → Outline stripe
+/// shader).
 fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {
+    // The scope covers BOTH paths (mask + rectangle fallback) — the whole
+    // function is one outlined draw. The close restores the enclosing
+    // per-item sprite pass (the endShaderMode trap — see
+    // endOutlineStripeScope).
+    const total_scale = backend.renderScale();
+    backend.beginOutlineStripeScope(total_scale);
+    defer backend.endOutlineStripeScope(total_scale);
     const mask = backend.textures.getOutlineTexture(sprite_id) orelse {
         // Fallback for missing sprites (or mask build failures): ring
         // the destination rectangle directly. Lets the hover highlight

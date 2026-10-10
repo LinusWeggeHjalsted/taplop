@@ -356,6 +356,40 @@ Key pieces (`src/raylib/text.zig`):
   baked from the shipped TTF at build time — accepted; shadowing is a
   side-effect seam, not a designed feature).
 
+### Outline stripe shader (marching outlines)
+
+The theme-`lightest` outlines (the world tile outlines — cursor, range,
+radius, aggro, region edges — the UI icon halo masks, and the spriteless
+panel-button hover rect) read weakly over busy art. They all draw through
+one fragment shader (`backend.zig`, the spriteLodSnapBias pattern): the
+default batch shader (texel × tint) plus a diagonal marching-stripe flip
+between the incoming tint and the theme's `darkest`. `s = gl_FragCoord.x +
+gl_FragCoord.y + phase*period` in render-target pixels; `mod(s, period) <
+stripeBandWidth` flips the RGB to the dark color at the texel's own alpha
+(premultiplied output — the pass draws under BLEND_ALPHA_PREMULTIPLY).
+50/50 duty (period = 2 bands), hard flip, band width = the shared outline
+thickness (8 source px) × the pass's whole scale so the bands match the
+outlines' drawn thickness at every zoom. The LIGHT color rides the existing
+per-draw tint; the dark color + phase are frame-level uniforms (set once
+per frame in `render`), the band is per-scope. A compile failure degrades
+exactly to the pre-shader look (solid tint) — never a crash. The SDF text
+outline shader is a SEPARATE pass, untouched by this.
+
+The phase (0..1, `ViewState.outline_stripe_phase`) is view-side, computed in
+`view()` from `session.animation_clock` stepped at `settings.animation_fps`
+(8 steps per cycle — frame-quantized to match the tile-highlight sheet's
+cadence, one animation system; freezes on pause like every looping anim —
+see Animation). The clock wraps mod the cycle IN u64 before the f32
+conversion (f32 mantissa holds only ~16.8s of microseconds). No game
+state involved — no replay impact.
+
+THE endShaderMode TRAP applies to the scopes: every draw site opens the
+stripe scope INSIDE an enclosing sprite pass (`beginSpritePass`), and
+`endOutlineStripeScope` must RE-OPEN that sprite pass — raylib's
+endShaderMode restores the DEFAULT shader, so the rest of the world pass
+would silently lose its LOD snap bias otherwise (the world layers share ONE
+sprite-pass scope; see Sprite-mipmap smoothing).
+
 ### Allocator rule for emscripten (no page_allocator on web)
 
 `std.heap.page_allocator` is **unusable on wasm32-emscripten**: it is
@@ -742,7 +776,10 @@ pending error open), the clock freezes too, so anims freeze in place and
 resume cleanly; when waits drain, anims advance. A fresh session starts at 0
 so looping anims begin at frame 0 (raw wall-clock mod would start mid-loop).
 One-shots store `end_clock = animation_clock + duration` in session-relative
-units, so pause freezing also freezes one-shots mid-flight.
+units, so pause freezing also freezes one-shots mid-flight. The outline
+stripe shader's phase (`ViewState.outline_stripe_phase`) is another
+looping consumer — stepped off this clock, frozen by the same pause gate
+(Platform Seam → Outline stripe shader).
 
 ### Frame rate
 

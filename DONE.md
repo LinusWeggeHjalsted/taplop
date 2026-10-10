@@ -15881,3 +15881,55 @@ changes in `shortestPath` (functions.zig) — the pairing is the point:
   session logs diverge under strict replay verification (pre-release:
   re-record). Design: DESIGN → Determinism & Tiebreaking (the A* f-cost
   tiebreak bullet).
+
+## Outline stripe shader (marching outlines)
+
+The TODO's readability complaint: the theme-`lightest` outlines (the artist's
+offwhite) read weakly over busy art. Fix: one fragment shader (the
+spriteLodSnapBias pattern — default batch shader + one addition) flipping the
+outline pixels between the incoming tint and the theme's `darkest` in
+marching 45° diagonal stripes.
+
+- **Shader** (backend.zig, GLSL 3.30 + ES 3.00 variants like both precedents):
+  `s = gl_FragCoord.x + gl_FragCoord.y + phase*period` in render-target
+  pixels; `mod(s, period) < band` flips the RGB to the dark color at the
+  texel's own alpha (premultiplied output — the pass draws under
+  BLEND_ALPHA_PREMULTIPLY). One shader covers BOTH draw shapes: untextured
+  strokes (the white 1x1 texture passes the tint through) and the icon halo
+  masks (the white band flips, the transparent interior stays). A compile
+  failure degrades EXACTLY to the pre-shader look (solid tint), never a
+  crash. The SDF text outline pass is a separate shader, untouched.
+- **Covered draws**: the five world tile-outline arms in `drawTileOverlay`
+  (cursor, range/radius/aggro outlines, region edges), `drawHighlightOutline`
+  (the UI icon halo masks — sprite-backed highlighted buttons/images, e.g.
+  the turn-step icons + its rectangle fallback), and the spriteless
+  highlighted button's stroked rect (the 9-slice panel-button hover
+  outline). Explicitly out: SDF text outlines, `.text_field` 9-slice frames,
+  lightest-tinted panels, occlusion insets.
+- **The light color rides the existing per-draw tint; the dark color +
+  phase are frame-level uniforms** (set once per frame in `render` from
+  `ViewState`), the band width is per-scope (`beginOutlineStripeScope(total_scale)`
+  — 8 source px × the pass's whole scale so the bands match the drawn
+  outline's thickness at every zoom).
+- **The endShaderMode trap, caught at implementation time**: every stripe
+  scope opens INSIDE an enclosing sprite pass, and raylib's endShaderMode
+  restores the DEFAULT shader — the first wiring silently dropped the sprite
+  LOD snap bias for the rest of the shared world-pass scope. The close
+  (`endOutlineStripeScope(total_scale)`) re-opens the sprite pass. Documented
+  in DESIGN → Platform Seam → Outline stripe shader + the backend method
+  doc.
+- **Phase**: `ViewState.outline_stripe_phase`, computed in `view()` from
+  `session.animation_clock` stepped at `settings.animation_fps` — 8 steps
+  per cycle, frame-quantized to match the tile-highlight sheet's cadence
+  (one animation system; freezes on pause with everything else). The clock
+  wraps mod the cycle IN u64 before the f32 conversion (f32 mantissa holds
+  only ~16.8s of microseconds — an unwrapped clock loses phase after
+  minutes). Pure view side — no game state, no replay impact.
+- **Decisions**: cursor included in the march; stepped (not continuous)
+  pacing; 50/50 duty (period = 2 bands). Tuning knobs, all in one place:
+  band scale (`outline_thickness` × total_scale), crawl speed
+  (`outline_stripe_steps` in view.zig), duty (the `2.0*` period factor in
+  the shader source).
+- Verified: native + test suite + web compile; the look still needs the
+  eyeball pass on both targets (band size vs. outline thickness, crawl
+  speed) — tuning knobs above if it reads off.

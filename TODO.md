@@ -147,12 +147,13 @@ Test by running `zig build run` and clicking through.
       table can produce warns + is kept; a comptime lockstep guard pins
       the tables to `types.producible_key_ids` — see DONE.md, dead-binding
       advisory).
-- **UI outline readability (shader animation)** — the highlighted-tile /
-  region outlines draw with the theme's `lightest` (the artist's offwhite
-  — view.zig), which reads weakly against the background; want a SHADER
-  animation (pulse / marching-ants style) so outlines stand out. Lands at
-  the platform seam (`src/raylib/`, the SDF-text-outline pipeline's
-  neighborhood); pure-view change (no state, no replay impact).
+- [x] **UI outline readability (shader animation)** — DONE (see DONE.md,
+      "Outline stripe shader"; design: DESIGN → Platform Seam → Outline
+      stripe shader). Marching 45° stripes flipping between the outline
+      tint and the theme's darkest, stepped off the animation clock — the
+      world tile outlines, the UI icon halo masks, and the spriteless
+      panel-button hover rect; the SDF text outline pass is untouched.
+      Tuning knobs (band size, steps per cycle, duty) live in the DONE entry.
 - [x] **Enemy pathing straightness** — DONE, both halves (see DONE.md,
       "Enemy AI movement: the straightness tiebreak" + "Pathfinding:
       Chebyshev heuristic + straightness f-cost tiebreak"; design: DESIGN →

@@ -2682,6 +2682,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         .background_color = black,
         .active_color_theme = theme,
         .world_scale = 1.0,
+        .outline_stripe_phase = 0.0,
         .tiles = &.{},
         .tile_overlays = &.{},
         .ground_drawables = &.{},

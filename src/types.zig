@@ -3567,6 +3567,12 @@ pub const ViewState = struct {
     /// Equals the camera zoom; world screen_positions already bake it in. UI
     /// elements are unaffected (they carry explicit reference-space sizes).
     world_scale: f32,
+    /// The outline stripe shader's cycle phase, 0..1 (fraction of one
+    /// light-dark cycle; see DESIGN → Platform Seam → Outline stripe
+    /// shader). View-side only, stepped at animation_fps from the animation
+    /// clock — freezes on pause like every looping anim; never game state,
+    /// so there is no replay impact.
+    outline_stripe_phase: f32,
     tiles: []const TileDrawable,
     tile_overlays: []const TileOverlayDrawable,
     ground_drawables: []const GroundDrawable,
