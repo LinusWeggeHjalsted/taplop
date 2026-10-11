@@ -972,7 +972,7 @@ pub fn playerDead(current_state: *const GameState) bool {
 
 /// The player's tile position for the current screen (entity 0 in a level,
 /// the hub player), or the origin when neither is active.
-pub fn playerPosition(current_state: *const GameState) types.Vector2 {
+fn playerPosition(current_state: *const GameState) types.Vector2 {
     if (current_state.level) |level| {
         if (level.entities.len > 0) return level.entities[0].position;
     }

@@ -28,7 +28,7 @@ pub const CombatLogTier = enum {
 /// None: everything else — mechanic noise (highlights, clear, turn-phase,
 /// aggro checks), gear toggles (swap_hands is player-only and spammable), and
 /// anything not relevant to a combat readout.
-pub fn combatLogTier(event: Event) CombatLogTier {
+fn combatLogTier(event: Event) CombatLogTier {
     return switch (event) {
         // --- coarse ---
         .level_event => |level_event| switch (level_event) {

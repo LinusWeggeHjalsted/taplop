@@ -30,7 +30,7 @@ const asU32 = parser.asU32;
 /// — class-1 surface state moved onto GameState (see DESIGN → UI Framework
 /// → UI state classification). Old logs re-record rather than migrate
 /// (pre-release policy).
-pub const session_log_file_format_version: u32 = 3;
+const session_log_file_format_version: u32 = 3;
 
 // ============================================================
 // Session log writer (event history serialization)

@@ -45,25 +45,25 @@ const button_background_sprite_id = emit.button_background_sprite_id;
 // failures (see SessionState.pending_error). Reuses the tooltip wrap
 // machinery (wrapRow / measureRowWidth / lineHeight) for the message body.
 // The body scrolls when the wrapped text exceeds the max body height.
-pub const error_popup_max_width: i32 = 1280;
-pub const error_popup_padding: i32 = 32;
-pub const error_header_font_size: i32 = 72;
-pub const error_body_font_size: i32 = 56;
-pub const error_header_gap: i32 = 24; // gap below the "Error" header
-pub const error_button_gap: i32 = 32; // gap above the Dismiss button
-pub const error_dismiss_button_width: i32 = 512;
-pub const error_dismiss_button_font_size: i32 = 64;
+const error_popup_max_width: i32 = 1280;
+const error_popup_padding: i32 = 32;
+const error_header_font_size: i32 = 72;
+const error_body_font_size: i32 = 56;
+const error_header_gap: i32 = 24; // gap below the "Error" header
+const error_button_gap: i32 = 32; // gap above the Dismiss button
+const error_dismiss_button_width: i32 = 512;
+const error_dismiss_button_font_size: i32 = 64;
 /// Max body region height before scrolling kicks in. Leaves room for the
 /// header + Dismiss button + padding within the 2160px reference height.
 /// The visible line count is derived from this via `lineHeight` — whole
 /// lines only (the region height is the visible count × line height, so
 /// text placement is identical at every scroll offset).
-pub const error_popup_max_body_height: i32 = 1600;
+const error_popup_max_body_height: i32 = 1600;
 /// Scrollbar geometry — the shared scrollbar constants (see element.zig);
 /// the error popup keeps its historical names as aliases. Drawn only when
 /// the body content overflows the visible region.
-pub const error_scrollbar_width: i32 = ui_element.scrollbar_width;
-pub const error_scrollbar_gap: i32 = ui_element.scrollbar_gap;
+const error_scrollbar_width: i32 = ui_element.scrollbar_width;
+const error_scrollbar_gap: i32 = ui_element.scrollbar_gap;
 
 /// Build a modal, centered, scrollable error popup showing `message` with
 /// a Dismiss button. Appended last in view() so it draws on top of

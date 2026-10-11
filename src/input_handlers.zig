@@ -98,7 +98,7 @@ pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
 /// sessions; custom missions are re-saved by the editor). A dev tool bound
 /// to ctrl+L. Runs only from the input path, so it never fires during replay.
 /// The timestamp is UTC (no timezone handling) — fine for a folder name.
-pub fn dumpEventLog(history: *GameStateHistory) void {
+fn dumpEventLog(history: *GameStateHistory) void {
     var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -833,7 +833,7 @@ pub fn resolveKeybindCaptureOutcome(
 /// entry; confirming dedupes). Cross-context same-combo pairs are LEGAL
 /// (kept — the scan continues past them). Confirming REMOVES the returned
 /// entry — the edited row wins (the loader's first-listed-wins rule).
-pub fn findKeybindSteal(
+fn findKeybindSteal(
     bindings: []const types.InputBinding,
     candidate: types.InputBinding,
     exclude_index: ?usize,

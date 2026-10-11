@@ -165,7 +165,7 @@ pub fn loadSettingsFromDisk(
 /// file failed to parse or load: the overlay fell back to defaults, and
 /// rewriting the file would overwrite possibly hand-recoverable content.
 /// Replay-safe: settings are loaded once at startup, never during replay.
-pub fn overlayUserSettings(
+fn overlayUserSettings(
     defaults: Settings,
     file_source: *const FileSource,
     allocator: std.mem.Allocator,

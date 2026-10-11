@@ -71,14 +71,14 @@ const TextEditState = text_input.TextEditState;
 /// Width of the editor inspector sidebar's background panel. Placeholder
 /// value — revisit once the field layout lands and the real width is
 /// visible.
-pub const editor_inspector_width: i32 = 1024;
+const editor_inspector_width: i32 = 1024;
 
 /// The Inventory section's slot-grid width: six square 128px cells fit a
 /// row with room for the gap rhythm; 16 rows × 6 = the full
 /// `inventory_slot_count` (the same 96 slots the in-game 8×12 grid
 /// shows — intentionally identical capacity, arranged to fit the panel).
-pub const editor_inventory_slots_per_row: u32 = 6;
-pub const editor_inventory_row_count: u32 = types.inventory_slot_count / editor_inventory_slots_per_row;
+const editor_inventory_slots_per_row: u32 = 6;
+const editor_inventory_row_count: u32 = types.inventory_slot_count / editor_inventory_slots_per_row;
 
 /// The inspector background panel's rect — the single source for the
 /// builder's layout AND the M2 press arbitration (DESIGN → UI Framework →
@@ -191,7 +191,7 @@ pub fn editorPickerOverlayRect() Rectangle {
 
 /// Width of the editor metadata sidebar's background panel (mirrors the
 /// inspector's placeholder width).
-pub const editor_metadata_sidebar_width: i32 = 1024;
+const editor_metadata_sidebar_width: i32 = 1024;
 
 /// The metadata sidebar's panel rect — the inspector rect mirrored to the
 /// right edge. Single source for the builder's layout AND the M2 press
@@ -635,7 +635,7 @@ pub const editor_inspector_row_height: i32 = editor_header_strip_height;
 
 /// Inspector scrollbar track width, centered in the panel's right `ui_gap`
 /// margin (the skills-panel precedent).
-pub const editor_inspector_scrollbar_width: i32 = 12;
+const editor_inspector_scrollbar_width: i32 = 12;
 
 /// Inset of a control line within its row unit. Halved from `ui_gap` so
 /// the label line sits CLOSE to its editable value (the header reads as
@@ -3035,6 +3035,7 @@ const InspectorPanel = struct {
     sections_expanded: bool = true,
     selected_inventory_slot: ?u32 = null,
 
+    /// pub for the UI-census structure tests (the only cross-file caller).
     pub fn buildAt(self: InspectorPanel, scroll: i32, elements: *UiElementList) anyerror!i32 {
         var ui_state: UiState = .{
             .editor_inspector_scroll = scroll,

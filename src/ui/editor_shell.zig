@@ -62,7 +62,7 @@ pub const editor_entity_frame_height: i32 = types.entity_sprite_frame_height;
 /// `world/tile_highlight.png` marching-ants sheet shared the size — the
 /// Select graphic is now the inset stroked square (see the fixed-tools
 /// emission).
-pub const tool_graphic_tile_size: i32 = 256;
+const tool_graphic_tile_size: i32 = 256;
 
 /// Font size for the editor palette group headers ("Entities", …).
 pub const editor_group_header_font_size: i32 = 64;
@@ -75,7 +75,7 @@ pub const editor_header_strip_height: i32 = 128;
 
 /// Side length of the square ui/panel "+" cells (palette group add-new,
 /// level-tab add-level).
-pub const editor_plus_size: i32 = 128;
+const editor_plus_size: i32 = 128;
 
 /// Maximum type cells a palette group shows at once. Groups with more
 /// types scroll horizontally (wheel over the group shifts the window;
@@ -712,7 +712,7 @@ pub fn buildEditorLevelTabs(
 /// two `slot_size` cells + the separating gap). Shared by the buttons
 /// builder, the level-tab row's right bound, and the tab wheel-scroll
 /// region so the three can't drift.
-pub const editor_primary_actions_width: i32 = 2 * top_bar_slot_size + ui_gap;
+const editor_primary_actions_width: i32 = 2 * top_bar_slot_size + ui_gap;
 
 /// The level-tab strip's wheel-scroll region: from the tab row's left
 /// edge (right of the global top bar's options + undo + redo cells) to the

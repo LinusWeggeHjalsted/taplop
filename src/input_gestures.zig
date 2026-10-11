@@ -51,7 +51,7 @@ pub fn skillsSlotUnderPointer(
 /// PlayerInputEvents (orchestrator convention; see DESIGN → Determinism &
 /// Tiebreaking → Replay PLAYER-ACTION LEGALITY). The handler pushes the
 /// machinery event as a child.
-pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
+fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
     // A drop back on the source slot is a no-op for every domain — don't
     // push a no-op swap/equip into the event log.
     if (ui.SlotRef.eql(from, to)) return null;

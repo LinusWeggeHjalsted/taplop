@@ -729,7 +729,7 @@ fn isUnsafeMissionImportName(name: []const u8) bool {
 /// the same dir, idempotent; a mission without a uuid lands under
 /// `missions/<sanitized name>/`). All names are validated BEFORE the first
 /// write: a hostile or malformed zip fails whole, never half-imported.
-pub fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
+fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
     const scratch = history.current_arena.allocator();
     const fail = struct {
         fn note(history_arg: *GameStateHistory, reason: []const u8) void {

@@ -122,7 +122,7 @@ pub const KeybindEditState = struct {
 /// True for the modifier ids (held-state tracking only — they never capture;
 /// a combo needs a base key, and the held modifiers BECOME the combo's
 /// requirements).
-pub fn isModifierInputId(id: []const u8) bool {
+fn isModifierInputId(id: []const u8) bool {
     const modifier_ids = [_][]const u8{
         "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft", "AltRight",
     };

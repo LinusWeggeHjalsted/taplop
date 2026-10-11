@@ -16201,6 +16201,41 @@ skill_helpers trio, the loaders `free*` family. **3 TEST-ONLY** —
 `computeMaxDamageRange`, `minimalPngHeader`, `buildAt` (keep pub, note
 why). The cleanup sweep is deliberately NOT part of this landing: each
 de-pub/delete is a per-symbol decision — some UNUSED are forward-looking
-(`freeHub`/`freeCampaign` become load-bearing at campaign-editor slice 1,
-the self-owned-loader rider), and the layout-const class is one mechanical
-sweep whenever it's taken.
+(`freeHub` and the loaders `free*` family become load-bearing at
+campaign-editor slice 1, the self-owned-loader rider), and the
+layout-const class is one mechanical sweep whenever it's taken. (The
+sweep landed the next session — see "Minimize-pub sweep" below.)
+
+## Minimize-pub sweep — the report's first cleanup (0 DEAD / 0 UNUSED)
+
+The unused-pub report's first run found 11 DEAD + 106 UNUSED + 3 TEST-ONLY;
+the full sweep landed in one pass (author call: clean up fully, re-pub as
+needed — the forward-looking ones, e.g. the loaders `free*` family, come
+back when campaign-editor slice 1 makes them load-bearing).
+
+- **DEAD deleted (11)**: types.zig's Rect placement helpers
+  (`centerX`/`centerY`/`placeTopLeft`/`placeTopRight`/`placeCenterLeft`/
+  `placeCenterRight`/`placeBottomRight`), element.zig's `Grid.totalWidth`/
+  `totalHeight`, loaders' `customDecorationSpriteConforms`, menus'
+  `credits_header_gap` (+ its dead ui.zig facade re-export).
+- **UNUSED de-pubbed (106)**: the ~60 ui layout-const class (each with its
+  ui.zig facade re-export line removed — 62 lines total), plus the
+  internal-only helpers (state's `takeSnapshot`/`markWriteDirty`/
+  `writeSettingsToFile`/`compactCurrentArena`/`scope`, the skill_helpers
+  trio, loaders' `free*` + `parseEntityDefinition`, writers'
+  `writePlayerSave`/`writePlayerLoadout`, view's `playerPosition`, parser's
+  `asF32`, combat_log's `combatLogTier`, ...).
+- **TEST-ONLY kept pub + why-noted (3)**: `computeMaxDamageRange`,
+  `minimalPngHeader` (already noted), `buildAt`.
+- **The compiler was the arbiter**: full build + suite PASS means zero
+  false negatives (nothing de-pubbed was secretly cross-file-used) and no
+  unused-private errors surfaced. Both reports re-run post-sweep: 554 pub
+  decls walked, 0 DEAD / 0 UNUSED / 3 TEST-ONLY; the doc checker CLEAN (no
+  doc named a deleted symbol).
+
+Process note: the first pass ran `zig fmt` over the touched files — the
+project is NOT fmt-enforced (hand-formatted; the wrap convention is an open
+TODO item) and fmt reflowed pre-existing drift in every fmt-dirty file it
+touched (view.zig's anonymous-struct literals, parser.zig's 74 lines).
+Reverted wholesale and re-applied the scripted edits without fmt: sweep
+scripts that touch files must not carry a formatter along.

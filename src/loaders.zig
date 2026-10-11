@@ -558,7 +558,7 @@ pub fn freeSettings(settings: types.Settings, allocator: std.mem.Allocator) void
 /// instantiateEditorLevel for placements). Utility skills are read from
 /// `slot_4`..`slot_8` keys (matching the save format), so the player loadout
 /// carries its bar; enemy types can too if present.
-pub fn parseEntityDefinition(
+fn parseEntityDefinition(
     pairs: []const KeyValuePair,
     team: u32,
     default_name: []const u8,
@@ -825,7 +825,7 @@ fn optionalBootsEqual(a: ?types.Boots, b: ?types.Boots) bool {
 
 /// Compare two decoration definitions for palette dedup (sprite + footprint
 /// + color_index + layers by content).
-pub fn decorationDefinitionsEqual(a: types.Decoration, b: types.Decoration) bool {
+fn decorationDefinitionsEqual(a: types.Decoration, b: types.Decoration) bool {
     if (!std.mem.eql(u8, a.name, b.name)) return false;
     if (a.footprint.len != b.footprint.len) return false;
     for (a.footprint, b.footprint) |fa, fb| {
@@ -1792,20 +1792,6 @@ pub fn customEntitySpriteConforms(
     return types.entitySpriteDimsConform(dims);
 }
 
-/// The pick-commit backstop for custom DECORATION sprites: does the stem
-/// resolve to a PNG of whole 256px tiles (the sprite-grid spec)? False on
-/// missing/invalid files too.
-pub fn customDecorationSpriteConforms(
-    file_source: *const FileSource,
-    mission_path: []const u8,
-    sprite_stem: []const u8,
-    allocator: std.mem.Allocator,
-) bool {
-    const dims = resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator) orelse
-        return false;
-    return types.decorationSpriteDimsConform(dims);
-}
-
 /// Resolve a decoration sprite's pixel dims at LOAD time. Exactly two
 /// channels — custom assets are always mission-bundled and never live
 /// under assets/ (see DESIGN → Custom Missions & Online Services):
@@ -1876,7 +1862,7 @@ fn cloneEntityOwned(entity: *types.Entity, allocator: std.mem.Allocator) void {
 /// Free an entity's owned fields (all string slices + layers). After
 /// `cloneEntityOwned`, every string and the layers array are owned; this
 /// frees them all.
-pub fn freeEntity(entity: types.Entity, allocator: std.mem.Allocator) void {
+fn freeEntity(entity: types.Entity, allocator: std.mem.Allocator) void {
     allocator.free(entity.name);
     allocator.free(entity.sprite);
     if (entity.main_hand_weapon) |w| allocator.free(w.name);
@@ -1910,7 +1896,7 @@ fn cloneDecorationOwned(decoration: *types.Decoration, allocator: std.mem.Alloca
 }
 
 /// Free a decoration's owned fields (name + footprint + layers).
-pub fn freeDecoration(decoration: types.Decoration, allocator: std.mem.Allocator) void {
+fn freeDecoration(decoration: types.Decoration, allocator: std.mem.Allocator) void {
     allocator.free(decoration.name);
     allocator.free(decoration.footprint);
     for (decoration.layers) |layer| allocator.free(layer.sprite);
@@ -1922,7 +1908,7 @@ pub fn freeDecoration(decoration: types.Decoration, allocator: std.mem.Allocator
 /// the parsed sections and freed by `freeParsedSections`; only the
 /// `footprint` and `layers` arrays are owned. Mirrors `freeDecoration` but
 /// for `DecorationTypeDef` (registry prefab, no cloned strings).
-pub fn freeDecorationRegistry(registry: []types.DecorationTypeDef, allocator: std.mem.Allocator) void {
+fn freeDecorationRegistry(registry: []types.DecorationTypeDef, allocator: std.mem.Allocator) void {
     for (registry) |def| {
         allocator.free(def.footprint);
         allocator.free(def.layers);
@@ -1944,7 +1930,7 @@ fn cloneItemOwned(item: *types.Item, allocator: std.mem.Allocator) void {
 }
 
 /// Free an item's name string.
-pub fn freeItem(item: types.Item, allocator: std.mem.Allocator) void {
+fn freeItem(item: types.Item, allocator: std.mem.Allocator) void {
     switch (item) {
         .weapon => |w| allocator.free(w.name),
         .amulet => |a| allocator.free(a.name),
@@ -1959,7 +1945,7 @@ pub fn freeItem(item: types.Item, allocator: std.mem.Allocator) void {
 /// Free all heap-allocated data in a Level (tiles, entities, decorations,
 /// ground items). Each entity/decoration/item is deep-freed. Use in tests
 /// with `std.testing.allocator`; in production, the arena absorbs everything.
-pub fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
+fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
     allocator.free(level.level_tiles);
     for (level.entities) |entity| freeEntity(entity, allocator);
     allocator.free(level.entities);
@@ -1974,7 +1960,7 @@ pub fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
 
 /// Free all heap-allocated data in a Hub (tiles, player, npcs, decorations,
 /// mission exits).
-pub fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
+fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
     allocator.free(hub.hub_tiles);
     freeEntity(hub.player, allocator);
     for (hub.npcs) |npc| freeEntity(npc.entity, allocator);

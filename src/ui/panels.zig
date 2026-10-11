@@ -308,7 +308,7 @@ pub fn buildInventoryPanel(
 }
 
 /// Font size for the gear-panel combat-stat lines.
-pub const gear_stat_font_size: i32 = 56;
+const gear_stat_font_size: i32 = 56;
 
 /// The combat-stat labels shown in the gear panel, in display order. Shared
 /// between `gearPanelWidth` (measures the longest line for the panel width)

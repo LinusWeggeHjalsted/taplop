@@ -423,7 +423,7 @@ pub const material_kinds = [_]MaterialKind{
 
 /// Read the count for `kind_index` out of `materials`. Kept as a switch so
 /// adding a material kind is a compile error until every index is handled.
-pub fn materialCount(materials: types.Materials, kind_index: usize) u32 {
+fn materialCount(materials: types.Materials, kind_index: usize) u32 {
     return switch (kind_index) {
         0 => materials.wood,
         1 => materials.metal,

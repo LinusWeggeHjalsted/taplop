@@ -329,7 +329,7 @@ pub fn asI32(value: []const u8) ?i32 {
     return std.fmt.parseInt(i32, value, 10) catch null;
 }
 
-pub fn asF32(value: []const u8) ?f32 {
+fn asF32(value: []const u8) ?f32 {
     return std.fmt.parseFloat(f32, value) catch null;
 }
 

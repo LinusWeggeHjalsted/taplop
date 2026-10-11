@@ -332,20 +332,20 @@ pub fn buildMainMenu(
 
 // --- Load-save browser (main menu, full screen) ---
 
-pub const load_save_header_font_size: i32 = 72;
-pub const load_save_header_gap: i32 = 32;
-pub const load_save_row_font_size: i32 = 56;
+const load_save_header_font_size: i32 = 72;
+const load_save_header_gap: i32 = 32;
+const load_save_row_font_size: i32 = 56;
 /// One save row's height. The scroll unit is the full row PITCH (height +
 /// gap) so scrolled text sits at identical y positions at every offset.
-pub const load_save_row_height: i32 = 112;
-pub const load_save_row_gap: i32 = 8;
-pub const load_save_padding: i32 = 48;
-pub const load_save_button_gap: i32 = 48; // gap between rows region and bottom buttons
-pub const load_save_scrollbar_width: i32 = 12;
-pub const load_save_scrollbar_gap: i32 = 16;
+const load_save_row_height: i32 = 112;
+const load_save_row_gap: i32 = 8;
+const load_save_padding: i32 = 48;
+const load_save_button_gap: i32 = 48; // gap between rows region and bottom buttons
+const load_save_scrollbar_width: i32 = 12;
+const load_save_scrollbar_gap: i32 = 16;
 /// Import/Back button size (bottom corners). Import label is long, so the
 /// buttons are wider than tall menu buttons but reuse the menu font.
-pub const load_save_button_width: i32 = 768;
+const load_save_button_width: i32 = 768;
 
 /// Build the load-save browser: a full-screen modal panel listing
 /// `save_files` (newest first — the slice arrives pre-sorted from
@@ -892,22 +892,21 @@ fn buildMissionBrowserContent(
 
 // --- Credits screen (main menu, full screen) ---
 
-pub const credits_header_font_size: i32 = 96;
-pub const credits_header_gap: i32 = 80;
+const credits_header_font_size: i32 = 96;
 /// Name line font size — larger than the roles line so each person reads
 /// as a heading above their credits.
-pub const credits_name_font_size: i32 = 72;
+const credits_name_font_size: i32 = 72;
 /// Roles line font size — the credit detail under each name.
-pub const credits_role_font_size: i32 = 48;
+const credits_role_font_size: i32 = 48;
 /// Gap between a person's name and their roles line.
-pub const credits_name_to_role_gap: i32 = 16;
+const credits_name_to_role_gap: i32 = 16;
 /// Gap between each person block (name + roles).
-pub const credits_person_gap: i32 = 64;
-pub const credits_padding: i32 = 48;
-pub const credits_button_gap: i32 = 48;
+const credits_person_gap: i32 = 64;
+const credits_padding: i32 = 48;
+const credits_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save Back button so the
 /// two main-menu overlays feel consistent.
-pub const credits_button_width: i32 = 768;
+const credits_button_width: i32 = 768;
 
 /// Build the credits screen: a full-screen modal panel with a centered
 /// "Credits" header, three person blocks (name in a larger font above their
@@ -1010,27 +1009,27 @@ pub fn buildCreditsPanel(
 
 // --- Settings screen (full screen, overlay) ---
 
-pub const settings_padding: i32 = 48;
-pub const settings_header_font_size: i32 = 96;
-pub const settings_header_gap: i32 = 64;
+const settings_padding: i32 = 48;
+const settings_header_font_size: i32 = 96;
+const settings_header_gap: i32 = 64;
 pub const settings_row_font_size: i32 = 56;
-pub const settings_row_height: i32 = 120;
-pub const settings_row_gap: i32 = 32;
-pub const settings_label_to_control_gap: i32 = 48;
-pub const settings_button_gap: i32 = 48;
+const settings_row_height: i32 = 120;
+const settings_row_gap: i32 = 32;
+const settings_label_to_control_gap: i32 = 48;
+const settings_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save / credits Back
 /// buttons so the main-menu overlays feel consistent.
-pub const settings_button_width: i32 = 768;
+const settings_button_width: i32 = 768;
 /// Toggle button (On/Off) width — sits in the control area of a row.
-pub const settings_toggle_width: i32 = 400;
+const settings_toggle_width: i32 = 400;
 /// Camera-zoom choice button width (one of 4).
-pub const settings_choice_button_width: i32 = 240;
+const settings_choice_button_width: i32 = 240;
 /// Player-color swatch size (one of 6).
-pub const settings_swatch_size: i32 = 120;
-pub const settings_swatch_gap: i32 = 16;
+const settings_swatch_size: i32 = 120;
+const settings_swatch_gap: i32 = 16;
 /// Slider track width.
-pub const settings_slider_width: i32 = 800;
-pub const settings_slider_value_gap: i32 = 32;
+const settings_slider_width: i32 = 800;
+const settings_slider_value_gap: i32 = 32;
 
 /// Emit a settings control button: a tinted 9-slice panel + a button
 /// carrying `setting_ref` (the field identity) + a centered text label.
@@ -1561,7 +1560,7 @@ pub fn buildSettingsPanel(
 /// "DigitN" strip their prefixes (slices INTO the id — the id outlives the
 /// frame); anything else shows verbatim (the full W3C key table means a raw
 /// id is always something recognizable).
-pub fn keyIdDisplayLabel(id: []const u8) []const u8 {
+fn keyIdDisplayLabel(id: []const u8) []const u8 {
     const fixed = std.StaticStringMap([]const u8).initComptime(.{
         .{ "ControlLeft", "Ctrl" },
         .{ "ControlRight", "Ctrl" },
@@ -1602,7 +1601,7 @@ fn makePrettifiedLabel(comptime name: []const u8) []const u8 {
 /// An action's display label ("undo" -> "Undo", "dump_event_log" -> "Dump
 /// event log") — comptime-generated from the enum field names (machine-walked:
 /// a new Action's label appears with no edit here).
-pub fn actionDisplayLabel(action: types.Action) []const u8 {
+fn actionDisplayLabel(action: types.Action) []const u8 {
     const labels = comptime blk: {
         @setEvalBranchQuota(20_000);
         const fields = @typeInfo(types.Action).@"enum".fields;
@@ -1618,7 +1617,7 @@ pub fn actionDisplayLabel(action: types.Action) []const u8 {
 /// A context set's display label ("Anytime", "Editor + Menu") —
 /// comptime-generated for every subset of the five contexts, so any set an
 /// `actionBindingContexts` case produces has a label with no edit here.
-pub fn contextSetDisplayLabel(set: types.BindingContextSet) []const u8 {
+fn contextSetDisplayLabel(set: types.BindingContextSet) []const u8 {
     const labels = comptime blk: {
         @setEvalBranchQuota(50_000);
         var table: [1 << context_set_member_names.len][]const u8 = undefined;
@@ -1656,13 +1655,13 @@ fn makeContextSetLabel(comptime mask: u32) []const u8 {
 }
 
 /// Horizontal padding inside a keybind key/action panel (label inset).
-pub const keybind_panel_padding: i32 = 24;
+const keybind_panel_padding: i32 = 24;
 /// Minimum panel width in the keybinds list. 9-slice panels render badly
 /// below a certain width (the corner tiles dominate the panel — see TODO →
 /// Cross-cutting polish), and single-character keys (I, U, 1) would
 /// otherwise produce stub panels; the label centers in the panel so the
 /// extra width reads as a button, not stretched text.
-pub const keybind_min_panel_width: i32 = 160;
+const keybind_min_panel_width: i32 = 160;
 
 /// Sort display order: by action (enum declaration order — undo, redo,
 /// escape, ...), stable so an action's multiple combos keep their file

@@ -403,14 +403,6 @@ pub const Grid = struct {
             .height = self.cell_height,
         };
     }
-
-    pub fn totalWidth(self: Grid) i32 {
-        return rowWidth(self.columns, self.cell_width, self.gap);
-    }
-
-    pub fn totalHeight(self: Grid, rows: i32) i32 {
-        return rowWidth(rows, self.cell_height, self.gap);
-    }
 };
 
 // ============================================================
@@ -903,7 +895,7 @@ pub fn tooltipOf(element: UiElement) ?Tooltip {
 /// instead of falling through to elements drawn behind it. Solid surfaces
 /// (panels, buttons, slots) block; decorative overlays (cooldown numbers,
 /// the drag ghost, the tooltip itself) opt out with `blocks_input = false`.
-pub fn blocksInputOf(element: UiElement) bool {
+fn blocksInputOf(element: UiElement) bool {
     return switch (element) {
         inline else => |e| e.blocks_input,
     };
@@ -1039,7 +1031,7 @@ pub fn blockingElementAt(
 
 /// The topmost ref-bearing slot under `position` (respecting occlusion),
 /// or null. Used by drag.
-pub fn slotAt(
+fn slotAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?Slot {
@@ -1047,7 +1039,7 @@ pub fn slotAt(
 }
 
 /// The SlotRef of the topmost ref-bearing slot under `position`, or null.
-pub fn slotRefAt(
+fn slotRefAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?SlotRef {

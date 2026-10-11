@@ -46,7 +46,7 @@ pub const Side = enum { right, below, left, above };
 /// cross-axis, shrinking the shared edge but keeping the sides flush
 /// (degenerates to a point only if the tooltip is larger than the available
 /// cross-axis space).
-pub fn placeTooltip(
+fn placeTooltip(
     source_position: ScreenPosition,
     source_width: i32,
     source_height: i32,
@@ -102,12 +102,12 @@ pub fn placeTooltip(
 // against the measurement seam (measureSpanWidth / lineHeight), so it is
 // deterministic and testable regardless of the eventual font.
 
-pub const tooltip_max_width: i32 = 1024;
-pub const tooltip_padding: i32 = 24; // inner padding around content
-pub const tooltip_row_gap: i32 = 8; // vertical gap between rows
-pub const tooltip_header_gap: i32 = 16; // extra gap below the header
+const tooltip_max_width: i32 = 1024;
+const tooltip_padding: i32 = 24; // inner padding around content
+const tooltip_row_gap: i32 = 8; // vertical gap between rows
+const tooltip_header_gap: i32 = 16; // extra gap below the header
 pub const tooltip_header_font_size: i32 = 64;
-pub const tooltip_body_font_size: i32 = 56;
+const tooltip_body_font_size: i32 = 56;
 pub const tooltip_panel_sprite = "ui/panel";
 
 /// Append a tooltip (background panel + positioned text) for `tooltip`,

@@ -34,7 +34,7 @@ const freeSettings = loaders.freeSettings;
 /// Format a PlayerData struct into the .txt save file format.
 /// Returns an owned slice — caller must free with the same allocator.
 /// This is the core function used by both web (download) and standalone (file write).
-pub fn writePlayerSave(
+fn writePlayerSave(
     player_data: PlayerData,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
@@ -435,7 +435,7 @@ pub fn writeEditorMission(
 /// sections of a player save; no Info/stats/hubs — base stats aren't
 /// authorable and the NAME is not part of the format, so a reloaded
 /// loadout reads back as "Player" regardless of the template's name).
-pub fn writePlayerLoadout(
+fn writePlayerLoadout(
     template: types.Entity,
     allocator: std.mem.Allocator,
 ) ![]const u8 {

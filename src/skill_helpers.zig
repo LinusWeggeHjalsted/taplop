@@ -134,7 +134,7 @@ pub fn hostileIndicesInRadius(
 /// right→left, left edge bottom→top), then ring 2 the same way, and so on
 /// outward. Ring n has exactly 8n tiles. The shared AoE execution order —
 /// see DESIGN → Determinism & Tiebreaking (AoE execution order).
-pub fn spiralTilesInRadius(
+fn spiralTilesInRadius(
     allocator: std.mem.Allocator,
     center: Vector2,
     radius: i32,
@@ -519,7 +519,7 @@ pub fn ownedEvents(
 /// arms push it too). Distinct from turn-flow pacing (500ms between turn
 /// steps). Shared here because both skills and the handlers construct it.
 /// See DESIGN → Architecture → Damage apply split + TODO → Effect pacing.
-pub const effect_step_wait_milliseconds: u32 = 125;
+const effect_step_wait_milliseconds: u32 = 125;
 
 /// Duration of the `gap_count`-th accelerating wait in an effect chain:
 /// `effect_step_wait_milliseconds` multiplied by 3/4 per prior gap (integer
@@ -563,7 +563,7 @@ fn effectStepWait() Event {
 /// hypothetical (without the inheritance, two sim-based enhancers
 /// equipped together would alternate through each other's sims forever).
 /// Transient arena memory, pass-scoped.
-pub fn bestCastsWithVirtualEffect(
+fn bestCastsWithVirtualEffect(
     frame: *skill_mod.EvalFrame,
     skill_id: types.SkillId,
     effect_id: types.EffectId,

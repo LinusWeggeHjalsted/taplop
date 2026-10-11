@@ -157,7 +157,7 @@ pub fn readZipArchive(
 /// Free a slice returned by `readZipArchive` (names + bytes + the slice).
 /// A zero-length slice is a no-op (the empty-archive case returns an
 /// allocated-but-empty slice; nothing to free per entry).
-pub fn freeZipArchive(allocator: std.mem.Allocator, entries: []const ZipEntry) void {
+fn freeZipArchive(allocator: std.mem.Allocator, entries: []const ZipEntry) void {
     for (entries) |entry| {
         allocator.free(entry.name);
         allocator.free(entry.bytes);

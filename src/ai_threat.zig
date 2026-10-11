@@ -60,6 +60,7 @@ pub fn computeMinRange(
 /// skills — how far away it can hurt something after closing. Non-damaging
 /// skills (movement, control, buffs) don't threaten. Null when no damaging
 /// skill is ready (such an entity cannot deal damage next turn).
+/// pub for the skill-tests' rating assertions (the only cross-file caller).
 pub fn computeMaxDamageRange(
     entity: Entity,
     weapon_type_definitions: WeaponTypeDefinitions,

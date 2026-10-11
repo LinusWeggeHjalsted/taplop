@@ -832,7 +832,7 @@ pub fn editorSelectionContainsPosition(
     return false;
 }
 
-pub fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
+fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
     return .{ .x = position.x + delta.x, .y = position.y + delta.y };
 }
 
@@ -942,7 +942,7 @@ pub fn planEditorSelectionMoveActions(
     return plan.items;
 }
 
-pub fn planEditorSelectionMoveDeleteActions(
+fn planEditorSelectionMoveDeleteActions(
     editor: *const types.Editor,
     allocator: std.mem.Allocator,
 ) []const Event {

@@ -66,7 +66,7 @@ pub const Screen = enum {
     };
 
     /// Which optional GameState fields are in scope for this screen.
-    pub fn scope(self: Screen) Scope {
+    fn scope(self: Screen) Scope {
         return switch (self) {
             .main_menu => .{},
             .hub => .{ .campaign = true, .hub = true },
@@ -523,7 +523,7 @@ pub const SessionState = struct {
     /// first dirty mark even under continuous change (a steady stream that
     /// keeps refreshing the debounce would otherwise never fire). `now` is
     /// `session_clock` at the call site. See DESIGN → Input.
-    pub fn markWriteDirty(
+    fn markWriteDirty(
         self: *SessionState,
         tag: PendingWrite.Tag,
         write_fn: *const fn (*GameStateHistory) void,
@@ -617,7 +617,7 @@ pub const PendingWrite = struct {
 /// not critical; the preference just doesn't persist). The settings
 /// `PendingWrite` writer fn, shared by preference-change persistence and
 /// the startup repair write. See DESIGN → Input → Debounced writes.
-pub fn writeSettingsToFile(history: *GameStateHistory) void {
+fn writeSettingsToFile(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const bytes = writers.writeSettings(history.settings, allocator) catch return;
     defer allocator.free(bytes);
@@ -1090,7 +1090,7 @@ pub const GameStateHistory = struct {
 
     /// Save a snapshot at the current position (call when event stack is empty).
     /// Also records this as an idle point for undo/redo.
-    pub fn takeSnapshot(
+    fn takeSnapshot(
         self: *GameStateHistory,
     ) void {
         // Record this event index as an undo/redo stop (durable session log).
@@ -1188,7 +1188,7 @@ pub const GameStateHistory = struct {
     /// points (stack empty) during live play only — replay manages current_arena
     /// itself. Without this, current_arena grows unbounded across a long forward
     /// session (it is otherwise only reset on undo/redo reconstruction).
-    pub fn compactCurrentArena(self: *GameStateHistory) void {
+    fn compactCurrentArena(self: *GameStateHistory) void {
         var fresh = std.heap.ArenaAllocator.init(self.backing_allocator);
         const rebuilt = deepCopy(GameState, self.current_state, fresh.allocator());
         self.current_arena.deinit();

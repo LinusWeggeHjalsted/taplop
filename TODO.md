@@ -32,11 +32,12 @@ Test by running `zig build run` and clicking through.
   shipped/placeholder/missing status, resolved against assets/ + the
   persistent dir — the artist's self-updating shopping list; replaces the
   hand-maintained missing-art notes scattered below.
-- [x] **Unused-pub report (session reflection rider)** — DONE:
-      `scripts/unused_pub_report.sh` (see DONE.md, "Unused-pub report").
-      First run: 11 DEAD + 106 UNUSED + 3 TEST-ONLY — the cleanup sweep is a
-      follow-up decision per symbol (some UNUSED are forward-looking, e.g.
-      the `freeHub`/`freeCampaign` self-owned-loader riders).
+- [x] **Unused-pub report (session reflection rider)** — DONE, first
+      cleanup sweep included: `scripts/unused_pub_report.sh` (see DONE.md,
+      "Unused-pub report" + "Minimize-pub sweep"). Tree now reports
+      0 DEAD / 0 UNUSED; the 3 TEST-ONLY pubs carry why-notes. Forward-
+      looking de-pubs (the loaders `free*` family) re-pub when
+      campaign-editor slice 1 lands.
 - **Skill targeting null-vs-empty convention doc (session reflection rider)**
   — the prepared-skill bug's root cause: `get_valid_targets_fn` returning
   NULL ("push no event") vs `&.{}` ("push a clearing event") is an

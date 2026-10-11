@@ -2038,11 +2038,11 @@ pub const item_type_count = @typeInfo(ItemType).@"union".fields.len;
 pub const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
 
 /// Skills per weapon type (skill_1..skill_3 in WeaponTypeDefinition).
-pub const weapon_skills_per_type: usize = 3;
+const weapon_skills_per_type: usize = 3;
 
 /// Size of Entity.onBarSkillIds: both equipped weapons' full skill sets
 /// (swap-available thirds included) + the utility slots.
-pub const on_bar_skill_count: usize = 2 * weapon_skills_per_type + utility_skill_count;
+const on_bar_skill_count: usize = 2 * weapon_skills_per_type + utility_skill_count;
 
 /// Salvage definitions for all item types.
 /// Non-weapon items are indexed by their position in the ItemType union
@@ -2551,7 +2551,7 @@ pub const UiSurfaceState = struct {
         self.inspected_entity_index = null;
     }
 
-    pub fn toggleMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
+    fn toggleMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
         if (self.isMiddlePanelOpen(panel_id)) {
             self.closeMiddlePanel(panel_id);
         } else {
@@ -2573,7 +2573,7 @@ pub const UiSurfaceState = struct {
 
     /// Close a panel and compact the remaining ones down (the
     /// contiguous-prefix invariant above).
-    pub fn closeMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
+    fn closeMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
         for (&self.open_middle_panels) |*slot| {
             if (slot.*) |open| {
                 if (open == panel_id) {
@@ -2606,7 +2606,7 @@ pub const UiSurfaceState = struct {
         return false;
     }
 
-    pub fn toggleFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+    fn toggleFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
         if (self.isFullScreenOverlayOpen(overlay_id)) {
             self.closeFullScreenOverlay(overlay_id);
         } else {
@@ -2614,7 +2614,7 @@ pub const UiSurfaceState = struct {
         }
     }
 
-    pub fn openFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+    fn openFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
         if (self.isFullScreenOverlayOpen(overlay_id)) return;
         for (&self.open_full_screen_overlays) |*slot| {
             if (slot.* == null) {
@@ -2624,7 +2624,7 @@ pub const UiSurfaceState = struct {
         }
     }
 
-    pub fn closeFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
+    fn closeFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
         for (&self.open_full_screen_overlays) |*slot| {
             if (slot.*) |open| {
                 if (open == overlay_id) {
@@ -2635,7 +2635,7 @@ pub const UiSurfaceState = struct {
         }
     }
 
-    pub fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
+    fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
         for (self.open_full_screen_overlays) |maybe_overlay| {
             if (maybe_overlay) |open| {
                 if (open == overlay_id) return true;
@@ -3191,12 +3191,6 @@ pub const Rectangle = struct {
     pub fn bottom(self: Rectangle) i32 {
         return self.y + self.height;
     }
-    pub fn centerX(self: Rectangle) i32 {
-        return self.x + @divTrunc(self.width, 2);
-    }
-    pub fn centerY(self: Rectangle) i32 {
-        return self.y + @divTrunc(self.height, 2);
-    }
     /// True when `point` lies inside the rectangle. Right/bottom edges are
     /// exclusive, matching the hit-testing convention used elsewhere.
     pub fn contains(self: Rectangle, point: ScreenPosition) bool {
@@ -3247,32 +3241,17 @@ pub const Rectangle = struct {
         return .{ .x = x, .y = y, .width = child_width, .height = child_height };
     }
 
-    pub fn placeTopLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
-        return self.placeChild(w, h, .start, .start, margin);
-    }
     pub fn placeTopCenter(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
         return self.placeChild(w, h, .center, .start, margin);
     }
-    pub fn placeTopRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
-        return self.placeChild(w, h, .end, .start, margin);
-    }
-    pub fn placeCenterLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
-        return self.placeChild(w, h, .start, .center, margin);
-    }
     pub fn placeCenter(self: Rectangle, w: i32, h: i32) Rectangle {
         return self.placeChild(w, h, .center, .center, 0);
-    }
-    pub fn placeCenterRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
-        return self.placeChild(w, h, .end, .center, margin);
     }
     pub fn placeBottomLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
         return self.placeChild(w, h, .start, .end, margin);
     }
     pub fn placeBottomCenter(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
         return self.placeChild(w, h, .center, .end, margin);
-    }
-    pub fn placeBottomRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
-        return self.placeChild(w, h, .end, .end, margin);
     }
 };
 
