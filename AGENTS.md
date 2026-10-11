@@ -276,6 +276,31 @@ back at the comment to update it.
   DESIGN → File System & IO`. Same single-source-of-truth rule as the .md
   files: the design lives in DESIGN.md, the code points at it.
 
+### Belong, don't fit
+
+When adding something, find where the design would have put it — the seam
+that already exists for this kind of problem (the Subsystem Map + the
+relevant DESIGN section answer "where?"). "Making it fit" — adapters,
+one-off flags, a special case in someone else's code, a seam built at the
+same time as its one consumer — defers a design decision into many small
+future payments, and the fit is invisible to the compiler (`walkingDistance`
+survived many sessions this way).
+
+- **Fit smells**: a name needing vocabulary the design doesn't use
+  (adapter/shim/compat/legacy/special); a comment justifying the thing's
+  EXISTENCE rather than describing it; a flag consumed in exactly one place;
+  a seam with one implementation and one consumer, born together.
+- **Belonging tests**: would the design have specified it before the need
+  arose? If it vanished, would the design feel incomplete (belongs) or get
+  cleaner (fits)? Is it riding a seam that existed for other reasons?
+- **Precedents**: mac Command → the backend key table (the site that owns
+  physical-key→id mapping), not a platform field threaded through bindings;
+  console input reusing `applyAction` instead of a second dispatch path; the
+  dispatch convergence — bindings fire by design, not by remembered wiring
+  (the ctrl+S missing-dispatch-line bug class is what "fit" looks like).
+- Fitting is legitimate as acknowledged debt: tracked in TODO.md, never
+  annotated "for now" in code (see Code Comments above).
+
 ## Config File Format
 
 - `.txt` files with CamelCase section headers (whitelisted in parser.zig) and snake_case keys
