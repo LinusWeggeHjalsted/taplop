@@ -16124,3 +16124,83 @@ Two riders from the closing reflection, one commit.
   stripe-scope batch flush note); one more convention landed in AGENTS →
   Commit policy (don't split landed commits when the split costs more than
   it buys).
+
+## Doc-symbol staleness checker (machine-walked truth for doc prose)
+
+The drift class: DESIGN/AGENTS/TODO name code symbols in backticks, and
+symbol moves/renames silently orphan the prose — every find so far was by
+accident during unrelated sessions (two during the session-log bundle work,
+two during dispatch convergence). Queued as "build BEFORE the campaign
+editor" — that work adds a wave of new symbols + doc prose, and the
+checker's value compounds from the first new line.
+
+`scripts/doc_symbol_check.sh`: extracts every backticked dot-path from the
+three living docs and checks them against a token corpus of every .zig
+under src/ (raylib seam included — docs name backend symbols) + tools/ +
+build.zig, comments stripped (a symbol only a comment names is stale too —
+comments drift). Two advisory tiers: STALE (the member name exists in no
+source file) and MOVED (the member exists but not in the file the doc's
+first segment names — the recorded drift class). Allowlist for deliberate
+non-symbols: external APIs (`W.STOPSIG`, `std.debug.simple_panic`,
+`LazyPath.getPath`) + the `ui.X` facade meta-placeholder. `--strict` for
+CI-if-ever.
+
+First-run catches, all fixed in the same commit: DESIGN's
+`parser.loadSettings`/`parser.loadDecorationRegistry`/`parser.freeSettings`
+qualifiers (all three live in loaders.zig — the exact drift class the
+checker exists for); the Raylib-seam paragraph rewritten from
+"switches from `rl.loadTexture`" history-phrasing to the as-is
+readFile → loadImageFromMemory flow; two history parentheticals naming the
+removed applyVolumes machinery trimmed to DONE pointers (DESIGN carries
+design, DONE carries history). Convention settled: TODO prose naming a
+NOT-YET-LANDED symbol uses the bare name (`inspect_cursor`) — a backticked
+dot-path is the checker's "exists today" signal. DONE.md is deliberately
+not scanned: history legitimately names dead symbols.
+
+## Unused-pub report (machine-walked truth for the minimize-pub discipline)
+
+The discipline (AGENTS → Code Style) kept losing to human attention —
+`walkingDistance` (pub, zero callers) and the dead
+`ui.tile_highlight_frame_size` facade re-export survived many sessions.
+The compiler flags unused file-private symbols but nothing flags an unused
+pub; this script is the missing checker.
+
+`scripts/unused_pub_report.sh`: walks `pub fn`/`pub var` + typed value
+consts (`pub const name: T = ...`) under src/ — the raylib seam excluded
+(backend interface, not the game's API discipline) — against a per-file
+token corpus of every .zig in the tree as a reference source (comments
+stripped, string literals kept: panic-message names are deliberate). One
+sort+join+awk pass. Three tiers: DEAD (the declaration line is the
+symbol's only occurrence anywhere — deletion candidates, the
+walkingDistance class), UNUSED (internal-only — de-pub candidates:
+file-private restores the compiler's dead-code check), TEST-ONLY
+(cross-file references from test files only — keep pub + note why, per
+AGENTS → Code Style).
+
+Deliberate scope decisions (the false-positive classes found while
+calibrating): plain `=`-form consts (types/aliases) are NOT walked — types
+are consumed without ever being named cross-file (field types, enum
+literals, namespace re-exports), so never-named ≠ dead and word-matching
+cannot judge it; the dead-TYPE class (`DecorationId`) stays code review's.
+`src/crash_dump.zig`'s struct-member pub fns are skipped — zig's
+panic-namespace contract, installed wholesale as
+`pub const panic = crash_dump.panic` and called by compiler-generated code
+that never names them. The ui.zig facade is handled in both directions: a
+src/ui symbol's re-export line is plumbing, not a use; a facade decl
+(`=`-form, unwalked anyway) is only real when a file outside src/ui/ names
+the symbol.
+
+First run (the payoff — 671 decls walked): **11 DEAD** — types.zig's Rect
+placement helpers (`centerX`/`centerY`/`place*`, dead since a refactor),
+element.zig's `totalHeight`/`totalWidth`, loaders'
+`customDecorationSpriteConforms`, `credits_header_gap` + its dead ui.zig
+re-export (the tile_highlight class). **106 UNUSED** — ~60 the ui
+layout-const class (pub + facade re-export + no consumer), plus
+state.zig's `takeSnapshot`/`markWriteDirty`/`writeSettingsToFile`, the
+skill_helpers trio, the loaders `free*` family. **3 TEST-ONLY** —
+`computeMaxDamageRange`, `minimalPngHeader`, `buildAt` (keep pub, note
+why). The cleanup sweep is deliberately NOT part of this landing: each
+de-pub/delete is a per-symbol decision — some UNUSED are forward-looking
+(`freeHub`/`freeCampaign` become load-bearing at campaign-editor slice 1,
+the self-owned-loader rider), and the layout-const class is one mechanical
+sweep whenever it's taken.

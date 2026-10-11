@@ -664,8 +664,7 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   settings)` after the drain. Sfx volume = `sound_effects_volume *
   master_volume` (per-play); music volume = `music_volume * master_volume`,
   applied to every layer per frame — volume-setting changes apply live with
-  NO diff machinery (the old `applyVolumes` + `last_applied_volumes`
-  snapshot were removed when per-frame application landed).
+  NO diff machinery (the removed diff approach's history: DONE → Audio).
 - **Assets:** all audio shipped as OGG (ported from the Unity project's WAVs
   via ffmpeg). Music: `assets/audio/music/ambient.ogg` (looping, ~3.3 MB).
   SFX: `assets/audio/sfx/*.ogg` (~220 KB total). Embedding OGG (not WAV) keeps
@@ -1905,9 +1904,9 @@ at the timestamped path); no PlayerData decode/encode, so it can't corrupt.
 ### Raylib seam
 
 `src/raylib/` stays the ONLY directory that `@import("raylib")`. The texture
-cache switches from `rl.loadTexture("assets/{s}.png")` (filesystem) to
-`rl.loadImageFromMemory(".png", bytes)` from `FileSource.readFile` →
-`rl.loadTextureFromImage` → `rl.unloadImage`. The backend asks the source for
+cache reads bytes via `FileSource.readFile` →
+`rl.loadImageFromMemory(".png", bytes)` → `rl.loadTextureFromImage` →
+`rl.unloadImage`. The backend asks the source for
 bytes; it never touches the filesystem directly. Same pattern holds for audio
 later (`loadMusicStreamFromMemory` / `loadSoundFromWave`).
 
@@ -2011,7 +2010,7 @@ custom-mission support.
 
 ### Settings ownership (loadSettings is self-owned)
 
-`parser.loadSettings` DUPES each `input_name` into the passed allocator, so
+`loaders.loadSettings` DUPES each `input_name` into the passed allocator, so
 the returned `Settings` OWNS its `InputBindings` strings — it does not
 borrow from the raw file buffer. This is the durable fix for the mangled-
 settings bug (where `overlayUserSettings` freed `user_bytes` while the merged
@@ -2020,7 +2019,7 @@ whose result outlives the bytes it was parsed from: make the result
 self-owned so the caller may free the raw bytes immediately. When
 `loadSettings` replaces a base's bindings (overlay path), it frees the base's
 owned strings + slice — so re-overlay doesn't leak the old names.
-`parser.freeSettings(settings, allocator)` frees a `Settings`' bindings
+`loaders.freeSettings(settings, allocator)` frees a `Settings`' bindings
 (strings + slice); used in tests under `testing.allocator`, never in
 production (settings live for the session).
 
@@ -5015,7 +5014,7 @@ dedup-on-load (same as enemies). Custom decorations carry their footprint
 inline in the level file (same format), so official and custom share ONE
 parser path; the registry is never read during gameplay/replay, only when the
 editor adds a new prefab to the palette. Loaded by
-`parser.loadDecorationRegistry` (returns `[]DecorationTypeDef`).
+`loaders.loadDecorationRegistry` (returns `[]DecorationTypeDef`).
 
 ### Occlusion inset (readability for overhang)
 
@@ -5558,8 +5557,8 @@ there takes effect next frame with no apply step. Audio + vsync need an
 explicit apply. **Audio applies per frame with NO diff machinery**: the
 backend's `updateMusic` scales every music layer by the current settings
 each frame and `playSounds` reads the sfx volume per play (the old
-`last_applied_volumes` snapshot + `backend.applyVolumes` diff were removed
-when layered music landed — see Audio). Input
+snapshot + diff approach was removed when layered music landed — see
+Audio). Input
 handlers just mutate `history.settings` + `markWriteDirty`. **Render
 resolution live-applies the same way** (`last_applied_render_resolution`
 snapshot → `backend.applyRenderResolution`, which recreates the render

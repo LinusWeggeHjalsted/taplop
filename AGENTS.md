@@ -243,8 +243,9 @@ d  diff before running them across the tree.** Asserted replacements catch
   unused file-private symbols, so this turns it into a free dead-code detector.
   A `pub` symbol is presumed to be API — nothing flags an unused one — so
   dead `pub` scaffolding (`computeFrameLength`, `DecorationId`) can linger
-  across redesigns. There is no Zig tool that reliably detects unused `pub`
-  symbols; the discipline is the lever. If a symbol needs to be `pub` for a
+  across redesigns. The machine-walked check is
+  `scripts/unused_pub_report.sh` (Dev Tools below) — the discipline plus
+  the report is the lever. If a symbol needs to be `pub` for a
   test (`test "..."` blocks in the same file can see file-private symbols, so
   this is rare), keep it `pub` but note why.
 
@@ -408,6 +409,22 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   with a draining enemy turn. Replay-safe by construction (a normal recorded
   event). See DESIGN → Input (hybrid precedence) for why ctrl+Enter doesn't
   also fire the plain-Enter `confirm`/`dismiss_error` bindings.
+- **Doc-symbol staleness checker** (`scripts/doc_symbol_check.sh`): every
+  backticked dot-path in AGENTS/DESIGN/TODO checked against the source tree —
+  STALE (member name in no .zig file) + MOVED (member exists but not in the
+  file the doc names — the recorded drift class). Advisory by default,
+  `--strict` for a gate. Convention it settles: TODO prose naming a
+  NOT-YET-LANDED symbol uses the bare name — a backticked dot-path is the
+  checker's "exists today" signal. DONE.md is not scanned (history
+  legitimately names dead symbols).
+- **Unused-pub report** (`scripts/unused_pub_report.sh`): the machine-walked
+  minimize-pub check — walks pub fn/var + typed consts under src/ (raylib
+  seam excluded), reports DEAD (deletion candidates — declaration is the
+  only occurrence), UNUSED (de-pub candidates — internal-only), TEST-ONLY
+  (keep pub + note why). Run it when touching pub surface; the findings
+  list informs, each de-pub/delete is a per-symbol decision. Known blind
+  spots (types consumed unnamed, namespace contracts) are documented in
+  the script header.
 
 ## Key Files
 

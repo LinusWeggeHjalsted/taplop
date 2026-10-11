@@ -32,17 +32,11 @@ Test by running `zig build run` and clicking through.
   shipped/placeholder/missing status, resolved against assets/ + the
   persistent dir — the artist's self-updating shopping list; replaces the
   hand-maintained missing-art notes scattered below.
-- **Unused-pub report (session reflection rider)** — the minimize-pub
-  discipline keeps losing to human attention: `walkingDistance` (pub, zero
-  callers) and the dead `ui.tile_highlight_frame_size` re-export both
-  survived many sessions of everyone reading the rule. A
-  scripts/unused_pub_report.sh (the sound_report.sh pattern): walk every
-  `pub` symbol in src/ + src/ui/ (excluding the src/raylib/ seam + test-only
-  pub), grep cross-file references, report the ones nothing imports — the
-  machine-walked-truth version of the rule; run it as a pre-commit hygiene
-  pass. (Both finds are from the outline-shader session — the
-  walkingDistance removal commit + DONE.md, "Tile highlight: the
-  marching-ants sheet retired".)
+- [x] **Unused-pub report (session reflection rider)** — DONE:
+      `scripts/unused_pub_report.sh` (see DONE.md, "Unused-pub report").
+      First run: 11 DEAD + 106 UNUSED + 3 TEST-ONLY — the cleanup sweep is a
+      follow-up decision per symbol (some UNUSED are forward-looking, e.g.
+      the `freeHub`/`freeCampaign` self-owned-loader riders).
 - **Skill targeting null-vs-empty convention doc (session reflection rider)**
   — the prepared-skill bug's root cause: `get_valid_targets_fn` returning
   NULL ("push no event") vs `&.{}` ("push a clearing event") is an
@@ -69,8 +63,8 @@ Test by running `zig build run` and clicking through.
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
-  alt+Enter opens inspect on the tile-cursor entity; lands as an
-  `Action.inspect_cursor` bool — the applyAction arm + the AnytimeInput
+  alt+Enter opens inspect on the tile-cursor entity; lands as a new
+  `inspect_cursor` action — the applyAction arm + the AnytimeInput
   field + the consumption site are the whole wiring (the dispatch fires
   it automatically — DESIGN → Input → New keybind wiring sites) —
   consumed in `handleIdleInput` where the tile cursor is resolved;
@@ -906,20 +900,11 @@ Done items in DONE.md. Open:
       kept its gate for convention) so the gate isn't cargo-culted onto new
       sites. Do NOT churn the per-site gates on their own — fold into the
       next touch of each site.
-- **Doc-symbol staleness checker (machine-walked truth for doc prose).**
-      DESIGN/AGENTS name code symbols (`main.dumpEventLog`,
-      `parser.writeEventLog`, ...) and drift silently when symbols move —
-      two stale refs were found + fixed during the session-log bundle work
-      (nobody re-reads settled prose), and two more surfaced by accident
-      during the dispatch-convergence session (the stale "blocked on NPC
-      art" line; a "silent gap in seven" vs 8 picker arms). The
-      sound_report / art_report pattern applied to docs: a script that
-      extracts backtick-quoted dot-paths from DESIGN/AGENTS/TODO and flags
-      the ones no src file contains (`rg -F` per candidate). Cheap to
-      build, self-maintaining, catches the whole class. Wire into scripts/
-      alongside test.sh; run manually or in CI-if-ever. Build it BEFORE the
-      campaign editor work — that work adds a wave of new symbols + doc
-      prose, and the checker's value compounds from the first new line.
+- [x] **Doc-symbol staleness checker (machine-walked truth for doc prose)**
+      — DONE: `scripts/doc_symbol_check.sh` (see DONE.md, "Doc-symbol
+      staleness checker"). First run caught real drift (DESIGN's
+      `parser.load*`/`parser.free*` qualifiers — all in loaders.zig) and
+      settled the future-symbol convention (bare names in TODO prose).
 - **Style pass over the Tier A session's lines — DEFERRED (owner
       undecided).** Scope discovery (cleanup session): the "~95-char wrap
       convention" isn't an enforced convention — it's in no doc, ~2,000+
