@@ -2942,6 +2942,27 @@ against a scratch `$ZIGLOP_DATA` dir: a dropped `skills/stab_layer.wav`
 reports `shadowed (.wav)`. Current state: 11 shipped, 174 missing — the
 designer's complete, honest work list.
 
+### Unity audio port completion (DONE)
+
+The five Unity sounds the no-fallbacks slice pruned came back, re-homed
+where the layered wiring now expects them (ffmpeg libvorbis q5, ~160kbps,
+matching the shipped set's profile):
+
+- **Equip / Salvage / LearnSkill** → the item-action cue layers
+  (`assets/audio/sfx/items/*_layer`). `item_base` has NO Unity source
+  (Unity played these as plain one-shots) and stays MISSING for the
+  designer; the layers play standalone until it's authored — the base and
+  layer of a cue play independently, so the port is audible as-is.
+- **Skip** → `assets/audio/sfx/buttons/skip_layer` (the skip-step button,
+  Space).
+- **Menu deliberately NOT ported** (author decision): it was the one-size
+  "menu opened" sound of the simpler pre-layering design. That role is now
+  distributed across per-action release layers (new_game / open_settings /
+  open_credits / toggle_skills / toggle_inventory / toggle_gear), and
+  duplicating it to six paths would re-import the old design's shape
+  instead of letting each action's layer be authored deliberately — the
+  "belong, don't fit" call (AGENTS → Code Style).
+
 ## Animation
 
 ### One-shot anim infrastructure + skill-icon pop (DONE)
