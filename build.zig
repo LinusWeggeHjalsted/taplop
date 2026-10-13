@@ -406,6 +406,29 @@ pub fn build(b: *std.Build) void {
     sound_report_run.setCwd(b.path("."));
     const sound_report_step = b.step("sound-report", "Generate sound_report.md (the wired-sound asset inventory)");
     sound_report_step.dependOn(&sound_report_run.step);
+
+    // === Gradient contrast report (scripts/gradient_report.sh) ===
+    // A host tool that reads data/color_themes.txt through the game's own
+    // parser + loader and writes gradient_report.md — the artist's
+    // perceptual-spacing reference: ΔE76 per ramp step, WCAG contrast on
+    // the renderer's structural seams, flags + suggested repairs for
+    // "too close" colors. Same module needs as the game's loader chain.
+    const gradient_report_exe = b.addExecutable(.{
+        .name = "gradient_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/gradient_report.zig"),
+            .target = b.resolveTargetQuery(.{}), // always the build host
+            .optimize = .Debug,
+        }),
+    });
+    gradient_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    gradient_report_exe.root_module.addImport("build_info", build_info_module);
+    gradient_report_exe.root_module.addImport("generated_assets", assets_module);
+    gradient_report_exe.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
+    const gradient_report_run = b.addRunArtifact(gradient_report_exe);
+    gradient_report_run.setCwd(b.path("."));
+    const gradient_report_step = b.step("gradient-report", "Generate gradient_report.md (the gradient spacing + seam contrast report)");
+    gradient_report_step.dependOn(&gradient_report_run.step);
 }
 
 /// Computes the game_version string at configure time:
