@@ -424,7 +424,8 @@ pub fn buildEditorSpritePicker(
                 // The scan minted the namespaced id (session-owned —
                 // MissionSprite.stored_id); the cell REFERENCES it. This
                 // slice is what rides the pick payload
-                // (`clicked_editor_sprite`), so it must outlive the frame —
+                // (`clicked_payload`'s editor_sprite variant), so it must
+                // outlive the frame —
                 // the per-frame allocPrint it replaced died at the render
                 // reset. The kind-prefixed graphic_id below is
                 // render-scoped (view-internal, dies with the frame) —
@@ -547,21 +548,23 @@ pub fn buildEditorSpritePicker(
         const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
         const tab_width = label_width + 2 * ui_gap;
         const active = spec.tab == tab;
-        try elements.append(allocator, .{ .nine_slice_panel = .{
-            .sprite_id = "ui/panel",
-            .screen_position = .{ .x = tab_x, .y = origin.y },
-            .width = tab_width,
-            .height = middle_panel_header_height,
-            // Darkest always (the background-panel class) — the active
-            // tab's highlight outline is the indication, no tint change.
-            .color = active_theme.darkest,
-        } });
+        try elements.append(allocator, .{
+            .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = .{ .x = tab_x, .y = origin.y },
+                .width = tab_width,
+                .height = middle_panel_header_height,
+                // Darkest always (the background-panel class) — the active
+                // tab's highlight outline is the indication, no tint change.
+                .color = active_theme.darkest,
+            },
+        });
         try elements.append(allocator, .{ .button = .{
             .screen_position = .{ .x = tab_x, .y = origin.y },
             .width = tab_width,
             .height = middle_panel_header_height,
             .action = .select_editor_sprite_tab,
-            .editor_sprite_tab = spec.tab,
+            .payload = .{ .editor_sprite_tab = spec.tab },
             .highlighted = active,
         } });
         try elements.append(allocator, .{ .text_label = .{
@@ -816,7 +819,7 @@ pub fn buildEditorThemePicker(
             .width = row_rect.width,
             .height = row_rect.height,
             .action = .select_editor_level_gradient,
-            .editor_gradient = @intCast(index),
+            .payload = .{ .editor_gradient = @intCast(index) },
             .highlighted = current_index != null and current_index.? == index,
         } });
         // A VISIBLE current marker (Button.highlighted doesn't render —
@@ -996,7 +999,7 @@ pub fn buildEditorFootprintEditor(
             .width = scaled_tile,
             .height = scaled_tile,
             .action = .toggle_editor_footprint_tile,
-            .editor_footprint_tile = @intCast(cell_index),
+            .payload = .{ .editor_footprint_tile = @intCast(cell_index) },
         } });
     }
 
@@ -1108,7 +1111,7 @@ fn emitPickerSpriteCell(
         .width = cell_rect.width,
         .height = cell_rect.height,
         .action = pick_action,
-        .editor_sprite = sprite_id,
+        .payload = .{ .editor_sprite = sprite_id },
         .color = button_color,
         .highlighted = highlighted,
         .tooltip = .{ .header = try spanRow(allocator, text(label)) },
@@ -1206,7 +1209,7 @@ fn emitPickerSkillCell(
         .width = cell_rect.width,
         .height = cell_rect.height,
         .action = .select_editor_utility_skill,
-        .editor_skill = skill_id,
+        .payload = .{ .editor_skill = skill_id },
         .color = frame_color,
         .highlighted = highlighted,
         .tooltip = tooltip,
@@ -1292,12 +1295,12 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_editor_utility_skill) {
             picker_buttons += 1;
-            if (button.editor_skill == null) {
+            if (button.payload.?.editor_skill == null) {
                 none_highlighted = button.highlighted;
             } else if (button.highlighted) {
-                highlighted_skill = button.editor_skill;
+                highlighted_skill = button.payload.?.editor_skill;
             }
-            if (button.editor_skill == .blink) saw_blink_cell = true;
+            if (button.payload.?.editor_skill == .blink) saw_blink_cell = true;
         },
         .text_label => |label| {
             if (std.mem.eql(u8, label.text, "Assign Slot 5")) saw_header = true;
@@ -1311,9 +1314,10 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     try std.testing.expect(saw_header);
     // No weapon-skill payload anywhere.
     for (elements.items) |element| switch (element) {
-        .button => |button| try std.testing.expect(
-            button.editor_skill == null or utility_skills.isUtilitySkill(button.editor_skill.?),
-        ),
+        .button => |button| try std.testing.expect(button.payload == null or switch (button.payload.?) {
+            .editor_skill => |skill| skill == null or utility_skills.isUtilitySkill(skill.?),
+            else => true,
+        }),
         else => {},
     };
 
@@ -1340,9 +1344,9 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
         var player_highlighted: ?types.SkillId = null;
         for (player_elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_utility_skill and
-                button.highlighted and button.editor_skill != null)
+                button.highlighted and button.payload.?.editor_skill != null)
             {
-                player_highlighted = button.editor_skill;
+                player_highlighted = button.payload.?.editor_skill;
             },
             else => {},
         };
@@ -1387,11 +1391,11 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_sprite) {
                 pick_buttons += 1;
-                if (std.mem.eql(u8, button.editor_sprite.?, "player")) saw_player = true;
-                if (button.highlighted) highlighted = button.editor_sprite;
+                if (std.mem.eql(u8, button.payload.?.editor_sprite, "player")) saw_player = true;
+                if (button.highlighted) highlighted = button.payload.?.editor_sprite;
             } else if (button.action == .select_editor_sprite_tab) {
                 // Tabs: Mission + Official, the active one highlighted.
-                if (button.editor_sprite_tab.? == .official) {
+                if (button.payload.?.editor_sprite_tab == .official) {
                     try std.testing.expect(button.highlighted);
                 } else {
                     try std.testing.expect(!button.highlighted);
@@ -1436,7 +1440,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         var saw_minion_graphic = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_sprite) {
-                payloads[pick_buttons] = button.editor_sprite.?;
+                payloads[pick_buttons] = button.payload.?.editor_sprite;
                 pick_buttons += 1;
             },
             .image => |image| {
@@ -1541,7 +1545,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_decoration_sprite) {
                 pick_buttons += 1;
-                if (button.highlighted) highlighted = button.editor_sprite;
+                if (button.highlighted) highlighted = button.payload.?.editor_sprite;
             },
             .image => |image| {
                 if (std.mem.eql(u8, image.sprite_id, "decorations/tree_1")) tree_base_image = image;
@@ -1594,7 +1598,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_decoration_sprite) {
                 pick_buttons += 1;
-                payload = button.editor_sprite;
+                payload = button.payload.?.editor_sprite;
             },
             .image => |image| {
                 if (std.mem.eql(u8, image.sprite_id, "decorations/custom/artists_den/banner")) {
@@ -1654,8 +1658,8 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_layer) {
                 pick_buttons += 1;
-                if (std.mem.eql(u8, button.editor_sprite.?, "player")) saw_player = true;
-                if (button.highlighted) highlighted = button.editor_sprite;
+                if (std.mem.eql(u8, button.payload.?.editor_sprite, "player")) saw_player = true;
+                if (button.highlighted) highlighted = button.payload.?.editor_sprite;
             },
             else => {},
         };
@@ -1774,7 +1778,7 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_entity_sprite) {
                 pick_buttons += 1;
-                if (std.mem.eql(u8, button.editor_sprite.?, "custom/test_m/hero")) saw_hero = true;
+                if (std.mem.eql(u8, button.payload.?.editor_sprite, "custom/test_m/hero")) saw_hero = true;
             },
             else => {},
         };
@@ -1954,7 +1958,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
             .button => |button| {
                 if (button.action == .toggle_editor_footprint_tile) {
                     toggle_buttons += 1;
-                    try std.testing.expect(button.editor_footprint_tile != null);
+                    try std.testing.expect(button.payload != null);
                 }
                 if (button.action == .confirm_editor_footprint) saw_confirm = true;
                 if (button.action == .close_editor_picker) saw_close = true;
@@ -2136,7 +2140,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         // The strips are FIXED-SIZE (6 × 128px swatch blocks, 128px tall),
         // not stretched to the overlay — the row's button spans the whole
         // strip (the 6 blocks beneath it are 128px each).
-        try std.testing.expectEqual(@as(?u32, 0), elements.items[9].button.editor_gradient);
+        try std.testing.expectEqual(@as(u32, 0), elements.items[9].button.payload.?.editor_gradient);
         try std.testing.expectEqual(6 * theme_picker_swatch_size, elements.items[9].button.width);
         try std.testing.expectEqual(theme_picker_swatch_size, elements.items[9].button.height);
         try std.testing.expectEqual(theme_picker_swatch_size, elements.items[3].solid_rect.width);
@@ -2163,7 +2167,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         try std.testing.expect(close_seen);
         try std.testing.expectEqual(@as(usize, 4), frame_rects);
         try std.testing.expect(current_button != null);
-        try std.testing.expectEqual(@as(?u32, 2), current_button.?.editor_gradient);
+        try std.testing.expectEqual(@as(u32, 2), current_button.?.payload.?.editor_gradient);
     }
 
     // Enemy role on auto: the current index is the DERIVED one (wheel 2,
@@ -2189,7 +2193,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             else => {},
         };
         try std.testing.expect(current_button != null);
-        try std.testing.expectEqual(@as(?u32, 0), current_button.?.editor_gradient);
+        try std.testing.expectEqual(@as(u32, 0), current_button.?.payload.?.editor_gradient);
     }
 }
 
@@ -2262,7 +2266,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
     };
     try std.testing.expectEqual(visible, pick_buttons);
     try std.testing.expect(current_button != null);
-    try std.testing.expectEqual(@as(?u32, gradient_count - 1), current_button.?.editor_gradient);
+    try std.testing.expectEqual(@as(u32, gradient_count - 1), current_button.?.payload.?.editor_gradient);
     try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
 
     // An offset below 0: clamps to the top — the first row is the first
@@ -2284,7 +2288,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
     var top_highlighted: usize = 0;
     for (top_elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_editor_level_gradient) {
-            if (top_first == null) top_first = button.editor_gradient;
+            if (top_first == null) top_first = button.payload.?.editor_gradient;
             if (button.highlighted) top_highlighted += 1;
         },
         else => {},

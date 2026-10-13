@@ -16510,3 +16510,92 @@ while reshaping: the walker landing had accidentally dropped the
 curated dumps' trailing newline (consecutive dumps concatenated);
 restored. Design updated in place (DESIGN → Input → Console input →
 the dump-paths bullet's class paragraph + the command-set list).
+
+## Input: clicked_* payload consolidation (the ButtonPayload union)
+
+The 28 `clicked_*` payload fields (27 on `AnytimeInput` +
+`IdleInput.clicked_save_row`, set by ~25 hand-wired relay lines in
+main.zig, each field FOUR touch points — element field, input field,
+dispatch line, handler read — with zero compiler help for forgetting
+one) collapsed into ONE tagged union, `types.ButtonPayload`, riding
+`PlayerInput.clicked_payload`. The design conversation that settled the
+shape (the interesting part):
+
+- **The category-error insight (where the blur came from).** Asking
+  "does the payload belong to AnytimeInput or IdleInput?" was asking
+  data to participate in an action classification. The boundary
+  classifies ACTIONS by when they may consume; the payload never
+  consumes anything by itself, so it has no consumption timing to
+  classify — it inherits its action's. `PlayerInput` already had the
+  family for frame-level facts transcending the classification
+  (`pointer`, `modifiers`, the two outcomes, `fired_actions` — itself
+  action-LAYER data correctly living above the split); the payload
+  joined it. This retroactively names why `fired_actions` lives where
+  it lives, and gives every future input datum a placement test.
+  Recorded as DESIGN → Input → the PlayerInput placement rule.
+- **Two near-misses the rule flags and explains (both stay):**
+  `IdleInput.tile_clicked` fails the INERT half (handleIdleInput
+  mutates it mid-consumption — Enter folds the cursor into it — a
+  resolution value, not a frame fact); `IdleInput.skill_slot_selected`
+  is not click identity (the `.skill_slot_N` action itself encodes it;
+  the payload channel exists only when the action does NOT encode the
+  identity, which is also why the Digit bridges differ — they map a
+  different keyboard action onto the click action + payload).
+- **SlotRef purity.** `SlotRef.save_file` existed in the drag-domain
+  union purely to carry the save-row click payload ("Save rows are
+  never drag sources" was an explicit dead guard arm in
+  dragToOrchestrator) — a fit by SlotRef's own doc comment. Save rows
+  now ride `.save_row`; `SlotRef` is back to exactly its four drag
+  domains, and `slotContentSize`/`slotContentIcon`/view's drag-ghost
+  switch dropped their save_file arms.
+- **Compound identities are one struct variant, not two fields**: a
+  weapon-type cell is `{ gear_slot, weapon_type }` (the five
+  two-payload consumption sites forced this); item-kind cells carry
+  `{ kind, weapon_type: ?WeaponType = null }` (non-weapon cells leave
+  it null — the old separate-field defaulting, inside the variant).
+  Null-MEANINGFUL identities keep the optional inside the variant
+  (`.editor_layer` null = the picker's add mode, `.editor_skill` null
+  = the picker's None cell — `payloadAs` flattens the inner optional so
+  call sites read exactly like the old per-field optionals).
+- **The table + fail-fast + no-orphan walk.** `types.actionButtonPayload`
+  is the `actionBindingContexts` pattern applied to payloads: an
+  exhaustive switch (payload-less actions NAMED in grouped null arms, no
+  else — a new Action is a compile error until its payload story is
+  decided) mapping each action to its one variant; main.zig's relay (now
+  ONE line) checks the button's payload against it and panics on a
+  mismatch — the exact silent-eat class (`orelse return` eating a
+  wrong/missing payload) this whole seam exists to kill. A comptime
+  walk makes a variant no action names a compile error (dead union
+  members, the minimize-pub/dead-code ethos applied to variants).
+  Console `action` commands still carry no payload — a payload-needing
+  action fired that way no-ops at the arm by design (the payload IS
+  the click); `payloadAs` is the belt-and-suspenders behind the relay.
+
+Numbers: element.zig's `Button` lost 23 optional payload fields for
+one `payload: ?ButtonPayload`; input.zig lost 27+1 fields for one on
+`PlayerInput`; main.zig's ~25 relay lines became one;
+input_handlers.zig gained the `payloadAs`/`PayloadAsType` consumption
+seam (its `@setEvalBranchQuota` — the comptime field walk crosses the
+default eval-branch quota once instantiated for many variants); the
+five `applyAction` Digit bridges construct variants. No event-log,
+file-format, or version impact — the payload is input-side transient
+and never crosses the input→event seam.
+
+The test sweep (109 sites in handler_tests_editor.zig) validated the
+dry-run discipline's own warning: a naive per-call regex block
+(`.*?\},`) broke on `.clicked_editor_tool = .{ .entity_type = 1 }`
+(inner braces end the "block" early) — the inventory pass surfaced it
+before any write (the `select_editor_tool` tuple was missing). The
+real sweep is a brace-depth state machine driven by the ACTION in the
+call (the action names the variant, compounds collect their two fields,
+anything unexpected asserts). The no-payload call sites (the other
+argument-count class) were swept shape-by-shape with the compiler as
+the checklist. 824/824 pass.
+
+Rider: the Action enum's doc comments carried 41
+`AnytimeInput.clicked_X` references — all swept to the
+payload-variant phrasing in the same change (a doc naming a dead
+field reads as truth). DESIGN → Input gained the two bullets (Button
+payloads + the placement rule); the load-save / level-editor /
+settings / console sections' payload references updated to the union
+spelling.

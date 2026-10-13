@@ -465,9 +465,6 @@ pub fn view(
             .height = drag.size,
         };
         switch (drag.source) {
-            // Save rows never start drags (slotContentIcon is null for them);
-            // the arm exists only to satisfy the variant switch.
-            .save_file => {},
             .skill_bar, .learned_skill => {
                 const bg_color = p[@min(@as(u32, 3), types.gradient_color_count - 1)];
                 ui_elements.append(frame_allocator, .{ .image = .{
@@ -488,15 +485,17 @@ pub fn view(
                 } }) catch @panic("failed to append drag ghost icon");
             },
             .inventory, .gear => {
-                ui_elements.append(frame_allocator, .{ .image = .{
-                    .sprite_id = drag.icon_sprite_id,
-                    .screen_position = ghost_rect.position(),
-                    .width = drag.size,
-                    .height = drag.size,
-                    .color = icon_color,
-                    // Follows the pointer; must not occlude drop-target hit-testing.
-                    .blocks_input = false,
-                } }) catch @panic("failed to append drag ghost");
+                ui_elements.append(frame_allocator, .{
+                    .image = .{
+                        .sprite_id = drag.icon_sprite_id,
+                        .screen_position = ghost_rect.position(),
+                        .width = drag.size,
+                        .height = drag.size,
+                        .color = icon_color,
+                        // Follows the pointer; must not occlude drop-target hit-testing.
+                        .blocks_input = false,
+                    },
+                }) catch @panic("failed to append drag ghost");
             },
         }
     }
@@ -1630,13 +1629,15 @@ fn buildWorldOverlays(
                     font_metrics,
                     text,
                 );
-                overlays.append(allocator, .{ .floating_text = .{
-                    .text = text,
-                    .screen_position = pos,
-                    .font_size = number_font_size,
-                    // Damage reads red regardless of magnitude — including 0.
-                    .color = ui.negative_color,
-                } }) catch @panic("failed to append world overlay");
+                overlays.append(allocator, .{
+                    .floating_text = .{
+                        .text = text,
+                        .screen_position = pos,
+                        .font_size = number_font_size,
+                        // Damage reads red regardless of magnitude — including 0.
+                        .color = ui.negative_color,
+                    },
+                }) catch @panic("failed to append world overlay");
             },
             .heal_number => |info| {
                 if (info.entity_index >= level.entities.len) continue;
@@ -1656,13 +1657,15 @@ fn buildWorldOverlays(
                     font_metrics,
                     text,
                 );
-                overlays.append(allocator, .{ .floating_text = .{
-                    .text = text,
-                    .screen_position = pos,
-                    .font_size = number_font_size,
-                    // Heals read green regardless of magnitude — including 0.
-                    .color = ui.positive_color,
-                } }) catch @panic("failed to append world overlay");
+                overlays.append(allocator, .{
+                    .floating_text = .{
+                        .text = text,
+                        .screen_position = pos,
+                        .font_size = number_font_size,
+                        // Heals read green regardless of magnitude — including 0.
+                        .color = ui.positive_color,
+                    },
+                }) catch @panic("failed to append world overlay");
             },
         }
     }
@@ -1893,15 +1896,11 @@ fn entityDrawable(
         const art_top_y: f32 = if (maybe_bounds) |maybe| if (maybe) |bounds|
             @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
         else
-            @as(f32, @floatFromInt(top_left.y))
-        else
-            @as(f32, @floatFromInt(top_left.y));
+            @as(f32, @floatFromInt(top_left.y)) else @as(f32, @floatFromInt(top_left.y));
         const art_bottom_y: f32 = if (maybe_bounds) |maybe| if (maybe) |bounds|
             @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.bottom.?)) * zoom
         else
-            @as(f32, @floatFromInt(top_left.y)) + draw_height
-        else
-            @as(f32, @floatFromInt(top_left.y)) + draw_height;
+            @as(f32, @floatFromInt(top_left.y)) + draw_height else @as(f32, @floatFromInt(top_left.y)) + draw_height;
         const center_y: f32 = (art_top_y + art_bottom_y) / 2;
         const drawn_size: f32 = @as(f32, @floatFromInt(effect_overlay_size_native)) * zoom;
         const overlay_top_left: types.ScreenPosition = .{
@@ -3147,7 +3146,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
     // An alive, active, hostile enemy → pole only (the banner is null).
     {
         const enemy = types.Entity{ .team = 1, .is_active = true };
-        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{ .{ .x = 0, .y = 0 } });
+        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{.{ .x = 0, .y = 0 }});
         state_.level.?.level_end = .{ .x = 2, .y = 2 };
         var session = state.SessionState{};
         const view_state = runView(&state_, &session, arena, &harness);
@@ -3159,7 +3158,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
     {
         var enemy = types.Entity{ .team = 1, .is_active = true };
         enemy.current_health = 0;
-        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{ .{ .x = 0, .y = 0 } });
+        var state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{.{ .x = 0, .y = 0 }});
         state_.level.?.level_end = .{ .x = 2, .y = 2 };
         var session = state.SessionState{};
         const view_state = runView(&state_, &session, arena, &harness);
@@ -3169,7 +3168,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
     }
     // No enemies at all → the banner waves.
     {
-        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{ .{ .x = 0, .y = 0 } });
+        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{.{ .x = 0, .y = 0 }});
         state_.level.?.level_end = .{ .x = 2, .y = 2 };
         var session = state.SessionState{};
         const view_state = runView(&state_, &session, arena, &harness);

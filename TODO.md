@@ -62,24 +62,15 @@ Test by running `zig build run` and clicking through.
 - **Gear sprites** — the last unlanded entity sub-layer (effect overlays,
   sprite animation, ground items, decorations all DONE — history in
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
-- **`clicked_*` payload consolidation (candidate, found during the
-  observability-stash work; opinion strengthened on close inspection)** —
-  `AnytimeInput` carries 28 `clicked_*` payload fields, all
-  same-frame-dead, all hand-wired as ~25 copy-paste lines in main.zig's
-  button-release relay, several with literally the same doc comment
-  ("same payload-rides-along pattern as `clicked_setting`"). The
-  concept "a button's payload" has no seam — it has 28. Worse than it
-  looks: every field is FOUR hand-wired touch points (element field,
-  AnytimeInput field, dispatch line, handler read) with zero compiler
-  help for forgetting one — the ctrl+S missing-dispatch bug class's
-  sibling (forgetting the dispatch line silently drops the payload;
-  the handler's `orelse return` eats it). Clean shape: ONE tagged-union
-  payload field (the `SlotRef` pattern already on the UI side) +
-  buttons carry one payload union; adding a payload kind becomes one
-  union variant (the switch forces every handler site to consider it).
-  Bonus: the dump renders one meaningful payload line instead of 28
-  mostly-null fields. ~30–50 sites; orthogonal to any current work —
-  do it the next time the dispatch relay is touched for real.
+- [x] **`clicked_*` payload consolidation** — DONE: ONE tagged union
+      (`types.ButtonPayload`) riding `PlayerInput.clicked_payload`, the
+      28 per-field splits + ~25 relay lines collapsed to one relay line
+      with a fail-fast `actionButtonPayload` check + a comptime no-orphan
+      walk; `SlotRef` back to pure drag domains (save rows ride
+      `.save_row`). The placement rule (data rides the frame, behavior
+      rides its classification) + the two documented near-misses:
+      DESIGN → Input (Button payloads + the PlayerInput placement
+      rule); history in DONE.md.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new

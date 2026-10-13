@@ -131,7 +131,7 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    const levels = [_]types.EditorLevel{ .{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
@@ -158,7 +158,7 @@ test "editor clamp snapshot: refreshed on level switch, held across tile edits, 
     var harness = Harness.init(backing.allocator());
 
     const level_0_tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 5, .y = 2 } };
-    const level_1_tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 } };
+    const level_1_tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
     const levels = [_]types.EditorLevel{
         .{ .level_tiles = &level_0_tiles },
         .{ .level_tiles = &level_1_tiles },
@@ -219,7 +219,7 @@ test "level-tab click on the active tab fires nothing (no dead undo step)" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 } };
+    const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
     const levels = [_]types.EditorLevel{
         .{ .level_tiles = &tiles },
         .{},
@@ -237,8 +237,7 @@ test "level-tab click on the active tab fires nothing (no dead undo step)" {
     // side effect).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level,
-        .clicked_editor_level = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_level = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
@@ -246,8 +245,7 @@ test "level-tab click on the active tab fires nothing (no dead undo step)" {
     // Positive control: clicking the OTHER tab fires the switch.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level,
-        .clicked_editor_level = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_level = 1 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.active_level_index);
 }
@@ -257,7 +255,7 @@ test "player_toggle_editor_inspector: flips the open state, undo/redo restores" 
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    const levels = [_]types.EditorLevel{ .{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
     // Open by default (an empty type isn't useful until populated — the
@@ -460,10 +458,14 @@ test "editor_delete_type (entity): removes the type + placements across levels, 
 
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
-            .type_kind = .entity,
-            .type_id = 1, // Brute
-        } } }},
+        &.{.{
+            .player_input_event = .{
+                .player_delete_editor_type = .{
+                    .type_kind = .entity,
+                    .type_id = 1, // Brute
+                },
+            },
+        }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1103,10 +1105,14 @@ test "player_place_editor_entity: existing enemy is retyped in place, same type 
     // type_id, placement count unchanged.
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
-            .type_id = 1, // Wolf
-            .position = .{ .x = 1, .y = 1 },
-        } } }},
+        &.{.{
+            .player_input_event = .{
+                .player_place_editor_entity = .{
+                    .type_id = 1, // Wolf
+                    .position = .{ .x = 1, .y = 1 },
+                },
+            },
+        }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1657,7 +1663,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
             .layer_index = 0,
             .sprite = "plate",
             .color_index = 4,
-            } } }},
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1672,7 +1678,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
         &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
             .target = target,
             .layer_index = 0,
-            } } }},
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1688,7 +1694,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
             .target = .player_def,
             .sprite = "hood",
             .color_index = 2,
-            } } }},
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -1698,7 +1704,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
         &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
             .target = target,
             .layer_index = 7,
-            } } }},
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2048,10 +2054,14 @@ test "player_place_editor_item: existing item is retyped in place, same type is 
     // type_id, placement count unchanged.
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
-            .type_id = 1, // Boots
-            .position = .{ .x = 1, .y = 1 },
-        } } }},
+        &.{.{
+            .player_input_event = .{
+                .player_place_editor_item = .{
+                    .type_id = 1, // Boots
+                    .position = .{ .x = 1, .y = 1 },
+                },
+            },
+        }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -2626,11 +2636,11 @@ test "editor tool click with an empty plan fires no event" {
     runToIdle(&history);
     history.current_state.editor.?.active_tool = .tile;
 
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Positive control: empty ground fires the paint.
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 }
 
@@ -2917,13 +2927,13 @@ test "tile-tool idle arm defers while a paint drag owns the press" {
     // already claimed, or a keyboard confirm) fires nothing — the gesture
     // owns the pointer press.
     history.session.ui_state.editor_tile_drag = true;
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // No drag: the same click fires (the keyboard confirm-at-cursor path —
     // the arm still works when no drag is in progress).
     history.session.ui_state.editor_tile_drag = false;
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 }
 
@@ -2934,7 +2944,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
 
     // Start from an editor state with a distinguishable mission (crafted
     // — the consumption site doesn't care how the editor was reached).
-    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 } };
+    const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
     const levels = [_]types.EditorLevel{.{ .name = "Old", .level_tiles = &tiles }};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
@@ -2946,7 +2956,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     // same AnytimeInput flag): open_editor with a null path — the fresh-
     // mission shape (one template level, the open_editor-null identity
     // with no uuid).
-    input_handlers.handleAnytimeInput(&history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .new_editor_mission = true }, null, .{ .x = 0, .y = 0 }, &.{});
     // The consumption drains inline (pushPlayerActionAndDrain); the idle
     // point for the undo step is the LIVE loop's post-update record — the
     // test's runToIdle mirrors it (stack already empty; the call records).
@@ -2970,7 +2980,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     // recorded player action, no editor to replace).
     var menu_history = harness.newHistory(null);
     runToIdle(&menu_history);
-    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&menu_history);
     try testing.expect(menu_history.current_state.screen == .editor);
     try testing.expect(menu_history.current_state.editor != null);
@@ -2979,7 +2989,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     // save_editor_mission discipline).
     menu_history.current_state.screen = .hub;
     menu_history.current_state.editor = null;
-    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(menu_history.current_state.screen == .hub);
     try testing.expect(menu_history.current_state.editor == null);
     try testing.expectEqual(@as(usize, 0), menu_history.current_state.event_stack.len);
@@ -3265,7 +3275,7 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
 
     // Through the input layer: no player action fires (no dead undo step),
     // and the protected selection is untouched.
-    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
 
@@ -3273,7 +3283,7 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
     // orchestrator.
     const with_deletable = [_]types.Selectable{ .player_start, .{ .tile = .{ .x = 0, .y = 0 } }, .{ .tile = .{ .x = 2, .y = 2 } } };
     history.current_state.editor.?.selection = &with_deletable;
-    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(history.current_state.event_stack[0].player_input_event == .player_delete_editor_selection);
 }
@@ -3299,13 +3309,13 @@ test "player_clear_editor_selection: ctrl+D clears everything, gated on a nonemp
 
     // An empty selection never fires (no dead undo step).
     history.current_state.editor.?.selection = &.{};
-    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A nonempty selection fires the orchestrator; the single clear event
     // empties it; one undo step restores the selection.
     history.current_state.editor.?.selection = &seeded_selection;
-    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(history.current_state.event_stack[0].player_input_event == .player_clear_editor_selection);
     runToIdle(&history);
@@ -3359,7 +3369,7 @@ test "player_select_editor_all: ctrl+A selects everything, skips present, one un
 
     // ctrl+A adds the other 7, skipping the present two — one player
     // action, one undo step.
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(
         history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
@@ -3391,7 +3401,7 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
     };
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -3506,7 +3516,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     // UiState.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqual(types.EditorPickerTarget.entity_sprite, history.current_state.editor.?.picker.?);
     try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
@@ -3521,8 +3531,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     // player_set_editor_entity_sprite event (on the undo timeline).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-        .clicked_editor_sprite = "custom/artists_den/boss",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqualStrings(
@@ -3544,11 +3553,10 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     // Same-value pick closes without recording (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-        .clicked_editor_sprite = "skeleton_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "skeleton_1" }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
@@ -3556,11 +3564,10 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     // authored grayscale for gradient tinting).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-        .clicked_editor_sprite = "wolf",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "wolf" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings(
         "wolf",
@@ -3571,15 +3578,14 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     // Tab switch: a direct UiState write.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_sprite_tab,
-        .clicked_editor_sprite_tab = .official,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite_tab = .official }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(types.EditorSpritePickerTab.official, history.session.ui_state.editor_picker_sprite_tab);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
 }
 
@@ -3610,11 +3616,10 @@ test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-        .clicked_editor_sprite = "custom/artists_den/boss",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     // The pick visibly didn't take: the sprite is unchanged and no undo
@@ -3649,8 +3654,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     // the base-sprite picker opens on it (Mission tab, the mission scan).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
-        .clicked_editor_group = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_group = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const editor = history.current_state.editor.?;
@@ -3679,8 +3683,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     // stale entity picker from the previous click closes).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
-        .clicked_editor_group = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_group = 1 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.decoration_types.len);
     try testing.expectEqualStrings(
@@ -3697,8 +3700,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     // the decoration picker from the previous click closes.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
-        .clicked_editor_group = 2,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_group = 2 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.item_types.len);
     try testing.expectEqualStrings(
@@ -3712,8 +3714,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     // picker).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
-        .clicked_editor_group = 3,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_group = 3 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types.len);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -3744,8 +3745,7 @@ test "palette + click: the group's window scrolls to the newly added tool" {
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
-        .clicked_editor_group = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_group = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     try testing.expectEqual(@as(usize, 10), history.current_state.editor.?.entity_types.len);
@@ -3781,8 +3781,7 @@ test "palette tool delete button: input arm deletes the type + placements; fixed
     // active tool (it WAS the deleted one) resets to select.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_palette_type,
-        .clicked_editor_tool = .{ .entity_type = 1 },
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_tool = .{ .entity_type = 1 } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const editor = history.current_state.editor.?;
@@ -3801,8 +3800,7 @@ test "palette tool delete button: input arm deletes the type + placements; fixed
     // targeted click does nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_palette_type,
-        .clicked_editor_tool = .select,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_tool = .select }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.entity_types.len);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -3955,7 +3953,7 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     // The top-bar "+": the template level lands + becomes the active tab.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_level,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.active_level_index);
@@ -3964,8 +3962,7 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     // levels above the delete.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_level,
-        .clicked_editor_level = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_level = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels.len);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.active_level_index);
@@ -3973,8 +3970,7 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     // Down to one level...
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_level,
-        .clicked_editor_level = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_level = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
 
@@ -3983,8 +3979,7 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     // reached).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_level,
-        .clicked_editor_level = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_level = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -4014,7 +4009,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
     // (the dump_event_log class; no undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .save_editor_mission = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
@@ -4063,7 +4058,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
     const first_dir_path = try arena.dupe(u8, first_save.dir_path);
     input_handlers.handleAnytimeInput(&history, .{
         .save_editor_mission = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     const second_save = history.session.editor_saved_mission.?;
     try testing.expectEqualStrings(first_uuid, second_save.uuid);
@@ -4120,7 +4115,7 @@ test "editor save: a renamed mission carries its custom art + heals stale stem n
 
     input_handlers.handleAnytimeInput(&history, .{
         .save_editor_mission = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.session.pendingError() == null);
 
@@ -4178,7 +4173,7 @@ test "editor export: saves first, bundles configs + custom sprites into the zip"
     // The options-button path (an anytime side effect; the save runs first).
     input_handlers.handleAnytimeInput(&history, .{
         .export_editor_mission = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     // The save happened (memo set) + the zip landed at
@@ -4241,7 +4236,7 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     // Open: the decoration target's sprite row opens the DECORATION picker.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget.decoration_sprite,
         history.current_state.editor.?.picker.?,
@@ -4251,8 +4246,7 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     // color, layers — and the palette label tracks the sprite.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "tree_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     const adopted = history.current_state.editor.?.decoration_types[0];
@@ -4274,21 +4268,19 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     // close, no commit) — reopen first (the pick closed the picker).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "tree_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "tree_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     // The open + the close-only pick recorded exactly the four surface
@@ -4301,8 +4293,7 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     history.current_state.editor.?.picker = .{ .entity_sprite = {} };
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "tree_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
@@ -4343,11 +4334,10 @@ test "decoration sprite picker: mission-local pick derives dims + bottom-left de
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "custom/artists_den/banner",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/banner" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     // The namespaced stem + PNG-derived dims + the bottom-left default
@@ -4364,11 +4354,10 @@ test "decoration sprite picker: mission-local pick derives dims + bottom-left de
     // A vanished file (the stem resolves to no PNG) commits nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
-        .clicked_editor_sprite = "custom/artists_den/gone",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/gone" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings(
         "custom/artists_den/banner",
@@ -4385,7 +4374,7 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .team = 1 }, // color_index 0, displays_weapons true
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -4393,26 +4382,24 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
     }));
     runToIdle(&history);
 
-    // Swatch click: color_index 0 → 3 (the payload rode in
-    // clicked_editor_color; the target is the active entity tool).
+    // Swatch click: color_index 0 → 3 (the editor_color payload;
+    // the target is the active entity tool).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_color,
-        .clicked_editor_color = 3,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_color = 3 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 3), history.current_state.editor.?.entity_types[0].template.color_index);
 
     // Same-value pick never fires (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_color,
-        .clicked_editor_color = 3,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_color = 3 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Toggle: true → false; a flip always changes, so no gate.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_entity_displays_weapons,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(!history.current_state.editor.?.entity_types[0].template.displays_weapons);
 
@@ -4427,11 +4414,10 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
     history.current_state.editor.?.active_tool = .select;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_color,
-        .clicked_editor_color = 5,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_color = 5 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_entity_displays_weapons,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.color_index);
 }
@@ -4457,7 +4443,7 @@ test "keep_original_colors toggles: entity + decoration flips ride the timeline;
 
         input_handlers.handleAnytimeInput(&history, .{
             .options_action = .toggle_editor_entity_keep_original_colors,
-        }, .{ .x = 0, .y = 0 }, &.{});
+        }, null, .{ .x = 0, .y = 0 }, &.{});
         runToIdle(&history);
         try testing.expect(history.current_state.editor.?.entity_types[0].template.keep_original_colors);
 
@@ -4469,7 +4455,7 @@ test "keep_original_colors toggles: entity + decoration flips ride the timeline;
         history.current_state.editor.?.active_tool = .select;
         input_handlers.handleAnytimeInput(&history, .{
             .options_action = .toggle_editor_entity_keep_original_colors,
-        }, .{ .x = 0, .y = 0 }, &.{});
+        }, null, .{ .x = 0, .y = 0 }, &.{});
         try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
         try testing.expect(!history.current_state.editor.?.entity_types[0].template.keep_original_colors);
     }
@@ -4485,7 +4471,7 @@ test "keep_original_colors toggles: entity + decoration flips ride the timeline;
 
         input_handlers.handleAnytimeInput(&history, .{
             .options_action = .toggle_editor_decoration_keep_original_colors,
-        }, .{ .x = 0, .y = 0 }, &.{});
+        }, null, .{ .x = 0, .y = 0 }, &.{});
         runToIdle(&history);
         try testing.expect(history.current_state.editor.?.decoration_types[0].keep_original_colors);
 
@@ -4515,7 +4501,7 @@ test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leadi
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -4580,7 +4566,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
             .coat = .{ .name = "Skeleton Coat", .health_bonus = 2, .defense_bonus = 1 },
         },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -4662,7 +4648,7 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
             .main_hand_weapon = .{ .name = "Skeleton Sword", .weapon_type = .sword, .weapon_damage = 5 },
         },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -4674,9 +4660,7 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     // ("New Axe", damage 0); one undo clears the slot again.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_weapon_type,
-        .clicked_editor_gear_slot = .off_hand,
-        .clicked_editor_weapon_type = .axe,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_weapon_type_cell = .{ .gear_slot = .off_hand, .weapon_type = .axe } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const weapon = history.current_state.editor.?.entity_types[0].template.off_hand_weapon.?;
@@ -4691,9 +4675,7 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     // in place — name + damage stay.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_weapon_type,
-        .clicked_editor_gear_slot = .main_hand,
-        .clicked_editor_weapon_type = .spear,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_weapon_type_cell = .{ .gear_slot = .main_hand, .weapon_type = .spear } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const weapon = history.current_state.editor.?.entity_types[0].template.main_hand_weapon.?;
@@ -4705,30 +4687,25 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     // Same-type pick never fires (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_weapon_type,
-        .clicked_editor_gear_slot = .main_hand,
-        .clicked_editor_weapon_type = .spear,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_weapon_type_cell = .{ .gear_slot = .main_hand, .weapon_type = .spear } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Delete clears the slot to null; delete on an empty slot is a no-op.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_item,
-        .clicked_editor_gear_slot = .main_hand,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gear_slot = .main_hand }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.entity_types[0].template.main_hand_weapon == null);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_item,
-        .clicked_editor_gear_slot = .main_hand,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gear_slot = .main_hand }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Gear Add creates the default item ("New Amulet", zero stats);
     // add on a present item never fires.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_item,
-        .clicked_editor_gear_slot = .amulet,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gear_slot = .amulet }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const amulet = history.current_state.editor.?.entity_types[0].template.amulet.?;
@@ -4737,16 +4714,14 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     }
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_item,
-        .clicked_editor_gear_slot = .amulet,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gear_slot = .amulet }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Weapon slots don't take gear Add (their creation path is the type
     // row) — the gate holds for crafted input.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_item,
-        .clicked_editor_gear_slot = .main_hand,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gear_slot = .main_hand }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -4763,7 +4738,7 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
             .weapon_damage = 5,
         } },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .item_types = &item_types,
@@ -4776,9 +4751,7 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
     // "New Axe", damage 0; the palette label tracks the display name.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_item_type,
-        .clicked_editor_item_kind = .weapon,
-        .clicked_editor_weapon_type = .axe,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .axe } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const definition = history.current_state.editor.?.item_types[0];
@@ -4802,16 +4775,13 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
     // The SAME pick never fires (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_item_type,
-        .clicked_editor_item_kind = .weapon,
-        .clicked_editor_weapon_type = .sword,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .sword } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A KIND switch resets too — "New Amulet", zero stats.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_item_type,
-        .clicked_editor_item_kind = .amulet,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .amulet } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const definition = history.current_state.editor.?.item_types[0];
@@ -4824,8 +4794,7 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
     // commits nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_item_type,
-        .clicked_editor_item_kind = .weapon,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -4838,7 +4807,7 @@ test "item-type commits: name + stat fields end-to-end, no-op gates, bounds" {
         .id = "Leather Coat",
         .item = .{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .item_types = &item_types,
@@ -4923,7 +4892,7 @@ test "editor_set_item_def: out-of-range type id is a no-op (handler guard)" {
     var harness = Harness.init(backing.allocator());
 
     const item_types = [_]types.ItemTypeDef{.{ .id = "Iron Sword" }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .item_types = &item_types,
@@ -4974,7 +4943,7 @@ test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy 
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -5032,7 +5001,7 @@ test "inspector team commits: numeric parse, would-change gate, empty no-op" {
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
     }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -5083,7 +5052,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
@@ -5093,9 +5062,9 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
         .x = 512,
         .y = ui.editorInspectorPanelRect().y + 100,
     };
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 1), history.session.ui_state.editor_inspector_scroll);
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
 
     // Outside the panel (top-right, over no UI): the wheel belongs to the
@@ -5103,6 +5072,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     input_handlers.handleAnytimeInput(
         &history,
         .{ .scroll_delta = -1 },
+        null,
         .{ .x = 2000, .y = 300 },
         &.{},
     );
@@ -5110,7 +5080,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
 
     // Panel closed: the routing falls through even inside the rect.
     history.current_state.editor.?.inspector_open = false;
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
 }
 
@@ -5119,7 +5089,7 @@ test "player_select_editor_all: tool-agnostic — switches to select, one undo r
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 } };
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
     const levels = [_]types.EditorLevel{.{
         .level_tiles = &tiles,
         .player_start = .{ .x = 0, .y = 0 },
@@ -5133,7 +5103,7 @@ test "player_select_editor_all: tool-agnostic — switches to select, one undo r
     // ctrl+A from the TILE tool: the action fires, switches to the select
     // tool (the selection can only live there), and selects everything
     // (the tile + the '!').
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(
         history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
@@ -5161,7 +5131,7 @@ test "player_select_editor_all: tool-agnostic — switches to select, one undo r
     history.current_state.editor.?.active_tool = .select;
     const everything = [_]types.Selectable{ .{ .tile = .{ .x = 1, .y = 1 } }, .player_start };
     history.current_state.editor.?.selection = &everything;
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -5526,7 +5496,7 @@ test "editor_commit_selection_move: a crafted marker entry onto the staying othe
     // the STAYING other marker's cell plans empty: the marker simply
     // doesn't place — it stays where it stands (markers are never
     // deletable; no tile is painted at the blocked target).
-    const tiles = [_]types.Vector2{.{ .x = 2, .y = 0 } };
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 0 }};
     const levels = [_]types.EditorLevel{.{
         .level_tiles = &tiles,
         .player_start = .{ .x = 0, .y = 0 },
@@ -5677,7 +5647,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
     var harness = Harness.init(backing.allocator());
 
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{} }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -5747,7 +5717,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     var harness = Harness.init(backing.allocator());
 
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{} }};
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
@@ -5758,8 +5728,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     // Open the picker for slot 0 (Slot 4).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_skill_picker,
-        .clicked_editor_utility_slot = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_utility_slot = 0 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.picker.?.utility_skill_slot);
 
@@ -5767,7 +5736,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     // while it's open (and it survives them).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(!history.current_state.editor.?.inspector_open);
     try testing.expect(history.current_state.editor.?.picker != null);
@@ -5775,8 +5744,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     // Pick blink: assigned + the picker closes; one undo step.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_utility_skill,
-        .clicked_editor_skill = .blink,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_skill = .blink }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(
         types.SkillId.blink,
@@ -5795,24 +5763,20 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     // Reopen + pick the SAME (empty) value: closes, records nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_skill_picker,
-        .clicked_editor_utility_slot = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_utility_slot = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_utility_skill,
-        .clicked_editor_skill = null,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_skill = null }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Assign, reopen, pick None: clears the slot (one event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_skill_picker,
-        .clicked_editor_utility_slot = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_utility_slot = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_utility_skill,
-        .clicked_editor_skill = .stone_form,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_skill = .stone_form }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(
         types.SkillId.stone_form,
@@ -5820,12 +5784,10 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_skill_picker,
-        .clicked_editor_utility_slot = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_utility_slot = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_utility_skill,
-        .clicked_editor_skill = null,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_skill = null }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(
         @as(?types.SkillId, null),
@@ -5835,11 +5797,10 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     // The close button's action just closes.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_skill_picker,
-        .clicked_editor_utility_slot = 2,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_utility_slot = 2 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
@@ -5872,7 +5833,7 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     // The Import button's orchestrator.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .import_editor_player,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     const template = history.current_state.editor.?.player_def.template;
@@ -6003,8 +5964,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
 const validation_fixture_path = "missions/validation_fixture";
 
 fn writeValidationFixtureMission(harness: *Harness) !void {
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/mission.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/mission.txt",
         \\Metadata
         \\file_format_version 2
         \\mission_uuid 33333333-3333-3333-3333-333333333333
@@ -6012,8 +5972,7 @@ fn writeValidationFixtureMission(harness: *Harness) !void {
         \\level_count 2
         \\
     );
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_1.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level One
@@ -6022,8 +5981,7 @@ fn writeValidationFixtureMission(harness: *Harness) !void {
         \\!=
         \\
     );
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_2.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_2.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level Two
@@ -6032,8 +5990,7 @@ fn writeValidationFixtureMission(harness: *Harness) !void {
         \\..!=
         \\
     );
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/player.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/player.txt",
         \\Metadata
         \\file_format_version 2
         \\
@@ -6181,7 +6138,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
 
     // ONE in-memory editor level (the fixture has TWO): the chaining
     // follows the file's level_count, not editor.levels.len.
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
@@ -6629,8 +6586,7 @@ test "reconstructFromEventLogChecking: content that diverges the run rejects ins
     // Move level 2's '=' out from under the run's recorded exit step: the
     // replayed check_level_end no longer satisfies the win condition, so
     // the recorded end_level diverges from what the handler pushes.
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_2.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_2.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level Two
@@ -6671,8 +6627,7 @@ test "reconstructFromEventLogChecking: an illegal recorded action rejects at the
     // Remove level 1's exit tile entirely: the recorded exit step to (1,0)
     // is now an unreachable tile — the seed-time legality check (the
     // validatePlayerAction layer) rejects before any handler runs.
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_1.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level One
@@ -6732,8 +6687,7 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
     // A benign edit: rename level 1 (metadata only — no event the run
     // touches changes, so the checking replay passes; the content hash
     // changes, which is what revalidation re-binds).
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_1.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level One Prime
@@ -6844,8 +6798,7 @@ test "revalidate: a divergent edit rejects and keeps the stored replay unchanged
 
     // A divergent edit: move level 2's '=' out from under the run's
     // recorded exit step (the checking-mode divergence fixture).
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_2.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_2.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level Two
@@ -6896,8 +6849,7 @@ test "revalidate: no stored replay / a different mission's uuid both reject" {
         }));
         runToIdle(&history);
         try playFixtureRunToCompletion(&history, false);
-        try harness.file_source.writeFile(
-            validation_fixture_path ++ "/mission.txt",
+        try harness.file_source.writeFile(validation_fixture_path ++ "/mission.txt",
             \\Metadata
             \\file_format_version 2
             \\mission_uuid 44444444-4444-4444-4444-444444444444
@@ -6933,7 +6885,7 @@ test "the options-menu Revalidate button saves first, then revalidates the saved
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .revalidate_editor_mission,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     // The save landed (the memo) and the orchestrator ran against the
@@ -7031,7 +6983,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     // run with the saved dir as the payload.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .validate_editor_mission,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.screen == .level);
     const saved = history.session.editor_saved_mission.?;
@@ -7145,8 +7097,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     // matches (it certifies an earlier version) → auto-overwrite
     // regardless of turns — even though this run (4 turns) is slower than
     // the 2-turn file.
-    try harness.file_source.writeFile(
-        validation_fixture_path ++ "/level_1.txt",
+    try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level One Prime
@@ -7244,7 +7195,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     runToIdle(&history);
 
     // DEFAULT: every section collapsed — the panel shows only headers.
-    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         [_]bool{false} ** @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len,
         history.session.ui_state.editor_inspector_section_expanded,
@@ -7253,8 +7204,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // Expand Weapons (the section id rides the click payload).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector_section,
-        .clicked_editor_section = .weapons,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_section = .weapons }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
     // Independent: nothing else expanded, no event recorded (view state,
     // off the undo timeline).
@@ -7264,8 +7214,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // Collapse it back.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector_section,
-        .clicked_editor_section = .weapons,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_section = .weapons }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
 }
 
@@ -7290,7 +7239,7 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // Open in ADD mode (no layer payload) → the entity-layer picker.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_entity_layer_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget{ .entity_layer = null },
         history.current_state.editor.?.picker.?,
@@ -7299,8 +7248,7 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // Pick: a new layer, color 0 (no authored source for entity layers).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer,
-        .clicked_editor_sprite = "bear",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "bear" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     var template = history.current_state.editor.?.entity_types[0].template;
     try testing.expectEqual(@as(usize, 1), template.layers.len);
@@ -7310,9 +7258,7 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // Color swap: the whole layer value commits with the color swapped.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer_color,
-        .clicked_editor_layer = 0,
-        .clicked_editor_color = 4,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer_color = .{ .layer_index = 0, .color_index = 4 } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     template = history.current_state.editor.?.entity_types[0].template;
     try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
@@ -7321,16 +7267,14 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // color is KEPT (the weapon-retype semantics).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_entity_layer_picker,
-        .clicked_editor_layer = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 0 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget{ .entity_layer = 0 },
         history.current_state.editor.?.picker.?,
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer,
-        .clicked_editor_sprite = "wolf",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "wolf" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     template = history.current_state.editor.?.entity_types[0].template;
     try testing.expectEqualStrings("wolf", template.layers[0].sprite);
@@ -7340,12 +7284,10 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // recorded change now (the picker surface event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_entity_layer_picker,
-        .clicked_editor_layer = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_layer,
-        .clicked_editor_sprite = "wolf",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "wolf" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     // Exactly the close pair (orchestrator + machinery; no commit).
     try expectLastEvents(&history, &close_picker_pair);
@@ -7353,8 +7295,7 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     // Delete: the layer is removed, one undo restores it.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_entity_layer,
-        .clicked_editor_layer = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.entity_types[0].template.layers.len);
     try testing.expect(history.undo(event_handlers.processEvent));
@@ -7415,15 +7356,14 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     // (grass_back is authored behind the base); dims match the base.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget{ .decoration_layer = null },
         history.current_state.editor.?.picker.?,
     );
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
-        .clicked_editor_sprite = "tree_1_grass_back",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1_grass_back" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     var definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(usize, 1), definition.layers.len);
@@ -7436,11 +7376,10 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     // color 0 (no registry match).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
-        .clicked_editor_sprite = "custom/artists_den/banner",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/banner" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(usize, 2), definition.layers.len);
@@ -7451,12 +7390,11 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     // nothing records (the load-time layer invariant).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     const events_before = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
-        .clicked_editor_sprite = "custom/artists_den/small",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/artists_den/small" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker != null);
     try testing.expectEqual(events_before, history.event_history.items.len);
@@ -7466,15 +7404,13 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     // swatch commits the whole layer (behind included); delete compacts.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .close_editor_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
-        .clicked_editor_layer = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer,
-        .clicked_editor_sprite = "tree_1",
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqualStrings("tree_1", definition.layers[0].sprite);
@@ -7484,9 +7420,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_layer_color,
-        .clicked_editor_layer = 0,
-        .clicked_editor_color = 5,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer_color = .{ .layer_index = 0, .color_index = 5 } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     // The color swatch commit kept the whole layer — behind included.
     try testing.expect(history.current_state.editor.?.decoration_types[0].layers[0].behind);
@@ -7494,8 +7428,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     // committing the whole layer (sprite + color kept).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_decoration_layer_behind,
-        .clicked_editor_layer = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expect(!definition.layers[0].behind);
@@ -7503,8 +7436,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_decoration_layer,
-        .clicked_editor_layer = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_layer = 1 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(usize, 1), definition.layers.len);
@@ -7616,7 +7548,7 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     // carries the type id.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_footprint_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget{ .decoration_footprint = 0 },
         history.current_state.editor.?.picker.?,
@@ -7628,27 +7560,24 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     // Toggle (1,0) off and back on: the draft is a plain UiState flip.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 1 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.session.ui_state.editor_footprint_draft[1]);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 1 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
 
     // An out-of-range cell (crafted) flips nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 99,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 99 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
 
     // Confirm an UNCHANGED draft: closes WITHOUT COMMITTING — the close
     // is the recorded change now (the picker surface event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     try expectLastEvents(&history, &close_picker_pair);
@@ -7657,18 +7586,16 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     // needs >= 1 tile), nothing records.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_footprint_picker,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 1 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker != null);
     // Nothing beyond the close + reopen surface events (the close pair
@@ -7680,11 +7607,10 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     // row-major, on the undo timeline.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_footprint_tile,
-        .clicked_editor_footprint_tile = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_footprint_tile = 0 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     const definition = history.current_state.editor.?.decoration_types[0];
@@ -7699,7 +7625,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    var levels = [_]types.EditorLevel{ .{ .name = "First", .color_wheel_index = 1 } };
+    var levels = [_]types.EditorLevel{.{ .name = "First", .color_wheel_index = 1 }};
     const editor = types.Editor{ .levels = &levels, .mission = .{ .name = "Old Name" } };
     var history = harness.newHistory(editorStateWith(editor));
     runToIdle(&history);
@@ -7898,8 +7824,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // + record their own idle points — no runToIdle needed after.)
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
-        .clicked_editor_gradient_role = .enemy,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         types.EditorPickerTarget{ .level_gradient = .{ .level_index = 1, .role = .enemy } },
         history.current_state.editor.?.picker.?,
@@ -7915,21 +7840,20 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     const derived_enemy: i32 = 2 + @divTrunc(gradient_count, 3);
     const expected_open_scroll: i32 = @max(derived_enemy + 1 - visible_rows, 0);
     try testing.expectEqual(expected_open_scroll, history.session.ui_state.editor_theme_picker_scroll_offset);
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         expected_open_scroll + 1,
         history.session.ui_state.editor_theme_picker_scroll_offset,
     );
     history.session.ui_state.editor_theme_picker_scroll_offset = 0;
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_theme_picker_scroll_offset);
 
     // A pick commits the override (auto → manual in the same commit) and
     // closes the picker.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level_gradient,
-        .clicked_editor_gradient = 4,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient = 4 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -7945,12 +7869,10 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // point at an unchanged state).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
-        .clicked_editor_gradient_role = .enemy,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level_gradient,
-        .clicked_editor_gradient = 4,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient = 4 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
     runToIdle(&history);
@@ -7960,8 +7882,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // the manual pick).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_level_gradient_auto,
-        .clicked_editor_gradient_role = .enemy,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
     try testing.expect(history.undo(event_handlers.processEvent));
@@ -7974,8 +7895,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // — a real commit, one undo back to auto.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_level_gradient_auto,
-        .clicked_editor_gradient_role = .enemy,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(?u32, 10), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
     try testing.expect(history.undo(event_handlers.processEvent));
@@ -7987,19 +7907,16 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // Auto semantics (a crafted world Auto click never fires).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
-        .clicked_editor_gradient_role = .world,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .world }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level_gradient,
-        .clicked_editor_gradient = 1,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient = 1 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
     const history_len_before_world_auto = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_level_gradient_auto,
-        .clicked_editor_gradient_role = .world,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient_role = .world }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
     try testing.expectEqual(history_len_before_world_auto, history.event_history.items.len);
@@ -8008,8 +7925,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     const history_len_before_crafted = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_level_gradient,
-        .clicked_editor_gradient = 3,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_gradient = 3 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
     try testing.expectEqual(history_len_before_crafted, history.event_history.items.len);
@@ -8032,9 +7948,9 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
         .x = ui.editorMetadataSidebarPanelRect().x + 100,
         .y = ui.editorMetadataSidebarPanelRect().y + 100,
     };
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 1), history.session.ui_state.editor_metadata_scroll);
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
 
     // Outside the panel (over the viewport): the wheel belongs to the
@@ -8042,6 +7958,7 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
     input_handlers.handleAnytimeInput(
         &history,
         .{ .scroll_delta = -1 },
+        null,
         .{ .x = 1920, .y = 1080 },
         &.{},
     );
@@ -8049,7 +7966,7 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
 
     // Panel closed: the routing falls through even inside the rect.
     history.current_state.editor.?.metadata_sidebar_open = false;
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, null, inside, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
 }
 
@@ -8069,7 +7986,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     // mission files — the shipped campaign is always there).
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
@@ -8081,7 +7998,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     history.current_state.ui_surfaces.options_menu_open = true;
     input_handlers.handleAnytimeInput(&history, .{
         .escape = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
     try testing.expect(history.current_state.ui_surfaces.options_menu_open);
 
@@ -8090,13 +8007,13 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     history.session.ui_state.editor_mission_browser_tab = .official;
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 
     // Reachable screens: the toggle ALSO opens from the main menu (the
@@ -8105,18 +8022,18 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     history.current_state.editor = null;
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 
     // Every other screen no-ops (the save_editor_mission discipline).
     history.current_state.screen = .hub;
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 }
 
@@ -8131,15 +8048,13 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
 
     // A local mission in the harness's scratch persistent dir: the minimal
     // valid shape (mission.txt + one level with the '!=' layout).
-    harness.file_source.writeFile("missions/test_mission/mission.txt",
-        "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Test Mission\n") catch @panic("w1");
-    harness.file_source.writeFile("missions/test_mission/level_1.txt",
-        "Metadata\nfile_format_version 1\n\nLayout\n!=\n") catch @panic("w2");
+    harness.file_source.writeFile("missions/test_mission/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Test Mission\n") catch @panic("w1");
+    harness.file_source.writeFile("missions/test_mission/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!=\n") catch @panic("w2");
 
     // Open the browser (scans) — the local list now carries the mission.
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
     try testing.expectEqualStrings("missions/test_mission", history.session.editor_local_missions[0].path);
 
@@ -8147,19 +8062,17 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     // lower-clamped at 0 — wheel-up past the top stays; the upper clamp is
     // the builder's).
     history.session.ui_state.editor_mission_scroll_offset = 0;
-    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
 
     // A tab switch is a direct UiState write + scroll reset.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_mission_tab,
-        .clicked_editor_mission_tab = .official,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_mission_tab = .official }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(types.EditorMissionBrowserTab.official, history.session.ui_state.editor_mission_browser_tab);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_mission_tab,
-        .clicked_editor_mission_tab = .local,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_mission_tab = .local }, .{ .x = 0, .y = 0 }, &.{});
 
     // A kind tab switch is the same shape: direct UiState write + scroll
     // reset (the other kind's content has its own extent). No-op without
@@ -8167,16 +8080,14 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     history.session.ui_state.editor_mission_scroll_offset = 5;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_kind_tab,
-        .clicked_editor_kind = .mission,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_kind = .mission }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(types.EditorKind.mission, history.session.ui_state.editor_browser_kind);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
     history.current_state.ui_surfaces.editor_browser_open = false;
     history.session.ui_state.editor_mission_scroll_offset = 5;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_kind_tab,
-        .clicked_editor_kind = .mission,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_kind = .mission }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(i32, 5), history.session.ui_state.editor_mission_scroll_offset);
     history.current_state.ui_surfaces.editor_browser_open = true;
 
@@ -8188,8 +8099,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     const generation_before = history.current_state.world_generation;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_mission_row,
-        .clicked_editor_mission_row = 0,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_mission_row = 0 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings("Test Mission", history.current_state.editor.?.mission.name);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.mission.level_count);
@@ -8215,8 +8125,7 @@ test "mission import: a picked zip extracts into missions/, the row appears, the
 
     // A mission zip (the Export Mission shape): configs + a custom sprite.
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "mission.txt", .bytes =
-        "Metadata\nfile_format_version 2\nmission_uuid a1b2c3d4-e5f6-7890-abcd-ef1234567890\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid a1b2c3d4-e5f6-7890-abcd-ef1234567890\nlevel_count 1\nname Skeleton Den\n" },
         .{ .name = "level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
         .{ .name = "boss.png", .bytes = "pretend png bytes" },
     };
@@ -8229,9 +8138,9 @@ test "mission import: a picked zip extracts into missions/, the row appears, the
     // Open the browser + run one anytime tick (the poll runs while open).
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.editor_browser_open);
-    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
 
     // The row: name + the save-convention dir path derived from the zip's
     // mission.txt (uuid + sanitized name).
@@ -8268,8 +8177,7 @@ test "mission import: an OS-made zip with a single root folder strips it" {
     // The "compress folder" shape: every file under one root segment, plus
     // macOS junk that must be skipped.
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "Skeleton Den/mission.txt", .bytes =
-        "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "Skeleton Den/mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 1\nname Skeleton Den\n" },
         .{ .name = "Skeleton Den/level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
         .{ .name = "__MACOSX/Skeleton Den/._mission.txt", .bytes = "junk" },
         .{ .name = "Skeleton Den/.DS_Store", .bytes = "junk" },
@@ -8280,8 +8188,8 @@ test "mission import: an OS-made zip with a single root folder strips it" {
 
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
-    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
 
     // The root stripped (mission.txt found at the stripped root), the junk
     // skipped (no stray files inside the mission dir), one row.
@@ -8310,8 +8218,7 @@ test "mission import: an unsafe entry name fails whole — popup, nothing writte
     runToIdle(&history);
 
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "mission.txt", .bytes =
-        "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Evil\n" },
+        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Evil\n" },
         .{ .name = "../escape.txt", .bytes = "should never be written" },
     };
     const archive = try zip_writer.writeZipArchive(&zip_entries, arena);
@@ -8320,8 +8227,8 @@ test "mission import: an unsafe entry name fails whole — popup, nothing writte
 
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
-    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
 
     // The popup explains, the list stays empty, and NOTHING was written —
     // names are validated before the first write (never half-imported).
@@ -8354,8 +8261,8 @@ test "mission import: a zip without mission.txt pops up instead of extracting" {
 
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
-    }, .{ .x = 0, .y = 0 }, &.{});
-    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
 
     try testing.expect(history.session.pending_error != null);
     try testing.expectEqual(@as(usize, 0), history.session.editor_local_missions.len);
@@ -8529,31 +8436,27 @@ test "inventory slot clicks: select/deselect toggle, Add default sword, Delete" 
     // Selection is a pure UiState write — no events ever record.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_slot,
-        .clicked_editor_inventory_slot = 4,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 4 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(u32, 4), history.session.ui_state.editor_inventory_selected_slot.?);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A repeat click deselects (the detail block collapses).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_slot,
-        .clicked_editor_inventory_slot = 4,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 4 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_inventory_selected_slot == null);
 
     // A crafted out-of-range index never selects.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_slot,
-        .clicked_editor_inventory_slot = types.inventory_slot_count,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = types.inventory_slot_count }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_inventory_selected_slot == null);
 
     // Add: the default sword lands in the empty slot; a crafted Add onto
     // an occupied slot never fires.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_inventory_item,
-        .clicked_editor_inventory_slot = 7,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 7 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const slot = history.current_state.editor.?.player_def.template.inventory.slots[7];
@@ -8563,26 +8466,22 @@ test "inventory slot clicks: select/deselect toggle, Add default sword, Delete" 
     const occupied_baseline = history.event_history.items.len;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_inventory_item,
-        .clicked_editor_inventory_slot = 7,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 7 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(occupied_baseline, history.event_history.items.len);
 
     // Delete clears the slot; a crafted Delete on an empty slot never
     // fires; a crafted out-of-range index never does either.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_inventory_item,
-        .clicked_editor_inventory_slot = 7,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 7 }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[7] == null);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_inventory_item,
-        .clicked_editor_inventory_slot = 7,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = 7 }, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_inventory_item,
-        .clicked_editor_inventory_slot = types.inventory_slot_count,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_inventory_slot = types.inventory_slot_count }, .{ .x = 0, .y = 0 }, &.{});
     // Only the real delete recorded (the delete pair: orchestrator +
     // machinery); the crafted empty-slot + out-of-range deletes never
     // fired.
@@ -8614,9 +8513,7 @@ test "inventory item-type clicks: reset-on-change on the selected slot, same-pic
     // semantics): "New Axe", damage 0.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .weapon,
-        .clicked_editor_weapon_type = .axe,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .axe } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const slot = history.current_state.editor.?.player_def.template.inventory.slots[2];
@@ -8636,16 +8533,13 @@ test "inventory item-type clicks: reset-on-change on the selected slot, same-pic
     // The SAME pick never fires (no dead undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .weapon,
-        .clicked_editor_weapon_type = .sword,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .sword } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A KIND switch resets too — "New Amulet", zero stats.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .amulet,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .amulet } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     {
         const slot = history.current_state.editor.?.player_def.template.inventory.slots[2];
@@ -8658,18 +8552,15 @@ test "inventory item-type clicks: reset-on-change on the selected slot, same-pic
     history.session.ui_state.editor_inventory_selected_slot = null;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .coat,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .coat } }, .{ .x = 0, .y = 0 }, &.{});
     history.session.ui_state.editor_inventory_selected_slot = 3;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .coat,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .coat } }, .{ .x = 0, .y = 0 }, &.{});
     history.session.ui_state.editor_inventory_selected_slot = 2;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
-        .clicked_editor_item_kind = .weapon,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_item_kind_cell = .{ .kind = .weapon } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -8785,7 +8676,7 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
 
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .import_editor_max_player,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     {
@@ -8851,14 +8742,14 @@ test "the validation stats screen: info populated, personal best captured, manua
     try testing.expect(!history.session.validation_replay_overwrite_offered);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .overwrite_validation_replay,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(u32, 2), (try readFixtureReplay(&harness, arena)).turns);
 
     // Continue (the overlay's button path): dismiss clears the info on
     // the undo timeline.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .continue_after_mission,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.last_completed_mission == null);
 
     // Run B (4 turns): SLOWER than the 2-turn best → keep + stash + offer.
@@ -8871,7 +8762,7 @@ test "the validation stats screen: info populated, personal best captured, manua
     // file, the offer is consumed, and the PB line follows the new file.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .overwrite_validation_replay,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(u32, 4), (try readFixtureReplay(&harness, arena)).turns);
     try testing.expectEqual(@as(u32, 4), history.session.validation_personal_best_turns.?);
     try testing.expect(history.session.pending_validation_replay == null);

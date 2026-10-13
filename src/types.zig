@@ -280,9 +280,9 @@ pub const Action = enum {
     // Opens/closes the load-save browser (main-menu "Load Save" + the
     // browser's Back button).
     toggle_load_save_menu,
-    // A save row in the load-save browser. The row index rides alongside
-    // in IdleInput.clicked_save_row (set from the button's SlotRef at the
-    // release-dispatch site — Action alone can't carry a payload).
+    // A save row in the load-save browser. The row index rides the click
+    // payload (the `save_row` variant, set at the release-dispatch site —
+    // Action alone can't carry a payload).
     load_save_row,
     // Load-save browser's "Import External Save" (web only): opens a file
     // picker; the picked file lands in saves/ and loads. Native builds never
@@ -291,37 +291,37 @@ pub const Action = enum {
     open_settings,
     open_credits,
     // A settings toggle or choice button was clicked. The SettingRef (which
-    // field + which value) rides in `AnytimeInput.clicked_setting`. See
+    // field + which value) rides the click payload (the `setting` variant). See
     // DESIGN → UI Framework → Settings screen.
     change_setting,
     // A keybinds-tab edit command was clicked (rekey / reassign / add /
     // remove / pick / confirm / cancel / reset — the whole editing UI
     // rides ONE action + the `KeybindCommand` payload in
-    // `AnytimeInput.clicked_keybind_command`). See DESIGN → UI Framework →
+    // the click payload (the `keybind_command` variant)). See DESIGN → UI Framework →
     // Settings screen (the Keybinds tab editing flows).
     edit_keybind,
     // A settings screen tab button was clicked (Settings / Keybinds). The
-    // tab rides in `AnytimeInput.clicked_settings_tab`. Routed through
+    // tab rides the click payload (the `settings_tab` variant). Routed through
     // `options_action` (the settings screen is reachable from the main
     // menu AND the in-game options menu). See DESIGN → UI Framework →
     // Settings screen.
     select_settings_tab,
     // An editor palette group header was clicked (expand/collapse the
-    // group). The group index rides in `AnytimeInput.clicked_editor_group`.
+    // group). The group index rides the click payload (the `editor_group` variant).
     // Routed through `options_action` so one handler serves it regardless
     // of screen state. See DESIGN → Architecture → Level Editor → Editor
     // UI layout (tool palette).
     toggle_editor_palette_group,
     // An editor palette group's "+" cell was clicked (add a new type to
     // that group, built from the shipped defaults). The group index rides
-    // in `AnytimeInput.clicked_editor_group` — the same payload field as
+    // the click payload (the `editor_group` variant) — the same variant as
     // the group-header toggle. See DESIGN → Architecture → Level Editor →
     // Editor UI layout (tool palette).
     add_editor_palette_type,
     // An editor palette tool cell's delete button (the small close-button
     // in the cell's top-right corner) was clicked: delete that palette
     // type + every placement referencing it across all levels. The
-    // EditorToolId rides in `AnytimeInput.clicked_editor_tool` — the same
+    // EditorToolId rides the click payload (the `editor_tool` variant) — the same
     // payload field as the tool cells. See DESIGN → Architecture → Level
     // Editor → Editor UI layout (tool palette).
     delete_editor_palette_type,
@@ -332,15 +332,15 @@ pub const Action = enum {
     // A level tab's × button was clicked: delete that level (gated on more
     // than one — a mission always keeps ≥1; the button isn't offered on a
     // single-level mission). The level index rides in
-    // `AnytimeInput.clicked_editor_level` — the same payload field as the
+    // the click payload (the `editor_level` variant) — the same payload field as the
     // tab itself.
     delete_editor_level,
     // An editor tool cell was clicked (make it the active tool). The
-    // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
+    // EditorToolId rides the click payload (the `editor_tool` variant). See DESIGN
     // → Architecture → Level Editor (active-tool model).
     select_editor_tool,
     // An editor level-tab was clicked (make that level active). The level
-    // index rides in `AnytimeInput.clicked_editor_level`. Routed through
+    // index rides the click payload (the `editor_level` variant). Routed through
     // `options_action` like the other payload-carrying editor clicks. See
     // DESIGN → Architecture → Level Editor → Editor UI layout (tabs).
     select_editor_level,
@@ -382,22 +382,22 @@ pub const Action = enum {
     revalidate_editor_mission,
     // A settings-sidebar gradient swatch (world / enemy / player row):
     // open the centered theme picker for that role. The role rides in
-    // `AnytimeInput.clicked_editor_gradient_role`; the picker target
+    // the click payload (the `editor_gradient_role` variant); the picker target
     // snapshots the active level index (a mid-edit tab switch can't
     // retarget the pick).
     open_editor_level_gradient_picker,
     // A theme-picker gradient row: set the level's index for the picker's
     // role. The gradient index rides in
-    // `AnytimeInput.clicked_editor_gradient`. For enemy/player, a pick
+    // the click payload (the `editor_gradient` variant). For enemy/player, a pick
     // while on auto flips that role to manual in the same commit.
     select_editor_level_gradient,
     // An enemy/player gradient row's AUTO button: revert that role to
     // auto-derivation (commits the null override). A no-op while already
     // auto (same-value picks never fire). The role rides in
-    // `AnytimeInput.clicked_editor_gradient_role`.
+    // the click payload (the `editor_gradient_role` variant).
     toggle_editor_level_gradient_auto,
     // An inspector section header (expand/collapse that section). The
-    // section id rides in `AnytimeInput.clicked_editor_section` — a
+    // section id rides the click payload (the `editor_section` variant) — a
     // direct UiState write (view affordance, off the undo timeline, like
     // the palette accordion).
     toggle_editor_inspector_section,
@@ -407,17 +407,17 @@ pub const Action = enum {
     // view or handlers).
     open_editor_sprite_picker,
     // A sprite picker cell: set the edited entity type's base sprite (the
-    // stem rode in `AnytimeInput.clicked_editor_sprite`) and close the
+    // stem rode the click payload (the `editor_sprite` variant)) and close the
     // picker. Same-value picks close without recording.
     select_editor_entity_sprite,
     // The decoration picker's cell: adopt the picked prefab (official tab)
     // or custom stem (mission tab) into the edited decoration type — see
     // `editor_set_decoration_def`. The stem rode in
-    // `AnytimeInput.clicked_editor_sprite`. Same-value picks close without
+    // the click payload (the `editor_sprite` variant). Same-value picks close without
     // recording.
     select_editor_decoration_sprite,
     // A sprite picker tab button (Mission / Official): switch the picker's
-    // tab. The tab rode in `AnytimeInput.clicked_editor_sprite_tab` — a
+    // tab. The tab rode the click payload (the `editor_sprite_tab` variant) — a
     // direct UiState write (view affordance).
     select_editor_sprite_tab,
     // The player inspector's Import button: copy the session's player
@@ -430,20 +430,20 @@ pub const Action = enum {
     import_editor_max_player,
     // An inspector color swatch was clicked (set the edited entity type's
     // color_index — the gradient index into the enemy gradient). The index
-    // rides in `AnytimeInput.clicked_editor_color`. Routed through
+    // rides the click payload (the `editor_color` variant). Routed through
     // `options_action` like the other payload-carrying editor clicks.
     select_editor_entity_color,
     // The decoration inspector's color swatch was clicked (set the edited
     // decoration type's color_index — the gradient index into the WORLD
-    // gradient). The index rides in `AnytimeInput.clicked_editor_color`.
+    // gradient). The index rides the click payload (the `editor_color` variant).
     select_editor_decoration_color,
     // The Layers sections' controls (enemy + decoration types). The layer
-    // index rides in `AnytimeInput.clicked_editor_layer` (null on the
-    // add-layer button — the picker's add mode).
+    // index rides the click payload (the `editor_layer` variant — null on
+    // the add-layer button, the picker's add mode).
     open_editor_entity_layer_picker,
     open_editor_decoration_layer_picker,
     // A layer-picker cell: the stem rode in
-    // `AnytimeInput.clicked_editor_sprite`; the layer identity (add vs
+    // the click payload (the `editor_sprite` variant); the layer identity (add vs
     // edit index) rides in the open picker's target on the Editor
     select_editor_entity_layer,
     select_editor_decoration_layer,
@@ -457,7 +457,7 @@ pub const Action = enum {
     open_editor_footprint_picker,
     // A footprint-editor tile cell: toggle that sprite-grid tile in/out
     // of the draft footprint. The grid cell index (row-major) rode in
-    // `AnytimeInput.clicked_editor_footprint_tile` — a direct UiState
+    // the click payload (the `editor_footprint_tile` variant) — a direct UiState
     // write (the draft is transient view state, off the undo timeline).
     toggle_editor_footprint_tile,
     // The footprint editor's Confirm button: close the picker and commit
@@ -471,39 +471,38 @@ pub const Action = enum {
     toggle_editor_decoration_keep_original_colors,
     // The inspector's per-layer draw-side toggle (decoration layers): flip
     // the layer's `behind` flag (back layers draw before the base). The
-    // layer index rides in `AnytimeInput.clicked_editor_layer`.
+    // layer index rides the click payload (the `editor_layer` variant).
     toggle_editor_decoration_layer_behind,
     // An inspector weapon-type cell was clicked (create the slot's weapon
     // while empty, or retype in place keeping name/damage). The hand
-    // (`GearSlot`, main/off) rides in `AnytimeInput.clicked_editor_gear_slot`
-    // + the type in `clicked_editor_weapon_type`.
+    // (`GearSlot`, main/off) + the type ride the click payload together
+    // (one compound `editor_weapon_type_cell` variant).
     select_editor_weapon_type,
     // The inspector's gear Add button (create a default item in the empty
-    // slot — the slot rides in `AnytimeInput.clicked_editor_gear_slot`).
+    // slot — the slot rides the click payload (the `editor_gear_slot` variant)).
     add_editor_item,
     // The inspector's item Delete button (clear the slot to null — the
-    // slot rides in `AnytimeInput.clicked_editor_gear_slot`).
+    // slot rides the click payload (the `editor_gear_slot` variant)).
     delete_editor_item,
     // An inspector item-TYPE cell was clicked (the Items group's content:
     // the two type-pick rows). Any pick that differs from the current
     // item RESETS it to a "New <Kind>" default with zeroed stats — no
     // retype-keeps-identity case (author decision); an identical pick
-    // never fires. The kind rides in
-    // `AnytimeInput.clicked_editor_item_kind`; a weapon cell also sets
-    // `clicked_editor_weapon_type`.
+    // never fires. The kind (+ the weapon type on weapon cells) rides the
+    // click payload (the `editor_item_kind_cell` variant).
     select_editor_item_type,
     // An inventory slot cell in the player inspector's Inventory section
     // was clicked (select it — the detail rows insert below its slot row;
     // clicking the already-selected slot deselects). The slot index rides
-    // in `AnytimeInput.clicked_editor_inventory_slot`.
+    // the click payload (the `editor_inventory_slot` variant).
     select_editor_inventory_slot,
     // The inspector's inventory-slot Add button (create the default
     // sword — the slot index rides in
-    // `AnytimeInput.clicked_editor_inventory_slot`).
+    // the click payload (the `editor_inventory_slot` variant)).
     add_editor_inventory_item,
     // The inspector's inventory-slot Delete button (clear the slot to
     // null — the slot index rides in
-    // `AnytimeInput.clicked_editor_inventory_slot`).
+    // the click payload (the `editor_inventory_slot` variant)).
     delete_editor_inventory_item,
     // An inventory-slot item-TYPE cell was clicked (the detail block's
     // type-pick rows): same reset-everything semantics as
@@ -512,13 +511,13 @@ pub const Action = enum {
     select_editor_inventory_item_type,
     // An inspector utility-slot button was clicked (open the centered
     // skill picker for that slot). The slot index rides in
-    // `AnytimeInput.clicked_editor_utility_slot`.
+    // the click payload (the `editor_utility_slot` variant).
     open_editor_skill_picker,
     // The skill picker's close button (top-right, the middle-panel
     // convention). No payload.
     close_editor_picker,
     // A skill picker cell was clicked (assign to the picker's slot). The
-    // skill rides in `AnytimeInput.clicked_editor_skill`; the None cell
+    // skill rides the click payload (the `editor_skill` variant); the None cell
     // carries no payload (clears the slot). Only UTILITY skills are
     // offered — see src/utility_skills.zig.
     select_editor_utility_skill,
@@ -554,19 +553,19 @@ pub const Action = enum {
     toggle_editor_browser,
     // A mission-list TAB button was clicked (Your Missions / Official —
     // the active kind's content tab). The tab rides in
-    // `AnytimeInput.clicked_editor_mission_tab`. Routed through
+    // the click payload (the `editor_mission_tab` variant). Routed through
     // `options_action` so it works while the browser is open over the
     // options menu.
     select_editor_mission_tab,
     // An editor-browser KIND tab was clicked (Mission today; Hub /
     // Campaign when those editors land) — switches the browser's content
     // to that editor kind. The kind rides in
-    // `AnytimeInput.clicked_editor_kind`. Same options_action routing as
+    // the click payload (the `editor_kind` variant). Same options_action routing as
     // the mission-list tabs.
     select_editor_kind_tab,
     // A mission-browser ROW was clicked (open that mission in the editor,
     // replacing the one being edited — no unsaved-changes confirm by
-    // design). The row index rides in `AnytimeInput.clicked_editor_mission_row`
+    // design). The row index rides the click payload (the `editor_mission_row` variant)
     // (an index into the CURRENT tab's list; the tab is read from UiState at
     // resolution). Pushes `open_editor` with the row's mission path.
     open_editor_mission_row,
@@ -589,8 +588,8 @@ pub const Action = enum {
     // the first same-combo cross-context pair: Digit1–8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
     // bridges them onto the click paths' `options_action` + payload pairs
-    // (select_editor_tool + clicked_editor_tool /
-    // toggle_editor_palette_group + clicked_editor_group), so keybind and
+    // (select_editor_tool + the `editor_tool` variant /
+    // toggle_editor_palette_group + the `editor_group` variant), so keybind and
     // click share consumption sites exactly — the tool switch rides the
     // undo timeline via `player_set_editor_tool` (same-value = no-op), the
     // group toggle is the accordion UiState write. No button carries these
@@ -670,9 +669,15 @@ pub fn actionIsSkillSlot(action: Action) bool {
 /// instead).
 pub fn actionSoundUnwired(action: Action) bool {
     return switch (action) {
-        .zoom_in, .zoom_out, .zoom_reset,
-        .move_cursor_up, .move_cursor_down, .move_cursor_left, .move_cursor_right,
-        .error_scroll_up, .error_scroll_down,
+        .zoom_in,
+        .zoom_out,
+        .zoom_reset,
+        .move_cursor_up,
+        .move_cursor_down,
+        .move_cursor_left,
+        .move_cursor_right,
+        .error_scroll_up,
+        .error_scroll_down,
         .dump_event_log,
         .skip_level,
         .confirm,
@@ -1082,8 +1087,8 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
 pub const SettingsTab = enum { settings, keybinds };
 
 /// One keybinds-tab edit command — the `.edit_keybind` action's payload
-/// (the whole editing UI rides one action + this union, riding along in
-/// `AnytimeInput.clicked_keybind_command`). See DESIGN → UI Framework →
+/// (the whole editing UI rides one action + this union as the click
+/// payload's `keybind_command` variant). See DESIGN → UI Framework →
 /// Settings screen.
 pub const KeybindCommand = union(enum) {
     /// Start listening to rekey the binding at `settings.input_bindings[`
@@ -1120,6 +1125,252 @@ pub const KeybindCommand = union(enum) {
 /// convention), or nothing happened. Resolved once per frame in
 /// `main.frame` — see `input_handlers.resolveKeybindCaptureOutcome`.
 pub const KeybindCaptureOutcome = enum { none, captured, canceled, confirmed };
+
+/// The identity of a clicked button BEYOND its action — what the click
+/// was on (which row, which tab, which cell), riding the frame's input
+/// (`PlayerInput.clicked_payload`) alongside the action `applyAction` folds
+/// (`AnytimeInput.options_action` / `IdleInput.menu_action`). Same-frame
+/// only: valid in the frame it was set, read by the consumption arm that
+/// fired its action, dead after. Inert data — it never fires anything by
+/// itself, which is why it rides `PlayerInput` rather than the anytime/idle
+/// sub-structs (see DESIGN → Input → Button payloads). The variant is the
+/// clicked thing's identity kind; a button whose identity is compound
+/// (a weapon-type cell: which hand + which type) carries one struct
+/// variant, not two. Null-meaningful identities keep the optional INSIDE
+/// the variant (`.editor_layer` null = the picker's add mode;
+/// `.editor_skill` null = the picker's None cell).
+pub const ButtonPayload = union(enum) {
+    /// A settings toggle/choice control: which field, and for choices which
+    /// value this button represents.
+    setting: SettingRef,
+    /// A load-save browser row (index into the browser's session list).
+    save_row: u32,
+    /// An editor palette group (the header's expand/collapse or the
+    /// group's "+" add-new cell).
+    editor_group: usize,
+    /// An inspector section header (expand/collapse).
+    editor_section: EditorInspectorSectionId,
+    /// A sprite picker cell (the sprite stem; namespaced `custom/<mission>/`
+    /// for mission-local picks).
+    editor_sprite: []const u8,
+    /// A sprite picker tab button (Mission / Official).
+    editor_sprite_tab: EditorSpritePickerTab,
+    /// An editor tool cell (make it the active tool).
+    editor_tool: EditorToolId,
+    /// An editor level tab.
+    editor_level: u32,
+    /// An entity/decoration color swatch (the gradient index).
+    editor_color: u32,
+    /// A layers-section control (sprite button / delete / behind toggle);
+    /// null on the add-layer button = the picker's add mode.
+    editor_layer: ?u32,
+    /// A layer's color swatch (layer + gradient index together).
+    editor_layer_color: struct { layer_index: u32, color_index: u32 },
+    /// An inspector gear-slot control (Add / Delete).
+    editor_gear_slot: GearSlot,
+    /// A weapon-type cell (which hand + which type).
+    editor_weapon_type_cell: struct { gear_slot: GearSlot, weapon_type: WeaponType },
+    /// An item-type pick cell (the kind; weapon cells carry the type —
+    /// non-weapon cells leave it null, the default).
+    editor_item_kind_cell: struct { kind: ItemKind, weapon_type: ?WeaponType = null },
+    /// A player-inspector inventory-slot control (slot cell / Add / Delete).
+    editor_inventory_slot: u32,
+    /// An inspector utility-slot button (opens the skill picker).
+    editor_utility_slot: u32,
+    /// A footprint-editor grid cell (row-major).
+    editor_footprint_tile: u32,
+    /// A settings-sidebar gradient row's role (its swatch or Auto button).
+    editor_gradient_role: LevelGradientRole,
+    /// A theme-picker gradient row.
+    editor_gradient: u32,
+    /// A skill-picker cell (null = the None cell, clears the slot).
+    editor_skill: ?SkillId,
+    /// An editor-browser kind tab (Mission today; Hub / Campaign later).
+    editor_kind: EditorKind,
+    /// A mission-browser tab (Your Missions / Official).
+    editor_mission_tab: EditorMissionBrowserTab,
+    /// A mission-browser row (index into the current tab's list).
+    editor_mission_row: u32,
+    /// The settings screen's content tab (Settings / Keybinds).
+    settings_tab: SettingsTab,
+    /// A keybinds-tab edit command (the whole editing UI rides one action).
+    keybind_command: KeybindCommand,
+};
+
+/// The payload variant an action's clicks carry, if any — the single
+/// declaration of "which payload rides this action" (the
+/// `actionBindingContexts` pattern: exhaustive by construction, no
+/// else-arm, so adding an Action is a compile error until it is classified
+/// here). One variant per action: a button needing two identities carries
+/// one compound variant, so a second entry here would mean a compound is
+/// missing. Read at the button-release relay (main.zig) as a fail-fast
+/// check — a payload on a payload-less action, or of the wrong variant,
+/// panics there instead of being silently eaten by a consumption arm's
+/// `orelse return` (the exact bug class the union exists to kill). Actions
+/// fired without a payload (console `action` commands, which cannot carry
+/// one) no-op at the consumption arm by design — the payload IS the click.
+pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
+    return switch (action) {
+        .load_save_row => .save_row,
+        .change_setting => .setting,
+        .edit_keybind => .keybind_command,
+        .select_settings_tab => .settings_tab,
+        .toggle_editor_palette_group,
+        .add_editor_palette_type,
+        => .editor_group,
+        .delete_editor_palette_type => .editor_tool,
+        .select_editor_tool => .editor_tool,
+        .select_editor_level => .editor_level,
+        .delete_editor_level => .editor_level,
+        .toggle_editor_inspector_section => .editor_section,
+        .select_editor_sprite_tab => .editor_sprite_tab,
+        .select_editor_entity_sprite,
+        .select_editor_decoration_sprite,
+        .select_editor_entity_layer,
+        .select_editor_decoration_layer,
+        => .editor_sprite,
+        .open_editor_level_gradient_picker,
+        .toggle_editor_level_gradient_auto,
+        => .editor_gradient_role,
+        .select_editor_level_gradient => .editor_gradient,
+        .select_editor_entity_color,
+        .select_editor_decoration_color,
+        => .editor_color,
+        .open_editor_entity_layer_picker,
+        .open_editor_decoration_layer_picker,
+        .delete_editor_entity_layer,
+        .delete_editor_decoration_layer,
+        .toggle_editor_decoration_layer_behind,
+        => .editor_layer,
+        .select_editor_entity_layer_color,
+        .select_editor_decoration_layer_color,
+        => .editor_layer_color,
+        .select_editor_weapon_type => .editor_weapon_type_cell,
+        .add_editor_item,
+        .delete_editor_item,
+        => .editor_gear_slot,
+        .select_editor_item_type,
+        .select_editor_inventory_item_type,
+        => .editor_item_kind_cell,
+        .select_editor_inventory_slot,
+        .add_editor_inventory_item,
+        .delete_editor_inventory_item,
+        => .editor_inventory_slot,
+        .open_editor_skill_picker => .editor_utility_slot,
+        .select_editor_utility_skill => .editor_skill,
+        .toggle_editor_footprint_tile => .editor_footprint_tile,
+        .select_editor_kind_tab => .editor_kind,
+        .select_editor_mission_tab => .editor_mission_tab,
+        .open_editor_mission_row => .editor_mission_row,
+
+        // Payload-less actions: every action below carries no button
+        // identity beyond its own name. Grouped, not elided — an `else =>
+        // null` would silently swallow a new Action; naming them all keeps
+        // adding one a compile error until its payload story is decided.
+        .undo,
+        .redo,
+        .escape,
+        .toggle_inventory,
+        .toggle_gear,
+        .toggle_skills,
+        .toggle_entity_inspect,
+        .toggle_world_map,
+        .confirm,
+        .cancel,
+        .skip,
+        .skill_slot_1,
+        .skill_slot_2,
+        .skill_slot_3,
+        .skill_slot_4,
+        .skill_slot_5,
+        .skill_slot_6,
+        .skill_slot_7,
+        .skill_slot_8,
+        .swap_weapons,
+        .move_cursor_up,
+        .move_cursor_down,
+        .move_cursor_left,
+        .move_cursor_right,
+        .dump_event_log,
+        .dismiss_error,
+        .error_scroll_up,
+        .error_scroll_down,
+        .zoom_in,
+        .zoom_out,
+        .zoom_reset,
+        .save_game,
+        .save_editor_mission,
+        .export_editor_mission,
+        .restart_mission,
+        .exit_mission,
+        .exit_to_menu,
+        .exit_game,
+        .continue_after_mission,
+        .replay_mission,
+        .overwrite_clone,
+        .overwrite_validation_replay,
+        .skip_level,
+        .continue_game,
+        .new_game,
+        .toggle_load_save_menu,
+        .import_save,
+        .open_settings,
+        .open_credits,
+        .add_editor_level,
+        .toggle_editor_inspector,
+        .toggle_editor_metadata_sidebar,
+        .test_editor_level,
+        .validate_editor_mission,
+        .revalidate_editor_mission,
+        .open_editor_sprite_picker,
+        .import_editor_player,
+        .import_editor_max_player,
+        .open_editor_footprint_picker,
+        .confirm_editor_footprint,
+        .toggle_editor_entity_displays_weapons,
+        .toggle_editor_entity_keep_original_colors,
+        .toggle_editor_decoration_keep_original_colors,
+        .close_editor_picker,
+        .delete_editor_selection,
+        .clear_editor_selection,
+        .select_editor_all,
+        .toggle_editor_browser,
+        .import_editor_mission,
+        .new_editor_mission,
+        .editor_select_tool,
+        .editor_tile_tool,
+        .toggle_editor_entity_group,
+        .toggle_editor_decoration_group,
+        .toggle_editor_item_group,
+        => null,
+    };
+}
+
+/// `ButtonPayload`'s variant tags.
+pub const ButtonPayloadTag = std.meta.Tag(ButtonPayload);
+
+// No-orphan check (machine-walked): every ButtonPayload variant must be
+// named by at least one action's `actionButtonPayload` entry — a variant
+// no action can carry is a dead union member, and this makes it a compile
+// error instead of dead scaffolding. Runs at comptime over the table
+// itself, so it can never drift from the switch above.
+comptime {
+    var carried: [@typeInfo(ButtonPayloadTag).@"enum".fields.len]bool =
+        .{false} ** @typeInfo(ButtonPayloadTag).@"enum".fields.len;
+    for (0..@typeInfo(Action).@"enum".fields.len) |action_index| {
+        if (actionButtonPayload(@enumFromInt(action_index))) |payload_tag| {
+            carried[@intFromEnum(payload_tag)] = true;
+        }
+    }
+    for (std.meta.tags(ButtonPayloadTag)) |payload_tag| {
+        if (!carried[@intFromEnum(payload_tag)]) {
+            @compileError(
+                "ButtonPayload variant ." ++ @tagName(payload_tag) ++
+                    " is carried by no action — dead variant, or actionButtonPayload is stale",
+            );
+        }
+    }
+}
 
 pub const InputBinding = struct {
     input: RawInput,

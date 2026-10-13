@@ -26,7 +26,6 @@ pub const SlotRef = union(enum) {
     gear: GearSlot, // equipped gear slot
     skill_bar: u32, // utility bar slot index (0-4)
     learned_skill: SkillId, // an entry in the skills-menu pool
-    save_file: u32, // a row in the load-save browser (index into SessionState.save_files)
 
     /// Whether two refs identify the same slot (same variant + same index/
     /// gear slot / skill id). Tagged-union equality with a same-variant
@@ -49,14 +48,9 @@ pub const SlotRef = union(enum) {
                 .learned_skill => |bs| as == bs,
                 else => false,
             },
-            .save_file => |ai| switch (b) {
-                .save_file => |bi| ai == bi,
-                else => false,
-            },
         };
     }
 };
-
 
 // Tooltip content model
 // ============================================================
@@ -199,7 +193,6 @@ pub const FontMetrics = struct {
     }
 };
 
-
 /// Baseline-to-baseline height for one line at `font_size`, in reference
 /// pixels. A layout factor (1.2em leading), not font data — raylib doesn't
 /// expose hhea/OS·2 line metrics, so this stays a free function independent
@@ -207,7 +200,6 @@ pub const FontMetrics = struct {
 pub fn lineHeight(font_size: i32) i32 {
     return @divTrunc(font_size * 120, 100);
 }
-
 
 test "measurement seam: row width sums spans, bold equals plain" {
     // Synthetic metrics: base_size 100, uniform 50px advance per ASCII glyph.
@@ -230,7 +222,6 @@ test "measurement seam: row width sums spans, bold equals plain" {
     // Line height exceeds the font size (leading).
     try std.testing.expect(lineHeight(font_size) > font_size);
 }
-
 
 // Layout constants — fixed sizes in reference resolution
 // ============================================================
@@ -596,115 +587,12 @@ pub const Button = struct {
     /// (e.g. a skill-bar slot: click = activate the skill, drag = reorder/
     /// clear). Null for action-only buttons. See `refAt`.
     ref: ?SlotRef = null,
-    /// Settings control identity, if this button is a settings toggle or
-    /// choice. The `.change_setting` action + `AnytimeInput.clicked_setting`
-    /// fold this into the handler. Null for non-settings buttons. See
-    /// `SettingRef`.
-    /// DESIGN → UI Framework → Settings screen.
-    setting_ref: ?types.SettingRef = null,
-    /// Editor palette group index, if this button is a group header
-    /// (expand/collapse) or the group's "+" add-new cell. The
-    /// `.toggle_editor_palette_group` / `.add_editor_palette_type` actions
-    /// + `AnytimeInput.clicked_editor_group` fold this into the handler —
-    /// same pattern as `setting_ref`.
-    editor_group: ?usize = null,
-    /// Inspector section identity, if this button is a section header
-    /// (expand/collapse). The `.toggle_editor_inspector_section` action +
-    /// `AnytimeInput.clicked_editor_section` fold this into the handler.
-    editor_section: ?types.EditorInspectorSectionId = null,
-    /// Sprite picker cell identity, if this button is a sprite option (the
-    /// stem — for mission-local picks the namespaced
-    /// `custom/<mission>/<stem>` id). The `.select_editor_entity_sprite`
-    /// action + `AnytimeInput.clicked_editor_sprite` fold this into the
-    /// handler.
-    editor_sprite: ?[]const u8 = null,
-    /// Sprite picker tab identity, if this button is a tab (Mission /
-    /// Official). The `.select_editor_sprite_tab` action +
-    /// `AnytimeInput.clicked_editor_sprite_tab` fold this into the handler.
-    editor_sprite_tab: ?types.EditorSpritePickerTab = null,
-    /// Editor tool identity, if this button is a tool cell (make it the
-    /// active tool). The `.select_editor_tool` action +
-    /// `AnytimeInput.clicked_editor_tool` fold this into the handler.
-    editor_tool: ?types.EditorToolId = null,
-    /// Editor level-tab index, if this button is a level tab (make that
-    /// level active). The `.select_editor_level` action +
-    /// `AnytimeInput.clicked_editor_level` fold this into the handler.
-    editor_level: ?u32 = null,
-    /// Editor entity color-swatch index, if this button is one of the
-    /// inspector's color swatches. The `.select_editor_entity_color`
-    /// action + `AnytimeInput.clicked_editor_color` fold this into the
-    /// handler.
-    editor_color: ?u32 = null,
-    /// Editor gear slot, if this button is an inspector slot control (a
-    /// weapon-type cell, Add, or Delete). Rides in
-    /// `AnytimeInput.clicked_editor_gear_slot` alongside its action.
-    editor_gear_slot: ?types.GearSlot = null,
-    /// Editor weapon type, if this button is a weapon-type cell (set
-    /// alongside `editor_gear_slot`). Rides in
-    /// `AnytimeInput.clicked_editor_weapon_type`.
-    editor_weapon_type: ?types.WeaponType = null,
-    /// Editor item KIND, if this button is an item-type pick cell (the
-    /// item content's type rows; a weapon cell also sets
-    /// `editor_weapon_type`). Rides in
-    /// `AnytimeInput.clicked_editor_item_kind` alongside
-    /// `.select_editor_item_type`.
-    editor_item_kind: ?types.ItemKind = null,
-    /// Editor inventory slot index, if this button is one of the player
-    /// inspector's Inventory-section controls (a slot cell, or the detail
-    /// block's Add/Delete). Rides in
-    /// `AnytimeInput.clicked_editor_inventory_slot`.
-    editor_inventory_slot: ?u32 = null,
-    /// Editor utility-slot index, if this button is an inspector
-    /// utility-slot button (opens the skill picker). Rides in
-    /// `AnytimeInput.clicked_editor_utility_slot`.
-    editor_utility_slot: ?u32 = null,
-    /// Editor LAYER index, if this button is a Layers-section control (a
-    /// layer's sprite button, its color swatches, its Delete, or the
-    /// add-layer button — null there = the picker's add mode). Rides in
-    /// `AnytimeInput.clicked_editor_layer` alongside its action.
-    editor_layer: ?u32 = null,
-    /// Footprint-editor grid cell (row-major), if this button is one of
-    /// the editor's sprite-grid tile cells. Rides in
-    /// `AnytimeInput.clicked_editor_footprint_tile`.
-    editor_footprint_tile: ?u32 = null,
-    /// Settings-sidebar gradient ROLE (world / enemy / player), if this
-    /// button is a gradient row's swatch (opens the theme picker) or its
-    /// Auto button (reverts to derivation). Rides in
-    /// `AnytimeInput.clicked_editor_gradient_role` alongside the action.
-    editor_gradient_role: ?types.LevelGradientRole = null,
-    /// Theme-picker gradient index, if this button is a picker row. Rides
-    /// in `AnytimeInput.clicked_editor_gradient` alongside
-    /// `.select_editor_level_gradient`.
-    editor_gradient: ?u32 = null,
-    /// Editor skill pick, if this button is a skill-picker cell. Rides in
-    /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
-    editor_skill: ?types.SkillId = null,
-    /// Keybinds-tab edit command (rekey / reassign / add / remove / pick /
-    /// confirm / cancel / reset), if this button is part of the keybinds
-    /// tab's editing UI. The `.edit_keybind` action +
-    /// `AnytimeInput.clicked_keybind_command` fold this into the handler —
-    /// same payload-rides-along pattern as `setting_ref`.
-    keybind_command: ?types.KeybindCommand = null,
-    /// Settings screen content tab (Settings / Keybinds), if this button
-    /// is one of the settings screen's tab buttons. The
-    /// `.select_settings_tab` action + `AnytimeInput.clicked_settings_tab`
-    /// fold this into the handler — same payload-rides-along pattern as
-    /// `editor_sprite_tab`.
-    settings_tab: ?types.SettingsTab = null,
-    /// Editor-browser KIND tab identity (Mission today), if this button is
-    /// one of the browser's kind tabs. The `.select_editor_kind_tab`
-    /// action + `AnytimeInput.clicked_editor_kind` fold this into the
-    /// handler — same payload-rides-along pattern as `editor_sprite_tab`.
-    editor_kind: ?types.EditorKind = null,
-    /// Mission-browser tab identity, if this button is one of the browser's
-    /// two tabs (Your Missions / Official). The `.select_editor_mission_tab`
-    /// action + `AnytimeInput.clicked_editor_mission_tab` fold this into the
-    /// handler — same payload-rides-along pattern as `editor_sprite_tab`.
-    editor_mission_tab: ?types.EditorMissionBrowserTab = null,
-    /// Mission-browser ROW index (into the current tab's list), if this
-    /// button is a mission row. The `.open_editor_mission_row` action +
-    /// `AnytimeInput.clicked_editor_mission_row` fold this into the handler.
-    editor_mission_row: ?u32 = null,
+    /// The button's identity BEYOND its action, if it has one — what was
+    /// clicked (which row, which tab, which cell), riding the frame's
+    /// input alongside the action (see `types.ButtonPayload` + DESIGN →
+    /// Input → Button payloads). Null for action-only buttons; the
+    /// variant must be the one `actionButtonPayload(action)` names.
+    payload: ?types.ButtonPayload = null,
     blocks_input: bool = true,
 };
 
@@ -1293,7 +1181,6 @@ test "wrapRow breaks at spaces and drops the break space" {
     try std.testing.expectEqualStrings("cc", lines[1][0].text);
 }
 
-
 test "wrapRow: newline is a hard line break, the character dropped" {
     // raylib's DrawTextEx ALSO breaks on '\n' (its own line advance + x
     // reset) — so a span containing one renders more lines than the layout
@@ -1398,4 +1285,3 @@ test "wrapRow: normal space wrapping still works" {
 // ============================================================
 // Tooltip placement (placeTooltip) — pure geometry over (source, screen, size)
 // ============================================================
-

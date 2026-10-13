@@ -186,7 +186,7 @@ fn emitEditorToolCellButton(
         .width = cell.width,
         .height = cell.height,
         .action = .select_editor_tool,
-        .editor_tool = tool,
+        .payload = .{ .editor_tool = tool },
         .color = button_color,
         .highlighted = std.meta.eql(tool, active_tool),
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
@@ -475,7 +475,7 @@ fn emitEditorToolDeleteButton(
         .width = close_button_size,
         .height = close_button_size,
         .action = .delete_editor_palette_type,
-        .editor_tool = tool,
+        .payload = .{ .editor_tool = tool },
         .tooltip = .{ .header = try spanRow(allocator, text(
             try std.fmt.allocPrint(allocator, "Delete {s} + its placements", .{type_name}),
         )) },
@@ -650,24 +650,26 @@ pub fn buildEditorLevelTabs(
             .width = width,
             .height = editor_header_strip_height,
             .action = .select_editor_level,
-            .editor_level = @intCast(index),
+            .payload = .{ .editor_level = @intCast(index) },
             .highlighted = index == editor.active_level_index,
         } });
-        try elements.append(allocator, .{ .text_label = .{
-            .text = label,
-            // Centered in the zone LEFT of the delete button, not the
-            // full tab — the × owns the top-right corner.
-            .screen_position = .{
-                .x = cell.x + @divFloor(width - delete_zone_width - label_width, 2),
-                .y = cell.y + @divFloor(
-                    cell.height - editor_group_header_font_size,
-                    2,
-                ),
+        try elements.append(allocator, .{
+            .text_label = .{
+                .text = label,
+                // Centered in the zone LEFT of the delete button, not the
+                // full tab — the × owns the top-right corner.
+                .screen_position = .{
+                    .x = cell.x + @divFloor(width - delete_zone_width - label_width, 2),
+                    .y = cell.y + @divFloor(
+                        cell.height - editor_group_header_font_size,
+                        2,
+                    ),
+                },
+                .font_size = editor_group_header_font_size,
+                .color = active_theme.lightest,
+                .blocks_input = false,
             },
-            .font_size = editor_group_header_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
+        });
         // The tab's × (delete level): the shared close-button visual, flush
         // in the tab's top-right corner, emitted AFTER the tab so hit-
         // testing (last-wins) prefers it where the two overlap. Offered
@@ -683,7 +685,7 @@ pub fn buildEditorLevelTabs(
                 .width = close_button_size,
                 .height = close_button_size,
                 .action = .delete_editor_level,
-                .editor_level = @intCast(index),
+                .payload = .{ .editor_level = @intCast(index) },
                 .tooltip = .{ .header = try spanRow(allocator, text("Delete level")) },
             } });
         }
@@ -968,7 +970,7 @@ pub fn buildEditorBottomBar(
             .width = header_width,
             .height = editor_header_strip_height,
             .action = .toggle_editor_palette_group,
-            .editor_group = group_index,
+            .payload = .{ .editor_group = group_index },
         } });
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -1132,7 +1134,10 @@ fn emitEditorPlusCell(
         .width = cell.width,
         .height = cell.height,
         .action = action,
-        .editor_group = editor_group,
+        .payload = if (editor_group) |group_index|
+            .{ .editor_group = group_index }
+        else
+            null,
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
     const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
@@ -1219,7 +1224,7 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     for (0..3) |tab| {
         const button = elements.items[4 * tab + 1].button;
         try std.testing.expectEqual(Action.select_editor_level, button.action);
-        try std.testing.expectEqual(@as(u32, @intCast(tab)), button.editor_level.?);
+        try std.testing.expectEqual(@as(u32, @intCast(tab)), button.payload.?.editor_level);
         try std.testing.expectEqual(tab == 1, button.highlighted);
         try std.testing.expect(button.sprite_id == null); // spriteless over the panel
 
@@ -1233,7 +1238,7 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
         const close_button = elements.items[4 * tab + 3].button;
         try std.testing.expectEqual(Action.delete_editor_level, close_button.action);
         try std.testing.expectEqualStrings(close_button_sprite_id, close_button.sprite_id.?);
-        try std.testing.expectEqual(@as(u32, @intCast(tab)), close_button.editor_level.?);
+        try std.testing.expectEqual(@as(u32, @intCast(tab)), close_button.payload.?.editor_level);
         try std.testing.expectEqual(close_button_size, close_button.width);
         try std.testing.expectEqual(@as(i32, 0), close_button.screen_position.y);
         const tab_panel = elements.items[4 * tab].nine_slice_panel;
@@ -1579,18 +1584,18 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         .button => |button| {
             // The header + "+" buttons BOTH carry the group payload — tell
             // them apart by action.
-            if (button.editor_group == 0 and button.action == .toggle_editor_palette_group) {
+            if (button.action == .toggle_editor_palette_group and button.payload.?.editor_group == 0) {
                 enemies_header_button = button.screen_position;
                 enemies_header_width = button.width;
             }
-            if (button.editor_group == 1 and button.action == .toggle_editor_palette_group) {
+            if (button.action == .toggle_editor_palette_group and button.payload.?.editor_group == 1) {
                 decorations_header_button = button.screen_position;
             }
             if (button.action == .add_editor_palette_type) {
                 plus_button_count += 1;
-                try std.testing.expect(button.editor_group != null);
+                try std.testing.expect(button.payload.?.editor_group >= 0);
                 try std.testing.expect(button.sprite_id == null); // spriteless over the panel
-                if (button.editor_group.? == 0) enemies_plus_button = button.screen_position;
+                if (button.payload.?.editor_group == 0) enemies_plus_button = button.screen_position;
             }
             if (button.action == .delete_editor_palette_type) {
                 delete_button_count += 1;
@@ -1604,7 +1609,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
                     types.reference_height - bottom_bar_height,
                     button.screen_position.y,
                 );
-                try std.testing.expect(button.editor_tool != null);
+                try std.testing.expect(std.meta.activeTag(button.payload.?) == .editor_tool);
             }
             if (button.sprite_id != null and
                 std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
@@ -1919,8 +1924,11 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
     var bar_band_tool_cells: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| {
-            if (button.editor_group) |group_index| {
-                group_header_y[group_index] = button.screen_position.y;
+            if (button.payload) |payload| {
+                switch (payload) {
+                    .editor_group => |group_index| group_header_y[group_index] = button.screen_position.y,
+                    else => {},
+                }
             }
             if (button.sprite_id != null and
                 std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
@@ -1956,7 +1964,11 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
     var decoration_header_x: ?i32 = null;
     for (elements.items) |element| switch (element) {
         .button => |button| {
-            if (button.editor_group == 1) decoration_header_x = button.screen_position.x;
+            const group_index = switch (button.payload orelse continue) {
+                .editor_group => |g| g,
+                else => continue,
+            };
+            if (group_index == 1) decoration_header_x = button.screen_position.x;
         },
         .text_label => |label| {
             if (std.mem.eql(u8, label.text, "+")) {
@@ -2007,7 +2019,11 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
         var empty_group_plus_y: ?i32 = null;
         for (empty_expanded_elements.items) |element| switch (element) {
             .button => |button| {
-                if (button.editor_group != 1) continue;
+                const group_index = switch (button.payload orelse continue) {
+                    .editor_group => |g| g,
+                    else => continue,
+                };
+                if (group_index != 1) continue;
                 if (button.action == .toggle_editor_palette_group) {
                     empty_group_header_y = button.screen_position.y;
                 } else if (button.action == .add_editor_palette_type) {
@@ -2110,8 +2126,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
                 u8,
                 button.sprite_id.?,
                 button_background_sprite_id,
-            ) and button.screen_position.y >= types.reference_height - bottom_bar_height)
-            {
+            ) and button.screen_position.y >= types.reference_height - bottom_bar_height) {
                 count += 1;
             },
             else => {},

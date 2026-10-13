@@ -130,7 +130,7 @@ pub const MissionSprite = struct {
     /// — the sprite picker's pick payload + the id the edited type
     /// stores on commit. MINTED AT SCAN TIME (backing_allocator, freed
     /// with the list) so every consumer references session-owned bytes:
-    /// the pick payload that rides `AnytimeInput.clicked_editor_sprite`
+    /// the pick payload that rides `PlayerInput.clicked_payload`
     /// borrows this slice, and a same-frame borrow of session-lifetime
     /// bytes is safe indefinitely (the per-frame view mint it replaced
     /// died at the frame's render reset — the lifetime hazard the
@@ -1266,7 +1266,7 @@ pub const GameStateHistory = struct {
             .player_input_event => |m| std.fmt.bufPrint(buf, "player_input_event.{s}", .{@tagName(m)}) catch "player_input_event.?",
             .level_event => |m| std.fmt.bufPrint(buf, "level_event.{s}", .{@tagName(m)}) catch "level_event.?",
             .sub_level_event => |m| std.fmt.bufPrint(buf, "sub_level_event.{s}", .{@tagName(m)}) catch "sub_level_event.?",
-        .replay_viewer_event => |m| std.fmt.bufPrint(buf, "replay_viewer_event.{s}", .{@tagName(m)}) catch "replay_viewer_event.?",
+            .replay_viewer_event => |m| std.fmt.bufPrint(buf, "replay_viewer_event.{s}", .{@tagName(m)}) catch "replay_viewer_event.?",
         };
     }
 
@@ -1316,7 +1316,8 @@ pub const GameStateHistory = struct {
             const act_name = eventName(&act_buf, expected);
             const field_hint = firstDiffField(Event, expected, recorded) orelse "";
             var msg_buf: [512]u8 = undefined;
-            const msg = std.fmt.bufPrint(&msg_buf,
+            const msg = std.fmt.bufPrint(
+                &msg_buf,
                 "replay mismatch at recorded event {d}: handler would run {s}, but recorded history has {s} (first differing field: \"{s}\")",
                 .{ recorded_index, act_name, exp_name, field_hint },
             ) catch "replay mismatch: handler-pushed event does not match recorded history";
@@ -1545,790 +1546,778 @@ pub const GameStateHistory = struct {
                     return;
                 }
                 switch (pi) {
-                // Exit/skip orchestrators: screen-context legality.
-                .player_skip_level,
-                .player_restart_mission,
-                .player_exit_mission,
-                => {
-                    if (self.current_state.screen != .level) {
-                        self.rejectReplay("replay validation: player exit/skip action outside level screen");
-                        return;
-                    }
-                },
-                .player_exit_to_menu => {
-                    if (self.current_state.screen != .level and self.current_state.screen != .hub and
-                        self.current_state.screen != .editor)
-                    {
-                        self.rejectReplay("replay validation: player_exit_to_menu outside level/hub/editor screen");
-                        return;
-                    }
-                },
-                // Editor Test button: only from the editor's edit mode —
-                // the button exists only there, so anything else in a
-                // crafted log is rejected.
-                .player_start_playtest => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: editor playtest start outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: editor playtest start with no editor");
-                        return;
-                    };
-                    if (editor.mode != .edit) {
-                        self.rejectReplay("replay validation: editor playtest start outside edit mode");
-                        return;
-                    }
-                },
-                // Validate: file-based (the handler needs no editor), so
-                // the legality bar is just "no run active" — which a
-                // fresh state satisfies, letting a cross-session
-                // validation replay seed this as its first event (see
-                // DESIGN → Custom Missions & Online Services → Validation
-                // replay). The mission files themselves are read in the
-                // handler (missing/unreadable → the recoverable-read
-                // path).
-                .player_start_validation => {
-                    if (self.current_state.level != null or self.current_state.mission != null) {
-                        self.rejectReplay("replay validation: player_start_validation with an active level/mission");
-                        return;
-                    }
-                },
-                // Revalidate: the options-menu button exists only on the
-                // editor screen with an editor present; the handler owns
-                // the rest (the replay file exists, the uuid identity
-                // gate, the checking replay). File-based like validate —
-                // no run-active check needed for a cross-session log.
-                .player_revalidate_mission => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_revalidate_mission outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_revalidate_mission with no editor");
-                        return;
-                    }
-                },
-                .player_set_editor_level => |set| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_set_editor_level outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_set_editor_level with no editor");
-                        return;
-                    };
-                    if (set.level_index >= editor.levels.len) {
-                        self.rejectReplay("replay validation: player_set_editor_level index out of range");
-                        return;
-                    }
-                },
-                // Structural legality: screen + editor + the tool's palette
-                // index in range (the live path gates on the rendered palette
-                // cells; a hand-crafted log could name a nonexistent type).
-                .player_set_editor_tool => |set| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_set_editor_tool outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_set_editor_tool with no editor");
-                        return;
-                    };
-                    const tool_valid = switch (set.tool) {
-                        .select, .tile => true,
-                        .entity_type => |type_id| type_id < editor.entity_types.len,
-                        .decoration_type => |type_id| type_id < editor.decoration_types.len,
-                        .item_type => |type_id| type_id < editor.item_types.len,
-                    };
-                    if (!tool_valid) {
-                        self.rejectReplay("replay validation: player_set_editor_tool type id out of range");
-                        return;
-                    }
-                },
-                // Structural legality: the editor screen with an editor
-                // present (the live path is the editor's top-left toggle
-                // button; no other screen renders it).
-                .player_toggle_editor_inspector => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_toggle_editor_inspector outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_toggle_editor_inspector with no editor");
-                        return;
-                    }
-                },
-                // Structural legality: same shape — the live path is a
-                // palette group's "+" cell (the editor's bottom bar).
-                .player_add_editor_entity_type,
-                .player_add_editor_decoration_type,
-                .player_add_editor_item_type,
-                => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_add_editor_type outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_add_editor_type with no editor");
-                        return;
-                    }
-                },
-                // Structural legality: same shape — the live path is the
-                // top-bar add-level "+".
-                .player_add_editor_level => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_add_editor_level outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_add_editor_level with no editor");
-                        return;
-                    }
-                },
-                // Structural legality: same shape — the live path is a level
-                // tab's × button. The index must be in range AND the
-                // mission must keep ≥1 level (the handler enforces both as
-                // its documented invariant; this is the gate that keeps
-                // crafted logs away from those panics).
-                .player_delete_editor_level => |delete| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_delete_editor_level outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_delete_editor_level with no editor");
-                        return;
-                    };
-                    if (editor.levels.len <= 1) {
-                        self.rejectReplay("replay validation: player_delete_editor_level with a single-level mission");
-                        return;
-                    }
-                    if (delete.level_index >= editor.levels.len) {
-                        self.rejectReplay("replay validation: player_delete_editor_level level index out of range");
-                        return;
-                    }
-                },
-                // Structural legality: the live path is a palette tool cell's
-                // delete button. The type id must be in range for its kind
-                // (the editor_set_tool range-check posture; the handler
-                // ignores out-of-range defensively).
-                .player_delete_editor_type => |delete| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_delete_editor_type outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_delete_editor_type with no editor");
-                        return;
-                    };
-                    const type_valid = switch (delete.type_kind) {
-                        .entity => delete.type_id < editor.entity_types.len,
-                        .decoration => delete.type_id < editor.decoration_types.len,
-                        .item => delete.type_id < editor.item_types.len,
-                    };
-                    if (!type_valid) {
-                        self.rejectReplay("replay validation: player_delete_editor_type type id out of range");
-                        return;
-                    }
-                },
-                // Structural legality: same shape — the live path is the
-                // editor's top-right toggle button.
-                .player_toggle_editor_metadata_sidebar => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar with no editor");
-                        return;
-                    }
-                },
-                // Structural legality: a surface toggle is legal only on
-                // the screens that surface exists on (mirrors the live
-                // gates: the in_game arms run at level/hub, the modal
-                // buttons render in their contexts, escape works everywhere).
-                .player_toggle_ui_surface => |toggle| {
-                    if (!surfaceToggleLegal(self.current_state.screen, toggle.surface)) {
-                        var buf: [128]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf,
-                            "replay validation: player_toggle_ui_surface .{s} outside its screens",
-                            .{@tagName(toggle.surface)},
-                        ) catch "replay validation: player_toggle_ui_surface outside its screens";
-                        self.rejectReplay(msg);
-                        return;
-                    }
-                },
-                // Structural legality: right-click inspect is level-only (the
-                // gesture's scope — hubs are excluded by design) and the
-                // target index must name a live entity.
-                .player_inspect_entity => |inspect| {
-                    if (self.current_state.screen != .level) {
-                        self.rejectReplay("replay validation: player_inspect_entity outside level screen");
-                        return;
-                    }
-                    if (inspect.entity_index) |index| {
+                    // Exit/skip orchestrators: screen-context legality.
+                    .player_skip_level,
+                    .player_restart_mission,
+                    .player_exit_mission,
+                    => {
+                        if (self.current_state.screen != .level) {
+                            self.rejectReplay("replay validation: player exit/skip action outside level screen");
+                            return;
+                        }
+                    },
+                    .player_exit_to_menu => {
+                        if (self.current_state.screen != .level and self.current_state.screen != .hub and
+                            self.current_state.screen != .editor)
+                        {
+                            self.rejectReplay("replay validation: player_exit_to_menu outside level/hub/editor screen");
+                            return;
+                        }
+                    },
+                    // Editor Test button: only from the editor's edit mode —
+                    // the button exists only there, so anything else in a
+                    // crafted log is rejected.
+                    .player_start_playtest => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: editor playtest start outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: editor playtest start with no editor");
+                            return;
+                        };
+                        if (editor.mode != .edit) {
+                            self.rejectReplay("replay validation: editor playtest start outside edit mode");
+                            return;
+                        }
+                    },
+                    // Validate: file-based (the handler needs no editor), so
+                    // the legality bar is just "no run active" — which a
+                    // fresh state satisfies, letting a cross-session
+                    // validation replay seed this as its first event (see
+                    // DESIGN → Custom Missions & Online Services → Validation
+                    // replay). The mission files themselves are read in the
+                    // handler (missing/unreadable → the recoverable-read
+                    // path).
+                    .player_start_validation => {
+                        if (self.current_state.level != null or self.current_state.mission != null) {
+                            self.rejectReplay("replay validation: player_start_validation with an active level/mission");
+                            return;
+                        }
+                    },
+                    // Revalidate: the options-menu button exists only on the
+                    // editor screen with an editor present; the handler owns
+                    // the rest (the replay file exists, the uuid identity
+                    // gate, the checking replay). File-based like validate —
+                    // no run-active check needed for a cross-session log.
+                    .player_revalidate_mission => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_revalidate_mission outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_revalidate_mission with no editor");
+                            return;
+                        }
+                    },
+                    .player_set_editor_level => |set| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_set_editor_level outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_set_editor_level with no editor");
+                            return;
+                        };
+                        if (set.level_index >= editor.levels.len) {
+                            self.rejectReplay("replay validation: player_set_editor_level index out of range");
+                            return;
+                        }
+                    },
+                    // Structural legality: screen + editor + the tool's palette
+                    // index in range (the live path gates on the rendered palette
+                    // cells; a hand-crafted log could name a nonexistent type).
+                    .player_set_editor_tool => |set| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_set_editor_tool outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_set_editor_tool with no editor");
+                            return;
+                        };
+                        const tool_valid = switch (set.tool) {
+                            .select, .tile => true,
+                            .entity_type => |type_id| type_id < editor.entity_types.len,
+                            .decoration_type => |type_id| type_id < editor.decoration_types.len,
+                            .item_type => |type_id| type_id < editor.item_types.len,
+                        };
+                        if (!tool_valid) {
+                            self.rejectReplay("replay validation: player_set_editor_tool type id out of range");
+                            return;
+                        }
+                    },
+                    // Structural legality: the editor screen with an editor
+                    // present (the live path is the editor's top-left toggle
+                    // button; no other screen renders it).
+                    .player_toggle_editor_inspector => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_toggle_editor_inspector outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_toggle_editor_inspector with no editor");
+                            return;
+                        }
+                    },
+                    // Structural legality: same shape — the live path is a
+                    // palette group's "+" cell (the editor's bottom bar).
+                    .player_add_editor_entity_type,
+                    .player_add_editor_decoration_type,
+                    .player_add_editor_item_type,
+                    => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_add_editor_type outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_add_editor_type with no editor");
+                            return;
+                        }
+                    },
+                    // Structural legality: same shape — the live path is the
+                    // top-bar add-level "+".
+                    .player_add_editor_level => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_add_editor_level outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_add_editor_level with no editor");
+                            return;
+                        }
+                    },
+                    // Structural legality: same shape — the live path is a level
+                    // tab's × button. The index must be in range AND the
+                    // mission must keep ≥1 level (the handler enforces both as
+                    // its documented invariant; this is the gate that keeps
+                    // crafted logs away from those panics).
+                    .player_delete_editor_level => |delete| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_delete_editor_level outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_delete_editor_level with no editor");
+                            return;
+                        };
+                        if (editor.levels.len <= 1) {
+                            self.rejectReplay("replay validation: player_delete_editor_level with a single-level mission");
+                            return;
+                        }
+                        if (delete.level_index >= editor.levels.len) {
+                            self.rejectReplay("replay validation: player_delete_editor_level level index out of range");
+                            return;
+                        }
+                    },
+                    // Structural legality: the live path is a palette tool cell's
+                    // delete button. The type id must be in range for its kind
+                    // (the editor_set_tool range-check posture; the handler
+                    // ignores out-of-range defensively).
+                    .player_delete_editor_type => |delete| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_delete_editor_type outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_delete_editor_type with no editor");
+                            return;
+                        };
+                        const type_valid = switch (delete.type_kind) {
+                            .entity => delete.type_id < editor.entity_types.len,
+                            .decoration => delete.type_id < editor.decoration_types.len,
+                            .item => delete.type_id < editor.item_types.len,
+                        };
+                        if (!type_valid) {
+                            self.rejectReplay("replay validation: player_delete_editor_type type id out of range");
+                            return;
+                        }
+                    },
+                    // Structural legality: same shape — the live path is the
+                    // editor's top-right toggle button.
+                    .player_toggle_editor_metadata_sidebar => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar with no editor");
+                            return;
+                        }
+                    },
+                    // Structural legality: a surface toggle is legal only on
+                    // the screens that surface exists on (mirrors the live
+                    // gates: the in_game arms run at level/hub, the modal
+                    // buttons render in their contexts, escape works everywhere).
+                    .player_toggle_ui_surface => |toggle| {
+                        if (!surfaceToggleLegal(self.current_state.screen, toggle.surface)) {
+                            var buf: [128]u8 = undefined;
+                            const msg = std.fmt.bufPrint(
+                                &buf,
+                                "replay validation: player_toggle_ui_surface .{s} outside its screens",
+                                .{@tagName(toggle.surface)},
+                            ) catch "replay validation: player_toggle_ui_surface outside its screens";
+                            self.rejectReplay(msg);
+                            return;
+                        }
+                    },
+                    // Structural legality: right-click inspect is level-only (the
+                    // gesture's scope — hubs are excluded by design) and the
+                    // target index must name a live entity.
+                    .player_inspect_entity => |inspect| {
+                        if (self.current_state.screen != .level) {
+                            self.rejectReplay("replay validation: player_inspect_entity outside level screen");
+                            return;
+                        }
+                        if (inspect.entity_index) |index| {
+                            const level = self.current_state.level orelse return;
+                            if (index >= level.entities.len) {
+                                self.rejectReplay("replay validation: player_inspect_entity index out of range");
+                                return;
+                            }
+                        }
+                    },
+                    // Structural legality: same shape as the inspector toggle —
+                    // the live path is the picker's own open buttons, with the
+                    // target's bounds validated here (type ids / level indices
+                    // / layer indices in range against the palette).
+                    .player_open_editor_picker => |open| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_open_editor_picker outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_open_editor_picker with no editor");
+                            return;
+                        };
+                        const target_legal = switch (open.target) {
+                            .utility_skill_slot => |slot_index| slot_index < types.utility_skill_count,
+                            .entity_sprite, .decoration_sprite => true,
+                            // A layer index is bounds-checked downstream — the
+                            // pick/commit handlers guard against
+                            // `template.layers.len` (a stale index no-ops).
+                            .entity_layer, .decoration_layer => true,
+                            .decoration_footprint => |type_id| type_id < editor.decoration_types.len,
+                            .level_gradient => |gradient| gradient.level_index < editor.levels.len,
+                        };
+                        if (!target_legal) {
+                            self.rejectReplay("replay validation: player_open_editor_picker target out of range");
+                            return;
+                        }
+                    },
+                    .player_close_editor_picker => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_close_editor_picker outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_close_editor_picker with no editor");
+                            return;
+                        }
+                    },
+                    // Structural legality: same shape as the inspector toggle —
+                    // the live path is the player inspector's Import buttons
+                    // (the session data + the max-player loadout).
+                    .player_import_editor_player, .player_import_editor_max_player => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_import_editor_player outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_import_editor_player with no editor");
+                            return;
+                        }
+                    },
+                    // Settings-sidebar commits. The mission-name commit needs
+                    // only the editor context; the level-indexed commits bound
+                    // the level index (the live path addresses the active tab;
+                    // a crafted log could name any level — the bound still
+                    // holds because the sidebar only ever renders real tabs).
+                    .player_set_editor_mission_name => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_set_editor_mission_name outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_set_editor_mission_name with no editor");
+                            return;
+                        }
+                    },
+                    .player_set_editor_level_name => |set| self.validateEditorLevelMetadataCommit(set.level_index),
+                    .player_set_editor_level_color_wheel => |set| self.validateEditorLevelMetadataCommit(set.level_index),
+                    .player_set_editor_level_enemy_gradient => |set| self.validateEditorLevelMetadataCommit(set.level_index),
+                    .player_set_editor_level_player_gradient => |set| self.validateEditorLevelMetadataCommit(set.level_index),
+                    // Structural legality: the editor screen + editor + the
+                    // target's palette index in range (the live path resolves
+                    // the target from the focused field; a stale focus — its
+                    // type deleted mid-edit — commits nothing, so an out-of-
+                    // range target here is a crafted log).
+                    .player_set_editor_entity_name => |set| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_set_editor_entity_name outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_set_editor_entity_name with no editor");
+                            return;
+                        };
+                        switch (set.target) {
+                            .entity_type => |type_id| {
+                                if (type_id >= editor.entity_types.len) {
+                                    self.rejectReplay("replay validation: player_set_editor_entity_name type id out of range");
+                                    return;
+                                }
+                            },
+                            .player_def => {},
+                        }
+                    },
+                    // Same structural legality as the name commit.
+                    .player_set_editor_entity_sprite => |set| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_set_editor_entity_sprite outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_set_editor_entity_sprite with no editor");
+                            return;
+                        };
+                        switch (set.target) {
+                            .entity_type => |type_id| {
+                                if (type_id >= editor.entity_types.len) {
+                                    self.rejectReplay("replay validation: player_set_editor_entity_sprite type id out of range");
+                                    return;
+                                }
+                            },
+                            .player_def => {},
+                        }
+                    },
+                    // The remaining inspector scalar commits share one structural
+                    // legality (helper below): editor screen + editor + target
+                    // index in range (values are unrestricted — base stats are
+                    // unbounded by design, color_index is bounded by the swatch
+                    // count at the UI, and a crafted out-of-range index is a
+                    // harmless render-time clamp). Separate arms (not a
+                    // multi-case capture): the payloads are distinct types.
+                    .player_set_editor_entity_color_index => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_displays_weapons => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_keep_original_colors => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_max_health => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
+                    // Team: enemy-authorable only — the player_def target is
+                    // rejected (the player's team is definitionally 0; a
+                    // crafted log setting it would corrupt the win
+                    // condition's team comparison).
+                    .player_set_editor_entity_team => |set| {
+                        self.validateInspectorEntityEdit(set.target);
+                        if (set.target == .player_def) {
+                            self.rejectReplay("replay validation: player_set_editor_entity_team on the player target");
+                            return;
+                        }
+                    },
+                    // The equipped-slot commit (one slot-parameterized event):
+                    // same structural legality — target in range. The payload's
+                    // kind/slot match + stat bounds are the handler's defensive
+                    // posture (a mismatched payload is ignored, not rejected).
+                    .player_set_editor_entity_gear => |set| self.validateInspectorEntityEdit(set.target),
+                    .player_set_editor_entity_utility_skill => |set| {
+                        self.validateInspectorEntityEdit(set.target);
+                        if (set.slot_index >= types.utility_skill_count) {
+                            self.rejectReplay("replay validation: player_set_editor_entity_utility_skill slot index out of range");
+                            return;
+                        }
+                        if (set.value) |skill_id| {
+                            if (!utility_skills.isUtilitySkill(skill_id)) {
+                                self.rejectReplay("replay validation: player_set_editor_entity_utility_skill with a weapon skill");
+                                return;
+                            }
+                        }
+                    },
+                    .player_set_editor_decoration_def => |set| self.validateInspectorDecorationEdit(set.type_id),
+                    .player_set_editor_decoration_color_index => |set| self.validateInspectorDecorationEdit(set.type_id),
+                    .player_set_editor_decoration_keep_original_colors => |set| self.validateInspectorDecorationEdit(set.type_id),
+                    .player_set_editor_decoration_footprint => |set| self.validateInspectorDecorationEdit(set.type_id),
+                    .player_set_editor_item_def => |set| self.validateInspectorItemEdit(set.type_id),
+                    .player_set_editor_item_name => |set| self.validateInspectorItemEdit(set.type_id),
+                    // Inventory-slot commits (the player loadout's Inventory
+                    // section): same structural legality — the editor screen
+                    // with an editor present + the slot index in range. The
+                    // payload's stat bounds are the handler's clamp (same
+                    // posture as the item palette arms above).
+                    .player_add_editor_inventory_item => |set| self.validateInspectorInventoryEdit(set.index),
+                    .player_delete_editor_inventory_item => |set| self.validateInspectorInventoryEdit(set.index),
+                    .player_set_editor_inventory_item_def => |set| self.validateInspectorInventoryEdit(set.index),
+                    .player_set_editor_inventory_item_name => |set| self.validateInspectorInventoryEdit(set.index),
+                    .player_add_editor_entity_layer => |set| self.validateInspectorEntityLayerEdit(set.target, null),
+                    .player_remove_editor_entity_layer => |set| self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
+                    .player_set_editor_entity_layer => |set| self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
+                    .player_add_editor_decoration_layer => |set| self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, null),
+                    .player_remove_editor_decoration_layer => |set| self.validateInspectorDecorationLayerEdit(set.type_id, null, set.layer_index),
+                    .player_set_editor_decoration_layer => |set| self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, set.layer_index),
+                    // Structural legality: the paint checks + the select tool
+                    // active (the live path only toggles from the select tool's
+                    // viewport arm; the handler no-ops otherwise as the
+                    // defensive path for machinery events). The position is
+                    // unrestricted (empty-ground clicks are legal in a recorded
+                    // session — they plan empty and record nothing, but a
+                    // hand-crafted log may contain one).
+                    .player_toggle_editor_selection => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_toggle_editor_selection outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_toggle_editor_selection with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_toggle_editor_selection with no levels");
+                            return;
+                        }
+                        if (editor.active_tool != .select) {
+                            self.rejectReplay("replay validation: player_toggle_editor_selection without the select tool active");
+                            return;
+                        }
+                    },
+                    // Same structural legality as the toggle (the plain-click
+                    // replace path).
+                    .player_replace_editor_selection => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_replace_editor_selection outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_replace_editor_selection with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_replace_editor_selection with no levels");
+                            return;
+                        }
+                        if (editor.active_tool != .select) {
+                            self.rejectReplay("replay validation: player_replace_editor_selection without the select tool active");
+                            return;
+                        }
+                    },
+                    // Same structural legality as the toggle (the marquee is the
+                    // select tool's other gesture); the corner positions are
+                    // unrestricted (an empty region is a legal no-op in a
+                    // recorded session — it plans empty and records nothing, but
+                    // a hand-crafted log may contain one).
+                    .player_select_editor_region => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_select_editor_region outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_select_editor_region with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_select_editor_region with no levels");
+                            return;
+                        }
+                        if (editor.active_tool != .select) {
+                            self.rejectReplay("replay validation: player_select_editor_region without the select tool active");
+                            return;
+                        }
+                    },
+                    // Tool-agnostic (a non-select active tool is legal: the
+                    // action switches to select — see the handler). Same other
+                    // structural legality as the region select (ctrl+A is its
+                    // unbounded form).
+                    .player_select_editor_all => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_select_editor_all outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_select_editor_all with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_select_editor_all with no levels");
+                            return;
+                        }
+                    },
+                    // Same structural legality as the toggle + region (the
+                    // selection only exists while the select tool is active).
+                    .player_delete_editor_selection => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_delete_editor_selection outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_delete_editor_selection with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_delete_editor_selection with no levels");
+                            return;
+                        }
+                        if (editor.active_tool != .select) {
+                            self.rejectReplay("replay validation: player_delete_editor_selection without the select tool active");
+                            return;
+                        }
+                    },
+                    // Structural legality: screen + editor (no levels check —
+                    // clearing needs no level; a crafted event with an empty
+                    // selection is an idempotent no-op in the handler).
+                    .player_clear_editor_selection => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_clear_editor_selection outside editor screen");
+                            return;
+                        }
+                        if (self.current_state.editor == null) {
+                            self.rejectReplay("replay validation: player_clear_editor_selection with no editor");
+                            return;
+                        }
+                    },
+                    // Same structural legality as the selection delete (the
+                    // move reads the selection from state; the delta is
+                    // unrestricted — a zero delta is a legal no-op in a
+                    // recorded session, the live gesture never fires one).
+                    .player_move_editor_selection => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_move_editor_selection outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_move_editor_selection with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_move_editor_selection with no levels");
+                            return;
+                        }
+                        if (editor.active_tool != .select) {
+                            self.rejectReplay("replay validation: player_move_editor_selection without the select tool active");
+                            return;
+                        }
+                    },
+                    // Structural legality only: screen + editor + a level to
+                    // paint on. The position is unrestricted (any tile
+                    // coordinate is a legal paint target — the handler no-ops
+                    // on an existing tile, and a recorded session may contain
+                    // such no-op clicks), so there is no position check here.
+                    .player_paint_editor_tile => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_paint_editor_tile outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_paint_editor_tile with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_paint_editor_tile with no levels");
+                            return;
+                        }
+                    },
+                    // Structural legality: the paint checks + the entity type
+                    // in palette range (an out-of-range type_id would create a
+                    // placement the view can't resolve — the live path can't
+                    // produce one, a hand-crafted log could). The position is
+                    // unrestricted (occupant no-op clicks are legal in a
+                    // recorded session).
+                    .player_place_editor_entity => |place| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_place_editor_entity outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_place_editor_entity with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_place_editor_entity with no levels");
+                            return;
+                        }
+                        if (place.type_id >= editor.entity_types.len) {
+                            self.rejectReplay("replay validation: player_place_editor_entity type id out of range");
+                            return;
+                        }
+                    },
+                    // Same shape as the entity placement: the paint checks +
+                    // the decoration type in palette range. Position is
+                    // unrestricted (occupant no-op clicks are legal in a
+                    // recorded session).
+                    .player_place_editor_decoration => |place| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_place_editor_decoration outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_place_editor_decoration with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_place_editor_decoration with no levels");
+                            return;
+                        }
+                        if (place.type_id >= editor.decoration_types.len) {
+                            self.rejectReplay("replay validation: player_place_editor_decoration type id out of range");
+                            return;
+                        }
+                    },
+                    // Same shape: the paint checks + the item type in palette
+                    // range. Position unrestricted (occupant no-op clicks are
+                    // legal in a recorded session).
+                    .player_place_editor_item => |place| {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_place_editor_item outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_place_editor_item with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_place_editor_item with no levels");
+                            return;
+                        }
+                        if (place.type_id >= editor.item_types.len) {
+                            self.rejectReplay("replay validation: player_place_editor_item type id out of range");
+                            return;
+                        }
+                    },
+                    // The right-click delete: screen + editor + a level. The
+                    // position is unrestricted — every branch (including the
+                    // no-op ones) is legal in a recorded session.
+                    .player_delete_editor_at => {
+                        if (self.current_state.screen != .editor) {
+                            self.rejectReplay("replay validation: player_delete_editor_at outside editor screen");
+                            return;
+                        }
+                        const editor = self.current_state.editor orelse {
+                            self.rejectReplay("replay validation: player_delete_editor_at with no editor");
+                            return;
+                        };
+                        if (editor.levels.len == 0) {
+                            self.rejectReplay("replay validation: player_delete_editor_at with no levels");
+                            return;
+                        }
+                    },
+                    .player_replay_mission => {
+                        if (self.current_state.last_completed_mission == null) {
+                            self.rejectReplay("replay validation: player_replay_mission with no completed mission");
+                            return;
+                        }
+                    },
+                    .player_overwrite_clone => {
+                        const info = self.current_state.last_completed_mission orelse {
+                            self.rejectReplay("replay validation: player_overwrite_clone with no completed mission");
+                            return;
+                        };
+                        if (!info.overwrite_offered) {
+                            self.rejectReplay("replay validation: player_overwrite_clone when not offered");
+                            return;
+                        }
+                    },
+                    .player_continue => {
+                        if (self.current_state.screen != .main_menu) {
+                            self.rejectReplay("replay validation: player_continue outside main menu");
+                            return;
+                        }
+                    },
+                    .player_load_save => {
+                        if (self.current_state.screen != .main_menu) {
+                            self.rejectReplay("replay validation: player_load_save outside main menu");
+                            return;
+                        }
+                    },
+                    // Level combat actions: inner legality checks.
+                    .player_move_action => |action| {
                         const level = self.current_state.level orelse return;
-                        if (index >= level.entities.len) {
-                            self.rejectReplay("replay validation: player_inspect_entity index out of range");
+                        if (level.entities.len == 0) return;
+                        const player = level.entities[0];
+                        if (!self.isPlayerMoveLegal(level, player, action.destination)) {
+                            var buf: [160]u8 = undefined;
+                            const msg = std.fmt.bufPrint(
+                                &buf,
+                                "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
+                                .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
+                            ) catch "replay validation: player moved to an unreachable tile";
+                            self.rejectReplay(msg);
                             return;
                         }
-                    }
-                },
-                // Structural legality: same shape as the inspector toggle —
-                // the live path is the picker's own open buttons, with the
-                // target's bounds validated here (type ids / level indices
-                // / layer indices in range against the palette).
-                .player_open_editor_picker => |open| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_open_editor_picker outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_open_editor_picker with no editor");
-                        return;
-                    };
-                    const target_legal = switch (open.target) {
-                        .utility_skill_slot => |slot_index| slot_index < types.utility_skill_count,
-                        .entity_sprite, .decoration_sprite => true,
-                        // A layer index is bounds-checked downstream — the
-                        // pick/commit handlers guard against
-                        // `template.layers.len` (a stale index no-ops).
-                        .entity_layer, .decoration_layer => true,
-                        .decoration_footprint => |type_id| type_id < editor.decoration_types.len,
-                        .level_gradient => |gradient| gradient.level_index < editor.levels.len,
-                    };
-                    if (!target_legal) {
-                        self.rejectReplay("replay validation: player_open_editor_picker target out of range");
-                        return;
-                    }
-                },
-                .player_close_editor_picker => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_close_editor_picker outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_close_editor_picker with no editor");
-                        return;
-                    }
-                },
-                // Structural legality: same shape as the inspector toggle —
-                // the live path is the player inspector's Import buttons
-                // (the session data + the max-player loadout).
-                .player_import_editor_player, .player_import_editor_max_player => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_import_editor_player outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_import_editor_player with no editor");
-                        return;
-                    }
-                },
-                // Settings-sidebar commits. The mission-name commit needs
-                // only the editor context; the level-indexed commits bound
-                // the level index (the live path addresses the active tab;
-                // a crafted log could name any level — the bound still
-                // holds because the sidebar only ever renders real tabs).
-                .player_set_editor_mission_name => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_set_editor_mission_name outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_set_editor_mission_name with no editor");
-                        return;
-                    }
-                },
-                .player_set_editor_level_name => |set|
-                    self.validateEditorLevelMetadataCommit(set.level_index),
-                .player_set_editor_level_color_wheel => |set|
-                    self.validateEditorLevelMetadataCommit(set.level_index),
-                .player_set_editor_level_enemy_gradient => |set|
-                    self.validateEditorLevelMetadataCommit(set.level_index),
-                .player_set_editor_level_player_gradient => |set|
-                    self.validateEditorLevelMetadataCommit(set.level_index),
-                // Structural legality: the editor screen + editor + the
-                // target's palette index in range (the live path resolves
-                // the target from the focused field; a stale focus — its
-                // type deleted mid-edit — commits nothing, so an out-of-
-                // range target here is a crafted log).
-                .player_set_editor_entity_name => |set| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_set_editor_entity_name outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_set_editor_entity_name with no editor");
-                        return;
-                    };
-                    switch (set.target) {
-                        .entity_type => |type_id| {
-                            if (type_id >= editor.entity_types.len) {
-                                self.rejectReplay("replay validation: player_set_editor_entity_name type id out of range");
-                                return;
-                            }
-                        },
-                        .player_def => {},
-                    }
-                },
-                // Same structural legality as the name commit.
-                .player_set_editor_entity_sprite => |set| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_set_editor_entity_sprite outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_set_editor_entity_sprite with no editor");
-                        return;
-                    };
-                    switch (set.target) {
-                        .entity_type => |type_id| {
-                            if (type_id >= editor.entity_types.len) {
-                                self.rejectReplay("replay validation: player_set_editor_entity_sprite type id out of range");
-                                return;
-                            }
-                        },
-                        .player_def => {},
-                    }
-                },
-                // The remaining inspector scalar commits share one structural
-                // legality (helper below): editor screen + editor + target
-                // index in range (values are unrestricted — base stats are
-                // unbounded by design, color_index is bounded by the swatch
-                // count at the UI, and a crafted out-of-range index is a
-                // harmless render-time clamp). Separate arms (not a
-                // multi-case capture): the payloads are distinct types.
-                .player_set_editor_entity_color_index => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_displays_weapons => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_keep_original_colors => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_max_health => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
-                // Team: enemy-authorable only — the player_def target is
-                // rejected (the player's team is definitionally 0; a
-                // crafted log setting it would corrupt the win
-                // condition's team comparison).
-                .player_set_editor_entity_team => |set| {
-                    self.validateInspectorEntityEdit(set.target);
-                    if (set.target == .player_def) {
-                        self.rejectReplay("replay validation: player_set_editor_entity_team on the player target");
-                        return;
-                    }
-                },
-                // The equipped-slot commit (one slot-parameterized event):
-                // same structural legality — target in range. The payload's
-                // kind/slot match + stat bounds are the handler's defensive
-                // posture (a mismatched payload is ignored, not rejected).
-                .player_set_editor_entity_gear => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_utility_skill => |set| {
-                    self.validateInspectorEntityEdit(set.target);
-                    if (set.slot_index >= types.utility_skill_count) {
-                        self.rejectReplay("replay validation: player_set_editor_entity_utility_skill slot index out of range");
-                        return;
-                    }
-                    if (set.value) |skill_id| {
-                        if (!utility_skills.isUtilitySkill(skill_id)) {
-                            self.rejectReplay("replay validation: player_set_editor_entity_utility_skill with a weapon skill");
+                    },
+                    .player_use_skill => |use| {
+                        const level = self.current_state.level orelse return;
+                        if (level.entities.len == 0) return;
+                        const player = level.entities[0];
+                        self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
+                        self.validateSkillTarget(level, player, use.skill_id, use.target);
+                    },
+                    .player_skip_move_to_skill => |skip| {
+                        const level = self.current_state.level orelse return;
+                        if (level.entities.len == 0) return;
+                        const player = level.entities[0];
+                        self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
+                        if (!skip.prepare) {
+                            self.validateSkillTarget(level, player, skip.skill_id, skip.target);
+                        }
+                    },
+                    .player_prepare_skill => |prepare| {
+                        const level = self.current_state.level orelse return;
+                        if (level.entities.len == 0) return;
+                        const player = level.entities[0];
+                        self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
+                    },
+                    // No payload to validate.
+                    .player_skip_move,
+                    .player_skip_attack,
+                    .player_cancel_skill,
+                    .start_new_game,
+                    .open_editor,
+                    .save_game,
+                    .dismiss_mission_complete,
+                    .swap_hands,
+                    .move_player,
+                    .interact_with_npc,
+                    => {},
+                    // Inventory/gear/skill click + drag orchestrators: screen
+                    // must be level/hub (panels only show there) and slot indices
+                    // in range. The item-type → machinery resolution lives in the
+                    // handler (deterministic from state), so no deeper check here.
+                    .player_use_inventory_item => |use| {
+                        self.validateInventoryScreenAndSlot(use.inventory_slot_index);
+                    },
+                    .player_salvage_inventory_item => |salvage| {
+                        self.validateInventoryScreenAndSlot(salvage.inventory_slot_index);
+                    },
+                    .player_salvage_inventory_region => |region| {
+                        self.validateInventoryScreenAndSlot(region.start_slot);
+                        self.validateInventoryScreenAndSlot(region.end_slot);
+                    },
+                    .player_equip_to_gear => |equip| {
+                        self.validateInventoryScreenAndSlot(equip.inventory_slot_index);
+                    },
+                    .player_unequip_from_gear => |unequip| {
+                        self.validateInventoryScreenAndSlot(unequip.inventory_slot_index);
+                    },
+                    .player_assign_utility_skill => |assign| {
+                        self.validateUtilitySlot(assign.slot_index);
+                        // Only UTILITY skills may sit on the bar; the learned
+                        // list can contain weapon-skill tomes, so the drag path
+                        // is validated here (the handler also no-ops defensively).
+                        if (!utility_skills.isUtilitySkill(assign.skill_id)) {
+                            self.rejectReplay("replay validation: player_assign_utility_skill with a weapon skill");
                             return;
                         }
-                    }
-                },
-                .player_set_editor_decoration_def => |set|
-                    self.validateInspectorDecorationEdit(set.type_id),
-                .player_set_editor_decoration_color_index => |set|
-                    self.validateInspectorDecorationEdit(set.type_id),
-                .player_set_editor_decoration_keep_original_colors => |set|
-                    self.validateInspectorDecorationEdit(set.type_id),
-                .player_set_editor_decoration_footprint => |set|
-                    self.validateInspectorDecorationEdit(set.type_id),
-                .player_set_editor_item_def => |set|
-                    self.validateInspectorItemEdit(set.type_id),
-                .player_set_editor_item_name => |set|
-                    self.validateInspectorItemEdit(set.type_id),
-                // Inventory-slot commits (the player loadout's Inventory
-                // section): same structural legality — the editor screen
-                // with an editor present + the slot index in range. The
-                // payload's stat bounds are the handler's clamp (same
-                // posture as the item palette arms above).
-                .player_add_editor_inventory_item => |set|
-                    self.validateInspectorInventoryEdit(set.index),
-                .player_delete_editor_inventory_item => |set|
-                    self.validateInspectorInventoryEdit(set.index),
-                .player_set_editor_inventory_item_def => |set|
-                    self.validateInspectorInventoryEdit(set.index),
-                .player_set_editor_inventory_item_name => |set|
-                    self.validateInspectorInventoryEdit(set.index),
-                .player_add_editor_entity_layer => |set|
-                    self.validateInspectorEntityLayerEdit(set.target, null),
-                .player_remove_editor_entity_layer => |set|
-                    self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
-                .player_set_editor_entity_layer => |set|
-                    self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
-                .player_add_editor_decoration_layer => |set|
-                    self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, null),
-                .player_remove_editor_decoration_layer => |set|
-                    self.validateInspectorDecorationLayerEdit(set.type_id, null, set.layer_index),
-                .player_set_editor_decoration_layer => |set|
-                    self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, set.layer_index),
-                // Structural legality: the paint checks + the select tool
-                // active (the live path only toggles from the select tool's
-                // viewport arm; the handler no-ops otherwise as the
-                // defensive path for machinery events). The position is
-                // unrestricted (empty-ground clicks are legal in a recorded
-                // session — they plan empty and record nothing, but a
-                // hand-crafted log may contain one).
-                .player_toggle_editor_selection => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_toggle_editor_selection outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_toggle_editor_selection with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_toggle_editor_selection with no levels");
-                        return;
-                    }
-                    if (editor.active_tool != .select) {
-                        self.rejectReplay("replay validation: player_toggle_editor_selection without the select tool active");
-                        return;
-                    }
-                },
-                // Same structural legality as the toggle (the plain-click
-                // replace path).
-                .player_replace_editor_selection => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_replace_editor_selection outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_replace_editor_selection with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_replace_editor_selection with no levels");
-                        return;
-                    }
-                    if (editor.active_tool != .select) {
-                        self.rejectReplay("replay validation: player_replace_editor_selection without the select tool active");
-                        return;
-                    }
-                },
-                // Same structural legality as the toggle (the marquee is the
-                // select tool's other gesture); the corner positions are
-                // unrestricted (an empty region is a legal no-op in a
-                // recorded session — it plans empty and records nothing, but
-                // a hand-crafted log may contain one).
-                .player_select_editor_region => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_select_editor_region outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_select_editor_region with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_select_editor_region with no levels");
-                        return;
-                    }
-                    if (editor.active_tool != .select) {
-                        self.rejectReplay("replay validation: player_select_editor_region without the select tool active");
-                        return;
-                    }
-                },
-                // Tool-agnostic (a non-select active tool is legal: the
-                // action switches to select — see the handler). Same other
-                // structural legality as the region select (ctrl+A is its
-                // unbounded form).
-                .player_select_editor_all => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_select_editor_all outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_select_editor_all with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_select_editor_all with no levels");
-                        return;
-                    }
-                },
-                // Same structural legality as the toggle + region (the
-                // selection only exists while the select tool is active).
-                .player_delete_editor_selection => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_delete_editor_selection outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_delete_editor_selection with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_delete_editor_selection with no levels");
-                        return;
-                    }
-                    if (editor.active_tool != .select) {
-                        self.rejectReplay("replay validation: player_delete_editor_selection without the select tool active");
-                        return;
-                    }
-                },
-                // Structural legality: screen + editor (no levels check —
-                // clearing needs no level; a crafted event with an empty
-                // selection is an idempotent no-op in the handler).
-                .player_clear_editor_selection => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_clear_editor_selection outside editor screen");
-                        return;
-                    }
-                    if (self.current_state.editor == null) {
-                        self.rejectReplay("replay validation: player_clear_editor_selection with no editor");
-                        return;
-                    }
-                },
-                // Same structural legality as the selection delete (the
-                // move reads the selection from state; the delta is
-                // unrestricted — a zero delta is a legal no-op in a
-                // recorded session, the live gesture never fires one).
-                .player_move_editor_selection => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_move_editor_selection outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_move_editor_selection with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_move_editor_selection with no levels");
-                        return;
-                    }
-                    if (editor.active_tool != .select) {
-                        self.rejectReplay("replay validation: player_move_editor_selection without the select tool active");
-                        return;
-                    }
-                },
-                // Structural legality only: screen + editor + a level to
-                // paint on. The position is unrestricted (any tile
-                // coordinate is a legal paint target — the handler no-ops
-                // on an existing tile, and a recorded session may contain
-                // such no-op clicks), so there is no position check here.
-                .player_paint_editor_tile => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_paint_editor_tile outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_paint_editor_tile with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_paint_editor_tile with no levels");
-                        return;
-                    }
-                },
-                // Structural legality: the paint checks + the entity type
-                // in palette range (an out-of-range type_id would create a
-                // placement the view can't resolve — the live path can't
-                // produce one, a hand-crafted log could). The position is
-                // unrestricted (occupant no-op clicks are legal in a
-                // recorded session).
-                .player_place_editor_entity => |place| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_place_editor_entity outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_place_editor_entity with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_place_editor_entity with no levels");
-                        return;
-                    }
-                    if (place.type_id >= editor.entity_types.len) {
-                        self.rejectReplay("replay validation: player_place_editor_entity type id out of range");
-                        return;
-                    }
-                },
-                // Same shape as the entity placement: the paint checks +
-                // the decoration type in palette range. Position is
-                // unrestricted (occupant no-op clicks are legal in a
-                // recorded session).
-                .player_place_editor_decoration => |place| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_place_editor_decoration outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_place_editor_decoration with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_place_editor_decoration with no levels");
-                        return;
-                    }
-                    if (place.type_id >= editor.decoration_types.len) {
-                        self.rejectReplay("replay validation: player_place_editor_decoration type id out of range");
-                        return;
-                    }
-                },
-                // Same shape: the paint checks + the item type in palette
-                // range. Position unrestricted (occupant no-op clicks are
-                // legal in a recorded session).
-                .player_place_editor_item => |place| {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_place_editor_item outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_place_editor_item with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_place_editor_item with no levels");
-                        return;
-                    }
-                    if (place.type_id >= editor.item_types.len) {
-                        self.rejectReplay("replay validation: player_place_editor_item type id out of range");
-                        return;
-                    }
-                },
-                // The right-click delete: screen + editor + a level. The
-                // position is unrestricted — every branch (including the
-                // no-op ones) is legal in a recorded session.
-                .player_delete_editor_at => {
-                    if (self.current_state.screen != .editor) {
-                        self.rejectReplay("replay validation: player_delete_editor_at outside editor screen");
-                        return;
-                    }
-                    const editor = self.current_state.editor orelse {
-                        self.rejectReplay("replay validation: player_delete_editor_at with no editor");
-                        return;
-                    };
-                    if (editor.levels.len == 0) {
-                        self.rejectReplay("replay validation: player_delete_editor_at with no levels");
-                        return;
-                    }
-                },
-                .player_replay_mission => {
-                    if (self.current_state.last_completed_mission == null) {
-                        self.rejectReplay("replay validation: player_replay_mission with no completed mission");
-                        return;
-                    }
-                },
-                .player_overwrite_clone => {
-                    const info = self.current_state.last_completed_mission orelse {
-                        self.rejectReplay("replay validation: player_overwrite_clone with no completed mission");
-                        return;
-                    };
-                    if (!info.overwrite_offered) {
-                        self.rejectReplay("replay validation: player_overwrite_clone when not offered");
-                        return;
-                    }
-                },
-                .player_continue => {
-                    if (self.current_state.screen != .main_menu) {
-                        self.rejectReplay("replay validation: player_continue outside main menu");
-                        return;
-                    }
-                },
-                .player_load_save => {
-                    if (self.current_state.screen != .main_menu) {
-                        self.rejectReplay("replay validation: player_load_save outside main menu");
-                        return;
-                    }
-                },
-                // Level combat actions: inner legality checks.
-                .player_move_action => |action| {
-                    const level = self.current_state.level orelse return;
-                    if (level.entities.len == 0) return;
-                    const player = level.entities[0];
-                    if (!self.isPlayerMoveLegal(level, player, action.destination)) {
-                        var buf: [160]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf,
-                            "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
-                            .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
-                        ) catch "replay validation: player moved to an unreachable tile";
-                        self.rejectReplay(msg);
-                        return;
-                    }
-                },
-                .player_use_skill => |use| {
-                    const level = self.current_state.level orelse return;
-                    if (level.entities.len == 0) return;
-                    const player = level.entities[0];
-                    self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
-                    self.validateSkillTarget(level, player, use.skill_id, use.target);
-                },
-                .player_skip_move_to_skill => |skip| {
-                    const level = self.current_state.level orelse return;
-                    if (level.entities.len == 0) return;
-                    const player = level.entities[0];
-                    self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
-                    if (!skip.prepare) {
-                        self.validateSkillTarget(level, player, skip.skill_id, skip.target);
-                    }
-                },
-                .player_prepare_skill => |prepare| {
-                    const level = self.current_state.level orelse return;
-                    if (level.entities.len == 0) return;
-                    const player = level.entities[0];
-                    self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
-                },
-                // No payload to validate.
-                .player_skip_move, .player_skip_attack, .player_cancel_skill,
-                .start_new_game, .open_editor, .save_game,
-                .dismiss_mission_complete, .swap_hands,
-                .move_player, .interact_with_npc,
-                => {},
-                // Inventory/gear/skill click + drag orchestrators: screen
-                // must be level/hub (panels only show there) and slot indices
-                // in range. The item-type → machinery resolution lives in the
-                // handler (deterministic from state), so no deeper check here.
-                .player_use_inventory_item => |use| {
-                    self.validateInventoryScreenAndSlot(use.inventory_slot_index);
-                },
-                .player_salvage_inventory_item => |salvage| {
-                    self.validateInventoryScreenAndSlot(salvage.inventory_slot_index);
-                },
-                .player_salvage_inventory_region => |region| {
-                    self.validateInventoryScreenAndSlot(region.start_slot);
-                    self.validateInventoryScreenAndSlot(region.end_slot);
-                },
-                .player_equip_to_gear => |equip| {
-                    self.validateInventoryScreenAndSlot(equip.inventory_slot_index);
-                },
-                .player_unequip_from_gear => |unequip| {
-                    self.validateInventoryScreenAndSlot(unequip.inventory_slot_index);
-                },
-                .player_assign_utility_skill => |assign| {
-                    self.validateUtilitySlot(assign.slot_index);
-                    // Only UTILITY skills may sit on the bar; the learned
-                    // list can contain weapon-skill tomes, so the drag path
-                    // is validated here (the handler also no-ops defensively).
-                    if (!utility_skills.isUtilitySkill(assign.skill_id)) {
-                        self.rejectReplay("replay validation: player_assign_utility_skill with a weapon skill");
-                        return;
-                    }
-                },
-                .player_swap_utility_skills => |swap| {
-                    self.validateUtilitySlot(swap.slot_a_index);
-                    self.validateUtilitySlot(swap.slot_b_index);
-                },
-                .player_clear_utility_skill => |clear| {
-                    self.validateUtilitySlot(clear.slot_index);
-                },
-                .player_swap_inventory_items => |swap| {
-                    self.validateInventoryScreenAndSlot(swap.slot_a_index);
-                    self.validateInventoryScreenAndSlot(swap.slot_b_index);
-                },
+                    },
+                    .player_swap_utility_skills => |swap| {
+                        self.validateUtilitySlot(swap.slot_a_index);
+                        self.validateUtilitySlot(swap.slot_b_index);
+                    },
+                    .player_clear_utility_skill => |clear| {
+                        self.validateUtilitySlot(clear.slot_index);
+                    },
+                    .player_swap_inventory_items => |swap| {
+                        self.validateInventoryScreenAndSlot(swap.slot_a_index);
+                        self.validateInventoryScreenAndSlot(swap.slot_b_index);
+                    },
                 }
             },
             else => {},
@@ -2354,7 +2343,8 @@ pub const GameStateHistory = struct {
     fn validateSkillOnBarAndOffCooldown(self: *GameStateHistory, player: types.Entity, skill_id: types.SkillId) void {
         if (self.skillOnBarAndOffCooldown(player, skill_id)) return;
         var buf: [128]u8 = undefined;
-        const msg = std.fmt.bufPrint(&buf,
+        const msg = std.fmt.bufPrint(
+            &buf,
             "replay validation: skill {s} not on bar or on cooldown",
             .{@tagName(skill_id)},
         ) catch "replay validation: skill not on bar or on cooldown";
@@ -2430,8 +2420,12 @@ pub const GameStateHistory = struct {
             .options_menu, .settings => true,
             .credits, .load_save_menu => screen == .main_menu,
             .editor_browser => screen == .main_menu or screen == .editor,
-            .inventory, .gear, .skills, .entity_inspect,
-            .world_map, .full_combat_log,
+            .inventory,
+            .gear,
+            .skills,
+            .entity_inspect,
+            .world_map,
+            .full_combat_log,
             => screen == .level or screen == .hub,
         };
     }
@@ -2465,7 +2459,8 @@ pub const GameStateHistory = struct {
         if (self.skillTargetLegal(skill_id, target)) return;
         var buf: [128]u8 = undefined;
         const target_tile = target orelse types.Vector2{ .x = 0, .y = 0 };
-        const msg = std.fmt.bufPrint(&buf,
+        const msg = std.fmt.bufPrint(
+            &buf,
             "replay validation: skill {s} target ({d},{d}) is not a valid target",
             .{ @tagName(skill_id), target_tile.x, target_tile.y },
         ) catch "replay validation: skill target is not a valid target";
@@ -2528,7 +2523,8 @@ pub const GameStateHistory = struct {
                     var buf: [128]u8 = undefined;
                     const name = eventName(&buf, next);
                     var msg_buf: [256]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&msg_buf,
+                    const msg = std.fmt.bufPrint(
+                        &msg_buf,
                         "replay: non-player event {s} seeded at idle point (event {d})",
                         .{ name, self.current_event_index },
                     ) catch "replay: non-player event seeded at idle point";
@@ -2544,7 +2540,8 @@ pub const GameStateHistory = struct {
 
             // Verify: the event about to run (stack top) matches the recording.
             const expected = self.current_state.event_stack[
-                self.current_state.event_stack.len - 1];
+                self.current_state.event_stack.len - 1
+            ];
             self.verifyReplayMatch(expected, self.current_event_index);
             if (self.replay_rejection != null) return;
 
@@ -2605,7 +2602,8 @@ pub const GameStateHistory = struct {
                     var buf: [128]u8 = undefined;
                     const name = eventName(&buf, next);
                     var msg_buf: [256]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&msg_buf,
+                    const msg = std.fmt.bufPrint(
+                        &msg_buf,
                         "replay: non-player event {s} seeded at idle point (event {d})",
                         .{ name, self.current_event_index },
                     ) catch "replay: non-player event seeded at idle point";
@@ -2624,7 +2622,8 @@ pub const GameStateHistory = struct {
             // that pushes a different child than the original session did
             // panics here. For seeded top-level events this is trivially true.
             const expected = self.current_state.event_stack[
-                self.current_state.event_stack.len - 1];
+                self.current_state.event_stack.len - 1
+            ];
             self.verifyReplayMatch(expected, self.current_event_index);
             if (self.replay_rejection != null) return;
 
@@ -3268,7 +3267,6 @@ test "replay validation: skill target legality (getValidTargets)" {
     // Non-targeting skill (Spinblade) accepts any target (ignored).
     try std.testing.expect(history.skillTargetLegal(.spinblade, null));
 }
-
 
 test "isPlayerAction: whitelist accepts player-pushable events" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);

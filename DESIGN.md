@@ -1328,6 +1328,48 @@ that true (`src/session_log_bundle.zig`):
   payload pairs inside `applyAction` (the payload is the keyboard
   action's own identity), so keybind, click, and console all share the
   consumption sites.
+- **Button payloads — one union, riding the frame.** A clicked button's
+  identity BEYOND its action (which row, which tab, which cell) is ONE
+  tagged union, `types.ButtonPayload`, riding `PlayerInput.clicked_payload`
+  alongside the action `applyAction` folds. Same-frame only: valid in the
+  frame it was set, read by the consumption arm that fired its action
+  (`payloadAs` in input_handlers.zig: "my arm's variant, or the click
+  didn't happen"), dead after. The relay in main.zig is ONE line with a
+  fail-fast check against `types.actionButtonPayload` (the
+  `actionBindingContexts` pattern: an exhaustive switch, so adding an
+  Action is a compile error until its payload story is decided; plus a
+  comptime no-orphan walk so a variant no action carries is a compile
+  error) — a wrong or missing variant panics at the relay instead of
+  being silently eaten by the arm's `orelse return`. Console `action`
+  commands carry no payload; a payload-needing action fired that way
+  no-ops at the arm by design — the payload IS the click. The payload
+  never crosses the input→event seam (handlers translate clicks into
+  events), so no event-log or version impact. Compound button identities
+  are one struct variant, not two (a weapon-type cell:
+  `{ gear_slot, weapon_type }`); null-meaningful identities keep the
+  optional INSIDE the variant (`.editor_layer` null = the picker's add
+  mode; `.editor_skill` null = the picker's None cell). `SlotRef` stays
+  PURELY the drag domains (inventory/gear/skill_bar/learned_skill);
+  save rows ride `.save_row`, not the drag union.
+- **The PlayerInput placement rule (data rides the frame; behavior rides
+  its classification).** Actions classify by when they may consume —
+  `AnytimeInput` actions on every `update()` call, `IdleInput` actions
+  only when the stack is drained. Inert frame-level data — data that
+  never consumes anything by itself — rides `PlayerInput` directly:
+  `pointer`, `modifiers`, `text_edit_outcome`, `keybind_capture_outcome`,
+  `fired_actions`, `clicked_payload`. Data doesn't classify by when it
+  consumes, because it doesn't consume; asking "AnytimeInput or
+  IdleInput?" of a payload is a category error (the 28 per-field
+  `clicked_*` split that preceded this rule had exactly that blur —
+  payloads scattered across both structs by which arm happened to read
+  them). Two near-misses the rule flags and explains: `IdleInput`
+  .tile_clicked is NOT inert (handleIdleInput mutates it mid-consumption —
+  Enter folds the cursor into it — making it the idle path's resolution
+  value, not a frame fact); `IdleInput.skill_slot_selected` is not click
+  identity — the `.skill_slot_N` action itself encodes it, and `applyAction`
+  unpacks the action's own number (the payload channel exists only when
+  the action does NOT encode the identity; the Digit bridges differ by
+  mapping a DIFFERENT keyboard action onto the click action + payload).
 - **macOS: Command reports as the Control ids.** Mac convention is Command
   for app shortcuts, so on macos targets the backend key table maps
   `left_super`/`right_super` to `ControlLeft`/`ControlRight`
@@ -1708,7 +1750,8 @@ the reader thread exits, zero cost.
   shows frame N, so `press X` followed by `dump
   previous_player_input...` asserts what the press DID. The stash is a
   plain wholesale copy — `PlayerInput` is all values except one string
-  payload, and that payload (`clicked_editor_sprite`) borrows
+  payload, and that payload (the `clicked_payload` union's `editor_sprite`
+  variant) borrows
   SESSION-owned scan bytes (`MissionSprite.stored_id`, minted at the
   scan — see DESIGN → Architecture → Level Editor → the sprite
   picker), so nothing in the stash can dangle into the reset frame
@@ -2063,11 +2106,12 @@ main menu. Design points:
   index refers to the list the clicked button was rendered from, and a rescan
   between the release dispatch (start of `update`) and the handler could
   otherwise shift the list under the index.
-- **Rows carry their identity in the Button's `SlotRef.save_file`** (row
-  index), since `Action` can't carry a payload. The release dispatch in
-  main.zig folds the index into `IdleInput.clicked_save_row` alongside the
-  action. Save rows are never drag sources (`slotContentIcon` returns null
-  for `.save_file`), so the drag machinery ignores them.
+- **Rows carry their identity in the Button's click payload** (the
+  `ButtonPayload.save_row` variant), since `Action` can't carry a
+  payload. The release dispatch in main.zig folds it into
+  `PlayerInput.clicked_payload` alongside the action. Save rows are never
+  drag sources (they carry no `SlotRef`), so the drag machinery ignores
+  them.
 - **Clicking a row pushes `player_load_save{path}`** — a PlayerInputEvent so
   the replay player-action whitelist stays a pure tag check; the handler
   pushes the ordinary meta `load_save` (acquisition already happened in idle
@@ -4223,8 +4267,8 @@ layout + a left inspector + a right metadata sidebar:
   picker for that index, + Delete) and "Layer N color" (a swatch row
   over the content's gradient, committing the WHOLE layer via the set
   event) — then an "Add layer" row (the picker in add mode). The layer
-  index rides the button payload (`AnytimeInput.clicked_editor_layer`,
-  null = add). Decoration layers carry the load-time invariant — layer
+  index rides the click payload (the `editor_layer` variant, null =
+  add). Decoration layers carry the load-time invariant — layer
   pixel dims MUST equal the base's (the level parser panics otherwise):
   the picker's Official tab FILTERS to matching dims so mismatched art
   is never offered, a custom pick resolves dims from its PNG at the
@@ -4289,8 +4333,9 @@ highlight targets).
   namespaced (no collision with official stems) + self-describing in
   the level file. The namespaced id is MINTED AT SCAN TIME
   (`MissionSprite.stored_id`, backing_allocator, freed with the list):
-  the pick payload (`AnytimeInput.clicked_editor_sprite`) and the
-  commit id REFERENCE the session-owned bytes — a same-frame borrow of
+  the pick payload (the `clicked_payload` union's `editor_sprite`
+  variant) and the commit id REFERENCE the session-owned bytes — a
+  same-frame borrow of
   session-lifetime memory, safe indefinitely (the per-frame view mint
   it replaced allocated `custom/...` into the frame arena every frame
   the picker was open, dying at the render reset — the lifetime hazard
@@ -5519,8 +5564,8 @@ A full-screen modal overlay (`GameState.ui_surfaces.settings_open`,
 toggled by the recorded `Action.open_settings` → `player_toggle_ui_surface`)
 with TWO content
 tabs (`UiState.settings_tab`: **Settings** / **Keybinds** — tab buttons
-under the header, `.select_settings_tab` + `AnytimeInput
-.clicked_settings_tab`; a switch is a view affordance off the undo timeline
+under the header, `.select_settings_tab` + the `settings_tab` click-payload
+variant; a switch is a view affordance off the undo timeline
 and resets `keybind_scroll_offset`). Mirrors the load-save browser /
 credits screen overlays: a `blocks_input` 9-slice panel, a Back button
 bottom-left that closes it. The screen is reachable from TWO entry points,
@@ -5571,7 +5616,8 @@ stolen entry — the loader's first-listed-wins rule, the edited row wins)
 defaults' bindings. All phases are pure UiState (off the undo timeline);
 a tab switch discards an active edit.
 - The whole editing UI rides ONE action (`.edit_keybind`) + the
-`KeybindCommand` payload union in `AnytimeInput.clicked_keybind_command`.
+`KeybindCommand` payload union as the click payload's `keybind_command`
+variant.
 
 Read side: one row per binding — modifier/key panels
 ("+" between; prettified ids via `keyIdDisplayLabel`: Ctrl/Shift/Alt,
@@ -5667,10 +5713,10 @@ embedded defaults + surfaces the warning popup → the next debounced write
 persists v2. Parse clamps volumes to 0–100 (robustness vs hand-edited files).
 
 **Field binding.** A `SettingId` enum (one per field) + a per-control
-`SettingRef` (like `SlotRef`) carries `{ setting_id }` on slider / choice /
-toggle elements so the input handler knows which field to mutate and how.
-`IdleInput.clicked_setting: ?SettingId` is the click-to-cycle path for
-toggles/choices (the load-save `clicked_save_row` pattern); sliders are
+`SettingRef` carries `{ setting_id }` on slider / choice / toggle elements
+so the input handler knows which field to mutate and how. The click
+payload's `setting` variant is the click-to-cycle path for
+toggles/choices (the load-save `save_row` pattern); sliders are
 handled directly in the input handlers by hit-testing against the control
 rect (drag state, like the camera-pan anchor). Settings live on
 `GameStateHistory` (off the undo timeline — preferences, not gameplay), so

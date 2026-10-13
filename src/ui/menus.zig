@@ -437,7 +437,7 @@ pub fn buildLoadSavePanel(
                 .width = cell.width,
                 .height = cell.height,
                 .action = .load_save_row,
-                .ref = .{ .save_file = @intCast(index) },
+                .payload = .{ .save_row = @intCast(index) },
             } });
             // Label: filename minus extension, centered like a panel button
             // label (horizontal via measurement, vertical via the glyph cell).
@@ -622,7 +622,7 @@ pub fn buildEditorBrowser(
             .width = kind_tab_width,
             .height = middle_panel_header_height,
             .action = .select_editor_kind_tab,
-            .editor_kind = spec.kind,
+            .payload = .{ .editor_kind = spec.kind },
             .highlighted = active,
         } });
         try elements.append(allocator, .{ .text_label = .{
@@ -768,7 +768,7 @@ fn buildMissionBrowserContent(
             .width = tab_width,
             .height = middle_panel_header_height,
             .action = .select_editor_mission_tab,
-            .editor_mission_tab = spec.tab,
+            .payload = .{ .editor_mission_tab = spec.tab },
             .highlighted = active,
         } });
         try elements.append(allocator, .{ .text_label = .{
@@ -848,7 +848,7 @@ fn buildMissionBrowserContent(
                 .width = cell.width,
                 .height = cell.height,
                 .action = .open_editor_mission_row,
-                .editor_mission_row = @intCast(index),
+                .payload = .{ .editor_mission_row = @intCast(index) },
             } });
             const label = missions[index].name;
             const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
@@ -1058,7 +1058,7 @@ fn emitSettingButton(
         .width = cell.width,
         .height = cell.height,
         .action = .change_setting,
-        .setting_ref = sref,
+        .payload = .{ .setting = sref },
         .highlighted = highlighted,
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
@@ -1350,7 +1350,7 @@ fn buildSettingsControls(
                 .width = swatch_rect.width,
                 .height = swatch_rect.height,
                 .action = .change_setting,
-                .setting_ref = .{ .id = .player_color_index, .choice_value = @intCast(i) },
+                .payload = .{ .setting = .{ .id = .player_color_index, .choice_value = @intCast(i) } },
                 .highlighted = settings.player_color_index == i,
             } });
         }
@@ -1486,7 +1486,7 @@ pub fn buildSettingsPanel(
             .width = tab_width,
             .height = settings_row_height,
             .action = .select_settings_tab,
-            .settings_tab = spec.tab,
+            .payload = .{ .settings_tab = spec.tab },
             .highlighted = active,
         } });
         try elements.append(allocator, .{ .text_label = .{
@@ -1849,7 +1849,7 @@ fn buildKeybindsContent(
                     .width = panel_x - content_x,
                     .height = settings_row_height,
                     .action = .edit_keybind,
-                    .keybind_command = .{ .rekey = index },
+                    .payload = .{ .keybind_command = .{ .rekey = index } },
                 } });
 
                 // Action panel (flush after the combo) + the reassign
@@ -1861,7 +1861,7 @@ fn buildKeybindsContent(
                     .width = action_panel_width,
                     .height = settings_row_height,
                     .action = .edit_keybind,
-                    .keybind_command = .{ .reassign = index },
+                    .payload = .{ .keybind_command = .{ .reassign = index } },
                 } });
                 panel_x += action_panel_width + settings_row_gap;
 
@@ -2017,7 +2017,7 @@ fn emitKeybindCommandPanel(
         .width = panel_width,
         .height = settings_row_height,
         .action = .edit_keybind,
-        .keybind_command = command,
+        .payload = .{ .keybind_command = command },
         .highlighted = highlighted,
     } });
     try elems.append(alloc, .{ .text_label = .{
@@ -2154,8 +2154,8 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .load_save_row) {
             row_buttons += 1;
-            const ref = button.ref.?;
-            if (first_ref_index == null) first_ref_index = ref.save_file;
+            const payload = button.payload.?;
+            if (first_ref_index == null) first_ref_index = payload.save_row;
         },
         else => {},
     };
@@ -2170,7 +2170,7 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
     var last_ref_index: u32 = 0;
     for (elements_end.items) |element| switch (element) {
         .button => |button| if (button.action == .load_save_row) {
-            last_ref_index = button.ref.?.save_file;
+            last_ref_index = button.payload.?.save_row;
         },
         else => {},
     };
@@ -2256,11 +2256,11 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     var found_official_tab = false;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_editor_mission_tab) {
-            if (button.editor_mission_tab == .local) {
+            if (button.payload.?.editor_mission_tab == .local) {
                 found_local_tab = true;
                 try std.testing.expect(button.highlighted);
             }
-            if (button.editor_mission_tab == .official) {
+            if (button.payload.?.editor_mission_tab == .official) {
                 found_official_tab = true;
                 try std.testing.expect(!button.highlighted);
             }
@@ -2277,7 +2277,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .open_editor_mission_row) {
             row_buttons += 1;
-            if (first_row_index == null) first_row_index = button.editor_mission_row;
+            if (first_row_index == null) first_row_index = button.payload.?.editor_mission_row;
         },
         else => {},
     };
@@ -2303,7 +2303,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     var last_row_index: u32 = 0;
     for (elements_end.items) |element| switch (element) {
         .button => |button| if (button.action == .open_editor_mission_row) {
-            last_row_index = button.editor_mission_row.?;
+            last_row_index = button.payload.?.editor_mission_row;
         },
         else => {},
     };
@@ -2406,7 +2406,7 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
         .button => |button| if (button.action == .select_editor_kind_tab) {
             const spec = editor_browser_kind_specs[kind_tab_count];
             kind_tab_count += 1;
-            try std.testing.expectEqual(spec.kind, button.editor_kind.?);
+            try std.testing.expectEqual(spec.kind, button.payload.?.editor_kind);
             try std.testing.expectEqual(spec.kind == .mission, button.highlighted);
         },
         else => {},
@@ -2749,7 +2749,7 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     var found_keybinds_tab_button = false;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_settings_tab) {
-            switch (button.settings_tab.?) {
+            switch (button.payload.?.settings_tab) {
                 .settings => {
                     found_settings_tab_button = true;
                     try std.testing.expect(button.highlighted);
@@ -2859,7 +2859,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     var add_open_buttons: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .edit_keybind) {
-            switch (button.keybind_command.?) {
+            switch (button.payload.?.keybind_command) {
                 .rekey => rekey_buttons += 1,
                 .reassign => reassign_buttons += 1,
                 .remove => remove_buttons += 1,

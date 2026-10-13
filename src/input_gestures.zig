@@ -56,8 +56,6 @@ fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent
     // push a no-op swap/equip into the event log.
     if (ui.SlotRef.eql(from, to)) return null;
     return switch (from) {
-        // Save rows are never drag sources (see slotContentIcon).
-        .save_file => null,
         .inventory => |inventory_index| switch (to) {
             .gear => |gear_slot| .{ .player_equip_to_gear = .{
                 .inventory_slot_index = inventory_index,
@@ -567,7 +565,6 @@ pub fn handleCameraPan(
 /// (no pan offset was ever computed) while the pending right-click fires
 /// the inspect. A right-drag past the threshold cancels the pending right-
 /// click and lets the pan proceed.
-
 /// Compute an integer slider value from a pointer x position over the
 /// slider's track. Clamps to `[min, max]`, step 1.
 fn sliderValueFromPointer(slider: ui.Slider, pointer_x: i32) u32 {
@@ -731,7 +728,7 @@ pub fn handleRightClickInspect(
                     const surfaces = &history.current_state.ui_surfaces;
                     const resolved: ?u32 =
                         if (surfaces.isSurfaceOpen(.entity_inspect) and
-                            surfaces.inspected_entity_index == pending.entity_index)
+                        surfaces.inspected_entity_index == pending.entity_index)
                             null
                         else
                             pending.entity_index;
@@ -1344,7 +1341,6 @@ test "skillsSlotUnderPointer: true over a learned_skill slot, false elsewhere" {
     // Over empty space.
     try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 500, .y = 500 }));
 }
-
 
 test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tiles inspect nothing" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);

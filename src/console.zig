@@ -1066,11 +1066,6 @@ fn dumpUiText(
                         "learned_skill/{s}",
                         .{@tagName(skill)},
                     ) catch @panic("failed to format slot identity"),
-                    .save_file => |row| std.fmt.allocPrint(
-                        allocator,
-                        "save_file/{d}",
-                        .{row},
-                    ) catch @panic("failed to format slot identity"),
                 };
                 buffer.print(
                     allocator,
@@ -1102,7 +1097,7 @@ fn dumpUiText(
 
 /// A root for tests that never path-dump (the walker only walks it when a
 /// `.path` command executes — these tests exercise other commands).
-const no_dump_root: struct{} = .{};
+const no_dump_root: struct {} = .{};
 
 const std_testing = std.testing;
 
@@ -1657,7 +1652,7 @@ test "takeFrameCommand records the taken command (any kind, waits included)" {
 
     // An input command: recorded.
     const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
-    const no_root: struct{} = .{};
+    const no_root: struct {} = .{};
     queue.push(parseCommandLine("press Escape").command);
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(queue.last_taken_command != null);

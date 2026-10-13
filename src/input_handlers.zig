@@ -1065,9 +1065,45 @@ fn fullScreenOverlaySurfaceId(overlay_id: types.FullScreenOverlayId) types.UiSur
     };
 }
 
+/// The value `payloadAs` returns for `tag`: the variant's payload type,
+/// with an inner optional flattened — `.editor_layer`'s ?u32 stays ?u32
+/// (not ??u32), so the null-meaningful variants read exactly like the old
+/// per-field optionals did.
+fn PayloadAsType(comptime tag: types.ButtonPayloadTag) type {
+    // The inline field walk with comptime name compares crosses the default
+    // eval-branch quota once payloadAs is instantiated for many variants.
+    @setEvalBranchQuota(10_000);
+    inline for (@typeInfo(types.ButtonPayload).@"union".fields) |field| {
+        if (comptime std.mem.eql(u8, field.name, @tagName(tag))) {
+            return switch (@typeInfo(field.type)) {
+                .optional => field.type,
+                else => ?field.type,
+            };
+        }
+    }
+}
+
+/// The frame's clicked-button payload when it is `tag`, else null — the
+/// consumption-site read shape: "my arm's variant, or the click didn't
+/// happen". Belt-and-suspenders behind main.zig's relay fail-fast check
+/// (the console path fires payload-needing actions with no payload — they
+/// no-op here by design; the payload IS the click).
+fn payloadAs(
+    comptime tag: types.ButtonPayloadTag,
+    clicked_payload: ?types.ButtonPayload,
+) PayloadAsType(tag) {
+    const payload = clicked_payload orelse return null;
+    if (std.meta.activeTag(payload) != tag) return null;
+    return @field(payload, @tagName(tag));
+}
+
 pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
+    /// The frame's clicked-button payload (see `types.ButtonPayload`),
+    /// riding alongside `anytime.options_action` — the handler arm that
+    /// fires the action reads its variant.
+    clicked_payload: ?types.ButtonPayload,
     /// Pointer position this frame, for scroll-delta routing (skills browser
     /// scroll vs camera zoom). The skills panel is scrolled when the pointer
     /// is over one of its slots — see `skillsSlotUnderPointer`.
@@ -1299,7 +1335,7 @@ pub fn handleAnytimeInput(
             .edit_keybind => {
                 if (!history.current_state.ui_surfaces.settings_open) return;
                 if (history.session.ui_state.settings_tab != .keybinds) return;
-                const command = anytime.clicked_keybind_command orelse return;
+                const command = payloadAs(.keybind_command, clicked_payload) orelse return;
                 const ui_state = &history.session.ui_state;
                 switch (command) {
                     .rekey => |index| {
@@ -1362,19 +1398,19 @@ pub fn handleAnytimeInput(
             // must not carry edit state).
             .select_settings_tab => {
                 if (!history.current_state.ui_surfaces.settings_open) return;
-                const settings_tab = anytime.clicked_settings_tab orelse return;
+                const settings_tab = payloadAs(.settings_tab, clicked_payload) orelse return;
                 if (history.session.ui_state.settings_tab == settings_tab) return;
                 history.session.ui_state.settings_tab = settings_tab;
                 history.session.ui_state.keybind_scroll_offset = 0;
                 history.session.ui_state.keybind_edit = null;
             },
-            // A settings toggle or choice was clicked. The SettingRef rode
-            // in `anytime.clicked_setting`. Mutate `history.settings` (a
+            // A settings toggle or choice was clicked (the `SettingRef`
+            // payload). Mutate `history.settings` (a
             // direct write — settings are off the undo timeline, like
             // `ui_state` toggles) + mark dirty for debounced persistence.
             // See DESIGN → UI Framework → Settings screen.
             .change_setting => {
-                const sref = anytime.clicked_setting orelse return;
+                const sref = payloadAs(.setting, clicked_payload) orelse return;
                 const settings = &history.settings;
                 switch (sref.id) {
                     .vsync => settings.vsync = !settings.vsync,
@@ -1399,13 +1435,13 @@ pub fn handleAnytimeInput(
                 state.markSettingsDirty(history);
             },
             // Editor palette group header (expand/collapse). The group
-            // index rode in `anytime.clicked_editor_group`. View-side
+            // index rides the payload. View-side
             // display state — a direct UiState write, off the undo timeline
             // (same class as the panel-toggle flags). Accordion: expanding
             // a group collapses the others (one group open at a time);
             // collapsing just closes the clicked one.
             .toggle_editor_palette_group => {
-                const group_index = anytime.clicked_editor_group orelse return;
+                const group_index = payloadAs(.editor_group, clicked_payload) orelse return;
                 if (group_index >= 3) return;
                 if (history.session.ui_state.editor_palette_collapsed[group_index]) {
                     for (&history.session.ui_state.editor_palette_collapsed) |*is_collapsed| {
@@ -1426,7 +1462,7 @@ pub fn handleAnytimeInput(
             // type through the active tool it set). Ground items have no
             // sprite to pick.
             .add_editor_palette_type => {
-                const group_index = anytime.clicked_editor_group orelse return;
+                const group_index = payloadAs(.editor_group, clicked_payload) orelse return;
                 if (current.editor == null) return;
                 switch (group_index) {
                     0 => pushPlayerActionAndDrain(history, .player_add_editor_entity_type),
@@ -1491,7 +1527,7 @@ pub fn handleAnytimeInput(
             // fixed tools have no delete button — a crafted
             // select/tile-targeted click does nothing.
             .delete_editor_palette_type => {
-                const tool = anytime.clicked_editor_tool orelse return;
+                const tool = payloadAs(.editor_tool, clicked_payload) orelse return;
                 if (current.editor == null) return;
                 switch (tool) {
                     .entity_type => |type_id| pushPlayerActionAndDrain(history, .{
@@ -1520,7 +1556,7 @@ pub fn handleAnytimeInput(
             // UI only offers the × above one level, but a crafted click
             // must not reach the handler's invariant panic).
             .delete_editor_level => {
-                const level_index = anytime.clicked_editor_level orelse return;
+                const level_index = payloadAs(.editor_level, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 if (editor.levels.len <= 1) return;
                 if (level_index >= editor.levels.len) return;
@@ -1529,13 +1565,13 @@ pub fn handleAnytimeInput(
                 } });
             },
             // Inspector section header (expand/collapse). The section id
-            // rode in `anytime.clicked_editor_section`. View-side display
+            // rides the payload. View-side display
             // state — a direct UiState write, off the undo timeline (same
             // class as the palette accordion). INDEPENDENT toggles, no
             // accordion — sections are per-topic and often wanted together
             // (e.g. Weapons + Gear).
             .toggle_editor_inspector_section => {
-                const section = anytime.clicked_editor_section orelse return;
+                const section = payloadAs(.editor_section, clicked_payload) orelse return;
                 const section_index: usize = @intFromEnum(section);
                 history.session.ui_state.editor_inspector_section_expanded[section_index] =
                     !history.session.ui_state.editor_inspector_section_expanded[section_index];
@@ -1574,7 +1610,7 @@ pub fn handleAnytimeInput(
                 mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
-                    .target = .{ .entity_layer = anytime.clicked_editor_layer },
+                    .target = .{ .entity_layer = payloadAs(.editor_layer, clicked_payload) },
                 } });
             },
             .open_editor_decoration_layer_picker => {
@@ -1582,7 +1618,7 @@ pub fn handleAnytimeInput(
                 mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
-                    .target = .{ .decoration_layer = anytime.clicked_editor_layer },
+                    .target = .{ .decoration_layer = payloadAs(.editor_layer, clicked_payload) },
                 } });
             },
             // The Footprint row's button: open the centered footprint
@@ -1627,7 +1663,7 @@ pub fn handleAnytimeInput(
             .toggle_editor_footprint_tile => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const type_id = expectPickerKind(editor, .decoration_footprint) orelse return;
-                const cell_index = anytime.clicked_editor_footprint_tile orelse return;
+                const cell_index = payloadAs(.editor_footprint_tile, clicked_payload) orelse return;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
                 const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
@@ -1684,7 +1720,7 @@ pub fn handleAnytimeInput(
             .open_editor_level_gradient_picker => {
                 if (current.editor == null) return;
                 const editor: *types.Editor = &current.editor.?;
-                const role = anytime.clicked_editor_gradient_role orelse return;
+                const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
                 if (editor.levels.len == 0) return;
                 const level_index = @min(editor.active_level_index, editor.levels.len - 1);
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
@@ -1722,7 +1758,7 @@ pub fn handleAnytimeInput(
             .select_editor_level_gradient => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const target = expectPickerKind(editor, .level_gradient) orelse return;
-                const gradient_index = anytime.clicked_editor_gradient orelse return;
+                const gradient_index = payloadAs(.editor_gradient, clicked_payload) orelse return;
                 if (target.level_index >= editor.levels.len) return;
                 const level = editor.levels[target.level_index];
                 switch (target.role) {
@@ -1773,7 +1809,7 @@ pub fn handleAnytimeInput(
             .toggle_editor_level_gradient_auto => {
                 if (current.editor == null) return;
                 const editor: *types.Editor = &current.editor.?;
-                const role = anytime.clicked_editor_gradient_role orelse return;
+                const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
                 if (editor.levels.len == 0) return;
                 const level_index: u32 =
                     @intCast(@min(editor.active_level_index, editor.levels.len - 1));
@@ -1811,7 +1847,7 @@ pub fn handleAnytimeInput(
                 }
             },
             // A sprite picker cell: set the edited type's base sprite (the
-            // stem rode in `anytime.clicked_editor_sprite`) and close the
+            // stem rides the payload) and close the
             // picker. Same-value picks close WITHOUT COMMITTING (the close
             // itself is the recorded change); a changed pick commits, and
             // the commit orchestrator's handler pushes the close as a
@@ -1819,7 +1855,7 @@ pub fn handleAnytimeInput(
             .select_editor_entity_sprite => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 expectPickerKind(editor, .entity_sprite) orelse return;
-                const sprite = anytime.clicked_editor_sprite orelse return;
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 // Pick-commit backstop (the picker filter's defense-in-depth
@@ -1878,7 +1914,7 @@ pub fn handleAnytimeInput(
             .select_editor_decoration_sprite => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 expectPickerKind(editor, .decoration_sprite) orelse return;
-                const sprite = anytime.clicked_editor_sprite orelse return;
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
@@ -1990,7 +2026,7 @@ pub fn handleAnytimeInput(
             .select_editor_entity_layer => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const layer_index = expectPickerKind(editor, .entity_layer) orelse return;
-                const sprite = anytime.clicked_editor_sprite orelse return;
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 const arena = history.current_arena.allocator();
@@ -2049,7 +2085,7 @@ pub fn handleAnytimeInput(
             .select_editor_decoration_layer => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const layer_index = expectPickerKind(editor, .decoration_layer) orelse return;
-                const sprite = anytime.clicked_editor_sprite orelse return;
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
@@ -2134,18 +2170,18 @@ pub fn handleAnytimeInput(
             // A sprite picker tab button (Mission / Official): switch tabs —
             // a direct UiState write (view affordance).
             .select_editor_sprite_tab => {
-                const tab = anytime.clicked_editor_sprite_tab orelse return;
+                const tab = payloadAs(.editor_sprite_tab, clicked_payload) orelse return;
                 history.session.ui_state.editor_picker_sprite_tab = tab;
             },
             // Editor tool cell click (make it the active tool). The
-            // EditorToolId rode in `anytime.clicked_editor_tool`. Push the
+            // EditorToolId rides the payload. Push the
             // orchestrator and drain (same as level tabs): the tool pointer
             // lives on the Editor (GameState), so the switch — and the
             // selection clear it carries — rides the undo timeline
             // (`editor_set_tool`). Re-selecting the active tool changes
             // nothing (no event, no undo step).
             .select_editor_tool => {
-                const tool = anytime.clicked_editor_tool orelse return;
+                const tool = payloadAs(.editor_tool, clicked_payload) orelse return;
                 if (current.editor == null) return;
                 if (std.meta.eql(tool, current.editor.?.active_tool)) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_tool = .{
@@ -2159,7 +2195,7 @@ pub fn handleAnytimeInput(
             // selection as a side effect (the select_editor_tool
             // same-value gate).
             .select_editor_level => {
-                const level_index = anytime.clicked_editor_level orelse return;
+                const level_index = payloadAs(.editor_level, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 if (level_index == editor.active_level_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_level = .{
@@ -2232,11 +2268,11 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .player_import_editor_max_player);
             },
             // Inspector color swatch: set the edited type's color_index. The
-            // gradient index rode in `anytime.clicked_editor_color`; the
+            // gradient index rides the payload; the
             // target is the inspector's resolved target (the swatches only
             // render for the enemy content). Same-value picks never fire.
             .select_editor_entity_color => {
-                const color_index = anytime.clicked_editor_color orelse return;
+                const color_index = payloadAs(.editor_color, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2250,7 +2286,7 @@ pub fn handleAnytimeInput(
             // decoration type's color_index (the WORLD gradient index).
             // Same-value picks never fire.
             .select_editor_decoration_color => {
-                const color_index = anytime.clicked_editor_color orelse return;
+                const color_index = payloadAs(.editor_color, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -2263,9 +2299,9 @@ pub fn handleAnytimeInput(
                 } });
             },
             // A layer's Delete button (enemy + decoration): remove the
-            // layer. The index rode in `anytime.clicked_editor_layer`.
+            // layer. The index rides the payload.
             .delete_editor_entity_layer => {
-                const layer_index = anytime.clicked_editor_layer orelse return;
+                const layer_index = payloadAs(.editor_layer, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2276,7 +2312,7 @@ pub fn handleAnytimeInput(
                 } });
             },
             .delete_editor_decoration_layer => {
-                const layer_index = anytime.clicked_editor_layer orelse return;
+                const layer_index = payloadAs(.editor_layer, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -2292,8 +2328,9 @@ pub fn handleAnytimeInput(
             // color_index, committing the WHOLE layer value through the set
             // event (sprite + dims kept). Same-color picks never fire.
             .select_editor_entity_layer_color => {
-                const layer_index = anytime.clicked_editor_layer orelse return;
-                const color_index = anytime.clicked_editor_color orelse return;
+                const swatch = payloadAs(.editor_layer_color, clicked_payload) orelse return;
+                const layer_index = swatch.layer_index;
+                const color_index = swatch.color_index;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2310,8 +2347,9 @@ pub fn handleAnytimeInput(
                 } });
             },
             .select_editor_decoration_layer_color => {
-                const layer_index = anytime.clicked_editor_layer orelse return;
-                const color_index = anytime.clicked_editor_color orelse return;
+                const swatch = payloadAs(.editor_layer_color, clicked_payload) orelse return;
+                const layer_index = swatch.layer_index;
+                const color_index = swatch.color_index;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -2336,7 +2374,7 @@ pub fn handleAnytimeInput(
             // (sprite + color + dims kept — the color swatch's commit
             // shape). Always changes (a flip), so no would-change gate.
             .toggle_editor_decoration_layer_behind => {
-                const layer_index = anytime.clicked_editor_layer orelse return;
+                const layer_index = payloadAs(.editor_layer, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -2392,8 +2430,9 @@ pub fn handleAnytimeInput(
             // empty ("New <Type>", damage 0), or RETYPE in place keeping
             // name/damage. Same-type picks never fire.
             .select_editor_weapon_type => {
-                const hand = anytime.clicked_editor_gear_slot orelse return;
-                const weapon_type = anytime.clicked_editor_weapon_type orelse return;
+                const cell = payloadAs(.editor_weapon_type_cell, clicked_payload) orelse return;
+                const hand = cell.gear_slot;
+                const weapon_type = cell.weapon_type;
                 if (hand != .main_hand and hand != .off_hand) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
@@ -2435,13 +2474,14 @@ pub fn handleAnytimeInput(
             // item, commits nothing (defensive — the cells always carry
             // both, tomes are never offered).
             .select_editor_item_type => {
-                const kind = anytime.clicked_editor_item_kind orelse return;
+                const cell = payloadAs(.editor_item_kind_cell, clicked_payload) orelse return;
+                const kind = cell.kind;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = editorItemEditTarget(editor.*) orelse return;
                 const current_item = editor.item_types[type_id].item;
                 const same_pick = switch (current_item) {
                     .weapon => |weapon| kind == .weapon and
-                        weapon.weapon_type == (anytime.clicked_editor_weapon_type orelse return),
+                        weapon.weapon_type == (cell.weapon_type orelse return),
                     else => types.itemKindOf(current_item) == kind,
                 };
                 if (same_pick) return;
@@ -2451,9 +2491,9 @@ pub fn handleAnytimeInput(
                         .name = std.fmt.allocPrint(
                             arena,
                             "New {s}",
-                            .{types.weaponTypeLabel(anytime.clicked_editor_weapon_type orelse return)},
+                            .{types.weaponTypeLabel(cell.weapon_type orelse return)},
                         ) catch @panic("failed to allocate default item name"),
-                        .weapon_type = anytime.clicked_editor_weapon_type orelse return,
+                        .weapon_type = cell.weapon_type orelse return,
                     } },
                     else => types.itemOfKind(kind, std.fmt.allocPrint(
                         arena,
@@ -2467,7 +2507,7 @@ pub fn handleAnytimeInput(
             // Gear Add: create a default item in the EMPTY slot (a
             // present item never re-adds — its fields edit in place).
             .add_editor_item => {
-                const slot = anytime.clicked_editor_gear_slot orelse return;
+                const slot = payloadAs(.editor_gear_slot, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2484,14 +2524,14 @@ pub fn handleAnytimeInput(
             // event (the picker state rides GameState; the PICK is a
             // separate action).
             .open_editor_skill_picker => {
-                const slot_index = anytime.clicked_editor_utility_slot orelse return;
+                const slot_index = payloadAs(.editor_utility_slot, clicked_payload) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                     .target = .{ .utility_skill_slot = slot_index },
                 } });
             },
             // A picker cell: assign to the picker's slot (the skill rode in
-            // `clicked_editor_skill`; no payload = the None cell) and close.
+            // skill; a null editor_skill payload = the None cell) and close.
             // The picker is a DROPDOWN, not a modal — everything else stays
             // live while it's open (see DESIGN → Level Editor → Editor UI
             // layout); this arm just no-ops when no picker is open.
@@ -2503,7 +2543,7 @@ pub fn handleAnytimeInput(
                 const entity_target = editorEntityEditTarget(editor.*) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
                 const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
-                const picked = anytime.clicked_editor_skill;
+                const picked = payloadAs(.editor_skill, clicked_payload);
                 if (template.equipped_utility_skills[slot_index] == picked) {
                     pushPlayerActionAndDrain(history, .player_close_editor_picker);
                     return;
@@ -2515,10 +2555,9 @@ pub fn handleAnytimeInput(
                 } });
             },
             // The picker's close button.
-            .close_editor_picker =>
-                pushPlayerActionAndDrain(history, .player_close_editor_picker),
+            .close_editor_picker => pushPlayerActionAndDrain(history, .player_close_editor_picker),
             .delete_editor_item => {
-                const slot = anytime.clicked_editor_gear_slot orelse return;
+                const slot = payloadAs(.editor_gear_slot, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
@@ -2533,7 +2572,7 @@ pub fn handleAnytimeInput(
             // (the detail block collapses). A crafted out-of-range index
             // never selects.
             .select_editor_inventory_slot => {
-                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                const slot = payloadAs(.editor_inventory_slot, clicked_payload) orelse return;
                 if (slot >= types.inventory_slot_count) return;
                 if (history.session.ui_state.editor_inventory_selected_slot == slot) {
                     history.session.ui_state.editor_inventory_selected_slot = null;
@@ -2545,7 +2584,7 @@ pub fn handleAnytimeInput(
             // slot (the button only renders while empty; the gate holds
             // for crafted input).
             .add_editor_inventory_item => {
-                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                const slot = payloadAs(.editor_inventory_slot, clicked_payload) orelse return;
                 if (slot >= types.inventory_slot_count) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 if (editor.player_def.template.inventory.slots[slot] != null) return;
@@ -2557,7 +2596,7 @@ pub fn handleAnytimeInput(
             // slot is a no-op — the button isn't rendered then, but the
             // gate holds for crafted input).
             .delete_editor_inventory_item => {
-                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                const slot = payloadAs(.editor_inventory_slot, clicked_payload) orelse return;
                 if (slot >= types.inventory_slot_count) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 if (editor.player_def.template.inventory.slots[slot] == null) return;
@@ -2572,14 +2611,15 @@ pub fn handleAnytimeInput(
             // empty selection commits nothing (author decision: an empty
             // slot shows Add until an item exists).
             .select_editor_inventory_item_type => {
-                const kind = anytime.clicked_editor_item_kind orelse return;
+                const cell = payloadAs(.editor_item_kind_cell, clicked_payload) orelse return;
+                const kind = cell.kind;
                 const slot = history.session.ui_state.editor_inventory_selected_slot orelse return;
                 if (slot >= types.inventory_slot_count) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const current_item = editor.player_def.template.inventory.slots[slot] orelse return;
                 const same_pick = switch (current_item) {
                     .weapon => |weapon| kind == .weapon and
-                        weapon.weapon_type == (anytime.clicked_editor_weapon_type orelse return),
+                        weapon.weapon_type == (cell.weapon_type orelse return),
                     else => types.itemKindOf(current_item) == kind,
                 };
                 if (same_pick) return;
@@ -2589,9 +2629,9 @@ pub fn handleAnytimeInput(
                         .name = std.fmt.allocPrint(
                             arena,
                             "New {s}",
-                            .{types.weaponTypeLabel(anytime.clicked_editor_weapon_type orelse return)},
+                            .{types.weaponTypeLabel(cell.weapon_type orelse return)},
                         ) catch @panic("failed to allocate default item name"),
-                        .weapon_type = anytime.clicked_editor_weapon_type orelse return,
+                        .weapon_type = cell.weapon_type orelse return,
                     } },
                     else => types.itemOfKind(kind, std.fmt.allocPrint(
                         arena,
@@ -2609,7 +2649,7 @@ pub fn handleAnytimeInput(
             // list-tab switch (the other kind's list has its own extent).
             .select_editor_kind_tab => {
                 if (!history.current_state.ui_surfaces.editor_browser_open) return;
-                const kind = anytime.clicked_editor_kind orelse return;
+                const kind = payloadAs(.editor_kind, clicked_payload) orelse return;
                 history.session.ui_state.editor_browser_kind = kind;
                 history.session.ui_state.editor_mission_scroll_offset = 0;
             },
@@ -2619,7 +2659,7 @@ pub fn handleAnytimeInput(
             // convention).
             .select_editor_mission_tab => {
                 if (!history.current_state.ui_surfaces.editor_browser_open) return;
-                const tab = anytime.clicked_editor_mission_tab orelse return;
+                const tab = payloadAs(.editor_mission_tab, clicked_payload) orelse return;
                 history.session.ui_state.editor_mission_browser_tab = tab;
                 // A tab switch resets the scroll — the other tab's list has
                 // its own extent, and a stale offset can clamp past its end.
@@ -2636,7 +2676,7 @@ pub fn handleAnytimeInput(
             // world_generation, so the transition UI reset never fires).
             .open_editor_mission_row => {
                 if (!history.current_state.ui_surfaces.editor_browser_open) return;
-                const row = anytime.clicked_editor_mission_row orelse return;
+                const row = payloadAs(.editor_mission_row, clicked_payload) orelse return;
                 const missions = switch (history.session.ui_state.editor_mission_browser_tab) {
                     .local => history.session.editor_local_missions,
                     .official => history.session.editor_official_missions,
@@ -3052,6 +3092,10 @@ fn pollImportMarker(history: *GameStateHistory) void {
 pub fn handleIdleInput(
     history: *GameStateHistory,
     idle_input: input.IdleInput,
+    /// The frame's clicked-button payload (see `types.ButtonPayload`),
+    /// riding alongside the menu action that consumed the click — the
+    /// `.load_save_row` arm reads `.save_row`.
+    clicked_payload: ?types.ButtonPayload,
     modifiers: input.Modifiers,
 ) void {
     // Enter acts as a click on the active tile cursor: fold it into
@@ -3097,9 +3141,9 @@ pub fn handleIdleInput(
                         .surface = .load_save_menu,
                     } });
                 },
-                // A save row was clicked. The row index rode in
-                // clicked_save_row (set by the button-release dispatch in
-                // main.zig) and refers to the list the CLICKED BUTTON was
+                // A save row was clicked. The row index rides the
+                // `.save_row` payload (set by the button-release dispatch
+                // in main.zig) and refers to the list the CLICKED BUTTON was
                 // rendered from — which is why the rescan/poll below runs
                 // AFTER this switch: it must not replace the list between
                 // the dispatch (start of update) and this resolution.
@@ -3107,7 +3151,7 @@ pub fn handleIdleInput(
                 // suspenders stale guard.
                 .load_save_row => {
                     if (!history.current_state.ui_surfaces.load_save_menu_open) return;
-                    const row = idle.clicked_save_row orelse return;
+                    const row = payloadAs(.save_row, clicked_payload) orelse return;
                     if (row >= history.session.save_files.len) return;
                     // Dupe the path into the current arena: the session
                     // list's strings are backing-owned and the housekeeping
@@ -4082,7 +4126,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expect(history.session.ui_state.editor_move_drag != null);
     try std.testing.expect(!history.session.ui_state.editor_move_drag.?.promoted);
     try std.testing.expect(history.session.ui_state.editor_move_drag.?.selected_at_press);
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // --- Drag beyond the threshold promotes; the live delta tracks the
@@ -4371,7 +4415,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     // The plain click on empty ground still deselects (the idle arm's
     // replace fires the clear alone).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
@@ -4513,19 +4557,19 @@ test "camera zoom (wheel + keys): gated to camera-bearing screens" {
 
     // Main menu: neither the wheel nor the zoom keys touch the setting.
     history.current_state.screen = .main_menu;
-    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, pointer, &.{});
-    handleAnytimeInput(&history, .{ .zoom_in = true }, pointer, &.{});
+    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, null, pointer, &.{});
+    handleAnytimeInput(&history, .{ .zoom_in = true }, null, pointer, &.{});
     try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
 
     // Replay viewer: same — no camera, no zoom.
     history.current_state.screen = .replay_viewer;
-    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, pointer, &.{});
+    handleAnytimeInput(&history, .{ .scroll_delta = 3 }, null, pointer, &.{});
     try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
 
     // Hub: the wheel and the keys zoom (1 notch + one key step).
     history.current_state.screen = .hub;
-    handleAnytimeInput(&history, .{ .scroll_delta = 1 }, pointer, &.{});
-    handleAnytimeInput(&history, .{ .zoom_in = true }, pointer, &.{});
+    handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, pointer, &.{});
+    handleAnytimeInput(&history, .{ .zoom_in = true }, null, pointer, &.{});
     try std.testing.expectEqual(zoom_before + 2 * camera_zoom_step, history.settings.camera_zoom);
 }
 
@@ -4741,7 +4785,7 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // A plain click on (1,1) with an EMPTY selection: the group (tile +
     // entity) becomes the selection.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
     @import("test_harness.zig").runToIdle(&history);
     {
         const selection = history.current_state.editor.?.selection;
@@ -4752,7 +4796,7 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // A plain click elsewhere REPLACES the selection entirely (the old
     // entries go, the clicked group becomes the selection).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
     @import("test_harness.zig").runToIdle(&history);
     {
         const selection = history.current_state.editor.?.selection;
@@ -4762,19 +4806,19 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // Clicking the exact current selection is a NO-OP — no event fires.
     const history_length_before = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expectEqual(history_length_before, history.event_history.items.len);
 
     // A plain click on EMPTY GROUND clears the selection — the clicky
     // deselect-all.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, null, .{});
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 
     // Clicking empty ground with an ALREADY-EMPTY selection is a no-op.
     const history_length_before_empty = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expectEqual(history_length_before_empty, history.event_history.items.len);
 
@@ -4936,16 +4980,14 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     // Re-selecting the ACTIVE tool changes nothing (no event fired).
     handleAnytimeInput(&history, .{
         .options_action = .select_editor_tool,
-        .clicked_editor_tool = .select,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_tool = .select }, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
 
     // Changing to a different tool clears the selection (the clear rides
     // the editor_set_tool event, so it is atomic with the switch).
     handleAnytimeInput(&history, .{
         .options_action = .select_editor_tool,
-        .clicked_editor_tool = .tile,
-    }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_tool = .tile }, .{ .x = 0, .y = 0 }, &.{});
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
@@ -4983,28 +5025,28 @@ test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
     history.session.setPendingError(backing.allocator(), "some recoverable failure");
 
     // Arrows: 3 lines per press, up = toward the top.
-    handleAnytimeInput(&history, .{ .error_scroll_down = true }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .error_scroll_down = true }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 3), history.session.error_scroll_offset);
-    handleAnytimeInput(&history, .{ .error_scroll_up = true }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .error_scroll_up = true }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 0), history.session.error_scroll_offset);
 
     // Wheel: one line per notch; POSITIVE delta (wheel up) scrolls toward
     // the top — offset DECREASES (the load-save browser / inspector /
     // skills-panel model).
     history.session.error_scroll_offset = 5;
-    handleAnytimeInput(&history, .{ .scroll_delta = 1.0 }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .scroll_delta = 1.0 }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 4), history.session.error_scroll_offset);
-    handleAnytimeInput(&history, .{ .scroll_delta = -2.0 }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .scroll_delta = -2.0 }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 6), history.session.error_scroll_offset);
 
     // Lower clamp at the input site (the upper clamp is the view's — only
     // the view knows the wrapped line count).
     history.session.error_scroll_offset = 1;
-    handleAnytimeInput(&history, .{ .error_scroll_up = true }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .error_scroll_up = true }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 0), history.session.error_scroll_offset);
 
     // Dismiss still clears through the same gate.
-    handleAnytimeInput(&history, .{ .dismiss_error = true }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .dismiss_error = true }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expect(history.session.pending_error == null);
 }
 
@@ -5111,7 +5153,7 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     var history = preparedSkillToggleHistory(&backing, .flash_strike);
     @import("test_harness.zig").runToIdle(&history);
 
-    handleIdleInput(&history, .{ .skill_slot_selected = 4 }, .{});
+    handleIdleInput(&history, .{ .skill_slot_selected = 4 }, null, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .player_cancel_skill);
     @import("test_harness.zig").runToIdle(&history);
@@ -5155,23 +5197,23 @@ test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     @import("test_harness.zig").runToIdle(&history);
 
     // Own tile: a same-position move would be a recorded no-op — no fire.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // NPC tile: the interact_with_npc handler is an unimplemented stub —
     // no fire (no recorded no-op).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A walkable other tile: fires move_player and moves.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .move_player);
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.hub.?.player.position);
 
     // A non-walkable tile: no fire.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -5191,7 +5233,7 @@ test "swap_weapons with both hands empty fires nothing" {
 
     // Both hands empty, nothing prepared: the swap would be a recorded
     // no-op — no fire (and no click sound).
-    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Positive control: with a main-hand weapon, the swap fires.
@@ -5200,7 +5242,7 @@ test "swap_weapons with both hands empty fires nothing" {
         .weapon_type = .sword,
         .weapon_damage = 4,
     };
-    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, .{ .x = 0, .y = 0 }, &.{});
+    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .swap_hands);
 }

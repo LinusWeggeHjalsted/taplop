@@ -38,7 +38,7 @@ test "skip_level idle input pushes end_level in a level (dev build)" {
     // Stack starts empty (handleIdleInput only runs when idle).
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    input_handlers.handleIdleInput(&history, .{ .skip_level = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .skip_level = true }, null, .{});
 
     // player_skip_level (the orchestrator) is on top of the event stack.
     // Its handler will push end_level as a child when processed.
@@ -55,7 +55,7 @@ test "skip_level does not fire on the main menu (level-only gate)" {
     var history = harness.newHistory(null); // default main-menu start state
     runToIdle(&history);
 
-    input_handlers.handleIdleInput(&history, .{ .skip_level = true }, .{});
+    input_handlers.handleIdleInput(&history, .{ .skip_level = true }, null, .{});
 
     // No end_level pushed — skip_level is gated to the level screen.
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);

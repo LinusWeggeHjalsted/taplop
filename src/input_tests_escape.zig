@@ -28,7 +28,7 @@ const three_by_three = [_]types.Vector2{
 fn pressEscape(history: *state.GameStateHistory) void {
     var anytime: input.AnytimeInput = .{};
     anytime.escape = true;
-    input_handlers.handleAnytimeInput(history, anytime, .{ .x = -4096, .y = -4096 }, &.{});
+    input_handlers.handleAnytimeInput(history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
 }
 
 test "escape: settings closes alone, options menu beneath stays open" {
@@ -110,20 +110,20 @@ test "options menu on the main menu: credits toggles via options_action; exit ga
     // while the menu is open).
     var anytime: input.AnytimeInput = .{};
     anytime.options_action = .open_credits;
-    input_handlers.handleAnytimeInput(&history, anytime, .{ .x = -4096, .y = -4096 }, &.{});
+    input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(history.current_state.ui_surfaces.credits_open);
 
     // The credits Back button reuses the action to close.
     var anytime_close: input.AnytimeInput = .{};
     anytime_close.options_action = .open_credits;
-    input_handlers.handleAnytimeInput(&history, anytime_close, .{ .x = -4096, .y = -4096 }, &.{});
+    input_handlers.handleAnytimeInput(&history, anytime_close, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.credits_open);
 
     // Exit Game: a request flag for the game loop's exit condition — not
     // a state transform, nothing recorded.
     var anytime_exit: input.AnytimeInput = .{};
     anytime_exit.options_action = .exit_game;
-    input_handlers.handleAnytimeInput(&history, anytime_exit, .{ .x = -4096, .y = -4096 }, &.{});
+    input_handlers.handleAnytimeInput(&history, anytime_exit, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(history.session.quit_requested);
 }
 

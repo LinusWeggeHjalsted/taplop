@@ -123,6 +123,7 @@ test "console press Escape closes the options menu (merge → translate → hand
     input_handlers.handleAnytimeInput(
         &history,
         player_input.anytime,
+        player_input.clicked_payload,
         .{ .x = -4096, .y = -4096 },
         &.{},
     );
@@ -155,6 +156,7 @@ test "console scroll with the options menu open moves the keybind scroll offset"
     input_handlers.handleAnytimeInput(
         &history,
         player_input.anytime,
+        player_input.clicked_payload,
         .{ .x = -4096, .y = -4096 },
         &.{},
     );
@@ -183,6 +185,7 @@ test "console action escape closes the options menu (the button seam)" {
     input_handlers.handleAnytimeInput(
         &history,
         player_input.anytime,
+        player_input.clicked_payload,
         .{ .x = -4096, .y = -4096 },
         &.{},
     );
@@ -537,11 +540,11 @@ test "dump path: the observability stash is addressable (previous_player_input /
     try testing.expectEqualStrings("3200\n", buffer[0..writer2.end]);
 
     // The one string payload borrows session-owned scan bytes, so the
-    // wholesale copy holds: a stashed clicked_editor_sprite reads back
+    // wholesale copy holds: a stashed editor_sprite payload reads back
     // verbatim (content — the pointer-identity pin lives in the picker
     // test).
-    root.previous_player_input.?.anytime.clicked_editor_sprite = "custom/artists_den/boss";
+    root.previous_player_input.?.clicked_payload = .{ .editor_sprite = "custom/artists_den/boss" };
     var writer3 = std.Io.Writer.fixed(&buffer);
-    @import("dump_walker.zig").writeDump(&writer3, const_root, "previous_player_input.anytime.clicked_editor_sprite");
+    @import("dump_walker.zig").writeDump(&writer3, const_root, "previous_player_input.clicked_payload.editor_sprite");
     try testing.expectEqualStrings("custom/artists_den/boss\n", buffer[0..writer3.end]);
 }

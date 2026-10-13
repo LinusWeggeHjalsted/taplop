@@ -55,7 +55,7 @@ pub const FrameState = struct {
     /// frame N's translation, so `press X` followed by `dump
     /// previous_player_input...` asserts what the press DID.
     /// Plain wholesale copy — PlayerInput is all values except one string
-    /// payload, and that payload (clicked_editor_sprite) borrows
+    /// payload, and that payload (clicked_payload's editor_sprite variant) borrows
     /// session-owned scan bytes (MissionSprite.stored_id), so nothing in
     /// the stash can dangle into the reset frame arena.
     previous_player_input: ?input.PlayerInput = null,
@@ -123,8 +123,7 @@ fn loadConfigWithFallback(
     // fires first on a parse/load failure).
     parser.validateKeys(sections, key_map, path, allocator, warnings);
 
-    warnings.append(allocator, std.fmt.allocPrint(allocator,
-        "Failed to parse {s}; using built-in default.", .{path}) catch
+    warnings.append(allocator, std.fmt.allocPrint(allocator, "Failed to parse {s}; using built-in default.", .{path}) catch
         @panic("failed to allocate startup warning")) catch
         @panic("failed to append startup warning");
     return result;
@@ -202,8 +201,7 @@ fn overlayUserSettings(
 
     const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
         allocator.free(user_bytes);
-        warnings.append(allocator, std.fmt.allocPrint(allocator,
-            "Failed to parse user settings.txt; using defaults.", .{}) catch
+        warnings.append(allocator, std.fmt.allocPrint(allocator, "Failed to parse user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
             @panic("failed to append startup warning");
         return defaults;
@@ -219,8 +217,7 @@ fn overlayUserSettings(
     // Error Handling.
     const warnings_before = warnings.items.len;
     const merged = loaders.loadSettings(user_sections, allocator, defaults, warnings) catch {
-        warnings.append(allocator, std.fmt.allocPrint(allocator,
-            "Failed to load user settings.txt; using defaults.", .{}) catch
+        warnings.append(allocator, std.fmt.allocPrint(allocator, "Failed to load user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
             @panic("failed to append startup warning");
         return defaults;
@@ -228,8 +225,7 @@ fn overlayUserSettings(
     parser.validateKeys(user_sections, parser.settings_key_map, "settings.txt", allocator, warnings);
     if (warnings.items.len > warnings_before) {
         repair_write_needed.* = true;
-        warnings.append(allocator, std.fmt.allocPrint(allocator,
-            "settings.txt was out of date; a repaired copy is saved automatically (these settings warnings won't repeat).", .{}) catch
+        warnings.append(allocator, std.fmt.allocPrint(allocator, "settings.txt was out of date; a repaired copy is saved automatically (these settings warnings won't repeat).", .{}) catch
             @panic("failed to allocate startup warning")) catch
             @panic("failed to append startup warning");
     }

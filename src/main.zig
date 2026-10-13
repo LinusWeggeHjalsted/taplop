@@ -201,129 +201,24 @@ fn update(
                 if (ui.buttonAt(ui_elements, pointer_position)) |button| {
                     if (button.action == pressed_action) {
                         input.applyAction(&player_input, button.action);
-                        // Payloadful buttons: the load-save rows carry their
-                        // row index in the SlotRef (Action can't). Ride it
-                        // alongside the folded action — same-frame only.
-                        if (button.ref) |ref| switch (ref) {
-                            .save_file => |row| player_input.idle.clicked_save_row = row,
-                            else => {},
-                        };
-                        // Settings controls: the SettingRef (which field +
-                        // which value) rides in `anytime.clicked_setting`
-                        // alongside the `.change_setting` action.
-                        if (button.setting_ref) |sref| {
-                            player_input.anytime.clicked_setting = sref;
-                        }
-                        // Editor palette group headers: the group index
-                        // rides in `anytime.clicked_editor_group` alongside
-                        // the `.toggle_editor_palette_group` action.
-                        if (button.editor_group) |group_index| {
-                            player_input.anytime.clicked_editor_group = group_index;
-                        }
-                        // Inspector section headers: the section id rides
-                        // in `anytime.clicked_editor_section` alongside the
-                        // `.toggle_editor_inspector_section` action.
-                        if (button.editor_section) |section| {
-                            player_input.anytime.clicked_editor_section = section;
-                        }
-                        // Sprite picker cells + tabs: the stem / tab ride
-                        // alongside their actions.
-                        if (button.editor_sprite) |sprite| {
-                            player_input.anytime.clicked_editor_sprite = sprite;
-                        }
-                        if (button.editor_sprite_tab) |tab| {
-                            player_input.anytime.clicked_editor_sprite_tab = tab;
-                        }
-                        // Editor tool cells: the tool identity rides in
-                        // `anytime.clicked_editor_tool` alongside the
-                        // `.select_editor_tool` action.
-                        if (button.editor_tool) |tool| {
-                            player_input.anytime.clicked_editor_tool = tool;
-                        }
-                        // Editor level tabs: the level index rides in
-                        // `anytime.clicked_editor_level` alongside the
-                        // `.select_editor_level` action.
-                        if (button.editor_level) |level_index| {
-                            player_input.anytime.clicked_editor_level = level_index;
-                        }
-                        // Inspector color swatches: the gradient index rides
-                        // in `anytime.clicked_editor_color` alongside the
-                        // `.select_editor_entity_color` action.
-                        if (button.editor_color) |color_index| {
-                            player_input.anytime.clicked_editor_color = color_index;
-                        }
-                        // Inspector slot controls (weapon-type cells, Add,
-                        // Delete): the slot + (for type cells) the weapon
-                        // type ride alongside the action.
-                        if (button.editor_gear_slot) |gear_slot| {
-                            player_input.anytime.clicked_editor_gear_slot = gear_slot;
-                        }
-                        if (button.editor_weapon_type) |weapon_type| {
-                            player_input.anytime.clicked_editor_weapon_type = weapon_type;
-                        }
-                        // Item-type pick cells: the kind rides alongside
-                        // the action (weapon cells also carry the type via
-                        // `clicked_editor_weapon_type`).
-                        if (button.editor_item_kind) |item_kind| {
-                            player_input.anytime.clicked_editor_item_kind = item_kind;
-                        }
-                        // Inventory-slot controls (the player inspector's
-                        // Inventory section): the slot index rides
-                        // alongside the action.
-                        if (button.editor_inventory_slot) |slot_index| {
-                            player_input.anytime.clicked_editor_inventory_slot = slot_index;
-                        }
-                        // Inspector utility-slot buttons + skill-picker
-                        // cells: the slot / skill ride alongside the action
-                        // (a missing skill payload = the picker's None cell).
-                        if (button.editor_utility_slot) |utility_slot| {
-                            player_input.anytime.clicked_editor_utility_slot = utility_slot;
-                        }
-                        // Layers-section controls: the layer index rides
-                        // alongside the action (null on the add-layer
-                        // button = the picker's add mode).
-                        if (button.editor_layer) |layer_index| {
-                            player_input.anytime.clicked_editor_layer = layer_index;
-                        }
-                        // Footprint-editor tile cells: the grid cell index
-                        // rides alongside the toggle action.
-                        if (button.editor_footprint_tile) |cell_index| {
-                            player_input.anytime.clicked_editor_footprint_tile = cell_index;
-                        }
-                        // Settings-sidebar gradient rows + theme-picker
-                        // rows: the role (swatch / Auto buttons) or the
-                        // gradient index (picker rows) rides alongside the
-                        // action.
-                        if (button.editor_gradient_role) |role| {
-                            player_input.anytime.clicked_editor_gradient_role = role;
-                        }
-                        if (button.editor_gradient) |gradient_index| {
-                            player_input.anytime.clicked_editor_gradient = gradient_index;
-                        }
-                        if (button.editor_skill) |skill_id| {
-                            player_input.anytime.clicked_editor_skill = skill_id;
-                        }
-                        // Editor-browser tabs + rows: the kind / tab /
-                        // row index ride alongside their actions.
-                        if (button.editor_kind) |kind| {
-                            player_input.anytime.clicked_editor_kind = kind;
-                        }
-                        // Settings screen content tab (Settings /
-                        // Keybinds) rides alongside its action.
-                        if (button.settings_tab) |settings_tab| {
-                            player_input.anytime.clicked_settings_tab = settings_tab;
-                        }
-                        // Keybinds-tab edit command (rekey / reassign /
-                        // add / remove / pick / confirm / cancel / reset)
-                        // rides alongside its action.
-                        if (button.keybind_command) |keybind_command| {
-                            player_input.anytime.clicked_keybind_command = keybind_command;
-                        }
-                        if (button.editor_mission_tab) |mission_tab| {
-                            player_input.anytime.clicked_editor_mission_tab = mission_tab;
-                        }
-                        if (button.editor_mission_row) |mission_row| {
-                            player_input.anytime.clicked_editor_mission_row = mission_row;
+                        // The button's payload rides the frame's input
+                        // alongside the folded action — one relay line, the
+                        // 28 per-field dispatch lines collapsed. The
+                        // fail-fast check catches a payload/action mismatch
+                        // (a wrong or missing variant would otherwise be
+                        // silently eaten by the consumption arm's
+                        // `orelse return` — the bug class this seam kills).
+                        // See types.ButtonPayload + DESIGN → Input → Button
+                        // payloads.
+                        if (button.payload) |payload| {
+                            if (types.actionButtonPayload(button.action)) |expected| {
+                                if (std.meta.activeTag(payload) != expected) {
+                                    @panic("button payload variant does not match its action — see types.actionButtonPayload");
+                                }
+                            } else {
+                                @panic("button payload on an action that carries none — see types.actionButtonPayload");
+                            }
+                            player_input.clicked_payload = payload;
                         }
                         // Release sound: the base up for every button except
                         // skill slots (auto-fire's use_skill cue subsumes it;
@@ -362,7 +257,7 @@ fn update(
 
     // Always handle anytime input first (escape always works,
     // but other inputs are blocked when the options menu is open)
-    input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position.toScreenPosition(), ui_elements);
+    input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.clicked_payload, player_input.pointer.position.toScreenPosition(), ui_elements);
 
     // Settings slider drag runs before the options-menu gate so sliders work
     // while the settings overlay is open on top of the options menu. See
@@ -457,14 +352,13 @@ fn update(
         event_handlers.processEvent(history);
     } else {
         // Stack empty — accept gameplay input
-        input_handlers.handleIdleInput(history, player_input.idle, player_input.modifiers);
+        input_handlers.handleIdleInput(history, player_input.idle, player_input.clicked_payload, player_input.modifiers);
     }
 }
 
 /// Build a ViewState describing what to render for the current game state.
 /// The frame_allocator is a per-frame arena — everything the ViewState
 /// points at is allocated from it and lives until the next frame.
-
 /// Live-apply the `render_resolution` setting (called from `frame()` each
 /// iteration): compare against the last-applied snapshot and swap the
 /// backend's render target on a diff. Same diff-and-apply shape as the audio
@@ -857,8 +751,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // index rides the key too: a level-tab switch recenters even when two
     // levels share a player_start (fresh levels all come from one template).
     const recenter_key_after = view_mod.cameraRecenterKey(&history.current_state);
-    if (!std.meta.eql(recenter_key_after, recenter_key_before))
-    {
+    if (!std.meta.eql(recenter_key_after, recenter_key_before)) {
         history.session.camera_pan = null;
         history.session.camera_pan_anchor = null;
         history.session.camera_pan_press = null;
@@ -1115,7 +1008,6 @@ pub fn run(
     defer setup.frame_state.history.session.last_number_start_by_entity.deinit(setup.frame_state.history.backing_allocator);
     gameLoop(backend, &setup.frame_state);
 }
-
 
 /// Drive event processing until the stack empties (test harness: no update()
 /// loop, so waits are cleared rather than timed). Mirrors the live gameLoop's

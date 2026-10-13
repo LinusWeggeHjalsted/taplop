@@ -543,7 +543,7 @@ fn emitSidebarGradientRow(
             .width = auto_rect.width,
             .height = auto_rect.height,
             .action = .toggle_editor_level_gradient_auto,
-            .editor_gradient_role = role,
+            .payload = .{ .editor_gradient_role = role },
             .highlighted = gradient_override == null,
             .tooltip = .{ .header = try spanRow(allocator, text(
                 "Derive from world gradient",
@@ -581,19 +581,21 @@ fn emitSidebarGradientRow(
             .color = row.colors[index],
         } });
     }
-    try elements.append(allocator, .{ .button = .{
-        .screen_position = swatch_rect.position(),
-        .width = swatch_rect.width,
-        .height = swatch_rect.height,
-        .action = .open_editor_level_gradient_picker,
-        .editor_gradient_role = role,
-        // The outline marks the row's mode: the AUTO button carries it
-        // while deriving, the SWATCH while an explicit pick is in force
-        // (the world row's swatch always — its index is always picked).
-        // The backend renders it as the lightest stroked rect.
-        .highlighted = role == .world or gradient_override != null,
-        .tooltip = .{ .header = try spanRow(allocator, text("Pick gradient")) },
-    } });
+    try elements.append(allocator, .{
+        .button = .{
+            .screen_position = swatch_rect.position(),
+            .width = swatch_rect.width,
+            .height = swatch_rect.height,
+            .action = .open_editor_level_gradient_picker,
+            .payload = .{ .editor_gradient_role = role },
+            // The outline marks the row's mode: the AUTO button carries it
+            // while deriving, the SWATCH while an explicit pick is in force
+            // (the world row's swatch always — its index is always picked).
+            // The backend renders it as the lightest stroked rect.
+            .highlighted = role == .world or gradient_override != null,
+            .tooltip = .{ .header = try spanRow(allocator, text("Pick gradient")) },
+        },
+    });
 }
 
 /// A sidebar name field: the inspector field-entry geometry (label line
@@ -1311,7 +1313,7 @@ fn emitInspectorSectionStrip(
         .width = cell.width,
         .height = cell.height,
         .action = .toggle_editor_inspector_section,
-        .editor_section = section,
+        .payload = .{ .editor_section = section },
         .tooltip = .{ .header = try spanRow(allocator, text(
             if (expanded) "Collapse" else "Expand",
         )) },
@@ -2140,7 +2142,7 @@ fn emitInspectorInventorySlotRow(
             .width = rect.width,
             .height = rect.height,
             .action = .select_editor_inventory_slot,
-            .editor_inventory_slot = slot_index,
+            .payload = .{ .editor_inventory_slot = slot_index },
             .color = button_color,
             .highlighted = selected_slot != null and selected_slot.? == slot_index,
             .tooltip = tooltip,
@@ -2231,7 +2233,7 @@ fn emitInspectorInventoryItemButton(
         .width = rect.width,
         .height = rect.height,
         .action = action,
-        .editor_inventory_slot = slot_index,
+        .payload = .{ .editor_inventory_slot = slot_index },
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
@@ -2359,8 +2361,10 @@ fn emitInspectorColorSwatches(
             .width = swatch_rect.width,
             .height = swatch_rect.height,
             .action = action,
-            .editor_color = @intCast(index),
-            .editor_layer = layer_index,
+            .payload = if (layer_index) |li|
+                .{ .editor_layer_color = .{ .layer_index = li, .color_index = @intCast(index) } }
+            else
+                .{ .editor_color = @intCast(index) },
             .highlighted = current_index == index,
         } });
     }
@@ -2473,8 +2477,7 @@ fn emitInspectorWeaponSlot(
             .width = cell.width,
             .height = cell.height,
             .action = .select_editor_weapon_type,
-            .editor_gear_slot = hand,
-            .editor_weapon_type = weapon_type,
+            .payload = .{ .editor_weapon_type_cell = .{ .gear_slot = hand, .weapon_type = weapon_type } },
             .color = button_color,
             .highlighted = highlighted,
             .tooltip = .{ .header = try spanRow(allocator, text(types.weaponTypeLabel(weapon_type))) },
@@ -2618,8 +2621,7 @@ fn emitInspectorItemTypeCell(
         .width = cell.width,
         .height = cell.height,
         .action = action,
-        .editor_item_kind = kind,
-        .editor_weapon_type = weapon_type,
+        .payload = .{ .editor_item_kind_cell = .{ .kind = kind, .weapon_type = weapon_type } },
         .color = button_color,
         .highlighted = highlighted,
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_label)) },
@@ -2696,7 +2698,7 @@ fn emitInspectorSlotButton(
         .width = rect.width,
         .height = rect.height,
         .action = action,
-        .editor_gear_slot = slot,
+        .payload = .{ .editor_gear_slot = slot },
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
@@ -2817,7 +2819,7 @@ fn emitInspectorLayerRow(
         .width = sprite_rect.width,
         .height = sprite_rect.height,
         .action = open_action,
-        .editor_layer = layer_index,
+        .payload = .{ .editor_layer = layer_index },
         .tooltip = .{ .header = try spanRow(allocator, text("Pick sprite")) },
     } });
     const label = if (sprite.len > 0) spriteDisplayName(sprite) else "(none)";
@@ -2901,7 +2903,7 @@ pub fn emitInspectorLayerButton(
         .width = rect.width,
         .height = rect.height,
         .action = action,
-        .editor_layer = layer_index,
+        .payload = .{ .editor_layer = layer_index },
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
@@ -2953,7 +2955,7 @@ fn emitInspectorUtilitySkillRow(
                 .width = cell.width,
                 .height = cell.height,
                 .action = .open_editor_skill_picker,
-                .editor_utility_slot = slot_index,
+                .payload = .{ .editor_utility_slot = slot_index },
                 .color = skill_frame_color,
                 .tooltip = tooltip,
             } });
@@ -2974,7 +2976,7 @@ fn emitInspectorUtilitySkillRow(
                 .width = cell.width,
                 .height = cell.height,
                 .action = .open_editor_skill_picker,
-                .editor_utility_slot = slot_index,
+                .payload = .{ .editor_utility_slot = slot_index },
                 .color = skill_frame_color,
                 .tooltip = .{ .header = try spanRow(allocator, text("None")) },
             } });
@@ -3298,7 +3300,7 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
                 swatch_count += 1;
                 if (button.highlighted) {
                     highlighted_count += 1;
-                    highlighted_color = button.editor_color.?;
+                    highlighted_color = button.payload.?.editor_color;
                 }
             },
             .solid_rect => |rect| {
@@ -3525,7 +3527,7 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
                     swatch_count += 1;
                     if (button.highlighted) {
                         highlighted_count += 1;
-                        highlighted_color = button.editor_color.?;
+                        highlighted_color = button.payload.?.editor_color;
                     }
                 }
             },
@@ -3630,11 +3632,11 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         for (elements.items) |element| switch (element) {
             .button => |button| {
                 if (button.action == .select_editor_weapon_type) {
-                    try std.testing.expect(button.editor_weapon_type != null);
-                    switch (button.editor_gear_slot.?) {
+                    const cell = button.payload.?.editor_weapon_type_cell;
+                    switch (cell.gear_slot) {
                         .main_hand => {
                             main_hand_cells += 1;
-                            if (button.highlighted) main_hand_highlighted = button.editor_weapon_type.?;
+                            if (button.highlighted) main_hand_highlighted = cell.weapon_type;
                         },
                         .off_hand => {
                             off_hand_cells += 1;
@@ -3643,11 +3645,11 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
                         else => {},
                     }
                 }
-                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .main_hand) {
+                if (button.action == .delete_editor_item and button.payload.?.editor_gear_slot == .main_hand) {
                     main_hand_deletes += 1;
                 }
-                if (button.action == .add_editor_item and button.editor_gear_slot.? == .amulet) amulet_add_seen = true;
-                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .coat) coat_delete_seen = true;
+                if (button.action == .add_editor_item and button.payload.?.editor_gear_slot == .amulet) amulet_add_seen = true;
+                if (button.action == .delete_editor_item and button.payload.?.editor_gear_slot == .coat) coat_delete_seen = true;
             },
             else => {},
         };
@@ -4059,15 +4061,15 @@ test "inspector item content: type rows, name + stat fields, ref targets" {
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .select_editor_item_type) {
                 pick_cells += 1;
-                try std.testing.expect(button.editor_item_kind != null);
-                if (button.editor_item_kind.? == .weapon) {
-                    try std.testing.expect(button.editor_weapon_type != null);
+                const cell = button.payload.?.editor_item_kind_cell;
+                if (cell.kind == .weapon) {
+                    try std.testing.expect(cell.weapon_type != null);
                     if (button.highlighted) {
                         highlighted_kinds += 1;
-                        try std.testing.expectEqual(types.WeaponType.sword, button.editor_weapon_type.?);
+                        try std.testing.expectEqual(types.WeaponType.sword, cell.weapon_type.?);
                     }
                 } else {
-                    try std.testing.expect(button.editor_weapon_type == null);
+                    try std.testing.expect(cell.weapon_type == null);
                     try std.testing.expect(!button.highlighted);
                 }
             },
@@ -4351,17 +4353,17 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     // completely — no never-emitted row, no unreachable row. The list is
     // the panel's semantic content contract, NOT a window snapshot.
     try census.expectContentReachable(arena.allocator(), panel, &.{
-        "Inspector",        "- Identity",    "Name",
-        "Team",             "Sprite",        "(none)",
-        "Keep colors",      "false",         "Color",
-        "Displays weapons", "true",          "- Stats",
-        "Max health",       "Defense",       "Speed",
-        "Aggro range",      "- Weapons",     "Main hand",
-        "Off hand",         "- Gear",        "Amulet",
-        "Add",              "Coat",          "Add",
-        "Gloves",           "Add",           "Pants",
-        "Add",              "Boots",         "Add",
-        "- Utility skills", "Skill bar",     "- Layers",
+        "Inspector",        "- Identity",  "Name",
+        "Team",             "Sprite",      "(none)",
+        "Keep colors",      "false",       "Color",
+        "Displays weapons", "true",        "- Stats",
+        "Max health",       "Defense",     "Speed",
+        "Aggro range",      "- Weapons",   "Main hand",
+        "Off hand",         "- Gear",      "Amulet",
+        "Add",              "Coat",        "Add",
+        "Gloves",           "Add",         "Pants",
+        "Add",              "Boots",       "Add",
+        "- Utility skills", "Skill bar",   "- Layers",
         "Add layer",        "Pick sprite",
     });
 
@@ -4431,7 +4433,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
             _ = try stale_panel.buildAt(scroll, &elements);
             for (elements.items) |element| switch (element) {
                 .button => |button| if (button.action == .select_editor_inventory_slot) {
-                    slot_seen[button.editor_inventory_slot.?] = true;
+                    slot_seen[button.payload.?.editor_inventory_slot] = true;
                 },
                 else => {},
             };
@@ -4490,9 +4492,9 @@ test "inspector utility-skill row: occupied slots show the skill, empty the diam
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .open_editor_skill_picker) {
                 slot_buttons += 1;
-                if (button.editor_utility_slot == 1) {
+                if (button.payload.?.editor_utility_slot == 1) {
                     try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
-                    blink_slot = button.editor_utility_slot;
+                    blink_slot = button.payload.?.editor_utility_slot;
                 } else {
                     try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
                 }
@@ -4600,13 +4602,13 @@ test "inspector player content: gear + skills + inventory over player_def, commi
                 if (button.action == .import_editor_player) player_data_button = true;
                 if (button.action == .import_editor_max_player) max_player_button = true;
                 if (button.action == .delete_editor_item and
-                    button.editor_gear_slot.? == .main_hand)
+                    button.payload.?.editor_gear_slot == .main_hand)
                 {
                     main_hand_delete = true;
                 }
                 if (button.action == .open_editor_skill_picker) {
                     picker_buttons += 1;
-                    if (button.editor_utility_slot == 0) {
+                    if (button.payload.?.editor_utility_slot == 0) {
                         try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
                         blink_occupied = true;
                     } else {
@@ -4614,7 +4616,7 @@ test "inspector player content: gear + skills + inventory over player_def, commi
                     }
                 }
                 if (button.action == .select_editor_inventory_slot and
-                    button.editor_inventory_slot.? < editor_inventory_slots_per_row)
+                    button.payload.?.editor_inventory_slot < editor_inventory_slots_per_row)
                 {
                     first_row_cells += 1;
                 }
@@ -4705,17 +4707,17 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
                 },
                 .button => |button| {
                     if (button.action == .open_editor_entity_layer_picker and
-                        button.editor_layer != null and button.editor_layer.? == 0)
+                        button.payload.?.editor_layer != null and button.payload.?.editor_layer.? == 0)
                     {
                         stem_button_seen = true;
                     }
                     if (button.action == .delete_editor_entity_layer and
-                        button.editor_layer != null and button.editor_layer.? == 0)
+                        button.payload.?.editor_layer != null and button.payload.?.editor_layer.? == 0)
                     {
                         delete_button_seen = true;
                     }
                     if (button.action == .select_editor_entity_layer_color) {
-                        try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                        try std.testing.expectEqual(@as(u32, 0), button.payload.?.editor_layer_color.layer_index);
                         swatch_count += 1;
                         if (button.highlighted) highlighted_count += 1;
                     }
@@ -4769,7 +4771,7 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
             var swatch_count: usize = 0;
             for (elements.items) |element| switch (element) {
                 .button => |button| if (button.action == .select_editor_decoration_layer_color) {
-                    try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                    try std.testing.expectEqual(@as(u32, 0), button.payload.?.editor_layer_color.layer_index);
                     swatch_count += 1;
                 },
                 else => {},
@@ -4832,7 +4834,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         var headers_seen: [2]bool = .{ false, false };
         for (elements.items) |element| switch (element) {
             .button => |button| switch (button.action) {
-                .toggle_editor_inspector_section => switch (button.editor_section.?) {
+                .toggle_editor_inspector_section => switch (button.payload.?.editor_section) {
                     .mission => headers[0] = button,
                     .current_level => headers[1] = button,
                     else => {},
@@ -4901,12 +4903,12 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
                     else => {},
                 },
                 .button => |button| switch (button.action) {
-                    .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
+                    .open_editor_level_gradient_picker => switch (button.payload.?.editor_gradient_role) {
                         .world => world_button = button,
                         .enemy => enemy_swatch_button = button,
                         .player => player_swatch_button = button,
                     },
-                    .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
+                    .toggle_editor_level_gradient_auto => switch (button.payload.?.editor_gradient_role) {
                         .enemy => enemy_auto_button = button,
                         .player => player_auto_button = button,
                         else => {},
@@ -5061,17 +5063,17 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
                 },
                 .button => |button| {
                     if (button.action == .select_editor_inventory_slot and
-                        button.editor_inventory_slot.? == 4 and button.highlighted)
+                        button.payload.?.editor_inventory_slot == 4 and button.highlighted)
                     {
                         selected_cell_seen = true;
                     }
                     if (button.action == .delete_editor_inventory_item and
-                        button.editor_inventory_slot.? == 4)
+                        button.payload.?.editor_inventory_slot == 4)
                     {
                         delete_button_seen = true;
                     }
                     if (button.action == .select_editor_inventory_item_type and
-                        button.editor_item_kind.? == .amulet and button.highlighted)
+                        button.payload.?.editor_item_kind_cell.kind == .amulet and button.highlighted)
                     {
                         amulet_cell_seen = true;
                     }
@@ -5109,7 +5111,7 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
             for (elements.items) |element| switch (element) {
                 .button => |button| {
                     if (button.action == .add_editor_inventory_item and
-                        button.editor_inventory_slot.? == 13)
+                        button.payload.?.editor_inventory_slot == 13)
                     {
                         add_button_seen = true;
                     }

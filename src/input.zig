@@ -239,6 +239,17 @@ pub const PlayerInput = struct {
     /// forces the attack step even with auto_skip enabled). Not a binding —
     /// bindings filter on modifiers in checkAction; this is the raw held state.
     modifiers: Modifiers = .{},
+    /// The clicked button's identity beyond its action (which row, which
+    /// tab, which cell), set by the button-release dispatch in main.zig
+    /// (and by `applyAction`'s keyboard bridges — the payload is the
+    /// keyboard action's own identity there). Valid only in the same frame
+    /// as the click. Inert data — it never fires anything by itself, which
+    /// is why it rides `PlayerInput` directly rather than the anytime/idle
+    /// sub-structs: those classify actions by when they may consume, and
+    /// data doesn't consume. Read by the handler arm that fired the
+    /// action. See `types.ButtonPayload` + DESIGN → Input → Button
+    /// payloads.
+    clicked_payload: ?types.ButtonPayload = null,
     /// Text-field keyboard resolution for this frame (Enter/Escape while a
     /// field is focused — see DESIGN → UI Framework → Text input widget).
     /// Resolved ONCE per frame by the caller (main), never per update()
@@ -323,114 +334,6 @@ pub const AnytimeInput = struct {
     /// so the action takes effect immediately even though the menu pauses
     /// the game. Null when no options button was clicked this tick.
     options_action: ?types.Action = null,
-    /// Which settings control was clicked, set alongside
-    /// `options_action == .change_setting` by the button-release dispatch
-    /// in main.zig — Action can't carry a payload, so the SettingRef rides
-    /// here. Valid only in the same frame as the click. See DESIGN → UI
-    /// Framework → Settings screen.
-    clicked_setting: ?types.SettingRef = null,
-    /// Which editor palette group's header or "+" cell was clicked
-    /// (expand/collapse / add-new-type), set alongside
-    /// `options_action == .toggle_editor_palette_group` /
-    /// `.add_editor_palette_type` by the button-release dispatch in
-    /// main.zig — same payload-rides-along pattern as `clicked_setting`.
-    /// Valid only in the same frame as the click.
-    clicked_editor_group: ?usize = null,
-    /// Which inspector section header was clicked (expand/collapse), set
-    /// alongside `options_action == .toggle_editor_inspector_section` by
-    /// the button-release dispatch — same payload-rides-along pattern.
-    /// Valid only in the same frame as the click.
-    clicked_editor_section: ?types.EditorInspectorSectionId = null,
-    /// Which sprite picker cell was clicked (the sprite stem — for a
-    /// mission-local pick, the namespaced `custom/<mission>/<stem>` id),
-    /// set alongside `options_action == .select_editor_entity_sprite`.
-    /// Valid only in the same frame as the click.
-    clicked_editor_sprite: ?[]const u8 = null,
-    /// Which sprite picker tab button was clicked (Mission / Official),
-    /// set alongside `options_action == .select_editor_sprite_tab`.
-    clicked_editor_sprite_tab: ?types.EditorSpritePickerTab = null,
-    /// Which editor tool was clicked (make it active), set alongside
-    /// `options_action == .select_editor_tool` (a tool cell) or
-    /// `.delete_editor_palette_type` (a tool cell's delete button) by the
-    /// button-release dispatch in main.zig — same payload-rides-along
-    /// pattern as `clicked_setting`. Valid only in the same frame as the
-    /// click.
-    clicked_editor_tool: ?types.EditorToolId = null,
-    /// Which editor level tab was clicked (make that level active) or which
-    /// tab's × button was clicked (delete it), set alongside
-    /// `options_action == .select_editor_level` / `.delete_editor_level` by
-    /// the button-release dispatch in main.zig — same payload-rides-along
-    /// pattern as `clicked_setting`. Valid only in the same frame as the
-    /// click.
-    clicked_editor_level: ?u32 = null,
-    /// Editor entity color-swatch index, set alongside
-    /// `options_action == .select_editor_entity_color` by the release
-    /// dispatch (the inspector's swatch row).
-    clicked_editor_color: ?u32 = null,
-    /// Editor gear slot, set alongside `options_action ==
-    /// .select_editor_weapon_type / .add_editor_item / .delete_editor_item`
-    /// by the release dispatch (the inspector's slot controls).
-    clicked_editor_gear_slot: ?types.GearSlot = null,
-    /// Editor weapon type, set alongside
-    /// `options_action == .select_editor_weapon_type` (a weapon-type cell)
-    /// or `.select_editor_item_type` (an item-type pick cell).
-    clicked_editor_weapon_type: ?types.WeaponType = null,
-    /// Editor item KIND, set alongside
-    /// `options_action == .select_editor_item_type` (the item content's
-    /// type-pick rows; weapon cells pair it with
-    /// `clicked_editor_weapon_type`).
-    clicked_editor_item_kind: ?types.ItemKind = null,
-    /// Editor inventory slot index (the player inspector's Inventory
-    /// section), set alongside `options_action ==
-    /// .select_editor_inventory_slot / .add_editor_inventory_item /
-    /// .delete_editor_inventory_item / .select_editor_inventory_item_type`
-    /// by the release dispatch (the type-pick cells address the SELECTED
-    /// slot, so they carry no slot payload — the handler reads the
-    /// selection).
-    clicked_editor_inventory_slot: ?u32 = null,
-    /// Editor utility-slot index, set alongside
-    /// `options_action == .open_editor_skill_picker` (an inspector slot
-    /// button).
-    clicked_editor_utility_slot: ?u32 = null,
-    /// Editor layer index, set alongside the Layers sections' actions
-    /// (a layer's sprite/color/delete controls; null on the add-layer
-    /// button = the picker's add mode).
-    clicked_editor_layer: ?u32 = null,
-    /// Footprint-editor grid cell (row-major), set alongside
-    /// `options_action == .toggle_editor_footprint_tile`.
-    clicked_editor_footprint_tile: ?u32 = null,
-    /// Settings-sidebar gradient role (world / enemy / player), set
-    /// alongside `options_action == .open_editor_level_gradient_picker` /
-    /// `.toggle_editor_level_gradient_auto` by the release dispatch.
-    clicked_editor_gradient_role: ?types.LevelGradientRole = null,
-    /// Theme-picker gradient index, set alongside
-    /// `options_action == .select_editor_level_gradient`.
-    clicked_editor_gradient: ?u32 = null,
-    /// Editor skill pick, set alongside
-    /// `options_action == .select_editor_utility_skill` (a picker cell).
-    /// No payload = the picker's None cell.
-    clicked_editor_skill: ?types.SkillId = null,
-    /// Editor-browser KIND tab, set alongside
-    /// `options_action == .select_editor_kind_tab` by the release dispatch
-    /// (one of the browser's kind tabs — Mission today).
-    clicked_editor_kind: ?types.EditorKind = null,
-    /// Settings screen content tab (Settings / Keybinds), set alongside
-    /// `options_action == .select_settings_tab` by the release dispatch.
-    clicked_settings_tab: ?types.SettingsTab = null,
-    /// Keybinds-tab edit command, set alongside
-    /// `options_action == .edit_keybind` by the release dispatch (the
-    /// keybinds tab's editing UI — one action, one payload union).
-    clicked_keybind_command: ?types.KeybindCommand = null,
-    /// Mission-browser tab, set alongside
-    /// `options_action == .select_editor_mission_tab` by the release
-    /// dispatch (one of the browser's two tab buttons).
-    clicked_editor_mission_tab: ?types.EditorMissionBrowserTab = null,
-    /// Mission-browser row index (into the current tab's list), set
-    /// alongside `options_action == .open_editor_mission_row` by the
-    /// release dispatch (a mission row). Valid only in the same frame as
-    /// the click — the row is resolved against the CURRENT tab's list
-    /// before any rescan can replace it.
-    clicked_editor_mission_row: ?u32 = null,
     /// Open/close the editor browser (the main-menu Editor button, the
     /// options-menu Open Mission button, the browser's Back button, and
     /// the ctrl+O binding). The consumption site accepts the editor +
@@ -522,13 +425,6 @@ pub const IdleInput = struct {
     /// button is clicked (no keybind path). Handled by the main_menu branch of
     /// handleIdleInput.
     menu_action: ?types.Action = null,
-
-    /// Which save row in the load-save browser was clicked (index into
-    /// SessionState.save_files), set alongside `menu_action == .load_save_row`
-    /// by the button-release dispatch in main.zig — Action can't carry the
-    /// payload, so it rides in this sibling field. Valid only in the same
-    /// frame as the click (not a keybind path).
-    clicked_save_row: ?u32 = null,
 };
 
 /// THE action→PlayerInput mapping — the one dispatch seam. All three input
@@ -643,23 +539,23 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // lands last, at main.zig's release dispatch, and wins).
         .editor_select_tool => {
             player_input.anytime.options_action = .select_editor_tool;
-            player_input.anytime.clicked_editor_tool = .select;
+            player_input.clicked_payload = .{ .editor_tool = .select };
         },
         .editor_tile_tool => {
             player_input.anytime.options_action = .select_editor_tool;
-            player_input.anytime.clicked_editor_tool = .tile;
+            player_input.clicked_payload = .{ .editor_tool = .tile };
         },
         .toggle_editor_entity_group => {
             player_input.anytime.options_action = .toggle_editor_palette_group;
-            player_input.anytime.clicked_editor_group = 0;
+            player_input.clicked_payload = .{ .editor_group = 0 };
         },
         .toggle_editor_decoration_group => {
             player_input.anytime.options_action = .toggle_editor_palette_group;
-            player_input.anytime.clicked_editor_group = 1;
+            player_input.clicked_payload = .{ .editor_group = 1 };
         },
         .toggle_editor_item_group => {
             player_input.anytime.options_action = .toggle_editor_palette_group;
-            player_input.anytime.clicked_editor_group = 2;
+            player_input.clicked_payload = .{ .editor_group = 2 };
         },
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
@@ -1494,7 +1390,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
     // Digit1–5 on the editor screen (the first shipped same-combo
     // cross-context pair — Digit1–8 are the in-game skill slots): the
     // tool shortcuts must land on options_action=.select_editor_tool with
-    // the right clicked_editor_tool payload, and the group toggles on
+    // the right editor_tool payload, and the group toggles on
     // options_action=.toggle_editor_palette_group with the right group
     // index — the exact pairs the button-release dispatch produces, so
     // the click consumption sites serve both. On the game set the same
@@ -1527,7 +1423,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         var input_state: InputState = .{};
         const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
-        try std.testing.expectEqual(types.EditorToolId.select, result.anytime.clicked_editor_tool);
+        try std.testing.expectEqual(types.EditorToolId.select, result.clicked_payload.?.editor_tool);
         try std.testing.expect(result.idle.skill_slot_selected == null);
     }
     // Editor screen: Digit2 → tile tool.
@@ -1535,14 +1431,14 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         var input_state: InputState = .{};
         const result = translateInput(press_two, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
-        try std.testing.expectEqual(types.EditorToolId.tile, result.anytime.clicked_editor_tool);
+        try std.testing.expectEqual(types.EditorToolId.tile, result.clicked_payload.?.editor_tool);
     }
     // Editor screen: Digit3 → entity group toggle (group index 0).
     {
         var input_state: InputState = .{};
         const result = translateInput(press_three, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.toggle_editor_palette_group, result.anytime.options_action);
-        try std.testing.expectEqual(@as(usize, 0), result.anytime.clicked_editor_group);
+        try std.testing.expectEqual(@as(usize, 0), result.clicked_payload.?.editor_group);
     }
     // Level screen: the same keys are the skill slots — no editor bridge.
     {
@@ -1550,7 +1446,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
         try std.testing.expectEqual(@as(u8, 1), result.idle.skill_slot_selected);
         try std.testing.expect(result.anytime.options_action == null);
-        try std.testing.expect(result.anytime.clicked_editor_tool == null);
+        try std.testing.expect(result.clicked_payload == null);
     }
     {
         var input_state: InputState = .{};

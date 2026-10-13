@@ -63,8 +63,6 @@ const Grid = ui_element.Grid;
 const SalvageRegion = @import("state.zig").SalvageRegion;
 const cooldown_font_size = emit.cooldown_font_size;
 
-
-
 /// The player entity is index 0 in a level, or the dedicated hub player.
 pub fn playerEntity(game_state: *const GameState) ?Entity {
     if (game_state.level) |level| {
@@ -82,9 +80,6 @@ pub fn slotContentSize(ref: SlotRef) i32 {
     return switch (ref) {
         .inventory, .gear => inventory_slot_size,
         .skill_bar, .learned_skill => slot_size,
-        // Unreachable: save rows never start drags (slotContentIcon is
-        // null for them). Size value is arbitrary.
-        .save_file => slot_size,
     };
 }
 
@@ -117,9 +112,6 @@ pub fn slotContentIcon(game_state: *const GameState, ref: SlotRef) ?[]const u8 {
             break :blk null;
         },
         .learned_skill => |skill_id| skillIconSpriteId(skill_id),
-        // Save rows have no drag content — null here is what keeps the drag
-        // machinery from ever starting on them (a press can't promote).
-        .save_file => null,
     };
 }
 
@@ -1533,12 +1525,12 @@ test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitte
     // 25 skills → more rows than fit → overflow (the exact row/window
     // arithmetic is the builder's; the test asserts the properties).
     const learned = [_]SkillId{
-        .slice, .stab, .chop, .cleave,
-        .slam, .skewer, .impale, .bash,
-        .blink, .blitz, .focus, .howl,
-        .meteor, .reflect, .replenish, .retreating_swipe,
-        .spark, .spinblade, .stone_form, .swap,
-        .that_which_lingers, .throw, .toss, .vampiric_strike,
+        .slice,              .stab,      .chop,       .cleave,
+        .slam,               .skewer,    .impale,     .bash,
+        .blink,              .blitz,     .focus,      .howl,
+        .meteor,             .reflect,   .replenish,  .retreating_swipe,
+        .spark,              .spinblade, .stone_form, .swap,
+        .that_which_lingers, .throw,     .toss,       .vampiric_strike,
         .flash_strike,
     };
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
@@ -1651,7 +1643,6 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
     // Only the second skill's icon emits; the drag source's is suppressed.
     try std.testing.expectEqual(@as(usize, 1), image_count);
 }
-
 
 fn testWeaponTypeDefinitions() [weapon_type_count]WeaponTypeDefinition {
     var defs: [weapon_type_count]WeaponTypeDefinition = undefined;
