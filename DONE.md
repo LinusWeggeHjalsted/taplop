@@ -16718,3 +16718,40 @@ SlotRef's own doc convicted `save_file`, strict-exact-match settled the
 alias question), and the TODO's `clicked_*` candidate note from a prior
 reflection seeded the session's whole first task — the open-question →
 design → done loop doing exactly what AGENTS.md says it does.
+
+## Gradient index surfacing — the theme picker's number column + the metadata sidebar's swatch numbers
+
+The theme picker showed bare swatch strips (no labels — "the colors ARE
+the content"), and the metadata sidebar's gradient rows showed the
+effective colors with no index — an author picking gradients had no way
+to see WHICH gradient (the 0-based index that `color_themes.txt`'s
+`gradient_index` lines and the level's stored keys
+`color_wheel_index` / `enemy_gradient_index` / `player_gradient_index`
+use). Both surfaces now show the number:
+
+- **Theme picker** (`src/ui/editor_pickers.zig`): a number column left
+  of each strip — right-aligned digits (columns line up), vertically
+  centered in the 128px row, sized to the WIDEST row number; the
+  index-column + strip + scrollbar cluster stays centered as a unit.
+- **Metadata sidebar** (`src/ui/editor_inspector.zig`): the role's
+  EFFECTIVE gradient index flush right on the gradient row's label
+  line (the control line's Auto + swatch geometry untouched); null
+  level (defensive path) shows no number, mirroring the picker's
+  stale-level no-highlight.
+- **`loaders.effectiveGradientIndex`** — the new single source for the
+  effective index (the role's override while manual, the auto-derived
+  one otherwise), normalized by the SAME modulo
+  `deriveActiveColorTheme` applies. Both surfaces call it, so the
+  sidebar number, the picker's current-row highlight, and the active
+  theme's actual colors can never disagree. This also fixed a latent
+  quirk: the picker previously compared the RAW level indices, so a
+  hand-edited out-of-range `color_wheel_index` (e.g. 30 of 24
+  gradients) displayed the modded colors but highlighted no row.
+
+0-based by decision (matches the config value — the point of showing
+it). Tests: the picker's census gains per-row index-label assertions
+(one per gradient, right edges aligned); the sidebar's census content
+list gains the three numbers, and the semantic walk asserts each
+visible gradient row's number by line association (world 0, enemy
+auto-derived 1, player manual 2). DESIGN → Level Editor updated at the
+two surfaces' descriptions.

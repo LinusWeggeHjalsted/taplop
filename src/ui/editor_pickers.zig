@@ -716,8 +716,9 @@ pub fn editorThemePickerVisibleRowLimit() usize {
 
 /// The metadata sidebar's THEME PICKER (the `.level_gradient` target):
 /// a centered panel listing every gradient in `color_themes.txt` as a
-/// swatch strip — one row per gradient (6 × 128px blocks, bare strips, no
-/// labels — the colors ARE the content), a close button top-right. The
+/// swatch strip — one row per gradient (6 × 128px blocks + the gradient's
+/// 0-based index number in a left column; no names — the colors ARE the
+/// content), a close button top-right. The
 /// list WINDOWS to the panel (the wheel outgrew it): only visible rows
 /// emit, the wheel scrolls one row per notch, and a scrollbar (the error
 /// popup's track + thumb convention) shows the window's position. The
@@ -737,7 +738,6 @@ pub fn buildEditorThemePicker(
     target: struct { level_index: u32, role: types.LevelGradientRole },
     scroll_offset: *i32,
 ) !void {
-    _ = font_metrics;
     const gradients = color_theme_definitions.gradients;
     // FIXED-SIZE rows: full-gradient strips at 6 × 128px blocks, centered
     // (with the scrollbar) in the FIXED picker overlay — the overlay never
@@ -772,12 +772,28 @@ pub fn buildEditorThemePicker(
         .player => "Player colors",
     }});
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
-    // Top-aligned (a scrolling list — no centering) with the strip +
-    // scrollbar cluster centered as a unit.
+    // The index column (left of each strip): as wide as the WIDEST row
+    // number (the last gradient's index) at the row-label font size, so
+    // every number right-aligns against the same edge and the digits'
+    // columns line up. 0-based — matches the `gradient_index` line in
+    // color_themes.txt and the level's stored keys.
+    const widest_index_text = try std.fmt.allocPrint(
+        allocator,
+        "{d}",
+        .{@max(rows - 1, 0)},
+    );
+    const index_column_width = font_metrics.measureSpanWidth(
+        text(widest_index_text),
+        editor_group_header_font_size,
+    );
+
+    // Top-aligned (a scrolling list — no centering) with the index column
+    // + strip + scrollbar cluster centered as a unit.
     const rows_origin_y = content.y + ui_gap;
-    const cluster_width = strip_width +
+    const cluster_width = index_column_width + ui_gap + strip_width +
         (if (scrolls) scrollbar_gap + scrollbar_width else 0);
-    const strip_x = content.x + @divFloor(content.width - cluster_width, 2);
+    const index_column_x = content.x + @divFloor(content.width - cluster_width, 2);
+    const strip_x = index_column_x + index_column_width + ui_gap;
 
     // The level's current index for the role (the DERIVED one while an
     // enemy/player role is on auto — it's what's in effect). A stale
@@ -786,13 +802,13 @@ pub fn buildEditorThemePicker(
     var current_index: ?u32 = null;
     if (target.level_index < editor.levels.len) {
         const level = editor.levels[target.level_index];
-        current_index = switch (target.role) {
-            .world => level.color_wheel_index,
-            .enemy => level.enemy_gradient_index orelse
-                loaders.autoDerivedGradientIndex(color_theme_definitions, level.color_wheel_index, .enemy),
-            .player => level.player_gradient_index orelse
-                loaders.autoDerivedGradientIndex(color_theme_definitions, level.color_wheel_index, .player),
-        };
+        current_index = loaders.effectiveGradientIndex(
+            color_theme_definitions,
+            level.color_wheel_index,
+            level.enemy_gradient_index,
+            level.player_gradient_index,
+            target.role,
+        );
     }
 
     for (gradients[first..last], first..) |gradient, index| {
@@ -822,6 +838,24 @@ pub fn buildEditorThemePicker(
             .payload = .{ .editor_gradient = @intCast(index) },
             .highlighted = current_index != null and current_index.? == index,
         } });
+        // The row's index number, right-aligned in the index column
+        // (digits line up across rows), vertically centered in the strip.
+        const index_text = try std.fmt.allocPrint(allocator, "{d}", .{index});
+        const index_text_width = font_metrics.measureSpanWidth(
+            text(index_text),
+            editor_group_header_font_size,
+        );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = index_text,
+            .screen_position = .{
+                .x = index_column_x + index_column_width - index_text_width,
+                .y = row_rect.y + @divFloor(row_rect.height - editor_group_header_font_size, 2),
+            },
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+
         // A VISIBLE current marker (Button.highlighted doesn't render —
         // see TODO): a lightest frame around the current row, the unified
         // 8px outline convention.
@@ -2119,7 +2153,8 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             &scroll,
         );
         // The FIXED picker overlay + header label + close + 3 rows ×
-        // (6 blocks + button) + 4 frame rects on the current row = 28.
+        // (6 blocks + button + index label) + 4 frame rects on the current
+        // row = 31.
         const panel = elements.items[0].nine_slice_panel;
         try std.testing.expectEqual(
             editorPickerOverlayRect(),
@@ -2131,10 +2166,10 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             },
         );
         // 3 base elements (overlay panel + header label + close button)
-        // + one row per gradient (its color blocks + strip button) + the
-        // current row's 4 frame edge rects.
+        // + one row per gradient (its color blocks + strip button + index
+        // label) + the current row's 4 frame edge rects.
         try std.testing.expectEqual(
-            @as(usize, 3 + definitions.gradients.len * (types.gradient_color_count + 1) + 4),
+            @as(usize, 3 + definitions.gradients.len * (types.gradient_color_count + 2) + 4),
             elements.items.len,
         );
         // The strips are FIXED-SIZE (6 × 128px swatch blocks, 128px tall),
@@ -2149,6 +2184,13 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         var current_button: ?Button = null;
         var close_seen = false;
         var frame_rects: usize = 0;
+        // The row index numbers: exactly one per gradient, each its 0-based
+        // index (the SAME index the row's strip button carries as its
+        // payload), all right-aligned against a common column edge so the
+        // digits line up.
+        const index_seen = try arena.allocator().alloc(bool, definitions.gradients.len);
+        @memset(index_seen, false);
+        var index_label_right_edge: ?i32 = null;
         for (elements.items) |element| switch (element) {
             .button => |button| switch (button.action) {
                 .select_editor_level_gradient => {
@@ -2161,8 +2203,21 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             .solid_rect => |rect| {
                 if (std.meta.eql(rect.color, lightest)) frame_rects += 1;
             },
+            .text_label => |label| blk: {
+                const gradient_index = std.fmt.parseInt(u32, label.text, 10) catch break :blk;
+                if (gradient_index >= index_seen.len) break :blk;
+                index_seen[gradient_index] = true;
+                const right_edge = label.screen_position.x +
+                    metrics.measureSpanWidth(text(label.text), label.font_size);
+                if (index_label_right_edge) |edge| {
+                    try std.testing.expectEqual(edge, right_edge);
+                } else {
+                    index_label_right_edge = right_edge;
+                }
+            },
             else => {},
         };
+        for (index_seen) |seen| try std.testing.expect(seen);
         try std.testing.expectEqual(@as(usize, 3), pick_buttons);
         try std.testing.expect(close_seen);
         try std.testing.expectEqual(@as(usize, 4), frame_rects);

@@ -2790,9 +2790,8 @@ pub fn loadColorThemeDefinitions(
 
 /// The auto-derivation rule's gradient index for a role (world = the
 /// wheel index itself; enemy / player = evenly spaced at 1/3 and 2/3
-/// around the wheel). Single source for `deriveActiveColorTheme` + the
-/// editor UI's effective-index display (the sidebar swatch + the theme
-/// picker's current highlight while a role is on auto).
+/// around the wheel). Single source for `deriveActiveColorTheme` +
+/// `effectiveGradientIndex` (the auto arm).
 pub fn autoDerivedGradientIndex(
     color_theme_definitions: ColorThemeDefinitions,
     color_wheel_index: u32,
@@ -2804,6 +2803,34 @@ pub fn autoDerivedGradientIndex(
         .world => color_wheel_index % gradient_count,
         .enemy => (color_wheel_index + gradient_count / 3) % gradient_count,
         .player => (color_wheel_index + 2 * gradient_count / 3) % gradient_count,
+    };
+}
+
+/// The level's EFFECTIVE gradient index for a role — the role's explicit
+/// override while manual, the auto-derived one otherwise — normalized by
+/// the same modulo `deriveActiveColorTheme` applies. Single source for the
+/// editor UI's index displays (the metadata sidebar's swatch number + the
+/// theme picker's current-row highlight) so both always agree with the
+/// active theme's actual colors.
+pub fn effectiveGradientIndex(
+    color_theme_definitions: ColorThemeDefinitions,
+    color_wheel_index: u32,
+    enemy_gradient_override: ?u32,
+    player_gradient_override: ?u32,
+    role: types.LevelGradientRole,
+) u32 {
+    const gradient_count: u32 = @intCast(color_theme_definitions.gradients.len);
+    if (gradient_count == 0) return 0;
+    return switch (role) {
+        .world => color_wheel_index % gradient_count,
+        .enemy => if (enemy_gradient_override) |override|
+            override % gradient_count
+        else
+            autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .enemy),
+        .player => if (player_gradient_override) |override|
+            override % gradient_count
+        else
+            autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .player),
     };
 }
 

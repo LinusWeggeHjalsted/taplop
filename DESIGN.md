@@ -4330,8 +4330,11 @@ layout + a left inspector + a right metadata sidebar:
   windowed emission (only fully-visible rows) + scrollbar + wheel
   routing when the content overflows. Mission section: the mission
   name. Current-level section: the level name + the three gradient rows
-  (World colors / Enemy colors / Player colors — label line above, AUTO
-  toggle + full-gradient swatch on the control line below — see "Level
+  (World colors / Enemy colors / Player colors — label line above with
+  the role's EFFECTIVE gradient index flush right (`loaders.effectiveGradientIndex` —
+  the override while manual, the derived index while auto, null = no level
+  = no number), AUTO toggle + full-gradient swatch on the control line
+  below — see "Level
   theme" below). The AUTO toggle works BOTH WAYS: while manual it
   reverts to auto-derivation (the null override); while auto it flips to
   manual by FREEZING the currently-derived index as the explicit pick
@@ -4445,7 +4448,9 @@ Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
 (see the Inspector fields above) + the THEME PICKER (the metadata
 sidebar's gradient rows — every gradient as a fixed-size strip of
-6 × 128px swatch blocks, one pick per row, the current index framed in
+6 × 128px swatch blocks with its 0-based gradient index in a left
+number column (matching `gradient_index` in color_themes.txt + the
+level's stored keys), one pick per row, the current index framed in
 lightest; a pick while an enemy/player role is on AUTO flips it to
 manual in the same commit, and an auto-role picker highlights its
 DERIVED index; the list WINDOWS to the overlay and scrolls — the wheel

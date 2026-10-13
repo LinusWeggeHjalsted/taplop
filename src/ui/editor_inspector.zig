@@ -18,6 +18,7 @@ const ui_tooltip = @import("tooltip.zig");
 const utility_skills = @import("../utility_skills.zig");
 const lookups = @import("../generated_lookups.zig");
 const census = @import("../test_ui_census.zig");
+const loaders = @import("../loaders.zig");
 const Skill = @import("../skill.zig").Skill;
 
 const Action = types.Action;
@@ -223,6 +224,7 @@ pub fn buildEditorMetadataSidebar(
     font_metrics: FontMetrics,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
     metadata_sidebar_open: bool,
     ui_state: *UiState,
 ) !void {
@@ -302,6 +304,7 @@ pub fn buildEditorMetadataSidebar(
         allocator,
         level,
         active_theme,
+        color_theme_definitions,
         &ui_state.editor_inspector_section_expanded,
     );
 
@@ -367,6 +370,7 @@ pub fn buildEditorMetadataSidebar(
             .gradient => |row| try emitSidebarGradientRow(
                 elements,
                 allocator,
+                font_metrics,
                 row,
                 button_color,
                 cell,
@@ -425,6 +429,10 @@ const EditorGradientRow = struct {
     role: types.LevelGradientRole,
     colors: [types.gradient_color_count]types.Color,
     gradient_override: ?u32,
+    /// The role's EFFECTIVE gradient index (the override while manual, the
+    /// auto-derived one otherwise — `loaders.effectiveGradientIndex`). Null
+    /// on the level-less defensive path — no number shown.
+    effective_index: ?u32,
 };
 
 /// Row units a metadata entry occupies: a section header / spacer is one;
@@ -446,6 +454,7 @@ fn editorMetadataEntries(
     allocator: std.mem.Allocator,
     level: ?types.EditorLevel,
     active_theme: types.ActiveColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
     expanded: *const [editor_inspector_section_count]bool,
 ) ![]const EditorMetadataEntry {
     var entries: std.ArrayList(EditorMetadataEntry) = .empty;
@@ -465,6 +474,11 @@ fn editorMetadataEntries(
                 .role = .world,
                 .colors = active_theme.world_gradient.colors,
                 .gradient_override = null,
+                .effective_index = levelEffectiveGradientIndex(
+                    color_theme_definitions,
+                    level,
+                    .world,
+                ),
             } },
             .{ .gradient = .{
                 .label = "Enemy colors",
@@ -474,6 +488,11 @@ fn editorMetadataEntries(
                     some_level.enemy_gradient_index
                 else
                     null,
+                .effective_index = levelEffectiveGradientIndex(
+                    color_theme_definitions,
+                    level,
+                    .enemy,
+                ),
             } },
             .{ .gradient = .{
                 .label = "Player colors",
@@ -483,6 +502,11 @@ fn editorMetadataEntries(
                     some_level.player_gradient_index
                 else
                     null,
+                .effective_index = levelEffectiveGradientIndex(
+                    color_theme_definitions,
+                    level,
+                    .player,
+                ),
             } },
         });
     }
@@ -490,9 +514,31 @@ fn editorMetadataEntries(
     return entries.items;
 }
 
+/// A level's effective gradient index for a role (the shared
+/// `loaders.effectiveGradientIndex` over the level's stored keys) — null
+/// while there's no level to derive from (the defensive level-less path:
+/// no number shown, mirroring the picker's stale-level no-highlight).
+fn levelEffectiveGradientIndex(
+    color_theme_definitions: types.ColorThemeDefinitions,
+    level: ?types.EditorLevel,
+    role: types.LevelGradientRole,
+) ?u32 {
+    const some_level = level orelse return null;
+    return loaders.effectiveGradientIndex(
+        color_theme_definitions,
+        some_level.color_wheel_index,
+        some_level.enemy_gradient_index,
+        some_level.player_gradient_index,
+        role,
+    );
+}
+
 /// A metadata-sidebar gradient row (two-unit field entry, the inspector's
 /// geometry): the role label line above, the control line below — the
-/// AUTO toggle (enemy/player roles only) then the full-gradient swatch
+/// role's EFFECTIVE gradient index flush right on the label line (the
+/// number the theme picker's matching row carries — see
+/// `EditorGradientRow.effective_index`), then the control line with the
+/// AUTO toggle (enemy/player roles only) and the full-gradient swatch
 /// strip, ONE button over the whole strip opening the theme picker.
 /// `gradient_override` is null while the role auto-derives. The outline
 /// marks the mode: the AUTO button while deriving, the SWATCH while an
@@ -502,6 +548,7 @@ fn editorMetadataEntries(
 fn emitSidebarGradientRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     row: EditorGradientRow,
     button_color: types.Color,
     entry: Rectangle,
@@ -516,6 +563,25 @@ fn emitSidebarGradientRow(
         .color = active_theme.lightest,
         .blocks_input = false,
     } });
+    // The effective gradient's index, flush right on the same line (0-based,
+    // matching the level's stored keys + the picker's row numbers).
+    if (row.effective_index) |index| {
+        const index_text = try std.fmt.allocPrint(allocator, "{d}", .{index});
+        const index_text_width = font_metrics.measureSpanWidth(
+            text(index_text),
+            editor_group_header_font_size,
+        );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = index_text,
+            .screen_position = .{
+                .x = entry.x + entry.width - index_text_width,
+                .y = inspectorLabelY(entry),
+            },
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+    }
     const control_rect = inspectorControlRect(entry);
     const role = row.role;
     const gradient_override = row.gradient_override;
@@ -3067,6 +3133,7 @@ const MetadataSidebarPanel = struct {
     metrics: FontMetrics,
     editor: types.Editor,
     theme: types.ActiveColorTheme,
+    definitions: types.ColorThemeDefinitions,
     open: bool = true,
     sections_expanded: bool = true,
 
@@ -3084,6 +3151,7 @@ const MetadataSidebarPanel = struct {
             self.metrics,
             self.editor,
             self.theme,
+            self.definitions,
             self.open,
             &ui_state,
         );
@@ -4796,6 +4864,19 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         .enemy_gradient = .{ .colors = .{black} ** 6 },
         .player_gradient = .{ .colors = .{black} ** 5 ++ .{player_five} },
     };
+    // The definitions the gradient rows' derived indices come from: 3
+    // gradients, the active level's wheel index 0 — world 0, enemy
+    // AUTO-derives to 1 (0 + 3/3), player is MANUAL at 2.
+    const gradients = [_]types.ColorGradient{
+        .{ .colors = .{black} ** 6 },
+        .{ .colors = .{black} ** 6 },
+        .{ .colors = .{black} ** 6 },
+    };
+    const definitions: types.ColorThemeDefinitions = .{
+        .lightest = lightest,
+        .darkest = black,
+        .gradients = &gradients,
+    };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const levels = [_]types.EditorLevel{
         .{ .name = "First" },
@@ -4814,7 +4895,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
-        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, definitions, false, &ui_state);
         try std.testing.expectEqual(@as(usize, 3), elements.items.len);
         try std.testing.expectEqual(Action.toggle_editor_metadata_sidebar, elements.items[1].button.action);
         const toggle_panel = elements.items[0].nine_slice_panel;
@@ -4827,7 +4908,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
-        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, definitions, true, &ui_state);
         // The strips are the shared collapsible headers (+ marker, the
         // toggle action, the section id payload).
         var headers: [2]?Button = .{ null, null };
@@ -4864,9 +4945,12 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
             .metrics = metrics,
             .editor = editor,
             .theme = theme,
+            .definitions = definitions,
         };
         try census.expectContentReachable(arena.allocator(), panel, &.{
-            "Metadata", "- Mission", "Name", "- Current level", "Name", "World colors", "Enemy colors", "Auto", "Player colors", "Auto",
+            "Metadata", "- Mission", "Name", "- Current level", "Name",
+            "World colors", "0", "Enemy colors", "1", "Auto",
+            "Player colors", "2", "Auto",
         });
         const max_scroll = try census.maxScroll(panel);
         try std.testing.expect(max_scroll > 0);
@@ -4883,6 +4967,10 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         var enemy_row_mode_seen = false;
         var player_row_mode_seen = false;
         var scrollbar_seen = false;
+        // The gradient rows' index numbers, one seen-flag per role
+        // (world/enemy/player) — the association check fires wherever a
+        // row's label line is visible.
+        var gradient_number_seen: [3]bool = .{ false, false, false };
         var scroll: i32 = 0;
         while (scroll <= max_scroll) : (scroll += 1) {
             var elements: UiElementList = .empty;
@@ -4896,7 +4984,23 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
             var enemy_swatch_button: ?Button = null;
             var player_auto_button: ?Button = null;
             var player_swatch_button: ?Button = null;
+            var role_label_y: [3]?i32 = .{ null, null, null };
+            var number_values: [3]u32 = undefined;
+            var number_ys: [3]i32 = undefined;
+            var numbers_seen: usize = 0;
             for (elements.items) |element| switch (element) {
+                .text_label => |label| {
+                    if (std.mem.eql(u8, label.text, "World colors")) role_label_y[0] = label.screen_position.y;
+                    if (std.mem.eql(u8, label.text, "Enemy colors")) role_label_y[1] = label.screen_position.y;
+                    if (std.mem.eql(u8, label.text, "Player colors")) role_label_y[2] = label.screen_position.y;
+                    if ((std.fmt.parseInt(u32, label.text, 10) catch null)) |number| {
+                        if (numbers_seen < number_values.len) {
+                            number_values[numbers_seen] = number;
+                            number_ys[numbers_seen] = label.screen_position.y;
+                            numbers_seen += 1;
+                        }
+                    }
+                },
                 .text_field => |field| switch (field.ref.id) {
                     .mission_name => mission_field = field,
                     .level_name => level_field = field,
@@ -4941,12 +5045,30 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
                 try std.testing.expect(player_swatch_button.?.highlighted);
                 player_row_mode_seen = true;
             }
+
+            // The gradient rows' index numbers: wherever a row's role
+            // label line is visible, a number sits on the SAME line and
+            // carries the semantic values — world 0, enemy AUTO-derived 1
+            // (wheel 0 + 1 of 3), player MANUAL 2.
+            const expected_indices = [_]u32{ 0, 1, 2 };
+            for (role_label_y, 0..) |maybe_y, role_index| {
+                const label_y = maybe_y orelse continue;
+                var number_found = false;
+                for (number_ys[0..numbers_seen], number_values[0..numbers_seen]) |number_y, number| {
+                    if (number_y != label_y) continue;
+                    number_found = true;
+                    try std.testing.expectEqual(expected_indices[role_index], number);
+                }
+                try std.testing.expect(number_found);
+                gradient_number_seen[role_index] = true;
+            }
         }
         try std.testing.expect(mission_field_seen);
         try std.testing.expect(level_field_seen);
         try std.testing.expect(world_button_seen);
         try std.testing.expect(enemy_row_mode_seen);
         try std.testing.expect(player_row_mode_seen);
+        for (gradient_number_seen) |seen| try std.testing.expect(seen);
         try std.testing.expect(scrollbar_seen);
 
         // Clamp semantics: an out-of-range scroll clamps to the content

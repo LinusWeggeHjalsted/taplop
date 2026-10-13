@@ -356,6 +356,7 @@ pub fn view(
                 font_metrics,
                 editor,
                 active_theme,
+                color_theme_definitions,
                 editor.metadata_sidebar_open,
                 &session.ui_state,
             ) catch @panic("failed to build editor metadata sidebar");
