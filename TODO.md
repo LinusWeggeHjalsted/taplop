@@ -157,11 +157,12 @@ Test by running `zig build run` and clicking through.
         (MissionSprite.stored_id — see DONE.md, mission sprite ids
         minted at the scan), so the stash is a plain wholesale copy with
         nothing to dangle.
-  - **`report ui` / `report level` verb split (dump-path slice 3)** —
-        rename the two CURATED dumps off the `dump` verb so `dump` is
-        purely the path mirror (two verbs, two semantics, no namespace
-        overlap). One-line parser + wiring change; breaks existing
-        scripts that use `dump ui`/`dump level` (fine — one install).
+  - [x] 5. `report ui` / `report level` verb split — DONE: `dump` is
+        purely the path mirror; the curated projections are the
+        `report` verb; the pre-split spellings resolve as paths and
+        error truthfully (the redirect teaches the new verb). Included
+        restoring the reports' trailing newline (dropped by accident
+        in the walker landing). See DONE.md, dump-path walker.
 - [x] **UI surface state unification** — DONE (all six slices; see DONE.md,
       "UI surface state unification", + DESIGN → UI Framework → UI state
       classification).

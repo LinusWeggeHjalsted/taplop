@@ -1611,8 +1611,8 @@ the reader thread exits, zero cost.
   command on that first idle frame; the pacing primitive for scripted
   turn flow, where enemy turns drain over real-clock waits and a frame
   count is a guess), `dump <thing>`
-  (plain text on stdout — see the next bullet for the two dump classes),
-  `quit`. The `ui` dump lists the last-rendered interactive
+  (plain text on stdout), `report ui` / `report level` (the curated
+  projections — see the next bullet), `quit`. The `ui` dump lists the last-rendered interactive
   surfaces (buttons / sliders / text fields / ref-bearing slots) with
   their rects and CENTER points — a valid click point each, in reference
   space — so scripts are self-documenting: `dump ui`, read a center,
@@ -1655,9 +1655,12 @@ the reader thread exits, zero cost.
   impossible; this replaced the hand-written `state` / `settings` /
   `bindings` / `history` projections, which were hand-maintained
   serializations of typed objects — drift by definition), and the
-  CURATED `dump ui` / `dump level` (derived facts that exist as no
-  stored state — click centers, legal-target highlights; slated to
-  move to a `report` verb in a future split).
+  CURATED `report ui` / `report level` (derived facts that exist as no
+  stored state — click centers, legal-target highlights). The verb
+  split is the vocabulary making the two semantics visible: `dump` is
+  purely the mirror, `report` is interpretation — and the pre-split
+  spellings (`dump ui`) resolve as PATHS, erroring truthfully against
+  the root (the redirect teaches the new verb).
   Rendering is type-determined — how a value prints depends only on
   its type, never on where the path ends: detail propagates through
   optionals/unions/slices (a union always shows through its active

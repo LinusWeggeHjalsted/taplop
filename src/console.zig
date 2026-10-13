@@ -102,9 +102,13 @@ pub const ConsoleCommand = union(enum) {
     wait_idle: void,
     /// Skip n frames before the next command (the pacing primitive).
     wait: u32,
-    /// Write a projection to stdout — a curated report (`ui`, `level`)
-    /// or a field path into the live object graph (see dump_walker.zig).
-    dump: DumpKind,
+    /// Write a field path's reflection to stdout (see dump_walker.zig).
+    /// An empty path renders the root table of contents.
+    dump: PathText,
+    /// Write a CURATED report to stdout — derived facts that exist as no
+    /// stored state (click centers, legal-target highlights), hand-
+    /// maintained by design (the state mirrors went to `dump <path>`).
+    report: ReportKind,
     /// Request the session quit (the Exit Game path).
     quit: void,
 
@@ -113,20 +117,7 @@ pub const ConsoleCommand = union(enum) {
         mouse: IdText,
     };
 
-    pub const DumpKind = union(enum) {
-        /// Curated script-facing projections — DERIVED facts that exist
-        /// as no stored state (click centers, legal-target highlights;
-        /// the report verb in a future split — kept under `dump` until
-        /// then so existing scripts keep working).
-        ui: void,
-        level: void,
-        /// A field path rooted at the FrameState the driver holds — pure
-        /// reflection (`dump_walker.writeDump`). An empty path renders
-        /// the root table of contents. Resolution happens at dump time
-        /// against the live state, so a dead path errors truthfully
-        /// instead of going stale.
-        path: PathText,
-    };
+    pub const ReportKind = enum { ui, level };
 };
 
 /// The result of parsing one stdin line.
@@ -233,10 +224,11 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
     }
 
     if (std.mem.eql(u8, verb, "dump")) {
-        // Bare `dump`: the root table of contents (empty path).
-        if (argument.len == 0) return .{ .command = .{ .dump = .{ .path = storedText(PathText, "") } } };
-        if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .dump = .ui } };
-        if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .dump = .level } };
+        // `dump` is PURELY the path mirror (the curated projections are
+        // the `report` verb — two verbs, two semantics, no namespace
+        // overlap). Bare `dump`: the root table of contents (empty
+        // path). A path naming a nonexistent field errors at dump time,
+        // truthfully, against the live state.
         if (argument.len > max_path_len) {
             return formattedMessage("dump path exceeds {d} characters", .{max_path_len});
         }
@@ -244,11 +236,17 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
             'A'...'Z', 'a'...'z', '0'...'9', '_', '.', '[', ']' => {},
             else => return staticMessage("dump path may contain only letters, digits, '_', '.', '[' and ']'"),
         };
-        return .{ .command = .{ .dump = .{ .path = storedText(PathText, argument) } } };
+        return .{ .command = .{ .dump = storedText(PathText, argument) } };
+    }
+
+    if (std.mem.eql(u8, verb, "report")) {
+        if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .report = .ui } };
+        if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .report = .level } };
+        return formattedMessage("unknown report kind '{s}' (ui, level)", .{argument});
     }
 
     return formattedMessage(
-        "unknown console command '{s}' (press, release, move, scroll, type, action, wait, dump, quit)",
+        "unknown console command '{s}' (press, release, move, scroll, type, action, wait, dump, report, quit)",
         .{verb},
     );
 }
@@ -443,8 +441,12 @@ pub fn applyFrameCommand(
             history.session.quit_requested = true;
             return backend_input;
         },
-        .dump => |kind| {
-            writeDump(kind, queue, frame_root, history, ui_elements, camera, camera_zoom);
+        .dump => |*path_text| {
+            writeDump(path_text.view(), queue, frame_root);
+            return backend_input;
+        },
+        .report => |kind| {
+            writeReport(kind, queue, history, ui_elements, camera, camera_zoom);
             return backend_input;
         },
         // Popped waits never leave takeFrameCommand (they arm their own
@@ -512,7 +514,7 @@ fn mergeIntoPlatformInput(
         },
         // Not input commands — applyFrameCommand handles them (the waits
         // never reach here either).
-        .wait, .wait_idle, .dump, .quit => {},
+        .wait, .wait_idle, .dump, .report, .quit => {},
     }
     return merged;
 }
@@ -593,67 +595,73 @@ pub fn foldInjectedActions(
 }
 
 // ============================================================
-// Dumps
+// Dumps + reports
 // ============================================================
 
-/// Write one dump to the console output (stdout, wired by the native
-/// driver). Two dump classes: `.path` is pure reflection routed to the
-/// walker (streamed, then flushed); `.ui`/`.level` are the curated
-/// projections (arena-built text, then flushed). Best-effort — a failed
-/// write reports on stderr and never surfaces as a crash (the
-/// diagnostics-write convention).
+/// Write one `dump <path>` reflection to the console output (stdout,
+/// wired by the native driver): streamed through the walker, then
+/// flushed. Best-effort — a failed write reports on stderr and never
+/// surfaces as a crash (the diagnostics-write convention).
 fn writeDump(
-    kind: ConsoleCommand.DumpKind,
+    path: []const u8,
     queue: *ConsoleQueue,
     frame_root: anytype,
+) void {
+    if (queue.output) |*output| {
+        dump_walker.writeDump(&output.interface, frame_root, path);
+        output.interface.flush() catch |err| {
+            std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
+        };
+    }
+}
+
+/// Write one `report <kind>` curated projection to the console output
+/// (arena-built text, then flushed — same best-effort convention).
+fn writeReport(
+    kind: ConsoleCommand.ReportKind,
+    queue: *ConsoleQueue,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
     camera_zoom: f32,
 ) void {
     if (queue.output) |*output| {
-        writeDumpToWriter(kind, &output.interface, frame_root, history, ui_elements, camera, camera_zoom);
+        writeReportToWriter(kind, &output.interface, history, ui_elements, camera, camera_zoom);
     }
 }
 
-/// The writer-level dump step (writeDump minus the queue plumbing) —
+/// The writer-level report step (writeReport minus the queue plumbing) —
 /// separate so tests drive it with a fixed writer over memory.
-fn writeDumpToWriter(
-    kind: ConsoleCommand.DumpKind,
+fn writeReportToWriter(
+    kind: ConsoleCommand.ReportKind,
     output: *std.Io.Writer,
-    frame_root: anytype,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
     camera_zoom: f32,
 ) void {
-    switch (kind) {
-        .path => |*path_text| {
-            dump_walker.writeDump(output, frame_root, path_text.view());
-            output.flush() catch |err| {
-                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-            };
-        },
-        .ui, .level => {
-            var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
-            defer arena.deinit();
-            const text = dumpText(kind, history, ui_elements, camera, camera_zoom, arena.allocator());
-            output.writeAll(text) catch |err| {
-                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-                return;
-            };
-            output.flush() catch |err| {
-                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-            };
-        },
-    }
+    var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer arena.deinit();
+    const text = reportText(kind, history, ui_elements, camera, camera_zoom, arena.allocator());
+    output.writeAll(text) catch |err| {
+        std.debug.print("console report write failed: {s}\n", .{@errorName(err)});
+        return;
+    };
+    output.writeAll("\n") catch |err| {
+        std.debug.print("console report write failed: {s}\n", .{@errorName(err)});
+        return;
+    };
+    output.flush() catch |err| {
+        std.debug.print("console report write failed: {s}\n", .{@errorName(err)});
+        return;
+    };
 }
 
-/// Build a CURATED dump projection as text (the `.ui`/`.level` kinds —
-/// derived facts, hand-maintained by design; the state mirrors went to
-/// the walker, `dump <path>`).
-fn dumpText(
-    kind: ConsoleCommand.DumpKind,
+/// Build a CURATED report projection as text (the `report ui`/`report
+/// level` kinds — derived facts, hand-maintained by design; the state
+/// mirrors went to the walker, `dump <path>`).
+fn reportText(
+    kind: ConsoleCommand.ReportKind,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
@@ -663,7 +671,6 @@ fn dumpText(
     return switch (kind) {
         .ui => dumpUiText(history, ui_elements, allocator),
         .level => dumpLevelText(history, camera, camera_zoom, allocator),
-        .path => "", // handled by the walker in writeDumpToWriter
     };
 }
 
@@ -1116,11 +1123,11 @@ test "parseCommandLine: every command shape" {
         .{ .line = "wait 60", .expected = .{ .wait = 60 } },
         .{ .line = "wait 0", .expected = .{ .wait = 0 } },
         .{ .line = "wait idle", .expected = .{ .wait_idle = {} } },
-        .{ .line = "dump ui", .expected = .{ .dump = .ui } },
-        .{ .line = "dump level", .expected = .{ .dump = .level } },
-        .{ .line = "dump", .expected = .{ .dump = .{ .path = storedText(PathText, "") } } },
-        .{ .line = "dump history.session.tile_cursor", .expected = .{ .dump = .{ .path = storedText(PathText, "history.session.tile_cursor") } } },
-        .{ .line = "dump history.event_history.items[12].meta_event", .expected = .{ .dump = .{ .path = storedText(PathText, "history.event_history.items[12].meta_event") } } },
+        .{ .line = "dump", .expected = .{ .dump = storedText(PathText, "") } },
+        .{ .line = "dump history.session.tile_cursor", .expected = .{ .dump = storedText(PathText, "history.session.tile_cursor") } },
+        .{ .line = "dump history.event_history.items[12].meta_event", .expected = .{ .dump = storedText(PathText, "history.event_history.items[12].meta_event") } },
+        .{ .line = "report ui", .expected = .{ .report = .ui } },
+        .{ .line = "report level", .expected = .{ .report = .level } },
         .{ .line = "quit", .expected = .quit },
         // Whitespace tolerance: leading/trailing spaces, split verbs.
         .{ .line = "  press   Escape  ", .expected = .{ .press = .{ .key = storedText(IdText, "Escape") } } },
@@ -1157,6 +1164,8 @@ test "parseCommandLine: errors name the problem" {
         .{ .line = "wait -1", .contains = "wait count '-1' is not a non-negative integer" },
         .{ .line = "dump history.$noop", .contains = "dump path may contain only letters" },
         .{ .line = "dump history session", .contains = "dump path may contain only letters" },
+        .{ .line = "report everything", .contains = "unknown report kind 'everything'" },
+        .{ .line = "report", .contains = "unknown report kind ''" },
         .{ .line = "quit now", .contains = "quit takes no arguments" },
     };
     for (error_cases) |case| {
@@ -1338,7 +1347,7 @@ test "applyFrameCommand: quit requests the session quit; empty queue passes thro
     try std_testing.expect(history.session.quit_requested);
 }
 
-test "dumpText: projections report the state they are handed" {
+test "reportText: curated projections report the state they are handed" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1351,17 +1360,17 @@ test "dumpText: projections report the state they are handed" {
     // (SessionState).
     history.current_state.ui_surfaces.options_menu_open = true;
     history.session.ui_state.keybind_scroll_offset = 4;
-    const ui_text = dumpText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
+    const ui_text = reportText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "keybind_scroll_offset: 4") != null);
 
     // level: the gameplay-decision projection (here: no world → the
     // no-world line).
-    const level_text = dumpText(.level, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
+    const level_text = reportText(.level, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, level_text, "world: none") != null);
 }
 
-test "dumpText ui: interactive surfaces list rects + ready-to-use click centers" {
+test "reportText ui: interactive surfaces list rects + ready-to-use click centers" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1403,7 +1412,7 @@ test "dumpText ui: interactive surfaces list rects + ready-to-use click centers"
         } },
     };
 
-    const text = dumpText(.ui, &history, &elements, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
+    const text = reportText(.ui, &history, &elements, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
 
     // Each surface's line: rect + center (a valid click point — the exact
     // coordinate a `move` + `press left`/`release left` pair acts at) + the
@@ -1430,12 +1439,12 @@ test "dumpText ui: interactive surfaces list rects + ready-to-use click centers"
     ) != null);
 
     // An element list with no interactive surfaces reports none.
-    const empty_text = dumpText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
+    const empty_text = reportText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
     try std_testing.expect(std.mem.indexOf(u8, empty_text, "interactive surfaces") != null);
     try std_testing.expect(std.mem.indexOf(u8, empty_text, "none\n") != null);
 }
 
-test "dumpText level: the active world with clickable highlights + entities" {
+test "reportText level: the active world with clickable highlights + entities" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1472,7 +1481,7 @@ test "dumpText level: the active world with clickable highlights + entities" {
 
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const zoom: f32 = 1.0;
-    const text = dumpText(.level, &history, &.{}, camera, zoom, arena);
+    const text = reportText(.level, &history, &.{}, camera, zoom, arena);
 
     // World + phase + flag + highlights + entities + skills, one line each,
     // with click centers derived from the camera projection.
@@ -1532,7 +1541,7 @@ test "dumpText level: the active world with clickable highlights + entities" {
     // No world (main menu): the dump says so.
     var menu_history = harness.newHistory(null);
     test_harness.runToIdle(&menu_history);
-    const no_world_text = dumpText(.level, &menu_history, &.{}, camera, zoom, arena);
+    const no_world_text = reportText(.level, &menu_history, &.{}, camera, zoom, arena);
     try std_testing.expect(std.mem.indexOf(u8, no_world_text, "world: none (no level or hub)\n") != null);
 }
 
@@ -1561,7 +1570,7 @@ test "applyFrameCommand: wait idle holds while events are pending, releases when
     try std_testing.expect(history.session.quit_requested);
 }
 
-test "writeDumpToWriter: writes the dump to the output writer (parent-pointer shape)" {
+test "writeReportToWriter: writes the report to the output writer (parent-pointer shape)" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1574,12 +1583,9 @@ test "writeDumpToWriter: writes the dump to the output writer (parent-pointer sh
     // wiring's File.Writer parent has).
     var allocating: std.Io.Writer.Allocating = .init(std_testing.allocator);
     defer allocating.deinit();
-    const Root = struct { history: GameStateHistory };
-    const root = Root{ .history = history };
-    writeDumpToWriter(
-        .{ .path = storedText(PathText, "history.current_state.screen") },
+    writeReportToWriter(
+        .level,
         &allocating.writer,
-        &root,
         &history,
         &.{},
         .{ .position = .{ .x = 0, .y = 0 } },
@@ -1587,11 +1593,11 @@ test "writeDumpToWriter: writes the dump to the output writer (parent-pointer sh
     );
 
     const written = allocating.written();
-    try std_testing.expect(std.mem.indexOf(u8, written, "main_menu") != null);
+    try std_testing.expect(std.mem.indexOf(u8, written, "world: none (no level or hub)") != null);
     try std_testing.expect(written[written.len - 1] == '\n');
 }
 
-test "writeDumpToWriter: path dumps route to the walker against the root" {
+test "writeDump: path dumps route to the walker against the root" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1607,63 +1613,33 @@ test "writeDumpToWriter: path dumps route to the walker against the root" {
 
     var buffer: [2048]u8 = undefined;
 
+    // The parser produces path commands for ANY single-token argument —
+    // including the pre-split spellings (`dump ui`), which now resolve as
+    // paths and error truthfully (the redirect teaches `report ui`).
+    {
+        const outcome = parseCommandLine("dump ui");
+        try std_testing.expect(outcome == .command);
+        try std_testing.expectEqualStrings("ui", outcome.command.dump.view());
+    }
+
     // A leaf path: the addressed value alone.
     {
         var writer = std.Io.Writer.fixed(&buffer);
-        writeDumpToWriter(
-            .{ .path = storedText(PathText, "history.session.tile_cursor") },
-            &writer,
-            &root,
-            &history,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
+        dump_walker.writeDump(&writer, &root, "history.session.tile_cursor");
         try std_testing.expectEqualStrings("{ x: 2, y: 3 }\n", buffer[0..writer.end]);
-    }
-
-    // A one-level path: the ToC shape (field name + value).
-    {
-        var writer = std.Io.Writer.fixed(&buffer);
-        writeDumpToWriter(
-            .{ .path = storedText(PathText, "history.current_state.screen") },
-            &writer,
-            &root,
-            &history,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
-        try std_testing.expectEqualStrings("main_menu\n", buffer[0..writer.end]);
     }
 
     // A dead path: the truthful error names what IS there.
     {
         var writer = std.Io.Writer.fixed(&buffer);
-        writeDumpToWriter(
-            .{ .path = storedText(PathText, "history.nope") },
-            &writer,
-            &root,
-            &history,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
+        dump_walker.writeDump(&writer, &root, "history.nope");
         try std_testing.expect(std.mem.indexOf(u8, buffer[0..writer.end], "dump error: no field 'nope'") != null);
     }
 
     // The bare dump: the root table of contents.
     {
         var writer = std.Io.Writer.fixed(&buffer);
-        writeDumpToWriter(
-            .{ .path = storedText(PathText, "") },
-            &writer,
-            &root,
-            &history,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
+        dump_walker.writeDump(&writer, &root, "");
         try std_testing.expect(std.mem.indexOf(u8, buffer[0..writer.end], "history: ") != null);
     }
 }

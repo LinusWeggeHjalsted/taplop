@@ -16494,3 +16494,19 @@ runs against each other: 500-frame vs 1500-frame scripts, ~3.2ms/frame).
   bullet. The `report ui`/`report level` verb split remains in TODO
   (dump-path slice 3), as does the `clicked_*` payload-consolidation
   candidate.
+
+## The `report` verb split — dump is purely the mirror
+
+Dump-path slice 3, closing the set: the curated projections moved off
+the `dump` verb — `report ui` / `report level` — so the two dump
+classes have two verbs and two visible semantics (`dump <path>` =
+pure reflection; `report` = interpretation of derived facts).
+`ConsoleCommand.dump` became a plain `PathText` (always a path; the
+DumpKind union dissolved) alongside `report: ReportKind` ({ui, level}).
+The pre-split spellings (`dump ui`) PARSE as paths and error truthfully
+against the root — `no field 'ui' on session_setup.FrameState —
+fields: ...` — the redirect itself teaches the new verb. Rider caught
+while reshaping: the walker landing had accidentally dropped the
+curated dumps' trailing newline (consecutive dumps concatenated);
+restored. Design updated in place (DESIGN → Input → Console input →
+the dump-paths bullet's class paragraph + the command-set list).
