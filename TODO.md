@@ -71,6 +71,14 @@ Test by running `zig build run` and clicking through.
   consumed in `handleIdleInput` where the tile cursor is resolved;
   right-click is the only inspect path today). (Camera clamping + editor viewport framing
   DONE — DONE.md; design: DESIGN → Platform Seam → Camera clamping.)
+- **Mouse-owns-the-frame arrow-drop (found during the rollover-input
+  investigation, unmeasured)** — `resolveTileCursor` gives the mouse the
+  WHOLE frame when `mouse_moved_this_tick` (any pointer position change,
+  even 1 reference-pixel of jitter from a resting hand): an arrow edge on
+  that frame is dropped, not deferred. Different signature from the
+  rollover swallow (intermittent, either key — that one is DONE, see
+  DONE.md "Arrow-key cursor rollover"); only worth touching if random
+  eaten taps are ever observed with a hand resting on the mouse.
 - **Keybind editor (settings → Keybinds tab)** — in-game rebinding UI.
   Settled design: contexts are DERIVED from `actionBindingContexts` (the
   binding `context` file line becomes informational — loader ignores it,

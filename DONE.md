@@ -16286,3 +16286,56 @@ dir (-1,0) instead of the correct (0,0) cancel).
   the same rollover script that used to crash now runs deterministically
   and reproduces the arrow-key bug it was sent to measure (cursor stuck
   at (1,0), left press swallowed — see the next entry).
+
+## Arrow-key cursor rollover: the press-direction fallback (snappy fast input)
+
+The report: in a hub or level, pressing right then left in quick
+succession registered only the right — the left press vanished. Root
+cause (verified per-frame through the real pipeline, headless + live via
+the console channel): the nudge design splits TRIGGER from DIRECTION —
+the trigger is a `move_cursor_*` edge, but the vector derives from HELD
+keys (`cursor_direction`, opposites cancel). A press landing while its
+opposite is still held — key ROLLOVER, what fast input actually does —
+fired its edge into a zero vector: no movement, edge consumed, and the
+opposite's later release produces no new edge. The only rescue was the
+synthetic repeat's 300ms initial delay — a quick tap (<300ms) was
+swallowed whole. Timing characterization (the console channel's first
+measurement job): sequential taps register at ANY speed (verified to
+1-frame, ~3ms gaps); same-frame release+press works; only rollover
+swallowed. Live frame period measured ≈3.2ms (uncapped loop + 0.1ms
+idle yield).
+
+- **Fix — press-direction fallback** (`cursor_press_direction` on
+  InGameInput): per-tick direction derived from the REAL press edges
+  only (synthetic repeats excluded — `actionPressedOnRealEdge`, which
+  reuses `bindingFires` with an empty repeat set so every gate is
+  identical to the dispatch pass). `resolveTileCursor` (level/hub arm +
+  editor arm) uses the held vector as before, EXCEPT when it cancels to
+  zero — then the press edge's own direction carries the intent. A
+  rollover press now moves at its own frame, no 300ms wait.
+- **Why repeats stay excluded**: deliberately holding both opposites
+  freezes the cursor (the cancel is the intent there), and per-key
+  repeat timers drift — a repeats-included fallback would oscillate the
+  cursor on alternating 40ms repeat edges. A real press is the intent
+  signal; a repeat is continuation, ambiguous under cancel.
+- **Why not re-fire on the opposite's release**: movement on release is
+  odd semantics, and in the fast tap-tap rollover shape the LEFT
+  releases before the right — the re-fire would have to fire on a key
+  that is no longer held, in the direction of a key released frames
+  ago. The press frame is where the intent lives.
+- **Nonzero vectors are unchanged** — diagonals still derive from held
+  keys (a diagonal fires when either of the two held keys edges); the
+  fallback engages only on the zero vector.
+- **Tests**: derivation pins in input.zig (rollover press →
+  cursor_direction (0,0) + cursor_press_direction (-1,0); repeat edge →
+  press direction (0,0)); resolution pins in input_handlers.zig
+  (rollover moves, repeats-only frozen, nonzero-vector diagonal
+  unchanged, editor arm same); an end-to-end console pin in
+  input_tests_console.zig (the reported sequence through the live seam
+  — per-frame arena reset, applyFrameCommand → translateInput →
+  resolveTileCursor). All verified red with the fallback disabled
+  before landing.
+- Design: DESIGN → Input → "Cursor nudges" bullet. The mouse-owns-the-
+  frame arrow-drop (a different, intermittent signature — a jittering
+  resting mouse can eat an arrow edge for a whole frame) is noted in
+  TODO → Input/camera leftovers as unmeasured.

@@ -1389,6 +1389,21 @@ that true (`src/session_log_bundle.zig`):
   are press-only — the per-binding gate consults the whitelist
   (`actionRepeats`) for synthetic edges, so a held key never repeats them.
   Mouse buttons have no repeat.
+- **Cursor nudges: edge trigger, held-derived vector, press-direction
+  fallback.** The tile-cursor nudge (`resolveTileCursor`, the level/hub
+  arm + the editor arm) fires on a `move_cursor_*` edge (press or
+  whitelisted repeat) but derives its vector from HELD cursor keys
+  (`cursor_direction`: opposites cancel, diagonals fire when either of
+  the two held keys edges/repeats — two physical presses rarely land in
+  one tick). A press landing while its opposite is still held — key
+  rollover, what fast input actually does — cancels the vector to zero
+  and would consume its edge with no movement and no re-fire (the
+  opposite's release produces no edge); the fallback nudges by the REAL
+  press edge's own direction instead (`cursor_press_direction`, derived
+  per tick from the press arrays with synthetic repeats EXCLUDED —
+  `actionPressedOnRealEdge`). Repeats keep the cancel: deliberately
+  holding both opposites freezes the cursor, and the fallback cannot
+  oscillate on per-key repeat-timer drift.
 - **Replay safety.** Repeat state lives on `InputState` (off the undoable
   GameState), and the resulting actions produce the same events a single
   press would — replay records events, not input timing, so a held-key

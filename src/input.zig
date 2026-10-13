@@ -483,6 +483,14 @@ pub const InGameInput = struct {
     /// (two physical presses rarely land in one tick, and per-key repeat
     /// timers drift, so the old all-edges-this-frame model was inconsistent).
     cursor_direction: Vector2 = .{ .x = 0, .y = 0 },
+    /// Direction of THIS tick's REAL press edges only (synthetic repeats
+    /// excluded; -1/0/+1 per axis, summed like cursor_direction). The
+    /// cursor resolution uses it as the fallback when the held vector
+    /// cancels to zero — a press landing while its opposite is still held
+    /// (key rollover at fast input speeds) is fresh intent and must nudge
+    /// in its own direction, while repeats during a deliberately-held
+    /// opposite pair keep the frozen cancel.
+    cursor_press_direction: Vector2 = .{ .x = 0, .y = 0 },
 };
 
 /// Actions that are only handled when the event stack is empty
@@ -831,6 +839,37 @@ fn isActionHeld(
     return false;
 }
 
+/// Whether `action` fired on a REAL press edge this tick (synthetic repeats
+/// excluded) — the press-intent companion to `isActionHeld` (see
+/// `InGameInput.cursor_press_direction`). Implemented as `bindingFires`
+/// with an empty repeat set, so every gate (derived contexts, required
+/// modifiers, hybrid precedence) is identical to the dispatch pass's.
+fn actionPressedOnRealEdge(
+    action: types.Action,
+    bindings: []const InputBinding,
+    keys_pressed: []const ?[]const u8,
+    mouse_pressed: []const ?[]const u8,
+    gamepad_pressed: []const ?[]const u8,
+    modifiers: Modifiers,
+    active_contexts: types.BindingContextSet,
+) bool {
+    for (bindings, 0..) |binding, binding_index| {
+        if (binding.action != action) continue;
+        if (bindingFires(
+            binding,
+            binding_index,
+            bindings,
+            keys_pressed,
+            &no_repeat_keys,
+            mouse_pressed,
+            gamepad_pressed,
+            modifiers,
+            active_contexts,
+        )) return true;
+    }
+    return false;
+}
+
 /// Whether `action`'s bindings may fire on synthetic key-repeat edges (see
 /// `InputState.advanceKeyRepeats`): the repeated-firing whitelist —
 /// undo/redo, skip, error-scroll, and the movement cursors. Everything else
@@ -1140,6 +1179,17 @@ pub fn translateInput(
     if (isActionHeld(.move_cursor_left, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_x -= 1;
     if (isActionHeld(.move_cursor_right, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_x += 1;
     result.anytime.in_game.cursor_direction = .{ .x = dir_x, .y = dir_y };
+
+    // Press-edge direction from the same-frame press arrays (repeats
+    // excluded) — the rollover fallback vector (see
+    // InGameInput.cursor_press_direction).
+    var press_dir_x: i32 = 0;
+    var press_dir_y: i32 = 0;
+    if (actionPressedOnRealEdge(.move_cursor_up, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) press_dir_y -= 1;
+    if (actionPressedOnRealEdge(.move_cursor_down, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) press_dir_y += 1;
+    if (actionPressedOnRealEdge(.move_cursor_left, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) press_dir_x -= 1;
+    if (actionPressedOnRealEdge(.move_cursor_right, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) press_dir_x += 1;
+    result.anytime.in_game.cursor_press_direction = .{ .x = press_dir_x, .y = press_dir_y };
 
     // Raw mouse-over-tile (unvalidated; the cursor resolution in update()
     // checks it against world tiles + UI occlusion). Plus whether the mouse
@@ -1607,4 +1657,86 @@ test "translateInput: an active keybind edit suppresses bindings + captures the 
     try std.testing.expectEqual(types.KeybindCaptureOutcome.captured, result.keybind_capture_outcome);
     try std.testing.expectEqualStrings("KeyQ", ui_state.keybind_edit.?.capture.capturedId().?);
     try std.testing.expect(ui_state.keybind_edit.?.capture.modifiers.ctrl);
+}
+
+test "translateInput: cursor_press_direction — real press edges only (the rollover fallback vector)" {
+    // The nudge vector derives from HELD keys (opposites cancel), so a
+    // press landing while its opposite is still held — key rollover at
+    // fast input speeds — produced a zero vector and its edge was
+    // consumed with no movement (the arrow-key swallow; see
+    // resolveTileCursor's fallback). cursor_press_direction carries the
+    // real-press intent for that fallback: this tick's press edges,
+    // synthetic repeats excluded.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "ArrowLeft" }, .action = .move_cursor_left },
+        .{ .input = .{ .key = "ArrowRight" }, .action = .move_cursor_right },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const game_set: types.BindingContextSet = .{ .anytime = true, .game = true };
+    const viewport = ViewportSize{ .width = 2560, .height = 2160 };
+
+    // Rollover: right pressed on an earlier frame (still held — no
+    // release), left presses now. The held vector cancels to zero; the
+    // press direction keeps the left intent.
+    {
+        var input_state: InputState = .{};
+        _ = translateInput(
+            PlatformInput{ .events = &.{.{ .key_down = "ArrowRight" }}, .viewport = viewport },
+            &input_state,
+            settings,
+            camera,
+            0,
+            null,
+            null,
+            game_set,
+        );
+        const rollover = translateInput(
+            PlatformInput{ .events = &.{.{ .key_down = "ArrowLeft" }}, .viewport = viewport },
+            &input_state,
+            settings,
+            camera,
+            0,
+            null,
+            null,
+            game_set,
+        );
+        const in_game = rollover.anytime.in_game;
+        try std.testing.expect(in_game.move_cursor_left);
+        try std.testing.expectEqual(@as(i32, 0), in_game.cursor_direction.x);
+        try std.testing.expectEqual(@as(i32, -1), in_game.cursor_press_direction.x);
+    }
+
+    // Synthetic repeat edges do NOT count as presses: right held past the
+    // repeat threshold fires the move_cursor_right edge again, but the
+    // press direction stays zero — a deliberately-held opposite pair
+    // keeps the frozen cancel, and the fallback cannot oscillate on
+    // per-key repeat-timer drift.
+    {
+        var input_state: InputState = .{};
+        _ = translateInput(
+            PlatformInput{ .events = &.{.{ .key_down = "ArrowRight" }}, .viewport = viewport },
+            &input_state,
+            settings,
+            camera,
+            0,
+            null,
+            null,
+            game_set,
+        );
+        const repeat_frame = translateInput(
+            PlatformInput{ .events = &.{}, .viewport = viewport },
+            &input_state,
+            settings,
+            camera,
+            400 * std.time.us_per_ms,
+            null,
+            null,
+            game_set,
+        );
+        const in_game = repeat_frame.anytime.in_game;
+        try std.testing.expect(in_game.move_cursor_right);
+        try std.testing.expectEqual(@as(i32, 1), in_game.cursor_direction.x);
+        try std.testing.expectEqual(@as(i32, 0), in_game.cursor_press_direction.x);
+    }
 }

@@ -3540,10 +3540,21 @@ pub fn resolveTileCursor(
     };
 
     // Nudge by the held-key direction (each axis independently; diagonals
-    // work via two held keys, opposite keys cancel).
+    // work via two held keys, opposite keys cancel). FALLBACK when the held
+    // vector cancels to zero: a REAL press edge that landed while its
+    // opposite was still held (key rollover at fast input speeds) nudges by
+    // the press's own direction instead — the edge is the intent signal,
+    // and it would otherwise be consumed into a zero vector and never
+    // re-fire (the opposite's release produces no edge). Synthetic repeats
+    // keep the cancel: deliberately holding both opposites stays frozen
+    // (cursor_press_direction is repeats-excluded by construction).
+    const direction = if (in_game.cursor_direction.x == 0 and in_game.cursor_direction.y == 0)
+        in_game.cursor_press_direction
+    else
+        in_game.cursor_direction;
     const nudged = types.Vector2{
-        .x = origin.x + in_game.cursor_direction.x,
-        .y = origin.y + in_game.cursor_direction.y,
+        .x = origin.x + direction.x,
+        .y = origin.y + direction.y,
     };
 
     // If the nudged position is a world tile, move there. Otherwise CROSS
@@ -3556,7 +3567,7 @@ pub fn resolveTileCursor(
             return;
         }
     }
-    if (functions.nearestTileAlongDirection(world_tiles, origin, in_game.cursor_direction)) |target| {
+    if (functions.nearestTileAlongDirection(world_tiles, origin, direction)) |target| {
         history.session.tile_cursor = target;
     }
 }
@@ -3600,8 +3611,15 @@ fn resolveEditorTileCursor(
         break :blk editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].player_start;
     };
 
-    cursor.x += in_game.cursor_direction.x;
-    cursor.y += in_game.cursor_direction.y;
+    // Same trigger/derive split + rollover fallback as levels/hubs (see
+    // resolveTileCursor's nudge block): the held vector, unless it cancels
+    // to zero and a real press edge carries the intent instead.
+    const direction = if (in_game.cursor_direction.x == 0 and in_game.cursor_direction.y == 0)
+        in_game.cursor_press_direction
+    else
+        in_game.cursor_direction;
+    cursor.x += direction.x;
+    cursor.y += direction.y;
     history.session.tile_cursor = cursor;
 }
 
@@ -5429,4 +5447,119 @@ test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" 
     }
     try std.testing.expect(seen_change_setting);
     try std.testing.expect(seen_toggle_inventory);
+}
+
+test "resolveTileCursor: rollover press nudges by the pressed direction; repeats keep the frozen cancel" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    // A 5-wide row; the cursor starts on (1,0) (the position a right
+    // press just moved it to).
+    const entities = [_]types.Entity{.{ .name = "Player", .team = 0, .position = .{ .x = 0, .y = 0 } }};
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 0 },
+    };
+    var history = harness.newHistory(@import("test_harness.zig").levelStateWithEntities(
+        backing.allocator(),
+        &entities,
+        &tiles,
+    ));
+    @import("test_harness.zig").runToIdle(&history);
+    history.session.tile_cursor = .{ .x = 1, .y = 0 };
+
+    // ROLLOVER: the left edge fires while right is still held — the held
+    // vector cancels to zero, the press direction carries the intent, and
+    // the cursor moves LEFT. This is the fast-input shape the held-vector
+    // model swallowed whole (the press edge consumed into a zero vector,
+    // never re-fired on the opposite's release).
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_left = true,
+            .cursor_direction = .{ .x = 0, .y = 0 },
+            .cursor_press_direction = .{ .x = -1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
+
+    // REPEATS ONLY: a synthetic repeat edge with both opposites held (a
+    // deliberate freeze) — no real press, so the cancel holds and the
+    // cursor stays put. The fallback must not oscillate on per-key
+    // repeat-timer drift.
+    history.session.tile_cursor = .{ .x = 2, .y = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_left = true,
+            .cursor_direction = .{ .x = 0, .y = 0 },
+            .cursor_press_direction = .{ .x = 0, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, history.session.tile_cursor.?);
+
+    // A NONZERO held vector ignores the press direction entirely (the
+    // diagonal-derive model unchanged): up held + left pressed nudges
+    // diagonally, not by the press axis alone.
+    history.session.tile_cursor = .{ .x = 2, .y = 1 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_left = true,
+            .cursor_direction = .{ .x = -1, .y = -1 },
+            .cursor_press_direction = .{ .x = -1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
+}
+
+test "resolveEditorTileCursor: rollover press nudges by the pressed direction (same fallback)" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 2, .y = 3 } }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    history.current_state.editor.?.active_tool = .tile;
+
+    // Null cursor + a rollover left press (right still held): snap to
+    // player_start, then nudge by the PRESS direction — unclamped (empty
+    // space is a legal paint target).
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_left = true,
+            .cursor_direction = .{ .x = 0, .y = 0 },
+            .cursor_press_direction = .{ .x = -1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 3 }, history.session.tile_cursor.?);
+
+    // Repeats only (both held, no real press): the frozen cancel holds.
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 0, .y = 0 },
+            .cursor_press_direction = .{ .x = 0, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 3 }, history.session.tile_cursor.?);
 }

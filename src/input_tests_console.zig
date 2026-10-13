@@ -375,3 +375,115 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
         try testing.expect(keyHeld(&input_state, "ArrowLeft"));
     }
 }
+
+test "console end-to-end: fast right-then-left arrow rollover moves the cursor both times" {
+    // The reported bug, pinned end-to-end through the console channel at
+    // the live loop's cadence: press right, then press left BEFORE
+    // releasing right (key rollover — what fast input actually does).
+    // The nudge trigger is edge-based but the vector derived from HELD
+    // keys (opposites cancel), so the left edge was consumed into a zero
+    // vector and never re-fired — only the right press registered. The
+    // press-direction fallback (cursor_press_direction) rescues the
+    // rollover press at its own frame.
+    //
+    // Drives the full live seam per frame — applyFrameCommand (with a
+    // per-frame arena RESET, like main.frame) → translateInput →
+    // resolveTileCursor — so the pin also re-exercises the held-id
+    // static-lifetime property every frame.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    var input_state: input.InputState = .{};
+    var queue: console.ConsoleQueue = .{};
+    var frame_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer frame_arena.deinit();
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+
+    // One live-shaped frame: drain one console command, translate, resolve
+    // the tile cursor. Returns the frame's PlayerInput.
+    const frame = struct {
+        fn run(
+            queue_ptr: *console.ConsoleQueue,
+            input_state_ptr: *input.InputState,
+            history_ptr: *state.GameStateHistory,
+            arena_ptr: *std.heap.ArenaAllocator,
+            camera_value: types.Camera,
+        ) input.PlayerInput {
+            const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
+            const backend_input = input.PlatformInput{
+                .events = &hardware_events,
+                .viewport = .{ .width = types.reference_width, .height = types.reference_height },
+            };
+            const platform_input = console.applyFrameCommand(
+                queue_ptr,
+                backend_input,
+                arena_ptr.allocator(),
+                history_ptr,
+                &.{},
+                camera_value,
+                1.0,
+            );
+            var player_input = input.translateInput(
+                platform_input,
+                input_state_ptr,
+                history_ptr.settings,
+                camera_value,
+                0,
+                null,
+                null,
+                game_contexts,
+            );
+            console.foldInjectedActions(&player_input, platform_input);
+            input_handlers.resolveTileCursor(history_ptr, player_input, &.{});
+            return player_input;
+        }
+    };
+
+    // Rollover sequence: right press → left press (right still held) →
+    // release right → release left. Every PRESS must register.
+    queue.push(console.parseCommandLine("press ArrowRight").command);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
+    _ = frame_arena.reset(.retain_capacity);
+
+    queue.push(console.parseCommandLine("press ArrowLeft").command);
+    const rollover_frame = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    try testing.expect(rollover_frame.anytime.in_game.move_cursor_left);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
+    _ = frame_arena.reset(.retain_capacity);
+
+    queue.push(console.parseCommandLine("release ArrowRight").command);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
+    _ = frame_arena.reset(.retain_capacity);
+
+    queue.push(console.parseCommandLine("release ArrowLeft").command);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
+
+    // Control — sequential taps (right fully released before left presses)
+    // registered at any speed before the fix and must stay identical.
+    var tap_state: input.InputState = .{};
+    var tap_queue: console.ConsoleQueue = .{};
+    {
+        tap_queue.push(console.parseCommandLine("press ArrowRight").command);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
+        _ = frame_arena.reset(.retain_capacity);
+        tap_queue.push(console.parseCommandLine("release ArrowRight").command);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
+        _ = frame_arena.reset(.retain_capacity);
+        tap_queue.push(console.parseCommandLine("press ArrowLeft").command);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
+        _ = frame_arena.reset(.retain_capacity);
+        tap_queue.push(console.parseCommandLine("release ArrowLeft").command);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
+    }
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
+}
