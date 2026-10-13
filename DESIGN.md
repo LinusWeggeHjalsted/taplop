@@ -1685,6 +1685,23 @@ the reader thread exits, zero cost.
   `console_queue`'s memory is written concurrently by the reader
   thread — dumping into it can display transiently torn values (never
   a crash, never a mutation).
+- **The observability stash — per-frame facts the walker can't otherwise
+  see.** The translated `PlayerInput` and the frame delta exist only
+  DURING `frame()`; `FrameState.previous_player_input` /
+  `previous_delta_microseconds` keep the previous frame's (written once
+  per frame right after translateInput + the console fold — everything
+  below only reads it), and `console_queue.last_taken_command` records
+  which command the drain took (any kind, waits included). The
+  `previous_` naming follows `previous_view_state`; a dump on frame N+1
+  shows frame N, so `press X` followed by `dump
+  previous_player_input...` asserts what the press DID. The stash is a
+  plain wholesale copy — `PlayerInput` is all values except one string
+  payload, and that payload (`clicked_editor_sprite`) borrows
+  SESSION-owned scan bytes (`MissionSprite.stored_id`, minted at the
+  scan — see DESIGN → Architecture → Level Editor → the sprite
+  picker), so nothing in the stash can dangle into the reset frame
+  arena (the console id-lifetime lesson, applied at the data's owner
+  instead of at the consumer).
 - **Console sessions are ordinary sessions**: injected events produce
   normal recorded events, so a console-driven session's log is a valid
   `--replay` artifact — scripted setup doubles as fixture generation.

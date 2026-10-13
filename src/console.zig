@@ -334,6 +334,12 @@ pub const ConsoleQueue = struct {
     /// position — a human at the window never loses the pointer. Game
     /// thread only (set + read in applyFrameCommand).
     pointer_position: ?input.PointerPosition = null,
+    /// The last command TAKEN by the frame drain (any kind — input, dump,
+    /// quit, waits included), recorded for `dump console_queue.last_taken_command`
+    /// (which command consumed a given frame — TAS pacing visibility).
+    /// A by-value copy taken at pop, before the reader thread can reuse
+    /// the slot. Game thread only.
+    last_taken_command: ?ConsoleCommand = null,
     /// Dump output goes here (stdout), wired by the native driver. Without a
     /// writer there is no reader thread either (web), so a dump can never
     /// arrive. Stored as the concrete parent (the File.Writer owns its
@@ -382,6 +388,10 @@ pub const ConsoleQueue = struct {
         // Empty: nothing pushed past what was popped.
         if (read == self.write_counter.load(.acquire)) return null;
         const command = self.commands[read % queue_capacity];
+        // The observability record: which command this frame took (a
+        // by-value copy — the slot is reader-thread memory, reusable once
+        // the counter below publishes the pop).
+        self.last_taken_command = command;
         // Release: the slot is consumed before the counter that frees it for
         // the producer's reuse.
         self.read_counter.store(read +% 1, .release);
@@ -1656,4 +1666,38 @@ test "writeDumpToWriter: path dumps route to the walker against the root" {
         );
         try std_testing.expect(std.mem.indexOf(u8, buffer[0..writer.end], "history: ") != null);
     }
+}
+
+test "takeFrameCommand records the taken command (any kind, waits included)" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    var queue: ConsoleQueue = .{};
+    try std_testing.expect(queue.last_taken_command == null);
+
+    // An input command: recorded.
+    const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
+    const no_root: struct{} = .{};
+    queue.push(parseCommandLine("press Escape").command);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(queue.last_taken_command != null);
+    try std_testing.expect(queue.last_taken_command.? == .press);
+
+    // A wait arms its frames and returns nothing THIS frame — but it was
+    // TAKEN (popped), so it records (which command consumed the frame is
+    // the point of the field).
+    queue.push(parseCommandLine("wait 5").command);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(queue.last_taken_command != null);
+    try std_testing.expect(queue.last_taken_command.? == .wait);
+
+    // An empty drain (wait frames remaining) keeps the last record — the
+    // last TAKEN command is still the truthful answer.
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    try std_testing.expect(queue.last_taken_command != null);
+    try std_testing.expect(queue.last_taken_command.? == .wait);
 }

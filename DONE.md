@@ -16458,3 +16458,39 @@ churn while the modal is up).
   main.zig's dispatch relay) — the clean shape is one tagged-union
   payload field (the SlotRef pattern), a 30–50-site refactor for
   another session.
+
+## The observability stash — previous_player_input / previous_delta / last_taken_command
+
+The gap that closed the dump-path discussion: the console channel could
+not see its own subject matter — the per-frame input TRANSLATION (fired
+actions, edges, cursor vectors) and the frame DELTA existed only during
+`frame()` (the delta previously measured by timing two whole process
+runs against each other: 500-frame vs 1500-frame scripts, ~3.2ms/frame).
+
+- **FrameState stash**: `previous_player_input: ?input.PlayerInput` +
+  `previous_delta_microseconds: u64`, written once per frame in
+  `main.frame` right after translateInput + the console action fold
+  (verified: everything below that point only reads player_input).
+  The `previous_` naming follows `previous_view_state`. Read order is
+  assertion-shaped for free: dumps execute at the START of frame N+1
+  (applyFrameCommand), so `press X` then `dump
+  previous_player_input...` shows the press frame's translation.
+- **`console_queue.last_taken_command`**: recorded at pop in
+  takeFrameCommand (any kind — input, dump, quit, WAITS included: a
+  wait consumes a frame, so it is the truthful "what took this frame");
+  a by-value copy taken before the reader can reuse the slot; an empty
+  drain keeps the last record.
+- **No bounded buffer needed**: the original plan had a 128-byte copy
+  buffer for PlayerInput's one string payload — the side quest
+  (mission sprite ids minted at the scan, previous entry) dissolved
+  the hazard at the source, so the stash is a plain wholesale copy.
+- **Tests**: the taken-command record (press / wait / empty-drain
+  keeps-last); the stash dump paths against the real root shape
+  (cursor_direction, delta, the sprite payload reads back verbatim).
+  Live verification: a script asserting the press frame's edge, the
+  held-derived direction on later frames, and the frame delta in one
+  command — the exact diagnostics that were impossible before.
+- Design: DESIGN → Input → Console input → the observability-stash
+  bullet. The `report ui`/`report level` verb split remains in TODO
+  (dump-path slice 3), as does the `clicked_*` payload-consolidation
+  candidate.

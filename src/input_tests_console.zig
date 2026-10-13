@@ -501,3 +501,47 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     }
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
 }
+
+test "dump path: the observability stash is addressable (previous_player_input / previous_delta)" {
+    // Pins the stash's dump paths against the real shape: a root with the
+    // FrameState's stash fields set (the live write happens in main.frame;
+    // here the walker proves the paths resolve + render the translation).
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    const StashRoot = struct {
+        history: state.GameStateHistory,
+        previous_player_input: ?input.PlayerInput,
+        previous_delta_microseconds: u64,
+    };
+    var root = StashRoot{
+        .history = history,
+        .previous_player_input = .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 1, .y = 0 },
+        } } },
+        .previous_delta_microseconds = 3200,
+    };
+
+    var buffer: [2048]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    const const_root: *const StashRoot = &root;
+    @import("dump_walker.zig").writeDump(&writer, const_root, "previous_player_input.anytime.in_game.cursor_direction");
+    try testing.expectEqualStrings("{ x: 1, y: 0 }\n", buffer[0..writer.end]);
+
+    var writer2 = std.Io.Writer.fixed(&buffer);
+    @import("dump_walker.zig").writeDump(&writer2, const_root, "previous_delta_microseconds");
+    try testing.expectEqualStrings("3200\n", buffer[0..writer2.end]);
+
+    // The one string payload borrows session-owned scan bytes, so the
+    // wholesale copy holds: a stashed clicked_editor_sprite reads back
+    // verbatim (content — the pointer-identity pin lives in the picker
+    // test).
+    root.previous_player_input.?.anytime.clicked_editor_sprite = "custom/artists_den/boss";
+    var writer3 = std.Io.Writer.fixed(&buffer);
+    @import("dump_walker.zig").writeDump(&writer3, const_root, "previous_player_input.anytime.clicked_editor_sprite");
+    try testing.expectEqualStrings("custom/artists_den/boss\n", buffer[0..writer3.end]);
+}

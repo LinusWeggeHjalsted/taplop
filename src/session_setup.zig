@@ -9,6 +9,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
+const input = @import("input.zig");
 const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
@@ -43,6 +44,25 @@ pub const FrameState = struct {
     /// which is immediate EOF); the native driver spawns the reader and wires
     /// the dump output writer.
     console_queue: console.ConsoleQueue = .{},
+    /// The previous frame's translated input + real-clock delta — the
+    /// observability stash (see DESIGN → Input → Console input → dump
+    /// paths): written once per frame in `main.frame` right after
+    /// translateInput + the console action fold, read by `dump
+    /// previous_player_input...` / `dump previous_delta_microseconds`.
+    /// Null before the first frame. The `previous_` naming follows
+    /// previous_view_state ("what was true last frame is what you act
+    /// against this frame") — and a dump executed on frame N+1 shows
+    /// frame N's translation, so `press X` followed by `dump
+    /// previous_player_input...` asserts what the press DID.
+    /// Plain wholesale copy — PlayerInput is all values except one string
+    /// payload, and that payload (clicked_editor_sprite) borrows
+    /// session-owned scan bytes (MissionSprite.stored_id), so nothing in
+    /// the stash can dangle into the reset frame arena.
+    previous_player_input: ?input.PlayerInput = null,
+    /// The previous frame's real-clock delta — the timing fact the stash
+    /// exists for (before it, the frame period had to be measured by
+    /// timing whole process runs against each other).
+    previous_delta_microseconds: u64 = 0,
 };
 
 /// Collected startup warnings (one per config file that fell back to its

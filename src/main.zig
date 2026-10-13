@@ -641,6 +641,17 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // DESIGN → Input → Console input.
     console.foldInjectedActions(&player_input, platform_input);
 
+    // The observability stash: the previous frame's translated input +
+    // delta, dumpable via `dump previous_player_input...` (see DESIGN →
+    // Input → Console input → dump paths). Written once per frame, right
+    // after the last producer of PlayerInput content (translateInput +
+    // the console fold) — everything below only reads it. A plain copy:
+    // the one string payload borrows session-owned scan bytes
+    // (MissionSprite.stored_id), so nothing dangles into the frame-arena
+    // reset.
+    frame_state.previous_player_input = player_input;
+    frame_state.previous_delta_microseconds = delta_microseconds;
+
     // Text-field keyboard resolution (Enter commits, Escape discards). Once
     // per frame HERE, before the drain — update() re-runs per drain
     // iteration and must not re-resolve. A commit pushes + drains its own

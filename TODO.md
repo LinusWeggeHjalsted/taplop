@@ -62,6 +62,18 @@ Test by running `zig build run` and clicking through.
 - **Gear sprites** — the last unlanded entity sub-layer (effect overlays,
   sprite animation, ground items, decorations all DONE — history in
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
+- **`clicked_*` payload consolidation (candidate, found during the
+  observability-stash work)** — `AnytimeInput` carries 28 `clicked_*`
+  payload fields, all same-frame-dead, all hand-wired as ~25 copy-paste
+  lines in main.zig's button-release relay, several with literally the
+  same doc comment ("same payload-rides-along pattern as
+  `clicked_setting`"). The concept "a button's payload" has no seam —
+  it has 28. Clean shape: ONE tagged-union payload field (the `SlotRef`
+  pattern already on the UI side) + buttons carry one payload union;
+  adding a payload kind becomes one union variant instead of a
+  4-site touch (element field, AnytimeInput field, dispatch line,
+  handler read). ~30–50 sites; orthogonal to any current work — do it
+  the next time the dispatch relay is touched for real.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new
@@ -137,19 +149,14 @@ Test by running `zig build run` and clicking through.
         hand-written state/settings/bindings/history mirrors deleted;
         safety invariants + rendering rules: DESIGN → Input → Console
         input → dump paths) — DONE (see DONE.md, dump-path walker).
-  - **Per-frame observability stash (dump-path slice 2)** — FrameState
-        gains `previous_player_input` / `previous_delta_microseconds` /
-        `previous_console_command` (the `previous_view_state` naming
-        convention), written in `frame()` right after translateInput,
-        dumpable via the walker (`dump previous_player_input.anytime.in_game.cursor_direction`).
-        The gap found while diagnosing the arrow-rollover bug: the console
-        channel could not see its own subject matter (held keys were
-        reachable via session.input_state, but the per-frame translation
-        + the frame delta were nowhere — measured by timing two whole
-        process runs). CONSTRAINT from the id-lifetime fix: the stash must
-        not retain frame-arena slices (PlayerInput's one string payload,
-        clicked_editor_sprite, needs dropping or a bounded copy — the
-        interning lesson applied up front).
+  - [x] 4. Per-frame observability stash — DONE: FrameState's
+        `previous_player_input` / `previous_delta_microseconds` (written
+        in `frame()` after the fold) + `console_queue.last_taken_command`
+        (recorded at pop). The string-payload constraint dissolved at
+        the source: mission sprite ids are now MINTED AT THE SCAN
+        (MissionSprite.stored_id — see DONE.md, mission sprite ids
+        minted at the scan), so the stash is a plain wholesale copy with
+        nothing to dangle.
   - **`report ui` / `report level` verb split (dump-path slice 3)** —
         rename the two CURATED dumps off the `dump` verb so `dump` is
         purely the path mirror (two verbs, two semantics, no namespace
