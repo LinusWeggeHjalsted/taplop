@@ -345,6 +345,14 @@ pub const ConsoleQueue = struct {
     /// interface copy would dangle).
     output: ?std.Io.File.Writer = null,
     output_buffer: [output_buffer_capacity]u8 = undefined,
+    /// A human is typing at the other end — set once by the native driver
+    /// at wiring from `isTty(stdin)`. Gates ONLY the console-ready prompt
+    /// (see `promptDue`): the channel itself stays always-on by design — a
+    /// piped script drives identically, just unprompted (a prompt over a
+    /// pipe is a lie: it invites typing, but the reader is consuming the
+    /// script), and an stdin-less launch (double-click, the mac bundle)
+    /// prints nothing at all.
+    interactive: bool = false,
 
     const queue_capacity = 64;
     const output_buffer_capacity = 4096;
@@ -406,6 +414,42 @@ pub const ConsoleQueue = struct {
 };
 
 // ============================================================
+// The console-ready prompt
+// ============================================================
+
+/// Whether the console-ready prompt (`> `) is due after the frame drain
+/// took `taken` — the game thread's marker that the channel can take the
+/// next line. The GAME thread prints it (not the reader: stdout already
+/// has exactly one writer — the game thread, via the queue's output —
+/// and a reader-side prompt would race the next frame's dump output onto
+/// a stale prompt line). Conditions: a HUMAN is typing (`interactive` — a
+/// piped script is unprompted by design), the taken command wasn't `quit`
+/// (the process is exiting), and the queue has DRAINED — pasted
+/// multi-line input prompts once, after the last command, not once per
+/// line. Mid-hold frames print nothing by construction: `wait` /
+/// `wait idle` arm inside `takeFrameCommand` and never reach the caller's
+/// switch, and the frame that ends a hold releases a real command whose
+/// own drain check applies.
+fn promptDue(queue: *const ConsoleQueue, taken: ConsoleCommand) bool {
+    if (taken == .quit) return false;
+    if (!queue.interactive) return false;
+    const read = queue.read_counter.load(.monotonic);
+    return read == queue.write_counter.load(.acquire);
+}
+
+/// Print the console-ready prompt: `> `, no newline, best-effort (a
+/// failed write never surfaces — the console is a convenience channel,
+/// not a game system). Pub for the native driver's boot prompt (the
+/// first one, printed at wiring); the per-command prompts are printed by
+/// `applyFrameCommand` via `promptDue`.
+pub fn printPrompt(queue: *ConsoleQueue) void {
+    if (queue.output) |*output| {
+        output.interface.writeAll("> ") catch return;
+        output.interface.flush() catch return;
+    }
+}
+
+// ============================================================
 // Per-frame drain + merge
 // ============================================================
 
@@ -436,27 +480,27 @@ pub fn applyFrameCommand(
         history.current_state.waiting == null and
         history.session.pending_error == null;
     const command = queue.takeFrameCommand(game_is_idle) orelse return backend_input;
-    switch (command) {
-        .quit => {
+    const merged: PlatformInput = switch (command) {
+        .quit => blk: {
             history.session.quit_requested = true;
-            return backend_input;
+            break :blk backend_input;
         },
-        .dump => |*path_text| {
+        .dump => |*path_text| blk: {
             writeDump(path_text.view(), queue, frame_root);
-            return backend_input;
+            break :blk backend_input;
         },
-        .report => |kind| {
+        .report => |kind| blk: {
             writeReport(kind, queue, history, ui_elements, camera, camera_zoom);
-            return backend_input;
+            break :blk backend_input;
         },
         // Popped waits never leave takeFrameCommand (they arm their own
         // idle frames / idle hold there) — this arm only keeps the switch
         // exhaustive.
-        .wait, .wait_idle => return backend_input,
+        .wait, .wait_idle => backend_input,
         // `move` both remembers the position and applies it this frame.
-        .move => |position| {
+        .move => |position| blk: {
             queue.pointer_position = position;
-            return mergeIntoPlatformInput(command, backend_input, arena);
+            break :blk mergeIntoPlatformInput(command, backend_input, arena);
         },
         // Press/release/scroll/type/action: re-apply the remembered pointer
         // position ahead of the command's own events (a mouse_move event
@@ -464,14 +508,19 @@ pub fn applyFrameCommand(
         // wins), so the command acts where the console moved the pointer,
         // frames later. Without a remembered position (no `move` yet), the
         // command acts at the hardware position.
-        else => {
-            var merged = backend_input;
+        else => blk: {
+            var merged_input = backend_input;
             if (queue.pointer_position) |position| {
-                merged = mergeIntoPlatformInput(.{ .move = position }, merged, arena);
+                merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
             }
-            return mergeIntoPlatformInput(command, merged, arena);
+            break :blk mergeIntoPlatformInput(command, merged_input, arena);
         },
-    }
+    };
+    // The console-ready prompt, AFTER the command's effect (a `dump`'s
+    // output lands above the prompt, same thread, no interleaving). See
+    // `promptDue`.
+    if (promptDue(queue, command)) printPrompt(queue);
+    return merged;
 }
 
 /// Merge one input command into the frame's PlatformInput. Key/mouse ids
@@ -1231,6 +1280,41 @@ test "queue: wait idle holds until the game is idle, then releases on that frame
     // The hold is cleared: later frames flow normally (empty queue → null,
     // busy or not).
     try std_testing.expect(queue.takeFrameCommand(false) == null);
+}
+
+test "promptDue: the console-ready conditions" {
+    var queue: ConsoleQueue = .{};
+    queue.interactive = true;
+
+    // `quit` never prompts — the process is exiting.
+    try std_testing.expect(!promptDue(&queue, .quit));
+
+    // A non-interactive channel (piped script, stdin-less launch) never
+    // prompts, whatever it took.
+    queue.interactive = false;
+    try std_testing.expect(!promptDue(&queue, .{ .scroll = 1 }));
+    queue.interactive = true;
+
+    // A drained queue (the taken command was the last pending one) prompts:
+    // the marker says the channel can take the next line.
+    queue.push(.{ .scroll = 1 });
+    try std_testing.expect(queue.takeFrameCommand(true) != null);
+    try std_testing.expect(promptDue(&queue, .{ .scroll = 1 }));
+
+    // An undrained queue (pasted multi-line input, mid-script backlog)
+    // stays silent — one prompt after the LAST command, not per line.
+    queue.push(.{ .scroll = 1 });
+    queue.push(.{ .scroll = 2 });
+    try std_testing.expect(queue.takeFrameCommand(true) != null);
+    try std_testing.expect(!promptDue(&queue, .{ .scroll = 1 }));
+    // Draining the remainder re-arms the prompt.
+    try std_testing.expect(queue.takeFrameCommand(true) != null);
+    try std_testing.expect(promptDue(&queue, .{ .scroll = 2 }));
+
+    // Mid-hold frames prompt nothing BY CONSTRUCTION — `wait` / `wait idle`
+    // arm inside takeFrameCommand and yield null, so no taken command ever
+    // reaches the prompt check while a hold is armed (the wait-idle test
+    // above pins that null). Nothing further to assert here.
 }
 
 test "mergeIntoPlatformInput: input commands append to the backend's frame" {

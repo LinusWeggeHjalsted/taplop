@@ -118,6 +118,16 @@ pub fn main(init: std.process.Init.Minimal) void {
         io,
         &setup.frame_state.console_queue.output_buffer,
     );
+    // The console-ready prompt gates on stdin being a TTY — "a human is
+    // typing at the other end". The channel itself stays always-on: a
+    // piped script drives identically, just unprompted (a prompt over a
+    // pipe would invite typing the script's pipe can never receive), and
+    // an stdin-less launch (double-click, the mac bundle) prints nothing.
+    // A failed check degrades to silent — the prompt is a convenience,
+    // never a gate on the channel.
+    setup.frame_state.console_queue.interactive =
+        std.Io.File.stdin().isTty(io) catch false;
+    console.printPrompt(&setup.frame_state.console_queue);
     const console_reader = std.Thread.spawn(
         .{},
         consoleReaderThread,

@@ -1629,6 +1629,23 @@ the reader thread exits, zero cost.
   by-value copy to each `update()`; `handleAnytimeInput` runs per call).
   Deterministic either way; a script that wants to avoid landing on a
   multi-event drain frame spaces its commands with `wait`.
+- **The console-ready prompt (`> `) — the GAME thread's marker that the
+  channel can take the next line.** Printed at boot (native wiring, right
+  after the output writer) and after each processed command whose frame
+  drain left the queue EMPTY — so pasted multi-line input prompts once,
+  after the last command, and a mid-script backlog stays silent. `quit`
+  prints none (the process is exiting); mid-hold frames print none BY
+  CONSTRUCTION (`wait`/`wait idle` arm inside `takeFrameCommand` and never
+  reach the caller). The game thread prints it, never the reader: stdout
+  has exactly one writer (the game thread, via the queue's output — the
+  reader writes only stderr), and a reader-side prompt would race the
+  next frame's dump output onto a stale prompt line. Gated on stdin being
+  a TTY (`isTty` at wiring → `ConsoleQueue.interactive`) — "a human is
+  typing at the other end" — which is exactly when a prompt is truthful:
+  the channel itself stays always-on (a piped script drives identically,
+  just unprompted — a prompt over a pipe invites typing the pipe can
+  never receive), and an stdin-less launch (double-click, the mac bundle)
+  prints nothing at all.
 - **The command set** (human readable + writable, both directions):
   `press <id>` / `release <id>` (any producible input id — the
   `producible_key_ids`/`producible_mouse_ids` vocabulary; an unknown id

@@ -16599,3 +16599,39 @@ field reads as truth). DESIGN → Input gained the two bullets (Button
 payloads + the placement rule); the load-save / level-editor /
 settings / console sections' payload references updated to the union
 spelling.
+
+## Console: the console-ready prompt (TTY-gated, game-thread printed)
+
+The interactive half of the console channel's missing discoverability
+surface (the other half — `help`/`inputs` — lands next): a `> ` prompt
+marking "the channel can take the next line."
+
+- **The game thread prints it, never the reader.** stdout already had
+  exactly one writer (the game thread, via the queue's output — the
+  reader writes only stderr); a reader-side "print before each blocking
+  read" would add a second stdout writer and a guaranteed cosmetic
+  race — the reader prints the next `> ` immediately after push, and
+  the next frame's dump output lands glued to the stale prompt. The
+  game thread's version is naturally ordered (a `dump`'s output writes
+  first, then the prompt — same thread, sequential). gdb's architecture
+  lesson, applied.
+- **Printed at boot + after each processed command when the frame drain
+  left the queue empty** — pasted multi-line input prompts once, after
+  the last command, not per line; a mid-script backlog never prompts;
+  `quit` prints none; mid-hold frames print none by construction
+  (`wait`/`wait idle` arm inside `takeFrameCommand`, never reaching the
+  caller's switch).
+- **TTY-gated** (`isTty(stdin)` at native wiring →
+  `ConsoleQueue.interactive`): the gate silences only the prompt — the
+  channel itself stays always-on by design (a piped script drives
+  identically, just unprompted: a prompt over a pipe is a lie, it
+  invites typing the pipe can never receive; console transcripts are
+  first-class artifacts — replay fixtures, TAS logs — that prompts
+  would pollute). An stdin-less launch (double-click, the mac bundle)
+  prints nothing — the zero-cost property preserved.
+
+`promptDue` (the bool predicate — quit/interactive/drained) is the
+unit-tested core; `printPrompt` is the thin best-effort writer (pub for
+the native driver's boot prompt). applyFrameCommand's switch was
+restructured to compute-then-prompt-then-return (labeled blocks — an
+unlabeled prong block's trailing value is a 0.16 parse quirk).
