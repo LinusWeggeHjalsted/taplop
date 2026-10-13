@@ -1672,7 +1672,16 @@ the reader thread exits, zero cost.
   (ints decimal, bools true/false, enums → tagName, strings verbatim).
   Addressed slices render element-per-line capped at 100 with an
   explicit `(+N more — address by index)` note; depth is never limited
-  (the path scopes the dump, not a render rule).
+  (the path scopes the dump, not a render rule). One known raw-but-
+  truthful rendering: `std.EnumSet` values (e.g. `fired_actions`) show
+  as their mask arrays — a nicer rendering would need `.contains()`
+  (a METHOD call), which the no-method-calls invariant below forbids;
+  do not "fix" this by calling methods.
+  MEASUREMENT TRUST: when a console measurement contradicts a
+  deterministic reading of the code, suspect the CHANNEL first — the
+  instrument is newer than the game (its segfault era: nondeterministic
+  dump truncation masquerading as game behavior — see DONE.md,
+  console input id interning). The channel is measurement-grade since.
   SAFETY INVARIANTS (a dump must never mutate or execute — verified
   before the walker was built): the root is const-asserted (`*const`
   from `writeDump` down — mutation is a compile error); raw pointers
@@ -3445,6 +3454,22 @@ the game cheating):
   handlers get their state allocator from `current_arena`; durable recording
   goes through `history.recordEvent` into `history_arena`. Never allocate live
   gameplay state into the gpa directly — it won't be reclaimed or replayed.
+- **The transient-lifetime invariant: NOTHING that survives a frame may
+  hold a slice into the frame arena.** `main.frame` resets
+  `frame_arena` every render; any object that outlives that reset
+  (InputState's held keys, `previous_view_state`, the observability
+  stash) dangles if it retains frame-arena bytes. The GameState/event
+  boundary already enforces string ownership rigorously (deep-copied
+  event payloads, the allocator model above) — the invariant extends
+  the same discipline to the TRANSIENT seams where state crosses
+  frames. Three instances found in one session (each its own DONE
+  entry): console-merged input ids (fixed by INTERNING to static
+  producible-id literals), the sprite picker's mission-cell ids (fixed
+  by MINTING at the scan — session-owned bytes instead of a per-frame
+  view mint), and the observability stash (safe wholesale copy BECAUSE
+  of the scan mint). The pattern for new transient seams: borrowed
+  strings must point at static literals, session-owned memory, or be
+  copied — never at frame-arena bytes.
 - Screen enum is authoritative for "where are we" — transitionScreen() handles cleanup
 - PlayerData is persistent, Entity is the in-level/hub working copy. Synced via build_player_from_data / build_data_from_player events
 - Player is always entity index 0

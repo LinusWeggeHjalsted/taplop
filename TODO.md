@@ -63,17 +63,23 @@ Test by running `zig build run` and clicking through.
   sprite animation, ground items, decorations all DONE — history in
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
 - **`clicked_*` payload consolidation (candidate, found during the
-  observability-stash work)** — `AnytimeInput` carries 28 `clicked_*`
-  payload fields, all same-frame-dead, all hand-wired as ~25 copy-paste
-  lines in main.zig's button-release relay, several with literally the
-  same doc comment ("same payload-rides-along pattern as
-  `clicked_setting`"). The concept "a button's payload" has no seam —
-  it has 28. Clean shape: ONE tagged-union payload field (the `SlotRef`
-  pattern already on the UI side) + buttons carry one payload union;
-  adding a payload kind becomes one union variant instead of a
-  4-site touch (element field, AnytimeInput field, dispatch line,
-  handler read). ~30–50 sites; orthogonal to any current work — do it
-  the next time the dispatch relay is touched for real.
+  observability-stash work; opinion strengthened on close inspection)** —
+  `AnytimeInput` carries 28 `clicked_*` payload fields, all
+  same-frame-dead, all hand-wired as ~25 copy-paste lines in main.zig's
+  button-release relay, several with literally the same doc comment
+  ("same payload-rides-along pattern as `clicked_setting`"). The
+  concept "a button's payload" has no seam — it has 28. Worse than it
+  looks: every field is FOUR hand-wired touch points (element field,
+  AnytimeInput field, dispatch line, handler read) with zero compiler
+  help for forgetting one — the ctrl+S missing-dispatch bug class's
+  sibling (forgetting the dispatch line silently drops the payload;
+  the handler's `orelse return` eats it). Clean shape: ONE tagged-union
+  payload field (the `SlotRef` pattern already on the UI side) +
+  buttons carry one payload union; adding a payload kind becomes one
+  union variant (the switch forces every handler site to consider it).
+  Bonus: the dump renders one meaningful payload line instead of 28
+  mostly-null fields. ~30–50 sites; orthogonal to any current work —
+  do it the next time the dispatch relay is touched for real.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new
@@ -163,6 +169,20 @@ Test by running `zig build run` and clicking through.
         error truthfully (the redirect teaches the new verb). Included
         restoring the reports' trailing newline (dropped by accident
         in the walker landing). See DONE.md, dump-path walker.
+  - **Console test-harness hardening (session-reflection rider)** —
+        two footguns found while driving the channel hard: (1)
+        `runConsoleScript` never RESETS its arena per frame, so its
+        scripts don't exercise the live loop's per-frame reset cadence
+        — the exact condition the id-lifetime bug class hides behind
+        (the new e2e tests reset manually; the helper should, so every
+        script gets it for free). (2) The path-dump tests build
+        `WalkerTestRoot{ .history = history }` copies refreshed BY HAND
+        per frame — a forgotten refresh silently reads stale state; a
+        shared live-root helper (test_harness) would remove the trap.
+        Nothing dangles today (ids are static, mission ids
+        scan-minted); this is keeping the next transient-lifetime bug
+        VISIBLE to exactly the tests that should catch it (see DESIGN
+        → Architecture → the transient-lifetime invariant).
 - [x] **UI surface state unification** — DONE (all six slices; see DONE.md,
       "UI surface state unification", + DESIGN → UI Framework → UI state
       classification).
