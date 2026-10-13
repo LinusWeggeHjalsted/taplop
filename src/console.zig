@@ -434,10 +434,11 @@ pub fn applyFrameCommand(
     }
 }
 
-/// Merge one input command into the frame's PlatformInput. String payloads
-/// (key/mouse ids, typed text) are duped into the frame arena — the command's
-/// bytes live in queue memory the reader thread may overwrite with a later
-/// push, so merged events must not alias them.
+/// Merge one input command into the frame's PlatformInput. Key/mouse ids
+/// resolve to their canonical static slices (`internedInputId`); typed text
+/// is duped into the frame arena (same-frame consumption — the text-input
+/// router copies it into the field buffer before the frame ends, so the
+/// arena lifetime is sufficient).
 fn mergeIntoPlatformInput(
     command: ConsoleCommand,
     backend_input: PlatformInput,
@@ -481,26 +482,52 @@ fn mergeIntoPlatformInput(
 const EventDirection = enum { down, up };
 
 /// Build the raw event for a press/release. Takes a POINTER into the
-/// caller's command: the event's string payload is a view into the id's
-/// bounded bytes, which must outlive this call until `appendEvent` dupes
-/// them into the frame arena (a by-value id would leave the payload
-/// pointing into this function's dead frame).
+/// caller's command (the id's bounded bytes are read here, then discarded —
+/// the event carries the INTERNED static slice, not a view into the
+/// command). The payload slice must be static-lifetime: `InputState`
+/// retains it past the frame (a held key stays in `keys_held` until its
+/// `release`), and the frame arena resets every frame.
 fn inputEventFor(
     id: *const ConsoleCommand.CommandInputId,
     direction: EventDirection,
 ) PlatformInputEvent {
     return switch (id.*) {
         .key => |*key| switch (direction) {
-            .down => .{ .key_down = key.view() },
-            .up => .{ .key_up = key.view() },
+            .down => .{ .key_down = internedInputId(key.view()) },
+            .up => .{ .key_up = internedInputId(key.view()) },
         },
         .mouse => |*mouse| switch (direction) {
-            .down => .{ .mouse_button_down = mouse.view() },
-            .up => .{ .mouse_button_up = mouse.view() },
+            .down => .{ .mouse_button_down = internedInputId(mouse.view()) },
+            .up => .{ .mouse_button_up = internedInputId(mouse.view()) },
         },
     };
 }
 
+/// Resolve a console input id to its canonical STATIC-lifetime slice — the
+/// same string literal `types.producible_key_ids` / `producible_mouse_ids`
+/// (and the backend's key mappings) use. Console-merged events must carry
+/// static ids, not frame-arena bytes: `InputState.keys_held` and
+/// `key_repeat_state` retain the id slice PAST the frame (a held key), and
+/// the frame arena resets every frame — an arena-duped id dangles there and
+/// the next held-state comparison reads dead memory (observed live as a
+/// segfault in `isHeld`). The parser already validated the id against these
+/// same tables (`classifyInputId`), so the lookup cannot miss; the panic
+/// names the invariant if a future seam breaks it.
+fn internedInputId(id: []const u8) []const u8 {
+    for (types.producible_key_ids) |producible_id| {
+        if (std.mem.eql(u8, id, producible_id)) return producible_id;
+    }
+    for (types.producible_mouse_ids) |producible_id| {
+        if (std.mem.eql(u8, id, producible_id)) return producible_id;
+    }
+    @panic("console input id was not validated at parse time");
+}
+
+/// Append one event to the frame's event list. The ARRAY is frame-arena-
+/// owned (same-frame consumption — `translateInput` drains it before the
+/// frame ends); the event's string payload is an interned static slice
+/// (`internedInputId`), so nothing in the array aliases frame-lifetime
+/// bytes.
 fn appendEvent(
     arena: std.mem.Allocator,
     existing: []const PlatformInputEvent,
@@ -509,18 +536,8 @@ fn appendEvent(
     const merged = arena.alloc(PlatformInputEvent, existing.len + 1) catch
         @panic("failed to allocate merged input events");
     @memcpy(merged[0..existing.len], existing);
-    merged[existing.len] = dupeEventPayload(arena, event);
+    merged[existing.len] = event;
     return merged;
-}
-
-fn dupeEventPayload(arena: std.mem.Allocator, event: PlatformInputEvent) PlatformInputEvent {
-    return switch (event) {
-        .key_down => |key| .{ .key_down = arena.dupe(u8, key) catch @panic("failed to dupe console key id") },
-        .key_up => |key| .{ .key_up = arena.dupe(u8, key) catch @panic("failed to dupe console key id") },
-        .mouse_button_down => |id| .{ .mouse_button_down = arena.dupe(u8, id) catch @panic("failed to dupe console mouse id") },
-        .mouse_button_up => |id| .{ .mouse_button_up = arena.dupe(u8, id) catch @panic("failed to dupe console mouse id") },
-        else => event,
-    };
 }
 
 /// Fold platform-injected actions (the console `action` command, merged into

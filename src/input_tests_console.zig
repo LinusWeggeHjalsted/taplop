@@ -282,3 +282,96 @@ test "console move persists to the command frame over the backend's per-frame ha
     );
     try testing.expectEqual(@as(f32, 2291), hardware_frame.pointer.position.x);
 }
+
+test "console press: held-key id survives the frame-arena reset (static-lifetime ids)" {
+    // The live frame loop RESETS the frame arena every frame
+    // (main.frame's `frame_arena.reset(.retain_capacity)`), so a console
+    // `press` id retained in InputState.keys_held — a held key stays held
+    // until its `release` — must point at static memory, not arena bytes.
+    // Regression pin for the crash class: arena-duped ids dangled into the
+    // reset arena; the next held-state comparison read dead memory (a live
+    // segfault in isHeld, and silently wrong held state — a "held" key
+    // vanishing mid-chord). The other console tests share one arena for
+    // the whole script, which is why they could not see this class.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    var input_state: input.InputState = .{};
+    var queue: console.ConsoleQueue = .{};
+    var frame_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer frame_arena.deinit();
+
+    // Frame 1: press ArrowRight (never released — it stays held).
+    queue.push(console.parseCommandLine("press ArrowRight").command);
+    const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
+    const backend_input = input.PlatformInput{
+        .events = &hardware_events,
+        .viewport = .{ .width = types.reference_width, .height = types.reference_height },
+    };
+    {
+        const platform_input = console.applyFrameCommand(
+            &queue,
+            backend_input,
+            frame_arena.allocator(),
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        const player_input = input.translateInput(
+            platform_input,
+            &input_state,
+            history.settings,
+            .{ .position = .{ .x = 0, .y = 0 } },
+            0,
+            null,
+            null,
+            game_contexts,
+        );
+        try testing.expect(player_input.anytime.in_game.move_cursor_right);
+        try testing.expectEqual(@as(i32, 1), player_input.anytime.in_game.cursor_direction.x);
+        try testing.expect(keyHeld(&input_state, "ArrowRight"));
+    }
+
+    // The frame ends: the live loop resets the arena here. Scribble junk
+    // over the reused memory in small chunks so a dangling id slice would
+    // read garbage (not its old bytes).
+    _ = frame_arena.reset(.retain_capacity);
+    for (0..256) |_| {
+        const churn = frame_arena.allocator().alloc(u8, 16) catch unreachable;
+        @memset(churn, 'X');
+    }
+
+    // Frame 2: press ArrowLeft while ArrowRight is still held (the rollover
+    // shape). Right must STILL register as held — the held-opposite cancel
+    // keeps cursor_direction.x at 0.
+    queue.push(console.parseCommandLine("press ArrowLeft").command);
+    {
+        const platform_input = console.applyFrameCommand(
+            &queue,
+            backend_input,
+            frame_arena.allocator(),
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        const player_input = input.translateInput(
+            platform_input,
+            &input_state,
+            history.settings,
+            .{ .position = .{ .x = 0, .y = 0 } },
+            0,
+            null,
+            null,
+            game_contexts,
+        );
+        try testing.expect(player_input.anytime.in_game.move_cursor_left);
+        try testing.expectEqual(@as(i32, 0), player_input.anytime.in_game.cursor_direction.x);
+        try testing.expect(keyHeld(&input_state, "ArrowRight"));
+        try testing.expect(keyHeld(&input_state, "ArrowLeft"));
+    }
+}

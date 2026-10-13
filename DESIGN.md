@@ -1541,9 +1541,21 @@ the reader thread exits, zero cost.
   held-state tracking, context gating, `bindingFires`, `frame()`'s gate
   ordering, drains, recorded events) — no parallel path, no different
   rate, so console-driven gameplay is identical to played gameplay.
-  Merged string payloads (key ids, typed text) are duped into the frame
-  arena — queue slots are reusable reader-thread memory, so merged events
-  must not alias them.
+  Merged KEY/MOUSE IDS resolve to their canonical STATIC slices —
+  `internedInputId` looks the id up in the producible-id tables (the same
+  literals the backend's key mappings use) at merge time. Static lifetime
+  is a hard requirement, not an optimization: `InputState.keys_held` /
+  `key_repeat_state` RETAIN the id slice past the frame (a held key stays
+  held until its `release`), and the frame arena resets every frame — an
+  arena-duped id dangles there and the next held-state comparison reads
+  dead memory (the bug this replaced: a live segfault in `isHeld`, plus
+  silently vanishing held keys). Typed text is still arena-duped — it is
+  consumed within the frame (the text-input router copies it into the
+  field buffer), so the arena lifetime suffices. The merged events ARRAY
+  is arena-owned on the same within-frame basis. Queue slots are reusable
+  reader-thread memory, so merged events must never alias them; the
+  popped command's bounded bytes are read at merge time only (the event
+  carries the interned slice, not a view).
   Chords work across frames (`press ControlLeft`, then `press KeyQ` next
   frame — held-state persistence supplies the modifier, like a human
   pressing across a frame boundary); `release <id>` completes the held

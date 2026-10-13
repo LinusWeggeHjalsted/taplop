@@ -16239,3 +16239,50 @@ TODO item) and fmt reflowed pre-existing drift in every fmt-dirty file it
 touched (view.zig's anonymous-struct literals, parser.zig's 74 lines).
 Reverted wholesale and re-applied the scripted edits without fmt: sweep
 scripts that touch files must not carry a formatter along.
+
+## Console input: id interning — the held-state lifetime fix (stress-test find)
+
+First real stress test of the console channel (piped scripts driving
+held-key sequences at speed) surfaced a crash class the unit suite could
+not see: `press <id>` merged a key_down whose id string was DUPED INTO THE
+FRAME ARENA, but `InputState.keys_held` / `key_repeat_state` RETAIN that
+slice past the frame (a held key stays held until its `release`) — and
+`main.frame` resets the frame arena every frame. The retained slice
+dangled into reused memory: live, a piped `press ArrowRight` → later
+frames segfaulted inside `isHeld` (getModifiers reads every keys_held
+entry each frame); before crashing, it also produced silently wrong held
+state (the "held" key vanished mid-chord, which made the first
+black-box measurements self-contradictory — a rollover frame reading
+dir (-1,0) instead of the correct (0,0) cancel).
+
+- The hardware path was never affected: `input_poll.zig`'s mapping-table
+  ids are static string literals, so hardware-held ids always had static
+  lifetime. The console merge was the only producer of frame-arena id
+  bytes.
+- **Fix — intern at the merge seam**: `inputEventFor` resolves the id via
+  `internedInputId` (a lookup against `types.producible_key_ids` /
+  `producible_mouse_ids` — the same literals the backend uses; the parser
+  already validated the id against those tables at parse time, so the
+  lookup cannot miss). Merged events carry the static slice; the
+  arena-dupe (`dupeEventPayload`) is deleted. The merged events ARRAY
+  stays arena-owned (within-frame consumption by `translateInput`), and
+  typed text stays arena-duped (within-frame consumption by the
+  text-input router — it copies into the field buffer).
+- **Why interning instead of a longer-lived allocator**: the id set is a
+  finite, already-declared table; resolving to its canonical slice costs
+  a small linear scan, allocates nothing, and makes console ids
+  BY CONSTRUCTION identical (same pointer) to hardware ids.
+- **Regression test** (`input_tests_console.zig`): the held-id-survives-
+  the-frame-arena-reset pin — press on frame 1, `reset(.retain_capacity)`
+  + scribble junk over the reused bytes, press the opposite key on frame
+  2, assert the first key is STILL held (cursor_direction.x stays 0 in
+  the rollover shape). Verified red on the old behavior (expected 0,
+  found -1) before landing the fix. The other console tests share one
+  arena for the whole script — the reason this class was invisible to
+  them; the live loop's per-frame reset is the missing ingredient.
+- Design updated in place: DESIGN → Input → Console input's merged-
+  payload paragraph now states the static-lifetime requirement and why.
+- Post-fix, the console channel is a trustworthy measurement instrument:
+  the same rollover script that used to crash now runs deterministically
+  and reproduces the arrow-key bug it was sent to measure (cursor stuck
+  at (1,0), left press swallowed — see the next entry).
