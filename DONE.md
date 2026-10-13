@@ -16680,3 +16680,41 @@ Verified by driving the real binary both ways: piped (`help` prints,
 no prompts anywhere, `quit` silent) and interactive via a pty
 (`script -qec`): boot hint + prompt, the post-drain prompt after a
 sole command, none after `quit` or mid-backlog.
+
+## Session reflection: ButtonPayload + the console's discoverability
+
+Three commits (each carries its own entry above): the `clicked_*`
+payload consolidation, the console-ready prompt, and `help`/`inputs` on
+one verb table. The durable lessons beyond the per-commit records,
+now in their homes:
+
+- **A sweep script's own asserts can lose its applied work** — the
+  assert-then-write-all shape rolled back applied fixes twice in one
+  session before the shape changed to write-per-step. AGENTS → Build &
+  Test → the sweep-script bullet carries the rule now (and a stray `d`
+  typo on that very bullet — the one that had been garbling "full diff"
+  — is fixed with it).
+- **Compiles ≠ runs generalizes beyond the platform seams.** The
+  console channel's stdout/TTY behavior is invisible to the headless
+  suite (a prompt, a boot hint, output interleaving); the console
+  prompt's FIRST commit shipped an ungated boot prompt with 824 tests
+  passing, caught in seconds by a piped smoke run against the real
+  binary. AGENTS → Build & Test now carries CONSOLE COMPILES ≠ CONSOLE
+  RUNS with both smoke shapes (piped + pty — the pty exercises the TTY
+  gate, which a plain pipe cannot).
+- **The 0.16 labeled-block prong quirk** (verified by minimal repro, not
+  just encountered): a switch prong with a result type needs
+  `blk: { ... break :blk value; }` to yield; an unlabeled block's
+  trailing value is a parse error. In AGENTS → Zig 0.16 Gotchas.
+- **handler_tests_editor's 181 identical call shapes** noted in TODO →
+  Tech Debt as fold-into-next-touch polish (the payload argument change
+  rippled ~200 sites across five test files — the cost of no shared
+  call helper).
+
+The session also validated the doc system end to end: every design
+question resolved by pointing at an existing settled rule (the
+PlayerInput placement rule was *articulated from* the existing shape,
+SlotRef's own doc convicted `save_file`, strict-exact-match settled the
+alias question), and the TODO's `clicked_*` candidate note from a prior
+reflection seeded the session's whole first task — the open-question →
+design → done loop doing exactly what AGENTS.md says it does.

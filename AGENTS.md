@@ -119,12 +119,21 @@ cleans `crashes/` before and after a passing run so a panicking test's crash
 dump doesn't pollute the tree.
 
 **Sweep scripts and repeated test churn** (lessons from the Tier A skills
-session):
+session + the ButtonPayload migration):
 - **Dry-run one-shot sweep scripts against ONE file and inspect its full
-d  diff before running them across the tree.** Asserted replacements catch
+  diff before running them across the tree.** Asserted replacements catch
   VALUE errors, but nothing catches SHAPE errors — the ai_options migration
   ran on all 31 skill files with a broken doc-walk and left doubled stale
   doc comments everywhere, invisible to the compiler for several commits.
+- **A sweep script's own asserts can lose its applied work.** The
+  assert-then-write-all shape (collect everything, verify, write once)
+  throws away every already-computed replacement when a LATER step's
+  assert fails — the ButtonPayload test-migration script hit this twice
+  in one session, silently rolling back applied fixes between runs.
+  Write after each successful step (asserts become post-conditions of
+  what landed), so a bad step aborts with the good steps landed, not
+  rolled back. The compiler is the real verifier anyway — the script's
+  asserts are diagnostics, not gates.
 - **When the same test breaks twice for the same structural reason, fix
   the test's SHAPE, don't patch the number again.** The utility-skill
   census counts were hand-updated twice before being derived from the
@@ -218,6 +227,18 @@ d  diff before running them across the tree.** Asserted replacements catch
   the runtime checklist lives in TODO (macOS native port). Persistent dir
   on mac: `~/Library/Application Support/ziglop/` — see DESIGN → File
   System & IO → Persistent path.
+- **CONSOLE COMPILES ≠ CONSOLE RUNS** (the same lesson, at home): the
+  console channel's stdout/TTY behavior is invisible to the headless
+  suite — no test can see a prompt, a boot hint, or output interleaving.
+  Behavioral changes to the channel (or anything stdout-adjacent) get the
+  30-second smoke runs against the REAL binary: piped
+  (`printf 'help\nquit\n' | ./zig-out/bin/ziglop` — commands must work,
+  prompts must NOT print) and interactive via a pty
+  (`printf '<cmds>\n' | script -qec ./zig-out/bin/ziglop /dev/null` —
+  boot hint + prompts must print; the pty also exercises the TTY gate,
+  which a plain pipe can't). Case study: the console prompt's first
+  commit shipped an ungated boot prompt with 824 tests passing; the
+  piped run caught it in seconds (DONE.md, "console: help + inputs").
 - **`.zig-cache` grows unbounded** (one directory per build variant — it
   accumulated to 90 GB on a 234 GB disk before being noticed). Prune it
   (`rm -rf .zig-cache`) when disk gets tight or every few months: a fresh
@@ -312,6 +333,11 @@ survived many sessions this way).
 
 ## Zig 0.16 Gotchas
 
+- A switch prong with a RESULT TYPE needs a labeled block to yield its
+  value: `.a => { stmt; value },` fails ("expected ';' after statement" —
+  the trailing value parses as a statement, not the block's yield);
+  `.a => blk: { stmt; break :blk value; },` works. Verified by minimal
+  repro; harmless in void-context switches (statement bodies are fine).
 - ArrayList is unmanaged: `.empty`, pass allocator to each call
 - ArrayList has no `.writer()` — use `.print(allocator, fmt, args)` and `.appendSlice(allocator, items)` directly
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`

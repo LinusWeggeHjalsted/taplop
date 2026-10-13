@@ -965,6 +965,17 @@ Done items in DONE.md. Open:
       one-time wrap rots immediately. Options when revisiting: (a) drop the
       item, (b) settle a going-forward wrap rule in AGENTS (no retroactive
       churn), (c) fix only egregious >120-char lines. Decide then.
+- **handler_tests_editor call-shape boilerplate (polish).** The file is
+  the tree's biggest (8.8k lines) and every test hand-writes the same
+  `input_handlers.handleAnytimeInput(&history, .{ .options_action = X },
+  payload, .{ .x = 0, .y = 0 }, &.{})` call — 181 of them (plus the same
+  call shape's siblings in the other handler_tests files). A one-line
+  harness helper (the `runToIdle`/`pushAndRunSub` pattern applied to the
+  anytime-call shape — e.g. `pressEditorButton(&history, action, payload)`)
+  collapses the boilerplate and makes the next signature change one-site
+  instead of a ~200-site ripple (the ButtonPayload argument change swept
+  five files). Fold into the next real touch of the editor tests rather
+  than a standalone churn commit.
 - **New-skill handler-level integration coverage is thin.** The Tier A
       skills are contract-tested at the pure-fn level (useSkill/aiOptions
       asserted directly) and the verbs have handler coverage, but only
