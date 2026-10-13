@@ -532,6 +532,15 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/writers.zig` — save/settings writers (typed objects → config text):
   `writePlayerSave`/`writeSettings`/`writePlayerSaveToFile`. The inverse of
   `loaders.zig`.
+- `src/console.zig` — the console input channel (stdin — see DESIGN →
+  Input → Console input): the command parser, the SPSC reader→game queue,
+  the per-frame command drain + PlatformInput merge, the applyAction fold,
+  and the dump routing. Raylib-free.
+- `src/dump_walker.zig` — `dump <path>` reflection over the live object
+  graph: a path is a Zig member-access expression (fields, union tags,
+  indexes) evaluated read-only against the FrameState root. Never follows
+  pointers, never calls methods — see DESIGN → Input → Console input →
+  dump paths for the safety invariants + rendering rules.
 - `src/session_log_bundle.zig` — the session-log BUNDLE (the folder
   artifact: session_log.txt + a ReconstructionCache manifest + `content/`
   byte copies of every reconstruction read; writer via FileSource, loader via

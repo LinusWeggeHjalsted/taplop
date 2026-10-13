@@ -582,6 +582,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend_input,
         frame_state.frame_arena.allocator(),
         history,
+        // The dump-path root: the FrameState itself — every `dump <path>`
+        // is a field path from here (see dump_walker.zig). Passed by
+        // mutable pointer; the walker const-asserts it.
+        frame_state,
         // The last-rendered UI — the same element list the press/release
         // dispatch hit-tests against; the ui dump lists it. Empty before the
         // first render.

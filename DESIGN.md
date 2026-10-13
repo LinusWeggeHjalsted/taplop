@@ -1611,8 +1611,8 @@ the reader thread exits, zero cost.
   command on that first idle frame; the pacing primitive for scripted
   turn flow, where enemy turns drain over real-clock waits and a frame
   count is a guess), `dump <thing>`
-  (state / ui / level / settings / bindings / history — plain text on
-  stdout), `quit`. The `ui` dump lists the last-rendered interactive
+  (plain text on stdout — see the next bullet for the two dump classes),
+  `quit`. The `ui` dump lists the last-rendered interactive
   surfaces (buttons / sliders / text fields / ref-bearing slots) with
   their rects and CENTER points — a valid click point each, in reference
   space — so scripts are self-documenting: `dump ui`, read a center,
@@ -1633,6 +1633,58 @@ the reader thread exits, zero cost.
   lines and `#` comments skip — scripts are annotatable.
   Verbs, ids, action names, and dump kinds are exact-match (they name
   enum values the engine consumes).
+- **`dump <path>` — pure reflection over the live object graph (the
+  `dump_walker.zig` seam).** A path is a Zig member-access expression
+  evaluated read-only against the FrameState the driver holds — field
+  names, union tag names, and `[n]` indexes: `dump
+  history.current_state.hub.player.position`, `dump
+  history.event_history.items[12].meta_event.wait`. The path IS the
+  code's own addressing (that is why union tags are path segments —
+  `.meta_event` is what the code writes), so names mirror the types
+  exactly: renaming a field renames its dump path, and a dead path
+  errors truthfully (`no field 'x' on types.Settings — fields: ...` —
+  the error teaches the next path) instead of going stale. Bare `dump`
+  renders the root table of contents (one level of field names — the
+  discovery entry point); any deeper fact needs its path. An empty
+  (uninhabited) union field — a "none yet" placeholder like
+  `ReplayViewerEvent` — errors as `a union with no variants` (its
+  `@field` access cannot even lower, so every walker recursion site
+  comptime-guards with `isEmptyUnion`).
+  Two dump classes share the verb: the PATH dumps above (machine-
+  walked truth — new fields appear automatically, a lie is structurally
+  impossible; this replaced the hand-written `state` / `settings` /
+  `bindings` / `history` projections, which were hand-maintained
+  serializations of typed objects — drift by definition), and the
+  CURATED `dump ui` / `dump level` (derived facts that exist as no
+  stored state — click centers, legal-target highlights; slated to
+  move to a `report` verb in a future split).
+  Rendering is type-determined — how a value prints depends only on
+  its type, never on where the path ends: detail propagates through
+  optionals/unions/slices (a union always shows through its active
+  tag); struct fields cut to one-line summaries — the compact form
+  when the value fits one line (`{ x: 5, y: 6 }`, `.meta_event .start_hub
+  { hub_id: camp_at_the_crossroads, sets_checkpoint: true, completed_mission: null }`),
+  else a summary token naming the type (`<types.ViewState>`, `([45 of
+  types.Vector2])`). Leaf conventions are the session-log writer's
+  (ints decimal, bools true/false, enums → tagName, strings verbatim).
+  Addressed slices render element-per-line capped at 100 with an
+  explicit `(+N more — address by index)` note; depth is never limited
+  (the path scopes the dump, not a render rule).
+  SAFETY INVARIANTS (a dump must never mutate or execute — verified
+  before the walker was built): the root is const-asserted (`*const`
+  from `writeDump` down — mutation is a compile error); raw pointers
+  are NEVER followed (`<pointer>`, so no vtable/allocator/function
+  pointer is ever dereferenced and cycles are unreachable by
+  construction); NO method is ever called on a walked value — field
+  memory reads and `@typeInfo` only (a Zig method is arbitrary code;
+  the walker's contract is that walking executes none); union descent
+  is active-tag-checked (reading an inactive payload is UB — the
+  mismatch is a truthful error instead); indexes are bounds-checked.
+  A canary test walks a battery of deep paths over a real history and
+  asserts the state bit-identical after. Known benign caveat:
+  `console_queue`'s memory is written concurrently by the reader
+  thread — dumping into it can display transiently torn values (never
+  a crash, never a mutation).
 - **Console sessions are ordinary sessions**: injected events produce
   normal recorded events, so a console-driven session's log is a valid
   `--replay` artifact — scripted setup doubles as fixture generation.

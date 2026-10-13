@@ -132,6 +132,29 @@ Test by running `zig build run` and clicking through.
         EOF-safe, detached), the stdout dump writer on the queue, always-on
         (no flag) — DONE (see DONE.md, console input slice 2; includes the
         wasm32 u32-atomic counter fix). Console input is COMPLETE.
+  - [x] 3. `dump <path>` reflection (dump_walker.zig — paths are Zig
+        member-access expressions against the FrameState root; the
+        hand-written state/settings/bindings/history mirrors deleted;
+        safety invariants + rendering rules: DESIGN → Input → Console
+        input → dump paths) — DONE (see DONE.md, dump-path walker).
+  - **Per-frame observability stash (dump-path slice 2)** — FrameState
+        gains `previous_player_input` / `previous_delta_microseconds` /
+        `previous_console_command` (the `previous_view_state` naming
+        convention), written in `frame()` right after translateInput,
+        dumpable via the walker (`dump previous_player_input.anytime.in_game.cursor_direction`).
+        The gap found while diagnosing the arrow-rollover bug: the console
+        channel could not see its own subject matter (held keys were
+        reachable via session.input_state, but the per-frame translation
+        + the frame delta were nowhere — measured by timing two whole
+        process runs). CONSTRAINT from the id-lifetime fix: the stash must
+        not retain frame-arena slices (PlayerInput's one string payload,
+        clicked_editor_sprite, needs dropping or a bounded copy — the
+        interning lesson applied up front).
+  - **`report ui` / `report level` verb split (dump-path slice 3)** —
+        rename the two CURATED dumps off the `dump` verb so `dump` is
+        purely the path mirror (two verbs, two semantics, no namespace
+        overlap). One-line parser + wiring change; breaks existing
+        scripts that use `dump ui`/`dump level` (fine — one install).
 - [x] **UI surface state unification** — DONE (all six slices; see DONE.md,
       "UI surface state unification", + DESIGN → UI Framework → UI state
       classification).

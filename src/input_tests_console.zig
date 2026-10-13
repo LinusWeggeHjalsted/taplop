@@ -60,6 +60,10 @@ fn runConsoleScript(
     // the remembered pointer position persists across frames on it).
     var queue: console.ConsoleQueue = .{};
     for (script) |line| {
+        // The dump-path root, refreshed per frame (history by value — a
+        // read-only shallow copy; the live path passes the real FrameState).
+        const WalkerTestRoot = struct { history: state.GameStateHistory };
+        var root = WalkerTestRoot{ .history = history.* };
         queue.push(console.parseCommandLine(line).command);
         const hardware_events: [1]input.PlatformInputEvent = if (hardware_pointer) |position|
             .{.{ .mouse_move = position }}
@@ -74,6 +78,7 @@ fn runConsoleScript(
             backend_input,
             arena,
             history,
+            &root,
             &.{},
             .{ .position = .{ .x = 0, .y = 0 } },
             1.0,
@@ -312,11 +317,14 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
         .viewport = .{ .width = types.reference_width, .height = types.reference_height },
     };
     {
+        const WalkerTestRoot = struct { history: state.GameStateHistory };
+        var root = WalkerTestRoot{ .history = history };
         const platform_input = console.applyFrameCommand(
             &queue,
             backend_input,
             frame_arena.allocator(),
             &history,
+            &root,
             &.{},
             .{ .position = .{ .x = 0, .y = 0 } },
             1.0,
@@ -350,11 +358,14 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
     // keeps cursor_direction.x at 0.
     queue.push(console.parseCommandLine("press ArrowLeft").command);
     {
+        const WalkerTestRoot = struct { history: state.GameStateHistory };
+        var root = WalkerTestRoot{ .history = history };
         const platform_input = console.applyFrameCommand(
             &queue,
             backend_input,
             frame_arena.allocator(),
             &history,
+            &root,
             &.{},
             .{ .position = .{ .x = 0, .y = 0 } },
             1.0,
@@ -416,6 +427,8 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
             arena_ptr: *std.heap.ArenaAllocator,
             camera_value: types.Camera,
         ) input.PlayerInput {
+            const WalkerTestRoot = struct { history: state.GameStateHistory };
+            const root = WalkerTestRoot{ .history = history_ptr.* };
             const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
             const backend_input = input.PlatformInput{
                 .events = &hardware_events,
@@ -426,6 +439,7 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
                 backend_input,
                 arena_ptr.allocator(),
                 history_ptr,
+                &root,
                 &.{},
                 camera_value,
                 1.0,

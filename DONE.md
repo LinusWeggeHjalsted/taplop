@@ -16339,3 +16339,75 @@ idle yield).
   frame arrow-drop (a different, intermittent signature — a jittering
   resting mouse can eat an arrow edge for a whole frame) is noted in
   TODO → Input/camera leftovers as unmeasured.
+
+## Dump-path walker — `dump <path>` as pure reflection over the live object graph
+
+The console channel's dumps were hand-written flat projections —
+fine for the curated click-point inventories (`dump ui`, `dump level`),
+drift by definition for the state mirrors (`dump state`, `dump settings`,
+`dump bindings`, `dump history` duplicated typed objects by hand; a new
+field needed a remembered dump line). Replaced the mirror class with a
+comptime field-path walker: a path is a Zig member-access expression —
+field names, union tag names, `[n]` indexes — evaluated read-only
+against the FrameState the driver holds (`dump
+history.current_state.hub.player.position`). Decisions settled in
+discussion: full literal paths only (aliases for common roots later,
+maybe); depth never limited (the path scopes the dump, not a render
+rule); dot-separated single-token grammar (mirrors code syntax — union
+tags are segments because `.meta_event` is what the code writes); a
+100-element cap with an explicit `(+N more — address by index)` note;
+`dump`/`report` verb split with the curated pair staying under `dump`
+until the rename slice.
+
+- **`src/dump_walker.zig`** (raylib-free, generic over the root): path
+  parsing (segments + index suffixes, charset-validated at parse),
+  resolution (structs by field, unions by active tag, optionals
+  transparent, slices by bounds-checked index), and type-determined
+  rendering — detail propagates through optionals/unions/slices, struct
+  fields cut to one-line summaries (compact form when the value fits a
+  line, else a type-name token); leaf conventions are the session-log
+  writer's. Bare `dump` renders the root table of contents (one level of
+  field names — the discovery entry point). Errors are truthful and
+  teach: `no field 'player_name' on types.Settings — fields: ...` (this
+  one fired live — the player name lives in PlayerData, not Settings,
+  and the error said so).
+- **Safety invariants, verified before building** (the "can a dump
+  mutate or execute?" question): Zig has no name→function dispatch, so
+  path segments select data only; the root is const-asserted (mutation
+  is a compile error); raw pointers are never followed (`<pointer>` —
+  no vtable/allocator is ever dereferenced, cycles unreachable by
+  construction); NO method is ever called on a walked value (a Zig
+  method is arbitrary code — the walker's contract is that walking
+  executes none; this is the invariant future "convenience" additions
+  must not break); union descent is active-tag-checked (the UB path
+  becomes an error naming the active tag); indexes bounds-checked. A
+  canary test walks a battery of deep paths over a real history and
+  asserts the state bit-identical after (deepEqual).
+- **The compile-time find of the slice**: `ReplayViewerEvent` is an
+  EMPTY union (a "none yet" placeholder) — `@field` on an access to
+  such a field cannot even lower ("expected pointer, found 'noreturn'"),
+  and since the walker instantiates the whole reachable type graph from
+  any path, Event's reference to it broke every dump-path compile.
+  Every walker recursion site now comptime-guards with `isEmptyUnion`
+  (rendering `<uninhabited>` / the no-variants error).
+- **console.zig rewiring**: `DumpKind` became a union — `path` (routed
+  to the walker, streamed + flushed) alongside the curated `ui`/`level`
+  (arena text as before); `applyFrameCommand` gained the `frame_root`
+  anytype param (main.frame passes the real FrameState; the walker
+  const-asserts it — console.zig still never imports session_setup);
+  the four hand-written mirrors deleted; `writers`/`session_log`
+  imports went with them.
+- **Tests**: walker units (compact forms + ToC, struct/slice/union/
+  optional/pointer resolution + every truthful-error shape, cap + note,
+  the parse errors), a console routing test through the real
+  writer-level seam, and the no-mutation canary. All verified red
+  against disabled pieces where applicable (the guard work was
+  verified by the compile failure itself).
+- Live smoke: the full vocabulary against a running game — including
+  `dump history.event_history` rendering the whole session log as one
+  readable compact line, and the truthful-error teaching moments.
+- Design: DESIGN → Input → Console input → the `dump <path>` bullet
+  (grammar, two dump classes, rendering rules, safety invariants).
+  Follow-ups tracked in TODO → Console input: the per-frame
+  observability stash (`previous_*` fields) and the `report` verb
+  split.

@@ -1,7 +1,9 @@
 //! Console input — stdin as a scripted input channel (TAS-shaped). The
 //! command vocabulary + parser, the reader-thread-facing queue, the
 //! per-frame drain + PlatformInput merge, the action fold, and the dump
-//! projections. Everything here is raylib-free; the reader thread + stdout
+//! routing (path dumps → dump_walker.zig, pure reflection; the curated
+//! ui/level projections stay here — derived facts that exist as no
+//! stored state). Everything here is raylib-free; the reader thread + stdout
 //! output writer are wired only by the native driver (native.zig) — with no
 //! reader the queue stays empty and the per-frame drain is a no-op (web, or
 //! a native launch without stdin, which is immediate EOF). Injected events
@@ -14,8 +16,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const input = @import("input.zig");
 const state = @import("state.zig");
-const writers = @import("writers.zig");
-const session_log = @import("session_log.zig");
+const dump_walker = @import("dump_walker.zig");
 const ui = @import("ui.zig");
 const view = @import("view.zig");
 
@@ -57,6 +58,8 @@ fn BoundedText(comptime capacity: usize) type {
 /// Every input id the console accepts (the binding vocabulary — see
 /// `types.producible_key_ids` / `producible_mouse_ids`).
 const max_id_len = 32;
+/// Longest `dump <path>` field path (see dump_walker.zig).
+const max_path_len = 128;
 /// Longest `type <text>` payload.
 const max_type_text_len = 256;
 /// Longest parse-error message.
@@ -65,6 +68,7 @@ const max_message_len = 256;
 const IdText = BoundedText(max_id_len);
 const TypeText = BoundedText(max_type_text_len);
 const MessageText = BoundedText(max_message_len);
+const PathText = BoundedText(max_path_len);
 
 // ============================================================
 // Commands
@@ -98,7 +102,8 @@ pub const ConsoleCommand = union(enum) {
     wait_idle: void,
     /// Skip n frames before the next command (the pacing primitive).
     wait: u32,
-    /// Write a projection to stdout.
+    /// Write a projection to stdout — a curated report (`ui`, `level`)
+    /// or a field path into the live object graph (see dump_walker.zig).
     dump: DumpKind,
     /// Request the session quit (the Exit Game path).
     quit: void,
@@ -108,7 +113,20 @@ pub const ConsoleCommand = union(enum) {
         mouse: IdText,
     };
 
-    pub const DumpKind = enum { state, ui, level, settings, bindings, history };
+    pub const DumpKind = union(enum) {
+        /// Curated script-facing projections — DERIVED facts that exist
+        /// as no stored state (click centers, legal-target highlights;
+        /// the report verb in a future split — kept under `dump` until
+        /// then so existing scripts keep working).
+        ui: void,
+        level: void,
+        /// A field path rooted at the FrameState the driver holds — pure
+        /// reflection (`dump_walker.writeDump`). An empty path renders
+        /// the root table of contents. Resolution happens at dump time
+        /// against the live state, so a dead path errors truthfully
+        /// instead of going stale.
+        path: PathText,
+    };
 };
 
 /// The result of parsing one stdin line.
@@ -215,13 +233,18 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
     }
 
     if (std.mem.eql(u8, verb, "dump")) {
-        if (std.mem.eql(u8, argument, "state")) return .{ .command = .{ .dump = .state } };
+        // Bare `dump`: the root table of contents (empty path).
+        if (argument.len == 0) return .{ .command = .{ .dump = .{ .path = storedText(PathText, "") } } };
         if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .dump = .ui } };
         if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .dump = .level } };
-        if (std.mem.eql(u8, argument, "settings")) return .{ .command = .{ .dump = .settings } };
-        if (std.mem.eql(u8, argument, "bindings")) return .{ .command = .{ .dump = .bindings } };
-        if (std.mem.eql(u8, argument, "history")) return .{ .command = .{ .dump = .history } };
-        return formattedMessage("unknown dump kind '{s}' (state, ui, level, settings, bindings, history)", .{argument});
+        if (argument.len > max_path_len) {
+            return formattedMessage("dump path exceeds {d} characters", .{max_path_len});
+        }
+        for (argument) |char| switch (char) {
+            'A'...'Z', 'a'...'z', '0'...'9', '_', '.', '[', ']' => {},
+            else => return staticMessage("dump path may contain only letters, digits, '_', '.', '[' and ']'"),
+        };
+        return .{ .command = .{ .dump = .{ .path = storedText(PathText, argument) } } };
     }
 
     return formattedMessage(
@@ -389,6 +412,11 @@ pub fn applyFrameCommand(
     backend_input: PlatformInput,
     arena: std.mem.Allocator,
     history: *GameStateHistory,
+    /// The driver's root object (the FrameState) — the dump-path root,
+    /// passed as anytype so console.zig never imports session_setup (the
+    /// walker is generic over it; a test passes any struct with the
+    /// fields its paths address). Read-only: the walker const-asserts it.
+    frame_root: anytype,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
     camera_zoom: f32,
@@ -406,7 +434,7 @@ pub fn applyFrameCommand(
             return backend_input;
         },
         .dump => |kind| {
-            writeDump(kind, queue, history, ui_elements, camera, camera_zoom);
+            writeDump(kind, queue, frame_root, history, ui_elements, camera, camera_zoom);
             return backend_input;
         },
         // Popped waits never leave takeFrameCommand (they arm their own
@@ -558,50 +586,62 @@ pub fn foldInjectedActions(
 // Dumps
 // ============================================================
 
-/// Write one dump projection to the console output (stdout, wired by the
-/// native driver). Best-effort — a failed write reports on stderr and never
-/// surfaces as a crash (the diagnostics-write convention).
+/// Write one dump to the console output (stdout, wired by the native
+/// driver). Two dump classes: `.path` is pure reflection routed to the
+/// walker (streamed, then flushed); `.ui`/`.level` are the curated
+/// projections (arena-built text, then flushed). Best-effort — a failed
+/// write reports on stderr and never surfaces as a crash (the
+/// diagnostics-write convention).
 fn writeDump(
     kind: ConsoleCommand.DumpKind,
     queue: *ConsoleQueue,
+    frame_root: anytype,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
     camera_zoom: f32,
 ) void {
     if (queue.output) |*output| {
-        writeDumpText(kind, &output.interface, history, ui_elements, camera, camera_zoom);
+        writeDumpToWriter(kind, &output.interface, frame_root, history, ui_elements, camera, camera_zoom);
     }
 }
 
-fn writeDumpText(
+/// The writer-level dump step (writeDump minus the queue plumbing) —
+/// separate so tests drive it with a fixed writer over memory.
+fn writeDumpToWriter(
     kind: ConsoleCommand.DumpKind,
     output: *std.Io.Writer,
+    frame_root: anytype,
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
     camera: types.Camera,
     camera_zoom: f32,
 ) void {
-    var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
-    defer arena.deinit();
-    const text = dumpText(kind, history, ui_elements, camera, camera_zoom, arena.allocator());
-    output.writeAll(text) catch |err| {
-        std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-        return;
-    };
-    output.writeAll("\n") catch |err| {
-        std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-        return;
-    };
-    output.flush() catch |err| {
-        std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
-        return;
-    };
+    switch (kind) {
+        .path => |*path_text| {
+            dump_walker.writeDump(output, frame_root, path_text.view());
+            output.flush() catch |err| {
+                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
+            };
+        },
+        .ui, .level => {
+            var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+            defer arena.deinit();
+            const text = dumpText(kind, history, ui_elements, camera, camera_zoom, arena.allocator());
+            output.writeAll(text) catch |err| {
+                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
+                return;
+            };
+            output.flush() catch |err| {
+                std.debug.print("console dump write failed: {s}\n", .{@errorName(err)});
+            };
+        },
+    }
 }
 
-/// Build a dump projection as text. `settings` is the full settings-file text
-/// (the writer's own serialization); `history` is the session-log body (the
-/// --replay artifact).
+/// Build a CURATED dump projection as text (the `.ui`/`.level` kinds —
+/// derived facts, hand-maintained by design; the state mirrors went to
+/// the walker, `dump <path>`).
 fn dumpText(
     kind: ConsoleCommand.DumpKind,
     history: *GameStateHistory,
@@ -611,17 +651,9 @@ fn dumpText(
     allocator: std.mem.Allocator,
 ) []const u8 {
     return switch (kind) {
-        .state => dumpStateText(history, allocator),
         .ui => dumpUiText(history, ui_elements, allocator),
         .level => dumpLevelText(history, camera, camera_zoom, allocator),
-        .settings => writers.writeSettings(history.settings, allocator) catch
-            @panic("failed to serialize settings dump"),
-        .bindings => dumpBindingsText(history, allocator),
-        .history => session_log.writeEventLog(
-            history.event_history.items,
-            "console_dump",
-            allocator,
-        ) catch @panic("failed to serialize history dump"),
+        .path => "", // handled by the walker in writeDumpToWriter
     };
 }
 
@@ -885,54 +917,6 @@ fn appendSkillLines(
     }
 }
 
-fn dumpStateText(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
-    var buffer: std.ArrayList(u8) = .empty;
-    const current = &history.current_state;
-    buffer.print(allocator, "screen: {s}\n", .{@tagName(current.screen)}) catch
-        @panic("failed to format state dump");
-    buffer.print(allocator, "world_generation: {d}\n", .{current.world_generation}) catch
-        @panic("failed to format state dump");
-    buffer.print(allocator, "event_stack: {d} pending\n", .{current.event_stack.len}) catch
-        @panic("failed to format state dump");
-    buffer.print(allocator, "event_history: {d} recorded (current index {d})\n", .{
-        history.event_history.items.len,
-        history.current_event_index,
-    }) catch @panic("failed to format state dump");
-    buffer.print(allocator, "idle_points: {d}\n", .{history.idle_points.items.len}) catch
-        @panic("failed to format state dump");
-    if (current.waiting) |wait| {
-        buffer.print(allocator, "waiting: {d} microseconds remaining\n", .{wait.remaining_microseconds}) catch
-            @panic("failed to format state dump");
-    } else {
-        buffer.appendSlice(allocator, "waiting: none\n") catch @panic("failed to format state dump");
-    }
-    buffer.appendSlice(
-        allocator,
-        if (history.session.pending_error != null) "pending_error: set\n" else "pending_error: none\n",
-    ) catch @panic("failed to format state dump");
-    if (current.level) |level| {
-        var player_line: []const u8 = "player: none on field\n";
-        for (level.entities) |entity| {
-            if (entity.team == 0) {
-                player_line = std.fmt.allocPrint(
-                    allocator,
-                    "player: at ({d}, {d})\n",
-                    .{ entity.position.x, entity.position.y },
-                ) catch @panic("failed to format state dump");
-                break;
-            }
-        }
-        buffer.print(allocator, "entities: {d}\n", .{level.entities.len}) catch
-            @panic("failed to format state dump");
-        buffer.appendSlice(allocator, player_line) catch @panic("failed to format state dump");
-    } else if (current.hub != null) {
-        buffer.appendSlice(allocator, "entities: hub (player present)\n") catch @panic("failed to format state dump");
-    } else {
-        buffer.appendSlice(allocator, "entities: none (no world)\n") catch @panic("failed to format state dump");
-    }
-    return buffer.items;
-}
-
 fn dumpUiText(
     history: *GameStateHistory,
     ui_elements: []const ui.UiElement,
@@ -1095,51 +1079,13 @@ fn dumpUiText(
     return buffer.items;
 }
 
-fn dumpBindingsText(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
-    var buffer: std.ArrayList(u8) = .empty;
-    const bindings = history.settings.input_bindings;
-    buffer.print(allocator, "{d} bindings\n", .{bindings.len}) catch
-        @panic("failed to format bindings dump");
-    for (bindings) |binding| {
-        const id = switch (binding.input) {
-            .key => |name| name,
-            .mouse_button => |name| name,
-            .gamepad_button => |name| name,
-        };
-        buffer.appendSlice(allocator, if (binding.modifiers.ctrl) "ctrl+" else "") catch
-            @panic("failed to format bindings dump");
-        buffer.appendSlice(allocator, if (binding.modifiers.shift) "shift+" else "") catch
-            @panic("failed to format bindings dump");
-        buffer.appendSlice(allocator, if (binding.modifiers.alt) "alt+" else "") catch
-            @panic("failed to format bindings dump");
-        buffer.print(allocator, "{s} -> {s} ({s})\n", .{
-            id,
-            @tagName(binding.action),
-            contextListText(allocator, types.actionBindingContexts(binding.action)),
-        }) catch @panic("failed to format bindings dump");
-    }
-    return buffer.items;
-}
-
-const all_binding_contexts = [_]types.BindingContext{ .anytime, .game, .editor, .menu, .error_popup };
-
-/// The active contexts of a set as a comma list ("anytime,game").
-fn contextListText(allocator: std.mem.Allocator, contexts: types.BindingContextSet) []const u8 {
-    var buffer: std.ArrayList(u8) = .empty;
-    for (all_binding_contexts) |context| {
-        if (!contexts.contains(context)) continue;
-        if (buffer.items.len > 0) {
-            buffer.append(allocator, ',') catch @panic("failed to format binding contexts");
-        }
-        buffer.appendSlice(allocator, @tagName(context)) catch @panic("failed to format binding contexts");
-    }
-    if (buffer.items.len == 0) return "none";
-    return buffer.items;
-}
-
 // ============================================================
 // Tests
 // ============================================================
+
+/// A root for tests that never path-dump (the walker only walks it when a
+/// `.path` command executes — these tests exercise other commands).
+const no_dump_root: struct{} = .{};
 
 const std_testing = std.testing;
 
@@ -1160,12 +1106,11 @@ test "parseCommandLine: every command shape" {
         .{ .line = "wait 60", .expected = .{ .wait = 60 } },
         .{ .line = "wait 0", .expected = .{ .wait = 0 } },
         .{ .line = "wait idle", .expected = .{ .wait_idle = {} } },
-        .{ .line = "dump state", .expected = .{ .dump = .state } },
         .{ .line = "dump ui", .expected = .{ .dump = .ui } },
         .{ .line = "dump level", .expected = .{ .dump = .level } },
-        .{ .line = "dump settings", .expected = .{ .dump = .settings } },
-        .{ .line = "dump bindings", .expected = .{ .dump = .bindings } },
-        .{ .line = "dump history", .expected = .{ .dump = .history } },
+        .{ .line = "dump", .expected = .{ .dump = .{ .path = storedText(PathText, "") } } },
+        .{ .line = "dump history.session.tile_cursor", .expected = .{ .dump = .{ .path = storedText(PathText, "history.session.tile_cursor") } } },
+        .{ .line = "dump history.event_history.items[12].meta_event", .expected = .{ .dump = .{ .path = storedText(PathText, "history.event_history.items[12].meta_event") } } },
         .{ .line = "quit", .expected = .quit },
         // Whitespace tolerance: leading/trailing spaces, split verbs.
         .{ .line = "  press   Escape  ", .expected = .{ .press = .{ .key = storedText(IdText, "Escape") } } },
@@ -1200,8 +1145,8 @@ test "parseCommandLine: errors name the problem" {
         .{ .line = "scroll lots", .contains = "scroll delta 'lots' is not a number" },
         .{ .line = "wait", .contains = "wait requires a frame count" },
         .{ .line = "wait -1", .contains = "wait count '-1' is not a non-negative integer" },
-        .{ .line = "dump", .contains = "unknown dump kind ''" },
-        .{ .line = "dump everything", .contains = "unknown dump kind 'everything'" },
+        .{ .line = "dump history.$noop", .contains = "dump path may contain only letters" },
+        .{ .line = "dump history session", .contains = "dump path may contain only letters" },
         .{ .line = "quit now", .contains = "quit takes no arguments" },
     };
     for (error_cases) |case| {
@@ -1374,12 +1319,12 @@ test "applyFrameCommand: quit requests the session quit; empty queue passes thro
 
     // Empty queue: the backend input returns unchanged (value-equal —
     // empty-slice pointers are not comparable).
-    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expectEqualDeep(backend_input, passed_through);
     try std_testing.expect(!history.session.quit_requested);
 
     queue.push(parseCommandLine("quit").command);
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(history.session.quit_requested);
 }
 
@@ -1392,11 +1337,6 @@ test "dumpText: projections report the state they are handed" {
     var history = harness.newHistory(null);
     test_harness.runToIdle(&history);
 
-    // state: a main-menu history — screen + no world.
-    const state_text = dumpText(.state, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
-    try std_testing.expect(std.mem.indexOf(u8, state_text, "screen: main_menu") != null);
-    try std_testing.expect(std.mem.indexOf(u8, state_text, "entities: none (no world)") != null);
-
     // ui: reflects the surface state (GameState) + the view flags
     // (SessionState).
     history.current_state.ui_surfaces.options_menu_open = true;
@@ -1405,23 +1345,10 @@ test "dumpText: projections report the state they are handed" {
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "keybind_scroll_offset: 4") != null);
 
-    // settings: the writer's own full-file text.
-    const settings_text = dumpText(.settings, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
-    const written = writers.writeSettings(history.settings, arena) catch unreachable;
-    try std_testing.expectEqualStrings(written, settings_text);
-
-    // bindings: one line per binding, derived from the same list.
-    const bindings_text = dumpText(.bindings, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
-    const binding_lines = std.mem.count(u8, bindings_text, " -> ");
-    try std_testing.expectEqual(history.settings.input_bindings.len, binding_lines);
-    if (history.settings.input_bindings.len > 0) {
-        const first = history.settings.input_bindings[0];
-        try std_testing.expect(std.mem.indexOf(u8, bindings_text, @tagName(first.action)) != null);
-    }
-
-    // history: the session-log body.
-    const history_text = dumpText(.history, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
-    try std_testing.expect(std.mem.indexOf(u8, history_text, "EventLog") != null);
+    // level: the gameplay-decision projection (here: no world → the
+    // no-world line).
+    const level_text = dumpText(.level, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
+    try std_testing.expect(std.mem.indexOf(u8, level_text, "world: none") != null);
 }
 
 test "dumpText ui: interactive surfaces list rects + ready-to-use click centers" {
@@ -1613,18 +1540,18 @@ test "applyFrameCommand: wait idle holds while events are pending, releases when
 
     const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
     // While the stack is pending, the quit behind the hold never fires.
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(!history.session.quit_requested);
 
     // Drain to idle; the next frame releases the quit on the first idle
     // frame.
     test_harness.runToIdle(&history);
-    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(history.session.quit_requested);
 }
 
-test "writeDumpText: writes the projection to the output writer" {
+test "writeDumpToWriter: writes the dump to the output writer (parent-pointer shape)" {
     const test_harness = @import("test_harness.zig");
     var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
     defer backing.deinit();
@@ -1637,9 +1564,96 @@ test "writeDumpText: writes the projection to the output writer" {
     // wiring's File.Writer parent has).
     var allocating: std.Io.Writer.Allocating = .init(std_testing.allocator);
     defer allocating.deinit();
-    writeDumpText(.state, &allocating.writer, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
+    const Root = struct { history: GameStateHistory };
+    const root = Root{ .history = history };
+    writeDumpToWriter(
+        .{ .path = storedText(PathText, "history.current_state.screen") },
+        &allocating.writer,
+        &root,
+        &history,
+        &.{},
+        .{ .position = .{ .x = 0, .y = 0 } },
+        1.0,
+    );
 
     const written = allocating.written();
-    try std_testing.expect(std.mem.indexOf(u8, written, "screen: main_menu") != null);
+    try std_testing.expect(std.mem.indexOf(u8, written, "main_menu") != null);
     try std_testing.expect(written[written.len - 1] == '\n');
+}
+
+test "writeDumpToWriter: path dumps route to the walker against the root" {
+    const test_harness = @import("test_harness.zig");
+    var backing = std.heap.ArenaAllocator.init(std_testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+    history.session.tile_cursor = .{ .x = 2, .y = 3 };
+
+    // The root mirrors the driver's: history by value (the walker reads
+    // the same fields the FrameState would).
+    const Root = struct { history: GameStateHistory };
+    const root = Root{ .history = history };
+
+    var buffer: [2048]u8 = undefined;
+
+    // A leaf path: the addressed value alone.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        writeDumpToWriter(
+            .{ .path = storedText(PathText, "history.session.tile_cursor") },
+            &writer,
+            &root,
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        try std_testing.expectEqualStrings("{ x: 2, y: 3 }\n", buffer[0..writer.end]);
+    }
+
+    // A one-level path: the ToC shape (field name + value).
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        writeDumpToWriter(
+            .{ .path = storedText(PathText, "history.current_state.screen") },
+            &writer,
+            &root,
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        try std_testing.expectEqualStrings("main_menu\n", buffer[0..writer.end]);
+    }
+
+    // A dead path: the truthful error names what IS there.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        writeDumpToWriter(
+            .{ .path = storedText(PathText, "history.nope") },
+            &writer,
+            &root,
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        try std_testing.expect(std.mem.indexOf(u8, buffer[0..writer.end], "dump error: no field 'nope'") != null);
+    }
+
+    // The bare dump: the root table of contents.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        writeDumpToWriter(
+            .{ .path = storedText(PathText, "") },
+            &writer,
+            &root,
+            &history,
+            &.{},
+            .{ .position = .{ .x = 0, .y = 0 } },
+            1.0,
+        );
+        try std_testing.expect(std.mem.indexOf(u8, buffer[0..writer.end], "history: ") != null);
+    }
 }
