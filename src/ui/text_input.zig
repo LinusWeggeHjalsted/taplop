@@ -317,7 +317,6 @@ pub fn placeCaretFromClick(
     text_edit.buffer.moveCaretTo(index, false);
 }
 
-
 test "TextField: insert at a mid-string caret shifts the tail intact" {
     // The case the original insertText got wrong (copyForwards on a
     // right-shifting overlap corrupted the tail): inserting at the START
@@ -595,4 +594,3 @@ test "placeCaretFromClick: click x maps through the field's text origin" {
     placeCaretFromClick(&ui_state.text_edit.?, field, 100, metrics);
     try std.testing.expect(ui_state.text_edit.?.buffer.selectionRange() == null);
 }
-

@@ -1359,8 +1359,7 @@ test "writeEditorMission round-trips through the load path" {
     {
         try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "team ") == null);
         try std.testing.expect(std.mem.indexOf(u8, written.level_txts[1], "team 2") != null);
-        try std.testing.expectEqual(@as(u32, 2),
-            reloaded.entity_types[reloaded.levels[1].entity_placements[0].type_id].template.team);
+        try std.testing.expectEqual(@as(u32, 2), reloaded.entity_types[reloaded.levels[1].entity_placements[0].type_id].template.team);
     }
 }
 

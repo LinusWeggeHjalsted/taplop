@@ -239,8 +239,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
     // No hostile at all.
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile beyond effective range 3.
     {
@@ -249,8 +248,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{ caster, out_of_range },
             &.{},
         );
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile exactly at range 3.
     {
@@ -271,8 +269,7 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{},
         );
         setCooldown(game_state, 0, .shoot, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.shoot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -424,8 +421,7 @@ test "bash: option is 3 with the colliding pick, 2 on an open path" {
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
         setCooldown(game_state, 0, .bash, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.bash, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.bash, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -502,8 +498,7 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
         setCooldown(game_state, 0, .powerful_shot, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.powerful_shot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.powerful_shot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -554,8 +549,7 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
             &.{ caster, out_of_range },
             &.{},
         );
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
     }
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -567,8 +561,7 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         setCooldown(game_state, 0, .head_shot, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.head_shot, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -601,15 +594,13 @@ test "idol heal: priority is 1 only below half health" {
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 20 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
     // Exactly half → 0 (at/above half).
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 10 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
     // Below half → 1.
     {
@@ -620,8 +611,7 @@ test "idol heal: priority is 1 only below half health" {
         try testing.expectEqual(@as(u32, 1), options[0].priority);
         // Cooldown overrides (a swap can leave one on a no-cooldown skill).
         setCooldown(game_state, 0, .heal, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.heal, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -657,8 +647,7 @@ test "focus: options rate by ticking weapon-skill count, cantrips excluded" {
     // Only the cantrip ticking → nothing to reset, no option.
     setCooldown(game_state, 0, .slice, 0);
     setCooldown(game_state, 0, .spinblade, 0);
-    try testing.expectEqual(@as(usize, 0),
-        freshOptions(.focus, 0, game_state, definitions, arena.allocator()).len);
+    try testing.expectEqual(@as(usize, 0), freshOptions(.focus, 0, game_state, definitions, arena.allocator()).len);
 }
 
 test "stone form: rates above the planned stun cast; HoT fallback without one" {
@@ -720,8 +709,7 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
 
     // Full health with no beneficiary: nothing at all.
     @constCast(game_state.level.?.entities)[0].current_health = 20;
-    try testing.expectEqual(@as(usize, 0),
-        freshOptions(.stone_form, 0, game_state, definitions, arena.allocator()).len);
+    try testing.expectEqual(@as(usize, 0), freshOptions(.stone_form, 0, game_state, definitions, arena.allocator()).len);
     @constCast(game_state.level.?.entities)[0].current_health = 9;
 
     // A sword-carrier (chop plans, but chops don't stun) below full
@@ -790,8 +778,7 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
         .equipped_utility_skills = .{ .that_which_lingers, null, null, null, null },
     };
     const lone_state = test_harness.levelStateWithEntities(arena.allocator(), &.{lone_caster}, &.{});
-    try testing.expectEqual(@as(usize, 0),
-        freshOptions(.that_which_lingers, 0, lone_state, definitions, arena.allocator()).len);
+    try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_lingers, 0, lone_state, definitions, arena.allocator()).len);
 }
 
 test "that which reaches: the sim differential enables an out-of-range attack" {
@@ -837,8 +824,7 @@ test "that which reaches: the sim differential enables an out-of-range attack" {
             &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .max_health = 20, .current_health = 20 } },
             &tiles,
         );
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -890,7 +876,7 @@ test "that which reaches: an in-range plan is the base-value beneficiary" {
     const game_state = test_harness.levelStateWithEntities(
         arena.allocator(),
         &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
-        &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }},
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
     );
     const options = freshOptions(.that_which_reaches, 0, game_state, definitions, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
@@ -942,7 +928,7 @@ test "that which rushes: rates above cooldown-bearing casts, never standalone" {
                 types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 },
                 types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 }, .max_health = 20, .current_health = 20 },
             },
-            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }},
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
         const options = freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
@@ -963,10 +949,9 @@ test "that which rushes: rates above cooldown-bearing casts, never standalone" {
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
             &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
-            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }},
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
         );
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_rushes, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1024,10 +1009,9 @@ test "that which bull form: the sim differential flips a short push into a colli
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
             &.{ sword_caster, types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 20, .current_health = 20 } },
-            &.{.{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }},
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
         );
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.bull_form, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.bull_form, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1100,8 +1084,8 @@ test "head shot: priority drops to 2 when the only target is already stunned" {
     const stunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
     const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
     const options = freshOptions(.head_shot, 0, game_state, undefined, arena.allocator());
-        try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 1), options[0].priority);
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(@as(u32, 1), options[0].priority);
 }
 
 test "meteor: options pick the tile with the most hostiles within radius" {
@@ -1118,8 +1102,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
             &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 8, .y = 8 } } },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 8, .y = 8 } },
         );
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
     }
     // A cluster straddling tile (3,0): the hostile ON the tile is a direct
     // hit (distance 0), its diagonal neighbor at (4,1) is at distance 1 →
@@ -1169,8 +1152,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
         setCooldown(game_state, 0, .meteor, 1);
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.meteor, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -1408,8 +1390,7 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 9, .y = 9 }) },
             &.{},
         );
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
     }
     // Threatened but on cooldown → 0.
     {
@@ -1419,8 +1400,7 @@ test "absorb: priority tiers by threat and health" {
             &.{},
         );
         setCooldown(game_state, 0, .absorb, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.absorb, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1492,8 +1472,7 @@ test "reflect: priority tiers by threat and health" {
             &.{},
         );
         @constCast(game_state.level.?.entities)[1].is_active = false;
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.reflect, 0, game_state, definitions, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.reflect, 0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -1567,8 +1546,7 @@ test "flash strike: priority counts hits over the best landing tile" {
             &.{caster},
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.flash_strike, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.flash_strike, 0, game_state, undefined, arena.allocator()).len);
     }
     // A landing tile at (3,0) is within range 3 and radius 1 of BOTH
     // hostiles → the max count is 2 → 4, and the option's target IS that
@@ -1638,8 +1616,7 @@ test "drain: priority follows the AoE bump (3 single, 4 double)" {
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         setCooldown(game_state, 0, .drain, 1);
-        try testing.expectEqual(@as(usize, 0),
-    freshOptions(.drain, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.drain, 0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -2270,8 +2247,7 @@ test "modifier enchantments: reaching, bull, rushing apply their effects" {
         // No hostiles, nothing range-bearing on the bar: no live
         // beneficiary and no sim differential — nothing to cast (the old
         // unconditional rating 1 is gone).
-        try testing.expectEqual(@as(usize, 0),
-            freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator()).len);
+        try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator()).len);
     }
     // Bull Form: distance +10.
     {

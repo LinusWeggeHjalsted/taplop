@@ -79,11 +79,17 @@ fn expectBoots(actual: ?Boots, expected_speed: u32) !void {
 }
 fn inventoryWeaponDamage(slot: ?Item) ?u32 {
     const item = slot orelse return null;
-    return switch (item) { .weapon => |w| w.weapon_damage, else => null };
+    return switch (item) {
+        .weapon => |w| w.weapon_damage,
+        else => null,
+    };
 }
 fn inventoryBootsSpeed(slot: ?Item) ?u32 {
     const item = slot orelse return null;
-    return switch (item) { .boots => |b| b.speed_bonus, else => null };
+    return switch (item) {
+        .boots => |b| b.speed_bonus,
+        else => null,
+    };
 }
 
 // ───────────────────────── equip_item ─────────────────────────
@@ -321,10 +327,12 @@ test "player_salvage_inventory_region: box with no occupied slots is a no-op" {
     var harness = Harness.init(backing.allocator());
     var history = harness.newHistory(hubStateWithPlayer(.{}));
     const before = history.current_state.player_data.materials;
-    pushInputAndRun(&history, .{ .player_salvage_inventory_region = .{
-        .start_slot = 0,
-        .end_slot = 7, // entire first row, all empty
-    } });
+    pushInputAndRun(&history, .{
+        .player_salvage_inventory_region = .{
+            .start_slot = 0,
+            .end_slot = 7, // entire first row, all empty
+        },
+    });
     try testing.expectEqual(before, history.current_state.player_data.materials);
 }
 

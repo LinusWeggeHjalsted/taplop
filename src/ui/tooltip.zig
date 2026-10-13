@@ -164,14 +164,16 @@ pub fn buildTooltip(
     const panel_x = placement.x;
     const panel_y = placement.y;
 
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = tooltip_panel_sprite,
-        .screen_position = .{ .x = panel_x, .y = panel_y },
-        .width = panel_width,
-        .height = panel_height,
-        // The tooltip is a passive overlay; it never captures the pointer.
-        .blocks_input = false,
-    } });
+    try elements.append(allocator, .{
+        .nine_slice_panel = .{
+            .sprite_id = tooltip_panel_sprite,
+            .screen_position = .{ .x = panel_x, .y = panel_y },
+            .width = panel_width,
+            .height = panel_height,
+            // The tooltip is a passive overlay; it never captures the pointer.
+            .blocks_input = false,
+        },
+    });
 
     const content_x = panel_x + tooltip_padding;
     var y = panel_y + tooltip_padding;
@@ -621,7 +623,6 @@ test "buildItemTooltip: empty equipped slot compares against zero" {
     try std.testing.expectEqualStrings("+1", speed_row[1].text);
     try std.testing.expectEqual(positive_color, speed_row[1].color);
 }
-
 
 test "placeTooltip: source in bottom bar prefers above" {
     // A bottom-bar element: source near the bottom edge, centered horizontally.

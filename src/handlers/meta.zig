@@ -344,7 +344,7 @@ pub fn handleMetaEvent(
             pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                 .mission_path = start.mission_path,
                 .level_index = 1,
-            } } } }, allocator);
+            } } }}, allocator);
         },
         .end_validation => |end| {
             // A successful run writes its replay (the personal-best guard

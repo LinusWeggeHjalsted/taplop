@@ -259,7 +259,6 @@ pub const UiState = struct {
     editor_tile_drag: bool = false,
 };
 
-
 /// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
 /// transition (the live loop resets SessionState.ui_state there). The ghost
 /// follows the pointer using InputState.mouse_screen_position — no pointer

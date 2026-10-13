@@ -902,4 +902,3 @@ test "writeEventLog serializes representative event shapes" {
         }
     }
 }
-

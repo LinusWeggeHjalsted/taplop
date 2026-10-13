@@ -33,7 +33,6 @@ pub const player_loadout_file_format_version: u32 = 2;
 pub const decorations_file_format_version: u32 = 1;
 pub const editor_defaults_file_format_version: u32 = 1;
 
-
 const Color = types.Color;
 
 // ============================================================
@@ -324,7 +323,6 @@ pub fn asU32(value: []const u8) ?u32 {
 /// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
 /// append a warning to `warnings` (when non-null) naming the field, value,
 /// file, and max — then return `max` so the game stays playable. Returns 0 on
-
 pub fn asI32(value: []const u8) ?i32 {
     return std.fmt.parseInt(i32, value, 10) catch null;
 }
@@ -422,10 +420,9 @@ pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations
 pub const editor_defaults_sections = [_][]const u8{ "Metadata", "Entities", "Decorations", "Items" };
 
 pub const player_save_sections = [_][]const u8{
-    "Metadata",       "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
-    "OffHandWeapon",  "Amulet",          "Coat",           "Gloves",
-    "Pants",          "Boots",           "Inventory",      "UtilitySkills",
-    "CloneData",
+    "Metadata",      "Info",      "DiscoveredHubs", "UnlockedSkills", "MainHandWeapon",
+    "OffHandWeapon", "Amulet",    "Coat",           "Gloves",         "Pants",
+    "Boots",         "Inventory", "UtilitySkills",  "CloneData",
 };
 
 /// A mission player.txt: the LOADOUT sections of a player save (weapons,
@@ -435,8 +432,8 @@ pub const player_save_sections = [_][]const u8{
 /// DESIGN → Architecture → Level Editor → Selection model (playtest
 /// player_data).
 pub const player_loadout_sections = [_][]const u8{
-    "Metadata",      "MainHandWeapon", "OffHandWeapon", "Amulet", "Coat",
-    "Gloves",        "Pants",          "Boots",          "Inventory", "UtilitySkills",
+    "Metadata", "MainHandWeapon", "OffHandWeapon", "Amulet",    "Coat",
+    "Gloves",   "Pants",          "Boots",         "Inventory", "UtilitySkills",
 };
 
 // ============================================================
@@ -468,7 +465,7 @@ const level_metadata_keys = [_][]const u8{ "file_format_version", "name", "color
 // (hubs + the other file types sharing `level_metadata_keys` don't carry
 // them). See DESIGN → Level Editor → Level theme.
 const level_file_metadata_keys = [_][]const u8{
-    "file_format_version", "name", "color_wheel_index",
+    "file_format_version",  "name",                  "color_wheel_index",
     "enemy_gradient_index", "player_gradient_index",
 };
 
@@ -504,7 +501,11 @@ const level_entities_keys = [_][]const u8{
     "boots_name",
     "boots_health_bonus",
     "boots_speed_bonus",
-    "slot_4", "slot_5", "slot_6", "slot_7", "slot_8",
+    "slot_4",
+    "slot_5",
+    "slot_6",
+    "slot_7",
+    "slot_8",
     "layer",
 };
 
@@ -630,7 +631,12 @@ pub const settings_key_map = std.StaticStringMap([]const []const u8).initComptim
 const color_theme_global_keys = [_][]const u8{ "lightest", "darkest" };
 const color_theme_gradient_keys = [_][]const u8{
     "gradient_index",
-    "color_0", "color_1", "color_2", "color_3", "color_4", "color_5",
+    "color_0",
+    "color_1",
+    "color_2",
+    "color_3",
+    "color_4",
+    "color_5",
 };
 
 pub const color_theme_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
@@ -685,9 +691,10 @@ pub const salvage_key_map = std.StaticStringMap([]const []const u8).initComptime
 // clone_name + turn count + materials. DiscoveredHubs entries carry `name`.
 
 const save_info_keys = [_][]const u8{
-    "player_name", "current_campaign", "current_hub",
-    "turns", "deaths", "defeated_enemies", "skills_used",
-    "wood_salvage", "metal_salvage", "leather_salvage", "cloth_salvage", "knowledge",
+    "player_name",     "current_campaign", "current_hub",
+    "turns",           "deaths",           "defeated_enemies",
+    "skills_used",     "wood_salvage",     "metal_salvage",
+    "leather_salvage", "cloth_salvage",    "knowledge",
 };
 const save_unlocked_skills_keys = [_][]const u8{"name"};
 const save_weapon_keys = [_][]const u8{ "item_name", "weapon_type", "damage" };
@@ -697,13 +704,16 @@ const save_gloves_keys = [_][]const u8{ "item_name", "damage", "health" };
 const save_pants_keys = [_][]const u8{ "item_name", "pickup_radius", "health" };
 const save_boots_keys = [_][]const u8{ "item_name", "speed", "health" };
 const save_inventory_keys = [_][]const u8{
-    "slot", "item_type", "item_name",
-    "weapon_type", "damage", "spell_damage", "armor", "health", "pickup_radius", "speed", "skill_name",
+    "slot",        "item_type",  "item_name",
+    "weapon_type", "damage",     "spell_damage",
+    "armor",       "health",     "pickup_radius",
+    "speed",       "skill_name",
 };
 const save_utility_skills_keys = [_][]const u8{ "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" };
 const save_clone_data_keys = [_][]const u8{
     "mission_uuid", "clone_name", "turns_to_complete",
-    "wood", "metal", "leather", "cloth", "knowledge",
+    "wood",         "metal",      "leather",
+    "cloth",        "knowledge",
 };
 const save_discovered_hubs_keys = [_][]const u8{"name"};
 
@@ -760,7 +770,8 @@ pub fn validateKeys(
         for (section.entry_groups) |group| {
             for (group.pairs) |pair| {
                 if (keyInList(valid_keys, pair.key)) continue;
-                warnings.append(allocator, std.fmt.allocPrint(allocator,
+                warnings.append(allocator, std.fmt.allocPrint(
+                    allocator,
                     "Unknown key '{s}' in {s} section of {s}",
                     .{ pair.key, section.header, file_path },
                 ) catch @panic("failed to allocate key validation warning")) catch
@@ -779,10 +790,7 @@ fn keyInList(list: []const []const u8, key: []const u8) bool {
     return false;
 }
 
-
 pub const color_theme_sections = [_][]const u8{ "Metadata", "GlobalColors", "Gradients" };
-
-
 
 // ============================================================
 // Tests
@@ -891,8 +899,6 @@ test "value conversion helpers" {
     try std.testing.expectEqual(null, asBool("yes"));
 }
 
-
-
 test "parseConfigFile handles layout grids as raw lines" {
     const allocator = std.testing.allocator;
     const raw_text =
@@ -990,19 +996,6 @@ test "layout with blank rows and tricky characters preserves all content" {
     try std.testing.expectEqual(0, sections[0].entry_groups.len);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 test "asColor parses hex color codes" {
     const red = asColor("#FF0000").?;
     try std.testing.expectEqual(255, red.r);
@@ -1020,10 +1013,6 @@ test "asColor parses hex color codes" {
     try std.testing.expectEqual(null, asColor("#GGGGGG")); // invalid hex digits
 }
 
-
-
-
-
 test "game_version is populated from the build seam" {
     // Verifies the build.zig version seam reaches code: YYYY.MM.<count>[-dirty].
     // Not asserting exact digits (they change per commit/date); just the shape.
@@ -1031,9 +1020,6 @@ test "game_version is populated from the build seam" {
     try std.testing.expect(version.len > 0);
     try std.testing.expect(std.mem.count(u8, version, ".") >= 2);
 }
-
-
-
 
 test "validateKeys: warns on unknown keys in level file sections" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

@@ -545,9 +545,9 @@ pub const TextRenderer = struct {
         const font = self.font.?;
         const black = toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, 255);
         const dirs = [_]struct { dx: f32, dy: f32 }{
-            .{ .dx = -outline_width, .dy = -outline_width }, .{ .dx = 0, .dy = -outline_width }, .{ .dx = outline_width, .dy = -outline_width },
-            .{ .dx = -outline_width, .dy = 0 }, .{ .dx = outline_width, .dy = 0 },
-            .{ .dx = -outline_width, .dy = outline_width }, .{ .dx = 0, .dy = outline_width }, .{ .dx = outline_width, .dy = outline_width },
+            .{ .dx = -outline_width, .dy = -outline_width }, .{ .dx = 0, .dy = -outline_width },            .{ .dx = outline_width, .dy = -outline_width },
+            .{ .dx = -outline_width, .dy = 0 },              .{ .dx = outline_width, .dy = 0 },             .{ .dx = -outline_width, .dy = outline_width },
+            .{ .dx = 0, .dy = outline_width },               .{ .dx = outline_width, .dy = outline_width },
         };
         for (dirs) |d| {
             rl.drawTextEx(font, text, .{ .x = position.x + d.dx, .y = position.y + d.dy }, font_size, spacing, black);

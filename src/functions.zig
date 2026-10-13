@@ -122,7 +122,7 @@ pub fn shortestPath(
         .h_cost = chebyshevHeuristic(start_position, end_position),
         .distance_squared = squaredEuclideanDistance(start_position, end_position),
     };
-    open_set.push(allocator,start_node) catch return null;
+    open_set.push(allocator, start_node) catch return null;
     node_map.put(start_position, start_node) catch return null;
 
     var found = false;
@@ -170,7 +170,7 @@ pub fn shortestPath(
                         .distance_squared = existing.distance_squared,
                     };
                     node_map.put(neighbor_position, updated) catch return null;
-                    open_set.push(allocator,updated) catch return null;
+                    open_set.push(allocator, updated) catch return null;
                 }
             } else {
                 const new_node = PathNode{
@@ -181,7 +181,7 @@ pub fn shortestPath(
                     .distance_squared = squaredEuclideanDistance(neighbor_position, end_position),
                 };
                 node_map.put(neighbor_position, new_node) catch return null;
-                open_set.push(allocator,new_node) catch return null;
+                open_set.push(allocator, new_node) catch return null;
             }
         }
     }
@@ -570,10 +570,9 @@ test "shortestPath: optimal path around obstacles (heuristic admissibility)" {
     // y=6: # # # . . . #
     const tiles = [_]Vector2{
         .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 5, .y = 0 }, .{ .x = 6, .y = 0 },
-        .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 4, .y = 1 }, .{ .x = 6, .y = 1 },
-        .{ .x = 0, .y = 2 }, .{ .x = 2, .y = 2 }, .{ .x = 5, .y = 2 }, .{ .x = 6, .y = 2 },
-        .{ .x = 0, .y = 3 }, .{ .x = 1, .y = 3 }, .{ .x = 2, .y = 3 }, .{ .x = 3, .y = 3 }, .{ .x = 5, .y = 3 },
-        .{ .x = 4, .y = 4 }, .{ .x = 5, .y = 4 },
+        .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 4, .y = 1 }, .{ .x = 6, .y = 1 }, .{ .x = 0, .y = 2 },
+        .{ .x = 2, .y = 2 }, .{ .x = 5, .y = 2 }, .{ .x = 6, .y = 2 }, .{ .x = 0, .y = 3 }, .{ .x = 1, .y = 3 },
+        .{ .x = 2, .y = 3 }, .{ .x = 3, .y = 3 }, .{ .x = 5, .y = 3 }, .{ .x = 4, .y = 4 }, .{ .x = 5, .y = 4 },
         .{ .x = 0, .y = 5 }, .{ .x = 1, .y = 5 }, .{ .x = 3, .y = 5 }, .{ .x = 4, .y = 5 }, .{ .x = 6, .y = 5 },
         .{ .x = 0, .y = 6 }, .{ .x = 1, .y = 6 }, .{ .x = 2, .y = 6 }, .{ .x = 6, .y = 6 },
     };

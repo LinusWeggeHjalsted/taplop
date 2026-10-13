@@ -77,15 +77,17 @@ pub fn emitCenteredNumber(
     // button's center; centering the taller lineHeight box would sit text high.
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
     const label_box = cell.placeCenter(label_width, font_size);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = label,
-        .screen_position = label_box.position(),
-        .font_size = font_size,
-        // Outlined for readability over varied icon art.
-        .outlined = true,
-        // Sits on top of its parent icon/button; let its tooltip win the hover.
-        .blocks_input = false,
-    } });
+    try elements.append(allocator, .{
+        .text_label = .{
+            .text = label,
+            .screen_position = label_box.position(),
+            .font_size = font_size,
+            // Outlined for readability over varied icon art.
+            .outlined = true,
+            // Sits on top of its parent icon/button; let its tooltip win the hover.
+            .blocks_input = false,
+        },
+    });
 }
 
 /// Emit a number label in the BOTTOM-RIGHT corner of `cell`, outlined for
@@ -192,15 +194,17 @@ pub fn emitIconButton(
         .highlighted = highlighted,
         .ref = ref,
     } });
-    try elements.append(allocator, .{ .image = .{
-        .sprite_id = icon_sprite_id,
-        .screen_position = cell.position(),
-        .width = cell.width,
-        .height = cell.height,
-        .color = icon_color,
-        // Sits on top of the background; let the button win the hit-test.
-        .blocks_input = false,
-    } });
+    try elements.append(allocator, .{
+        .image = .{
+            .sprite_id = icon_sprite_id,
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .color = icon_color,
+            // Sits on top of the background; let the button win the hit-test.
+            .blocks_input = false,
+        },
+    });
 }
 
 /// Emit a panel-backed button: a 9-slice panel background, a spriteless
@@ -241,13 +245,15 @@ pub fn emitPanelButton(
     // button's center.
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
     const label_box = cell.placeCenter(label_width, font_size);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = label,
-        .screen_position = label_box.position(),
-        .font_size = font_size,
-        // Sits on top of the button; let the button win the hit-test.
-        .blocks_input = false,
-    } });
+    try elements.append(allocator, .{
+        .text_label = .{
+            .text = label,
+            .screen_position = label_box.position(),
+            .font_size = font_size,
+            // Sits on top of the button; let the button win the hit-test.
+            .blocks_input = false,
+        },
+    });
 }
 
 /// Map a skill bar slot (1-8) to its input Action, so clicking a skill
@@ -367,18 +373,20 @@ pub fn emitSkillButton(
 
     const cooldown = player.skill_cooldowns.get(skill_id.?);
     if (cooldown > 0) {
-        try elements.append(allocator, .{ .image = .{
-            // Reuse the skill-button frame as a translucent wash so the icon
-            // reads as dimmed/locked. Tinted darkest theme color at 50% alpha.
-            .sprite_id = "ui/skill_button",
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .color = cooldown_overlay_color,
-            .alpha = 128,
-            // Overlay on the skill button — pass hover through to the button.
-            .blocks_input = false,
-        } });
+        try elements.append(allocator, .{
+            .image = .{
+                // Reuse the skill-button frame as a translucent wash so the icon
+                // reads as dimmed/locked. Tinted darkest theme color at 50% alpha.
+                .sprite_id = "ui/skill_button",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = cooldown_overlay_color,
+                .alpha = 128,
+                // Overlay on the skill button — pass hover through to the button.
+                .blocks_input = false,
+            },
+        });
         try emitCenteredNumber(elements, allocator, font_metrics, cell, cooldown, cooldown_font_size);
     }
 }
@@ -810,7 +818,6 @@ pub fn itemIconSpriteId(item: types.Item) []const u8 {
         .skill_tome => "items/skill_tome",
     };
 }
-
 
 /// The sprite id for an active-effect icon in the UI (bottom-bar effects
 /// grid + entity-inspect panel). Effects created by a skill share the skill's

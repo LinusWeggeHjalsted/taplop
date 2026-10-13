@@ -1411,7 +1411,7 @@ pub const LevelEvent = union(enum) {
     },
     clear_highlights: void,
     clear_prepared_skill: void,
-    
+
     move_entity: struct {
         entity_index: u32,
         destination: Vector2,

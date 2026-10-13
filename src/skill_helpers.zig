@@ -173,7 +173,6 @@ fn spiralTilesInRadius(
 }
 
 /// A resolved valid-target for the selection scans. `preferred` is the
-
 /// A resolved valid-target for the selection scans. `preferred` is the
 /// leading key of the keyed selections (knockback: the push collides;
 /// stun: the target is not already stunned).

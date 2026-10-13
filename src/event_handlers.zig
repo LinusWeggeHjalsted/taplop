@@ -28,7 +28,6 @@ const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 
 /// Process a single event from the stack. Applies the event to the current
-
 /// Process a single event from the stack. Applies the event to the current
 /// state and records it in event history. Also used by undo/redo replay.
 pub fn processEvent(
@@ -143,4 +142,3 @@ pub fn processEvent(
         },
     }
 }
-

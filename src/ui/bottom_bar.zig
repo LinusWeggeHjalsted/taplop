@@ -40,7 +40,6 @@ const playerEntity = @import("panels.zig").playerEntity;
 const button_background_sprite_id = emit.button_background_sprite_id;
 const overlay_font_size = emit.overlay_font_size;
 
-
 /// The bottom bar: one horizontally-centered row anchored to the bottom
 /// of `screen`, laid out left-to-right as
 ///   inventory, gear, skills, health, weapon-skills, swap, utility-skills, skip
@@ -90,8 +89,8 @@ pub fn buildBottomBar(
     // the cell matches it rather than letting the border overhang into the
     // gaps (which crowded the neighbors — see health_globe_border_width).
     var content_width = slot_size * 3 // inventory, gear, skills
-        + health_globe_border_width // health (wider than a slot)
-        + weapon_skills_width + swap_button_size + utility_skills_width;
+    + health_globe_border_width // health (wider than a slot)
+    + weapon_skills_width + swap_button_size + utility_skills_width;
     if (in_level) {
         top_level_count += 1;
         content_width += slot_size;

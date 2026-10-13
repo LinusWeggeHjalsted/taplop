@@ -169,7 +169,6 @@ pub fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator
     pushEvents(current, start_events.items, allocator);
 }
 
-
 /// Recompute the reachable tiles shown during the player's move step.
 /// No-op unless we're in a level and currently in the .player_move phase
 /// (e.g. changing boots in the hub or during the attack step should not

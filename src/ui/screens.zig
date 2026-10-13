@@ -39,8 +39,6 @@ const wrapRow = ui_element.wrapRow;
 const tooltip_panel_sprite = ui_tooltip.tooltip_panel_sprite;
 const button_background_sprite_id = emit.button_background_sprite_id;
 
-
-
 // Error popup sizing — a modal centered panel for recoverable load
 // failures (see SessionState.pending_error). Reuses the tooltip wrap
 // machinery (wrapRow / measureRowWidth / lineHeight) for the message body.
@@ -151,15 +149,17 @@ pub fn buildErrorPopup(
     const panel_rect = screenRect().placeCenter(panel_width, panel_height);
     const panel_pos = panel_rect.position();
 
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = tooltip_panel_sprite,
-        .screen_position = panel_pos,
-        .width = panel_width,
-        .height = panel_height,
-        // Modal: halts hit-testing within the panel bounds so clicks on the
-        // popup (not on the button) are swallowed rather than passing through.
-        .blocks_input = true,
-    } });
+    try elements.append(allocator, .{
+        .nine_slice_panel = .{
+            .sprite_id = tooltip_panel_sprite,
+            .screen_position = panel_pos,
+            .width = panel_width,
+            .height = panel_height,
+            // Modal: halts hit-testing within the panel bounds so clicks on the
+            // popup (not on the button) are swallowed rather than passing through.
+            .blocks_input = true,
+        },
+    });
 
     const content_x = panel_pos.x + error_popup_padding;
     var y = panel_pos.y + error_popup_padding;
@@ -348,16 +348,18 @@ pub fn buildGlobalTopBar(
         .color = c_btn_bg,
         .tooltip = .{ .header = try spanRow(allocator, text("Redo")) },
     } });
-    try elements.append(allocator, .{ .image = .{
-        .sprite_id = "ui/icon_undo",
-        .screen_position = redo_cell.position(),
-        .width = redo_cell.width,
-        .height = redo_cell.height,
-        .color = c_btn_icon,
-        .flip_horizontal = true,
-        // Sits on top of the background; let the button win the hit-test.
-        .blocks_input = false,
-    } });
+    try elements.append(allocator, .{
+        .image = .{
+            .sprite_id = "ui/icon_undo",
+            .screen_position = redo_cell.position(),
+            .width = redo_cell.width,
+            .height = redo_cell.height,
+            .color = c_btn_icon,
+            .flip_horizontal = true,
+            // Sits on top of the background; let the button win the hit-test.
+            .blocks_input = false,
+        },
+    });
     if (!can_redo) try emitDimWash(elements, allocator, redo_cell, c_dim);
 }
 

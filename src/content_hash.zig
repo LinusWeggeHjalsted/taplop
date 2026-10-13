@@ -173,10 +173,8 @@ test "computeMissionHash: deterministic for the same file set" {
     const file_source = FileSource.init(io, dir);
 
     // Write a minimal mission: mission.txt + level_1.txt (no player.txt).
-    file_source.writeFile("test_mission/mission.txt",
-        "Metadata\nfile_format_version 1\nlevel_count 1\nname Test\n") catch @panic("write mission");
-    file_source.writeFile("test_mission/level_1.txt",
-        "Metadata\nfile_format_version 1\n\nLayout\n.\n!\n") catch @panic("write level");
+    file_source.writeFile("test_mission/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\nname Test\n") catch @panic("write mission");
+    file_source.writeFile("test_mission/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n.\n!\n") catch @panic("write level");
 
     const h1 = try computeMissionHash(&file_source, arena, "test_mission", 1);
     const h2 = try computeMissionHash(&file_source, arena, "test_mission", 1);
