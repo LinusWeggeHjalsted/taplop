@@ -127,7 +127,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // never a gate on the channel.
     setup.frame_state.console_queue.interactive =
         std.Io.File.stdin().isTty(io) catch false;
-    console.printPrompt(&setup.frame_state.console_queue);
+    console.announceConsoleInput(&setup.frame_state.console_queue);
     const console_reader = std.Thread.spawn(
         .{},
         consoleReaderThread,

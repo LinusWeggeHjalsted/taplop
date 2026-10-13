@@ -1645,7 +1645,27 @@ the reader thread exits, zero cost.
   the channel itself stays always-on (a piped script drives identically,
   just unprompted — a prompt over a pipe invites typing the pipe can
   never receive), and an stdin-less launch (double-click, the mac bundle)
-  prints nothing at all.
+  prints nothing at all. The BOOT half of the discoverability surface:
+  when interactive, the native driver prints one hint line ("console
+  input on stdin — type help for the command list") + the first prompt
+  at wiring — the prompt says a console exists, the hint says how to
+  learn it.
+- **ONE verb table owns the vocabulary (no hand-written lists).** The
+  console's command set is a single comptime declaration, `verb_table`
+  in console.zig: the parser DISPATCHES on each entry's `name`, `help`
+  PRINTS the entries (columns aligned at comptime from the table's own
+  widths), and every entry carries real `examples` that a both-ways
+  test walks — every example is a working command line (the printed
+  help shows only tested-working lines), and every `ConsoleCommand`
+  variant is covered by at least one example (a new variant is a test
+  failure until the help table covers it). There is no second list to
+  drift against: the parser's accepted verbs ARE the table's names,
+  and the unknown-verb / unknown-id errors point at `help` / `inputs`
+  instead of inlining a stale list. Ids stay strict exact-match — one
+  canonical spelling shared by command lines, session logs, and the
+  settings bindings (an accepted alias would beg the reverse question
+  of which spelling a dumped binding uses); the vocabulary is
+  discoverable instead of forgiving.
 - **The command set** (human readable + writable, both directions):
   `press <id>` / `release <id>` (any producible input id — the
   `producible_key_ids`/`producible_mouse_ids` vocabulary; an unknown id
@@ -1671,7 +1691,10 @@ the reader thread exits, zero cost.
   turn flow, where enemy turns drain over real-clock waits and a frame
   count is a guess), `dump <thing>`
   (plain text on stdout), `report ui` / `report level` (the curated
-  projections — see the next bullet), `quit`. The `ui` dump lists the last-rendered interactive
+  projections — see the next bullet), `help` (the command list), `inputs`
+  (every input id `press`/`release` accept — the producible-id tables
+  themselves, printed; the same vocabulary the settings bindings name, and
+  the category grouping emerges from the tables' existing order), `quit`. The `ui` dump lists the last-rendered interactive
   surfaces (buttons / sliders / text fields / ref-bearing slots) with
   their rects and CENTER points — a valid click point each, in reference
   space — so scripts are self-documenting: `dump ui`, read a center,

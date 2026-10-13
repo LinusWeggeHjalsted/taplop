@@ -16635,3 +16635,48 @@ unit-tested core; `printPrompt` is the thin best-effort writer (pub for
 the native driver's boot prompt). applyFrameCommand's switch was
 restructured to compute-then-prompt-then-return (labeled blocks — an
 unlabeled prong block's trailing value is a 0.16 parse quirk).
+
+## Console: help + inputs — one verb table owns the vocabulary
+
+The discoverability half of the console channel (the prompt landed
+first): `help` (the command list) + `inputs` (the input-id vocabulary) +
+the boot hint, built on the structural decision that one table owns
+everything.
+
+- **The verb table (the both-ways machine-walk).** The parser's if-chain
+  over hand-compared verb strings became ONE comptime declaration,
+  `verb_table` in console.zig: name, argument shape, description, real
+  example lines, and a per-verb parse fn. The parser dispatches on
+  `name`; `help` prints the entries (column width comptime-derived from
+  the table's own widest usage pair, so added verbs realign
+  automatically); the both-ways test parses every example (everything
+  the printed help shows is a tested-working command line) and requires
+  every `ConsoleCommand` variant to be covered by ≥1 example (a new
+  variant is a test failure until the help table covers it). Three
+  hand-written lists died with it: the parser arms, the unknown-verb
+  error's inline verb list, and the would-be help table. The
+  unknown-verb error now points at `help`; the unknown-id error points
+  at `inputs`.
+- **`inputs` — the id vocabulary, derived.** Prints
+  `producible_key_ids` + `producible_mouse_ids` straight from the
+  arrays the parser validates against (and the same ids the settings
+  bindings name): it cannot lie, and new ids appear automatically. The
+  category grouping (modifiers → letters → digits → punctuation →
+  navigation → F-keys → numpad → media) emerges from the tables'
+  existing order wrapped at 80 columns — no hand-maintained grouping.
+- **Ids stay strict exact-match — discoverable instead of forgiving.**
+  The `press Key1` trap (digits are `Digit1`) is solved by the list,
+  not by aliases: one canonical spelling is shared by command lines,
+  session logs, and bindings files, and an accepted alias would beg the
+  reverse question of which spelling a dumped binding uses.
+- **The boot hint** (interactive only): "console input on stdin — type
+  help for the command list" + the first prompt at wiring; the prompt
+  says a console exists, the hint says how to learn it.
+  (`announceConsoleInput` also fixed a commit-1 gap the smoke test
+  caught: the boot prompt printed unconditionally — piped runs got a
+  stray `> ` — before the gate moved into the announcement.)
+
+Verified by driving the real binary both ways: piped (`help` prints,
+no prompts anywhere, `quit` silent) and interactive via a pty
+(`script -qec`): boot hint + prompt, the post-drain prompt after a
+sole command, none after `quit` or mid-backlog.

@@ -109,6 +109,16 @@ pub const ConsoleCommand = union(enum) {
     /// stored state (click centers, legal-target highlights), hand-
     /// maintained by design (the state mirrors went to `dump <path>`).
     report: ReportKind,
+    /// Print the command list — the verb table, the console's single
+    /// declaration of its own vocabulary (see `verb_table`). The
+    /// discoverability entry point: everything printed is a
+    /// tested-working line (the both-ways test parses every example).
+    help: void,
+    /// Print the full input-id vocabulary — the producible-id tables the
+    /// parser validates `press`/`release` against (and the same ids the
+    /// settings bindings name). Machine-walked: the print cannot lie, and
+    /// new ids appear automatically.
+    inputs: void,
     /// Request the session quit (the Exit Game path).
     quit: void,
 
@@ -139,116 +149,246 @@ pub const ParseOutcome = union(enum) {
 };
 
 // ============================================================
-// Parser
+// Parser — one verb table owns the vocabulary
 // ============================================================
+
+/// One console verb — the single declaration of the console's command
+/// vocabulary. The parser dispatches on `name`; `help` prints the entry
+/// (columns aligned at comptime from the table's own widths); the both-ways
+/// test parses every `example`, so everything `help` shows is a
+/// tested-working command line, and a new `ConsoleCommand` variant is a test
+/// failure until an example covers it. There is no second list to drift
+/// against — the parser's accepted verbs ARE this table's names.
+const VerbEntry = struct {
+    name: []const u8,
+    /// The argument shape, printed by `help` ("" = argument-less).
+    args: []const u8,
+    description: []const u8,
+    /// Real, parsing command lines — test fixtures + the printed examples.
+    /// The both-ways test walks them all (see the struct doc).
+    examples: []const []const u8,
+    /// Parse the verb's arguments into a command (or an error outcome).
+    /// `rest` is the untrimmed rest-of-line (`type` consumes it verbatim);
+    /// `argument` is the fully-trimmed remainder (every other verb).
+    parse: *const fn (rest: []const u8, argument: []const u8) ParseOutcome,
+};
+
+const verb_table = [_]VerbEntry{
+    .{
+        .name = "press",
+        .args = "<id>",
+        .description = "press a key or mouse button (chords work across frames)",
+        .examples = &.{"press Escape"},
+        .parse = parsePress,
+    },
+    .{
+        .name = "release",
+        .args = "<id>",
+        .description = "release a held key or button (completes the held model)",
+        .examples = &.{"release KeyA"},
+        .parse = parseRelease,
+    },
+    .{
+        .name = "move",
+        .args = "<x> <y>",
+        .description = "move the pointer, reference-space pixels",
+        .examples = &.{"move 640 360"},
+        .parse = parseMove,
+    },
+    .{
+        .name = "scroll",
+        .args = "<delta>",
+        .description = "scroll; positive = up",
+        .examples = &.{"scroll 1"},
+        .parse = parseScroll,
+    },
+    .{
+        .name = "type",
+        .args = "<text>",
+        .description = "type text into the focused text field (the rest of the line)",
+        .examples = &.{"type New Player"},
+        .parse = parseType,
+    },
+    .{
+        .name = "action",
+        .args = "<name>",
+        .description = "fire a semantic action (the keybind vocabulary)",
+        .examples = &.{"action escape"},
+        .parse = parseAction,
+    },
+    .{
+        .name = "wait",
+        .args = "<n> | idle",
+        .description = "skip n frames, or hold until the game is idle (scripted turn-flow pacing)",
+        .examples = &.{ "wait 60", "wait idle" },
+        .parse = parseWait,
+    },
+    .{
+        .name = "dump",
+        .args = "<path>",
+        .description = "field-path reflection over the live state (bare dump: the root contents)",
+        .examples = &.{ "dump history.session.tile_cursor", "dump" },
+        .parse = parseDump,
+    },
+    .{
+        .name = "report",
+        .args = "ui | level",
+        .description = "curated projections: interactive surfaces / the active world",
+        .examples = &.{"report ui"},
+        .parse = parseReport,
+    },
+    .{
+        .name = "help",
+        .args = "",
+        .description = "this command list",
+        .examples = &.{"help"},
+        .parse = parseHelp,
+    },
+    .{
+        .name = "inputs",
+        .args = "",
+        .description = "every input id press/release accept (the bindings vocabulary)",
+        .examples = &.{"inputs"},
+        .parse = parseInputs,
+    },
+    .{
+        .name = "quit",
+        .args = "",
+        .description = "request the session quit",
+        .examples = &.{"quit"},
+        .parse = parseQuit,
+    },
+};
 
 /// Parse one console command line (no trailing newline). The line is
 /// space-separated: a verb, then its arguments; `type`'s argument is the rest
-/// of the line verbatim. Verbs, ids, action names, and dump kinds are all
-/// exact-match (case-sensitive) — they name enum values the engine consumes.
+/// of the line verbatim. Dispatch is the verb table above — one declaration
+/// owns the vocabulary (see `VerbEntry`). Verbs, ids, action names, and dump
+/// kinds are all exact-match (case-sensitive) — they name enum values the
+/// engine consumes.
 pub fn parseCommandLine(line: []const u8) ParseOutcome {
     const trimmed = std.mem.trim(u8, line, " \t\r");
+
     if (trimmed.len == 0 or trimmed[0] == '#') return .skip;
 
     const verb, const rest = splitFirstWord(trimmed);
     // Verbs other than `type` take single-token arguments — trim fully.
-    // `type`'s payload is the rest of the line (handled in its own arm).
+    // `type`'s payload is the rest of the line (its parse fn reads `rest`).
     const argument = std.mem.trim(u8, rest, " \t");
 
-    if (std.mem.eql(u8, verb, "quit")) {
-        if (argument.len > 0) return staticMessage("quit takes no arguments");
-        return .{ .command = .quit };
+    inline for (verb_table) |entry| {
+        if (std.mem.eql(u8, verb, entry.name)) return entry.parse(rest, argument);
     }
+    return formattedMessage("unknown console command '{s}' — type 'help' for the command list", .{verb});
+}
 
-    if (std.mem.eql(u8, verb, "press") or std.mem.eql(u8, verb, "release")) {
-        if (argument.len == 0 or argument.len > max_id_len) {
-            return formattedMessage("{s} requires an input id (press Escape, press left)", .{verb});
-        }
-        const command_id = classifyInputId(argument) orelse
-            return formattedMessage(
-                "input id '{s}' names an input no platform mapping can produce; ids are W3C key codes (KeyA, Escape, ArrowLeft, ...) or mouse buttons (left, right, middle)",
-                .{argument},
-            );
-        if (std.mem.eql(u8, verb, "press")) {
-            return .{ .command = .{ .press = command_id } };
-        } else {
-            return .{ .command = .{ .release = command_id } };
-        }
+fn parseQuit(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len > 0) return staticMessage("quit takes no arguments");
+    return .{ .command = .quit };
+}
+
+fn parseHelp(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len > 0) return staticMessage("help takes no arguments");
+    return .{ .command = .help };
+}
+
+fn parseInputs(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len > 0) return staticMessage("inputs takes no arguments");
+    return .{ .command = .inputs };
+}
+
+fn parsePress(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len == 0 or argument.len > max_id_len) {
+        return staticMessage("press requires an input id (press Escape, press left)");
     }
+    const command_id = classifyInputId(argument) orelse return unknownInputIdMessage(argument);
+    return .{ .command = .{ .press = command_id } };
+}
 
-    if (std.mem.eql(u8, verb, "move")) {
-        const x_word, const after_x = splitFirstWord(argument);
-        const y_word, const after_y = splitFirstWord(std.mem.trim(u8, after_x, " \t"));
-        if (x_word.len == 0 or y_word.len == 0 or after_y.len > 0) {
-            return staticMessage("move requires exactly two numbers (move 640 360, reference-space pixels)");
-        }
-        const x = std.fmt.parseFloat(f32, x_word) catch
-            return formattedMessage("move x '{s}' is not a number", .{x_word});
-        const y = std.fmt.parseFloat(f32, y_word) catch
-            return formattedMessage("move y '{s}' is not a number", .{y_word});
-        return .{ .command = .{ .move = .{ .x = x, .y = y } } };
+fn parseRelease(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len == 0 or argument.len > max_id_len) {
+        return staticMessage("release requires an input id (press Escape, press left)");
     }
+    const command_id = classifyInputId(argument) orelse return unknownInputIdMessage(argument);
+    return .{ .command = .{ .release = command_id } };
+}
 
-    if (std.mem.eql(u8, verb, "scroll")) {
-        if (argument.len == 0) return staticMessage("scroll requires a delta (scroll 1; positive = up)");
-        const delta = std.fmt.parseFloat(f32, argument) catch
-            return formattedMessage("scroll delta '{s}' is not a number", .{argument});
-        return .{ .command = .{ .scroll = delta } };
-    }
-
-    if (std.mem.eql(u8, verb, "type")) {
-        // `rest` is verbatim: splitFirstWord already consumed exactly one
-        // separator after the verb, so a doubled space types a leading
-        // space ("type  x" types " x"). The whole line was trimmed at
-        // both ends above, so trailing whitespace is not typable.
-        if (rest.len == 0) return staticMessage("type requires text (the rest of the line)");
-        if (rest.len > max_type_text_len) {
-            return staticMessage("type text exceeds 256 characters");
-        }
-        return .{ .command = .{ .type_text = storedText(TypeText, rest) } };
-    }
-
-    if (std.mem.eql(u8, verb, "action")) {
-        if (argument.len == 0) return staticMessage("action requires an action name (action escape)");
-        const action = std.meta.stringToEnum(types.Action, argument) orelse
-            return formattedMessage("unknown action '{s}'", .{argument});
-        return .{ .command = .{ .action = action } };
-    }
-
-    if (std.mem.eql(u8, verb, "wait")) {
-        if (argument.len == 0) return staticMessage("wait requires a frame count (wait 60) or 'idle'");
-        if (std.mem.eql(u8, argument, "idle")) return .{ .command = .{ .wait_idle = {} } };
-        const frames = std.fmt.parseInt(u32, argument, 10) catch
-            return formattedMessage("wait count '{s}' is not a non-negative integer", .{argument});
-        return .{ .command = .{ .wait = frames } };
-    }
-
-    if (std.mem.eql(u8, verb, "dump")) {
-        // `dump` is PURELY the path mirror (the curated projections are
-        // the `report` verb — two verbs, two semantics, no namespace
-        // overlap). Bare `dump`: the root table of contents (empty
-        // path). A path naming a nonexistent field errors at dump time,
-        // truthfully, against the live state.
-        if (argument.len > max_path_len) {
-            return formattedMessage("dump path exceeds {d} characters", .{max_path_len});
-        }
-        for (argument) |char| switch (char) {
-            'A'...'Z', 'a'...'z', '0'...'9', '_', '.', '[', ']' => {},
-            else => return staticMessage("dump path may contain only letters, digits, '_', '.', '[' and ']'"),
-        };
-        return .{ .command = .{ .dump = storedText(PathText, argument) } };
-    }
-
-    if (std.mem.eql(u8, verb, "report")) {
-        if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .report = .ui } };
-        if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .report = .level } };
-        return formattedMessage("unknown report kind '{s}' (ui, level)", .{argument});
-    }
-
+/// press/release share the unknown-id message (both validate against the
+/// producible-id vocabulary; the full list is the `inputs` command).
+fn unknownInputIdMessage(id: []const u8) ParseOutcome {
     return formattedMessage(
-        "unknown console command '{s}' (press, release, move, scroll, type, action, wait, dump, report, quit)",
-        .{verb},
+        "input id '{s}' names an input no platform mapping can produce; ids are W3C key codes (KeyA, Escape, ArrowLeft, ...) or mouse buttons (left, right, middle); the full list: inputs",
+        .{id},
     );
+}
+
+fn parseMove(_: []const u8, argument: []const u8) ParseOutcome {
+    const x_word, const after_x = splitFirstWord(argument);
+    const y_word, const after_y = splitFirstWord(std.mem.trim(u8, after_x, " \t"));
+    if (x_word.len == 0 or y_word.len == 0 or after_y.len > 0) {
+        return staticMessage("move requires exactly two numbers (move 640 360, reference-space pixels)");
+    }
+    const x = std.fmt.parseFloat(f32, x_word) catch
+        return formattedMessage("move x '{s}' is not a number", .{x_word});
+    const y = std.fmt.parseFloat(f32, y_word) catch
+        return formattedMessage("move y '{s}' is not a number", .{y_word});
+    return .{ .command = .{ .move = .{ .x = x, .y = y } } };
+}
+
+fn parseScroll(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len == 0) return staticMessage("scroll requires a delta (scroll 1; positive = up)");
+    const delta = std.fmt.parseFloat(f32, argument) catch
+        return formattedMessage("scroll delta '{s}' is not a number", .{argument});
+    return .{ .command = .{ .scroll = delta } };
+}
+
+fn parseType(rest: []const u8, _: []const u8) ParseOutcome {
+    // `rest` is verbatim: splitFirstWord already consumed exactly one
+    // separator after the verb, so a doubled space types a leading
+    // space ("type  x" types " x"). The whole line was trimmed at
+    // both ends by the dispatcher, so trailing whitespace is not typable.
+    if (rest.len == 0) return staticMessage("type requires text (the rest of the line)");
+    if (rest.len > max_type_text_len) {
+        return staticMessage("type text exceeds 256 characters");
+    }
+    return .{ .command = .{ .type_text = storedText(TypeText, rest) } };
+}
+
+fn parseAction(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len == 0) return staticMessage("action requires an action name (action escape)");
+    const action = std.meta.stringToEnum(types.Action, argument) orelse
+        return formattedMessage("unknown action '{s}'", .{argument});
+    return .{ .command = .{ .action = action } };
+}
+
+fn parseWait(_: []const u8, argument: []const u8) ParseOutcome {
+    if (argument.len == 0) return staticMessage("wait requires a frame count (wait 60) or 'idle'");
+    if (std.mem.eql(u8, argument, "idle")) return .{ .command = .{ .wait_idle = {} } };
+    const frames = std.fmt.parseInt(u32, argument, 10) catch
+        return formattedMessage("wait count '{s}' is not a non-negative integer", .{argument});
+    return .{ .command = .{ .wait = frames } };
+}
+
+fn parseDump(_: []const u8, argument: []const u8) ParseOutcome {
+    // `dump` is PURELY the path mirror (the curated projections are
+    // the `report` verb — two verbs, two semantics, no namespace
+    // overlap). Bare `dump`: the root table of contents (empty
+    // path). A path naming a nonexistent field errors at dump time,
+    // truthfully, against the live state.
+    if (argument.len > max_path_len) {
+        return formattedMessage("dump path exceeds {d} characters", .{max_path_len});
+    }
+    for (argument) |char| switch (char) {
+        'A'...'Z', 'a'...'z', '0'...'9', '_', '.', '[', ']' => {},
+        else => return staticMessage("dump path may contain only letters, digits, '_', '.', '[' and ']'"),
+    };
+    return .{ .command = .{ .dump = storedText(PathText, argument) } };
+}
+
+fn parseReport(_: []const u8, argument: []const u8) ParseOutcome {
+    if (std.mem.eql(u8, argument, "ui")) return .{ .command = .{ .report = .ui } };
+    if (std.mem.eql(u8, argument, "level")) return .{ .command = .{ .report = .level } };
+    return formattedMessage("unknown report kind '{s}' (ui, level)", .{argument});
 }
 
 /// Split `text` at its first whitespace run: the word before, the remainder
@@ -439,14 +579,26 @@ fn promptDue(queue: *const ConsoleQueue, taken: ConsoleCommand) bool {
 
 /// Print the console-ready prompt: `> `, no newline, best-effort (a
 /// failed write never surfaces — the console is a convenience channel,
-/// not a game system). Pub for the native driver's boot prompt (the
-/// first one, printed at wiring); the per-command prompts are printed by
-/// `applyFrameCommand` via `promptDue`.
-pub fn printPrompt(queue: *ConsoleQueue) void {
+/// not a game system). Called by `applyFrameCommand` via `promptDue` and
+/// by the boot announcement below.
+fn printPrompt(queue: *ConsoleQueue) void {
     if (queue.output) |*output| {
         output.interface.writeAll("> ") catch return;
         output.interface.flush() catch return;
     }
+}
+
+/// The boot half of the console's discoverability surface: when a human
+/// is typing (`interactive`), one hint line pointing at `help` + the first
+/// ready prompt. Called by the native driver at wiring; the per-command
+/// prompts are `applyFrameCommand`'s.
+pub fn announceConsoleInput(queue: *ConsoleQueue) void {
+    if (!queue.interactive) return;
+    if (queue.output) |*output| {
+        output.interface.writeAll("console input on stdin — type help for the command list\n") catch return;
+        output.interface.flush() catch return;
+    }
+    printPrompt(queue);
 }
 
 // ============================================================
@@ -491,6 +643,14 @@ pub fn applyFrameCommand(
         },
         .report => |kind| blk: {
             writeReport(kind, queue, history, ui_elements, camera, camera_zoom);
+            break :blk backend_input;
+        },
+        .help => blk: {
+            writeHelp(queue);
+            break :blk backend_input;
+        },
+        .inputs => blk: {
+            writeInputs(queue);
             break :blk backend_input;
         },
         // Popped waits never leave takeFrameCommand (they arm their own
@@ -563,7 +723,7 @@ fn mergeIntoPlatformInput(
         },
         // Not input commands — applyFrameCommand handles them (the waits
         // never reach here either).
-        .wait, .wait_idle, .dump, .report, .quit => {},
+        .wait, .wait_idle, .dump, .report, .help, .inputs, .quit => {},
     }
     return merged;
 }
@@ -677,6 +837,100 @@ fn writeReport(
     if (queue.output) |*output| {
         writeReportToWriter(kind, &output.interface, history, ui_elements, camera, camera_zoom);
     }
+}
+
+/// The help table's column width — the widest `name args` usage pair, at
+/// comptime — added verbs realign the printed list automatically.
+const help_column_width = blk: {
+    var width: usize = 0;
+    for (verb_table) |entry| {
+        const usage_len = entry.name.len + entry.args.len +
+            (if (entry.args.len > 0) @as(usize, 1) else 0);
+        width = @max(width, usage_len);
+    }
+    break :blk width;
+};
+
+/// Write the command list (`help`) to the console output — one line per
+/// verb-table entry: the usage (name + argument shape) padded to the
+/// table's own comptime column width, the description, then the entry's
+/// examples (the both-ways test parses them, so everything printed here
+/// is a tested-working command line).
+fn writeHelp(queue: *ConsoleQueue) void {
+    if (queue.output) |*output| {
+        writeHelpToWriter(&output.interface);
+        output.interface.flush() catch return;
+    }
+}
+
+/// The writer-level help step (writeHelp minus the queue plumbing) —
+/// separate so tests drive it with a fixed writer over memory.
+fn writeHelpToWriter(output: *std.Io.Writer) void {
+    output.writeAll("console commands:\n") catch return;
+    inline for (verb_table) |entry| {
+        const usage = if (entry.args.len > 0)
+            entry.name ++ " " ++ entry.args
+        else
+            entry.name;
+        output.writeAll("  ") catch return;
+        output.writeAll(usage) catch return;
+        var pad: usize = usage.len;
+        while (pad < help_column_width) : (pad += 1) {
+            output.writeAll(" ") catch return;
+        }
+        output.writeAll("  ") catch return;
+        output.writeAll(entry.description) catch return;
+        for (entry.examples, 0..) |example, example_index| {
+            output.writeAll(if (example_index == 0) " (" else "; ") catch return;
+            output.writeAll(example) catch return;
+        }
+        output.writeAll(")\n") catch return;
+    }
+}
+
+/// Write the full input-id vocabulary (`inputs`) to the console output —
+/// straight from the producible-id tables the parser validates against
+/// (the same ids the settings bindings name). Machine-walked: the print
+/// cannot lie, and new ids appear automatically.
+fn writeInputs(queue: *ConsoleQueue) void {
+    if (queue.output) |*output| {
+        writeInputsToWriter(&output.interface);
+        output.interface.flush() catch return;
+    }
+}
+
+/// The wrap column for the `inputs` id lists.
+const input_id_list_wrap_column = 80;
+
+/// The writer-level inputs step (writeInputs minus the queue plumbing) —
+/// separate so tests drive it with a fixed writer over memory. Ids print
+/// in table order wrapped at the wrap column — the tables' existing
+/// category ordering (modifiers → letters → digits → punctuation →
+/// navigation → F-keys → numpad → media) reads as grouping without any
+/// hand-maintained grouping.
+fn writeInputsToWriter(output: *std.Io.Writer) void {
+    output.writeAll("keys (W3C physical-key codes):\n") catch return;
+    writeIdList(output, &types.producible_key_ids);
+    output.writeAll("mouse buttons:\n") catch return;
+    writeIdList(output, &types.producible_mouse_ids);
+}
+
+/// One id list: space-separated, wrapped at the wrap column.
+fn writeIdList(output: *std.Io.Writer, ids: []const []const u8) void {
+    var line_len: usize = 0;
+    for (ids) |id| {
+        if (line_len > 0 and line_len + 1 + id.len > input_id_list_wrap_column) {
+            output.writeAll("\n") catch return;
+            line_len = 0;
+        }
+        if (line_len > 0) {
+            output.writeAll(" ") catch return;
+            line_len += 1;
+        }
+        output.writeAll(id) catch return;
+        line_len += id.len;
+    }
+    output.writeAll("\n") catch return;
 }
 
 /// The writer-level report step (writeReport minus the queue plumbing) —
@@ -1180,6 +1434,69 @@ test "parseCommandLine: every command shape" {
         const outcome = parseCommandLine(case.line);
         try std_testing.expect(outcome == .command);
         try std_testing.expectEqualDeep(case.expected, outcome.command);
+    }
+}
+
+test "verb table: every example parses; every command variant is covered" {
+    // Both ways, so the table can never drift from the vocabulary it owns:
+    // (a) every example is a real, working command line (the printed help
+    // shows only tested-working lines), and (b) every ConsoleCommand
+    // variant is produced by at least one example — a new variant is a
+    // test failure until the help table covers it.
+    const CommandTag = std.meta.Tag(ConsoleCommand);
+    var covered: [@typeInfo(CommandTag).@"enum".fields.len]bool =
+        .{false} ** @typeInfo(CommandTag).@"enum".fields.len;
+    for (verb_table) |entry| {
+        for (entry.examples) |example| {
+            const outcome = parseCommandLine(example);
+            try std_testing.expect(outcome == .command);
+            covered[@intFromEnum(std.meta.activeTag(outcome.command))] = true;
+        }
+    }
+    for (std.meta.tags(CommandTag)) |variant_tag| {
+        try std_testing.expect(covered[@intFromEnum(variant_tag)]);
+    }
+}
+
+test "parseCommandLine: help and inputs parse; arguments error" {
+    try std_testing.expectEqualDeep(ConsoleCommand.help, parseCommandLine("help").command);
+    try std_testing.expectEqualDeep(ConsoleCommand.inputs, parseCommandLine("inputs").command);
+    {
+        const outcome = parseCommandLine("help me");
+        try std_testing.expect(outcome == .err);
+        try std_testing.expect(std.mem.indexOf(u8, outcome.err.view(), "help takes no arguments") != null);
+    }
+    {
+        const outcome = parseCommandLine("inputs now");
+        try std_testing.expect(outcome == .err);
+        try std_testing.expect(std.mem.indexOf(u8, outcome.err.view(), "inputs takes no arguments") != null);
+    }
+}
+
+test "writeHelpToWriter: every verb, description and example printed" {
+    var buffer: [4096]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    writeHelpToWriter(&writer);
+    const text = buffer[0..writer.end];
+    for (verb_table) |entry| {
+        try std_testing.expect(std.mem.indexOf(u8, text, entry.name) != null);
+        try std_testing.expect(std.mem.indexOf(u8, text, entry.description) != null);
+        for (entry.examples) |example| {
+            try std_testing.expect(std.mem.indexOf(u8, text, example) != null);
+        }
+    }
+}
+
+test "writeInputsToWriter: every producible id printed" {
+    var buffer: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    writeInputsToWriter(&writer);
+    const text = buffer[0..writer.end];
+    for (types.producible_key_ids) |id| {
+        try std_testing.expect(std.mem.indexOf(u8, text, id) != null);
+    }
+    for (types.producible_mouse_ids) |id| {
+        try std_testing.expect(std.mem.indexOf(u8, text, id) != null);
     }
 }
 
