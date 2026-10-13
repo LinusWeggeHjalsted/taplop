@@ -16411,3 +16411,50 @@ until the rename slice.
   Follow-ups tracked in TODO → Console input: the per-frame
   observability stash (`previous_*` fields) and the `report` verb
   split.
+
+## Mission sprite ids minted at the scan (the side quest before the observability stash)
+
+While designing the per-frame observability stash, `PlayerInput`'s one
+string payload (`clicked_editor_sprite` — which sprite a picker cell
+picked) forced a bounded-copy plan: its bytes were minted PER FRAME by
+the picker (allocPrint `custom/<dir>/<stem>` into the frame arena,
+pickers:425), so a stashed copy would dangle into the reset arena —
+the exact bug class the console id-interning fix addressed. Analysis
+(in discussion) showed the mint was misplaced: the namespaced id is a
+fact about the SCANNED FILE, not a render fact — re-derived identically
+every frame the picker was open (also per-cell-per-frame allocation
+churn while the modal is up).
+
+- **Fix — mint at the source**: `MissionSprite.stored_id`
+  (`custom/<mission-dir>/<stem>`), allocPrint'd once per file at scan
+  time (`rescanEditorMissionSprites`) into backing_allocator, freed
+  with the list (the scan's existing per-entry ownership). The picker's
+  mission cells REFERENCE it (no mint); the kind-prefixed `graphic_id`
+  stays view-minted — it is render-scoped (kind-dependent prefix), and
+  it never leaves the frame.
+- **The payload chain is now fully owned**: scan (owned, session) →
+  button payload (borrow of session bytes) → `clicked_editor_sprite`
+  (borrow) → handler → event push (owned deep copy). A same-frame
+  borrow of session-lifetime bytes is safe indefinitely — the
+  observability stash copies `PlayerInput` wholesale with NO bounded
+  buffer, because there is nothing left to dangle.
+- Alternatives rejected in the discussion: index payloads (the four
+  pick actions span four different lists + two tabs — the stem is the
+  only uniform, staleness-free key, and sprite identity is open-ended
+  string space); value-carrying Action unions (breaks EnumSet
+  fired_actions, bindings, settings serialization, the keybind UI).
+- `missionDirectoryName` moved to types.zig (pub — the id-convention's
+  own helper, next to `customSpriteDimsPassGate` which parses the same
+  ids); the picker's private copy deleted.
+- Tests: the scan test pins the minted id at the source
+  (`custom/artists_den/boss`); the picker test pins POINTER IDENTITY —
+  the built button's payload IS the session list's string (the
+  structural no-re-mint property, not just content equality).
+- Design updated in place: DESIGN → Architecture → Level Editor → the
+  sprite picker's Mission bullet (the scan-mint + why).
+- Also flagged in discussion, recorded as a TODO candidate: the
+  28-field `clicked_*` payload explosion on AnytimeInput (one
+  hand-wired sibling field per payload kind, ~25 copy-paste lines in
+  main.zig's dispatch relay) — the clean shape is one tagged-union
+  payload field (the SlotRef pattern), a 30–50-site refactor for
+  another session.

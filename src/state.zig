@@ -126,6 +126,16 @@ pub const EditorSavedMission = struct {
 /// aspect-fit degrades to the full cell — `scaleToFit`'s fallback).
 pub const MissionSprite = struct {
     file_name: []const u8,
+    /// The namespaced mission-local id (`custom/<mission-dir>/<stem>`)
+    /// — the sprite picker's pick payload + the id the edited type
+    /// stores on commit. MINTED AT SCAN TIME (backing_allocator, freed
+    /// with the list) so every consumer references session-owned bytes:
+    /// the pick payload that rides `AnytimeInput.clicked_editor_sprite`
+    /// borrows this slice, and a same-frame borrow of session-lifetime
+    /// bytes is safe indefinitely (the per-frame view mint it replaced
+    /// died at the frame's render reset — the lifetime hazard the
+    /// observability stash exposed).
+    stored_id: []const u8,
     pixel_dims: types.Vector2,
 };
 

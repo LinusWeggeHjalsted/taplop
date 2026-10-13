@@ -4242,14 +4242,22 @@ highlight targets).
   `save_files` ownership pattern). A picked `boss.png` in mission
   `artists_den` stores the stem **`custom/artists_den/boss`** —
   namespaced (no collision with official stems) + self-describing in
-  the level file. Resolution rule: a stem starting `custom/<mission>/`
+  the level file. The namespaced id is MINTED AT SCAN TIME
+  (`MissionSprite.stored_id`, backing_allocator, freed with the list):
+  the pick payload (`AnytimeInput.clicked_editor_sprite`) and the
+  commit id REFERENCE the session-owned bytes — a same-frame borrow of
+  session-lifetime memory, safe indefinitely (the per-frame view mint
+  it replaced allocated `custom/...` into the frame arena every frame
+  the picker was open, dying at the render reset — the lifetime hazard
+  the observability stash exposed; the picker test pins pointer
+  identity: the button's payload IS the scan's string). Resolution
+  rule: a stem starting `custom/<mission>/`
   → `{mission_path}/<name>.png` (the mission being played/edited);
   anything else → `entities/{stem}.png` embedded. Mission-local cells
   render the art UNTINTED — custom art keeps its own colors (the
   `keep_original_colors` semantics; see the coloring section) — at the
   entity-frame convention (512×640); decoration kinds aspect-fit at
-  the SCAN's IHDR dims (`SessionState.editor_mission_sprites`,
-  extended from bare file names to `{file_name, pixel_dims}` entries).
+  the SCAN's IHDR dims (the IHDR read lives on the scan entry).
 - **Official** — the shipped `assets/entities/*.png` (comptime from
   the sprite-metadata table), the player body EXCLUDED. Cells draw the
   sprite aspect-fit at the 512×640 entity-frame convention, tinted with

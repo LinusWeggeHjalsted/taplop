@@ -26,19 +26,26 @@ const GameStateHistory = state.GameStateHistory;
 
 /// Scan the mission directory's .pngs into `session.editor_mission_sprites`
 /// (the sprite picker's mission-local tab): one entry per file, each
-/// carrying the PNG's pixel dims (IHDR read at scan time — the decoration
-/// cells' aspect-fit needs them; an unreadable/non-PNG file degrades to
-/// (0, 0), `scaleToFit`'s fallback). Frees the previous scan — the list is
-/// session-owned (backing allocator); the final list's leak at process
-/// exit is bounded (the save_files pattern). An IO failure degrades to an
-/// empty list — the Mission tab shows "No sprites" while the Official tab
-/// stays usable (recoverable-degrade; a popup would interrupt the click
-/// flow for a dev tool).
+/// carrying its namespaced id (`custom/<mission-dir>/<stem>`, minted HERE
+/// so the pick payload + the commit id reference session-owned bytes —
+/// see MissionSprite.stored_id) and the PNG's pixel dims (IHDR read at
+/// scan time — the decoration cells' aspect-fit needs them; an
+/// unreadable/non-PNG file degrades to (0, 0), `scaleToFit`'s fallback).
+/// Frees the previous scan — the list is session-owned (backing
+/// allocator); the final list's leak at process exit is bounded (the
+/// save_files pattern). An IO failure degrades to an empty list — the
+/// Mission tab shows "No sprites" while the Official tab stays usable
+/// (recoverable-degrade; a popup would interrupt the click flow for a dev
+/// tool).
 pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) void {
     const allocator = history.backing_allocator;
     const session = &history.session;
-    for (session.editor_mission_sprites) |entry| allocator.free(entry.file_name);
+    for (session.editor_mission_sprites) |entry| {
+        allocator.free(entry.file_name);
+        allocator.free(entry.stored_id);
+    }
     allocator.free(session.editor_mission_sprites);
+    const mission_directory = types.missionDirectoryName(editor.mission.path);
     const names = history.file_source.listPersistentPngFiles(
         allocator,
         editor.mission.path,
@@ -54,8 +61,14 @@ pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Edit
             stem,
             allocator,
         ) orelse types.Vector2{ .x = 0, .y = 0 };
+        const stored_id = std.fmt.allocPrint(
+            allocator,
+            "custom/{s}/{s}",
+            .{ mission_directory, stem },
+        ) catch @panic("failed to scan mission sprites");
         sprites.append(allocator, .{
             .file_name = file_name,
+            .stored_id = stored_id,
             .pixel_dims = pixel_dims,
         }) catch @panic("failed to scan mission sprites");
     }

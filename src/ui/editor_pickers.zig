@@ -400,7 +400,6 @@ pub fn buildEditorSpritePicker(
         untinted: bool = false,
     };
     var cells: std.ArrayList(PickerCell) = .empty;
-    const mission_directory = missionDirectoryName(editor.mission.path);
     // Custom mission-bundled art renders under the kind's folder prefix
     // (the same id view() builds — the texture store resolves
     // `custom/<mission-dir>/<stem>` ids to the mission directory; see
@@ -422,11 +421,15 @@ pub fn buildEditorSpritePicker(
             for (mission_sprites) |mission_sprite| {
                 const file_name = mission_sprite.file_name;
                 const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-                const stored_id = try std.fmt.allocPrint(
-                    allocator,
-                    "custom/{s}/{s}",
-                    .{ mission_directory, stem },
-                );
+                // The scan minted the namespaced id (session-owned —
+                // MissionSprite.stored_id); the cell REFERENCES it. This
+                // slice is what rides the pick payload
+                // (`clicked_editor_sprite`), so it must outlive the frame —
+                // the per-frame allocPrint it replaced died at the render
+                // reset. The kind-prefixed graphic_id below is
+                // render-scoped (view-internal, dies with the frame) —
+                // kind-dependent, so it cannot be pre-minted at the scan.
+                const stored_id = mission_sprite.stored_id;
                 const graphic_id = try std.fmt.allocPrint(
                     allocator,
                     "{s}{s}",
@@ -1077,15 +1080,6 @@ pub fn buildEditorFootprintEditor(
     );
 }
 
-/// The mission directory's NAME (the last path segment) — the namespace
-/// for mission-local sprite ids.
-fn missionDirectoryName(mission_path: []const u8) []const u8 {
-    if (std.mem.lastIndexOfScalar(u8, mission_path, '/')) |slash| {
-        return mission_path[slash + 1 ..];
-    }
-    return mission_path;
-}
-
 /// One sprite-picker cell: the button background (carrying the pick + the
 /// stored-id payload) + the option's graphic — the shipped/prefab/mission
 /// art aspect-fit at the cell's frame (custom mission art UNTINTED —
@@ -1421,8 +1415,8 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     // its own colors) at the 512x640 entity-frame convention.
     {
         const mission_sprites = [_]state.MissionSprite{
-            .{ .file_name = "boss.png", .pixel_dims = .{ .x = 512, .y = 640 } },
-            .{ .file_name = "minion.png", .pixel_dims = .{ .x = 512, .y = 640 } },
+            .{ .file_name = "boss.png", .stored_id = "custom/artists_den/boss", .pixel_dims = .{ .x = 512, .y = 640 } },
+            .{ .file_name = "minion.png", .stored_id = "custom/artists_den/minion", .pixel_dims = .{ .x = 512, .y = 640 } },
         };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
@@ -1458,6 +1452,13 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         try std.testing.expectEqual(@as(usize, 2), pick_buttons);
         try std.testing.expectEqualStrings("custom/artists_den/boss", payloads[0]);
         try std.testing.expectEqualStrings("custom/artists_den/minion", payloads[1]);
+        // The payload IS the session-owned scan string (pointer identity —
+        // no per-frame re-mint): the pick payload rides PlayerInput as a
+        // borrow, so its bytes must outlive the frame (the scan mint is
+        // the lifetime guarantee; the allocPrint it replaced died at the
+        // frame's render reset).
+        try std.testing.expect(payloads[0].ptr == mission_sprites[0].stored_id.ptr);
+        try std.testing.expect(payloads[1].ptr == mission_sprites[1].stored_id.ptr);
         try std.testing.expect(saw_boss_graphic);
         try std.testing.expect(saw_minion_graphic);
     }
@@ -1572,6 +1573,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
     {
         const mission_sprites = [_]state.MissionSprite{.{
             .file_name = "banner.png",
+            .stored_id = "custom/artists_den/banner",
             .pixel_dims = .{ .x = 512, .y = 512 },
         }};
         var elements: UiElementList = .empty;
@@ -1751,9 +1753,9 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
             .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
         };
         const mission_sprites = [_]state.MissionSprite{
-            .{ .file_name = "hero.png", .pixel_dims = .{ .x = 512, .y = 640 } },
-            .{ .file_name = "tiny.png", .pixel_dims = .{ .x = 256, .y = 256 } },
-            .{ .file_name = "broken.png", .pixel_dims = .{ .x = 0, .y = 0 } },
+            .{ .file_name = "hero.png", .stored_id = "custom/test_m/hero", .pixel_dims = .{ .x = 512, .y = 640 } },
+            .{ .file_name = "tiny.png", .stored_id = "custom/test_m/tiny", .pixel_dims = .{ .x = 256, .y = 256 } },
+            .{ .file_name = "broken.png", .stored_id = "custom/test_m/broken", .pixel_dims = .{ .x = 0, .y = 0 } },
         };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
@@ -1800,8 +1802,8 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
             .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
         };
         const mission_sprites = [_]state.MissionSprite{
-            .{ .file_name = "blocks.png", .pixel_dims = .{ .x = 512, .y = 256 } },
-            .{ .file_name = "odd.png", .pixel_dims = .{ .x = 1000, .y = 1200 } },
+            .{ .file_name = "blocks.png", .stored_id = "custom/test_m/blocks", .pixel_dims = .{ .x = 512, .y = 256 } },
+            .{ .file_name = "odd.png", .stored_id = "custom/test_m/odd", .pixel_dims = .{ .x = 1000, .y = 1200 } },
         };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
@@ -1846,8 +1848,8 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
             .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
         };
         const mission_sprites = [_]state.MissionSprite{
-            .{ .file_name = "match.png", .pixel_dims = .{ .x = 512, .y = 256 } },
-            .{ .file_name = "big.png", .pixel_dims = .{ .x = 768, .y = 768 } },
+            .{ .file_name = "match.png", .stored_id = "custom/test_m/match", .pixel_dims = .{ .x = 512, .y = 256 } },
+            .{ .file_name = "big.png", .stored_id = "custom/test_m/big", .pixel_dims = .{ .x = 768, .y = 768 } },
         };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
@@ -1888,7 +1890,7 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
             .mission = .{ .name = "Test", .path = "missions/test_m", .level_count = 0 },
         };
         const mission_sprites = [_]state.MissionSprite{
-            .{ .file_name = "tiny.png", .pixel_dims = .{ .x = 256, .y = 256 } },
+            .{ .file_name = "tiny.png", .stored_id = "custom/test_m/tiny", .pixel_dims = .{ .x = 256, .y = 256 } },
         };
         var elements: UiElementList = .empty;
         try buildEditorSpritePicker(
