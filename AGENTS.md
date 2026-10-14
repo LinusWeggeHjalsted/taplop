@@ -45,8 +45,8 @@ Two hygiene rules that keep the above true in practice:
 - **Prefer machine-walked truth over hand-maintained lists.** When an
   inventory/report/lookup can be DERIVED from source truth (an enum, a
   directory scan), generate it instead of curating it —
-  `generated_lookups.zig`, `generated_sprite_metadata.zig`, and
-  `sound_report.zig` are the pattern: new content appears automatically and
+  `generated_lookups.zig`, `generated_sprite_metadata.zig`, `sound_report.zig`,
+  and `gradient_report.zig` are the pattern: new content appears automatically and
   a lie is structurally impossible. Hand-maintained duplicates of
   machine-derivable facts are drift by definition.
 

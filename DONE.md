@@ -16755,3 +16755,40 @@ list gains the three numbers, and the semantic walk asserts each
 visible gradient row's number by line association (world 0, enemy
 auto-derived 1, player manual 2). DESIGN → Level Editor updated at the
 two surfaces' descriptions.
+
+## Gradient spacing rule + report — the "too close" colors made measurable
+
+The gradient wheel's 1→2 steps were too small across the yellow corner of
+the wheel — gradient 0 (the default theme everywhere) rendered its even
+tiles at color 1 against a color 2 background at WCAG contrast 1.03:
+effectively the same color. Root cause structural: the renderer places the
+ramp's WEAK pair (the small 1→2 step of the artist's 6-step ramps) in the
+most contrast-critical adjacent roles (even tiles at 1, background at 2).
+
+- **`src/gradient_report.zig`** (`zig build gradient-report`, wrapped by
+  `scripts/gradient_report.sh` — the sound_report pattern): reads
+  `data/color_themes.txt` through the game's own parser + loader and writes
+  `gradient_report.md` — ΔE76 per adjacent ramp step, the three structural
+  seams (tiles-vs-background, checkerboard, odd-tile-vs-background) with
+  WCAG contrast ratios, flags, and computed slide repairs (the violating
+  step's darker color slides along its own ramp toward its darker neighbor
+  until it clears the floor + 0.5 headroom; the repair for the
+  tiles-vs-background class moves only the background color). Run-at-will
+  reference, NOT a build step (unlike the SDF atlas) and NOT a test gate —
+  the thresholds may become a gate later once calibrated against what
+  reads well in play.
+- **The rule** (settled in DESIGN → Level Editor → Level theme): any two
+  renderer-adjacent colors ≥ ΔE 6 apart; structural seams keep WCAG
+  contrast ≥ 1.06. Calibrated on the shipped wheel: broken seams at
+  ΔE 5.4–5.6, fine seams start ~6.8.
+- **The artist's original wheel is preserved at commit `a4148d5`** — the
+  report snapshot committed BEFORE any color change. The fix commit
+  regenerates the report, so the two commits' `gradient_report.md` diff
+  shows exactly what the fix changed.
+- **The fix**: three single-hex color_2 edits (the slide repairs): gradient
+  0 `#f2eb82`→`#e8df7b`, gradient 3 `#bec761`→`#b9c05e`, gradient 22
+  `#f0bb6e`→`#eab66b` — all three 1-2 seams move from ΔE ~5.5 to ~6.5, the
+  2-3 steps keep ≥ 7.9 slack, and the report reads CLEAN. Gradients 1, 2,
+  23 sit just above the floor (ΔE 6.0–6.2, legal) — left as-is for now;
+  the report shows them as the weakest legal, an artist call whether to
+  widen the yellow corner consistently later.

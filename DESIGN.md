@@ -4500,6 +4500,22 @@ wheel-only derivation (no override fields — hubs aren't editor-authored).
 threads them from the live level / the editor's active tab, so the editor
 viewport previews the active level's full theme live.
 
+**Ramp spacing rule.** Within every gradient, any two colors the renderer
+places adjacent — the ramp steps (0-1 through 4-5) plus the checkerboard
+pair 1-3 — must be at least ΔE 6 apart (CIE76 perceptual distance in Lab
+space; calibration on the shipped wheel: seams that read broken sit at
+ΔE 5.4–5.6, seams that read fine start ~6.8), and the structural seams
+(1-2 tiles-vs-background, 1-3 checkerboard, 2-3) keep a WCAG contrast
+ratio of at least 1.06 (the same-luminance catch). Enforcement is the
+REPORT, not a gate: `scripts/gradient_report.sh` regenerates
+`gradient_report.md` (the sound_report pattern — reads
+`data/color_themes.txt` through the game's own parser + loader, ranks every
+gradient, flags violations, and computes slide repairs: the violating
+step's darker color slides along its own ramp toward its darker neighbor
+until it clears the floor plus 0.5 headroom — the repair for the
+tiles-vs-background class moves only the background color). Everything
+else about a ramp's shape (the artist's character) is free.
+
 **Editor viewport rendering (drawable projection).** The editor playfield
 never builds a concrete `Level`; `view()` gains an editor-mode branch that
 projects the `EditorLevel` structure into the same drawable kinds the

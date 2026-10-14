@@ -9,7 +9,7 @@ Gradients
 gradient_index 0
 color_0 #f6f6bb
 color_1 #f2ef90
-color_2 #f2eb82
+color_2 #e8df7b
 color_3 #d7cb71
 color_4 #bcad67
 color_5 #95896a
@@ -33,7 +33,7 @@ color_5 #807858
 gradient_index 3
 color_0 #dfe5a3
 color_1 #c9d173
-color_2 #bec761
+color_2 #b9c05e
 color_3 #aaae57
 color_4 #979546
 color_5 #767253
@@ -185,7 +185,7 @@ color_5 #896854
 gradient_index 22
 color_0 #fadfb3
 color_1 #f5c67e
-color_2 #f0bb6e
+color_2 #eab66b
 color_3 #d6a261
 color_4 #b78b5e
 color_5 #8c715b

@@ -38,10 +38,10 @@ cross-gradient pairs, a separate calibration).
 
 | gradient | 0-1 | 1-2 | 2-3 | 3-4 | 4-5 | worst |
 |---:|---:|---:|---:|---:|---:|---:|
-| 0 | 18.2 | **5.4** | 12.6 | 13.8 | 23.8 | **1-2 5.4** |
+| 0 | 18.2 | 6.6 | 8.0 | 13.8 | 23.8 | 1-2 6.6 |
 | 1 | 18.1 | 6.2 | 11.5 | 15.7 | 22.6 | 1-2 6.2 |
 | 2 | 16.0 | 6.0 | 11.6 | 12.0 | 24.3 | 1-2 6.0 |
-| 3 | 16.4 | **5.6** | 10.9 | 9.7 | 27.6 | **1-2 5.6** |
+| 3 | 16.4 | 6.6 | 7.9 | 9.7 | 27.6 | 1-2 6.6 |
 | 4 | 17.6 | 6.3 | 10.2 | 10.9 | 25.4 | 1-2 6.3 |
 | 5 | 13.8 | 7.0 | 9.7 | 8.1 | 24.8 | 1-2 7.0 |
 | 6 | 11.5 | 6.5 | 9.1 | 10.3 | 15.3 | 1-2 6.5 |
@@ -60,17 +60,17 @@ cross-gradient pairs, a separate calibration).
 | 19 | 23.4 | 9.2 | 8.8 | 17.6 | 16.4 | 2-3 8.8 |
 | 20 | 23.6 | 8.8 | 9.4 | 16.8 | 17.7 | 1-2 8.8 |
 | 21 | 21.5 | 7.3 | 9.1 | 16.1 | 18.6 | 1-2 7.3 |
-| 22 | 19.5 | **5.5** | 10.4 | 13.9 | 18.6 | **1-2 5.5** |
+| 22 | 19.5 | 6.4 | 8.3 | 13.9 | 18.6 | 1-2 6.4 |
 | 23 | 19.3 | 6.2 | 11.8 | 16.4 | 20.5 | 1-2 6.2 |
 
 ## Structural seams (ΔE76 / WCAG contrast ratio)
 
 | gradient | 1-2 even tiles vs bg | 1-3 checkerboard | 2-3 odd tiles vs bg |
 |---:|---:|---:|---:|
-| 0 | 5.4 / 1.03 | 12.7 / 1.38 | 12.6 / 1.34 |
+| 0 | 6.6 / 1.15 | 12.7 / 1.38 | 8.0 / 1.21 |
 | 1 | 6.2 / 1.08 | 12.8 / 1.42 | 11.5 / 1.31 |
 | 2 | 6.0 / 1.10 | 12.9 / 1.43 | 11.6 / 1.31 |
-| 3 | 5.6 / 1.11 | 12.7 / 1.44 | 10.9 / 1.30 |
+| 3 | 6.6 / 1.19 | 12.7 / 1.44 | 7.9 / 1.21 |
 | 4 | 6.3 / 1.15 | 13.0 / 1.48 | 10.2 / 1.29 |
 | 5 | 7.0 / 1.11 | 12.1 / 1.44 | 9.7 / 1.30 |
 | 6 | 6.5 / 1.15 | 14.1 / 1.50 | 9.1 / 1.31 |
@@ -89,20 +89,9 @@ cross-gradient pairs, a separate calibration).
 | 19 | 9.2 / 1.17 | 14.0 / 1.49 | 8.8 / 1.27 |
 | 20 | 8.8 / 1.16 | 10.2 / 1.36 | 9.4 / 1.17 |
 | 21 | 7.3 / 1.13 | 13.5 / 1.45 | 9.1 / 1.29 |
-| 22 | 5.5 / 1.10 | 13.0 / 1.44 | 10.4 / 1.31 |
+| 22 | 6.4 / 1.16 | 13.0 / 1.44 | 8.3 / 1.24 |
 | 23 | 6.2 / 1.06 | 13.4 / 1.41 | 11.8 / 1.33 |
 
 ## Flags
 
-- **gradient 0, step 1-2: ΔE 5.4 < 6** — color_2 sits on top of color_1.
-  Suggested repair: color_2 `#f2eb82` → `#e8df7b` (moved toward color_3 `#d7cb71`)
-  → step 1-2 becomes ΔE 6.6, step 2-3 becomes ΔE 8.0.
-- **gradient 3, step 1-2: ΔE 5.6 < 6** — color_2 sits on top of color_1.
-  Suggested repair: color_2 `#bec761` → `#b9c05e` (moved toward color_3 `#aaae57`)
-  → step 1-2 becomes ΔE 6.6, step 2-3 becomes ΔE 7.9.
-- **gradient 22, step 1-2: ΔE 5.5 < 6** — color_2 sits on top of color_1.
-  Suggested repair: color_2 `#f0bb6e` → `#eab66b` (moved toward color_3 `#d6a261`)
-  → step 1-2 becomes ΔE 6.4, step 2-3 becomes ΔE 8.3.
-- **gradient 0, seam 1-2: contrast 1.03 < 1.06** —
-  near-identical luminance (ΔE may pass; hue is carrying it).
-  Needs an artist's eye — no computed repair.
+CLEAN — no gradient below the floors.
