@@ -16850,3 +16850,50 @@ of the font (OFL's Modified Version definition includes "changing
 formats"), so condition 5 (derivatives stay under OFL) applies to it —
 satisfied by shipping TTF + blob + license text together inside the exe,
 no relicensing of anything.
+
+## 9-slice small panels: the smeared border (run-axis LOD minification)
+
+The header-only tooltips (undo/redo/gear/skills — a single 64px row:
+`lineHeight(64)=76 + 2*24 padding = 124` tall, ~212-270 wide) rendered their
+top/bottom border lines as a vertical gray-gradient smear while large panels
+stayed crisp — at EVERY `render_resolution` preset, with the corners always
+correct. That last fact was the decisive clue: the mechanism had to be
+aspect-driven, not resolution-driven.
+
+Root cause (found via a temporary raylib host tool — `tools/
+nine_slice_probe.zig`, the `sdf_atlas_generator` pattern: same texture load
+pipeline incl. premultiply + generated mips + trilinear, same
+`beginTextureMode` + `beginMode2D(zoom = renderScale)` pass shape, same piece
+math + the sprite-pass LOD-bias shader, GPU readback exported as PNGs): a
+NARROW panel's top/bottom edge pieces span the whole source width
+(`texture_width - 2*corner` = 260 texels for the 124-tall tooltip) but land
+in a destination only ~88 reference px wide — the piece minifies ~3-6x
+along its RUN axis, dragging the texture LOD 2+ mip levels down where the
+10px border stroke is box-averaged to 1-2px; trilinear ghost-blends those
+thin levels into the sample → the smear. Large panels' edge pieces MAGNIFY
+along the run axis, so the LOD stays pinned by the cross axis's exact 2:1
+(clean mip1) → crisp. Corners are square 1:1 in both — always correct. The
+sprite-pass `spriteLodSnapBias` (renderScale term) can't fix it — the bias
+snaps the renderScale LOD term, not the piece's own aspect term (probe
+`current` vs `current_nobias` at 720p: the bias helps, the smear stays).
+
+The fix: `ui.nineSlicePiecesAtScale` (pure, unit-tested — element.zig)
+crops each edge/center piece's source span on its RUN axis to the
+destination's span in TARGET pixels (dest ref px × renderScale), window
+centered — the run-axis LOD term collapses to 0 and the border samples at
+its true thickness. Piece roles: top/bottom edges crop width, left/right
+crop height, center both, corners never (square 1:1 by construction); the
+CROSS axis is never cropped (already 1:1 in reference space — cropping it
+cuts into the border; the probe's first crop version did exactly that and
+the border vanished). `drawNineSlice` (draw.zig) now calls it with
+`backend.renderScale()`; `nineSlicePieces` de-pub'd (internal to element.zig
+now), the ui.zig facade swaps the re-export. Probe validation (undo-tooltip
+top border profile, `K`=border, digits=gray): current
+`KKKKK814www` (smeared) → crop `KKKKKK17www` — PIXEL-IDENTICAL to the large
+panel at 1080p, equal at every preset.
+
+The centered crop window is invisible in today's edge art (uniform along
+the run axis); when patterned panel art ships, the TODO 9-slice tiling
+refinement supersedes the window choice for narrow panels. The probe (tool
++ `zig build nine-slice-probe` wiring + PNGs) was temporary by agreement and
+is fully reverted — this entry carries the method + findings.

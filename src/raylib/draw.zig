@@ -552,8 +552,14 @@ fn drawSprite(
 
 /// 9-slice: every corner is drawn square (aspect-true 1:1) and the edges
 /// + center stretch to fill — the rect math lives in the pure, tested
-/// `ui.nineSlicePieces` (corners shrink proportionally on panels smaller
-/// than two slices instead of being squashed).
+/// `ui.nineSlicePiecesAtScale` (corners shrink proportionally on panels
+/// smaller than two slices instead of being squashed; edge/center source
+/// rects additionally cropped on their run axis to the destination's
+/// target-pixel span, fed the renderScale):
+/// a narrow panel's edge pieces otherwise minify 3-6x along the run axis,
+/// dragging the LOD into deep mips where the border stroke is
+/// box-averaged thin — the trilinear ghost-blend smeared small panels'
+/// top/bottom borders (the tooltip bug; probe history in DONE.md).
 fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkest: types.Color) void {
     const texture = backend.textures.getTexture(panel.sprite_id) orelse {
         rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
@@ -579,7 +585,7 @@ fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkes
         .width = panel.width,
         .height = panel.height,
     };
-    const pieces = ui.nineSlicePieces(texture.width, texture.height, destination);
+    const pieces = ui.nineSlicePiecesAtScale(texture.width, texture.height, destination, backend.renderScale());
     if (backend.diagnostics.shouldRecordFirstPanelDraw()) {
         diagnostics_mod.recordFirstPanelDraw(&backend.diagnostics, panel, texture, tint, theme_darkest, destination, pieces);
     }

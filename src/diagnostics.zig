@@ -70,7 +70,7 @@ pub const SpriteDrawValues = struct {
 /// First 9-slice-panel-draw probe values — the full draw state (texture,
 /// tint before + after default-tint resolution, destination, all nine
 /// source/destination rect pairs) to diff against the control. The pieces
-/// are the pure `ui.nineSlicePieces` output (raylib-free — same seam).
+/// are the pure `ui.nineSlicePiecesAtScale` output (raylib-free — same seam).
 pub const PanelDrawValues = struct {
     sprite_id: []const u8,
     texture_id: u32,

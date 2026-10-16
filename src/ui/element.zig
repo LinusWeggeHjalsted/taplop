@@ -433,7 +433,7 @@ pub const NineSlicePiece = struct {
 /// right, bottom-left, bottom, bottom-right); degenerate pieces (zero size,
 /// only possible on a panel smaller than 2× the corner size) are returned
 /// with zero extents for the caller to skip.
-pub fn nineSlicePieces(
+fn nineSlicePieces(
     texture_width: i32,
     texture_height: i32,
     destination: Rectangle,
@@ -481,6 +481,74 @@ pub fn nineSlicePieces(
         }
     }
     return pieces;
+}
+
+/// Nine-slice pieces for drawing under render-target minification: the
+/// `nineSlicePieces` math plus the RUN-axis source crop. `render_scale` is
+/// the render target's zoom (target px per reference px — the UI-pass
+/// camera zoom, `RaylibBackend.renderScale`).
+///
+/// WHY the crop: a NARROW panel's top/bottom edge pieces span the whole
+/// source width (texture_width - 2*corner texels) but land in a destination
+/// only a fraction as wide — the piece minifies 3-6x along its run axis,
+/// dragging the texture LOD 2+ mip levels down where the border stroke is
+/// box-averaged to a fraction of its true thickness; trilinear ghost-blends
+/// those thin levels into the sample and the border renders as a
+/// gray-gradient smear (the small-tooltip 9-slice bug; probe history in
+/// DONE.md). Cropping the source span to the destination's span in TARGET
+/// pixels keeps the run-axis LOD term at 0 (<= 1:1 texel:pixel), so the
+/// border samples at its true thickness — small panels render as crisp as
+/// large ones, at every render_resolution preset.
+///
+/// Piece roles: corners are never cropped (square 1:1 in both spaces by
+/// construction); top/bottom edges crop their width, left/right edges
+/// their height, the center both. The CROSS axis is never cropped (already
+/// 1:1 in reference space — cropping it would cut into the border). The
+/// crop window is centered along the run axis: the shipped edge art is
+/// uniform there, so the window choice is invisible; when patterned edge
+/// art ships, the tiling refinement supersedes it.
+pub fn nineSlicePiecesAtScale(
+    texture_width: i32,
+    texture_height: i32,
+    destination: Rectangle,
+    render_scale: f32,
+) [9]NineSlicePiece {
+    var pieces = nineSlicePieces(texture_width, texture_height, destination);
+    for (&pieces, 0..) |*piece, index| {
+        const is_corner = index == 0 or index == 2 or index == 6 or index == 8;
+        if (is_corner) continue;
+        const is_center = index == 4;
+        const crop_width = is_center or index == 1 or index == 7;
+        const crop_height = is_center or index == 3 or index == 5;
+        if (crop_width) {
+            const span = cropRunAxis(piece.source.x, piece.source.width, piece.destination.width, render_scale);
+            piece.source.x = span.offset;
+            piece.source.width = span.span;
+        }
+        if (crop_height) {
+            const span = cropRunAxis(piece.source.y, piece.source.height, piece.destination.height, render_scale);
+            piece.source.y = span.offset;
+            piece.source.height = span.span;
+        }
+    }
+    return pieces;
+}
+
+const CroppedSpan = struct { offset: i32, span: i32 };
+
+/// Clamp a run-axis source span to the destination's span in TARGET pixels
+/// (destination ref px * render_scale), window centered. No-op when the
+/// source span already fits (the destination magnifies or matches along the
+/// run axis) or the destination span degenerates to zero.
+fn cropRunAxis(source_offset: i32, source_span: i32, destination_span: i32, render_scale: f32) CroppedSpan {
+    const destination_target_span = @as(f32, @floatFromInt(destination_span)) * render_scale;
+    const target_span: i32 = @intFromFloat(@round(destination_target_span));
+    if (target_span <= 0 or source_span <= target_span)
+        return .{ .offset = source_offset, .span = source_span };
+    return .{
+        .offset = source_offset + @divTrunc(source_span - target_span, 2),
+        .span = target_span,
+    };
 }
 
 test "nineSlicePieces: large panel keeps full square slices" {
@@ -551,6 +619,49 @@ test "nineSlicePieces: pieces tile the destination exactly" {
         try std.testing.expectEqual(destination.height, covered_height);
     }
     try std.testing.expectEqual(destination.width, covered_width);
+}
+
+test "nineSlicePiecesAtScale: narrow tooltip edge pieces crop to the destination's target span" {
+    // The undo tooltip's geometry (a header-only tooltip: 212x124 — text
+    // width + padding, lineHeight(64) + padding) at the 1080p render scale
+    // (0.5): corner 62, the top/bottom edge sources span 260 texels but the
+    // destination run spans only 88 reference px (44 target px) — without
+    // the crop the piece minifies 260:44 along the run axis and the border
+    // smears through deep mips.
+    const pieces = nineSlicePiecesAtScale(384, 384, .{ .x = 200, .y = 200, .width = 212, .height = 124 }, 0.5);
+    // Top edge: source cropped to 44 texels, centered in the 260-texel
+    // middle column (x 62 + (260-44)/2 = 170), cross axis untouched.
+    try std.testing.expectEqual(Rectangle{ .x = 170, .y = 0, .width = 44, .height = 62 }, pieces[1].source);
+    try std.testing.expectEqual(Rectangle{ .x = 262, .y = 200, .width = 88, .height = 62 }, pieces[1].destination);
+    // Bottom edge: the same crop in the bottom slice.
+    try std.testing.expectEqual(Rectangle{ .x = 170, .y = 322, .width = 44, .height = 62 }, pieces[7].source);
+    // Corners never cropped (square 1:1 by construction).
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 0, .width = 62, .height = 62 }, pieces[0].source);
+    try std.testing.expectEqual(Rectangle{ .x = 322, .y = 0, .width = 62, .height = 62 }, pieces[2].source);
+    // Left/right edges are degenerate on a 124-tall panel (corner = h/2) —
+    // zero-span destinations stay zero.
+    try std.testing.expectEqual(@as(i32, 0), pieces[3].destination.height);
+    try std.testing.expectEqual(@as(i32, 0), pieces[5].destination.height);
+}
+
+test "nineSlicePiecesAtScale: tall narrow panel crops the left/right edges" {
+    // 212x300: corner 106, the left/right edge sources span 172 texels but
+    // the destination run spans only 88 reference px (44 target); the
+    // top/bottom edges are degenerate (corner = w/2).
+    const pieces = nineSlicePiecesAtScale(384, 384, .{ .x = 0, .y = 0, .width = 212, .height = 300 }, 0.5);
+    // Left edge: height cropped 172 -> 44, centered (y 106 + (172-44)/2).
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 170, .width = 106, .height = 44 }, pieces[3].source);
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 106, .width = 106, .height = 88 }, pieces[3].destination);
+    try std.testing.expectEqual(@as(i32, 0), pieces[1].destination.width);
+}
+
+test "nineSlicePiecesAtScale: large panel pieces are unchanged" {
+    // A wide panel's edge pieces MAGNIFY along the run axis (the source
+    // span is the smaller side) — the crop is a no-op for every piece.
+    const destination = Rectangle{ .x = 100, .y = 200, .width = 1024, .height = 512 };
+    const uncropped = nineSlicePieces(384, 384, destination);
+    const scaled = nineSlicePiecesAtScale(384, 384, destination, 0.5);
+    for (uncropped, scaled) |before, after| try std.testing.expectEqual(before, after);
 }
 
 /// A clickable slot (inventory cell, gear slot, skill bar slot).
