@@ -16797,9 +16797,13 @@ most contrast-critical adjacent roles (even tiles at 1, background at 2).
 
 The unfinished FreeZilla handwriting face (76 of 95 ASCII glyphs; the
 0.5em fallback in `measureSpanWidth` papered over the gaps) is replaced by
-Cause Regular (`assets/fonts/cause-regular.ttf` from
+Cause Medium (`assets/fonts/cause-medium.ttf` from
 https://github.com/xconsau/Cause — Saurabh Sharma / intothedesign, © The
-Cause Project Authors). The migration surface was tiny by construction: the
+Cause Project Authors). Weight chosen by in-game comparison: Regular
+shipped first for parity, Medium read better against the 8px black
+outline (a face flip is a two-path change — build.zig's generator input +
+text.zig's fallback read — so iterating on weights is cheap). The
+migration surface was tiny by construction: the
 font's identity lived in exactly two sites — `build.zig`'s SDF-generator
 input (dependency-tracked, so the build-time SDF atlas regenerated
 automatically) and `src/raylib/text.zig`'s runtime fallback read. All other

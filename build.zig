@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
     const sdf_generator_run = b.addRunArtifact(sdf_generator_exe);
     // Input file (dependency-tracked: editing the font regenerates the atlas)
     // then output blob path.
-    sdf_generator_run.addFileArg(b.path("assets/fonts/cause-regular.ttf"));
+    sdf_generator_run.addFileArg(b.path("assets/fonts/cause-medium.ttf"));
     const sdf_blob = sdf_generator_run.addOutputFileArg("sdf_font.bin");
 
     // Wrapper module: package root = write-files dir, so @embedFile reaches
