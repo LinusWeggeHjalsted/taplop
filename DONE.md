@@ -16916,10 +16916,11 @@ machine-walked sources, no hand-maintained list:
   separately: `ui.effectIconSpriteId` resolves to the skill icon, the
   effects/<x> overlay, or the display name (not a sprite id) — the first two
   are already covered, the third is not id-shaped.
-- **Every sprite-id string literal under src/** (the tool's own file
-  excluded — its manual notes would self-report; test fixtures included,
-  conservative). This is the truth for the UI/world icon set — no enum to
-  walk.
+- **Every sprite-id string literal in shipped code under src/** (the
+  tool's own file excluded — its manual notes would self-report; test
+  blocks excluded — fixture ids are structure-asserted, never loaded, and
+  would put phantom assets on the shopping list). This is the truth for
+  the UI/world icon set — no enum to walk.
 - **Every `sprite <stem>` reference in shipped data** (levels, hubs,
   decorations.txt, editor_defaults.txt), mapped by section header:
   Entities -> entities/, Decorations -> decorations/, NPCs -> npcs/ (the
@@ -16931,13 +16932,18 @@ when its condition lands): the redo-button `ui/icon_undo` double duty
 note), and the `npcs/` palette being future stock for the campaign
 editor's npc_type model.
 
-First-run findings: **12 MISSING** (the known set — ui/icon_swap,
-ui/momentum, ui/icon_undo, ui/icon_playtest, ui/icon_validate — plus
-`ui/close_button` from element.zig and six editor-shell preview
-composition sprites: custom_fighter, custom_helmet, skeleton_armor,
-moss_1, moss_vine, ruin_1_moss), and **8 orphans** — the six new enemies
-(frog/ghoul/mushroom/snake/specter + raider — shipped art no official
-content spawns yet) + the two NPC sprites. The TODO's hand-maintained
+First-run findings: **6 MISSING** (ui/icon_swap, ui/momentum,
+ui/icon_undo, ui/icon_playtest, ui/icon_validate — plus the
+report-discovered ui/close_button from element.zig), and **9 orphans** —
+the six new enemies (frog/ghoul/mushroom/snake/specter + raider — shipped
+art no official content spawns yet), plain skeleton, and the two NPC
+sprites. The first cut of the literal scanner INCLUDED test blocks
+("conservative"), which put six phantom ids on the shopping list (the
+editor-shell palette-composition test's fixtures — custom_fighter,
+skeleton_armor, moss_vine etc. — never loaded, never drawn); the user
+caught it asking what custom_fighter was, and the scanner now excludes
+test blocks exactly (zig-fmt'd test declarations are top-level and close
+with a lone `}` at column 0). The TODO's hand-maintained
 missing-art notes (Cross-cutting polish, Platform Layer's Missing-art
 audit, the View section's placeholder-id list) now point at the report
 instead; the NEXT-UP art-report item is checked off. AGENTS' machine-walked

@@ -9,9 +9,10 @@
 //!      items via the Item/WeaponType tags — a mirror of ui's
 //!      itemIconSpriteId closed set — and weapons via WeaponType — a mirror
 //!      of view.zig's `weapons/{enemy_}?<type>` derivation).
-//!   2. Every sprite-id string literal under src/ (its own file excluded;
-//!      test fixtures included — conservative: an id only tests use still
-//!      reports consumed).
+//!   2. Every sprite-id string literal in shipped code under src/ (the
+//!      tool's own file excluded; test blocks excluded — fixture ids are
+//!      structure-asserted, never loaded, and would put phantom assets on
+//!      the shopping list).
 //!   3. Every `sprite <stem>` reference in shipped data (levels, hubs,
 //!      decorations.txt, editor defaults), mapped by section: Entities ->
 //!      entities/, Decorations -> decorations/, NPCs -> npcs/.
@@ -170,12 +171,12 @@ pub fn main() !void {
         \\at its destination rect (no fallbacks), so the status column is the
         \\complete truth about what is done and what is missing.
         \\
-        \\Included consumption sources (conservative — an id used only by a
-        \\test still reports consumed): engine enums + derivations (skills,
-        \\effects, items, weapons), every sprite-id string literal under
-        \\`src/`, every `sprite <stem>` reference in shipped data
-        \\(levels/hubs/decorations/editor defaults, mapped by section:
-        \\Entities -> entities/, Decorations -> decorations/, NPCs -> npcs/).
+        \\Included consumption sources: engine enums + derivations (skills,
+        \\effects, items, weapons), every sprite-id string literal in shipped
+        \\code (test blocks excluded — fixture ids are not game consumption),
+        \\and every `sprite <stem>` reference in shipped data (levels/hubs/
+        \\decorations/editor defaults, mapped by section: Entities ->
+        \\entities/, Decorations -> decorations/, NPCs -> npcs/).
         \\
         \\Hand-maintained notes (each retires when its condition lands):
         \\
@@ -323,27 +324,54 @@ fn isFile(io: std.Io, dir: std.Io.Dir, path: []const u8) bool {
 
 /// Scan source bytes for quoted string literals that are sprite ids (a
 /// namespace prefix + [a-z0-9_] stem). Literal consumption is the truth for
-/// the UI/world icon set — there is no enum to walk.
+/// the UI/world icon set — there is no enum to walk. Test blocks are
+/// EXCLUDED (they are not game consumption: a test's fixture ids are
+/// structure-asserted, never loaded — reporting them would put phantom
+/// assets on the shopping list, the custom_fighter/moss_vine class). Zig
+/// source is zig-fmt'd, so the exclusion is exact: test declarations are
+/// top-level (`test ...` at column 0) and their block closes with a lone
+/// `}` at column 0.
 fn scanSourceLiterals(
     consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
     allocator: std.mem.Allocator,
     bytes: []const u8,
     path: []const u8,
 ) !void {
+    var skipping_test_block = false;
+    var line_iterator = std.mem.splitScalar(u8, bytes, '\n');
+    while (line_iterator.next()) |line| {
+        if (skipping_test_block) {
+            if (std.mem.eql(u8, line, "}")) skipping_test_block = false;
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "test ")) {
+            skipping_test_block = true;
+            continue;
+        }
+        try scanLineLiterals(consumed, allocator, line, path);
+    }
+}
+
+fn scanLineLiterals(
+    consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
+    allocator: std.mem.Allocator,
+    line: []const u8,
+    path: []const u8,
+) !void {
     var i: usize = 0;
-    while (i < bytes.len) {
-        if (bytes[i] != '"') {
+    while (i < line.len) {
+        if (line[i] != '"') {
             i += 1;
             continue;
         }
         const start = i + 1;
         var end = start;
-        while (end < bytes.len and bytes[end] != '"' and bytes[end] != '\n') end += 1;
-        if (end >= bytes.len or bytes[end] != '"') {
+        while (end < line.len and line[end] != '"' and line[end] != '\n') end += 1;
+        if (end >= line.len or line[end] != '"') {
             i = start;
             continue;
         }
-        const literal = bytes[start..end];
+        const literal = line[start..end];
         if (idNamespace(literal) != null) {
             const description = try std.fmt.allocPrint(allocator, "code-referenced ({s})", .{path});
             try addConsumed(consumed, allocator, literal, description);

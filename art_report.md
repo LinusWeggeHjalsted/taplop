@@ -15,12 +15,12 @@ assets at BUILD time, so a repo copy needs a rebuild to show up.
 at its destination rect (no fallbacks), so the status column is the
 complete truth about what is done and what is missing.
 
-Included consumption sources (conservative — an id used only by a
-test still reports consumed): engine enums + derivations (skills,
-effects, items, weapons), every sprite-id string literal under
-`src/`, every `sprite <stem>` reference in shipped data
-(levels/hubs/decorations/editor defaults, mapped by section:
-Entities -> entities/, Decorations -> decorations/, NPCs -> npcs/).
+Included consumption sources: engine enums + derivations (skills,
+effects, items, weapons), every sprite-id string literal in shipped
+code (test blocks excluded — fixture ids are not game consumption),
+and every `sprite <stem>` reference in shipped data (levels/hubs/
+decorations/editor defaults, mapped by section: Entities ->
+entities/, Decorations -> decorations/, NPCs -> npcs/).
 
 Hand-maintained notes (each retires when its condition lands):
 - `ui/icon_undo` serves double duty as the redo button's glyph (drawn
@@ -34,12 +34,6 @@ lands; today hub NPCs render through the entity path.
 
 ## MISSING — the shopping list
 
-- `assets/entities/custom_fighter.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/entities/custom_helmet.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/entities/skeleton_armor.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/decorations/moss_1.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/decorations/moss_vine.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/decorations/ruin_1_moss.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_playtest.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_swap.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
@@ -47,20 +41,16 @@ lands; today hub NPCs render through the entity path.
 - `assets/ui/icon_validate.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/ui/momentum.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
 
-## entities (12 consumed)
+## entities (8 consumed)
 
-- `assets/entities/bear.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
+- `assets/entities/bear.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_3.txt) **[shipped]**
 - `assets/entities/crab.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
-- `assets/entities/custom_fighter.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/entities/custom_helmet.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/entities/giant_crab.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
 - `assets/entities/player.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
-- `assets/entities/skeleton.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
-- `assets/entities/skeleton_1.png` — code-referenced (src/types.zig) **[shipped]**
+- `assets/entities/skeleton_1.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
 - `assets/entities/skeleton_2.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
 - `assets/entities/skeleton_3.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
-- `assets/entities/skeleton_armor.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/entities/wolf.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
+- `assets/entities/wolf.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
 
 ## weapons (12 consumed)
 
@@ -144,14 +134,11 @@ lands; today hub NPCs render through the entity path.
 - `assets/effects/reflect.png` — world overlay for the effect **[shipped]**
 - `assets/effects/stun.png` — code-referenced (src/view.zig) **[shipped]**
 
-## decorations (51 consumed)
+## decorations (48 consumed)
 
-- `assets/decorations/moss_1.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/decorations/moss_vine.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/decorations/ruin_1.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
+- `assets/decorations/ruin_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_1.txt) **[shipped]**
 - `assets/decorations/ruin_10.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/ruin_11.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
-- `assets/decorations/ruin_1_moss.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/decorations/ruin_2.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_2.txt) **[shipped]**
 - `assets/decorations/ruin_3.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/ruin_4.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_2.txt) **[shipped]**
@@ -166,17 +153,17 @@ lands; today hub NPCs render through the entity path.
 - `assets/decorations/statue_4.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
 - `assets/decorations/statue_5.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/stone_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
-- `assets/decorations/stone_2.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
+- `assets/decorations/stone_2.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/stone_3.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/stone_4.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/stone_5.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/stone_6.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
 - `assets/decorations/tent.png` — content-referenced (data/decorations.txt) **[shipped]**
-- `assets/decorations/tree_1.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
-- `assets/decorations/tree_1_canopy.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
-- `assets/decorations/tree_1_grass.png` — code-referenced (src/view.zig) **[shipped]**
-- `assets/decorations/tree_1_grass_back.png` — code-referenced (src/view.zig) **[shipped]**
-- `assets/decorations/tree_1_moss.png` — code-referenced (src/view.zig) **[shipped]**
+- `assets/decorations/tree_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
+- `assets/decorations/tree_1_canopy.png` — content-referenced (data/decorations.txt) **[shipped]**
+- `assets/decorations/tree_1_grass.png` — content-referenced (data/decorations.txt) **[shipped]**
+- `assets/decorations/tree_1_grass_back.png` — content-referenced (data/decorations.txt) **[shipped]**
+- `assets/decorations/tree_1_moss.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_2.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_2_canopy.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_2_grass.png` — content-referenced (data/decorations.txt) **[shipped]**
@@ -204,7 +191,7 @@ lands; today hub NPCs render through the entity path.
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/health_globe.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/health_globe_border.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
-- `assets/ui/icon_gear.png` — code-referenced (src/types.zig) **[shipped]**
+- `assets/ui/icon_gear.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/icon_inventory.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/icon_options.png` — code-referenced (src/ui/screens.zig) **[shipped]**
 - `assets/ui/icon_playtest.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
@@ -220,7 +207,7 @@ lands; today hub NPCs render through the entity path.
 - `assets/ui/material_metal.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/material_wood.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/momentum.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
-- `assets/ui/panel.png` — code-referenced (src/handler_tests_editor.zig) **[shipped]**
+- `assets/ui/panel.png` — code-referenced (src/ui/screens.zig) **[shipped]**
 - `assets/ui/salvage_tool.png` — code-referenced (src/ui/panels.zig) **[shipped]**
 - `assets/ui/skill_button.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
 - `assets/ui/skill_slot_empty.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
@@ -236,7 +223,7 @@ lands; today hub NPCs render through the entity path.
 - `assets/world/flag_pole.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/ground_items.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/hit_flash.png` — code-referenced (src/view.zig) **[shipped]**
-- `assets/world/tile.png` — code-referenced (src/types.zig) **[shipped]**
+- `assets/world/tile.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
 
 ## Shipped but unconsumed
 
@@ -247,6 +234,7 @@ or art nothing references — the artist's call.
 **entities:**
 
 - `assets/entities/raider.png` — shipped, nothing consumes it
+- `assets/entities/skeleton.png` — shipped, nothing consumes it
 - `assets/entities/snake.png` — shipped, nothing consumes it
 - `assets/entities/frog.png` — shipped, nothing consumes it
 - `assets/entities/mushroom.png` — shipped, nothing consumes it
