@@ -47,6 +47,7 @@ const screenRect = ui_element.screenRect;
 const bottom_bar_height = ui_element.bottom_bar_height;
 const close_button_sprite_id = ui_element.close_button_sprite_id;
 const close_button_size = ui_element.close_button_size;
+const button_background_sprite_id = emit.button_background_sprite_id;
 const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 const spanRow = @import("tooltip.zig").spanRow;
 
@@ -94,7 +95,7 @@ pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
 }
 
 /// Which editor palette group's tool cells contain `position`, if any.
-/// Tool cells are Buttons whose sprite is `ui/button_background_small` (the
+/// Tool cells are Buttons whose sprite is `ui/button_background` (the
 /// header buttons are spriteless over panels and the "+" cells are
 /// panels — neither matches), so detection matches those in the
 /// bottom-bar band and
@@ -112,7 +113,7 @@ pub fn editorPaletteGroupAt(
     for (ui_elements) |element| switch (element) {
         .button => |button| {
             const sprite_id = button.sprite_id orelse continue;
-            if (!std.mem.eql(u8, sprite_id, small_button_background_sprite_id)) continue;
+            if (!std.mem.eql(u8, sprite_id, button_background_sprite_id)) continue;
             if (button.screen_position.y < types.reference_height - bottom_bar_height) continue;
             defer cell_index += 1;
             const group = editorPaletteGroupOfCell(editor, collapsed, cell_index) orelse continue;
@@ -164,7 +165,7 @@ pub fn scaleToFit(cell: Rectangle, sprite_width: i32, sprite_height: i32) Rectan
     return cell.placeCenter(fitted_width, fitted_height);
 }
 
-/// The button layer of an editor tool cell: a `ui/button_background_small`
+/// The button layer of an editor tool cell: a `ui/button_background`
 /// Button tinted as a button (player gradient index 5) carrying the tool's
 /// action + payload + tooltip. Selecting the tool makes it active; the
 /// ACTIVE tool's button is highlighted (lightest edge outline), as is the
@@ -181,7 +182,7 @@ fn emitEditorToolCellButton(
     active_tool: types.EditorToolId,
 ) !void {
     try elements.append(allocator, .{ .button = .{
-        .sprite_id = small_button_background_sprite_id,
+        .sprite_id = button_background_sprite_id,
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,
@@ -193,7 +194,7 @@ fn emitEditorToolCellButton(
     } });
 }
 
-/// Emit one editor tool cell: a `ui/button_background_small` Button tinted as a
+/// Emit one editor tool cell: a `ui/button_background` Button tinted as a
 /// button (player gradient index 5) carrying the tool's action + payload +
 /// tooltip + input, with the tool's graphic scaled to fit (aspect-preserved,
 /// centered, then multiplied by `graphic_scale`) on top — the icon passes
@@ -1514,7 +1515,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     for (elements.items) |element| switch (element) {
         .button => |button| {
             if (button.sprite_id != null and
-                std.mem.eql(u8, button.sprite_id.?, small_button_background_sprite_id) and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                 button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
                 background_count += 1;
@@ -1612,7 +1613,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
                 try std.testing.expect(std.meta.activeTag(button.payload.?) == .editor_tool);
             }
             if (button.sprite_id != null and
-                std.mem.eql(u8, button.sprite_id.?, small_button_background_sprite_id) and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                 button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
                 // Cells emit in order: Select, Tile, enemy, …
@@ -1931,7 +1932,7 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
                 }
             }
             if (button.sprite_id != null and
-                std.mem.eql(u8, button.sprite_id.?, small_button_background_sprite_id) and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                 button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
                 bar_band_tool_cells += 1;
@@ -2125,7 +2126,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
             .button => |button| if (button.sprite_id != null and std.mem.eql(
                 u8,
                 button.sprite_id.?,
-                small_button_background_sprite_id,
+                button_background_sprite_id,
             ) and button.screen_position.y >= types.reference_height - bottom_bar_height) {
                 count += 1;
             },
@@ -2177,7 +2178,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         for (elements.items) |element| switch (element) {
             .button => |button| {
                 if (button.sprite_id != null and
-                    std.mem.eql(u8, button.sprite_id.?, small_button_background_sprite_id) and
+                    std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                     button.screen_position.y >= types.reference_height - bottom_bar_height)
                 {
                     if (index == 0) {

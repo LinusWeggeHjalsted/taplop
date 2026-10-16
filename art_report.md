@@ -34,7 +34,6 @@ lands; today hub NPCs render through the entity path.
 
 ## MISSING — the shopping list
 
-- `assets/ui/button_background_small.png` — code-referenced (src/ui/emit.zig) **[MISSING (draws magenta)]**
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_playtest.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_swap.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
@@ -48,10 +47,10 @@ lands; today hub NPCs render through the entity path.
 - `assets/entities/crab.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
 - `assets/entities/giant_crab.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
 - `assets/entities/player.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
-- `assets/entities/skeleton_1.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
+- `assets/entities/skeleton_1.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
 - `assets/entities/skeleton_2.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
 - `assets/entities/skeleton_3.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
-- `assets/entities/wolf.png` — content-referenced (data/campaigns/main_campaign/missions/seatown/level_3.txt) **[shipped]**
+- `assets/entities/wolf.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_3.txt) **[shipped]**
 
 ## weapons (12 consumed)
 
@@ -137,30 +136,30 @@ lands; today hub NPCs render through the entity path.
 
 ## decorations (48 consumed)
 
-- `assets/decorations/ruin_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_1.txt) **[shipped]**
-- `assets/decorations/ruin_10.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
+- `assets/decorations/ruin_1.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
+- `assets/decorations/ruin_10.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
 - `assets/decorations/ruin_11.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
 - `assets/decorations/ruin_2.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_2.txt) **[shipped]**
-- `assets/decorations/ruin_3.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
-- `assets/decorations/ruin_4.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_2.txt) **[shipped]**
-- `assets/decorations/ruin_5.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
-- `assets/decorations/ruin_6.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
-- `assets/decorations/ruin_7.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
-- `assets/decorations/ruin_8.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
-- `assets/decorations/ruin_9.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
+- `assets/decorations/ruin_3.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
+- `assets/decorations/ruin_4.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
+- `assets/decorations/ruin_5.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_3.txt) **[shipped]**
+- `assets/decorations/ruin_6.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_2.txt) **[shipped]**
+- `assets/decorations/ruin_7.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
+- `assets/decorations/ruin_8.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
+- `assets/decorations/ruin_9.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
 - `assets/decorations/statue_1.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/statue_2.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/statue_3.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_2.txt) **[shipped]**
 - `assets/decorations/statue_4.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
 - `assets/decorations/statue_5.png` — content-referenced (data/decorations.txt) **[shipped]**
-- `assets/decorations/stone_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
-- `assets/decorations/stone_2.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
-- `assets/decorations/stone_3.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
-- `assets/decorations/stone_4.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
+- `assets/decorations/stone_1.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_1.txt) **[shipped]**
+- `assets/decorations/stone_2.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
+- `assets/decorations/stone_3.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
+- `assets/decorations/stone_4.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
 - `assets/decorations/stone_5.png` — content-referenced (data/decorations.txt) **[shipped]**
-- `assets/decorations/stone_6.png` — content-referenced (data/campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt) **[shipped]**
+- `assets/decorations/stone_6.png` — content-referenced (data/campaigns/main_campaign/missions/beginnings/level_3.txt) **[shipped]**
 - `assets/decorations/tent.png` — content-referenced (data/decorations.txt) **[shipped]**
-- `assets/decorations/tree_1.png` — content-referenced (data/campaigns/main_campaign/missions/wetlands/level_3.txt) **[shipped]**
+- `assets/decorations/tree_1.png` — content-referenced (data/campaigns/main_campaign/missions/forest/level_3.txt) **[shipped]**
 - `assets/decorations/tree_1_canopy.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_1_grass.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_1_grass_back.png` — content-referenced (data/decorations.txt) **[shipped]**
@@ -189,7 +188,7 @@ lands; today hub NPCs render through the entity path.
 ## ui (27 consumed)
 
 - `assets/ui/button_background.png` — code-referenced (src/ui/emit.zig) **[shipped]**
-- `assets/ui/button_background_small.png` — code-referenced (src/ui/emit.zig) **[MISSING (draws magenta)]**
+- `assets/ui/button_background_small.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/health_globe.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/health_globe_border.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
@@ -202,17 +201,17 @@ lands; today hub NPCs render through the entity path.
 - `assets/ui/icon_swap.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_undo.png` — code-referenced (src/ui/screens.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_validate.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
-- `assets/ui/item_slot.png` — code-referenced (src/ui/panels.zig) **[shipped]**
+- `assets/ui/item_slot.png` — code-referenced (src/handler_tests_gear.zig) **[shipped]**
 - `assets/ui/material_cloth.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/material_knowledge.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/material_leather.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/material_metal.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/material_wood.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/momentum.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
-- `assets/ui/panel.png` — code-referenced (src/ui/screens.zig) **[shipped]**
+- `assets/ui/panel.png` — code-referenced (src/raylib/draw.zig) **[shipped]**
 - `assets/ui/salvage_tool.png` — code-referenced (src/ui/panels.zig) **[shipped]**
-- `assets/ui/skill_button.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
-- `assets/ui/skill_slot_empty.png` — code-referenced (src/ui/editor_pickers.zig) **[shipped]**
+- `assets/ui/skill_button.png` — code-referenced (src/handler_tests_gear.zig) **[shipped]**
+- `assets/ui/skill_slot_empty.png` — code-referenced (src/ui/emit.zig) **[shipped]**
 - `assets/ui/turn_attack.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/turn_move.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 
@@ -221,11 +220,11 @@ lands; today hub NPCs render through the entity path.
 - `assets/world/aggro.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/entity_health_bar_background.png` — code-referenced (src/raylib/draw.zig) **[shipped]**
 - `assets/world/entity_health_bar_outline.png` — code-referenced (src/raylib/draw.zig) **[shipped]**
-- `assets/world/flag.png` — code-referenced (src/view.zig) **[shipped]**
+- `assets/world/flag.png` — code-referenced (src/raylib/draw.zig) **[shipped]**
 - `assets/world/flag_pole.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/ground_items.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/hit_flash.png` — code-referenced (src/view.zig) **[shipped]**
-- `assets/world/tile.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
+- `assets/world/tile.png` — code-referenced (src/raylib/backend.zig) **[shipped]**
 
 ## Shipped but unreferenced by shipped content
 
@@ -237,13 +236,13 @@ editor). Other namespaces here are genuinely unreferenced.
 
 **entities:**
 
-- `assets/entities/raider.png` — shipped, not referenced by shipped content (editor palette stock)
-- `assets/entities/skeleton.png` — shipped, not referenced by shipped content (editor palette stock)
-- `assets/entities/snake.png` — shipped, not referenced by shipped content (editor palette stock)
-- `assets/entities/frog.png` — shipped, not referenced by shipped content (editor palette stock)
 - `assets/entities/mushroom.png` — shipped, not referenced by shipped content (editor palette stock)
-- `assets/entities/ghoul.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/frog.png` — shipped, not referenced by shipped content (editor palette stock)
 - `assets/entities/specter.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/skeleton.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/ghoul.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/snake.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/raider.png` — shipped, not referenced by shipped content (editor palette stock)
 
 **npcs:**
 
