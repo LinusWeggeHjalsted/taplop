@@ -16897,3 +16897,48 @@ the run axis); when patterned panel art ships, the TODO 9-slice tiling
 refinement supersedes the window choice for narrow panels. The probe (tool
 + `zig build nine-slice-probe` wiring + PNGs) was temporary by agreement and
 is fully reverted — this entry carries the method + findings.
+
+## Art report — the machine-derived sprite inventory (scripts/art_report.sh)
+
+`src/art_report.zig` (`zig build art-report`, wrapped by `scripts/
+art_report.sh` — the sound_report.sh pattern) enumerates every sprite id the
+game can consume and writes `art_report.md`: per-id status (shipped /
+shadowed / MISSING-draws-magenta — no fallbacks, so the status column is
+the whole truth) plus the shipped-but-unconsumed orphans. Three
+machine-walked sources, no hand-maintained list:
+
+- **Engine enums + derivation shapes:** skills via `ui.skillIconSpriteId`
+  (called per SkillId — zero drift), effect overlays via each definition's
+  `effect_sprite` (via `generated_lookups`), items via the Item-union tags +
+  WeaponType subtags (a mirror of `ui.itemIconSpriteId`'s closed set), and
+  weapons via WeaponType (a mirror of view.zig's
+  `weapons/{enemy_}?<type>` derivation). The effect ICON ids are not walked
+  separately: `ui.effectIconSpriteId` resolves to the skill icon, the
+  effects/<x> overlay, or the display name (not a sprite id) — the first two
+  are already covered, the third is not id-shaped.
+- **Every sprite-id string literal under src/** (the tool's own file
+  excluded — its manual notes would self-report; test fixtures included,
+  conservative). This is the truth for the UI/world icon set — no enum to
+  walk.
+- **Every `sprite <stem>` reference in shipped data** (levels, hubs,
+  decorations.txt, editor_defaults.txt), mapped by section header:
+  Entities -> entities/, Decorations -> decorations/, NPCs -> npcs/ (the
+  loaders' namespace derivation mirrored).
+
+Two hand-maintained notes live IN the tool (`manual_notes`, each retires
+when its condition lands): the redo-button `ui/icon_undo` double duty
+(icon_redo is not code-referenced — the TODO wrinkle, resolved by the
+note), and the `npcs/` palette being future stock for the campaign
+editor's npc_type model.
+
+First-run findings: **12 MISSING** (the known set — ui/icon_swap,
+ui/momentum, ui/icon_undo, ui/icon_playtest, ui/icon_validate — plus
+`ui/close_button` from element.zig and six editor-shell preview
+composition sprites: custom_fighter, custom_helmet, skeleton_armor,
+moss_1, moss_vine, ruin_1_moss), and **8 orphans** — the six new enemies
+(frog/ghoul/mushroom/snake/specter + raider — shipped art no official
+content spawns yet) + the two NPC sprites. The TODO's hand-maintained
+missing-art notes (Cross-cutting polish, Platform Layer's Missing-art
+audit, the View section's placeholder-id list) now point at the report
+instead; the NEXT-UP art-report item is checked off. AGENTS' machine-walked
+-truth pattern list gained `art_report.zig`.

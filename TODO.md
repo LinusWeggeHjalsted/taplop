@@ -27,11 +27,11 @@ Test by running `zig build run` and clicking through.
   "Combat Log" below.
 - [x] `toggle_options_menu` rename — DONE: the action is `escape` now (see
       DONE.md; existing installs self-heal via the warn+drop at load).
-- **Art report (machine-derived asset inventory)** — a scripts/art_report.sh
-  (the sound_report.sh pattern): every sprite id the game can consume with
-  shipped/placeholder/missing status, resolved against assets/ + the
-  persistent dir — the artist's self-updating shopping list; replaces the
-  hand-maintained missing-art notes scattered below.
+- [x] **Art report (machine-derived asset inventory)** — DONE:
+      `scripts/art_report.sh` (the sound_report.sh pattern) writes
+      `art_report.md` — every consumable sprite id + status + orphans; the
+      MISSING section is the artist's self-updating shopping list (see
+      DONE.md, "Art report").
 - [x] **Unused-pub report (session reflection rider)** — DONE, first
       cleanup sweep included: `scripts/unused_pub_report.sh` (see DONE.md,
       "Unused-pub report" + "Minimize-pub sweep"). Tree now reports
@@ -233,9 +233,8 @@ Test by running `zig build run` and clicking through.
       counterexample tests) was the latent half (slice 2).
 - **Cross-cutting polish** — 9-slice edge/center TILING (corners are
   aspect-true — DONE.md; `highlighted` edge outlines DONE), missing art
-  (ui/icon_swap, ui/momentum, ui/icon_undo draw magenta — and the global
-  top bar's redo button flips icon_undo as its glyph until icon_redo
-  lands), the color wheel's two REPEATED colors across gradients (artist to
+  (the `art_report.md` MISSING list — `scripts/art_report.sh` — is the
+  self-updating shopping list), the color wheel's two REPEATED colors across gradients (artist to
   correct: `#c1cde8` — color_0 of both gradient 8 (330° spoke) and gradient 9
   (315°); `#d89656` — color_3 of both gradient 20 (150°) and gradient 21
   (135°); shipped as-sent until the corrected wheel arrives), and
@@ -354,9 +353,8 @@ Open:
   (item/skill/effect icons otherwise DERIVE from ids —
   `skillIconSpriteId` / `itemIconSpriteId` / `effectIconSpriteId` in
   emit.zig; no config field needed).
-- Move UI sprite assets from Unity project — remaining placeholder ids:
-  ui/icon_swap, ui/momentum (also tracked under Cross-cutting polish
-  missing art).
+- Move UI sprite assets from Unity project — the remaining placeholder
+  ids are the `art_report.md` MISSING list (`scripts/art_report.sh`).
 - text_label hover bounds are a placeholder (boundsOf reports a font_size
   square, no measurement) — fine while no text label has a tooltip. Wire
   boundsOf for text_label to measureSpanWidth (the real font + FontMetrics
@@ -722,14 +720,9 @@ Open:
 - Bold/italic rendering — `drawTextLabel` ignores bold/italic (only the
   regular face is loaded); honoring TextLabel bold/italic + color needs
   separate faces. (TTF + metrics DONE — DONE.md.)
-- Missing-art audit: some sprite ids are still placeholders
-  (ui/icon_swap, ui/momentum, ui/icon_undo, and the editor's
-  ui/icon_playtest / ui/icon_validate) and will draw magenta until
-  real assets land. WRINKLE for the planned art_report: the redo button
-  consumes ui/icon_undo (flipped) — icon_redo is not a code-referenced
-  sprite id, so a scan of consumed ids won't surface it; the report
-  needs this aliasing (or a manual note) until the dedicated icon lands
-  and the button switches to it.
+- Missing art: the `art_report.md` MISSING section (`scripts/art_report.sh`)
+  is the live audit — a missing sprite draws magenta until real assets land;
+  the redo-button icon_undo aliasing is a manual note inside the report.
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
   → Asset memory levers matter more for web than native); emrun polish.
   (The WebGL1/WebGL2 build option is DONE — the web build is WebGL2-only;

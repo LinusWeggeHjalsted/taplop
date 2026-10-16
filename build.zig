@@ -408,6 +408,31 @@ pub fn build(b: *std.Build) void {
     const sound_report_step = b.step("sound-report", "Generate sound_report.md (the wired-sound asset inventory)");
     sound_report_step.dependOn(&sound_report_run.step);
 
+    // === Art asset overview (scripts/art_report.sh) ===
+    // A host tool that enumerates every consumable sprite id (engine enums +
+    // derivations, src string literals, shipped data sprite references) and
+    // writes art_report.md — the artist's self-updating inventory + shopping
+    // list (status per id: shipped / shadowed / MISSING-draws-magenta, plus
+    // shipped-but-unconsumed orphans). Root lives in src/ so it can import
+    // types.zig + the ui facade; the `generated` + `build_info` modules cover
+    // types.zig's imports.
+    const art_report_exe = b.addExecutable(.{
+        .name = "art_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/art_report.zig"),
+            .target = b.resolveTargetQuery(.{}), // always the build host
+            .optimize = .Debug,
+            // libc for std.c.getenv (the resolvePersistentPath discipline).
+            .link_libc = true,
+        }),
+    });
+    art_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    art_report_exe.root_module.addImport("build_info", build_info_module);
+    const art_report_run = b.addRunArtifact(art_report_exe);
+    art_report_run.setCwd(b.path("."));
+    const art_report_step = b.step("art-report", "Generate art_report.md (the consumed-sprite asset inventory)");
+    art_report_step.dependOn(&art_report_run.step);
+
     // === Gradient contrast report (scripts/gradient_report.sh) ===
     // A host tool that reads data/color_themes.txt through the game's own
     // parser + loader and writes gradient_report.md — the artist's

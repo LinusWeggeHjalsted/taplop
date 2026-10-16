@@ -46,7 +46,7 @@ Two hygiene rules that keep the above true in practice:
   inventory/report/lookup can be DERIVED from source truth (an enum, a
   directory scan), generate it instead of curating it —
   `generated_lookups.zig`, `generated_sprite_metadata.zig`, `sound_report.zig`,
-  and `gradient_report.zig` are the pattern: new content appears automatically and
+  `art_report.zig`, and `gradient_report.zig` are the pattern: new content appears automatically and
   a lie is structurally impossible. Hand-maintained duplicates of
   machine-derivable facts are drift by definition.
 
