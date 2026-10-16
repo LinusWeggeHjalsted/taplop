@@ -225,23 +225,25 @@ lands; today hub NPCs render through the entity path.
 - `assets/world/hit_flash.png` — code-referenced (src/view.zig) **[shipped]**
 - `assets/world/tile.png` — code-referenced (src/ui/editor_shell.zig) **[shipped]**
 
-## Shipped but unconsumed
+## Shipped but unreferenced by shipped content
 
-Palette stock (the editor pickers offer every shipped sprite in the
-entity/decoration namespaces, so unconsumed is not necessarily dead)
-or art nothing references — the artist's call.
+Entity + decoration sprites are editor palette stock BY DESIGN —
+every shipped sprite is player-placeable in the editor, so
+unreferenced is NOT unused: this section tracks what the official
+campaign does not use yet (real content authoring rides the campaign
+editor). Other namespaces here are genuinely unreferenced.
 
 **entities:**
 
-- `assets/entities/raider.png` — shipped, nothing consumes it
-- `assets/entities/skeleton.png` — shipped, nothing consumes it
-- `assets/entities/snake.png` — shipped, nothing consumes it
-- `assets/entities/frog.png` — shipped, nothing consumes it
-- `assets/entities/mushroom.png` — shipped, nothing consumes it
-- `assets/entities/ghoul.png` — shipped, nothing consumes it
-- `assets/entities/specter.png` — shipped, nothing consumes it
+- `assets/entities/raider.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/skeleton.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/snake.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/frog.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/mushroom.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/ghoul.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/entities/specter.png` — shipped, not referenced by shipped content (editor palette stock)
 
 **npcs:**
 
-- `assets/npcs/gear_upgrader.png` — shipped, nothing consumes it
-- `assets/npcs/dream_guide.png` — shipped, nothing consumes it
+- `assets/npcs/gear_upgrader.png` — shipped, not referenced by shipped content (editor palette stock)
+- `assets/npcs/dream_guide.png` — shipped, not referenced by shipped content (editor palette stock)

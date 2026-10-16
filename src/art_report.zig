@@ -1,8 +1,11 @@
 //! Art asset overview generator — a build tool, never part of the game.
 //! `zig build art-report` (wrapped by scripts/art_report.sh) enumerates every
 //! sprite id the game can consume and writes art_report.md at the project
-//! root: per-id status (shipped / shadowed / MISSING-draws-magenta) plus the
-//! shipped-but-unconsumed orphans. Three machine-walked sources, so new
+//! root: per-id status (shipped / shadowed / MISSING-draws-magenta) plus
+//! the shipped sprites no shipped content references — entity/decoration
+//! sprites are editor palette stock BY DESIGN (every shipped sprite is
+//! player-placeable), so unreferenced is not unused. Three machine-walked
+//! sources, so new
 //! consumption appears automatically — no hand-maintained list to drift:
 //!   1. The engine's enums + derivation shapes (skills via ui's
 //!      skillIconSpriteId, effect overlays via the definitions' effect_sprite,
@@ -214,13 +217,16 @@ pub fn main() !void {
         }
     }
 
-    // Shipped but unconsumed: palette stock (editor pickers offer every
-    // shipped sprite in these namespaces) or dead art — the artist's call.
-    try report.print(allocator, "\n## Shipped but unconsumed\n\n", .{});
+    // Shipped but unreferenced by shipped content: entity/decoration
+    // sprites are editor palette stock BY DESIGN (every shipped sprite is
+    // player-placeable), so unreferenced is not unused.
+    try report.print(allocator, "\n## Shipped but unreferenced by shipped content\n\n", .{});
     try report.print(allocator,
-        \\Palette stock (the editor pickers offer every shipped sprite in the
-        \\entity/decoration namespaces, so unconsumed is not necessarily dead)
-        \\or art nothing references — the artist's call.
+        \\Entity + decoration sprites are editor palette stock BY DESIGN —
+        \\every shipped sprite is player-placeable in the editor, so
+        \\unreferenced is NOT unused: this section tracks what the official
+        \\campaign does not use yet (real content authoring rides the campaign
+        \\editor). Other namespaces here are genuinely unreferenced.
         \\
     , .{});
     var orphan_count: usize = 0;
@@ -235,11 +241,11 @@ pub fn main() !void {
         orphan_count += namespace_orphans.items.len;
         try report.print(allocator, "\n**{s}:**\n\n", .{namespace});
         for (namespace_orphans.items) |id| {
-            try report.print(allocator, "- `assets/{s}.png` — shipped, nothing consumes it\n", .{id});
+            try report.print(allocator, "- `assets/{s}.png` — shipped, not referenced by shipped content (editor palette stock)\n", .{id});
         }
     }
     if (orphan_count == 0) {
-        try report.print(allocator, "- (every shipped sprite is consumed)\n", .{});
+        try report.print(allocator, "- (every shipped sprite is referenced by shipped content)\n", .{});
     }
 
     counts.orphaned = orphan_count;
@@ -248,7 +254,7 @@ pub fn main() !void {
         .data = report.items,
     });
     std.debug.print(
-        "art_report.md written: {d} shipped, {d} shadowed, {d} missing, {d} orphaned\n",
+        "art_report.md written: {d} shipped, {d} shadowed, {d} missing, {d} unreferenced (editor palette stock)\n",
         .{ counts.shipped, counts.shadowed, counts.missing, counts.orphaned },
     );
 }

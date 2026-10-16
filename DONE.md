@@ -16904,7 +16904,7 @@ is fully reverted — this entry carries the method + findings.
 art_report.sh` — the sound_report.sh pattern) enumerates every sprite id the
 game can consume and writes `art_report.md`: per-id status (shipped /
 shadowed / MISSING-draws-magenta — no fallbacks, so the status column is
-the whole truth) plus the shipped-but-unconsumed orphans. Three
+the whole truth) plus the shipped sprites no shipped content references. Three
 machine-walked sources, no hand-maintained list:
 
 - **Engine enums + derivation shapes:** skills via `ui.skillIconSpriteId`
@@ -16934,10 +16934,15 @@ editor's npc_type model.
 
 First-run findings: **6 MISSING** (ui/icon_swap, ui/momentum,
 ui/icon_undo, ui/icon_playtest, ui/icon_validate — plus the
-report-discovered ui/close_button from element.zig), and **9 orphans** —
+report-discovered ui/close_button from element.zig), and **9 unreferenced** —
 the six new enemies (frog/ghoul/mushroom/snake/specter + raider — shipped
 art no official content spawns yet), plain skeleton, and the two NPC
-sprites. The first cut of the literal scanner INCLUDED test blocks
+sprites. The
+'orphan' framing was corrected on review: entity + decoration sprites
+are editor palette stock BY DESIGN — every shipped sprite is
+player-placeable, so unreferenced-by-shipped-content is NOT unused; the
+report's section + row wording now says palette stock instead of
+'nothing consumes it'. The first cut of the literal scanner INCLUDED test blocks
 ("conservative"), which put six phantom ids on the shopping list (the
 editor-shell palette-composition test's fixtures — custom_fighter,
 skeleton_armor, moss_vine etc. — never loaded, never drawn); the user
