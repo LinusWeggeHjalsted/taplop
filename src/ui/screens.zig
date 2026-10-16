@@ -37,7 +37,7 @@ const emitPanelButton = emit.emitPanelButton;
 const emitMaterialIcons = emit.emitMaterialIcons;
 const wrapRow = ui_element.wrapRow;
 const tooltip_panel_sprite = ui_tooltip.tooltip_panel_sprite;
-const button_background_sprite_id = emit.button_background_sprite_id;
+const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 
 // Error popup sizing — a modal centered panel for recoverable load
 // failures (see SessionState.pending_error). Reuses the tooltip wrap
@@ -304,7 +304,7 @@ pub fn buildGlobalTopBar(
             elements,
             allocator,
             options_cell,
-            button_background_sprite_id,
+            small_button_background_sprite_id,
             "ui/icon_options",
             .escape,
             .{ .header = try spanRow(allocator, text("Options")) },
@@ -322,7 +322,7 @@ pub fn buildGlobalTopBar(
         elements,
         allocator,
         undo_cell,
-        button_background_sprite_id,
+        small_button_background_sprite_id,
         "ui/icon_undo",
         .undo,
         .{ .header = try spanRow(allocator, text("Undo")) },
@@ -340,7 +340,7 @@ pub fn buildGlobalTopBar(
     // flipped icon button).
     const redo_cell = row.next(top_bar_slot_size);
     try elements.append(allocator, .{ .button = .{
-        .sprite_id = button_background_sprite_id,
+        .sprite_id = small_button_background_sprite_id,
         .screen_position = redo_cell.position(),
         .width = redo_cell.width,
         .height = redo_cell.height,
@@ -370,7 +370,7 @@ pub fn buildGlobalTopBar(
 /// the button beneath (which no-ops exactly like the keybind).
 fn emitDimWash(elements: *UiElementList, allocator: std.mem.Allocator, cell: Rectangle, dim_color: Color) !void {
     try elements.append(allocator, .{ .image = .{
-        .sprite_id = button_background_sprite_id,
+        .sprite_id = small_button_background_sprite_id,
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,

@@ -137,6 +137,7 @@ pub const overlay_font_size = ui_emit.overlay_font_size;
 pub const emitCenteredNumber = ui_emit.emitCenteredNumber;
 pub const emitCornerNumber = ui_emit.emitCornerNumber;
 pub const button_background_sprite_id = ui_emit.button_background_sprite_id;
+pub const small_button_background_sprite_id = ui_emit.small_button_background_sprite_id;
 pub const emitPanelHeader = ui_emit.emitPanelHeader;
 pub const emitIconButton = ui_emit.emitIconButton;
 pub const emitPanelButton = ui_emit.emitPanelButton;

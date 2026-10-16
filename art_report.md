@@ -34,6 +34,7 @@ lands; today hub NPCs render through the entity path.
 
 ## MISSING — the shopping list
 
+- `assets/ui/button_background_small.png` — code-referenced (src/ui/emit.zig) **[MISSING (draws magenta)]**
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_playtest.png` — code-referenced (src/ui/editor_shell.zig) **[MISSING (draws magenta)]**
 - `assets/ui/icon_swap.png` — code-referenced (src/ui/bottom_bar.zig) **[MISSING (draws magenta)]**
@@ -185,9 +186,10 @@ lands; today hub NPCs render through the entity path.
 - `assets/decorations/tree_5_grass_back.png` — content-referenced (data/decorations.txt) **[shipped]**
 - `assets/decorations/tree_5_moss.png` — content-referenced (data/decorations.txt) **[shipped]**
 
-## ui (26 consumed)
+## ui (27 consumed)
 
 - `assets/ui/button_background.png` — code-referenced (src/ui/emit.zig) **[shipped]**
+- `assets/ui/button_background_small.png` — code-referenced (src/ui/emit.zig) **[MISSING (draws magenta)]**
 - `assets/ui/close_button.png` — code-referenced (src/ui/element.zig) **[MISSING (draws magenta)]**
 - `assets/ui/health_globe.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**
 - `assets/ui/health_globe_border.png` — code-referenced (src/ui/bottom_bar.zig) **[shipped]**

@@ -38,6 +38,7 @@ const emitSkillButton = emit.emitSkillButton;
 const effectIconSpriteId = emit.effectIconSpriteId;
 const playerEntity = @import("panels.zig").playerEntity;
 const button_background_sprite_id = emit.button_background_sprite_id;
+const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 const overlay_font_size = emit.overlay_font_size;
 
 /// The bottom bar: one horizontally-centered row anchored to the bottom
@@ -74,9 +75,9 @@ pub fn buildBottomBar(
     const c_btn = p[@min(@as(u32, 4), types.gradient_color_count - 1)]; // inventory/gear/skills: 4
     const c_globe_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)]; // health bg: 5
     const c_globe_fill = p[@min(@as(u32, 1), types.gradient_color_count - 1)]; // health fill: 1
-    const c_border = p[@min(@as(u32, 3), types.gradient_color_count - 1)]; // border/skill bg/skip bg/turn/swap/momentum: 3
-    const c_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)]; // skill/skip icon: 1
-    const c_skip_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)]; // skip bg: 5
+    const c_border = p[@min(@as(u32, 3), types.gradient_color_count - 1)]; // border/skill bg/turn/momentum: 3
+    const c_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)]; // skill/skip/swap icon: 1
+    const c_button_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)]; // skip + swap button bg: 5
     _ = player_color_index; // UI uses fixed indices, not the player's chosen index
 
     const weapon_skills_width = 3 * slot_size;
@@ -181,18 +182,25 @@ pub fn buildBottomBar(
         }
     }
 
-    // Weapon swap button (128, centered vertically in its cell).
+    // Weapon swap button (128, centered vertically in its cell) — the
+    // layered icon-button treatment: small-button background + the swap
+    // icon on top (the small-button class migration; was the bare icon as
+    // the button, border-tinted).
     {
         const cell = row.next(swap_button_size);
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = "ui/icon_swap",
-            .screen_position = cell.placeCenter(swap_button_size, swap_button_size).position(),
-            .width = swap_button_size,
-            .height = swap_button_size,
-            .action = .swap_weapons,
-            .color = c_border,
-            .tooltip = .{ .header = try spanRow(allocator, text("Swap weapons")) },
-        } });
+        try emitIconButton(
+            elements,
+            allocator,
+            cell.placeCenter(swap_button_size, swap_button_size),
+            small_button_background_sprite_id,
+            "ui/icon_swap",
+            .swap_weapons,
+            .{ .header = try spanRow(allocator, text("Swap weapons")) },
+            c_button_bg,
+            c_icon,
+            false,
+            null,
+        );
     }
 
     // Utility skills sub-bar (slots 4-8, packed flush).
@@ -220,7 +228,7 @@ pub fn buildBottomBar(
             "ui/icon_skip",
             .skip,
             .{ .header = try spanRow(allocator, text("Skip turn step")) },
-            c_skip_bg,
+            c_button_bg,
             c_icon,
             false,
             null,

@@ -56,7 +56,7 @@ const emitInspectorLayerButton = inspector.emitInspectorLayerButton;
 const GameState = state.GameState;
 const editor_entity_frame_width = shell.editor_entity_frame_width;
 const middle_panel_header_height = ui_element.middle_panel_header_height;
-const button_background_sprite_id = emit.button_background_sprite_id;
+const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 const buildSkillTooltip = @import("tooltip.zig").buildSkillTooltip;
 const allInspectorSectionsExpanded = inspector.allInspectorSectionsExpanded;
 const editor_entity_frame_height = shell.editor_entity_frame_height;
@@ -1140,7 +1140,7 @@ fn emitPickerSpriteCell(
     frame_height: i32,
 ) !void {
     try elements.append(allocator, .{ .button = .{
-        .sprite_id = button_background_sprite_id,
+        .sprite_id = small_button_background_sprite_id,
         .screen_position = cell_rect.position(),
         .width = cell_rect.width,
         .height = cell_rect.height,

@@ -120,6 +120,14 @@ pub fn emitCornerNumber(
 /// independently.
 pub const button_background_sprite_id: []const u8 = "ui/button_background";
 
+/// Sprite id of the small-button background — the 128px button class (the
+/// top bar + its dim washes, the editor's primary actions + tool/picker
+/// cells, the swap-hands button). `ui/button_background` is 256x256 art, so
+/// a 128px draw minifies it 2:1 and softens it; the small asset is authored
+/// at the class's own draw size. Buttons drawing at 256 (the skip button)
+/// stay on the 256 asset at 1:1.
+pub const small_button_background_sprite_id: []const u8 = "ui/button_background_small";
+
 /// Emit a middle-panel header: a title `text_label` on the left (vertically
 /// centered in the `header_height` strip) + a close `button` flush in the
 /// panel's top-right corner. Returns the content bounds — the area below the
