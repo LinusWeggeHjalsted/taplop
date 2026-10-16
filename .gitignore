@@ -17,3 +17,5 @@ src/generated_test_root.zig
 zig-out/
 zig-pkg/
 sound_report.md
+scratch/
+# Dev scratch data dir (--data-dir ./scratch, README) — untracked by design

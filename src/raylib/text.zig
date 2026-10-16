@@ -143,8 +143,9 @@ else
 
 /// Load the FALLBACK font — only called when the SDF pipeline failed to
 /// init (see `TextRenderer.init`); the normal path never builds this
-/// atlas. Reads the embedded TTF (`assets/fonts/freezilla.ttf`) through
-/// the FileSource and rasterizes a glyph atlas at `font_base_size`.
+/// atlas. Reads the embedded TTF (`assets/fonts/cause-regular.ttf` — Cause
+/// Regular, SIL OFL 1.1; see LICENSE-FONT.txt) through the FileSource and
+/// rasterizes a glyph atlas at `font_base_size`.
 /// The atlas is built ENTIRELY ON THE CPU (`loadFontData` →
 /// `genImageFontAtlas`) so it can be PREMULTIPLIED before upload — text
 /// composites correctly under the render pass's `BLEND_ALPHA_PREMULTIPLY`
@@ -169,7 +170,7 @@ else
 /// it is the default (so deinit can skip unloading raylib-owned the
 /// default).
 fn loadFont(file_source: *const @import("../file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
-    const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/freezilla.ttf") catch |err| {
+    const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/cause-regular.ttf") catch |err| {
         std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
         const fallback = rl.getFontDefault() catch @panic("failed to load default font");
         return .{ .font = fallback, .is_default = true };

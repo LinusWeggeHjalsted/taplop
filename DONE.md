@@ -16792,3 +16792,57 @@ most contrast-critical adjacent roles (even tiles at 1, background at 2).
   23 sit just above the floor (ΔE 6.0–6.2, legal) — left as-is for now;
   the report shows them as the weakest legal, an artist call whether to
   widen the yellow corner consistently later.
+
+## Font migration: FreeZilla → Cause (SIL OFL 1.1) + license texts embedded in the exe
+
+The unfinished FreeZilla handwriting face (76 of 95 ASCII glyphs; the
+0.5em fallback in `measureSpanWidth` papered over the gaps) is replaced by
+Cause Regular (`assets/fonts/cause-regular.ttf` from
+https://github.com/xconsau/Cause — Saurabh Sharma / intothedesign, © The
+Cause Project Authors). The migration surface was tiny by construction: the
+font's identity lived in exactly two sites — `build.zig`'s SDF-generator
+input (dependency-tracked, so the build-time SDF atlas regenerated
+automatically) and `src/raylib/text.zig`'s runtime fallback read. All other
+machinery (base size 128, SDF encoding constants, shader, runtime-derived
+`FontMetrics`) is font-agnostic and survived untouched; the headless suite
+never touches the font.
+
+Why static, not the variable font: the whole pipeline (generator + fallback)
+is stb_truetype via raylib, which has no variable-font support — it renders
+the default instance (wght 400 = Regular) and ignores fvar/gvar. The
+variable file would render identically to the static Regular while
+embedding ~110 KB instead of ~56 KB. The remaining statics slot in later as
+second faces if the bold/italic TODO item lands (Cause has no italic —
+fake-italic or drop, decided then).
+
+**Licensing (OFL 1.1, read before bundling):** no Reserved Font Name is
+declared; we ship unmodified (Original Version), so all conditions are
+satisfied trivially — bundling with software is explicitly permitted. Two
+new obligations handled:
+- `LICENSE-FONT.txt` (root, matching LICENSE-CODE/GRAPHICS/AUDIO) + a README
+  "## Licenses" bullet crediting "The Cause Project Authors" (the copyright
+  line in the OFL and the TTF name table) and Saurabh Sharma (designer,
+  nameID 9 in the font's own metadata — the Google Fonts convention of
+  copyright line + designer credit).
+- **The binary gap:** root licenses never reached the shipped artifact —
+  `generateAssetsFile` embeds only `data/` and `assets/`, so the single-file
+  exe (and the web build, same shape) carried the font TTF + its SDF-derived
+  atlas blob with no license text anywhere. OFL condition 2 requires each
+  copy to carry the copyright notice + license ("stand-alone text files …
+  or machine-readable metadata fields within text or binary files"); a bare
+  exe has no "alongside". Fixed structurally: `collectLicenseFiles` (in
+  build.zig, the `collectContentFiles` pattern) scans the project root for
+  `LICENSE-*.txt` and adds them to the embedded map — so ALL license texts
+  (MIT code, CC-BY-SA graphics + audio, OFL font) now ride inside every
+  distributed copy, closing the same latent CC-BY-SA "license text must
+  accompany distributions" gap for the art and audio too. Scanned, not
+  hardcoded: a new root LICENSE-*.txt lands embedded automatically. Found
+  one bug on the way: `entry.name` from dir iteration dies at the next
+  `iter.next()` — the first version passed it un-copied and emitted garbage
+  bytes as embed keys; `b.dupe` fixes it.
+
+OFL nuance noted: the build-time SDF atlas is a format-converted derivative
+of the font (OFL's Modified Version definition includes "changing
+formats"), so condition 5 (derivatives stay under OFL) applies to it —
+satisfied by shipping TTF + blob + license text together inside the exe,
+no relicensing of anything.

@@ -8,6 +8,7 @@ this game is multi-licensed:
 * **Source code:** MIT by Linus Wegge Hjalsted - see LICENSE-CODE.txt
 * **Graphic assets:** CC-BY-SA 4.0 by Cille Rosenørn Abildhauge - see LICENSE-GRAPHICS.txt
 * **Audio assets:** CC-BY-SA 4.0 by Victor Heiber Bull Willaredt - see LICENSE-AUDIO.txt
+* **Font (Cause):** SIL Open Font License 1.1 by The Cause Project Authors, designed by Saurabh Sharma - see LICENSE-FONT.txt. the license texts for all bundled content are also embedded in the exe itself (see `build.zig`, `generateAssetsFile`)
 
 ## Build & run
 
