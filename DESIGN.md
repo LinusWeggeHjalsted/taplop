@@ -395,10 +395,11 @@ never a crash. The SDF text outline shader is a SEPARATE pass, untouched
 by this.
 
 The phase (0..1, `ViewState.outline_stripe_phase`) is view-side, computed in
-`view()` from `session.animation_clock` stepped at `settings.animation_fps`
-(8 steps per cycle — frame-quantized at the shared animation clock, one
-animation system; freezes on pause like every looping anim — see
-Animation). The clock wraps mod the cycle IN u64 before the f32
+`view()` from the UNGATED `session.session_clock` stepped at
+`settings.animation_fps` (8 steps per cycle — frame-quantized at the shared
+animation rate, one animation system; the stripe is UI + decorative, so it
+marches during pause too, options/settings menus included — see Animation
+for the two-clock split). The clock wraps mod the cycle IN u64 before the f32
 conversion (f32 mantissa holds only ~16.8s of microseconds). No game
 state involved — no replay impact.
 
@@ -815,7 +816,8 @@ so looping anims begin at frame 0 (raw wall-clock mod would start mid-loop).
 One-shots store `end_clock = animation_clock + duration` in session-relative
 units, so pause freezing also freezes one-shots mid-flight. The outline
 stripe shader's phase (`ViewState.outline_stripe_phase`) is another
-looping consumer — stepped off this clock, frozen by the same pause gate
+looping consumer, but stepped off the UNGATED `session_clock` instead —
+outlines are UI + decorative, so they march everywhere, pause included
 (Platform Seam → Outline stripe shader).
 
 ### Frame rate

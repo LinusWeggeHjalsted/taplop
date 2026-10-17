@@ -568,11 +568,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // the pre-drain key lets us detect the change without inspecting events.
     const recenter_key_before = view_mod.cameraRecenterKey(&history.current_state);
 
-    // Advance the non-pause-gated session clock (used for debounced write
-    // deadlines). Unlike animation_clock, this advances every frame regardless
-    // of pause so writes fire even while the options menu is open. Done before
-    // the drain so markWriteDirty (called during the drain via
-    // handleAnytimeInput) sees an up-to-date clock. See DESIGN → Input.
+    // Advance the non-pause-gated session clock (pause-independent
+    // timing: debounced write deadlines + the outline stripe phase).
+    // Unlike animation_clock, this advances every frame regardless of
+    // pause, so writes fire and UI marching outlines keep animating even
+    // while the options menu is open. Done before the drain so
+    // markWriteDirty (called during the drain via handleAnytimeInput) sees
+    // an up-to-date clock. See DESIGN → Input + DESIGN → Animation.
     history.session.session_clock +%= delta_microseconds;
 
     // Drain: call update() repeatedly until the stack empties, a wait

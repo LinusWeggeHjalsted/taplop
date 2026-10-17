@@ -291,10 +291,13 @@ pub const SessionState = struct {
 
     /// Non-pause-gated session-relative monotonic clock (accumulated
     /// microseconds). Unlike `animation_clock` (which freezes during pause),
-    /// this advances every frame regardless — used for debounced write
-    /// deadlines (currently settings persistence) so writes fire
-    /// even while the options menu is open. Off the undoable GameState, so
-    /// replay-safe by construction. See DESIGN → Input.
+    /// this advances every frame regardless — the clock for
+    /// pause-independent timing: debounced write deadlines (currently
+    /// settings persistence, so writes fire even while the options menu
+    /// is open — see DESIGN → Input) and the outline stripe phase (so UI
+    /// marching outlines animate everywhere, options/settings menus
+    /// included — see DESIGN → Animation). Off the undoable GameState, so
+    /// replay-safe by construction.
     session_clock: u64 = 0,
 
     /// Snapshot of the render resolution the last time `frame()` applied it
