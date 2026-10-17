@@ -290,12 +290,10 @@ pub const FileSource = struct {
     /// fetch-to-local, zip import preview) persist into this dir first, then
     /// appear here. See DESIGN → Custom Missions & Online Services.
     ///
-    /// The folder ENUMERATION is platform-split (the save-list scan's
-    /// `Dir.iterate`-is-broken-on-IDBFS story — see `listSaveFiles`): web
-    /// lists the mission folders via JS + a temp listing file, native
-    /// iterates. The per-mission work (mission.txt probe + parse + the
-    /// custom-assets check) is shared below — individual file reads + stats
-    /// work on IDBFS, so only the directory listings need the JS path.
+    /// The per-mission work (mission.txt probe + parse + the custom-assets
+    /// check) is shared below — the folder scan runs the same
+    /// `Dir.iterate` path on every platform (the old IDBFS-era platform
+    /// split is gone; see DONE.md "web storage model slice 5").
     pub fn listMissions(
         self: *const FileSource,
         allocator: std.mem.Allocator,
@@ -372,8 +370,6 @@ pub const FileSource = struct {
 
             // Folder scan: custom-asset detection + the recency stamp
             // (the max file mtime — any change is an update).
-            // Platform-split enumeration (see listSaveFiles for the IDBFS
-            // story).
             const folder_scan = try self.scanMissionFolder(
                 allocator,
                 mission_id,
@@ -397,23 +393,12 @@ pub const FileSource = struct {
     }
 
     /// The mission FOLDER names under `missions/` (directories only, no
-    /// files). Native iterates the persistent dir; web enumerates via JS
-    /// (`Dir.iterate` fails with `error.Unexpected` on the IDBFS mount —
-    /// the `listSaveFiles` story, see `listSaveFilesWeb`). A missing
-    /// missions/ (fresh install) is an empty list, not an error. The
-    /// caller owns the returned names + slice.
+    /// files). A missing missions/ (fresh install) is an empty list, not an
+    /// error. The caller owns the returned names + slice.
     fn listMissionFolderNames(
         self: *const FileSource,
         allocator: std.mem.Allocator,
     ) ![][]const u8 {
-        if (@import("builtin").os.tag == .emscripten) {
-            return listPersistentDirNamesWeb(
-                self,
-                allocator,
-                persistent_mount_path ++ "/missions",
-                true,
-            );
-        }
         var names: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (names.items) |name| allocator.free(name);
@@ -439,13 +424,8 @@ pub const FileSource = struct {
     /// the folder holds anything beyond the known config files
     /// (mission.txt / player.txt / level_<N>.txt), and the recency stamp
     /// (the max mtime across the folder's files — see
-    /// `MissionEntry.mtime_ns`). Native iterates the folder; web enumerates
-    /// its FILE children via JS (the `listMissionFolderNames` story) + the
-    /// shared name check, then stats each file individually (stats work on
-    /// IDBFS). A pathological folder name (quote/backslash — can't be
-    /// embedded in the JS path) yields no custom assets + mtime 0 on web
-    /// (the mission still lists; the flags are advisory). An unreadable
-    /// folder behaves the same — the scan never blocks the listing.
+    /// `MissionEntry.mtime_ns`). An unreadable folder behaves the same —
+    /// the scan never blocks the listing.
     fn scanMissionFolder(
         self: *const FileSource,
         allocator: std.mem.Allocator,
@@ -453,35 +433,6 @@ pub const FileSource = struct {
         level_count: u32,
     ) !MissionFolderScan {
         var result: MissionFolderScan = .{};
-        if (@import("builtin").os.tag == .emscripten) {
-            if (!isSafeForJsEmbedding(mission_id)) return result;
-            const fs_dir_path = try std.fmt.allocPrint(
-                allocator,
-                "{s}/missions/{s}",
-                .{ persistent_mount_path, mission_id },
-            );
-            defer allocator.free(fs_dir_path);
-            const names = try listPersistentDirNamesWeb(self, allocator, fs_dir_path, false);
-            defer {
-                for (names) |name| allocator.free(name);
-                allocator.free(names);
-            }
-            for (names) |name| {
-                if (!isKnownMissionConfigFile(name, level_count)) result.has_custom_assets = true;
-                // Stat via the persistent dir (individual file stats work
-                // on IDBFS); a stat failure (vanished between enumerate +
-                // stat) just skips the stamp.
-                const file_path = try std.fmt.allocPrint(
-                    allocator,
-                    "missions/{s}/{s}",
-                    .{ mission_id, name },
-                );
-                defer allocator.free(file_path);
-                const stat = self.persistent_dir.statFile(self.io, file_path, .{}) catch continue;
-                result.max_mtime_ns = @max(result.max_mtime_ns, stat.mtime.nanoseconds);
-            }
-            return result;
-        }
         const dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
         defer allocator.free(dir_path);
         const mission_dir = self.persistent_dir.openDir(self.io, dir_path, .{
@@ -569,12 +520,6 @@ pub const FileSource = struct {
     /// Only `*.txt` files count — the dir is also where stray non-save artifacts
     /// would land. A missing saves/ dir is an empty list (fresh install), not an
     /// error. Caller owns the returned slice + its strings (`freeSaveFiles`).
-    ///
-    /// On web (emscripten IDBFS), `readdir` is broken (returns undefined entries,
-    /// and Zig's `Dir.iterate` fails with `error.Unexpected`). The web path
-    /// enumerates `saves/` via JS (`FS.lookupPath` + `Object.keys(node.contents)`)
-    /// writing the name list to a temp file, then stats each file from Zig
-    /// (individual file `stat` calls work on IDBFS). See DESIGN → File System & IO.
     pub fn listSaveFiles(
         self: *const FileSource,
         allocator: std.mem.Allocator,
@@ -582,199 +527,48 @@ pub const FileSource = struct {
         var entries: std.ArrayList(SaveFileEntry) = .empty;
         errdefer freeSaveFiles(allocator, entries.items);
 
-        if (@import("builtin").os.tag == .emscripten) {
-            try self.listSaveFilesWeb(allocator, &entries);
-        } else {
-            try self.listSaveFilesNative(allocator, &entries);
+        // The one path, every platform: open saves/, iterate, filter .txt,
+        // stat each. (The old emscripten platform split — a JS enumeration
+        // via a listing temp because IDBFS's readdir was broken — died with
+        // the IDBFS mount itself: plain MEMFS readdir works; browser-verified,
+        // see DONE.md "web storage model slice 5".)
+        const maybe_saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
+            .access_sub_paths = true,
+            .iterate = true,
+        }) catch |err| switch (err) {
+            error.FileNotFound => null, // fresh install: empty list, not an error
+            else => return err,
+        };
+        if (maybe_saves_dir) |saves_dir| {
+            defer std.Io.Dir.close(saves_dir, self.io);
+
+            var it = saves_dir.iterate();
+            while (try it.next(self.io)) |dir_entry| {
+                if (dir_entry.kind != .file) continue;
+                if (!std.mem.endsWith(u8, dir_entry.name, ".txt")) continue;
+
+                // Stat through the open saves_dir by bare name — a failure
+                // here (vanished between iterate + stat, permissions
+                // quirk) skips the entry without having allocated
+                // anything for it yet.
+                const stat = saves_dir.statFile(self.io, dir_entry.name, .{}) catch continue;
+
+                const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{dir_entry.name});
+                errdefer allocator.free(relative_path);
+                const name = try allocator.dupe(u8, dir_entry.name);
+                errdefer allocator.free(name);
+                try entries.append(allocator, .{
+                    .name = name,
+                    .path = relative_path,
+                    .mtime_ns = stat.mtime.nanoseconds,
+                });
+            }
         }
 
         std.mem.sort(SaveFileEntry, entries.items, {}, saveFileOrder);
         return entries.toOwnedSlice(allocator);
     }
 
-    /// Native path: open saves/, iterate entries, filter .txt, stat each.
-    fn listSaveFilesNative(
-        self: *const FileSource,
-        allocator: std.mem.Allocator,
-        entries: *std.ArrayList(SaveFileEntry),
-    ) !void {
-        const saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
-            .access_sub_paths = true,
-            .iterate = true,
-        }) catch |err| switch (err) {
-            error.FileNotFound => return,
-            else => return err,
-        };
-        defer std.Io.Dir.close(saves_dir, self.io);
-
-        var it = saves_dir.iterate();
-        while (try it.next(self.io)) |dir_entry| {
-            if (dir_entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, dir_entry.name, ".txt")) continue;
-
-            // Stat through the open saves_dir by bare name — a failure here
-            // (vanished between iterate + stat, permissions quirk) skips the
-            // entry without having allocated anything for it yet.
-            const stat = saves_dir.statFile(self.io, dir_entry.name, .{}) catch continue;
-
-            const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{dir_entry.name});
-            errdefer allocator.free(relative_path);
-            const name = try allocator.dupe(u8, dir_entry.name);
-            errdefer allocator.free(name);
-            try entries.append(allocator, .{
-                .name = name,
-                .path = relative_path,
-                .mtime_ns = stat.mtime.nanoseconds,
-            });
-        }
-    }
-
-    /// Web path: emscripten IDBFS `readdir` is broken (returns undefined entries),
-    /// so enumerate `saves/` via JS (`FS.lookupPath` + `Object.keys(node.contents)`)
-    /// and write the `.txt` filename list to a temp file. Zig reads the temp file,
-    /// then stats each file individually (stat works on IDBFS — only readdir is
-    /// broken). The temp file is deleted after reading.
-    fn listSaveFilesWeb(
-        self: *const FileSource,
-        allocator: std.mem.Allocator,
-        entries: *std.ArrayList(SaveFileEntry),
-    ) !void {
-        // JS: enumerate saves/ via lookupPath + Object.keys, filter .txt, write
-        // the newline-separated name list to a temp file. If saves/ doesn't exist
-        // (fresh install), write an empty file so Zig reads an empty list.
-        const script =
-            "(function() {" ++
-            "try {" ++
-            "  var node = FS.lookupPath('" ++ persistent_mount_path ++ "/saves');" ++
-            "  if (!node || !node.node) { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', ''); return; }" ++
-            "  var names = Object.keys(node.node.contents).filter(function(n) { return n.endsWith('.txt'); });" ++
-            "  FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', names.join('\\n'));" ++
-            "} catch(e) {" ++
-            "  try { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', ''); } catch(e2) {}" ++
-            "}" ++
-            "})();";
-        emscripten_run_script(script);
-
-        // Read the temp file (individual file reads work on IDBFS).
-        const listing_bytes = self.persistent_dir.readFileAlloc(self.io, saves_listing_temp, allocator, read_limit) catch |err| switch (err) {
-            error.FileNotFound => return, // JS didn't write it — empty saves
-            else => return err,
-        };
-        defer allocator.free(listing_bytes);
-        // Clean up the temp file.
-        self.persistent_dir.deleteFile(self.io, saves_listing_temp) catch {};
-
-        // Parse newline-separated filenames, stat each, build entries.
-        var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
-        while (lines.next()) |name| {
-            if (name.len == 0) continue;
-
-            const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{name});
-            errdefer allocator.free(relative_path);
-            const owned_name = try allocator.dupe(u8, name);
-            errdefer allocator.free(owned_name);
-
-            // Stat via the persistent dir (individual file stats work on IDBFS).
-            // A stat failure (vanished between enumerate + stat) skips the entry.
-            const stat = self.persistent_dir.statFile(self.io, relative_path, .{}) catch {
-                allocator.free(relative_path);
-                allocator.free(owned_name);
-                continue;
-            };
-            try entries.append(allocator, .{
-                .name = owned_name,
-                .path = relative_path,
-                .mtime_ns = stat.mtime.nanoseconds,
-            });
-        }
-    }
-
-    /// Temp listing file for the web JS directory enumeration (the
-    /// `saves_listing_temp` pattern, reused by both mission-listing call
-    /// sites — the script runs are sequential + synchronous, so one temp
-    /// path serves both).
-    const missions_listing_temp = ".missions_listing";
-
-    /// A name that can be safely embedded inside a single-quoted JS string
-    /// literal (the web listing scripts format paths into them): no quotes,
-    /// backslashes, or newlines. Our own saved mission dirs are sanitized to
-    /// this by construction; a hand-placed folder that isn't is skipped by the
-    /// caller (its flags degrade, the mission still lists).
-    fn isSafeForJsEmbedding(name: []const u8) bool {
-        for (name) |character| {
-            if (character == '\'' or character == '"' or character == '\\' or
-                character == '\n' or character == '\r') return false;
-        }
-        return true;
-    }
-
-    /// Web: enumerate one persistent-dir folder's children via JS — Zig's
-    /// `Dir.iterate` fails with `error.Unexpected` on the IDBFS mount (see
-    /// `listSaveFiles`). The JS writes the newline-separated names of children
-    /// whose `isDir` matches `keep_directories` to the temp listing file (empty
-    /// when the folder is missing or the lookup fails); Zig reads + deletes it.
-    /// Caller owns the returned names + slice.
-    fn listPersistentDirNamesWeb(
-        self: *const FileSource,
-        allocator: std.mem.Allocator,
-        /// The ABSOLUTE in-FS path to enumerate (e.g. "/ziglop/missions") —
-        /// must be safe to embed in the JS string (the caller filters).
-        fs_dir_path: []const u8,
-        keep_directories: bool,
-    ) ![][]const u8 {
-        const keep_flag: []const u8 = if (keep_directories) "true" else "false";
-        const temp_fs_path = persistent_mount_path ++ "/" ++ missions_listing_temp;
-        const script_body = std.fmt.allocPrint(
-            allocator,
-            "(function() {{" ++
-                "try {{" ++
-                "  var node = FS.lookupPath('{s}');" ++
-                "  var names = [];" ++
-                "  if (node && node.node) {{" ++
-                "    Object.keys(node.node.contents).forEach(function(n) {{" ++
-                "      var child = node.node.contents[n];" ++
-                "      if (child && FS.isDir(child.mode) === {s}) names.push(n);" ++
-                "    }});" ++
-                "  }}" ++
-                "  FS.writeFile('{s}', names.join('\\n'));" ++
-                "}} catch(e) {{" ++
-                "  try {{ FS.writeFile('{s}', ''); }} catch(e2) {{}}" ++
-                "}}" ++
-                "}})();",
-            .{ fs_dir_path, keep_flag, temp_fs_path, temp_fs_path },
-        ) catch @panic("failed to format web dir listing script");
-        defer allocator.free(script_body);
-        const script = allocator.dupeZ(u8, script_body) catch
-            @panic("failed to null-terminate web dir listing script");
-        defer allocator.free(script);
-        emscripten_run_script(script);
-
-        // Read the temp listing back (individual file reads work on IDBFS),
-        // delete it, split + dupe the names.
-        const listing_bytes = self.persistent_dir.readFileAlloc(
-            self.io,
-            missions_listing_temp,
-            allocator,
-            read_limit,
-        ) catch |err| switch (err) {
-            error.FileNotFound => return &.{}, // JS didn't write it — empty dir
-            else => return err,
-        };
-        defer allocator.free(listing_bytes);
-        self.persistent_dir.deleteFile(self.io, missions_listing_temp) catch {};
-
-        var names: std.ArrayList([]const u8) = .empty;
-        errdefer {
-            for (names.items) |name| allocator.free(name);
-            names.deinit(allocator);
-        }
-        var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
-        while (lines.next()) |name| {
-            if (name.len == 0) continue;
-            try names.append(allocator, try allocator.dupe(u8, name));
-        }
-        return names.toOwnedSlice(allocator);
-    }
 
     /// Delete a file from the persistent dir (used to consume the import
     /// marker). Missing file is an error like any other — callers poll with
@@ -803,18 +597,17 @@ pub const FileSource = struct {
     ) ![][]const u8 {
         var paths: std.ArrayList([]const u8) = .empty;
         errdefer freePersistentDirFiles(allocator, paths.items);
-        if (@import("builtin").os.tag == .emscripten) {
-            try self.listPersistentDirFilesWeb(allocator, &paths);
-        } else {
-            try listPersistentDirFilesNative(self.persistent_dir, self.io, "", allocator, &paths);
-        }
+        // The one path, every platform (the old emscripten JS-walk split
+        // died with the IDBFS mount — plain MEMFS readdir works; see
+        // DONE.md "web storage model slice 5").
+        try collectPersistentDirFiles(self.persistent_dir, self.io, "", allocator, &paths);
         std.mem.sort([]const u8, paths.items, {}, pathOrder);
         return paths.toOwnedSlice(allocator);
     }
 
-    /// Native path: `Dir.iterate` recursion. `prefix` is `dir`'s
+    /// `Dir.iterate` recursion. `prefix` is `dir`'s
     /// persistent-relative path ("" at the root).
-    fn listPersistentDirFilesNative(
+    fn collectPersistentDirFiles(
         dir: std.Io.Dir,
         io: std.Io,
         prefix: []const u8,
@@ -836,7 +629,7 @@ pub const FileSource = struct {
                     };
                     defer sub_dir.close(io);
                     defer allocator.free(relative_path);
-                    try listPersistentDirFilesNative(sub_dir, io, relative_path, allocator, paths);
+                    try collectPersistentDirFiles(sub_dir, io, relative_path, allocator, paths);
                 },
                 .file => try paths.append(allocator, relative_path),
                 else => allocator.free(relative_path),
@@ -844,51 +637,6 @@ pub const FileSource = struct {
         }
     }
 
-    /// Web path: the JS recursive walk (`FS.lookupPath` + `Object.keys` +
-    /// `FS.isDir`) writes the persistent-relative path list to the listing
-    /// temp (the `.saves_listing` seam at tree scale); Zig reads it back
-    /// (individual file reads work — only `Dir.iterate` is broken).
-    fn listPersistentDirFilesWeb(
-        self: *const FileSource,
-        allocator: std.mem.Allocator,
-        paths: *std.ArrayList([]const u8),
-    ) !void {
-        const script =
-            "(function() {" ++
-            "try {" ++
-            "  var out = [];" ++
-            "  function walk(path) {" ++
-            "    var node = FS.lookupPath(path);" ++
-            "    if (!node || !node.node) return;" ++
-            "    var names = Object.keys(node.node.contents);" ++
-            "    for (var i = 0; i < names.length; i++) {" ++
-            "      var child = node.node.contents[names[i]];" ++
-            "      if (!child) continue;" ++
-            "      var child_path = path + '/' + names[i];" ++
-            "      if (FS.isDir(child.mode)) walk(child_path);" ++
-            "      else if (" ++ persistent_dir_artifact_js_filter ++ "true) out.push(child_path.substring('" ++ persistent_mount_path ++ "/'.length));" ++
-            "    }" ++
-            "  }" ++
-            "  walk('" ++ persistent_mount_path ++ "');" ++
-            "  FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_folder_listing_temp ++ "', out.join('\\n'));" ++
-            "} catch(e) {" ++
-            "  try { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_folder_listing_temp ++ "', ''); } catch(e2) {}" ++
-            "}" ++
-            "})();";
-        emscripten_run_script(script);
-
-        const listing_bytes = self.persistent_dir.readFileAlloc(self.io, game_folder_listing_temp, allocator, read_limit) catch |err| switch (err) {
-            error.FileNotFound => return,
-            else => return err,
-        };
-        defer allocator.free(listing_bytes);
-        self.persistent_dir.deleteFile(self.io, game_folder_listing_temp) catch {};
-        var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
-        while (lines.next()) |path| {
-            if (path.len == 0) continue;
-            try paths.append(allocator, try allocator.dupe(u8, path));
-        }
-    }
 };
 
 /// Free a `listPersistentDirFiles` result.
@@ -911,24 +659,10 @@ fn pathOrder(_: void, a: []const u8, b: []const u8) bool {
 /// so the native + JS filters can never drift apart.
 const persistent_dir_artifact_names = [_][]const u8{
     game_export_temp_path,
-    game_folder_listing_temp,
     game_import_temp_path,
     game_import_marker_path,
     import_marker_path,
     mission_import_marker_path,
-    saves_listing_temp,
-};
-
-/// The JS mirror of the artifact-name exclusion: one `names[i] !== '...'`
-/// condition per artifact, built from the same comptime list as
-/// `isPersistentDirArtifactName` (a hand-maintained copy of a machine-
-/// derivable list is drift by definition).
-const persistent_dir_artifact_js_filter = build_filter: {
-    var script_filter: []const u8 = "";
-    for (persistent_dir_artifact_names) |artifact_name| {
-        script_filter = script_filter ++ "names[i] !== '" ++ artifact_name ++ "' && ";
-    }
-    break :build_filter script_filter;
 };
 
 /// True for a persistent-dir-root artifact name (the staging + marker set -
@@ -1042,13 +776,6 @@ extern fn emscripten_run_script(script: [*:0]const u8) void;
 /// `triggerBrowserDownload`.
 pub const persistent_mount_path = "/ziglop";
 
-/// Temp file (persistent-dir root, outside saves/) used by the web path to
-/// pass the JS-enumerated filename list back to Zig. Written by JS, read +
-/// deleted by Zig. Mirrors the `.import_marker` pattern. Excluded from the
-/// persistent-dir listing like every root artifact (see
-/// `persistent_dir_artifact_names`).
-const saves_listing_temp = ".saves_listing";
-
 /// Marker file (persistent-dir root) written by the web import JS after the
 /// picked save file has landed in saves/. Zig polls it while the load-save
 /// browser is open; finding it means "an import completed — load this path".
@@ -1068,12 +795,6 @@ pub const mission_import_marker_path = ".mission_import_marker";
 /// EXCLUDES it — a crashed export's leftover must not ride in a later
 /// export. Deleted after the download reads it.
 pub const game_export_temp_path = ".game_export.zip";
-
-/// The temp listing for the recursive persistent-dir walk (the
-/// `.saves_listing` pattern at directory-tree scale — Export Game's
-/// source list; see game_zip.zig). Written by the web JS walk, read +
-/// deleted by Zig. Excluded from the listing like the staging temp.
-pub const game_folder_listing_temp = ".game_folder_listing";
 
 /// Import Game's archive staging file (persistent-dir root, dot-prefixed
 /// like the export staging temp; see game_zip.zig). The web game-import JS

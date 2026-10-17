@@ -17446,3 +17446,31 @@ had STARTED; no crash-bundle write = the crash hook was uninstalled =
 inside the boot sequence), the headless mimic (import + teardown + double
 createSessionSetup over the real zip, heap reuse included) ruled out
 everything but wasm, and the source-mapped run named the exact frame.
+
+## Web storage model slice 5: the IDBFS-era listing splits deleted
+
+The refactor's last item: under plain MEMFS, `Dir.iterate` works (the
+"readdir is broken on IDBFS" workaround never applied to the in-memory
+mount), so the platform splits were dead weight. Deleted:
+
+- The four splits in `file_source.zig`: the save scan (`listSaveFiles`), the
+  mission folder names (`listMissionFolderNames`), the per-mission folder
+  scan (`scanMissionFolder`), and the export tree walk
+  (`listPersistentDirFiles` - the recursive helper renamed
+  `collectPersistentDirFiles`; the others inlined into their callers).
+- Their JS machinery: `listSaveFilesWeb`, `listPersistentDirNamesWeb`,
+  `listPersistentDirFilesWeb`, `isSafeForJsEmbedding`, the three listing
+  temp files (`.saves_listing`, `.missions_listing`,
+  `.game_folder_listing`), and the JS mirror of the artifact-name
+  exclusion (the comptime filter builder - with the JS walks gone, no JS
+  needs it; the artifact set itself stays, feeding the native walker, and
+  shrank to the staging zips + markers).
+- The IDBFS-era prose at the listing sites + DESIGN (the load-save
+  browser + mission-browser sections).
+
+What survives (still genuinely web-only): the download seam, the three
+upload triggers (save / mission / game), and the markers/staging temps they
+use. Browser verification: the three listing surfaces on web (the
+load-save browser, the mission browser, an export) - `Dir.iterate` through
+plain MEMFS readdir everywhere; a surface turning up empty or erroring
+restores the splits from git.

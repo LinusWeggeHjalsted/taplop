@@ -796,16 +796,27 @@ Open:
      model), two centered lines above the title, riding the same
      `persistent_dir_path` web signal (see DONE.md, "web storage model
      slice 4").
-  5. [ ] Cleanup sweep - the `file_source.zig` platform-split directory
-     listings (the "Dir.iterate is broken on the IDBFS mount" workaround:
-     JS-path listings + per-file stats) may be deletable under the plain
-     MEMFS mount - browser-verified (compile ≠ run; harmless if kept) -
-     plus any remaining IDBFS-era prose.
-  - Browser pass PENDING for slice 2 (landed headless-verified only):
-    emrun - Export Game downloads ziglop.zip with the full tree in it
-    (incl. a mid-level autosave), the staging temp cleans up, a refresh
-    leaves no residue, and the new JS walk errors degrade (empty listing,
-    popup) rather than hanging.
+  5. [x] Cleanup sweep - DONE (see DONE.md, "web storage model slice
+     5"): the `file_source.zig` platform-split directory listings deleted
+     (all four: the save scan, the mission folder names, the per-mission
+     folder scan, the export tree walk) + their JS machinery (three
+     listing temp files, the shared JS enumerator, the JS artifact filter)
+     + the IDBFS-era prose. Browser verification: the load-save browser
+     + the mission browser + an export on web (the three listing
+     surfaces) — plain MEMFS readdir through `Dir.iterate` everywhere.
+     If a listing surface turns up empty or errors on web, the splits
+     restore from git.
+  - Browser pass DONE (the emrun pass across slices 2-4, with the user
+    driving): export + import round-trip verified — the download lands
+    with the full tree, importing loads the content, Continue appears for
+    the imported autosave, the re-boot completes. The pass caught four
+    real bugs on the way (each its own commit): the export walk's
+    unquoted mount path (a JS injection crash), its path-strip
+    off-by-one (absolute paths), the download seam's NUL truncation
+    (5-byte zips), and the Audio.deinit undefined-fill crash at the
+    re-boot. Remaining unverified edges: the hostile/garbage-zip abort
+    (popup, nothing written) + a refresh-residue check (IndexedDB stays
+    empty) — fine to fold into the next pass.
 
 - **Load-save browser polish** (the browser itself is DONE — DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player

@@ -2187,7 +2187,7 @@ into). The picked zip lands at a FIXED staging temp (`.game_import.zip`)
 JS's write order: staging first, marker second); the staging zip is
 deleted on every import exit (success + failure — the original stays
 wherever the player picked it from), and BOTH temps plus every other
-root artifact (markers, listing temps) are excluded from the Export Game
+root artifact (markers, the staging zips) are excluded from the Export Game
 listing via ONE machine-walked name set both walkers derive from (a
 leftover must never ride in a later export). The marker is polled EVERY
 FRAME on web (a comptime-gated call in the shared frame path) and consumed
@@ -4068,11 +4068,11 @@ time). The OFFICIAL tab keeps its comptime path order (embedded content
 has no filesystem). Lists live on SessionState
 (scanned from the input path on open, never `view()`; no periodic rescan
 while open — nothing can add a local mission while the modal is up, a web
-import rescans explicitly). On WEB, the folder ENUMERATION goes through
-the JS listing path (`FS.lookupPath` + `Object.keys` + a temp listing
-file — the `listSaveFiles` IDBFS story: Zig's `Dir.iterate` fails on the
-mount, while individual file reads + stats work); the per-mission
-mission.txt probe + parse is shared across platforms. A row click pushes
+import rescans explicitly). The per-mission probe + parse + the folder
+scan run the same `Dir.iterate` path on every platform (the old
+IDBFS-era platform split — a JS listing via a temp file because the
+IDBFS mount's readdir was broken — died with the IDBFS mount itself;
+see DONE.md "web storage model slice 5"). A row click pushes
 the ordinary `open_editor`
 with the row's path (`pushPlayerActionAndDrain`) — the loading path is
 unchanged; replay re-reads the files silently (the `player_load_save`

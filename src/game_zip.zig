@@ -313,7 +313,6 @@ test "listPersistentDirFiles + zip round-trip: the full tree, temps excluded" {
     try file_source.writeFile("missions/mine/mission.txt", "mission");
     try file_source.writeFile("missions/mine/sprites/art.png", "png");
     try file_source.writeFile(file_source_mod.game_export_temp_path, "stale export staging temp");
-    try file_source.writeFile(file_source_mod.game_folder_listing_temp, "stale listing temp");
     try file_source.writeFile(file_source_mod.game_import_temp_path, "stale import staging temp");
     try file_source.writeFile(file_source_mod.game_import_marker_path, "stale import marker");
     try file_source.writeFile(file_source_mod.import_marker_path, "stale save import marker");
