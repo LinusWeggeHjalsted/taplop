@@ -604,11 +604,21 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
     documented exclusions keep semantics feedback honest:
     `types.actionSoundUnwired` (no layer by design — the same list the
     sound report excludes) and the OUTCOME-GATED set (undo/redo,
-    swap_weapons, cancel, the skill slots — `actionLayerRidesConsumptionSite`),
+    swap_weapons, cancel, skip, the skill slots —
+    `actionLayerRidesConsumptionSite`),
     whose layer rides the CONSUMPTION site so a no-op stays silent (an
     undo with nothing to undo, a swap with both hands empty, a cancel
-    with nothing prepared) and an auto-fire slot cast plays the full
-    skill cue instead. Skill slots: the release seam suppresses the up
+    with nothing prepared, a skip that never reaches its orchestrator)
+    and an auto-fire slot cast plays the full
+    skill cue instead. SKIP was the shipped lesson: `.skip` was missing
+    from the set, so a skip queued its layer at BOTH sites — two plays
+    per skip, which on fast native landed in one frame's playSounds (two
+    pool entries overlapping into one louder blip — not hearable) but on
+    web separated across frames (the orchestrator often drains a frame
+    later) — "the skip sound repeated quickly", a web-sounding bug with
+    a platform-neutral root cause. A missing entry here double-plays; the
+    live-path test (input_handlers' "skip action layers exactly once")
+    pins it. Skill slots: the release seam suppresses the up
     base (`types.actionIsSkillSlot`) — auto-fire's use_skill cue subsumes
     any button sound, and the prepare/unprepare path plays its own up
     base + slot layer at the consumption site. History: the

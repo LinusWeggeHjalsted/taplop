@@ -17352,3 +17352,39 @@ The onset probe (the investigation's instrument) was reverted with the
 conclusion: the submission marks in audio.zig + the fill wrapper + the
 1-second lead line in web.zig. The watchdog keeps its trip console.warn
 (a real repair event, one per load).
+
+## Web skip-sound burst: the missing rides-consumption classification
+
+The user's browser pass surfaced "the skip sound plays in a burst, repeated
+quickly" on web (button + keybind both), clean-sounding on native. The
+investigation lesson worth keeping:
+
+- Native-clean initially pointed the investigation at the web OUTPUT side
+  (the watchdog-era tight schedule) — the user then made the sharper
+  observation themselves: native runs much faster, and two plays landing in
+  the same frame overlap into one blip they can't rule out by ear. That
+  reinstated the platform-neutral candidate.
+- The actual bug (found by code-walking the queue sites): the skip layer is
+  queued at the CONSUMPTION site (the skip orchestrator handlers in
+  player_input.zig — deliberately, the layer reflects an actually-consumed
+  skip), but `.skip` was MISSING from `actionLayerRidesConsumptionSite` —
+  so the fired-actions choke point (dispatchFiredActionSounds) queued the
+  SAME layer cue too. Two plays per skip. On fast native both plays landed
+  in one frame's playSounds (two pool entries overlapping almost perfectly
+  — one slightly-louder blip, not hearable); on web the orchestrator often
+  drains a frame later (budget + pacing waits), so the two plays were
+  separated — "repeated quickly". A web-only-SOUNDING bug with a
+  platform-neutral root cause.
+- Fix: `.skip` joins `actionLayerRidesConsumptionSite` (the layer rides the
+  consumption site only; a skip that never reaches its orchestrator stays
+  silent — the sound report's own description said exactly this: "fires on
+  the button release + the keybind, when the action does something").
+- Pin: the new live-path test (input_handlers' "the skip action layers
+  exactly once": applyAction + the choke point + handleIdleInput's skip
+  path + the drain queue EXACTLY ONE skip layer cue — negative-checked:
+  it fails without the classification) + `.skip` added to the
+  dispatchFiredActionSounds exclusions test. The classification's doc
+  comment now states the class invariant: a consumption-site queue without
+  a rides-consumption entry double-plays.
+
+Verified: full suite PASS; the user's ear-verification on web pending.

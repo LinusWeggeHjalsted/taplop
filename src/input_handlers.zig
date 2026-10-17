@@ -742,12 +742,17 @@ pub fn dispatchFiredActionSounds(
 /// OUTCOME, not the firing — undo/redo sound only when a step actually
 /// happened (a no-op at the timeline start stays silent), swap_weapons
 /// only past its any-weapon/prepared gate, cancel only with a live
-/// preparation to cancel, and the skill slots play their layer only on
+/// preparation to cancel, the skill slots play their layer only on
 /// prepare/unprepare (an auto-fire cast plays the full skill cue instead —
-/// see main.zig's release-seam skill-slot skip).
+/// see main.zig's release-seam skill-slot skip), and skip only when the
+/// skip orchestrator actually fires (the handler's queue — the layer
+/// plays once; a skip that never reaches the orchestrator stays silent).
+/// A missing entry here DOUBLE-PLAYS the layer (the choke point + the
+/// consumption site) — the shipped skip layer did exactly that before
+/// `.skip` joined this set.
 fn actionLayerRidesConsumptionSite(action: types.Action) bool {
     return switch (action) {
-        .undo, .redo, .swap_weapons, .cancel => true,
+        .undo, .redo, .swap_weapons, .cancel, .skip => true,
         else => types.actionIsSkillSlot(action),
     };
 }
@@ -5631,6 +5636,48 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
     loaders.freeSettings(history.settings, std.testing.allocator);
 }
 
+test "the skip action layers exactly once (the consumption site, not the choke point)" {
+    // Regression: `.skip` was missing from `actionLayerRidesConsumptionSite`,
+    // so a skip queued its layer at BOTH the fired-actions choke point and
+    // the skip orchestrator handler - two plays per skip. On fast native
+    // the two plays landed in one frame's playSounds (two pool entries
+    // overlapping almost perfectly - one louder blip, not hearable); on
+    // web the orchestrator often drains a frame later (budget + waits), so
+    // the two plays were separated - "the skip sound repeated quickly",
+    // the shipped web skip burst. The live-path pin: applyAction records
+    // the firing, the choke point dispatches (skip excluded - it rides the
+    // consumption site), idle input consumes the skip, and the drain queues
+    // EXACTLY ONE skip layer cue.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(@import("test_harness.zig").levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+    ));
+    @import("test_harness.zig").runToIdle(&history);
+    history.current_state.level.?.turn_phase = .player_attack;
+
+    var player_input = input.PlayerInput{};
+    input.applyAction(&player_input, .skip);
+    dispatchFiredActionSounds(&history, player_input.fired_actions);
+    handleIdleInput(&history, player_input.idle, null, .{});
+    @import("test_harness.zig").runToIdle(&history);
+
+    // Exactly ONE skip layer cue total (the consumption site's).
+    var skip_layers: usize = 0;
+    for (history.session.pending_sounds.items) |cue| {
+        if (cue.layer) |layer| switch (layer) {
+            .action => |action| {
+                if (action == .skip) skip_layers += 1;
+            },
+            else => {},
+        };
+    }
+    try std.testing.expectEqual(@as(usize, 1), skip_layers);
+}
+
 test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" {
     // The per-action sound choke point: exactly ONE action layer per
     // fired action, and only for the non-excluded classes. The
@@ -5654,6 +5701,7 @@ test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" 
     input.applyAction(&player_input, .skip_level);
     input.applyAction(&player_input, .undo);
     input.applyAction(&player_input, .swap_weapons);
+    input.applyAction(&player_input, .skip);
 
     dispatchFiredActionSounds(&history, player_input.fired_actions);
 
