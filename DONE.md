@@ -17244,3 +17244,77 @@ Game functionality to load and save data for cross-session usage).
   rides the emrun browser pass (the visual claim: fits, readable).
 
 Verified: full suite PASS (847), native + web compile OK.
+
+## Web audio onset delay: the ScriptProcessorNode banked queue (diagnosis + watchdog)
+
+The user's browser pass surfaced two web bugs (the export crash is its own
+entry-level fix above; this one is the audio delay investigation). The
+diagnosis story is worth keeping — it's the project's "measure before
+concluding" discipline in action, with two of my own hypotheses killed by
+measurement on the way:
+
+- **Symptom**: every sfx delayed on web (worst in combat), instant on
+  native. Debug + release both, release milder. The user's gut said
+  "something must have broken"; the audio stack turned out to have been
+  pinned (same raylib-zig commit) since the first web build — nothing
+  regressed underneath.
+- **Hypothesis 1 (main-thread contention)**: on web, raylib's whole mixer
+  runs in miniaudio's `onaudioprocess` on the MAIN thread (no
+  SharedArrayBuffer -> no AudioWorklet path -> the ScriptProcessorNode
+  fallback). KILLED by the clock-ratio probe (AudioContext.currentTime vs
+  real time): 1.000 throughout — the mixer keeps up; no starvation, even
+  during the observed sub-60fps frame dips.
+- **Hypothesis 2 (buffer-inherent latency)**: the ScriptProcessorNode
+  buffer is 2048 frames (~43ms; miniaudio's browser-specific override of
+  raylib's period default). Halving it to 1024 via raylib's
+  `-Dconfig -DAUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024` changed NOTHING
+  audible — killed by the user's ears.
+- **The onset probe (the decisive instrument)**: the submission moment
+  marked in Zig (at the actual rl.playSound site, via a tiny JS call
+  carrying the AudioContext clock) + the fill moment measured in JS (a
+  runtime wrap of miniaudio's own onaudioprocess, reading
+  AudioProcessingEvent.playbackTime vs the context clock). Per sound:
+  trigger->fill + fill->audible + total.
+- **Diagnosis (measured)**: fill->audible (the node's output QUEUE depth)
+  starts healthy (~30ms, 1-2 buffers), then JUMPS across main-thread
+  blocks (content loads) and stays: ~90ms in release, ~2 SECONDS in debug.
+  A long block starves the queue (clock runs on through silence), then the
+  browser delivers the missed fill requests in a burst — each banking ~one
+  buffer of pre-mixed audio AHEAD of playback — and the banked depth never
+  drains (production == consumption at 1x afterwards). Every sound after
+  the load plays late by the banked depth, permanently. Buffer size
+  irrelevant (explains hypothesis 2's null result); clock healthy
+  (explains hypothesis 1's). Native unaffected (real audio thread).
+- **The fix (landed)**: `web.zig`'s queue watchdog (every web build, per
+  boot) — a runtime property swap on the node's callback (NO raylib or
+  miniaudio source modified) watching the queue depth per fill; a burst
+  banks ~21ms per fill, so +50ms growth-per-fill is the burst signature
+  (normal jitter ~±10ms measured) backed by a 150ms absolute cap (normal
+  steady lead measured 30-64ms). On a trip it rebuilds the node: fresh
+  ScriptProcessorNode = clean ~1-buffer schedule; the stale pre-mixed
+  queue drops with the old node; the wrapper is reattached so the
+  wasm-side mixing state is untouched. Costs when it fires: music skips
+  forward by the banked depth (right after a load, when a gap is least
+  noticed) + sounds triggered during the block are lost rather than
+  played seconds late. Fragility accepted + degrades-safe: reads
+  miniaudio's internal device layout (window.miniaudio.devices
+  [0].scriptNode) — a raylib upgrade reshaping it no-ops back to this bug,
+  never a crash.
+- **Also landed**: the 1024-frame period define kept (halves the inherent
+  ~1-2-buffer lead; measured serviceable at 60fps — clock ratio 1.000;
+  512 would chronically starve). tryResumeWebAudio after an import
+  re-boot (the fresh AudioContext starts suspended; the import click's
+  sticky activation may allow an immediate resume, else miniaudio's
+  re-registered unlock listener recovers on the next click).
+- **Deferred (TODO → Platform Layer)**: the AudioWorklet structural fix
+  (mixing off the main thread; blocks become silent ring-buffer underruns
+  instead of a banked queue) lands as its own session WITH the web hosting
+  milestone — it needs MA_ENABLE_AUDIO_WORKLETS + -sASYNCIFY +
+  SharedArrayBuffer -> COOP/COEP isolation headers from every host. Also
+  recorded: the release-web frame-time dips during rapid turn steps
+  (~45fps) as a measure-then-optimize perf item.
+
+Verified: suite PASS, native + web compile OK. Browser verification
+pending (the user's run): the watchdog trips after each load + the lead
+resets to ~30ms, sounds prompt after loads, the music skip acceptable, no
+rebuild loops.

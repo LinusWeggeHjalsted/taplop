@@ -536,7 +536,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   insets, health bars) + camera math (computeCamera, tileToScreen) +
   sprite/flag frame/pivot constants.
 - `src/native.zig` — native exe entry (raylib); `src/web.zig` — web (emscripten)
-  exe entry (the in-memory persistent mount + emscripten main-loop driver);
+  exe entry (the in-memory persistent mount + emscripten main-loop driver +
+  the Import Game re-boot + the web audio queue watchdog — see DESIGN →
+  Platform Seam → Web audio onset latency);
   `src/raylib/backend.zig` — the raylib platform backend (window/clock/
   render target/render driver, the duck-typed `RaylibBackend` interface) +
   `src/raylib/input_poll.zig` (the key/mouse mapping tables + the per-frame
@@ -686,7 +688,7 @@ stay here in AGENTS; this map is the seam between the two.
 - **Platform seam (raylib)** — DESIGN → Platform Seam (raylib): native/web
   driver split, budget-driven drain, render gating, letterbox, two-camera
   model, camera pan, render target resolution, SDF text outline, allocator
-  rule for emscripten. Key:
+  rule for emscripten, web audio onset latency watchdog. Key:
   `src/raylib/` (backend.zig), `native.zig`, `web.zig`, `transient_allocator.zig`,
   `tools/sdf_atlas_generator.zig`.
 - **Audio** — DESIGN → Audio: sound as side effect, sfx queue + looping music

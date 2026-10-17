@@ -113,6 +113,11 @@ fn bootSession(session: *WebSession) void {
     session.setup.fixupPointers();
     (&session.backend).initAudio(session.setup.frame_state.history.settings);
     crash_dump.install(&session.setup.frame_state.history);
+    // The audio queue watchdog (see installAudioLeadWatchdog) — after
+    // initAudio so the node exists; per boot so a re-boot re-wraps the
+    // fresh node. ALL web builds (the Release-scale banking is exactly the
+    // player-facing case).
+    installAudioLeadWatchdog();
 }
 
 /// Best-effort: resume the re-boot's fresh AudioContext immediately (it
@@ -169,6 +174,73 @@ fn mountPersistentDir() void {
         \\FS.mkdir('/ziglop');
         \\FS.mount(MEMFS, {}, '/ziglop');
     ;
+    emscripten_run_script(script);
+}
+
+/// Web audio onset latency: the ScriptProcessorNode QUEUE WATCHDOG (see
+/// DESIGN → Platform Seam → Web audio onset latency). On web, raylib's
+/// entire mixer runs inside miniaudio's `onaudioprocess` on the MAIN
+/// thread, and the just-filled buffer joins the node's output queue, which
+/// drains to the speakers at exactly 1x real time. A long main-thread
+/// block (a mission/level load) starves the queue during the block, then
+/// the browser delivers the missed fill requests in a burst — each banking
+/// ~one buffer (21ms at 1024 frames @48kHz) of pre-mixed audio AHEAD of
+/// playback — and the banked queue never drains (production and
+/// consumption both run 1x afterwards). Measured: every subsequent sound
+/// plays late by the banked depth — ~2s in Debug (slow loads), ~90ms in
+/// Release; native is unaffected (a real audio thread).
+///
+/// The watchdog wraps the node's callback (a runtime property swap — no
+/// raylib/miniaudio source is touched) and watches the queue depth on
+/// every fill (AudioProcessingEvent.playbackTime vs the context clock):
+/// a burst banks +21ms per fill, so a +50ms growth-per-fill is the burst
+/// signature (normal jitter measured ~±10ms); a 150ms absolute cap backs
+/// it up for slow creep (normal steady lead measured 30-64ms). On a trip it
+/// rebuilds the node — a fresh ScriptProcessorNode starts with a clean
+/// ~1-buffer schedule, and the stale pre-mixed queue (silence from the
+/// block + music + any sounds triggered during it) is dropped with the old
+/// node. The wrapper is reattached, so miniaudio's wasm-side mixing state
+/// is untouched. Costs when it fires: the music skips forward by the
+/// banked depth (right after a load, when a gap is least noticed) and any
+/// sound triggered during the block is lost rather than played seconds
+/// late — the right trade for feel. Fragility (accepted, degrades-safe): it
+/// reads miniaudio's internal device layout (`window.miniaudio.devices
+/// [0].scriptNode`) — a raylib upgrade that reshapes it makes the install
+/// find nothing and quietly no-op back to this bug, never a crash. The
+/// structural fix (AudioWorklet: mixing off-thread, blocks become silent
+/// ring-buffer underruns that recover instantly) is deferred to the web
+/// hosting milestone — see TODO → Platform Layer. Installed per boot from
+/// bootSession (a re-boot's fresh node needs re-wrapping).
+fn installAudioLeadWatchdog() void {
+    const script =
+        "(function() {" ++
+        "  var m = window.miniaudio;" ++
+        "  var d = m && m.devices && m.devices[0];" ++
+        "  if (!d || !d.scriptNode || d.scriptNode.__ziglopWatchdog) return;" ++
+        "  d.scriptNode.__ziglopWatchdog = true;" ++
+        "  var last_lead = null;" ++
+        "  var orig = d.scriptNode.onaudioprocess;" ++
+        "  d.scriptNode.onaudioprocess = function(e) {" ++
+        "    orig(e);" ++
+        "    if (!d.webaudio || d.webaudio.state !== 'running' ||" ++
+        "        typeof e.playbackTime !== 'number') { last_lead = null; return; }" ++
+        "    var lead = (e.playbackTime - d.webaudio.currentTime) * 1000;" ++
+        "    var banked = lead > 150 ||" ++
+        "      (last_lead != null && lead - last_lead > 50);" ++
+        "    last_lead = lead;" ++
+        "    if (!banked) return;" ++
+        "    var old = d.scriptNode;" ++
+        "    if (old !== e.target) return;" ++
+        "    console.warn('[ziglop] audio queue banked ' + lead.toFixed(0) +" ++
+        "      'ms of playback ahead - rebuilding the audio node (the queue never drains; see the web-audio latency notes)');" ++
+        "    var fresh = d.webaudio.createScriptProcessor(old.bufferSize, 0, old.channelCount || 2);" ++
+        "    fresh.onaudioprocess = old.onaudioprocess;" ++
+        "    fresh.connect(d.webaudio.destination);" ++
+        "    d.scriptNode = fresh;" ++
+        "    old.disconnect();" ++
+        "    last_lead = null;" ++
+        "  };" ++
+        "})();";
     emscripten_run_script(script);
 }
 

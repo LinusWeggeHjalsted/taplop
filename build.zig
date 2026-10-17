@@ -264,7 +264,21 @@ pub fn build(b: *std.Build) void {
         // Same custom frame control as native: EndDrawing() only flushes the
         // render batch; we drive swapScreenBuffer + pollInputEvents ourselves
         // from the emscripten main-loop callback (no asyncify).
-        .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL",
+        .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL " ++
+        // Web audio onset latency (the measured diagnosis — see DESIGN →
+        // Platform Seam → Web audio onset latency): raylib's default device
+        // period (0) is overridden by miniaudio's webaudio backend to 33ms ->
+        // a 2048-frame (~43ms @ 48kHz) ScriptProcessorNode buffer, doubling
+        // the node's inherent ~1-2-buffer fill-ahead lead on every sound's
+        // onset. 1024 frames (~21ms) halves that inherent lead and was
+        // measured serviceable at 60fps (AudioContext clock ratio 1.000 —
+        // the main thread services a fill every ~21ms against ~16.7ms frame
+        // gaps; 512/~10.7ms would chronically starve). The DOMINANT web
+        // onset delay — the queue BANKED by long main-thread blocks — is
+        // handled by web.zig's queue watchdog, not by this knob. Native
+        // keeps raylib's default (a real audio thread, 10ms period, instant
+        // by the same measurement).
+        "-DAUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024",
     });
     const raylib_web = raylib_web_dep.module("raylib");
     const raylib_web_artifact = raylib_web_dep.artifact("raylib");

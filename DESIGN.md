@@ -442,6 +442,70 @@ untracked allocations (font bytes, crash-dump output, existence probes)
 use `transient_allocator.zig` — c_allocator on emscripten, page_allocator
 on native. Never call `std.heap.page_allocator` directly from shared code.
 
+### Web audio onset latency (the ScriptProcessorNode queue watchdog)
+
+On web, raylib's ENTIRE mixer runs inside miniaudio's `onaudioprocess`
+JS callback on the MAIN thread (no SharedArrayBuffer in the build → miniaudio's
+AudioWorklet path is unavailable → the ScriptProcessorNode fallback), and
+each fill's mixed buffer joins the node's output queue, which drains to
+the speakers at exactly 1x real time. The queue is the onset-latency
+story, in two layers (both MEASURED — the onset probe instrumented the
+submission moment in Zig + the fill moment in JS):
+
+- **Inherent lead**: a healthy node schedules its fills ~1-2 buffers ahead
+  of playback — ~30ms at the 1024-frame period (see below), i.e. the
+  platform's base onset latency for every sound. Native has none of this
+  (a real audio thread, 10ms period, instant by the same measurement).
+- **Banked queue (the bug class)**: a long main-thread block (a
+  mission/level load) starves the queue during the block (the clock runs
+  on through silence), then the browser delivers the missed fill requests
+  in a BURST — each banking ~one buffer (21ms at 1024 frames) of pre-mixed
+  audio AHEAD of playback. The banked depth never drains (production and
+  consumption both run 1x afterwards; the clock-ratio probe reads 1.000
+  through it all), so EVERY subsequent sound plays late by the banked
+  depth, permanently: measured ~2s in Debug (slow loads), ~90ms in
+  Release — the reported "web audio delay", worst in combat (after the
+  level load that banked it). Buffer size is irrelevant to the banked
+  depth, which is why halving the buffer changed nothing.
+
+The FIX (landed): the web driver installs a QUEUE WATCHDOG
+(`web.zig`'s `installAudioLeadWatchdog`, every web build, per boot) — a
+runtime property swap on the node's callback (NO raylib/miniaudio source
+is touched) that watches the queue depth on every fill
+(`AudioProcessingEvent.playbackTime` vs the context clock). A burst banks
+~21ms per fill, so a **+50ms growth-per-fill** is the burst signature
+(normal jitter measured ~±10ms); a **150ms absolute cap** backs it up for
+slow creep (normal steady lead measured 30-64ms). On a trip it REBUILDS
+the node: a fresh ScriptProcessorNode starts with a clean ~1-buffer
+schedule and the stale pre-mixed queue is dropped with the old node —
+the wrapper is reattached, so miniaudio's wasm-side mixing state is
+untouched. Costs when it fires: the music skips forward by the banked
+depth (right after a load, when a gap is least noticed) and any sound
+triggered during the block is LOST rather than played seconds late — the
+right trade for feel. Known limitation (accepted, degrades-safe): the
+install reads miniaudio's internal device layout
+(`window.miniaudio.devices[0].scriptNode`) — a raylib upgrade that
+reshapes it makes the watchdog find nothing and quietly no-op back to
+the banked-queue bug, never a crash.
+
+The device period is also tuned: raylib's default period (0) becomes a
+2048-frame (~43ms) ScriptProcessorNode buffer on web (miniaudio's
+browser-specific override), doubling the inherent lead. The build passes
+`AUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024` (~21ms, build.zig's web raylib
+config) — measured serviceable at 60fps (clock ratio 1.000, the main
+thread services a fill every ~21ms against ~16.7ms frame gaps) with the
+inherent lead halved; 512/~10.7ms would chronically starve.
+
+The STRUCTURAL fix — miniaudio's AudioWorklet path (mixing on the
+browser's audio thread; a load block becomes a silent ring-buffer
+underrun that recovers instantly instead of a banked queue) — is DEFERRED
+ to the web hosting milestone (TODO → Platform Layer): it needs
+`MA_ENABLE_AUDIO_WORKLETS` in raylib's C build, `-sASYNCIFY` (whole-program
+instrumentation: bigger + slower wasm), and SharedArrayBuffer (wasm
+workers) — which requires COOP/COEP cross-origin-isolation headers from
+ every host that serves the game. That tradeoff belongs with the hosting
+decisions. The watchdog caps the damage until then.
+
 ### Diagnostics
 
 Purpose: Terminal-less platform troubleshooting — getting data from

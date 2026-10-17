@@ -662,6 +662,27 @@ Open:
   native; the platform-seam compiles-≠-runs rule). The setting itself is
   DONE (DONE.md; design: DESIGN → Platform Seam → Render target
   resolution).
+- **Web audio: the AudioWorklet structural fix — DEFERRED to the web
+  hosting milestone.** The ScriptProcessorNode queue banking (the web
+  audio onset-delay diagnosis) is capped by the landed watchdog + the
+  1024-frame period (see DESIGN → Platform Seam → Web audio onset
+  latency; history in DONE.md). The structural fix — miniaudio's
+  AudioWorklet path (mixing on the browser's audio thread, load blocks
+  become silent underruns instead of banked queue) — lands as its own
+  session WITH the hosting work: `MA_ENABLE_AUDIO_WORKLETS` via raylib's
+  `-Dconfig`, `-sAUDIO_WORKLET=1 -sWASM_WORKERS=1 -sASYNCIFY` (whole-program
+  instrumentation: bigger + slower wasm), and SharedArrayBuffer → COOP/COEP
+  cross-origin-isolation headers required from every host that serves
+  the game (emrun verified; itch/GitHub Pages `_headers`; the fallback when
+  a host can't send them = today's ScriptProcessorNode + watchdog path).
+- **Web frame-time dips during rapid turn steps — MEASURE + optimize
+  (perf polish).** Observed: release web dips below 60fps (~45) while
+  holding space through turn steps (each auto-fired skip = a full turn
+  drain + view rebuild + render in one frame). Not yet known: how much of
+  the frame is drain vs `view()` vs render (a devtools Performance
+  capture or the show_fps overlay while reproducing), and whether native
+  release shows the same dips. The audio watchdog caps the damage this
+  causes to sound; the dips themselves are a smoothness item.
 - **Zig toolchain policy (settled): stay on 0.16.0** for the
   foreseeable future; migrate to 0.17.0 ONLY when it RELEASES and
   raylib_zig/zemscripten ship 0.17-compatible versions (today's
