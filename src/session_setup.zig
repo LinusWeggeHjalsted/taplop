@@ -66,30 +66,67 @@ pub const FrameState = struct {
 };
 
 /// Collected startup warnings (one per config file that fell back to its
-/// embedded copy). Passed by-mutable-pointer to each loader; the helper
-/// appends to it. `createSessionSetup` concatenates the entries into a single
-/// `pending_error` after the history is created (the popup lives on
-/// SessionState, which is on GameStateHistory). The warning strings are
-/// allocated in the session allocator (process-lifetime); `setPendingError`
-/// dupes the combined message into `history_arena`, so these are leaked in
-/// the GPA — accepted (small, rare; same lifetime contract as the config
-/// bytes themselves). See DESIGN → Error Handling → three contexts.
+/// embedded copy, or per stale entry the overlay repaired). Passed by-
+/// mutable-pointer to each loader as `&startup.warnings` (the list lives on
+/// `StartupMemory`); the helper appends to it. `createSessionSetup`
+/// concatenates the entries into a single `pending_error` after the
+/// history is created (the popup lives on SessionState, which is on
+/// GameStateHistory). The warning strings are backing-allocator-owned,
+/// tracked in the SessionSetup's StartupMemory, and freed by
+/// `freeSessionSetup` (the web re-boot's teardown) — process-lifetime on
+/// native. See DESIGN → Error Handling → three contexts.
 const Warnings = *std.ArrayList([]const u8);
+
+/// One retained startup allocation: the raw config bytes + the parsed
+/// sections of one load attempt the session KEEPS. The loaded values own
+/// their own strings/slices (duped by the loaders), but the bytes +
+/// section containers stay referenced for the session (the values' fields
+/// can borrow from section strings), so they are tracked here and freed by
+/// `freeSessionSetup` — AFTER the history deinit freed the loaded values
+/// (values first, then section containers, then bytes).
+pub const StartupAllocation = struct {
+    config_bytes: []const u8,
+    sections: []const parser.Section,
+};
+
+/// Tracked startup memory (the teardown's bookkeeping): every retained
+/// bytes + sections pair plus the startup warning strings. Production
+/// never frees it (process lifetime — native never tears down); the web
+/// re-boot's teardown (`freeSessionSetup`) frees it all so a re-booted
+/// session doesn't leak the previous session's startup memory on every
+/// Import Game. Owned by `SessionSetup` (filled by `createSessionSetup`
+/// through the loaders below; the lists' own memory is backing-allocated).
+pub const StartupMemory = struct {
+    allocations: std.ArrayList(StartupAllocation) = .empty,
+    warnings: std.ArrayList([]const u8) = .empty,
+
+    /// Track a retained bytes + sections pair (freed by freeSessionSetup).
+    fn retain(
+        self: *StartupMemory,
+        allocator: std.mem.Allocator,
+        config_bytes: []const u8,
+        sections: []const parser.Section,
+    ) void {
+        self.allocations.append(allocator, .{ .config_bytes = config_bytes, .sections = sections }) catch
+            @panic("failed to track startup allocation");
+    }
+};
 
 /// Read + parse a config file and load it via `load_fn`, falling back to the
 /// embedded copy if the first attempt (persistent-dir shadow → embedded) fails
 /// at any stage — read, parse, or `load_fn`. On a successful first attempt,
 /// returns the loaded value with no warning. On a failed first attempt +
-/// successful embedded retry, appends a warning to `warnings` and returns the
-/// value. If the embedded copy also fails, panics — shipped content is broken,
-/// a real bug. See DESIGN → Error Handling → three contexts.
+/// successful embedded retry, appends a warning to `startup.warnings` and
+/// returns the value. If the embedded copy also fails, panics — shipped
+/// content is broken, a real bug. See DESIGN → Error Handling → three
+/// contexts.
 ///
 /// `load_fn` has shape `fn ([]const parser.Section, std.mem.Allocator) anyerror!T`
 /// (the common loader shape; `loadWeaponTypeDefinition` is wrapped to match).
-/// The bytes from the successful attempt are leaked into `allocator`
-/// (process-lifetime on both platforms) and referenced by the returned value's
-/// slices — same lifetime contract as the existing `parseConfigFileFromPath`
-/// path.
+/// The bytes + sections of every RETAINED attempt (a successful load, or a
+/// load_fn failure that falls through to the retry) are tracked in
+/// `startup` — process-lifetime on native, freed by the web re-boot's
+/// teardown (`freeSessionSetup`) via the same tracking.
 fn loadConfigWithFallback(
     comptime T: type,
     file_source: *const FileSource,
@@ -97,15 +134,23 @@ fn loadConfigWithFallback(
     path: []const u8,
     load_fn: *const fn ([]const parser.Section, std.mem.Allocator) anyerror!T,
     key_map: std.StaticStringMap([]const []const u8),
-    warnings: Warnings,
+    startup: *StartupMemory,
 ) T {
+    const warnings = &startup.warnings;
     // First attempt: normal read order (persistent dir → embedded).
     if (file_source.readFile(allocator, path)) |bytes| {
         if (parser.parseConfigFile(bytes, allocator)) |sections| {
             if (load_fn(sections, allocator)) |result| {
                 parser.validateKeys(sections, key_map, path, allocator, warnings);
+                startup.retain(allocator, bytes, sections);
                 return result;
-            } else |_| {}
+            } else |_| {
+                // A load_fn failure falls through to the embedded retry with
+                // the attempt's bytes + sections retained (tracked — freed
+                // by the teardown; a failed load_fn may have left partial
+                // allocations that cannot be named here).
+                startup.retain(allocator, bytes, sections);
+            }
         } else |_| {
             allocator.free(bytes);
         }
@@ -122,6 +167,7 @@ fn loadConfigWithFallback(
     // embedded file is a softer issue worth surfacing (the panic above
     // fires first on a parse/load failure).
     parser.validateKeys(sections, key_map, path, allocator, warnings);
+    startup.retain(allocator, embedded_bytes, sections);
 
     warnings.append(allocator, std.fmt.allocPrint(allocator, "Failed to parse {s}; using built-in default.", .{path}) catch
         @panic("failed to allocate startup warning")) catch
@@ -162,9 +208,9 @@ fn loadSettingsWrapped(
 pub fn loadSettingsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
-    warnings: Warnings,
+    startup: *StartupMemory,
 ) Settings {
-    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", loadSettingsWrapped, parser.settings_key_map, warnings);
+    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", loadSettingsWrapped, parser.settings_key_map, startup);
 }
 
 /// Overlay a user's persistent `settings.txt` (in the persistent dir) on top
@@ -188,9 +234,10 @@ fn overlayUserSettings(
     defaults: Settings,
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
-    warnings: Warnings,
+    startup: *StartupMemory,
     repair_write_needed: *bool,
 ) Settings {
+    const warnings = &startup.warnings;
     const user_bytes = file_source.readFile(allocator, "settings.txt") catch {
         return defaults; // No user settings file → defaults are authoritative.
     };
@@ -237,9 +284,9 @@ fn overlayUserSettings(
 pub fn loadColorThemeDefinitionsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
-    warnings: Warnings,
+    startup: *StartupMemory,
 ) ColorThemeDefinitions {
-    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", loaders.loadColorThemeDefinitions, parser.color_theme_key_map, warnings);
+    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", loaders.loadColorThemeDefinitions, parser.color_theme_key_map, startup);
 }
 
 /// Load all weapon type definitions from data/weapon_types/, each falling
@@ -248,7 +295,7 @@ pub fn loadColorThemeDefinitionsFromDisk(
 pub fn loadWeaponTypeDefinitions(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
-    warnings: Warnings,
+    startup: *StartupMemory,
 ) [weapon_type_count]WeaponTypeDefinition {
     var definitions: [weapon_type_count]WeaponTypeDefinition = undefined;
     const fields = @typeInfo(WeaponType).@"enum".fields;
@@ -262,7 +309,7 @@ pub fn loadWeaponTypeDefinitions(
             file_path,
             loadWeaponTypeDefinitionWrapped,
             parser.weapon_type_key_map,
-            warnings,
+            startup,
         );
     }
 
@@ -274,9 +321,9 @@ pub fn loadWeaponTypeDefinitions(
 pub fn loadSalvageDefinitionsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
-    warnings: Warnings,
+    startup: *StartupMemory,
 ) types.SalvageDefinitions {
-    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", loaders.loadSalvageDefinitions, parser.salvage_key_map, warnings);
+    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", loaders.loadSalvageDefinitions, parser.salvage_key_map, startup);
 }
 
 /// Owns the session-long setup state (config definitions + FrameState) that
@@ -289,6 +336,11 @@ pub fn loadSalvageDefinitionsFromDisk(
 /// memory location, so the history's pointer points to the right place.
 pub const SessionSetup = struct {
     weapon_type_definitions: [weapon_type_count]WeaponTypeDefinition,
+    /// The tracked startup memory (see StartupMemory): every retained
+    /// config bytes + sections pair + the startup warning strings. Filled
+    /// by `createSessionSetup`; freed by `freeSessionSetup` (the web
+    /// re-boot's teardown — native never tears down, process lifetime).
+    startup: StartupMemory,
     frame_state: FrameState,
 
     /// Point history.weapon_type_definitions at this struct's field. Must be
@@ -310,15 +362,15 @@ pub fn createSessionSetup(
     io: std.Io,
     backend: anytype,
 ) SessionSetup {
-    var warnings: std.ArrayList([]const u8) = .empty;
+    var startup: StartupMemory = .{};
 
-    const default_settings = loadSettingsFromDisk(file_source, allocator, &warnings);
+    const default_settings = loadSettingsFromDisk(file_source, allocator, &startup);
     var repair_write_needed = false;
-    const settings = overlayUserSettings(default_settings, file_source, allocator, &warnings, &repair_write_needed);
+    const settings = overlayUserSettings(default_settings, file_source, allocator, &startup, &repair_write_needed);
     backend.applyVsync(settings.vsync);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator, &warnings);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &warnings);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(file_source, allocator, &warnings);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator, &startup);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &startup);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(file_source, allocator, &startup);
 
     const starting_game_state = GameState{
         .screen = .main_menu,
@@ -367,9 +419,10 @@ pub fn createSessionSetup(
     // Surface startup warnings as a single pending error popup (see DESIGN →
     // Error Handling). The popup is modal: the player dismisses it (Escape /
     // Enter / the Dismiss button) before interacting with the main menu.
-    if (warnings.items.len > 0) {
+    if (startup.warnings.items.len > 0) {
         var message: std.ArrayList(u8) = .empty;
-        for (warnings.items, 0..) |warning, index| {
+        defer message.deinit(allocator);
+        for (startup.warnings.items, 0..) |warning, index| {
             if (index > 0) {
                 message.appendSlice(allocator, "\n") catch
                     @panic("failed to assemble startup warning message");
@@ -382,12 +435,39 @@ pub fn createSessionSetup(
 
     return .{
         .weapon_type_definitions = weapon_type_definitions,
+        .startup = startup,
         .frame_state = .{
             .history = history,
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
             .last_render_time = backend.realClockMicroseconds(),
         },
     };
+}
+
+/// Tear down a SessionSetup (the web re-boot's prerequisite — run at the
+/// frame boundary, AFTER `frame` returned; a mid-frame swap would be a
+/// use-after-free of the old history, which the running frame holds
+/// references into). Frees the frame arena, everything the history owns
+/// (its `deinit`: the session-owned config values, the session lists, the
+/// arenas), and the tracked startup memory. ORDER: the history deinit
+/// FIRST (the loaded config values are freed while the startup bytes are
+/// still intact), then the section containers (`freeParsedSections`),
+/// then the raw bytes, then the warning strings. The FileSource + IO are
+/// NOT freed (owned by the platform driver, shared across re-boots).
+/// Native never tears down (process lifetime); test histories living in
+/// throwaway arenas skip it (the arena reclaims — deinit would also work,
+/// arena frees are no-ops except the arena deinit).
+pub fn freeSessionSetup(setup: *SessionSetup) void {
+    const allocator = setup.frame_state.history.backing_allocator;
+    setup.frame_state.frame_arena.deinit();
+    setup.frame_state.history.deinit();
+    for (setup.startup.allocations.items) |allocation| {
+        parser.freeParsedSections(allocation.sections, allocator);
+        if (allocation.config_bytes.len > 0) allocator.free(allocation.config_bytes);
+    }
+    setup.startup.allocations.deinit(allocator);
+    for (setup.startup.warnings.items) |warning| allocator.free(warning);
+    setup.startup.warnings.deinit(allocator);
 }
 
 // --- tests ---
@@ -420,15 +500,19 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     dir.writeFile(io, .{ .sub_path = "data/default_settings.txt", .data = "this is not valid config" }) catch
         @panic("failed to write broken shadow");
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = loadSettingsFromDisk(&file_source, allocator, &warnings);
+    var startup: StartupMemory = .{};
+    const settings = loadSettingsFromDisk(&file_source, allocator, &startup);
 
     // The embedded copy loaded (keybindings present, not the empty-default).
     try testing.expect(settings.input_bindings.len > 0);
     // One warning was recorded.
-    try testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try testing.expectEqual(@as(usize, 1), startup.warnings.items.len);
     // The warning mentions the path.
-    try testing.expect(std.mem.indexOf(u8, warnings.items[0], "data/default_settings.txt") != null);
+    try testing.expect(std.mem.indexOf(u8, startup.warnings.items[0], "data/default_settings.txt") != null);
+    // Both retained attempts are tracked for the teardown: the shadow's
+    // (it parses but fails to LOAD, so its bytes + sections stay retained —
+    // see loadConfigWithFallback) + the embedded retry's.
+    try testing.expectEqual(@as(usize, 2), startup.allocations.items.len);
 }
 
 test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
@@ -447,14 +531,16 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = loadSettingsFromDisk(&file_source, allocator, &warnings);
+    var startup: StartupMemory = .{};
+    const settings = loadSettingsFromDisk(&file_source, allocator, &startup);
 
     // The embedded copy loaded.
     try testing.expect(settings.input_bindings.len > 0);
     // No warning — the normal read path (persistent miss → embedded hit) is
     // not a "fallback"; only a parse failure that retries embedded is.
-    try testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try testing.expectEqual(@as(usize, 0), startup.warnings.items.len);
+    // The normal embedded hit is still a RETAINED attempt (tracked).
+    try testing.expectEqual(@as(usize, 1), startup.allocations.items.len);
 }
 
 /// Build self-owned defaults WITHOUT going through loadConfigWithFallback
@@ -524,13 +610,15 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
         @panic("failed to write user settings.txt");
 
-    var warnings: std.ArrayList([]const u8) = .empty;
+    var startup: StartupMemory = .{};
     var repair_write_needed = false;
-    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &startup, &repair_write_needed);
     // No warnings on a valid user file — so no warning strings were allocated
     // into `allocator` (which would leak since the test doesn't free them) —
-    // and no repair write is scheduled (nothing to repair).
-    try testing.expectEqual(@as(usize, 0), warnings.items.len);
+    // and no repair write is scheduled (nothing to repair). The overlay path
+    // frees its bytes + sections eagerly, so nothing is tracked either.
+    try testing.expectEqual(@as(usize, 0), startup.warnings.items.len);
+    try testing.expectEqual(@as(usize, 0), startup.allocations.items.len);
     try testing.expect(!repair_write_needed);
 
     // Overlay is PER-ACTION: the user's bindings for undo/redo win (owned
@@ -624,17 +712,17 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
         @panic("failed to write user settings.txt");
 
     const defaults = loadOwnedDefaults(&file_source, allocator);
-    var warnings: std.ArrayList([]const u8) = .empty;
-    defer warnings.deinit(allocator);
+    var startup: StartupMemory = .{};
+    defer startup.warnings.deinit(allocator);
+    defer for (startup.warnings.items) |warning| allocator.free(warning);
     var repair_write_needed = false;
-    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
-    defer for (warnings.items) |warning| allocator.free(warning);
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &startup, &repair_write_needed);
 
     // The stale binding was warned by name, the repair flag is set, and the
     // reassurance line was appended (the popup tells the player it's fixed).
     var found_stale_warning = false;
     var found_repair_note = false;
-    for (warnings.items) |warning| {
+    for (startup.warnings.items) |warning| {
         if (std.mem.indexOf(u8, warning, "toggle_options_menu") != null) found_stale_warning = true;
         if (std.mem.indexOf(u8, warning, "repaired copy") != null) found_repair_note = true;
     }
@@ -658,10 +746,10 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
     loaders.freeSettings(merged, allocator);
 
     const fresh_defaults = loadOwnedDefaults(&file_source, allocator);
-    var warnings_after: std.ArrayList([]const u8) = .empty;
+    var startup_after: StartupMemory = .{};
     var repair_write_needed_after = false;
-    const remerged = overlayUserSettings(fresh_defaults, &file_source, allocator, &warnings_after, &repair_write_needed_after);
-    try testing.expectEqual(@as(usize, 0), warnings_after.items.len);
+    const remerged = overlayUserSettings(fresh_defaults, &file_source, allocator, &startup_after, &repair_write_needed_after);
+    try testing.expectEqual(@as(usize, 0), startup_after.warnings.items.len);
     try testing.expect(!repair_write_needed_after);
     loaders.freeSettings(remerged, allocator);
 }
@@ -690,14 +778,14 @@ test "overlayUserSettings: invalid user file sets no repair flag" {
         @panic("failed to write broken settings.txt");
 
     const defaults = loadOwnedDefaults(&file_source, allocator);
-    var warnings: std.ArrayList([]const u8) = .empty;
-    defer warnings.deinit(allocator);
+    var startup: StartupMemory = .{};
+    defer startup.warnings.deinit(allocator);
+    defer for (startup.warnings.items) |warning| allocator.free(warning);
     var repair_write_needed = false;
-    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings, &repair_write_needed);
-    defer for (warnings.items) |warning| allocator.free(warning);
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &startup, &repair_write_needed);
 
     // Warned (load failure → defaults), and NO repair write scheduled.
-    try testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try testing.expectEqual(@as(usize, 1), startup.warnings.items.len);
     try testing.expect(!repair_write_needed);
     // The broken file was left untouched on disk (the observable half of the
     // guard: no write fired over it).
@@ -769,16 +857,16 @@ test "createSessionSetup: stale settings.txt schedules the repair write" {
     // on-disk file is warning-free — the popup won't repeat next launch.
     setup.frame_state.history.session.fireElapsedWrites(&setup.frame_state.history, 2 * std.time.us_per_s);
 
-    var warnings_after: std.ArrayList([]const u8) = .empty;
+    var startup_after: StartupMemory = .{};
     var repair_write_needed_after = false;
     const remerged = overlayUserSettings(
         loadOwnedDefaults(&file_source, allocator),
         &file_source,
         allocator,
-        &warnings_after,
+        &startup_after,
         &repair_write_needed_after,
     );
-    try testing.expectEqual(@as(usize, 0), warnings_after.items.len);
+    try testing.expectEqual(@as(usize, 0), startup_after.warnings.items.len);
     try testing.expect(!repair_write_needed_after);
     // The stale name is gone from disk: the written file's undo binding
     // round-trips (any default binding present proves the full-format write;
@@ -788,4 +876,66 @@ test "createSessionSetup: stale settings.txt schedules the repair write" {
         if (binding.action == .undo) found_undo = true;
     }
     try testing.expect(found_undo);
+}
+
+// The web re-boot's teardown contract: the createSessionSetup +
+// freeSessionSetup round-trip is leak-clean under testing.allocator (NO
+// arena — the leak checker catches every startup allocation the tracking
+// misses and every history-owned allocation the deinit misses; the web
+// driver re-boots the session after every Import Game, so a miss is a
+// per-boot leak). The drain runs the real event path (open_main_menu -> the
+// main menu, queued sounds + a snapshot + an idle point) so the teardown
+// covers non-empty history machinery, not just the fresh state. The user
+// settings.txt carries a stale entry so the overlay's repair + warning
+// paths (tracked + freed) run too.
+test "createSessionSetup + freeSessionSetup round-trip: leak-clean under testing.allocator" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-startup-teardown";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\Display
+        \\camra_zoom 2
+    }) catch @panic("failed to write user settings.txt");
+
+    // Minimal fake backend (the repair-write test's): createSessionSetup
+    // only applies vsync + reads the clock.
+    const FakeBackend = struct {
+        fn applyVsync(_: *const @This(), _: bool) void {}
+        fn realClockMicroseconds(_: *const @This()) u64 {
+            return 0;
+        }
+    };
+    var fake_backend = FakeBackend{};
+    var setup = createSessionSetup(allocator, &file_source, io, &fake_backend);
+
+    // The startup repair + warning paths ran (tracked + freed by the
+    // teardown below — asserted by the leak checker itself).
+    try testing.expect(setup.startup.warnings.items.len > 0);
+    try testing.expect(setup.startup.allocations.items.len > 0);
+
+    // Drive the queued open_main_menu through the real drain (the harness's
+    // runToIdle shape; event_handlers is imported inside the test block so
+    // this file stays a leaf for non-test builds).
+    const event_handlers = @import("event_handlers.zig");
+    while (setup.frame_state.history.current_state.event_stack.len > 0) {
+        event_handlers.processEvent(&setup.frame_state.history);
+        if (setup.frame_state.history.load_error) @panic("teardown test content should be valid");
+        setup.frame_state.history.current_state.waiting = null;
+    }
+    setup.frame_state.history.maybeRecordIdlePoint(true);
+    try testing.expect(state.Screen.main_menu == setup.frame_state.history.current_state.screen);
+
+    // The teardown: everything above is freed or the leak checker fires.
+    freeSessionSetup(&setup);
 }

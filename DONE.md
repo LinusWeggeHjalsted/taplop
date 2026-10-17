@@ -17122,3 +17122,62 @@ call in `frame`). mission_io's two helpers now delegate. Remaining (TODO
 + action wiring (`triggerBrowserGameUpload` is DEAD until then — by design,
 its caller lands with the button). Verified: full suite PASS, native + web
 compile OK.
+
+## Web storage model slice 3b: SessionSetup teardown + the web re-boot driver
+
+The Import Game re-boot's prerequisites: the old session freed, not leaked,
+plus the frame-boundary re-boot itself in web.zig. The ownership picture
+worth keeping:
+
+- **The startup-config memory problem**: `loadConfigWithFallback` /
+  `overlayUserSettings` intentionally leak bytes + parsed sections into the
+  session allocator (the loaded values can borrow from section strings), with
+  no record of them. An ARENA for startup config was considered and
+  rejected: settings bindings get reallocated mid-session by the keybind
+  edit machinery via `history.backing_allocator`, so startup-arena-owned
+  strings + later backing-owned replacements would give the settings MIXED
+  ownership and the replace machinery's frees would be allocator-mismatched.
+  Instead the loads TRACK what they retain: `StartupMemory`
+  (`SessionSetup.startup`) holds every retained (bytes, sections) pair —
+  including a first attempt that parsed but failed to LOAD (it falls through
+  to the embedded retry with its bytes + sections retained; load_fn
+  partial allocations can't be named) — plus the startup warnings.
+- **The teardown ordering**: values FIRST (the history deinit's
+  freeSettings + the gradients/salvage frees — all independent
+  allocations), then the section containers (`freeParsedSections`), then
+  the raw bytes. `freeSessionSetup` runs the frame arena, the history
+  deinit, then the startup frees.
+- **`GameStateHistory.deinit`** (new): freeSettings + the theme gradients +
+  the salvage splits (weapon array + the six named), the SessionState
+  backing lists (sounds/anims/drag/number-hash), the scan entries
+  (freeSaveFiles, freeMissions, mission sprites, the editor registry,
+  the saved mission, the validation-replay stash), then the
+  snapshot/checkpoint/initial arenas + the two big arenas (event log,
+  idle points, reconstruction cache, pending_error all live in
+  history_arena — one deinit covers them). The FileSource + IO are NOT
+  freed (driver-owned, shared across re-boots).
+- **The registry free caught mid-flight**: the session's
+  `editor_decoration_registry` is the OWNED shape (every string duped,
+  `id` aliases `sprite` — freed once), not the loader's borrowed-shape
+  free. The free loop existed inline in editor/handlers' re-load; lifted
+  to `state.freeEditorDecorationRegistry` (pub) + both sites delegate —
+  one free for the re-load + the deinit.
+- **web.zig**: `bootSession` (the shared boot sequence — first boot + the
+  re-boot) + `rebootSession` (`crash_dump.uninstall` → `deinitAudio` →
+  `freeSessionSetup` → `bootSession`), consumed by `frameCallback` right
+  after `game.frame` returns. `RaylibBackend.deinitAudio` added (a thin
+  wrapper over Audio.deinit, which fully resets `audio_ready` so the boot's
+  `initAudio` re-opens + reloads with the imported settings).
+- **The leak-check test**: createSessionSetup + a real open_main_menu
+  drain + maybeRecordIdlePoint + freeSessionSetup under
+  testing.allocator — the whole boot cycle leak-checked (the
+  settings-ownership pattern at session scale). Known limitation
+  (recorded in DESIGN): the test drives boot + main-menu drain; a re-boot
+  from a deeper session (scanned save lists, the editor registry) relies
+  on the deinit's symmetric frees (empty-list no-ops) rather than a
+  driven test.
+
+Verified: full suite PASS (846), native + web compile OK, doc-symbol check
+CLEAN, unused-pub report: only the known DEAD `triggerBrowserGameUpload`
+(its caller lands with 3c, the button wiring) + the three pre-existing
+TEST-ONLY entries.

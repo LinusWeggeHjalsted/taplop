@@ -17,6 +17,7 @@ const input = @import("input.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
 const writers = @import("writers.zig");
+const loaders = @import("loaders.zig");
 const build_info = @import("build_info");
 
 const FileSource = file_source_mod.FileSource;
@@ -138,6 +139,27 @@ pub const MissionSprite = struct {
     stored_id: []const u8,
     pixel_dims: types.Vector2,
 };
+
+/// Free the session-owned decoration registry (SessionState's
+/// `editor_decoration_registry`): the duped sprite strings (`id` aliases
+/// `sprite` — one free per definition), each layer's sprite, the footprint
+/// + layers arrays, and the slice. The OWNED shape — every string is duped
+/// into the owning allocator at load (editor/handlers' registry load);
+/// loaders' freeDecorationRegistry is the borrowed-shape free (strings
+/// still owned by the parsed sections). Shared by the registry re-load's
+/// previous-free + the history deinit (the re-boot teardown).
+pub fn freeEditorDecorationRegistry(
+    registry: []const types.DecorationTypeDef,
+    allocator: std.mem.Allocator,
+) void {
+    for (registry) |definition| {
+        allocator.free(definition.sprite);
+        for (definition.layers) |layer| allocator.free(layer.sprite);
+        allocator.free(definition.footprint);
+        allocator.free(definition.layers);
+    }
+    if (registry.len > 0) allocator.free(registry);
+}
 
 pub const SessionState = struct {
     /// Sentinel for `save_files_last_scan_us` — no scan has run yet this
@@ -965,6 +987,79 @@ pub const GameStateHistory = struct {
             .current_arena = std.heap.ArenaAllocator.init(allocator),
             .replaying = false,
         };
+    }
+
+    /// Free everything the history owns: the session-owned config values
+    /// (settings bindings, theme gradients, salvage splits — all backing-
+    /// allocator allocations, independent of the startup config bytes they
+    /// were parsed from, so they are freed here BEFORE `freeSessionSetup`
+    /// frees the tracked startup bytes + sections), SessionState's backing-
+    /// owned lists + scan entries, the snapshot/checkpoint/initial arenas,
+    /// and the two arenas (event_history + idle_points + the
+    /// reconstruction cache + pending_error all live in history_arena;
+    /// current_state in current_arena — one deinit each covers them).
+    /// The FileSource + IO are NOT freed (owned by the platform driver,
+    /// shared across re-boots). The web re-boot's prerequisite (a mid-frame
+    /// swap would be a use-after-free — run at the frame boundary); native
+    /// never tears down (process lifetime). Test/scratch histories that
+    /// live in a throwaway arena skip deinit (the arena reclaims).
+    pub fn deinit(self: *GameStateHistory) void {
+        const allocator = self.backing_allocator;
+
+        // Session-owned config values.
+        loaders.freeSettings(self.settings, allocator);
+        if (self.color_theme_definitions.gradients.len > 0) {
+            allocator.free(self.color_theme_definitions.gradients);
+        }
+        for (self.salvage_definitions.weapon) |definition| {
+            if (definition.splits.len > 0) allocator.free(definition.splits);
+        }
+        if (self.salvage_definitions.amulet.splits.len > 0) allocator.free(self.salvage_definitions.amulet.splits);
+        if (self.salvage_definitions.coat.splits.len > 0) allocator.free(self.salvage_definitions.coat.splits);
+        if (self.salvage_definitions.gloves.splits.len > 0) allocator.free(self.salvage_definitions.gloves.splits);
+        if (self.salvage_definitions.pants.splits.len > 0) allocator.free(self.salvage_definitions.pants.splits);
+        if (self.salvage_definitions.boots.splits.len > 0) allocator.free(self.salvage_definitions.boots.splits);
+        if (self.salvage_definitions.skill_tome.splits.len > 0) allocator.free(self.salvage_definitions.skill_tome.splits);
+
+        // SessionState's backing-owned lists + scan entries.
+        self.session.pending_sounds.deinit(allocator);
+        self.session.pending_anims.deinit(allocator);
+        self.session.active_anims.deinit(allocator);
+        self.session.editor_tile_drag_visited.deinit(allocator);
+        self.session.last_number_start_by_entity.deinit(allocator);
+        file_source_mod.freeSaveFiles(allocator, self.session.save_files);
+        file_source_mod.freeMissions(allocator, self.session.editor_local_missions);
+        file_source_mod.freeMissions(allocator, self.session.editor_official_missions);
+        for (self.session.editor_mission_sprites) |sprite| {
+            allocator.free(sprite.file_name);
+            allocator.free(sprite.stored_id);
+        }
+        if (self.session.editor_mission_sprites.len > 0) {
+            allocator.free(self.session.editor_mission_sprites);
+        }
+        if (self.session.editor_decoration_registry.len > 0) {
+            freeEditorDecorationRegistry(self.session.editor_decoration_registry, allocator);
+        }
+        if (self.session.editor_saved_mission) |saved| {
+            allocator.free(saved.uuid);
+            allocator.free(saved.dir_path);
+        }
+        if (self.session.pending_validation_replay) |bytes| {
+            allocator.free(bytes);
+        }
+
+        // The arenas: snapshots + checkpoints + the initial-state copy each
+        // own one; then the two big ones. Everything else the history
+        // references lives in one of these.
+        for (&self.snapshots) |*slot| {
+            if (slot.*) |*saved| saved.arena.deinit();
+        }
+        for (&self.checkpoints) |*slot| {
+            if (slot.*) |*saved| saved.arena.deinit();
+        }
+        self.initial_arena.deinit();
+        self.current_arena.deinit();
+        self.history_arena.deinit();
     }
 
     /// Record a live (non-replay) event into the history log. If the player has

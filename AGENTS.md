@@ -476,9 +476,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   loading lives in `session_setup.zig` (raylib-free).
 - `src/session_setup.zig` — session startup: loading all config (settings,
   color themes, weapon types, salvage tables) + `SessionSetup`/
-  `createSessionSetup`/`fixupPointers` + `FrameState`. The entry files
-  (`native.zig`/`web.zig`) call `createSessionSetup` then hand the result to
-  `main.run`/`main.frame`.
+  `createSessionSetup`/`fixupPointers`/`freeSessionSetup` (the web re-boot's
+  teardown: the tracked startup memory `StartupMemory` + the history deinit)
+  + `FrameState`. The entry files (`native.zig`/`web.zig`) call
+  `createSessionSetup` then hand the result to `main.run`/`main.frame`.
 - `src/test_harness.zig` — reusable harness for `processEvent` handler tests
   (`Harness.init` + `newHistory` + `runToIdle`); test build only.
 - `src/event_handlers.zig` — the thin `processEvent` dispatch: pop +
@@ -553,7 +554,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
   replay timeline: recordEvent/discardFutureTimeline/replayTo/
   reconstructFromEventLog/validatePlayerAction, + the debounced settings
-  persistence: PendingWrite/writeSettingsToFile/markSettingsDirty), Screen
+  persistence: PendingWrite/writeSettingsToFile/markSettingsDirty), Screen,
+  + `deinit` (the teardown's history free — see DESIGN → File System & IO →
+  Web storage model)
 - `src/types.zig` — all game data types, Entity with getEffective* methods
 - `src/events.zig` — event hierarchy (Meta, Super, Player, Level, SubLevel,
   Editor, PlayerInput, ReplayViewer categories)

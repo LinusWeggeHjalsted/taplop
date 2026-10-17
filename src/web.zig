@@ -77,12 +77,59 @@ const WebSession = struct {
 };
 
 /// Emscripten main-loop callback — called once per requestAnimationFrame:
-/// one `game.frame`. The whole session setup ran synchronously in `main()`
-/// (the in-memory mount needs no async boot gate — the old two-phase boot
-/// existed solely for the async IDBFS load; history in DONE.md).
+/// one `game.frame`, then (if an Import Game completed this frame) the
+/// session RE-BOOT at the frame boundary: `game.frame` has returned, so
+/// nothing holds references into the old history (a mid-frame swap would
+/// be a use-after-free), and the next rAF runs against the fresh boot with
+/// everything the imported folder carries applied (the main menu re-renders
+/// with the imported autosave's Continue button).
 fn frameCallback(arg: *anyopaque) callconv(.c) void {
     const session: *WebSession = @ptrCast(@alignCast(arg));
     game.frame(&session.backend, &session.setup.frame_state);
+    // Import Game completed this frame — the re-boot happens NOW, between
+    // frames: nothing renders or reads input against the old history by
+    // construction (see DESIGN → File System & IO → Web storage model).
+    if (session.setup.frame_state.history.session.pending_import_reboot) {
+        rebootSession(session);
+    }
+}
+
+/// The session boot sequence — shared by `main` (first boot) and the
+/// Import Game re-boot: build the SessionSetup (all config loads + the
+/// fresh history), fix up the weapon-type pointer to its stable home,
+/// open the audio device + load sfx/music (settings are loaded), and
+/// install the crash-dump hook (the live history a panic dumps). The
+/// previous setup must be torn down FIRST on the re-boot path
+/// (`rebootSession` does).
+fn bootSession(session: *WebSession) void {
+    session.setup = session_setup.createSessionSetup(
+        session.allocator,
+        session.file_source,
+        session.io,
+        &session.backend,
+    );
+    // Fix up the history's weapon_type_definitions pointer to point at
+    // the SessionSetup's field (now in its stable heap location).
+    session.setup.fixupPointers();
+    (&session.backend).initAudio(session.setup.frame_state.history.settings);
+    crash_dump.install(&session.setup.frame_state.history);
+}
+
+/// Re-boot after a completed Import Game: everything the imported folder
+/// carries applies (settings, shadow data/ trees, the imported autosave →
+/// the Continue button). Runs at the FRAME BOUNDARY only (frameCallback,
+/// after `game.frame` returned — see there for the use-after-free story).
+/// The old session is torn down, not leaked (`freeSessionSetup`: history
+/// deinit + the tracked startup memory), the crash hook uninstalled first
+/// (it would point at freed history), audio torn down + re-opened by the
+/// boot with the NEW settings. The discarded session's live progress is
+/// included in the discard (an import replaces the session — DESIGN →
+/// File System & IO → Web storage model).
+fn rebootSession(session: *WebSession) void {
+    crash_dump.uninstall();
+    session.backend.deinitAudio();
+    session_setup.freeSessionSetup(&session.setup);
+    bootSession(session);
 }
 
 /// Mount the persistent virtual path as a plain in-memory (MEMFS)
@@ -153,27 +200,11 @@ pub fn main() void {
         .allocator = allocator,
     };
 
-    // Build the session setup (same sequence as native's run()). The returned
-    // SessionSetup is stored in the heap WebSession (not on a stack), keeping
-    // history.weapon_type_definitions's pointer valid.
-    session.setup = session_setup.createSessionSetup(
-        session.allocator,
-        session.file_source,
-        session.io,
-        &session.backend,
-    );
-    // Fix up the history's weapon_type_definitions pointer to point at
-    // the SessionSetup's field (now in its stable heap location).
-    session.setup.fixupPointers();
-    // Open the audio device + load sfx/music after settings are available.
-    // No-op-safe if the device can't open (the game runs silent). See
-    // DESIGN → Audio. Web audio may require a user gesture to start in some
-    // browsers; the stream simply won't play until then, never crashing.
-    (&session.backend).initAudio(session.setup.frame_state.history.settings);
-    // Register the live history so a panic can dump its event log before
-    // trapping (best-effort on web — see crash_dump.zig). No uninstall: the
-    // tab/process closing IS the shutdown.
-    crash_dump.install(&session.setup.frame_state.history);
+    // Build + boot the session (the shared boot sequence — the re-boot
+    // after an Import Game re-runs this exact sequence; see bootSession).
+    // The SessionSetup is stored in the heap WebSession (not on a stack),
+    // keeping history.weapon_type_definitions's pointer valid.
+    bootSession(session);
 
     // Register the callback and let emscripten drive the frame loop.
     // fps = -1 lets the browser use requestAnimationFrame (~monitor refresh).

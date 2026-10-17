@@ -760,13 +760,11 @@ Open:
         poll wiring, the artifact-name listing exclusion set, and the
         headless tests. The upload JS (`triggerBrowserGameUpload`) is
         DEAD until 3c wires its caller (the button's action arm).
-  - [ ] 3b. SessionSetup teardown + the web re-boot driver — the
-        prerequisite (the old setup freed, not leaked: history deinit +
-        the startup-config memory), then the frame-boundary re-boot in
-        web.zig (a shared `bootSession` helper for main() + the re-boot:
-        `crash_dump.uninstall` → teardown → `createSessionSetup` →
-        `fixupPointers` → `deinitAudio` + `initAudio` →
-        `crash_dump.install`) consuming `pending_import_reboot`.
+  - [x] 3b. SessionSetup teardown + the web re-boot driver — DONE (see
+        DONE.md, "web storage model slice 3b"): `GameStateHistory.deinit`
+        + `freeSessionSetup` + the tracked startup memory (`StartupMemory`)
+        + `bootSession`/`rebootSession` in web.zig + `deinitAudio` + the
+        leak-check round-trip test.
   - [ ] 3c. Button + action wiring — the main-menu Import Game button
         (web-only via the `persistent_dir_path == null` signal, the
         Export Game discipline), `.import_game` action + the three

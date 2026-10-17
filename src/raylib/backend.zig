@@ -514,11 +514,22 @@ pub const RaylibBackend = struct {
 
     /// Open the audio device and load all sfx + the music streams (the
     /// Audio subsystem — see audio.zig). Called once after construction
-    /// (settings are available). Idempotent: a second call when already
-    /// ready no-ops. If the audio device can't open, audio stays silent —
-    /// the game runs, never crashes. See DESIGN → Audio.
+    /// (settings are available), and again by the web re-boot after a
+    /// completed Import Game (the previous teardown ran `deinitAudio`;
+    /// everything reloads with the imported settings). Idempotent: a second
+    /// call when already ready no-ops. If the audio device can't open,
+    /// audio stays silent — the game runs, never crashes. See DESIGN → Audio.
     pub fn initAudio(self: *RaylibBackend, settings: types.Settings) void {
         self.audio.init(settings, audioDiagnosticsSink, self);
+    }
+
+    /// Tear down audio (the Audio subsystem): stop + unload the music
+    /// streams + every sfx + layer cache, close the device. The Import Game
+    /// re-boot's path (web.zig's rebootSession): the re-booted session
+    /// re-opens + reloads with its own settings via a fresh `initAudio`.
+    /// Safe when audio was never initialized (no-op).
+    pub fn deinitAudio(self: *RaylibBackend) void {
+        self.audio.deinit();
     }
 
     /// Play the drained sound cues at the sfx/master settings volume (the

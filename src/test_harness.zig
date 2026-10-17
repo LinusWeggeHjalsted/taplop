@@ -68,14 +68,14 @@ pub const Harness = struct {
         // teardown hook to close them in. Test binaries are short-lived.
         const file_source = FileSource.init(io, persistent_dir);
 
-        var warnings: std.ArrayList([]const u8) = .empty;
+        var startup: session_setup.StartupMemory = .{};
         return .{
             .arena = arena,
             .file_source = file_source,
-            .settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings),
-            .weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings),
-            .color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings),
-            .salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings),
+            .settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup),
+            .weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup),
+            .color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup),
+            .salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup),
         };
     }
 

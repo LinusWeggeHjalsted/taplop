@@ -397,13 +397,9 @@ pub fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.m
         };
     }
 
-    for (session.editor_decoration_registry) |definition| {
-        backing.free(definition.sprite);
-        for (definition.layers) |layer| backing.free(layer.sprite);
-        backing.free(definition.footprint);
-        backing.free(definition.layers);
-    }
-    backing.free(session.editor_decoration_registry);
+    // The previous registry's free (the shared session-owned free — the
+    // history deinit uses the same one).
+    state.freeEditorDecorationRegistry(session.editor_decoration_registry, backing);
     session.editor_decoration_registry = owned;
 }
 

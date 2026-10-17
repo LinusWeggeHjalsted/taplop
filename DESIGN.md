@@ -2113,21 +2113,34 @@ at that frame boundary — an import REPLACES the session, in-flight
 progress since the last autosave included (the button being main-menu-
 only keeps the realistic race to a sub-second window; the chosen behavior
 is the honest one — apply the import the moment it completes). APPLICATION: a successful
-import RE-BOOTSTRAPS the session — the exact boot sequence re-run
-(`createSessionSetup` + `fixupPointers` + `initAudio` + `crash_dump.install`)
-so everything the folder carries applies: settings (vsync at setup,
+import RE-BOOTSTRAPS the session — `rebootSession` (web.zig, at the frame
+boundary): `crash_dump.uninstall` → `deinitAudio` → `freeSessionSetup`
+(the teardown: the history's `deinit` + the tracked startup memory) →
+the boot sequence (`createSessionSetup` + `fixupPointers` + `initAudio` +
+`crash_dump.install`, shared with first boot via `bootSession`) so
+everything the folder carries applies: settings (vsync at setup,
 render resolution live-applies next frame), shadow `data/` trees (themes,
 weapon types, salvage), and the autosave detection (Continue appears for
-the imported autosave). The re-boot runs at a FRAME BOUNDARY via a pending
-flag set by the import handler (a mid-frame swap is a use-after-free of
-the old history — the running frame holds references into it), and
-re-installs the crash-dump hook (the old history is freed). The result is
-a fresh-boot state (open surfaces close, timeline resets) — mechanically
-safe at any screen (the reboot happens between frames; nothing renders
-or reads input against the old history after the flag is consumed);
-the discarded session's live progress is the accepted cost above.
-Prerequisite: a SessionSetup teardown (history deinit +
-config frees) so the old setup is freed, not leaked.
+the imported autosave). The re-boot runs at a FRAME BOUNDARY via
+`pending_import_reboot` (a mid-frame swap is a use-after-free of
+the old history — the running frame holds references into it). The
+TEARDOWN (a landed prerequisite, not a leak): `freeSessionSetup` frees
+the frame arena, everything the history owns (its `deinit`: the
+session-owned config values, the session lists + scan entries, the
+snapshot/checkpoint/initial arenas, the two big arenas — the event log,
+idle points, reconstruction cache, and pending_error all live in
+`history_arena`), and the tracked startup memory (`StartupMemory`: every
+retained config bytes + sections pair + the startup warnings — the
+loaded values are freed FIRST, then the section containers, then the
+raw bytes; the round-trip is leak-check-tested under testing.allocator).
+The result is a fresh-boot state (open surfaces close, timeline resets) —
+mechanically safe at any screen (the reboot happens between frames;
+nothing renders or reads input against the old history after the flag
+is consumed); the discarded session's live progress is the accepted
+cost above. Known limitation: the leak-check test drives boot +
+main-menu drain; a re-boot from a deeper session (scanned save lists,
+the editor registry) relies on the deinit's symmetric frees (the
+empty-list no-ops) rather than a driven test.
 - **Export Game** (options menu, EVERY variant — the options menu is the
 only menu surface reachable mid-level, so in-session backups are always
 possible): a game in progress pushes the autosave write FIRST (the

@@ -1151,11 +1151,11 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1243,11 +1243,11 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, scratch_dir);
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1341,11 +1341,11 @@ test "loadAndReconstructSession: missing file sets pending_error, stays at main 
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1398,11 +1398,11 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1559,11 +1559,11 @@ test "replay verification: clean replay through the slow path passes" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1622,11 +1622,11 @@ test "ported campaign missions load through the event path" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1735,11 +1735,11 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1846,11 +1846,11 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -1943,11 +1943,11 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -2033,11 +2033,11 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -2111,11 +2111,11 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
         .data = "this is not valid config",
     }) catch @panic("failed to write broken mission");
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -2202,11 +2202,11 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
         @panic("failed to create blocker file");
     const file_source = FileSource.init(io, dir);
 
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
-    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
-    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
-    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+    var startup: session_setup.StartupMemory = .{};
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &startup);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &startup);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &startup);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &startup);
 
     const starting_state = GameState{
         .screen = .main_menu,
