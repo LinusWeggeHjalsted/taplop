@@ -24,6 +24,7 @@ const event_handlers = @import("event_handlers.zig");
 const event_push = @import("event_push.zig");
 const input_handlers = @import("input_handlers.zig");
 const input_gestures = @import("input_gestures.zig");
+const game_zip = @import("game_zip.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 const file_source_mod = @import("file_source.zig");
@@ -446,6 +447,18 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     );
 
     applyRenderResolutionSetting(backend, history);
+
+    // Import Game (web only - the comptime gate makes the native build free):
+    // consume the game-import marker whenever it lands (the upload JS writes
+    // the picked ziglop.zip + the marker between frames), overlay the
+    // archive onto the persistent dir, and set the pending re-boot flag. The
+    // flag is consumed by the WEB DRIVER after this frame returns - a
+    // mid-frame re-boot would be a use-after-free of the old history, which
+    // this frame holds references into. See game_zip.zig + DESIGN → File
+    // System & IO → Web storage model.
+    if (@import("builtin").os.tag == .emscripten) {
+        game_zip.pollGameImportMarker(history);
+    }
 
     const backend_input = backend.pollInput();
     // Camera is derived (centered on the player + clamped to the view

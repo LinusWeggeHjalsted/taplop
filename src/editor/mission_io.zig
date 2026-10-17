@@ -689,16 +689,10 @@ pub fn pollMissionImportMarker(history: *GameStateHistory) void {
 const mission_import_max_entries: usize = 1024;
 
 /// The set of junk a macOS "Compress" zip carries alongside the real
-/// content — skipped so an OS-made mission zip imports clean.
+/// content - skipped so an OS-made mission zip imports clean. The shared
+/// untrusted-archive policy (see `zip_reader.isOsZipJunkEntry`).
 fn isMissionImportJunk(name: []const u8) bool {
-    // Directory entries (a trailing '/', zero contents).
-    if (std.mem.endsWith(u8, name, "/")) return true;
-    // The macOS resource-fork folder + its artifacts.
-    if (std.mem.startsWith(u8, name, "__MACOSX/")) return true;
-    const basename = std.fs.path.basename(name);
-    if (std.mem.startsWith(u8, basename, "._")) return true;
-    if (std.mem.eql(u8, basename, ".DS_Store")) return true;
-    return false;
+    return zip_reader.isOsZipJunkEntry(name);
 }
 
 /// Strip a single common ROOT folder from every entry name, if there is
@@ -723,18 +717,12 @@ fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
     }
 }
 
-/// A safe extraction name: no absolute paths, no `..` traversal, no
-/// backslashes (spec names use '/'; a backslash is a malformed or hostile
-/// name — a literal filename character on some platforms), no empty
-/// segments. Applied AFTER the root strip.
+/// A safe extraction name: the shared untrusted-archive policy (see
+/// `zip_reader.isUnsafeZipEntryName`) - no absolute paths, no `..`
+/// traversal, no backslashes, no NUL bytes, no empty segments. Applied
+/// AFTER the root strip.
 fn isUnsafeMissionImportName(name: []const u8) bool {
-    if (name.len == 0 or name[0] == '/') return true;
-    if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
-    var iterator = std.mem.splitScalar(u8, name, '/');
-    while (iterator.next()) |segment| {
-        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
-    }
-    return false;
+    return zip_reader.isUnsafeZipEntryName(name);
 }
 
 /// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the

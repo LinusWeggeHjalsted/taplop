@@ -592,11 +592,6 @@ pub const FileSource = struct {
         return entries.toOwnedSlice(allocator);
     }
 
-    /// Temp file (persistent-dir root, outside saves/) used by the web path to
-    /// pass the JS-enumerated filename list back to Zig. Written by JS, read +
-    /// deleted by Zig. Mirrors the `.import_marker` pattern.
-    const saves_listing_temp = ".saves_listing";
-
     /// Native path: open saves/, iterate entries, filter .txt, stat each.
     fn listSaveFilesNative(
         self: *const FileSource,
@@ -795,12 +790,13 @@ pub const FileSource = struct {
     /// native walks the tree via `Dir.iterate` recursion; web walks it via
     /// JS (a recursive `FS.lookupPath` pass writing the path list to a
     /// temp listing — the `.saves_listing` pattern at tree scale), then
-    /// reads the list back. The staging + listing temps
-    /// (`game_export_temp_path`, `game_folder_listing_temp`) are excluded
-    /// on both platforms — a crashed export's leftovers must not ride
-    /// along. Caller owns the returned slice + strings (free via
-    /// `freePersistentDirFiles`, or pass a throwaway arena). Sorted for
-    /// determinism. Empty when the dir is empty (a fresh web session).
+    /// reads the list back. The staging + listing temps + import markers
+    /// (`persistent_dir_artifact_names` - the whole root-artifact set) are
+    /// excluded on both platforms: a crashed export's or import's
+    /// leftovers must not ride in a later export. Caller owns the returned
+    /// slice + strings (free via `freePersistentDirFiles`, or pass a
+    /// throwaway arena). Sorted for determinism. Empty when the dir is
+    /// empty (a fresh web session).
     pub fn listPersistentDirFiles(
         self: *const FileSource,
         allocator: std.mem.Allocator,
@@ -827,7 +823,7 @@ pub const FileSource = struct {
     ) anyerror!void {
         var iterator = dir.iterate();
         while (try iterator.next(io)) |entry| {
-            if (isGameFolderTempName(entry.name)) continue;
+            if (isPersistentDirArtifactName(entry.name)) continue;
             const relative_path = if (prefix.len == 0)
                 try allocator.dupe(u8, entry.name)
             else
@@ -870,7 +866,7 @@ pub const FileSource = struct {
             "      if (!child) continue;" ++
             "      var child_path = path + '/' + names[i];" ++
             "      if (FS.isDir(child.mode)) walk(child_path);" ++
-            "      else if (names[i] !== '" ++ game_export_temp_path ++ "' && names[i] !== '" ++ game_folder_listing_temp ++ "') out.push(child_path.substring(" ++ persistent_mount_path ++ ".length));" ++
+            "      else if (" ++ persistent_dir_artifact_js_filter ++ "true) out.push(child_path.substring(" ++ persistent_mount_path ++ ".length));" ++
             "    }" ++
             "  }" ++
             "  walk('" ++ persistent_mount_path ++ "');" ++
@@ -906,12 +902,42 @@ fn pathOrder(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
 
-/// True for the game-folder zip's staging + listing temp names (a crashed
-/// export's leftovers must not ride in a later export — see
-/// `listPersistentDirFiles`).
-fn isGameFolderTempName(name: []const u8) bool {
-    return std.mem.eql(u8, name, game_export_temp_path) or
-        std.mem.eql(u8, name, game_folder_listing_temp);
+/// Every dot-file artifact the game's own machinery stages in the
+/// persistent-dir root: the Export/Import Game staging zips, the two listing
+/// temps, and the web import markers (each can linger if a browser closed
+/// between staging and consumption). None of it is player data, and none of
+/// it may ride in an Export Game archive - `listPersistentDirFiles` excludes
+/// the whole set on BOTH platforms, both walks deriving from this ONE list
+/// so the native + JS filters can never drift apart.
+const persistent_dir_artifact_names = [_][]const u8{
+    game_export_temp_path,
+    game_folder_listing_temp,
+    game_import_temp_path,
+    game_import_marker_path,
+    import_marker_path,
+    mission_import_marker_path,
+    saves_listing_temp,
+};
+
+/// The JS mirror of the artifact-name exclusion: one `names[i] !== '...'`
+/// condition per artifact, built from the same comptime list as
+/// `isPersistentDirArtifactName` (a hand-maintained copy of a machine-
+/// derivable list is drift by definition).
+const persistent_dir_artifact_js_filter = build_filter: {
+    var script_filter: []const u8 = "";
+    for (persistent_dir_artifact_names) |artifact_name| {
+        script_filter = script_filter ++ "names[i] !== '" ++ artifact_name ++ "' && ";
+    }
+    break :build_filter script_filter;
+};
+
+/// True for a persistent-dir-root artifact name (the staging + marker set -
+/// see `persistent_dir_artifact_names`).
+fn isPersistentDirArtifactName(name: []const u8) bool {
+    for (persistent_dir_artifact_names) |artifact_name| {
+        if (std.mem.eql(u8, name, artifact_name)) return true;
+    }
+    return false;
 }
 
 
@@ -1016,6 +1042,13 @@ extern fn emscripten_run_script(script: [*:0]const u8) void;
 /// `triggerBrowserDownload`.
 pub const persistent_mount_path = "/ziglop";
 
+/// Temp file (persistent-dir root, outside saves/) used by the web path to
+/// pass the JS-enumerated filename list back to Zig. Written by JS, read +
+/// deleted by Zig. Mirrors the `.import_marker` pattern. Excluded from the
+/// persistent-dir listing like every root artifact (see
+/// `persistent_dir_artifact_names`).
+const saves_listing_temp = ".saves_listing";
+
 /// Marker file (persistent-dir root) written by the web import JS after the
 /// picked save file has landed in saves/. Zig polls it while the load-save
 /// browser is open; finding it means "an import completed — load this path".
@@ -1041,6 +1074,23 @@ pub const game_export_temp_path = ".game_export.zip";
 /// source list; see game_zip.zig). Written by the web JS walk, read +
 /// deleted by Zig. Excluded from the listing like the staging temp.
 pub const game_folder_listing_temp = ".game_folder_listing";
+
+/// Import Game's archive staging file (persistent-dir root, dot-prefixed
+/// like the export staging temp; see game_zip.zig). The web game-import JS
+/// writes the picked ziglop.zip here under this FIXED name, then the import
+/// marker so the Zig-side poll picks it up. The persistent-dir listing
+/// EXCLUDES it - a leftover must not ride in a later export. Deleted by the
+/// import on every exit (the original stays in the player's Downloads).
+pub const game_import_temp_path = ".game_import.zip";
+
+/// Marker file (persistent-dir root) written by the web game-import JS
+/// after the picked ziglop.zip has landed at `game_import_temp_path`. Zig
+/// polls it every frame on web (an import re-boots the session - see
+/// DESIGN → File System & IO → Web storage model); finding it means "an
+/// Import Game upload completed - overlay this zip onto the persistent
+/// dir". The marker body carries the staging zip path. Deleted immediately
+/// after reading - same shape as `mission_import_marker_path`.
+pub const game_import_marker_path = ".game_import_marker";
 
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes) under the given
@@ -1133,6 +1183,42 @@ pub fn triggerBrowserMissionUpload() void {
             "    FS.mkdirTree('" ++ persistent_mount_path ++ "/imported_missions');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_missions/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ mission_import_marker_path ++ "', 'imported_missions/' + name);" ++
+            "  };" ++
+            "  reader.readAsArrayBuffer(file);" ++
+            "};" ++
+            "document.body.appendChild(input);" ++
+            "input.click();" ++
+            "setTimeout(function() { input.remove(); }, 5000);" ++
+            "})();";
+        emscripten_run_script(script);
+    }
+}
+
+/// On web, open a browser file picker for Import Game: the picked ziglop.zip
+/// (the player's own Export Game archive, or an OS-made zip of an extracted
+/// folder) is written at the FIXED staging path (`game_import_temp_path` -
+/// the fixed name is what the listing excludes by exact name, and there is
+/// no name to sanitize: the staging copy is transient + deleted on every
+/// import exit), then the game import marker (body = the staging path, the
+/// write-order discipline of the other two markers: staging first, marker
+/// second, so the bytes exist when the marker does). The Zig-side poll
+/// consumes the marker whenever it lands (see game_zip.zig). Native is a
+/// no-op (comptime-dead branch) - the main-menu button that triggers this is
+/// web-only (the persistent-dir-path-null signal, the Export Game discipline).
+pub fn triggerBrowserGameUpload() void {
+    if (@import("builtin").os.tag == .emscripten) {
+        const script =
+            "(function() {" ++
+            "var input = document.createElement('input');" ++
+            "input.type = 'file';" ++
+            "input.accept = '.zip';" ++
+            "input.onchange = function() {" ++
+            "  var file = input.files[0];" ++
+            "  if (!file) return;" ++
+            "  var reader = new FileReader();" ++
+            "  reader.onload = function() {" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_import_temp_path ++ "', new Uint8Array(reader.result));" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_import_marker_path ++ "', '" ++ game_import_temp_path ++ "');" ++
             "  };" ++
             "  reader.readAsArrayBuffer(file);" ++
             "};" ++

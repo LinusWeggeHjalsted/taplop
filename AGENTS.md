@@ -626,7 +626,12 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +
-  persistent dir + future VFS; see DESIGN → File System & IO)
+  persistent dir + future VFS; the web seams: browser download/upload JS,
+  the game import marker + staging temp, the artifact-name listing
+  exclusion set; see DESIGN → File System & IO)
+- `src/game_zip.zig` — the game-folder zip round trip (Export Game's
+  writer + Import Game's overlay machinery + marker poll — see DESIGN →
+  File System & IO → Web storage model)
 - `src/content_hash.zig` — mission content identity (SHA-256 over the
   mission's config files; see DESIGN → Custom Missions & Online Services → Content
   identity). v1 hashes config files only; extends to custom assets when the

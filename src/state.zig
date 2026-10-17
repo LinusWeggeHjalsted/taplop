@@ -413,6 +413,19 @@ pub const SessionState = struct {
     /// pending writes + diagnostics on the way out.
     quit_requested: bool = false,
 
+    /// Import Game completed - the imported ziplop.zip has been overlaid onto
+    /// the persistent dir and the session must re-boot (web only; native
+    /// never sets it - the main-menu Import Game button is web-only, the
+    /// poll that sets this is comptime-dead on native). A request, not a
+    /// state transform: never recorded, off the undo timeline (input-path
+    /// side effect, the reset-to-defaults class - the reboot resets the
+    /// timeline anyway). The WEB DRIVER consumes it at the FRAME BOUNDARY,
+    /// right after `frame` returns and before the next rAF: a mid-frame
+    /// swap would be a use-after-free of the old history (the running frame
+    /// holds references into it). Read before the old history is freed.
+    /// See DESIGN → File System & IO → Web storage model + game_zip.zig.
+    pending_import_reboot: bool = false,
+
     /// Copy `msg` into the durable history arena and set it as the pending
     /// error. Overwrites (leaks) any prior message. The caller passes
     /// `history_arena.allocator()` so the message outlives `current_arena`

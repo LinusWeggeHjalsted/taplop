@@ -1,19 +1,40 @@
 //! Minimal ZIP archive READER — the sibling of zip_writer.zig (the export
-//! path; see editor/mission_io.zig's importMissionFromZip for the import flow).
-//! Pure: archive bytes in, entries out, no IO — directly round-trip-
-//! testable against zip_writer. Supports the two methods mission zips
-//! carry in practice: STORE (our own exports) and DEFLATE (any OS file
-//! manager's "compress" default — inflate via std.compress.flate). Zip64,
-//! encryption, and other methods are rejected with descriptive errors (a
-//! mission zip never legitimately uses them). Entry names + bytes are
-//! uniformly allocated from the passed allocator — free via
-//! `freeZipArchive`, or hand the caller's throwaway arena.
+//! path; see editor/mission_io.zig's importMissionFromZip + game_zip.zig's
+//! importGameFolder for the two import flows). Pure: archive bytes in,
+//! entries out, no IO - directly round-trip-testable against zip_writer.
+//! Supports the two methods mission zips carry in practice: STORE (our own
+//! exports) and DEFLATE (any OS file manager's "compress" default - inflate
+//! via std.compress.flate). Zip64, encryption, and other methods are rejected
+//! with descriptive errors (a mission zip never legitimately uses them).
+//! Entry names + bytes are uniformly allocated from the passed allocator -
+//! free via `freeZipArchive`, or hand the caller's throwaway arena.
+//!
+//! The read is split in two so an importer can validate EVERYTHING before
+//! extracting a single byte: `readZipEntryHeaders` walks the central
+//! directory (the authoritative index: every name + size, no data), then
+//! `extractZipEntry` decodes one entry at a time - streaming extraction with
+//! memory = one entry. `readZipArchive` is both halves joined.
 
 const std = @import("std");
 const zip_writer = @import("zip_writer.zig");
 
 /// One archived file, same shape as the writer's entries (name + contents).
 pub const ZipEntry = zip_writer.ZipEntry;
+
+/// One central-directory record: the authoritative metadata for an entry
+/// (name + sizes + method), with NO data extracted. `name` is BORROWED from
+/// the archive bytes - the headers slice owns only its own memory (free the
+/// slice, nothing per entry). What an importer validates before extracting:
+/// every Zip-Slip name rule + every size cap can be checked over the whole
+/// archive from these alone.
+pub const ZipEntryHeader = struct {
+    name: []const u8,
+    method: u16,
+    crc32: u32,
+    compressed_size: usize,
+    uncompressed_size: usize,
+    local_header_offset: usize,
+};
 
 /// The archive-level read errors (names mirror std.zip's vocabulary where
 /// it has one).
@@ -50,7 +71,8 @@ const local_file_header_size = 30;
 const central_directory_record_size = 46;
 const end_record_size = 22;
 
-/// Read every entry out of a ZIP archive. Walks the central directory (the
+/// Read every entry out of a ZIP archive: the central-directory headers plus
+/// every entry's data, fully extracted. Walks the central directory (the
 /// authoritative index), reads each entry's data via its local header, and
 /// inflates DEFLATE entries. STORE entry bytes are duped (uniform ownership
 /// with inflated bytes — the caller frees everything via `freeZipArchive`,
@@ -59,6 +81,37 @@ pub fn readZipArchive(
     archive: []const u8,
     allocator: std.mem.Allocator,
 ) ReadError![]ZipEntry {
+    const headers = try readZipEntryHeaders(archive, allocator);
+    defer allocator.free(headers);
+
+    var entries: std.ArrayList(ZipEntry) = .empty;
+    errdefer {
+        for (entries.items) |entry| {
+            allocator.free(entry.name);
+            allocator.free(entry.bytes);
+        }
+        entries.deinit(allocator);
+    }
+    for (headers) |header| {
+        const entry = try extractZipEntry(archive, allocator, header);
+        errdefer {
+            allocator.free(entry.name);
+            allocator.free(entry.bytes);
+        }
+        try entries.append(allocator, entry);
+    }
+
+    return entries.toOwnedSlice(allocator);
+}
+
+/// Read every central-directory record (the authoritative index) without
+/// extracting any data. `readZipArchive` joined with `extractZipEntry` is
+/// this plus the data pass; importers that must validate the whole archive
+/// before writing a byte (see importGameFolder) use this alone first.
+pub fn readZipEntryHeaders(
+    archive: []const u8,
+    allocator: std.mem.Allocator,
+) ReadError![]ZipEntryHeader {
     // Find the end-of-central-directory record: scan backwards from the
     // archive end for its signature (the LAST occurrence wins — junk bytes
     // earlier in a comment-sized tail can't shadow the real record).
@@ -82,14 +135,8 @@ pub fn readZipArchive(
     if (central_directory_offset + central_directory_size > end_offset)
         return ZipError.ZipTruncated;
 
-    var entries: std.ArrayList(ZipEntry) = .empty;
-    errdefer {
-        for (entries.items) |entry| {
-            allocator.free(entry.name);
-            allocator.free(entry.bytes);
-        }
-        entries.deinit(allocator);
-    }
+    var headers: std.ArrayList(ZipEntryHeader) = .empty;
+    errdefer headers.deinit(allocator);
 
     var record_offset = central_directory_offset;
     for (0..entry_count) |_| {
@@ -116,42 +163,62 @@ pub fn readZipArchive(
         if (name.len == 0) return ZipError.ZipBadName;
         record_offset += central_directory_record_size + name_length + extra_length + comment_length;
 
-        // The entry's data lives at the LOCAL header's data offset — which
-        // carries its own name/extra lengths, so they must be read there,
-        // not reused from the central directory record.
-        if (local_header_offset + local_file_header_size > archive.len)
-            return ZipError.ZipTruncated;
-        const local = archive[local_header_offset .. local_header_offset + local_file_header_size];
-        if (readInt(u32, local[0..4]) != 0x04034b50) return ZipError.ZipBadSignature;
-        const local_name_length: usize = readInt(u16, local[26..28]);
-        const local_extra_length: usize = readInt(u16, local[28..30]);
-        const data_offset = local_header_offset + local_file_header_size +
-            local_name_length + local_extra_length;
-        if (data_offset + compressed_size > archive.len) return ZipError.ZipTruncated;
-        const compressed = archive[data_offset .. data_offset + compressed_size];
-
-        // Decode first (per-entry errdefers cover the not-yet-appended
-        // allocation), verify the CRC regardless of method (flate checks
-        // match distances, but a valid stream can still decode to bytes
-        // other than what was recorded), then take ownership via append.
-        const bytes: []u8 = switch (method) {
-            0 => blk: { // store — the bytes are the contents, verbatim.
-                if (compressed.len != uncompressed_size) return ZipError.ZipBadSize;
-                break :blk try allocator.dupe(u8, compressed);
-            },
-            8 => try inflate(compressed, uncompressed_size, allocator),
-            else => return ZipError.ZipUnsupportedMethod,
-        };
-        errdefer allocator.free(bytes);
-        if (std.hash.Crc32.hash(bytes) != crc32) return ZipError.ZipCrcMismatch;
-        if (bytes.len != uncompressed_size) return ZipError.ZipBadSize;
-
-        const owned_name = try allocator.dupe(u8, name);
-        errdefer allocator.free(owned_name);
-        try entries.append(allocator, .{ .name = owned_name, .bytes = bytes });
+        try headers.append(allocator, .{
+            .name = name,
+            .method = method,
+            .crc32 = crc32,
+            .compressed_size = compressed_size,
+            .uncompressed_size = uncompressed_size,
+            .local_header_offset = local_header_offset,
+        });
     }
 
-    return entries.toOwnedSlice(allocator);
+    return headers.toOwnedSlice(allocator);
+}
+
+/// Extract ONE entry's data (its local header's data offset + decode + CRC
+/// verify). The returned entry owns its name + bytes (uniform with
+/// `readZipArchive` - free both, or use a throwaway arena). Streaming
+/// importers call this per header with a per-entry reset arena so memory
+/// stays at one entry (see importGameFolder).
+pub fn extractZipEntry(
+    archive: []const u8,
+    allocator: std.mem.Allocator,
+    header: ZipEntryHeader,
+) ReadError!ZipEntry {
+    // The entry's data lives at the LOCAL header's data offset - which
+    // carries its own name/extra lengths, so they must be read there,
+    // not reused from the central directory record.
+    if (header.local_header_offset + local_file_header_size > archive.len)
+        return ZipError.ZipTruncated;
+    const local = archive[header.local_header_offset .. header.local_header_offset + local_file_header_size];
+    if (readInt(u32, local[0..4]) != 0x04034b50) return ZipError.ZipBadSignature;
+    const local_name_length: usize = readInt(u16, local[26..28]);
+    const local_extra_length: usize = readInt(u16, local[28..30]);
+    const data_offset = header.local_header_offset + local_file_header_size +
+        local_name_length + local_extra_length;
+    if (data_offset + header.compressed_size > archive.len) return ZipError.ZipTruncated;
+    const compressed = archive[data_offset .. data_offset + header.compressed_size];
+
+    // Decode first (per-entry errdefers cover the not-yet-owned allocation),
+    // verify the CRC regardless of method (flate checks match distances,
+    // but a valid stream can still decode to bytes other than what was
+    // recorded), then take ownership via the owned-name dupe.
+    const bytes: []u8 = switch (header.method) {
+        0 => blk: { // store - the bytes are the contents, verbatim.
+            if (compressed.len != header.uncompressed_size) return ZipError.ZipBadSize;
+            break :blk try allocator.dupe(u8, compressed);
+        },
+        8 => try inflate(compressed, header.uncompressed_size, allocator),
+        else => return ZipError.ZipUnsupportedMethod,
+    };
+    errdefer allocator.free(bytes);
+    if (std.hash.Crc32.hash(bytes) != header.crc32) return ZipError.ZipCrcMismatch;
+    if (bytes.len != header.uncompressed_size) return ZipError.ZipBadSize;
+
+    const owned_name = try allocator.dupe(u8, header.name);
+    errdefer allocator.free(owned_name);
+    return .{ .name = owned_name, .bytes = bytes };
 }
 
 /// Free a slice returned by `readZipArchive` (names + bytes + the slice).
@@ -186,6 +253,38 @@ fn inflate(
 
 fn readInt(comptime Int: type, bytes: []const u8) Int {
     return std.mem.readInt(Int, bytes[0..@sizeOf(Int)], .little);
+}
+
+/// The set of junk an OS "Compress" zip carries alongside the real content
+/// - skipped by both importers (mission + game folder) so an OS-made zip
+/// round-trips clean. Directory entries (a trailing '/', zero contents),
+/// the macOS resource-fork folder + its artifacts.
+pub fn isOsZipJunkEntry(name: []const u8) bool {
+    // Directory entries (a trailing '/', zero contents).
+    if (std.mem.endsWith(u8, name, "/")) return true;
+    // The macOS resource-fork folder + its artifacts.
+    if (std.mem.startsWith(u8, name, "__MACOSX/")) return true;
+    const basename = std.fs.path.basename(name);
+    if (std.mem.startsWith(u8, basename, "._")) return true;
+    if (std.mem.eql(u8, basename, ".DS_Store")) return true;
+    return false;
+}
+
+/// A safe extraction name for an UNTRUSTED archive (the Zip-Slip class):
+/// no absolute paths, no `..` traversal, no backslashes (spec names use '/';
+/// a backslash is a malformed or hostile name - a literal filename
+/// character on some platforms), no NUL bytes, no empty segments.
+/// Applied BEFORE the first write by both importers: a hostile or malformed
+/// zip fails whole, never half-imported.
+pub fn isUnsafeZipEntryName(name: []const u8) bool {
+    if (name.len == 0 or name[0] == '/') return true;
+    if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
+    if (std.mem.indexOfScalar(u8, name, 0) != null) return true;
+    var iterator = std.mem.splitScalar(u8, name, '/');
+    while (iterator.next()) |segment| {
+        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
+    }
+    return false;
 }
 
 // --- tests ---
@@ -293,6 +392,53 @@ test "readZipArchive: DEFLATE entry inflates (OS-made zips)" {
     try testing.expectEqual(@as(usize, 1), read.len);
     try testing.expectEqualStrings(name, read[0].name);
     try testing.expectEqualStrings(contents, read[0].bytes);
+}
+
+test "readZipEntryHeaders + extractZipEntry: headers borrow names, one entry at a time" {
+    const allocator = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    const written = [_]ZipEntry{
+        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 2\n" },
+        .{ .name = "sprites/boss.png", .bytes = "pretend png bytes" },
+    };
+    const archive = try zip_writer.writeZipArchive(&written, arena_allocator);
+
+    const headers = try readZipEntryHeaders(archive, allocator);
+    defer allocator.free(headers);
+    try testing.expectEqual(written.len, headers.len);
+    for (written, headers) |expected, header| {
+        try testing.expectEqualStrings(expected.name, header.name);
+        try testing.expectEqual(expected.bytes.len, header.uncompressed_size);
+    }
+
+    // One entry at a time, each freed before the next: the streaming-import
+    // shape (memory = one entry - see importGameFolder).
+    for (headers, 0..) |header, index| {
+        const entry = try extractZipEntry(archive, allocator, header);
+        defer allocator.free(entry.name);
+        defer allocator.free(entry.bytes);
+        try testing.expectEqualStrings(written[index].name, entry.name);
+        try testing.expectEqualStrings(written[index].bytes, entry.bytes);
+    }
+
+    // The junk + name-safety policy, at the edge cases that matter.
+    try testing.expect(isOsZipJunkEntry("saves/"));
+    try testing.expect(isOsZipJunkEntry("__MACOSX/evil"));
+    try testing.expect(isOsZipJunkEntry("missions/mine/._boss.png"));
+    try testing.expect(isOsZipJunkEntry("missions/mine/.DS_Store"));
+    try testing.expect(!isOsZipJunkEntry("saves/autosave.txt"));
+    try testing.expect(isUnsafeZipEntryName("/absolute.txt"));
+    try testing.expect(isUnsafeZipEntryName("../evil.txt"));
+    try testing.expect(isUnsafeZipEntryName("saves/../evil.txt"));
+    try testing.expect(isUnsafeZipEntryName("saves\\evil.txt"));
+    try testing.expect(isUnsafeZipEntryName("saves/evil\x00.txt"));
+    try testing.expect(isUnsafeZipEntryName("saves//evil.txt"));
+    try testing.expect(isUnsafeZipEntryName(""));
+    try testing.expect(!isUnsafeZipEntryName("saves/autosave.txt"));
+    try testing.expect(!isUnsafeZipEntryName("missions/mine/sprites/art.png"));
 }
 
 test "readZipArchive: rejects a missing end record, an unsupported method, and a CRC mismatch" {

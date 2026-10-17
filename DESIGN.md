@@ -2078,18 +2078,41 @@ setup inline (history in DONE.md).
 game-folder zip (`ziglop.zip`), OVERLAID onto the persistent dir: same-path
 files are overwritten by the zip (restore wins), files the zip doesn't
 mention are kept (this session's new work survives — e.g. a custom mission
-made this session). UNTRUSTED-ZIP RULES: entry names must be relative,
-`..`-free (validated under `/` AND `\` separators), NUL-free, non-absolute
-(the Zip-Slip class) — anything else ABORTS the import with the
-recoverable popup naming the entry; extraction STREAMS entry-by-entry
-(memory = one entry), capped at 512 MB per entry / 2 GB total / 65,536
-entries (a generous tripwire — legitimate folders are a few MB; under the
-in-memory model the caps protect a busy tab, not a quota); single-level
-extraction (no zip-in-zip recursion); shadow trees (`data/`/`assets/` names
-under the persistent dir) are ALLOWED — a restore of the player's own
-folder — written through the RAW persistent-dir handle (not
-`FileSource.writeFile`, whose shipped-path write guard panics by design);
-no post-import flush (nothing to flush into). APPLICATION: a successful
+made this session). UNTRUSTED-ZIP RULES (the shared policy with the mission
+import — `zip_reader.isUnsafeZipEntryName`/`isOsZipJunkEntry`): entry names
+must be relative, `..`-free, NUL-free, non-absolute, backslash-free (a
+backslash is a malformed or hostile name outright — a superset of
+"`..`-free under both separators") — anything else ABORTS the import with
+the recoverable popup naming the entry; OS-zip junk (directory entries,
+`__MACOSX/`, `._*`, `.DS_Store`) is skipped so an OS "compress folder" zip
+round-trips clean; every name + size cap is validated BEFORE the first
+write and a full dry-run decode pass runs before the write pass, so a
+hostile OR CORRUPT archive fails WHOLE — the first bad entry is found in
+validation, nothing is ever written (never a half-applied overlay);
+extraction STREAMS entry-by-entry (the reader's split API: central-
+directory headers first, then one entry decoded + written + freed at a
+time via a per-entry reset arena — memory = one entry), capped at
+512 MB per entry / 2 GB total / 65,536 entries (a generous tripwire —
+legitimate folders are a few MB; under the in-memory model the caps
+protect a busy tab, not a quota); single-level extraction (no zip-in-zip
+recursion); shadow trees (`data/`/`assets/` names under the persistent dir)
+are ALLOWED — a restore of the player's own folder — written through the
+RAW persistent-dir handle (not `FileSource.writeFile`, whose shipped-path
+write guard panics by design); no post-import flush (nothing to flush
+into). The picked zip lands at a FIXED staging temp (`.game_import.zip`)
++ the marker (`.game_import_marker`, body = the staging path — the upload
+JS's write order: staging first, marker second); the staging zip is
+deleted on every import exit (success + failure — the original stays
+wherever the player picked it from), and BOTH temps plus every other
+root artifact (markers, listing temps) are excluded from the Export Game
+listing via ONE machine-walked name set both walkers derive from (a
+leftover must never ride in a later export). The marker is polled EVERY
+FRAME on web (a comptime-gated call in the shared frame path) and consumed
+whenever it lands, regardless of what screen is up: the re-boot happens
+at that frame boundary — an import REPLACES the session, in-flight
+progress since the last autosave included (the button being main-menu-
+only keeps the realistic race to a sub-second window; the chosen behavior
+is the honest one — apply the import the moment it completes). APPLICATION: a successful
 import RE-BOOTSTRAPS the session — the exact boot sequence re-run
 (`createSessionSetup` + `fixupPointers` + `initAudio` + `crash_dump.install`)
 so everything the folder carries applies: settings (vsync at setup,
@@ -2099,9 +2122,11 @@ the imported autosave). The re-boot runs at a FRAME BOUNDARY via a pending
 flag set by the import handler (a mid-frame swap is a use-after-free of
 the old history — the running frame holds references into it), and
 re-installs the crash-dump hook (the old history is freed). The result is
-a fresh-boot state (open surfaces close, timeline resets) — safe because
-Import Game is main-menu-only: the discarded session is fresh-boot-
-equivalent. Prerequisite: a SessionSetup teardown (history deinit +
+a fresh-boot state (open surfaces close, timeline resets) — mechanically
+safe at any screen (the reboot happens between frames; nothing renders
+or reads input against the old history after the flag is consumed);
+the discarded session's live progress is the accepted cost above.
+Prerequisite: a SessionSetup teardown (history deinit +
 config frees) so the old setup is freed, not leaked.
 - **Export Game** (options menu, EVERY variant — the options menu is the
 only menu surface reachable mid-level, so in-session backups are always

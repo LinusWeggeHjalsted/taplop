@@ -17068,3 +17068,57 @@ the browser entirely.
   null-path web simulation in menus.zig. Browser-verified (compile ≠
   run): the JS walk, the staging + download + temp cleanup, and the
   mid-level autosave landing in the archive — the emrun eyeball.
+
+## Web storage model slice 3a: Import Game machinery (extraction + poll)
+
+The web build's cross-session data path, the inbound half's machinery: the
+picked ziglop.zip is validated WHOLE before the first write, then streamed
+onto the persistent dir as an overlay. Design conversation notes worth
+keeping:
+
+- **Validate-first + dry-run** (the abort-semantics question): "abort on the
+  first bad entry" is implemented as pass one over the central directory
+  (every name + size, no data) finding the first bad entry BEFORE any write,
+  then a full dry-run decode pass (extract + free per entry) so a CORRUPT
+  archive also fails whole — never a half-applied overlay. The alternative
+  (validate-as-you-write) was rejected: a bad entry at position N would
+  leave entries 1..N-1 already written.
+- **The marker race** (marker lands mid-screen): decided to reboot ASAP —
+  the poll consumes the marker EVERY FRAME on web (comptime-gated call in
+  `main.frame`, next to the platform machinery) regardless of screen; the
+  import replaces the session, in-flight progress since the last autosave
+  included. The user's framing: nothing renders or reads input against the
+  old history by construction (the re-boot runs between frames), so there
+  is nothing to soften.
+- **Streaming memory**: the reader is split (`readZipEntryHeaders` + 
+  `extractZipEntry` — `readZipArchive` reimplemented on both) so pass one
+  needs no data and the write pass holds one entry at a time (a per-entry
+  reset arena; the caps bound the per-entry buffer).
+- **The shared untrusted-archive policy**: `zip_reader.isUnsafeZipEntryName` /
+  `isOsZipJunkEntry` moved out of mission_io (delegation kept) — one junk +
+  name-safety set for both importers, with the NUL check added (the game
+  import's DESIGN rule).
+- **The artifact-name exclusion set**: `file_source.persistent_dir_artifact_names`
+  — ONE machine-walked comptime list (the export/import staging zips, both
+  listing temps, all three import markers) feeding the native walker, the
+  JS walk (the script's name chain is built from the same list — the old
+  hand-maintained inline pair was exactly the drift class), and
+  `isPersistentDirArtifactName`. Also caught: the pre-existing markers
+  (`.import_marker`, `.mission_import_marker`, `.saves_listing`) could ride
+  in an export if they linger — now excluded like every other artifact.
+- **`saves_listing_temp` moved to file scope** (was inside the FileSource
+  struct; the set at file scope couldn't see it).
+
+Landed: `zip_reader.zig` (split API + shared policy + the direct
+headers/extract test), `game_zip.zig` (importGameFolder [file-private] +
+pollGameImportMarker + the cap constants + 5 tests: overlay semantics
+incl. shadow trees + flag, hostile-name whole-abort, junk skip, both size
+caps via patched central records, the marker poll), `file_source.zig`
+(staging + marker constants, the exclusion set, `triggerBrowserGameUpload`),
+`state.zig` (`SessionState.pending_import_reboot` — the web driver's
+request flag beside `quit_requested`), `main.zig` (the comptime-gated poll
+call in `frame`). mission_io's two helpers now delegate. Remaining (TODO
+3b/3c): the SessionSetup teardown + the web re-boot driver, then the button
++ action wiring (`triggerBrowserGameUpload` is DEAD until then — by design,
+its caller lands with the button). Verified: full suite PASS, native + web
+compile OK.

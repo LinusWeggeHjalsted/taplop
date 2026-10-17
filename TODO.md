@@ -749,20 +749,29 @@ Open:
      FULL persistent dir zipped as ziglop.zip (the mission STORE zip
      writer) → `triggerBrowserDownload`. DONE — DONE.md; design: DESIGN
      → Web storage model.
-  3. [ ] Import Game — main menu, web only: file picker → OVERLAY the
-     ziglop.zip onto the persistent dir (the settled untrusted-zip rules
-     live in DESIGN → Web storage model — Zip-Slip name validation, abort
-     on the first bad entry, streaming extraction, the 512 MB / 2 GB /
-     65,536 caps, shadow trees allowed via the raw dir handle; the
-     import-marker poll pattern at directory scale). Application: a
-     successful import sets a pending RE-BOOT flag (a mid-frame swap is a
-     use-after-free of the old history); the frame boundary re-runs the
-     boot sequence (`createSessionSetup` + `fixupPointers` + `initAudio` +
-     `crash_dump.install`) — everything the folder carries applies and
-     Continue appears for the imported autosave; the result is a
-     fresh-boot state (safe: main-menu-only, the discarded session is
-     fresh-boot-equivalent). Prerequisite: a SessionSetup teardown (the
-     old setup freed, not leaked). See DESIGN → Web storage model.
+  3. Import Game — main menu, web only. The settled rules (Zip-Slip
+     validation, junk skip, caps, streaming, staging + marker, the
+     every-frame poll + the ASAP re-boot) live in DESIGN → Web storage
+     model (updated with the landed shape). Sub-slices:
+  - [x] 3a. The machinery — DONE (see DONE.md, "web storage model slice
+        3a"): `zip_reader`'s split API (headers pass + one-entry extract,
+        the shared junk/name-safety policy), `game_zip`'s overlay +
+        caps + dry-run passes + the poll, the frame-path comptime-gated
+        poll wiring, the artifact-name listing exclusion set, and the
+        headless tests. The upload JS (`triggerBrowserGameUpload`) is
+        DEAD until 3c wires its caller (the button's action arm).
+  - [ ] 3b. SessionSetup teardown + the web re-boot driver — the
+        prerequisite (the old setup freed, not leaked: history deinit +
+        the startup-config memory), then the frame-boundary re-boot in
+        web.zig (a shared `bootSession` helper for main() + the re-boot:
+        `crash_dump.uninstall` → teardown → `createSessionSetup` →
+        `fixupPointers` → `deinitAudio` + `initAudio` →
+        `crash_dump.install`) consuming `pending_import_reboot`.
+  - [ ] 3c. Button + action wiring — the main-menu Import Game button
+        (web-only via the `persistent_dir_path == null` signal, the
+        Export Game discipline), `.import_game` action + the three
+        exhaustive map classifications + the input arm
+        (`triggerBrowserGameUpload`'s caller, comptime-gated), tests.
   4. [ ] Disclaimer — main menu, centered above the title, web only, the
      chosen wording (DESIGN → Web storage model).
   5. [ ] Cleanup sweep - the `file_source.zig` platform-split directory
