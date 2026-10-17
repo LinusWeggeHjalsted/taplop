@@ -17318,3 +17318,37 @@ Verified: suite PASS, native + web compile OK. Browser verification
 pending (the user's run): the watchdog trips after each load + the lead
 resets to ~30ms, sounds prompt after loads, the music skip acceptable, no
 rebuild loops.
+
+Follow-up (the watchdog detector iteration, same investigation): the first
+detector shipped with thresholds sized for an imagined per-fill banking and
+was killed twice by measurement — the discipline of this whole entry:
+
+- **v1 (150ms absolute cap + +50ms growth-per-fill)**: never tripped in
+  RELEASE at all (the banked depth measured 87-96ms < 150; a burst banks
+  ~21ms per fill, never +50) — confirmed by a user run with zero console
+  output and the delay still felt. Debug would trip (2s > 150), release
+  never — exactly "still feels delayed".
+- **v2 (burst-cadence detection: fills <10ms apart with the lead up >12ms,
+  armed-gated)**: tripped constantly on FALSE positives — the tight ~0-20ms
+  schedule a rebuilt node runs jitters -66..+35ms around zero (fills
+  delivered after their slot read as negative lead), so consecutive close
+  fills crossed the growth line at steady state. A misfire storm — though
+  it accidentally revealed the good news below.
+- **The accidental finding**: a REBUILT ScriptProcessorNode schedules its
+  fills ~0-20ms ahead — TIGHTER than miniaudio's original ~30-64ms — so a
+  repair lands at better-than-baseline latency.
+- **v3 (sustained elevation, the landed detector)**: the lead exceeding
+  ~60ms on 3 consecutive fills. Persistence is the one signal that
+  separates a banked queue (it holds — the queue never drains) from jitter
+  (single-fill spikes; the tight schedule's wobble never holds >60). The
+  3-fill streak completes fast inside a burst. Verified (release,
+  probe-verified): zero false trips at boot + steady state, exactly one
+  trip per load (banked 99ms / 67ms observed), the tight schedule after
+  (~15-20ms steady lead), combat onset totals ~15-45ms — down from
+  ~90-115 pre-fix. Remaining browser verification: a debug run (the ~2s
+  banking case) + the user's ears across both.
+
+The onset probe (the investigation's instrument) was reverted with the
+conclusion: the submission marks in audio.zig + the fill wrapper + the
+1-second lead line in web.zig. The watchdog keeps its trip console.warn
+(a real repair event, one per load).

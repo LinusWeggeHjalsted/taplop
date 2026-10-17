@@ -472,18 +472,27 @@ The FIX (landed): the web driver installs a QUEUE WATCHDOG
 (`web.zig`'s `installAudioLeadWatchdog`, every web build, per boot) — a
 runtime property swap on the node's callback (NO raylib/miniaudio source
 is touched) that watches the queue depth on every fill
-(`AudioProcessingEvent.playbackTime` vs the context clock). A burst banks
-~21ms per fill, so a **+50ms growth-per-fill** is the burst signature
-(normal jitter measured ~±10ms); a **150ms absolute cap** backs it up for
-slow creep (normal steady lead measured 30-64ms). On a trip it REBUILDS
-the node: a fresh ScriptProcessorNode starts with a clean ~1-buffer
-schedule and the stale pre-mixed queue is dropped with the old node —
-the wrapper is reattached, so miniaudio's wasm-side mixing state is
-untouched. Costs when it fires: the music skips forward by the banked
-depth (right after a load, when a gap is least noticed) and any sound
-triggered during the block is LOST rather than played seconds late — the
-right trade for feel. Known limitation (accepted, degrades-safe): the
-install reads miniaudio's internal device layout
+(`AudioProcessingEvent.playbackTime` vs the context clock). The trip
+detector is SUSTAINED ELEVATION: the lead exceeding ~60ms on 3 consecutive
+fills. A banked queue lifts the lead above the healthy envelope and HOLDS
+it (it never drains) — while scheduling jitter spikes are single fills,
+and the tight ~0-20ms schedule a rebuilt node runs jitters -66..+35ms
+around zero (measured) — persistence is the one signal separating them.
+60ms sits above both schedule shapes' healthy envelopes (miniaudio's
+original ~30-64ms; the rebuilt node's ~0-20ms) and below the banked depth
+(~90ms release, ~2s debug); the 3-fill streak completes fast inside a
+burst (fills arrive back-to-back after a block). On a trip it REBUILDS
+the node: a fresh ScriptProcessorNode starts a clean schedule (measured
+~0-20ms ahead — TIGHTER than miniaudio's original, so the repair lands
+at better-than-baseline latency) and the stale pre-mixed queue is dropped
+with the old node. The wrapper is reattached, so miniaudio's wasm-side
+mixing state is untouched. Costs when it fires: the music skips forward
+by the banked depth (right after a load, when a gap is least noticed)
+and any sound triggered during the block is LOST rather than played
+seconds late — the right trade for feel. Verified outcomes (release,
+probe-verified): one trip per load, ~15-45ms onset totals after the
+repair, no false trips at steady state. Known limitation (accepted,
+degrades-safe): the install reads miniaudio's internal device layout
 (`window.miniaudio.devices[0].scriptNode`) — a raylib upgrade that
 reshapes it makes the watchdog find nothing and quietly no-op back to
 the banked-queue bug, never a crash.

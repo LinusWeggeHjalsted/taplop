@@ -177,40 +177,38 @@ fn mountPersistentDir() void {
     emscripten_run_script(script);
 }
 
-/// Web audio onset latency: the ScriptProcessorNode QUEUE WATCHDOG (see
-/// DESIGN → Platform Seam → Web audio onset latency). On web, raylib's
-/// entire mixer runs inside miniaudio's `onaudioprocess` on the MAIN
-/// thread, and the just-filled buffer joins the node's output queue, which
-/// drains to the speakers at exactly 1x real time. A long main-thread
-/// block (a mission/level load) starves the queue during the block, then
-/// the browser delivers the missed fill requests in a burst — each banking
-/// ~one buffer (21ms at 1024 frames @48kHz) of pre-mixed audio AHEAD of
-/// playback — and the banked queue never drains (production and
-/// consumption both run 1x afterwards). Measured: every subsequent sound
-/// plays late by the banked depth — ~2s in Debug (slow loads), ~90ms in
-/// Release; native is unaffected (a real audio thread).
-///
 /// The watchdog wraps the node's callback (a runtime property swap — no
 /// raylib/miniaudio source is touched) and watches the queue depth on
-/// every fill (AudioProcessingEvent.playbackTime vs the context clock):
-/// a burst banks +21ms per fill, so a +50ms growth-per-fill is the burst
-/// signature (normal jitter measured ~±10ms); a 150ms absolute cap backs
-/// it up for slow creep (normal steady lead measured 30-64ms). On a trip it
-/// rebuilds the node — a fresh ScriptProcessorNode starts with a clean
-/// ~1-buffer schedule, and the stale pre-mixed queue (silence from the
-/// block + music + any sounds triggered during it) is dropped with the old
-/// node. The wrapper is reattached, so miniaudio's wasm-side mixing state
-/// is untouched. Costs when it fires: the music skips forward by the
-/// banked depth (right after a load, when a gap is least noticed) and any
-/// sound triggered during the block is lost rather than played seconds
-/// late — the right trade for feel. Fragility (accepted, degrades-safe): it
-/// reads miniaudio's internal device layout (`window.miniaudio.devices
-/// [0].scriptNode`) — a raylib upgrade that reshapes it makes the install
-/// find nothing and quietly no-op back to this bug, never a crash. The
-/// structural fix (AudioWorklet: mixing off-thread, blocks become silent
-/// ring-buffer underruns that recover instantly) is deferred to the web
-/// hosting milestone — see TODO → Platform Layer. Installed per boot from
-/// bootSession (a re-boot's fresh node needs re-wrapping).
+/// every fill (AudioProcessingEvent.playbackTime vs the context clock).
+/// The trip detector is SUSTAINED ELEVATION: the lead exceeding ~60ms on 3
+/// consecutive fills. A banked queue lifts the lead above the healthy
+/// envelope and HOLDS it (it never drains) — while scheduling jitter
+/// spikes are single fills, and the tight ~0-20ms schedule a rebuilt node
+/// runs jitters -66..+35ms around zero (measured) — so persistence is the
+/// one signal that separates them. 60ms sits above both schedule shapes'
+/// healthy envelopes (miniaudio's original ~30-64ms, the rebuilt node's
+/// ~0-20ms) and below the banked depth (~90ms release, ~2s debug); the
+/// 3-fill streak completes fast inside a burst (fills arrive
+/// back-to-back after a main-thread block). On a trip it REBUILDS the
+/// node — a fresh ScriptProcessorNode starts a clean schedule (measured
+/// to run ~0-20ms ahead, TIGHTER than miniaudio's original ~30-64ms — the
+/// repair lands at better-than-baseline latency) and the stale
+/// pre-mixed queue is dropped with the old node. The wrapper is
+/// reattached, so miniaudio's wasm-side mixing state is untouched. Costs
+/// when it fires: the music skips forward by the banked depth (right
+/// after a load, when a gap is least noticed) and any sound triggered
+/// during the block is LOST rather than played seconds late — the right
+/// trade for feel. Verified outcomes (release, probe-verified): one trip
+/// per load, ~15-45ms onset totals after the repair, no false trips at
+/// steady state. Known limitation (accepted, degrades-safe): the install
+/// reads miniaudio's internal device layout
+/// (`window.miniaudio.devices[0].scriptNode`) — a raylib upgrade that
+/// reshapes it makes the watchdog find nothing and quietly no-op back to
+/// the banked-queue bug, never a crash. The structural fix (AudioWorklet:
+/// mixing off-thread, blocks become silent ring-buffer underruns that
+/// recover instantly) is deferred to the web hosting milestone — see
+/// TODO → Platform Layer. Installed per boot from bootSession (a
+/// re-boot's fresh node needs re-wrapping).
 fn installAudioLeadWatchdog() void {
     const script =
         "(function() {" ++
@@ -219,16 +217,31 @@ fn installAudioLeadWatchdog() void {
         "  if (!d || !d.scriptNode || d.scriptNode.__ziglopWatchdog) return;" ++
         "  d.scriptNode.__ziglopWatchdog = true;" ++
         "  var last_lead = null;" ++
+        "  var high_streak = 0;" ++
         "  var orig = d.scriptNode.onaudioprocess;" ++
         "  d.scriptNode.onaudioprocess = function(e) {" ++
         "    orig(e);" ++
         "    if (!d.webaudio || d.webaudio.state !== 'running' ||" ++
-        "        typeof e.playbackTime !== 'number') { last_lead = null; return; }" ++
+        "        typeof e.playbackTime !== 'number') { last_lead = null; high_streak = 0; return; }" ++
         "    var lead = (e.playbackTime - d.webaudio.currentTime) * 1000;" ++
-        "    var banked = lead > 150 ||" ++
-        "      (last_lead != null && lead - last_lead > 50);" ++
+        // The trip detector: SUSTAINED elevation. A banked queue (the
+        // missed fills delivered as a burst after a main-thread block)
+        // lifts the lead above the healthy envelope and HOLDS it there
+        // for every fill thereafter (it never drains - production and
+        // consumption both run 1x) - while scheduling jitter spikes are
+        // single fills. Trip when the lead exceeds ~60ms on 3 consecutive
+        // fills: 60ms sits above the healthy envelopes measured on both
+        // schedule shapes (miniaudio's original ~30-64ms, and the tight
+        // ~0-15ms schedule a rebuilt node runs - its jitter measured
+        // -66..+35ms around zero, which is why per-fill delta detectors
+        // false-trip on it) and below the banked depth (~90ms release,
+        // ~2s debug); 3 consecutive fills filters every transient while
+        // still catching real banking fast (fills arrive back-to-back
+        // inside a burst, so the streak completes within the burst).
+        "    if (lead > 60) { high_streak += 1; } else { high_streak = 0; }" ++
         "    last_lead = lead;" ++
-        "    if (!banked) return;" ++
+        "    if (high_streak < 3) return;" ++
+        "    high_streak = 0;" ++
         "    var old = d.scriptNode;" ++
         "    if (old !== e.target) return;" ++
         "    console.warn('[ziglop] audio queue banked ' + lead.toFixed(0) +" ++
