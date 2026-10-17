@@ -288,10 +288,16 @@ pub fn buildMainMenu(
     font_metrics: FontMetrics,
     screen: Rectangle,
     continue_available: bool,
+    /// Import Game available — the web signal (threaded from
+    /// `SessionState.persistent_dir_path`: null on web, where the import is
+    /// a browser upload; the Export Game discipline). Native passes false —
+    /// the real persistent dir IS the game folder (drop files into it by
+    /// hand instead).
+    import_available: bool,
     button_color: Color,
 ) !void {
-    const MenuButton = struct { label: []const u8, action: Action };
-    var buttons: [4]MenuButton = undefined;
+    const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
+    var buttons: [5]MenuButton = undefined;
     var button_count: usize = 0;
     if (continue_available) {
         buttons[button_count] = .{ .label = "Continue", .action = .continue_game };
@@ -301,6 +307,23 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
+    // Import Game (web only — the import_available signal): uploads a
+    // ziglop.zip OVER the game folder — the web build's cross-session
+    // RESTORE path (browser storage never persists sessions; a downloaded
+    // archive is the only durable home, Export Game writes it). The
+    // overlay lands via the every-frame marker poll + the session re-boots
+    // at the frame boundary — see game_zip.zig + DESIGN → File System &
+    // IO → Web storage model.
+    if (import_available) {
+        buttons[button_count] = .{
+            .label = "Import Game",
+            .action = .import_game,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Uploads a ziglop.zip over your game folder (replaces the current session)",
+            ))}) },
+        };
+        button_count += 1;
+    }
     // Opens the editor browser (the tabbed modal — browse + create
     // editor content; the mission kind today). See DESIGN → Architecture
     // → Level Editor → The editor browser.
@@ -345,7 +368,7 @@ pub fn buildMainMenu(
             menu_button_font_size,
             menu_button.action,
             button_color,
-            null,
+            menu_button.tooltip,
         );
     }
 }
@@ -2684,7 +2707,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     // Continue present only when a game exists to resume.
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, true, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
         var found_continue = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {
@@ -2696,7 +2719,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     }
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, false, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, false, false, button_color);
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .continue_game),
             else => {},
@@ -2707,7 +2730,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     // Credits moved to the options menu (the top-bar options button is
     // the entry point from every screen).
     var elements: UiElementList = .empty;
-    try buildMainMenu(&elements, allocator, metrics, screen, true, button_color);
+    try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
     for ([_]types.Action{ .new_game, .toggle_load_save_menu, .toggle_editor_browser }) |expected| {
         var found = false;
         for (elements.items) |element| switch (element) {
@@ -2721,6 +2744,43 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     for ([_]types.Action{ .open_settings, .open_credits }) |moved| {
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != moved),
+            else => {},
+        };
+    }
+}
+
+test "buildMainMenu: Import Game web only (the import_available signal)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Web (the null persistent-dir-path signal, threaded as
+    // import_available): the button is present, between Load Save and
+    // Editor, with a tooltip.
+    {
+        var elements: UiElementList = .empty;
+        try buildMainMenu(&elements, allocator, metrics, screen, true, true, button_color);
+        var import_button: ?Button = null;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == .import_game) import_button = b;
+            },
+            else => {},
+        };
+        const found = import_button orelse @panic("no Import Game button on web");
+        try std.testing.expect(found.tooltip != null);
+    }
+
+    // Native (a real persistent dir path): no button.
+    {
+        var elements: UiElementList = .empty;
+        try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != .import_game),
             else => {},
         };
     }

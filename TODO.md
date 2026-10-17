@@ -765,11 +765,12 @@ Open:
         + `freeSessionSetup` + the tracked startup memory (`StartupMemory`)
         + `bootSession`/`rebootSession` in web.zig + `deinitAudio` + the
         leak-check round-trip test.
-  - [ ] 3c. Button + action wiring — the main-menu Import Game button
-        (web-only via the `persistent_dir_path == null` signal, the
-        Export Game discipline), `.import_game` action + the three
-        exhaustive map classifications + the input arm
-        (`triggerBrowserGameUpload`'s caller, comptime-gated), tests.
+  - [x] 3c. Button + action wiring — DONE (see DONE.md, "web storage
+        model slice 3c"): the main-menu Import Game button (web-only via
+        the `persistent_dir_path == null` signal, threaded as
+        `import_available`), `.import_game` action + the three exhaustive
+        map classifications + the idle menu-action arm
+        (`triggerBrowserGameUpload`'s caller — no DEAD pubs left).
   4. [ ] Disclaimer — main menu, centered above the title, web only, the
      chosen wording (DESIGN → Web storage model).
   5. [ ] Cleanup sweep - the `file_source.zig` platform-split directory

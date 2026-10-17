@@ -17181,3 +17181,42 @@ Verified: full suite PASS (846), native + web compile OK, doc-symbol check
 CLEAN, unused-pub report: only the known DEAD `triggerBrowserGameUpload`
 (its caller lands with 3c, the button wiring) + the three pre-existing
 TEST-ONLY entries.
+
+## Web storage model slice 3c: the Import Game button + action wiring
+
+The last code piece of the import flow — the player-facing half. The action
+follows the `export_game` discipline everywhere: button-only, no event (a
+pure input-path side effect — the import REPLACES the session via the
+re-boot, so there is no timeline to record into), no orchestrator arm
+(export had one only for its autosave push; an import has no game in
+progress to save).
+
+- `types.Action.import_game` + the three exhaustive map classifications:
+  binding contexts -> menu (main-menu-only, the button's screen — NOT the
+  options menu's menu+game+editor group export_game sits in), the
+  payload-less group (no ButtonPayload), and sound-wise WIRED (a layer
+  file is optional per action; the regenerated sound report lists
+  `sfx/buttons/import_game_layer` MISSING — the shopping list picked it up
+  automatically).
+- `buildMainMenu` gains `import_available` (threaded from
+  `session.persistent_dir_path == null` in view — the Export Save tooltip's
+  same null case): the button lands between Load Save and Editor with a
+  tooltip ("Uploads a ziglop.zip over your game folder (replaces the
+  current session)"). The MenuButton local struct gained the optional
+  tooltip field (the options menu's shape) and the emission loop now
+  passes it through instead of hardcoding null — the first main-menu
+  button with a tooltip.
+- `applyAction` routes it to `idle.menu_action`; the consumption arm sits
+  in `handleIdleInput`'s main-menu switch beside `.import_save` (the
+  sibling precedent): `triggerBrowserGameUpload()` — internally
+  comptime-dead on native, like `import_save`'s arm (no os-tag gate at
+  the arm needed; the button never emits natively).
+- Tests: the web-sim button present + tooltip, absent on native
+  (buildMainMenu); the pre-existing main-menu test passes native-default
+  false. Browser-verified items (the emrun pass): the picker opening, the
+  marker landing, the overlay + re-boot, Continue appearing for the
+  imported autosave.
+
+Verified: full suite PASS (847), native + web compile OK, unused-pub
+report CLEAN of DEAD/UNUSED (the 3 pre-existing TEST-ONLY entries remain),
+sound report regenerated with the new layer path, doc-symbol check CLEAN.

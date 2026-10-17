@@ -247,6 +247,15 @@ pub const Action = enum {
     // orchestrator arm), then the input path zips + downloads. See
     // game_zip.zig + DESIGN → File System & IO → Web storage model.
     export_game,
+    // Import a ziglop.zip OVER the persistent dir (the main menu's Import
+    // Game button — web only, button-only). A pure input-path side effect
+    // (the reset-to-defaults class — no event, nothing recorded: the
+    // import REPLACES the session via the frame-boundary re-boot, so
+    // there is no timeline to record into). The JS file picker stages
+    // the zip + the import marker; the every-frame poll (main.frame)
+    // consumes it — the overlay + the re-boot. See game_zip.zig + DESIGN →
+    // File System & IO → Web storage model.
+    import_game,
     // Save the edited mission to the persistent dir (the editor options
     // menu's Save Mission button + the ctrl+S binding). A pure side effect
     // — the dump_event_log class, not the save_game class: there is no
@@ -1037,6 +1046,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
+        // Import Game (web only, the main-menu button — the defensive
+        // future-keybind half, the save_game discipline).
+        .import_game,
         .open_credits,
         .exit_game,
         => .{ .menu = true },
@@ -1311,6 +1323,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .zoom_reset,
         .save_game,
         .export_game,
+        .import_game,
         .save_editor_mission,
         .export_editor_mission,
         .restart_mission,

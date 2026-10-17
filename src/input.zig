@@ -588,6 +588,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
+        // Import Game (web only, the main-menu button — a pure input-path
+        // side effect consumed in the main-menu idle arm).
+        .import_game,
         => player_input.idle.menu_action = action,
     }
 }

@@ -3226,6 +3226,17 @@ pub fn handleIdleInput(
                 // is never emitted there — drop files into the persistent
                 // saves/ dir by hand instead).
                 .import_save => file_source_mod.triggerBrowserUpload(),
+                // Import Game: open the browser file picker for a full
+                // ziglop.zip. The picked file lands at the staging temp +
+                // the game import marker is written; the EVERY-FRAME poll
+                // in main.frame consumes it whenever it lands — the
+                // overlay runs there, then the session re-boots at the
+                // frame boundary. No-op on native (the button is never
+                // emitted there — the real persistent dir IS the game
+                // folder). A pure input-path side effect (no event,
+                // nothing recorded: the import replaces the session, so
+                // there is no timeline to record into).
+                .import_game => file_source_mod.triggerBrowserGameUpload(),
                 else => {},
             }
         }
