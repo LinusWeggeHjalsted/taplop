@@ -17388,3 +17388,15 @@ investigation lesson worth keeping:
   a rides-consumption entry double-plays.
 
 Verified: full suite PASS; the user's ear-verification on web pending.
+
+Follow-up (the export walk, second browser-only bug in the same line): after
+the unquoted-mount-path crash fix, the first real export attempt failed with
+"could not read /logs/session_.../content/...". The walk's path strip was off
+by one separator — `substring('/ziglop'.length)` keeps the separator, so
+every listed path came out ABSOLUTE (`/logs/...`), the reads failed (no such
+absolute path; the error names the first file in sort order), and the export
+aborted. Fixed: `substring('/ziglop/'.length)`. Two bugs in one JS line, both
+browser-only-reachable — the web walk cannot run in the headless suite (the
+JS only executes under emscripten), which is exactly the compiles-≠-runs
+class the platform seam carries. The re-export (a populated folder:
+saves + logs + the edited mission) is the browser verification.

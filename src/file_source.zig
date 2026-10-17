@@ -866,7 +866,7 @@ pub const FileSource = struct {
             "      if (!child) continue;" ++
             "      var child_path = path + '/' + names[i];" ++
             "      if (FS.isDir(child.mode)) walk(child_path);" ++
-            "      else if (" ++ persistent_dir_artifact_js_filter ++ "true) out.push(child_path.substring('" ++ persistent_mount_path ++ "'.length));" ++
+            "      else if (" ++ persistent_dir_artifact_js_filter ++ "true) out.push(child_path.substring('" ++ persistent_mount_path ++ "/'.length));" ++
             "    }" ++
             "  }" ++
             "  walk('" ++ persistent_mount_path ++ "');" ++
