@@ -241,11 +241,17 @@ pub const top_bar_slot_size: i32 = 128;
 pub const slot_size: i32 = 256;
 /// Weapon-swap button — half a normal button, centered vertically.
 pub const swap_button_size: i32 = 128;
-/// Scrollbar geometry (reference-space pixels), shared by every scrollbar
-/// surface (the error popup's, the editor theme picker's): a 12px track with
-/// a 16px gap from the scrolled content, drawn only when content overflows.
+/// Scrollbar geometry + colors (reference-space pixels), shared by every
+/// scrollbar surface (error popup, editor theme picker, load-save browser,
+/// editor browser, skills grid, editor inspector, settings keybinds
+/// columns): a 12px track with a 16px gap from the scrolled content, fixed
+/// grays, a 40px minimum thumb, drawn only when content overflows. One
+/// tuning knob per surface class — the scrollbar-polish pass retunes here.
 pub const scrollbar_width: i32 = 12;
 pub const scrollbar_gap: i32 = 16;
+pub const scrollbar_track_color: Color = .{ .r = 80, .g = 80, .b = 80 };
+pub const scrollbar_thumb_color: Color = .{ .r = 180, .g = 180, .b = 180 };
+pub const scrollbar_thumb_min_height: i32 = 40;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
 pub const menu_button_font_size: i32 = 96;
@@ -318,9 +324,6 @@ pub const close_button_sprite_id: []const u8 = "ui/close_button";
 /// Height shares `middle_panel_height` with the other middle panels.
 pub const skills_panel_width: i32 = 1056;
 pub const skills_panel_columns: i32 = 4;
-/// Scrollbar lives in the panel's right `ui_gap` margin (16px), so the
-/// track is 12px centered within it. See `buildSkillsPanel`.
-pub const skills_scrollbar_width: i32 = 12;
 /// Enemy-inspect panel width: the 4-wide skill grid (4 × `slot_size` +
 /// 2 × `ui_gap` side margins = 1056). The gear mirror + active-effects
 /// strip fit within this width. See `buildEntityInspectPanel`.

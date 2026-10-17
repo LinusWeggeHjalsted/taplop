@@ -341,8 +341,51 @@ const load_save_row_height: i32 = 112;
 const load_save_row_gap: i32 = 8;
 const load_save_padding: i32 = 48;
 const load_save_button_gap: i32 = 48; // gap between rows region and bottom buttons
-const load_save_scrollbar_width: i32 = 12;
-const load_save_scrollbar_gap: i32 = 16;
+/// Scrollbar geometry, aliased from the shared constants in `element.zig`
+/// (one tuning knob for every scrollbar surface).
+const scrollbar_width = ui_element.scrollbar_width;
+const scrollbar_gap = ui_element.scrollbar_gap;
+
+/// One scrollbar: fixed-gray track + thumb (the shared scrollbar
+/// constants) sized to the visible row window and positioned by the row
+/// scroll offset — the shape every row list on these surfaces uses
+/// (load-save browser, editor browser, the settings keybinds columns).
+/// The track spans the full rows region; the thumb is the visible
+/// window's height (min `scrollbar_thumb_min_height`) sliding through the
+/// remaining travel.
+fn emitScrollbar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    track_x: i32,
+    track_y: i32,
+    track_height: i32,
+    row_pitch: i32,
+    visible_rows: usize,
+    total_rows: usize,
+    scroll_offset: i32,
+) !void {
+    try elements.append(allocator, .{ .solid_rect = .{
+        .screen_position = .{ .x = track_x, .y = track_y },
+        .width = scrollbar_width,
+        .height = track_height,
+        .color = ui_element.scrollbar_track_color,
+    } });
+    const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
+    const max_scroll_row: i32 = @intCast(total_rows - @min(total_rows, visible_rows));
+    const track_travel = track_height - visible_span_rows * row_pitch;
+    const thumb_height = @max(ui_element.scrollbar_thumb_min_height, visible_span_rows * row_pitch);
+    const thumb_y = track_y + if (max_scroll_row == 0)
+        0
+    else
+        @divTrunc(scroll_offset * track_travel, max_scroll_row);
+    try elements.append(allocator, .{ .solid_rect = .{
+        .screen_position = .{ .x = track_x, .y = thumb_y },
+        .width = scrollbar_width,
+        .height = thumb_height,
+        .color = ui_element.scrollbar_thumb_color,
+    } });
+}
+
 /// Import/Back button size (bottom corners). Import label is long, so the
 /// buttons are wider than tall menu buttons but reuse the menu font.
 const load_save_button_width: i32 = 768;
@@ -413,7 +456,7 @@ pub fn buildLoadSavePanel(
     } else {
         // Rows widen right up to the scrollbar gutter when one is drawn.
         const rows_width = if (scrolls)
-            content_width - load_save_scrollbar_width - load_save_scrollbar_gap
+            content_width - scrollbar_width - scrollbar_gap
         else
             content_width;
 
@@ -453,31 +496,20 @@ pub fn buildLoadSavePanel(
             } });
         }
 
-        // Scrollbar: track + proportional thumb along the rows region, same
-        // fixed grays as the error popup's scrollbar.
+        // Scrollbar: track + thumb along the rows region, the shared
+        // emission.
         if (scrolls) {
-            const scrollbar_x = content_x + content_width - load_save_scrollbar_width;
-            const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
-            try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = scrollbar_x, .y = rows_y },
-                .width = load_save_scrollbar_width,
-                .height = rows_height,
-                .color = track_color,
-            } });
-            const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
-            const track_travel = rows_height - visible_span_rows * row_pitch;
-            const thumb_height = @max(@as(i32, 40), visible_span_rows * row_pitch);
-            const thumb_y = rows_y + if (max_scroll_row == 0)
-                0
-            else
-                @divTrunc(scroll_offset.* * track_travel, max_scroll_row);
-            const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
-            try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
-                .width = load_save_scrollbar_width,
-                .height = thumb_height,
-                .color = thumb_color,
-            } });
+            try emitScrollbar(
+                elements,
+                allocator,
+                content_x + content_width - scrollbar_width,
+                rows_y,
+                rows_height,
+                row_pitch,
+                visible_rows,
+                total_rows,
+                scroll_offset.*,
+            );
         }
     }
 
@@ -821,7 +853,7 @@ fn buildMissionBrowserContent(
     } else {
         // Rows widen right up to the scrollbar gutter when one is drawn.
         const rows_width = if (scrolls)
-            content_width - load_save_scrollbar_width - load_save_scrollbar_gap
+            content_width - scrollbar_width - scrollbar_gap
         else
             content_width;
 
@@ -861,31 +893,19 @@ fn buildMissionBrowserContent(
             } });
         }
 
-        // Scrollbar: track + proportional thumb, the load-save browser's
-        // exact model.
+        // Scrollbar: track + thumb, the shared emission.
         if (scrolls) {
-            const scrollbar_x = content_x + content_width - load_save_scrollbar_width;
-            const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
-            try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = scrollbar_x, .y = rows_y },
-                .width = load_save_scrollbar_width,
-                .height = rows_height,
-                .color = track_color,
-            } });
-            const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
-            const track_travel = rows_height - visible_span_rows * row_pitch;
-            const thumb_height = @max(@as(i32, 40), visible_span_rows * row_pitch);
-            const thumb_y = rows_y + if (max_scroll_row == 0)
-                0
-            else
-                @divTrunc(scroll_offset.* * track_travel, max_scroll_row);
-            const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
-            try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
-                .width = load_save_scrollbar_width,
-                .height = thumb_height,
-                .color = thumb_color,
-            } });
+            try emitScrollbar(
+                elements,
+                allocator,
+                content_x + content_width - scrollbar_width,
+                rows_y,
+                rows_height,
+                row_pitch,
+                visible_rows,
+                total_rows,
+                scroll_offset.*,
+            );
         }
     }
 }
@@ -1873,6 +1893,22 @@ fn buildKeybindsContent(
         }
     }
 
+    // Scrollbar (only when the binding list overflows the window): track +
+    // thumb at the left column's right edge (the screen midpoint).
+    if (rows.items.len > visible_rows) {
+        try emitScrollbar(
+            elements,
+            allocator,
+            picker_x - @divTrunc(ui_gap, 2) - scrollbar_width,
+            list_top,
+            region_height,
+            row_stride,
+            visible_rows,
+            rows.items.len,
+            scroll_offset.*,
+        );
+    }
+
     // The right-column action PICKER (the picker phase): the full
     // scrollable action list — every Action, bound or not, labeled
     // "Action — Contexts". Picking one either moves the target row's combo
@@ -1915,6 +1951,22 @@ fn buildKeybindsContent(
                     button_color,
                     .{ .pick = action },
                     active,
+                );
+            }
+
+            // Scrollbar (only when the action list overflows the window):
+            // track + thumb at the content right edge.
+            if (actions.len > picker_visible_rows) {
+                try emitScrollbar(
+                    elements,
+                    allocator,
+                    screen.x + screen.width - settings_padding - scrollbar_width,
+                    picker_list_top,
+                    picker_region_height,
+                    row_stride,
+                    picker_visible_rows,
+                    actions.len,
+                    picker_scroll_offset.*,
                 );
             }
         },
@@ -2960,4 +3012,127 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     var elements_neg: UiElementList = .empty;
     try buildSettingsPanel(&elements_neg, allocator, metrics, screen, settings, undefined, .{ .r = 50, .g = 50, .b = 50 }, .keybinds, &scroll, null, &picker_scroll);
     try std.testing.expectEqual(@as(i32, 0), scroll);
+}
+
+test "buildSettingsPanel: keybinds tab scrollbars — track + thumb per overflowing column, none when content fits" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    // 60 distinct actions — enough rows to overflow either column's window
+    // on this screen.
+    const action_tags = std.meta.tags(types.Action);
+    var bindings: [60]types.InputBinding = undefined;
+    for (&bindings, action_tags[0..60], 0..) |*binding, action, index| {
+        binding.* = .{
+            .input = .{ .key = if (index % 2 == 0) "Enter" else "Space" },
+            .action = action,
+        };
+    }
+    const settings: types.Settings = .{ .input_bindings = &bindings };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Short list, picker closed: nothing overflows, no scrollbar rects.
+    {
+        const short: types.Settings = .{ .input_bindings = bindings[0..3] };
+        var scroll: i32 = 0;
+        var picker_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, short, undefined, button_color, .keybinds, &scroll, null, &picker_scroll);
+        var scrollbar_rects: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, ui_element.scrollbar_track_color) or
+                    std.meta.eql(rect.color, ui_element.scrollbar_thumb_color)) scrollbar_rects += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 0), scrollbar_rects);
+    }
+
+    // Overflowing list, picker closed: exactly one track + one thumb; the
+    // track flush to the left column's right edge (the screen midpoint);
+    // the thumb at the track's top at scroll 0, below it at the clamped
+    // max, always inside the track, never shorter than the min thumb.
+    {
+        var scroll: i32 = 0;
+        var picker_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, button_color, .keybinds, &scroll, null, &picker_scroll);
+        var track_x: i32 = -1;
+        var track_y: i32 = -1;
+        var track_height: i32 = -1;
+        var scrollbar_rects: usize = 0;
+        var thumb_y: i32 = -1;
+        var thumb_height: i32 = -1;
+        for (elements.items) |element| switch (element) {
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, ui_element.scrollbar_track_color)) {
+                    track_x = rect.screen_position.x;
+                    track_y = rect.screen_position.y;
+                    track_height = rect.height;
+                    scrollbar_rects += 1;
+                } else if (std.meta.eql(rect.color, ui_element.scrollbar_thumb_color)) {
+                    thumb_y = rect.screen_position.y;
+                    thumb_height = rect.height;
+                    scrollbar_rects += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
+        try std.testing.expectEqual(
+            screen.x + @divTrunc(screen.width, 2) - scrollbar_width,
+            track_x,
+        );
+        try std.testing.expectEqual(track_y, thumb_y);
+        try std.testing.expect(thumb_height >= ui_element.scrollbar_thumb_min_height);
+
+        // Max scroll (clamped by the builder): the thumb moves down and
+        // stays inside the track.
+        scroll = 999;
+        var elements_max: UiElementList = .empty;
+        try buildSettingsPanel(&elements_max, allocator, metrics, screen, settings, undefined, button_color, .keybinds, &scroll, null, &picker_scroll);
+        var max_thumb_y: i32 = -1;
+        var max_thumb_height: i32 = -1;
+        for (elements_max.items) |element| switch (element) {
+            .solid_rect => |rect| if (std.meta.eql(rect.color, ui_element.scrollbar_thumb_color)) {
+                max_thumb_y = rect.screen_position.y;
+                max_thumb_height = rect.height;
+            },
+            else => {},
+        };
+        try std.testing.expect(max_thumb_y > track_y);
+        try std.testing.expect(max_thumb_y + max_thumb_height <= track_y + track_height);
+    }
+
+    // Picker open: BOTH columns overflow — the picker's track flush to the
+    // content right edge joins the list's at the midpoint (4 rects).
+    {
+        var edit_state: keybind_edit.KeybindEditState = .{ .edit = .{ .picker = .{ .binding = 0 } } };
+        var scroll: i32 = 0;
+        var picker_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, button_color, .keybinds, &scroll, &edit_state, &picker_scroll);
+        var scrollbar_rects: usize = 0;
+        var right_edge_track_seen = false;
+        for (elements.items) |element| switch (element) {
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, ui_element.scrollbar_track_color)) {
+                    scrollbar_rects += 1;
+                    if (rect.screen_position.x == screen.x + screen.width - settings_padding - scrollbar_width) {
+                        right_edge_track_seen = true;
+                    }
+                } else if (std.meta.eql(rect.color, ui_element.scrollbar_thumb_color)) {
+                    scrollbar_rects += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 4), scrollbar_rects);
+        try std.testing.expect(right_edge_track_seen);
+    }
 }

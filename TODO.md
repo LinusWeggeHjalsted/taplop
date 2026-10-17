@@ -241,7 +241,9 @@ Test by running `zig build run` and clicking through.
   gear-tooltip comparison colors — full green/red placeholders, artist to
   pick softer shades (`ui.positive_color`/`ui.negative_color`, shared by
   tooltip comparisons, the inventory icon stat numbers, and combat
-  damage/heal numbers).
+  damage/heal numbers), and scrollbar visuals — the fixed grays + plain
+  solid-rect track/thumb are placeholder everywhere (the shared
+  `scrollbar_*` constants in `element.zig` are the one retune site).
 - **Larger systems (beyond MVP)** — the world-map overlay (the campaign
   view's read-side mirror — DESIGN → Campaigns & the Campaign Editor;
   campaign-editor slice 2) + NPC interaction/dialogue (see "NPC

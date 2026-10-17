@@ -391,10 +391,10 @@ pub fn buildEditorMetadataSidebar(
             .screen_position = .{ .x = track_x, .y = track_y },
             .width = editor_inspector_scrollbar_width,
             .height = track_height,
-            .color = .{ .r = 80, .g = 80, .b = 80 },
+            .color = ui_element.scrollbar_track_color,
         } });
         const thumb_height = @max(
-            @as(i32, 40),
+            ui_element.scrollbar_thumb_min_height,
             @divTrunc(track_height * visible_rows, total_units),
         );
         const thumb_y = track_y +
@@ -403,7 +403,7 @@ pub fn buildEditorMetadataSidebar(
             .screen_position = .{ .x = track_x, .y = thumb_y },
             .width = editor_inspector_scrollbar_width,
             .height = thumb_height,
-            .color = .{ .r = 180, .g = 180, .b = 180 },
+            .color = ui_element.scrollbar_thumb_color,
         } });
     }
 }
@@ -703,7 +703,7 @@ pub const editor_inspector_row_height: i32 = editor_header_strip_height;
 
 /// Inspector scrollbar track width, centered in the panel's right `ui_gap`
 /// margin (the skills-panel precedent).
-const editor_inspector_scrollbar_width: i32 = 12;
+const editor_inspector_scrollbar_width = ui_element.scrollbar_width;
 
 /// Inset of a control line within its row unit. Halved from `ui_gap` so
 /// the label line sits CLOSE to its editable value (the header reads as
@@ -2048,10 +2048,10 @@ fn buildEditorInspectorContent(
             .screen_position = .{ .x = track_x, .y = track_y },
             .width = editor_inspector_scrollbar_width,
             .height = track_height,
-            .color = .{ .r = 80, .g = 80, .b = 80 },
+            .color = ui_element.scrollbar_track_color,
         } });
         const thumb_height = @max(
-            @as(i32, 40),
+            ui_element.scrollbar_thumb_min_height,
             @divTrunc(track_height * visible_rows, total_units),
         );
         const thumb_y = track_y +
@@ -2060,7 +2060,7 @@ fn buildEditorInspectorContent(
             .screen_position = .{ .x = track_x, .y = thumb_y },
             .width = editor_inspector_scrollbar_width,
             .height = thumb_height,
-            .color = .{ .r = 180, .g = 180, .b = 180 },
+            .color = ui_element.scrollbar_thumb_color,
         } });
     }
 }
@@ -3159,14 +3159,15 @@ const MetadataSidebarPanel = struct {
     }
 };
 
-/// The scrollbar's track + thumb rects (the fixed grays) — presence means
-/// the builder judged the content as overflowing the window.
+/// The scrollbar's track + thumb rects (the shared scrollbar grays) —
+/// presence means the builder judged the content as overflowing the
+/// window.
 fn countScrollbarRects(elements: *const UiElementList) usize {
     var count: usize = 0;
     for (elements.items) |element| switch (element) {
         .solid_rect => |rect| {
-            if (std.meta.eql(rect.color, types.Color{ .r = 80, .g = 80, .b = 80 }) or
-                std.meta.eql(rect.color, types.Color{ .r = 180, .g = 180, .b = 180 }))
+            if (std.meta.eql(rect.color, ui_element.scrollbar_track_color) or
+                std.meta.eql(rect.color, ui_element.scrollbar_thumb_color))
             {
                 count += 1;
             }

@@ -61,7 +61,6 @@ pub const middle_panel_header_font_size = ui_element.middle_panel_header_font_si
 pub const close_button_sprite_id = ui_element.close_button_sprite_id;
 pub const skills_panel_width = ui_element.skills_panel_width;
 pub const skills_panel_columns = ui_element.skills_panel_columns;
-pub const skills_scrollbar_width = ui_element.skills_scrollbar_width;
 pub const entity_inspect_panel_width = ui_element.entity_inspect_panel_width;
 pub const default_tint = ui_element.default_tint;
 pub const screenRect = ui_element.screenRect;

@@ -39,7 +39,7 @@ const middle_panel_header_height = ui_element.middle_panel_header_height;
 const inventory_slot_size = ui_element.inventory_slot_size;
 const skills_panel_width = ui_element.skills_panel_width;
 const skills_panel_columns = ui_element.skills_panel_columns;
-const skills_scrollbar_width = ui_element.skills_scrollbar_width;
+const scrollbar_width = ui_element.scrollbar_width;
 const entity_inspect_panel_width = ui_element.entity_inspect_panel_width;
 const buildItemTooltip = tooltip.buildItemTooltip;
 const buildSkillTooltip = tooltip.buildSkillTooltip;
@@ -890,28 +890,26 @@ pub fn buildSkillsPanel(
     // height. Mirrors `buildErrorPopup`'s scrollbar geometry.
     if (total_rows > visible_rows) {
         const track_x = origin.x + bounds.width - ui_gap +
-            @divFloor(ui_gap - skills_scrollbar_width, 2);
+            @divFloor(ui_gap - scrollbar_width, 2);
         const track_y = grid_origin.y;
         const track_height = visible_rows * slot_size;
-        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = track_x, .y = track_y },
-            .width = skills_scrollbar_width,
+            .width = scrollbar_width,
             .height = track_height,
-            .color = track_color,
+            .color = ui_element.scrollbar_track_color,
         } });
         const thumb_height = @max(
-            @as(i32, 40),
+            ui_element.scrollbar_thumb_min_height,
             @divTrunc(track_height * visible_rows, total_rows),
         );
         const thumb_y = track_y +
             @divTrunc(scroll_offset.* * (track_height - thumb_height), max_scroll_row);
-        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = track_x, .y = thumb_y },
-            .width = skills_scrollbar_width,
+            .width = scrollbar_width,
             .height = thumb_height,
-            .color = thumb_color,
+            .color = ui_element.scrollbar_thumb_color,
         } });
     }
 

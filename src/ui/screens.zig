@@ -209,27 +209,25 @@ pub fn buildErrorPopup(
     // line max — the same ratio as pixels).
     if (scrolls) {
         const scrollbar_x = content_x + content_width - error_scrollbar_width;
-        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = scrollbar_x, .y = body_top },
             .width = error_scrollbar_width,
             .height = visible_body_height,
-            .color = track_color,
+            .color = ui_element.scrollbar_track_color,
         } });
         const thumb_height = @max(
-            @as(i32, 40),
+            ui_element.scrollbar_thumb_min_height,
             @divTrunc(visible_body_height * visible_body_height, body_content_height),
         );
         const thumb_y = body_top + @divTrunc(
             session.error_scroll_offset * (visible_body_height - thumb_height),
             max_scroll_lines,
         );
-        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
             .width = error_scrollbar_width,
             .height = thumb_height,
-            .color = thumb_color,
+            .color = ui_element.scrollbar_thumb_color,
         } });
     }
 

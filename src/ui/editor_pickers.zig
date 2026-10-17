@@ -894,28 +894,26 @@ pub fn buildEditorThemePicker(
     // the scroll offset.
     if (scrolls) {
         const track_x = strip_x + strip_width + scrollbar_gap;
-        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = track_x, .y = rows_origin_y },
             .width = scrollbar_width,
             .height = window_height,
-            .color = track_color,
+            .color = ui_element.scrollbar_track_color,
         } });
         const grid_height: i32 = rows * row_pitch - ui_gap;
         const thumb_height = @max(
-            @as(i32, 40),
+            ui_element.scrollbar_thumb_min_height,
             @divTrunc(window_height * window_height, grid_height),
         );
         const thumb_y = rows_origin_y + @divTrunc(
             scroll_offset.* * (window_height - thumb_height),
             max_offset,
         );
-        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = track_x, .y = thumb_y },
             .width = scrollbar_width,
             .height = thumb_height,
-            .color = thumb_color,
+            .color = ui_element.scrollbar_thumb_color,
         } });
     }
 }
