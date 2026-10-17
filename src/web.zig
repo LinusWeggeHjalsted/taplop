@@ -115,6 +115,30 @@ fn bootSession(session: *WebSession) void {
     crash_dump.install(&session.setup.frame_state.history);
 }
 
+/// Best-effort: resume the re-boot's fresh AudioContext immediately (it
+/// was created in a rAF callback — outside a user-gesture handler — so it
+/// starts suspended; see the AudioContext console warnings). The Import Game
+/// click already gave the page user activation, so browsers that allow
+/// sticky-activation resumes close the audio gap right here; ones that
+/// require an in-gesture resume reject this (harmless no-op) and miniaudio's
+/// own re-registered unlock listener (touchend/click) recovers on the next
+/// click — the same one-click sleep as first boot. Reaches into
+/// window.miniaudio's device list (the same internals miniaudio's own
+/// unlock handler walks) — a raylib/miniaudio upgrade that changes this
+/// shape degrades to the no-op + next-click path, never a crash.
+fn tryResumeWebAudio() void {
+    const script =
+        "(function() {" ++
+        "  var m = window.miniaudio;" ++
+        "  if (!m || !m.devices) return;" ++
+        "  for (var i = 0; i < m.devices.length; i++) {" ++
+        "    var d = m.devices[i];" ++
+        "    if (d && d.webaudio && d.webaudio.state === 'suspended') d.webaudio.resume();" ++
+        "  }" ++
+        "})();";
+    emscripten_run_script(script);
+}
+
 /// Re-boot after a completed Import Game: everything the imported folder
 /// carries applies (settings, shadow data/ trees, the imported autosave →
 /// the Continue button). Runs at the FRAME BOUNDARY only (frameCallback,
@@ -130,6 +154,7 @@ fn rebootSession(session: *WebSession) void {
     session.backend.deinitAudio();
     session_setup.freeSessionSetup(&session.setup);
     bootSession(session);
+    tryResumeWebAudio();
 }
 
 /// Mount the persistent virtual path as a plain in-memory (MEMFS)
