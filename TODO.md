@@ -755,12 +755,15 @@ Open:
      live in DESIGN → Web storage model — Zip-Slip name validation, abort
      on the first bad entry, streaming extraction, the 512 MB / 2 GB /
      65,536 caps, shadow trees allowed via the raw dir handle; the
-     import-marker poll pattern at directory scale). OPEN: settings
-     application AFTER import — `createSessionSetup` ran at boot, so an
-     imported settings.txt needs an overlay re-run + live-apply (volumes,
-     render resolution). A page reload is NOT an option here: the next
-     boot starts from an empty in-memory mount anyway, so the apply has
-     to happen in-session.
+     import-marker poll pattern at directory scale). Application: a
+     successful import sets a pending RE-BOOT flag (a mid-frame swap is a
+     use-after-free of the old history); the frame boundary re-runs the
+     boot sequence (`createSessionSetup` + `fixupPointers` + `initAudio` +
+     `crash_dump.install`) — everything the folder carries applies and
+     Continue appears for the imported autosave; the result is a
+     fresh-boot state (safe: main-menu-only, the discarded session is
+     fresh-boot-equivalent). Prerequisite: a SessionSetup teardown (the
+     old setup freed, not leaked). See DESIGN → Web storage model.
   4. [ ] Disclaimer — main menu, centered above the title, web only, the
      chosen wording (DESIGN → Web storage model).
   5. [ ] Cleanup sweep — the `file_source.zig` platform-split directory

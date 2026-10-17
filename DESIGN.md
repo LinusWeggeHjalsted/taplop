@@ -2089,8 +2089,20 @@ extraction (no zip-in-zip recursion); shadow trees (`data/`/`assets/` names
 under the persistent dir) are ALLOWED — a restore of the player's own
 folder — written through the RAW persistent-dir handle (not
 `FileSource.writeFile`, whose shipped-path write guard panics by design);
-no post-import flush (nothing to flush into). The open settings-apply
-question lives with the TODO slice.
+no post-import flush (nothing to flush into). APPLICATION: a successful
+import RE-BOOTSTRAPS the session — the exact boot sequence re-run
+(`createSessionSetup` + `fixupPointers` + `initAudio` + `crash_dump.install`)
+so everything the folder carries applies: settings (vsync at setup,
+render resolution live-applies next frame), shadow `data/` trees (themes,
+weapon types, salvage), and the autosave detection (Continue appears for
+the imported autosave). The re-boot runs at a FRAME BOUNDARY via a pending
+flag set by the import handler (a mid-frame swap is a use-after-free of
+the old history — the running frame holds references into it), and
+re-installs the crash-dump hook (the old history is freed). The result is
+a fresh-boot state (open surfaces close, timeline resets) — safe because
+Import Game is main-menu-only: the discarded session is fresh-boot-
+equivalent. Prerequisite: a SessionSetup teardown (history deinit +
+config frees) so the old setup is freed, not leaked.
 - **Export Game** (options menu, EVERY variant — the options menu is the
 only menu surface reachable mid-level, so in-session backups are always
 possible): a game in progress pushes the autosave write FIRST (the
