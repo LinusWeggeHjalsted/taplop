@@ -933,28 +933,67 @@ fn removeKeybindBinding(history: *GameStateHistory, index: usize) void {
     history.session.ui_state.keybind_edit = null;
 }
 
-/// Replace ALL bindings with the shipped defaults' set (Reset): re-load the
-/// embedded `data/default_settings.txt`'s InputBindings. The fresh
-/// bindings' strings are loadSettings-owned (the standard ownership
-/// contract); the current ones are freed. Reset to defaults is the undo
-/// for the whole editing UI (settings changes carry no undo steps).
-fn resetKeybindsToDefaults(history: *GameStateHistory) void {
+/// Replace ALL settings (every preference + bindings) with the shipped
+/// defaults (Reset to Defaults): back up the current settings first (see
+/// `backUpSettingsFile`), then re-load the embedded
+/// `data/default_settings.txt` wholesale — the current settings are freed
+/// via `freeSettings` and replaced. `Settings` carries no identity data
+/// (no player name — that lives in the player save), so a full reset is
+/// purely preferences + bindings. The fresh settings' strings are
+/// loadSettings-owned (the standard ownership contract). Reset to Defaults
+/// is the undo for the whole editing UI (settings changes carry no undo
+/// steps).
+fn resetSettingsToDefaults(history: *GameStateHistory) void {
+    backUpSettingsFile(history);
     const allocator = history.backing_allocator;
     const bytes = history.file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch return;
     defer allocator.free(bytes);
     const sections = parser.parseConfigFile(bytes, allocator) catch return;
     defer parser.freeParsedSections(sections, allocator);
     const fresh = loaders.loadSettings(sections, allocator, null, null) catch return;
-    for (history.settings.input_bindings) |binding| {
-        loaders.freeRawInputString(binding.input, allocator);
-    }
-    if (history.settings.input_bindings.len > 0) {
-        allocator.free(history.settings.input_bindings);
-    }
-    history.settings.input_bindings = fresh.input_bindings;
+    loaders.freeSettings(history.settings, allocator);
+    history.settings = fresh;
     history.session.ui_state.keybind_edit = null;
     history.session.ui_state.keybind_scroll_offset = 0;
     state.markSettingsDirty(history);
+}
+
+/// Back up `settings.txt` before Reset to Defaults overwrites it (the
+/// `backup_autosave` policy — see DESIGN → File System & IO): a
+/// synchronous flush FIRST (the debounced writer, so the file is the exact
+/// current settings, not up to the 5s debounced-write max-stale), then a
+/// byte copy to `settings-backup-<timestamp>.txt` in the persistent root
+/// (next to `settings.txt` — `saves/` stays for save files). Best-effort:
+/// a failure surfaces the recoverable-error popup but does NOT stop the
+/// reset (the reset is what the user asked for; informed destruction). A
+/// fresh install with no `settings.txt` yet has nothing to back up —
+/// silent skip. Same-second collision overwrites (accepted — the
+/// autosave-backup convention). Live-path side effect (input handling is
+/// never replayed), so no `!replaying` gate needed.
+fn backUpSettingsFile(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    state.writeSettingsToFile(history);
+    if (!history.file_source.fileExists("settings.txt")) return;
+    const bytes = history.file_source.readFile(allocator, "settings.txt") catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to back up settings",
+        );
+        return;
+    };
+    defer allocator.free(bytes);
+    const timestamp = session_log.formatSessionTimestamp(allocator, history.io);
+    defer allocator.free(timestamp);
+    const backup_path = std.fmt.allocPrint(allocator, "settings-backup-{s}.txt", .{timestamp}) catch
+        @panic("failed to allocate backup path");
+    defer allocator.free(backup_path);
+    history.file_source.writeFile(backup_path, bytes) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to back up settings",
+        );
+        return;
+    };
 }
 
 fn handleEscapeKey(history: *GameStateHistory) void {
@@ -1323,19 +1362,22 @@ pub fn handleAnytimeInput(
                     history.session.quit_requested = true;
                 }
             },
-            // A keybinds-tab edit command was clicked (the whole editing
-            // UI rides this one action + the `KeybindCommand` payload).
-            // All phase transitions are direct UiState writes (off the
-            // undo timeline); the SETTINGS mutation happens only at
-            // remove / confirm / reset (the camera_zoom discipline — mutate
-            // + mark dirty). The key-capture seam lives in
-            // `translateInput` (`ui.routeKeybindCapture`) + main.frame's
+            // A settings edit command was clicked (the whole editing UI
+            // rides this one action + the `KeybindCommand` payload). All
+            // phase transitions are direct UiState writes (off the undo
+            // timeline); the SETTINGS mutation happens only at remove /
+            // confirm / reset (the camera_zoom discipline — mutate + mark
+            // dirty). The key-capture seam lives in `translateInput`
+            // (`ui.routeKeybindCapture`) + main.frame's
             // `resolveKeybindCaptureOutcome`; the builder renders the
-            // phases. See DESIGN → UI Framework → Settings screen.
+            // phases. The keybinds-tab commands only fire on the keybinds
+            // tab; `.reset_defaults` is a whole-settings command (its
+            // bottom-right button shows on both tabs). See DESIGN → UI
+            // Framework → Settings screen.
             .edit_keybind => {
                 if (!history.current_state.ui_surfaces.settings_open) return;
-                if (history.session.ui_state.settings_tab != .keybinds) return;
                 const command = payloadAs(.keybind_command, clicked_payload) orelse return;
+                if (history.session.ui_state.settings_tab != .keybinds and command != .reset_defaults) return;
                 const ui_state = &history.session.ui_state;
                 switch (command) {
                     .rekey => |index| {
@@ -1387,7 +1429,7 @@ pub fn handleAnytimeInput(
                     },
                     .confirm => applyKeybindEdit(history),
                     .cancel => ui_state.keybind_edit = null,
-                    .reset_defaults => resetKeybindsToDefaults(history),
+                    .reset_defaults => resetSettingsToDefaults(history),
                 }
             },
             // A settings screen content tab was clicked (Settings /
@@ -5440,6 +5482,127 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     // freeSettings frees exactly those under testing.allocator. Any
     // imbalance (a rebuild that forgot a free, freed a moved string, or
     // leaked the slice) fails the leak check at test end.
+    loaders.freeSettings(history.settings, std.testing.allocator);
+}
+
+test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
+    // The full-settings reset: every preference + the binding set replaced
+    // by the embedded defaults; the backup is a flush-then-copy of
+    // settings.txt (the exact pre-reset bytes) to a timestamped sibling.
+    // The history runs on std.testing.allocator (the keybind-edit test's
+    // leak-checked model — the handler's alloc/free ledger must balance).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = state.GameStateHistory.init(
+        std.testing.allocator,
+        @import("test_harness.zig").defaultStartingState(),
+        harness.settings,
+        &harness.weapon_type_definitions,
+        harness.color_theme_definitions,
+        harness.salvage_definitions,
+        &harness.file_source,
+        harness.file_source.io,
+    );
+
+    // Custom settings to be destroyed: non-default values + a self-owned
+    // binding set + an active keybind edit on a scrolled keybinds tab.
+    const owned_bindings = try std.testing.allocator.alloc(types.InputBinding, 1);
+    owned_bindings[0] = .{
+        .input = .{ .key = try std.testing.allocator.dupe(u8, "KeyX") },
+        .action = .dump_event_log,
+    };
+    history.settings.input_bindings = owned_bindings;
+    history.settings.music_volume = 10;
+    history.settings.show_fps = true;
+    history.settings.camera_zoom = 100;
+    history.session.ui_state.settings_tab = .keybinds;
+    history.session.ui_state.keybind_scroll_offset = 7;
+    history.session.ui_state.keybind_edit = .{ .edit = .{ .listening = .{ .binding = 0 } } };
+
+    // The expected backup bytes: the exact pre-reset serialization (the
+    // flush writes the same bytes to settings.txt before the copy).
+    const expected_bytes = try writers.writeSettings(history.settings, std.testing.allocator);
+    defer std.testing.allocator.free(expected_bytes);
+
+    // Backup-name candidates: the timestamp second the handler runs in,
+    // formatted before AND after the call so a second boundary crossing
+    // mid-handler can't flake the lookup.
+    const timestamp_before = session_log.formatSessionTimestamp(std.testing.allocator, history.file_source.io);
+    defer std.testing.allocator.free(timestamp_before);
+
+    resetSettingsToDefaults(&history);
+
+    const timestamp_after = session_log.formatSessionTimestamp(std.testing.allocator, history.file_source.io);
+    defer std.testing.allocator.free(timestamp_after);
+
+    // Full reset: preferences back at the shipped defaults + the default
+    // binding set (derived from the same embedded file the handler loads).
+    {
+        const bytes = history.file_source.readEmbeddedFile(std.testing.allocator, "data/default_settings.txt") catch return error.TestUnexpectedError;
+        defer std.testing.allocator.free(bytes);
+        const sections = parser.parseConfigFile(bytes, std.testing.allocator) catch return error.TestUnexpectedError;
+        defer parser.freeParsedSections(sections, std.testing.allocator);
+        const defaults = loaders.loadSettings(sections, std.testing.allocator, null, null) catch return error.TestUnexpectedError;
+        defer loaders.freeSettings(defaults, std.testing.allocator);
+        try std.testing.expectEqual(defaults.music_volume, history.settings.music_volume);
+        try std.testing.expectEqual(defaults.show_fps, history.settings.show_fps);
+        try std.testing.expectEqual(defaults.camera_zoom, history.settings.camera_zoom);
+        try std.testing.expectEqual(defaults.input_bindings.len, history.settings.input_bindings.len);
+        for (defaults.input_bindings, history.settings.input_bindings) |expected, actual| {
+            try std.testing.expect(std.meta.eql(expected.modifiers, actual.modifiers));
+            try std.testing.expectEqual(expected.action, actual.action);
+            const expected_id = switch (expected.input) {
+                .key => |id| id,
+                .mouse_button => |id| id,
+                .gamepad_button => |id| id,
+            };
+            const actual_id = switch (actual.input) {
+                .key => |id| id,
+                .mouse_button => |id| id,
+                .gamepad_button => |id| id,
+            };
+            try std.testing.expectEqualStrings(expected_id, actual_id);
+        }
+    }
+
+    // The editing state clears with the settings.
+    try std.testing.expect(history.session.ui_state.keybind_edit == null);
+    try std.testing.expectEqual(@as(i32, 0), history.session.ui_state.keybind_scroll_offset);
+
+    // The synchronous flush landed: settings.txt holds the exact pre-reset
+    // bytes.
+    {
+        const on_disk = history.file_source.readFile(std.testing.allocator, "settings.txt") catch return error.TestUnexpectedError;
+        defer std.testing.allocator.free(on_disk);
+        try std.testing.expectEqualSlices(u8, expected_bytes, on_disk);
+    }
+
+    // The backup: one of the two timestamp-second candidates exists and
+    // holds the same pre-reset bytes.
+    var backup_seen = false;
+    for ([_][]const u8{ timestamp_before, timestamp_after }) |timestamp| {
+        const path = try std.fmt.allocPrint(std.testing.allocator, "settings-backup-{s}.txt", .{timestamp});
+        defer std.testing.allocator.free(path);
+        const backup_bytes = history.file_source.readFile(std.testing.allocator, path) catch continue;
+        defer std.testing.allocator.free(backup_bytes);
+        try std.testing.expectEqualSlices(u8, expected_bytes, backup_bytes);
+        backup_seen = true;
+    }
+    try std.testing.expect(backup_seen);
+
+    // The reset marks the debounced settings write (the mutate + mark-dirty
+    // discipline).
+    var settings_write_pending = false;
+    for (history.session.pending_writes) |slot| {
+        if (slot) |entry| {
+            if (entry.tag == .settings) settings_write_pending = true;
+        }
+    }
+    try std.testing.expect(settings_write_pending);
+
+    // Teardown: the fresh bindings are history-owned under
+    // testing.allocator — freeSettings balances the ledger.
     loaders.freeSettings(history.settings, std.testing.allocator);
 }
 

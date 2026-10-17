@@ -2093,6 +2093,8 @@ the same wall-clock second produce the same filename) is accepted — the
 second overwrites the first, a scenario implausible enough not to warrant a
 suffix counter. The backup is a pure file copy (read autosave bytes → write
 at the timestamped path); no PlayerData decode/encode, so it can't corrupt.
+The reset-to-defaults settings backup follows this same policy
+(`settings-backup-…` in the persistent root — see Input → Keybinds tab).
 
 ### Raylib seam
 
@@ -5677,12 +5679,22 @@ being edited; same action = a duplicate (confirming dedupes). Confirming
 applies: rebuild `settings.input_bindings` (replace/append + REMOVE the
 stolen entry — the loader's first-listed-wins rule, the edited row wins)
 + `markSettingsDirty` (the debounced persistence). X removes directly
-(no confirm — Reset is the safety net); Reset re-loads the embedded
-defaults' bindings. All phases are pure UiState (off the undo timeline);
-a tab switch discards an active edit.
+(no confirm — Reset to Defaults is the safety net). All phases are pure
+UiState (off the undo timeline); a tab switch discards an active edit.
 - The whole editing UI rides ONE action (`.edit_keybind`) + the
 `KeybindCommand` payload union as the click payload's `keybind_command`
 variant.
+- **Reset to Defaults** (bottom-right on both tabs, mirroring Back — a
+whole-settings command, exempt from the keybinds-tab gate): direct click,
+no confirm — the timestamped backup is the safety net. First backs up:
+a synchronous flush (bypassing the debounce, so `settings.txt` is exactly
+current) then a byte copy to `settings-backup-YYYYMMDD_HHMMSS.txt` in the
+persistent root — the `backup_autosave` policy (best-effort, popup on
+failure, the reset proceeds; same-second overwrite accepted — see File
+System & IO). Then the whole `Settings` (every preference + bindings — no
+identity data; the player name lives in the player save) is replaced by
+the embedded `data/default_settings.txt` + `markSettingsDirty`; the
+active edit + keybinds scroll clear.
 
 Read side: one row per binding — modifier/key panels
 ("+" between; prettified ids via `keyIdDisplayLabel`: Ctrl/Shift/Alt,

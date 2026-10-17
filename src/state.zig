@@ -629,8 +629,12 @@ pub const PendingWrite = struct {
 /// (best-effort — errors are swallowed since a failed preferences write is
 /// not critical; the preference just doesn't persist). The settings
 /// `PendingWrite` writer fn, shared by preference-change persistence and
-/// the startup repair write. See DESIGN → Input → Debounced writes.
-fn writeSettingsToFile(history: *GameStateHistory) void {
+/// the startup repair write. Also called directly (a synchronous flush,
+/// bypassing the debounce) by the reset-to-defaults backup, so
+/// `settings.txt` holds the exact current settings before the byte copy —
+/// see `input_handlers.backUpSettingsFile`. See DESIGN → Input → Debounced
+/// writes.
+pub fn writeSettingsToFile(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const bytes = writers.writeSettings(history.settings, allocator) catch return;
     defer allocator.free(bytes);

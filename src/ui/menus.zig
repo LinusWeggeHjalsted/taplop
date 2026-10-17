@@ -1432,9 +1432,10 @@ fn buildSettingsControls(
 
 /// Build the settings screen: a full-screen modal panel with a centered
 /// "Settings" header, a column of control rows (toggle/choice — sliders
-/// land in slice 3b), and a Back button in the bottom-left. The panel
-/// blocks input to the surface behind it (main menu or the options menu).
-/// See DESIGN → UI Framework → Settings screen.
+/// land in slice 3b), a Back button in the bottom-left, and Reset to
+/// Defaults in the bottom-right (both tabs). The panel blocks input to the
+/// surface behind it (main menu or the options menu). See DESIGN → UI
+/// Framework → Settings screen.
 pub fn buildSettingsPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1566,6 +1567,44 @@ pub fn buildSettingsPanel(
         button_color,
         null,
     );
+
+    // Reset to Defaults, bottom-right — mirrors the Back button's metrics.
+    // Direct click, no confirm (the timestamped backup is the safety net);
+    // the tooltip says what it does. The command rides the `.edit_keybind`
+    // channel (`.reset_defaults` is exempt from the keybinds-tab gate — a
+    // whole-settings command on a both-tabs button).
+    const reset_button_rect: Rectangle = .{
+        .x = screen.x + screen.width - settings_padding - settings_button_width,
+        .y = button_y,
+        .width = settings_button_width,
+        .height = panel_button_height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = reset_button_rect.position(),
+        .width = reset_button_rect.width,
+        .height = reset_button_rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = reset_button_rect.position(),
+        .width = reset_button_rect.width,
+        .height = reset_button_rect.height,
+        .action = .edit_keybind,
+        .payload = .{ .keybind_command = .reset_defaults },
+        .tooltip = .{ .header = try spanRow(allocator, text("Creates a backup of current settings and loads defaults")) },
+    } });
+    const reset_label_text = "Reset to Defaults";
+    const reset_label_width = font_metrics.measureSpanWidth(text(reset_label_text), menu_button_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = reset_label_text,
+        .screen_position = .{
+            .x = reset_button_rect.x + @divTrunc(reset_button_rect.width - reset_label_width, 2),
+            .y = reset_button_rect.y + @divTrunc(panel_button_height - menu_button_font_size, 2),
+        },
+        .font_size = menu_button_font_size,
+        .blocks_input = false,
+    } });
 }
 
 // --- Keybinds tab (the in-game rebinding list) ---
@@ -2884,6 +2923,39 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     try std.testing.expect(found_control);
     try std.testing.expect(back_button_top > 0);
     try std.testing.expect(lowest_control_bottom <= back_button_top);
+
+    // Reset to Defaults, bottom-right on BOTH tabs: command-carrying button
+    // + label + tooltip, mirroring the Back button's metrics (same row as
+    // Back, mirrored x).
+    var reset_button_seen = false;
+    var reset_button_y: i32 = 0;
+    var reset_label_seen = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .edit_keybind) {
+            switch (button.payload.?.keybind_command) {
+                .reset_defaults => {
+                    reset_button_seen = true;
+                    reset_button_y = button.screen_position.y;
+                    try std.testing.expectEqual(
+                        screen.x + screen.width - settings_padding - settings_button_width,
+                        button.screen_position.x,
+                    );
+                    try std.testing.expectEqualStrings(
+                        "Creates a backup of current settings and loads defaults",
+                        button.tooltip.?.header.?[0].text,
+                    );
+                },
+                else => {},
+            }
+        },
+        .text_label => |label| if (std.mem.eql(u8, label.text, "Reset to Defaults")) {
+            reset_label_seen = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(reset_button_seen);
+    try std.testing.expect(reset_label_seen);
+    try std.testing.expectEqual(back_button_top, reset_button_y);
 }
 
 test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + context tags" {
@@ -2949,6 +3021,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     var remove_buttons: usize = 0;
     var add_buttons: usize = 0;
     var add_open_buttons: usize = 0;
+    var reset_buttons: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .edit_keybind) {
             switch (button.payload.?.keybind_command) {
@@ -2957,6 +3030,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
                 .remove => remove_buttons += 1,
                 .add => add_buttons += 1,
                 .add_open => add_open_buttons += 1,
+                .reset_defaults => reset_buttons += 1,
                 else => {},
             }
         },
@@ -2967,6 +3041,9 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 4), remove_buttons);
     try std.testing.expectEqual(@as(usize, 4), add_buttons);
     try std.testing.expectEqual(@as(usize, 1), add_open_buttons);
+    // The bottom-right Reset to Defaults button shows on the keybinds tab
+    // too (both tabs).
+    try std.testing.expectEqual(@as(usize, 1), reset_buttons);
 
     // The X/+ tooltips: every remove button's tooltip says Delete, every
     // add button's says Add another keybind (header-only tooltips).
