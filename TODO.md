@@ -1091,3 +1091,15 @@ Done items in DONE.md. Open:
   assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
   guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
   with a descriptive @panic. See DESIGN → Architecture note.
+- **The dash sweep** - the no-em-dash rule landed mid-project (AGENTS → Code
+  Style): replace every em-dash (U+2014) and en-dash (U+2013) with `-`, every
+  ellipsis (U+2026) with `...`, across src/ + the .md docs (NOT zig-pkg/ -
+  vendored; NOT .zig-cache/). Pre-rule counts: ~3900 em-dashes in code, ~4800
+  in docs, 97 en-dashes, 19 ellipses. Includes the RENDERED-string sites
+  (the visible bug: tooltips/popups showing `?` where a dash should be -
+  the menus tooltips, the keybind action-panel separator format, the
+  listening panels' ellipsis, the steal warnings, the editor pickers'
+  "sprites hidden" note, the validation summary, three player_input popups)
+  + their test assertions in lockstep. Sweep discipline: dry-run ONE file +
+  inspect the full diff before the tree; write after each file. Deferred
+  until the web storage model refactor lands.
