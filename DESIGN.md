@@ -128,9 +128,11 @@ next session meets it as a surprise instead of a known.
   window/persistent-dir, then calls `main.run` with a `RaylibBackend`. Drives
   the shared `frame()` via a blocking while-loop (the native driver).
 - `src/web.zig` is the web (emscripten) exe root: mirrors native but mounts
-  IDBFS at /ziglop for persistence and drives `frame()` via
-  `emscripten_set_main_loop_arg` (the browser schedules rAFs; no sleep/yield,
-  no asyncify). The patched-stdlib web-build workflow lives in AGENTS → Build & Test.
+  the IN-MEMORY persistent dir (MEMFS at /ziglop — browser storage is
+  never touched; see File System & IO → Web storage model) and drives
+  `frame()` via `emscripten_set_main_loop_arg` (the browser schedules rAFs;
+  no sleep/yield, no asyncify). The patched-stdlib web-build workflow lives
+  in AGENTS → Build & Test.
 - **WebGL 2 (GL ES 3.0), not WebGL 1** — the web raylib dependency sets
   `opengl_version = .gles_3` in build.zig (raylib-zig's auto-default for
   emscripten is WebGL 1). Two reasons, both settled:
@@ -2033,9 +2035,10 @@ the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and
 autosaves don't mix into your real persistent play data. The Windows native
 path is still DEFERRED (the same switch gains a `.windows` arm when that
-build exists). Web (emscripten) is WIRED: web.zig mounts an IDBFS slice at
-/ziglop (IndexedDB-backed, survives browser close) and builds FileSource on
-that dir — same read/write code path as native, just a different dir source.
+build exists). Web (emscripten) is WIRED: web.zig mounts the IN-MEMORY
+persistent dir (MEMFS at /ziglop — browser storage is never touched;
+see Web storage model) and builds FileSource on that dir — same
+read/write code path as native, just a different dir source.
 The dir name (`ziglop`) rides the planned ziglop→taplop rename sweep — free
 pre-release (no real players with saves yet); the rename adds one site per
 platform default + the `$ZIGLOP_DATA` env var name.
@@ -2176,7 +2179,7 @@ download is additive redundancy, not a replacement.
 - Replay-gated upstream (`write_save` skips side effects while replaying), so
   undo/redo scrubbing can't re-fire downloads.
 - The mount path constant is shared (`file_source.persistent_mount_path`)
-  between web.zig's IDBFS mount and the JS that builds absolute FS paths.
+  between web.zig's in-memory mount and the JS that builds absolute FS paths.
 - Browser user-gesture policy could block a programmatic download if the
   click's activation expires before the handler runs; if that ever surfaces,
   the fix is a JS-side queued-download flag consumed on the next real pointer
