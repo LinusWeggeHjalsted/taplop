@@ -347,19 +347,18 @@ const scrollbar_width = ui_element.scrollbar_width;
 const scrollbar_gap = ui_element.scrollbar_gap;
 
 /// One scrollbar: fixed-gray track + thumb (the shared scrollbar
-/// constants) sized to the visible row window and positioned by the row
-/// scroll offset — the shape every row list on these surfaces uses
-/// (load-save browser, editor browser, the settings keybinds columns).
-/// The track spans the full rows region; the thumb is the visible
-/// window's height (min `scrollbar_thumb_min_height`) sliding through the
-/// remaining travel.
+/// constants) sized PROPORTIONALLY to the visible slice of the total
+/// content and positioned by the row scroll offset — the shape every
+/// row list on these surfaces uses (load-save browser, editor browser,
+/// the settings keybinds columns). The track spans the full rows region;
+/// the thumb is `track_height × visible / total` (min
+/// `scrollbar_thumb_min_height`) sliding through the remaining travel.
 fn emitScrollbar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     track_x: i32,
     track_y: i32,
     track_height: i32,
-    row_pitch: i32,
     visible_rows: usize,
     total_rows: usize,
     scroll_offset: i32,
@@ -372,12 +371,14 @@ fn emitScrollbar(
     } });
     const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
     const max_scroll_row: i32 = @intCast(total_rows - @min(total_rows, visible_rows));
-    const track_travel = track_height - visible_span_rows * row_pitch;
-    const thumb_height = @max(ui_element.scrollbar_thumb_min_height, visible_span_rows * row_pitch);
+    const thumb_height = @max(
+        ui_element.scrollbar_thumb_min_height,
+        @divTrunc(track_height * visible_span_rows, @as(i32, @intCast(total_rows))),
+    );
     const thumb_y = track_y + if (max_scroll_row == 0)
         0
     else
-        @divTrunc(scroll_offset * track_travel, max_scroll_row);
+        @divTrunc(scroll_offset * (track_height - thumb_height), max_scroll_row);
     try elements.append(allocator, .{ .solid_rect = .{
         .screen_position = .{ .x = track_x, .y = thumb_y },
         .width = scrollbar_width,
@@ -505,7 +506,6 @@ pub fn buildLoadSavePanel(
                 content_x + content_width - scrollbar_width,
                 rows_y,
                 rows_height,
-                row_pitch,
                 visible_rows,
                 total_rows,
                 scroll_offset.*,
@@ -901,7 +901,6 @@ fn buildMissionBrowserContent(
                 content_x + content_width - scrollbar_width,
                 rows_y,
                 rows_height,
-                row_pitch,
                 visible_rows,
                 total_rows,
                 scroll_offset.*,
@@ -1902,7 +1901,6 @@ fn buildKeybindsContent(
             picker_x - @divTrunc(ui_gap, 2) - scrollbar_width,
             list_top,
             region_height,
-            row_stride,
             visible_rows,
             rows.items.len,
             scroll_offset.*,
@@ -1963,7 +1961,6 @@ fn buildKeybindsContent(
                     screen.x + screen.width - settings_padding - scrollbar_width,
                     picker_list_top,
                     picker_region_height,
-                    row_stride,
                     picker_visible_rows,
                     actions.len,
                     picker_scroll_offset.*,
@@ -3090,6 +3087,9 @@ test "buildSettingsPanel: keybinds tab scrollbars — track + thumb per overflow
         );
         try std.testing.expectEqual(track_y, thumb_y);
         try std.testing.expect(thumb_height >= ui_element.scrollbar_thumb_min_height);
+        // The thumb represents the visible SLICE: strictly smaller than the
+        // track whenever the content overflows it.
+        try std.testing.expect(thumb_height < track_height);
 
         // Max scroll (clamped by the builder): the thumb moves down and
         // stays inside the track.
