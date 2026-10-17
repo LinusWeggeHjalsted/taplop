@@ -765,11 +765,16 @@ Open:
      old setup freed, not leaked). See DESIGN → Web storage model.
   4. [ ] Disclaimer — main menu, centered above the title, web only, the
      chosen wording (DESIGN → Web storage model).
-  5. [ ] Cleanup sweep — the `file_source.zig` platform-split directory
+  5. [ ] Cleanup sweep - the `file_source.zig` platform-split directory
      listings (the "Dir.iterate is broken on the IDBFS mount" workaround:
      JS-path listings + per-file stats) may be deletable under the plain
-     MEMFS mount — browser-verified (compile ≠ run; harmless if kept) —
+     MEMFS mount - browser-verified (compile ≠ run; harmless if kept) -
      plus any remaining IDBFS-era prose.
+  - Browser pass PENDING for slice 2 (landed headless-verified only):
+    emrun - Export Game downloads ziglop.zip with the full tree in it
+    (incl. a mid-level autosave), the staging temp cleans up, a refresh
+    leaves no residue, and the new JS walk errors degrade (empty listing,
+    popup) rather than hanging.
 
 - **Load-save browser polish** (the browser itself is DONE — DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player
