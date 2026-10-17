@@ -344,10 +344,16 @@ survived many sessions this way).
 ## Zig 0.16 Gotchas
 
 - A switch prong with a RESULT TYPE needs a labeled block to yield its
-  value: `.a => { stmt; value },` fails ("expected ';' after statement" —
+  value: `.a => { stmt; value },` fails ("expected ';' after statement" -
   the trailing value parses as a statement, not the block's yield);
   `.a => blk: { stmt; break :blk value; },` works. Verified by minimal
   repro; harmless in void-context switches (statement bodies are fine).
+- A switch prong whose body is a bare `if (cond) thing = value,` also
+  fails ("invalid left-hand side to assignment") - the blockless `if` in
+  prong position parses as an expression. Same fix as above: give it a
+  body, `if (cond) { thing = value; },`. Hit twice in one session
+  (a scrollbar test, an Export Game label check) - same shape class as
+  the result-type prongs, different trigger.
 - ArrayList is unmanaged: `.empty`, pass allocator to each call
 - ArrayList has no `.writer()` — use `.print(allocator, fmt, args)` and `.appendSlice(allocator, items)` directly
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`
