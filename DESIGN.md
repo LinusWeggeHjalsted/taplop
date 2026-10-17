@@ -2105,10 +2105,13 @@ import-marker pattern at directory scale). The session continues with the
 imported state.
 - **Export Game** (options menu, EVERY variant — the options menu is the
 only menu surface reachable mid-level, so in-session backups are always
-possible): zips the FULL persistent dir (the "game folder": settings,
-saves including backups, custom missions, logs) and triggers a browser
-download (`triggerBrowserDownload`). The download is the only guaranteed-
-safe home for web data — the bytes leave the browser entirely.
+possible): a game in progress pushes the autosave write FIRST (the
+`end_hub`/`end_level` `write_save` push — mid-level progress is IN the
+export, not just the files already on disk), then zips the FULL persistent
+dir (the "game folder": settings, saves including backups, custom missions,
+logs) and triggers a browser download (`triggerBrowserDownload`). The
+download is the only guaranteed-safe home for web data — the bytes leave
+the browser entirely.
 - The ONE-FILE import/export flows (save files, mission STOREs) are
 UNCHANGED — different verbs (sharing one save / one custom mission) than
 the whole-game round-trip; both keep their existing homes.

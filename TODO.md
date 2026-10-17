@@ -741,7 +741,10 @@ Open:
      contents + `syncfs(false)` before the boot gate opens (web.zig; the
      two-phase boot machinery is otherwise unchanged).
   2. [ ] Export Game — options menu (EVERY variant — the only menu surface
-     reachable mid-level), web only: zip the FULL persistent dir (the
+     reachable mid-level), web only: push the autosave write FIRST when a
+     game is in progress (the end-of-level `write_save` push, so
+     mid-level progress is in the export — the user expects current
+     state, not just current files), then zip the FULL persistent dir (the
      mission STORE zip writer is the machinery pattern) →
      `triggerBrowserDownload`.
   3. [ ] Import Game — main menu, web only: file picker → unzip into the
