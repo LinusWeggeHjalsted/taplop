@@ -17419,3 +17419,30 @@ off-by-one, the NUL truncation): all in the export's browser-only JS, none
 reachable by the headless suite, each caught only by actually exercising
 the flow in a browser — the compiles-≠-runs rule, three times over. The
 export→import round trip is the verification.
+
+Follow-up (the import re-boot's alignment crash — the audio caches after
+deinit): with source maps restored (-Dweb-debug-runtime, the flag's designed
+use), the symbolized trace pinned it:
+`ensureSoundLoaded -> contains -> getIndex -> capacity -> header ->
+incorrectAlignment` — the sound cache's first `contains` inside the
+re-boot's initAudio. Root cause: std 0.16's `HashMapUnmanaged.deinit` ends
+with `self.* = undefined` — the Debug 0xAA fill makes `metadata` a NON-NULL
+misaligned pointer (0xAAAAAAAA, low bits 0b10), so the next `contains`
+skips the null check and `@alignCast`s it into the "incorrect alignment"
+panic. Our re-boot path (deinitAudio -> initAudio) was the first-ever
+deinit->reuse cycle of the Audio struct: first boot starts the caches
+`.empty` (null metadata — fine), every subsequent use after a deinit hits
+the undefined fill. My native mimic missed it — the fake backend has no
+audio; the crash was only reachable through the real re-boot. (Native
+would crash identically — no native code path deinits + reinits Audio; the
+Import Game button does not exist there.) Fix: `Audio.deinit` re-establishes
+the reusable empty state for all four caches after their deinits, with the
+class lesson at the site: a std-deinit'd struct intended for reuse must be
+re-initialized before its next use — std's deinit leaves it undefined.
+
+Diagnosis chain worth keeping: the crash window was first narrowed from the
+console (the second SetWindowState warning = the re-boot's createSessionSetup
+had STARTED; no crash-bundle write = the crash hook was uninstalled =
+inside the boot sequence), the headless mimic (import + teardown + double
+createSessionSetup over the real zip, heap reuse included) ruled out
+everything but wasm, and the source-mapped run named the exact frame.

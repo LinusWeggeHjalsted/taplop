@@ -237,6 +237,17 @@ pub const Audio = struct {
             if (maybe_sound.*) |sound| rl.unloadSound(sound);
         }
         self.item_layer_cache.deinit(self.allocator);
+        // std's HashMapUnmanaged.deinit ends with `self.* = undefined` —
+        // the Debug 0xAA fill makes `metadata` a NON-NULL misaligned pointer
+        // (0xAAAAAAAA), so the first `contains` after a deinit->init cycle
+        // derefs it + panics with "incorrect alignment" (the import re-boot
+        // crash: deinitAudio leaves the caches here, initAudio's first
+        // ensureSoundLoaded -> contains trips it). A struct intended for
+        // REUSE must be re-initialized to the empty state after deinit.
+        self.sound_cache = .empty;
+        self.skill_layer_cache = .empty;
+        self.action_layer_cache = .empty;
+        self.item_layer_cache = .empty;
         rl.closeAudioDevice();
         self.audio_ready = false;
     }
