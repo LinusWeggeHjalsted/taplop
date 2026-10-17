@@ -1096,7 +1096,12 @@ pub const game_import_marker_path = ".game_import_marker";
 /// download (anchor click on a Blob of the file's bytes) under the given
 /// download name (the staging path can be a dot-temp the download must not
 /// carry). The file must already be written — this reads it back from the
-/// emscripten in-memory FS. On native this is a no-op (comptime-dead
+/// emscripten in-memory FS as BINARY (no `{encoding:'utf8'}` — emscripten's
+/// utf8 read has C-string semantics: it stops at the FIRST NUL byte, which
+/// truncated every downloaded ZIP to its first 5 bytes (`PK\x03\x04\x14`,
+/// the header up to the first NUL — the shipped ziglop.zip + mission
+/// exports; a binary read is correct for every file, text included) and
+/// blobbed as octet-stream). On native this is a no-op (comptime-dead
 /// branch), so the extern is never linked outside web builds. `allocator`
 /// only backs the script-string formatting.
 pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, download_name: []const u8) void {
@@ -1104,8 +1109,8 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, do
         const script_body = std.fmt.allocPrint(
             allocator,
             "(function() {{" ++
-                "var data = FS.readFile('{s}/{s}', {{encoding:'utf8'}});" ++
-                "var blob = new Blob([data], {{type:'text/plain'}});" ++
+                "var data = FS.readFile('{s}/{s}');" ++
+                "var blob = new Blob([data], {{type:'application/octet-stream'}});" ++
                 "var url = URL.createObjectURL(blob);" ++
                 "var a = document.createElement('a');" ++
                 "a.href = url;" ++

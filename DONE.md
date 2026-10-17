@@ -17400,3 +17400,22 @@ browser-only-reachable — the web walk cannot run in the headless suite (the
 JS only executes under emscripten), which is exactly the compiles-≠-runs
 class the platform seam carries. The re-export (a populated folder:
 saves + logs + the edited mission) is the browser verification.
+
+Follow-up (the download seam's NUL truncation — the third browser-only bug
+of the browser pass): the export worked, the import failed with "the zip is
+corrupt or uses an unsupported format", and the downloaded ~/Downloads/
+ziglop.zip measured FIVE BYTES — exactly `PK\x03\x04\x14`, the archive's
+first bytes up to the first NUL (offset 5). `triggerBrowserDownload` read the
+staged file with `FS.readFile(path, {encoding:'utf8'})` — emscripten's utf8
+read has C-STRING semantics: it stops at the first NUL byte. Written for
+the save TEXT export, reused for the binary zips — every downloaded ziglop.zip
+(and every mission export download, the same seam) shipped as a 5-byte
+stub. Fixed: the read is binary (no encoding — a Uint8Array, no NUL
+semantics; correct for every file, text included) + the blob is
+octet-stream.
+
+The pattern across the three (the unquoted mount path, the separator
+off-by-one, the NUL truncation): all in the export's browser-only JS, none
+reachable by the headless suite, each caught only by actually exercising
+the flow in a browser — the compiles-≠-runs rule, three times over. The
+export→import round trip is the verification.
