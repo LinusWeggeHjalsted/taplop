@@ -1742,14 +1742,18 @@ fn buildKeybindsContent(
         button_color,
         .add_open,
         false,
+        null,
     );
 
     const list_top = content_top + row_stride;
     const region_height = buttons_top - list_top;
     const visible_rows: usize = @intCast(@max(1, @divTrunc(region_height, row_stride)));
 
-    // The ADD proposal (an add's listening or pending phase) renders as an
-    // extra row at the top of the list — always visible, no scroll hunting.
+    // The ADD proposal (an add's listening or pending phase) renders as
+    // an extra row below its action's row group — where the confirmed
+    // combo will appear (the display is action-sorted) — or at the top of
+    // the list when the action has no bindings yet (the standalone add of
+    // a fresh action).
     const add_edit: ?keybind_edit.KeybindEdit = if (edit_state) |edit_source| switch (edit_source.edit) {
         .listening => |target| switch (target) {
             .add => |action| .{ .listening = .{ .add = action } },
@@ -1769,9 +1773,32 @@ fn buildKeybindsContent(
         add_edit,
         binding: usize,
     };
+
+    // The proposal's insert position: after the LAST row of its action's
+    // group in display order (0 = top — the action has no bindings yet).
+    var add_insert_position: usize = 0;
+    if (add_edit != null) {
+        const target_action: ?types.Action = switch (add_edit.?) {
+            .listening => |target| switch (target) {
+                .add => |action| action,
+                else => null,
+            },
+            .pending => |pending| pending.binding.action,
+            else => null,
+        };
+        if (target_action) |action| {
+            for (order, 0..) |binding_index, position| {
+                if (bindings[binding_index].action == action) add_insert_position = position + 1;
+            }
+        }
+    }
+
     var rows: std.ArrayList(RowEntry) = .empty;
-    if (add_edit != null) try rows.append(allocator, .add_edit);
-    for (order) |index| try rows.append(allocator, .{ .binding = index });
+    for (order, 0..) |binding_index, position| {
+        if (add_edit != null and position == add_insert_position) try rows.append(allocator, .add_edit);
+        try rows.append(allocator, .{ .binding = binding_index });
+    }
+    if (add_edit != null and add_insert_position >= order.len) try rows.append(allocator, .add_edit);
 
     // Clamp the scroll (authoritative upper bound).
     if (rows.items.len <= visible_rows) {
@@ -1779,6 +1806,18 @@ fn buildKeybindsContent(
     } else {
         scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(rows.items.len - visible_rows)));
         if (scroll_offset.* < 0) scroll_offset.* = 0;
+
+        // Keep the proposal row on screen — it is the user's next
+        // interaction (the keypress capture or Confirm/Cancel): clamp the
+        // scroll so the proposal index sits inside the window. A no-op
+        // when already visible; snaps to the nearest window edge when
+        // not.
+        if (add_edit != null) {
+            const proposal_index: i32 = @intCast(add_insert_position);
+            const lowest: i32 = @max(0, proposal_index - @as(i32, @intCast(visible_rows)) + 1);
+            const highest: i32 = @min(proposal_index, @as(i32, @intCast(rows.items.len - visible_rows)));
+            scroll_offset.* = @min(@max(scroll_offset.*, lowest), highest);
+        }
     }
     const first_visible: usize = @intCast(scroll_offset.*);
     const last_visible = @min(rows.items.len, first_visible + visible_rows);
@@ -1885,9 +1924,9 @@ fn buildKeybindsContent(
                 panel_x += action_panel_width + settings_row_gap;
 
                 // X (remove — direct) + + (add a combo for this action).
-                panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "X", panel_x, row_y, button_color, .{ .remove = index }, false);
+                panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "X", panel_x, row_y, button_color, .{ .remove = index }, false, "Delete");
                 panel_x += settings_row_gap;
-                _ = try emitKeybindCommandPanel(elements, allocator, font_metrics, "+", panel_x, row_y, button_color, .{ .add = binding.action }, false);
+                _ = try emitKeybindCommandPanel(elements, allocator, font_metrics, "+", panel_x, row_y, button_color, .{ .add = binding.action }, false, "Add another keybind");
             },
         }
     }
@@ -1949,6 +1988,7 @@ fn buildKeybindsContent(
                     button_color,
                     .{ .pick = action },
                     active,
+                    null,
                 );
             }
 
@@ -2037,7 +2077,8 @@ fn emitKeybindPanel(
 }
 
 /// Panel + centered label + an invisible button carrying a `.edit_keybind`
-/// command (the interactive panel shape). Returns the panel width.
+/// command (the interactive panel shape; optional hover tooltip). Returns
+/// the panel width.
 fn emitKeybindCommandPanel(
     elems: *UiElementList,
     alloc: std.mem.Allocator,
@@ -2048,6 +2089,7 @@ fn emitKeybindCommandPanel(
     panel_color: Color,
     command: types.KeybindCommand,
     highlighted: bool,
+    tooltip_text: ?[]const u8,
 ) !i32 {
     const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
     const panel_width = @max(
@@ -2068,6 +2110,7 @@ fn emitKeybindCommandPanel(
         .action = .edit_keybind,
         .payload = .{ .keybind_command = command },
         .highlighted = highlighted,
+        .tooltip = if (tooltip_text) |tooltip_label| .{ .header = try spanRow(alloc, text(tooltip_label)) } else null,
     } });
     try elems.append(alloc, .{ .text_label = .{
         .text = label_text,
@@ -2144,9 +2187,9 @@ fn emitPendingRow(
     // Confirm / Cancel. Enter CONFIRMS through the capture seam during
     // pending (the modal-capture-state convention — safe because capture
     // happens during listening; Escape cancels the same way).
-    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Confirm", panel_x, row_y, button_color, .confirm, true);
+    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Confirm", panel_x, row_y, button_color, .confirm, true, null);
     panel_x += settings_row_gap;
-    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Cancel", panel_x, row_y, button_color, .cancel, false);
+    panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Cancel", panel_x, row_y, button_color, .cancel, false, null);
 
     // The steal warning (see findKeybindSteal): the combo currently fires
     // another binding — confirming REMOVES it — or duplicates its own
@@ -2924,6 +2967,19 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 4), remove_buttons);
     try std.testing.expectEqual(@as(usize, 4), add_buttons);
     try std.testing.expectEqual(@as(usize, 1), add_open_buttons);
+
+    // The X/+ tooltips: every remove button's tooltip says Delete, every
+    // add button's says Add another keybind (header-only tooltips).
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .edit_keybind) {
+            switch (button.payload.?.keybind_command) {
+                .remove => try std.testing.expectEqualStrings("Delete", button.tooltip.?.header.?[0].text),
+                .add => try std.testing.expectEqualStrings("Add another keybind", button.tooltip.?.header.?[0].text),
+                else => {},
+            }
+        },
+        else => {},
+    };
     try std.testing.expectEqual(@as(usize, 2), undo_anytime); // both combos
     // The min-width contract: every keybind panel (key/modifier/action —
     // all settings_row_height) stays at or above `keybind_min_panel_width`
@@ -2938,6 +2994,121 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     };
     try std.testing.expectEqual(@as(usize, 1), confirm_game);
     try std.testing.expectEqual(@as(usize, 1), select_tool_editor);
+}
+
+test "buildSettingsPanel: keybinds tab add proposal — below its action's group, kept on screen" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const row_stride = settings_row_height + settings_row_gap;
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // A row's `+` (an add listening on an EXISTING action): the proposal
+    // renders directly below that action's row group — one row_stride
+    // under the group's last row's action label.
+    {
+        const bindings = [_]types.InputBinding{
+            .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
+            .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        };
+        const settings: types.Settings = .{ .input_bindings = &bindings };
+        var edit_state: keybind_edit.KeybindEditState = .{ .edit = .{ .listening = .{ .add = .undo } } };
+        var scroll: i32 = 0;
+        var picker_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, button_color, .keybinds, &scroll, &edit_state, &picker_scroll);
+
+        var undo_label_y: i32 = -1;
+        var confirm_label_y: i32 = -1;
+        var proposal_y: i32 = -1;
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(.undo)});
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, "Confirm — Game")) confirm_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, proposal_text)) proposal_y = label.screen_position.y;
+            },
+            else => {},
+        };
+        try std.testing.expect(undo_label_y >= 0);
+        try std.testing.expect(confirm_label_y >= 0);
+        try std.testing.expect(proposal_y >= 0);
+        // Undo is the first display row; the proposal is its row + 1.
+        try std.testing.expectEqual(undo_label_y + row_stride, proposal_y);
+        // And it sits above the next action's group (undo < confirm in
+        // display order).
+        try std.testing.expect(proposal_y < confirm_label_y);
+    }
+
+    // A standalone add of a FRESH action (no bindings for it): the
+    // proposal renders at the top, pushing the first row down one.
+    {
+        const bindings = [_]types.InputBinding{
+            .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
+        };
+        const settings: types.Settings = .{ .input_bindings = &bindings };
+        var edit_state: keybind_edit.KeybindEditState = .{ .edit = .{ .listening = .{ .add = .dump_event_log } } };
+        var scroll: i32 = 0;
+        var picker_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, settings, undefined, button_color, .keybinds, &scroll, &edit_state, &picker_scroll);
+
+        var undo_label_y: i32 = -1;
+        var proposal_y: i32 = -1;
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(.dump_event_log)});
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, proposal_text)) proposal_y = label.screen_position.y;
+            },
+            else => {},
+        };
+        try std.testing.expect(undo_label_y >= 0);
+        try std.testing.expect(proposal_y >= 0);
+        try std.testing.expectEqual(proposal_y + row_stride, undo_label_y);
+    }
+
+    // Kept on screen: 60 rows overflow; scrolled to the bottom WITHOUT
+    // an edit first (the view's own clamp is the oracle for the pre-bump
+    // scroll value), then the same scroll WITH a row-`+` proposal on the
+    // last display action — the proposal would land beyond the window,
+    // so the scroll bumps one notch and the proposal is emitted.
+    {
+        const action_tags = std.meta.tags(types.Action);
+        var long_bindings: [60]types.InputBinding = undefined;
+        for (&long_bindings, action_tags[0..60], 0..) |*binding, action, index| {
+            binding.* = .{
+                .input = .{ .key = if (index % 2 == 0) "Enter" else "Space" },
+                .action = action,
+            };
+        }
+        const long_settings: types.Settings = .{ .input_bindings = &long_bindings };
+
+        var scroll: i32 = 999;
+        var picker_scroll: i32 = 0;
+        var base_elements: UiElementList = .empty;
+        try buildSettingsPanel(&base_elements, allocator, metrics, screen, long_settings, undefined, button_color, .keybinds, &scroll, null, &picker_scroll);
+        try std.testing.expect(scroll > 0); // clamped to the bottom (60 rows)
+        const bottom_scroll = scroll;
+
+        var edit_state: keybind_edit.KeybindEditState = .{ .edit = .{ .listening = .{ .add = action_tags[59] } } };
+        var elements: UiElementList = .empty;
+        try buildSettingsPanel(&elements, allocator, metrics, screen, long_settings, undefined, button_color, .keybinds, &scroll, &edit_state, &picker_scroll);
+        try std.testing.expectEqual(bottom_scroll + 1, scroll);
+
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(action_tags[59])});
+        var proposal_seen = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| if (std.mem.eql(u8, label.text, proposal_text)) {
+                proposal_seen = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(proposal_seen);
+    }
 }
 
 test "buildSettingsPanel: keybinds tab scroll window + clamp" {

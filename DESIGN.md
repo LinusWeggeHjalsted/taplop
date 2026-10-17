@@ -5661,8 +5661,10 @@ right half; picking one moves the row's combo to it → PENDING. The
 standalone Add button (top of the list) opens the picker in add mode:
 pick the action → listening → pending. A row's `+` adds a combo for its
 action (listening → pending); an add's listening/pending row renders as
-an extra row at the top of the list. The wheel scrolls the PICKER while
-it's open.
+an extra row below its action's row group — where the confirmed combo
+will appear (the display is action-sorted) — or at the top when the
+action has no bindings yet, and the scroll clamps to keep the proposal
+row on screen. The wheel scrolls the PICKER while it's open.
 - PENDING: the proposal row shows the captured combo + the action panel +
 Confirm/Cancel buttons (Enter CONFIRMS, Escape cancels — the
 modal-capture-state convention, see Input) + the STEAL WARNING (warn
