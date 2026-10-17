@@ -26,6 +26,7 @@ const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
 const parser = @import("parser.zig");
 const event_handlers = @import("event_handlers.zig");
+const game_zip = @import("game_zip.zig");
 const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
@@ -1289,6 +1290,19 @@ pub fn handleAnytimeInput(
                     .{timestamp},
                 ) catch @panic("failed to format save path");
                 pushPlayerActionAndDrain(history, .{ .save_game = .{ .save_path = save_path } });
+            },
+            // Export Game (web only — the view gates on the web signal,
+            // `persistent_dir_path == null`; the comptime gate here is the
+            // defensive half for a future keybind, the Exit Game
+            // discipline). The autosave write (a game in progress) drains
+            // FIRST via the orchestrator arm — mid-level progress is in the
+            // zip — then the zip + download run here (a live-path side
+            // effect, the reset-to-defaults class: input handling never
+            // replays, so no replay gate).
+            .export_game => {
+                if (@import("builtin").os.tag != .emscripten) return;
+                pushPlayerActionAndDrain(history, .export_game);
+                game_zip.exportGameFolder(history);
             },
             // Exit-path buttons: push the player orchestrator event, then
             // drain. The orchestrator handler pushes the machinery (end_level

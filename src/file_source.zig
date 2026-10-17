@@ -787,7 +787,133 @@ pub const FileSource = struct {
     pub fn deleteFile(self: *const FileSource, path: []const u8) !void {
         try self.persistent_dir.deleteFile(self.io, path);
     }
+
+    /// Recursively list every FILE under the persistent dir as
+    /// `/`-separated persistent-relative paths — the game-folder zip's
+    /// source list (Export Game; see game_zip.zig). Platform-split (the
+    /// `Dir.iterate`-is-broken-on-IDBFS story — see `listSaveFiles`):
+    /// native walks the tree via `Dir.iterate` recursion; web walks it via
+    /// JS (a recursive `FS.lookupPath` pass writing the path list to a
+    /// temp listing — the `.saves_listing` pattern at tree scale), then
+    /// reads the list back. The staging + listing temps
+    /// (`game_export_temp_path`, `game_folder_listing_temp`) are excluded
+    /// on both platforms — a crashed export's leftovers must not ride
+    /// along. Caller owns the returned slice + strings (free via
+    /// `freePersistentDirFiles`, or pass a throwaway arena). Sorted for
+    /// determinism. Empty when the dir is empty (a fresh web session).
+    pub fn listPersistentDirFiles(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+    ) ![][]const u8 {
+        var paths: std.ArrayList([]const u8) = .empty;
+        errdefer freePersistentDirFiles(allocator, paths.items);
+        if (@import("builtin").os.tag == .emscripten) {
+            try self.listPersistentDirFilesWeb(allocator, &paths);
+        } else {
+            try listPersistentDirFilesNative(self.persistent_dir, self.io, "", allocator, &paths);
+        }
+        std.mem.sort([]const u8, paths.items, {}, pathOrder);
+        return paths.toOwnedSlice(allocator);
+    }
+
+    /// Native path: `Dir.iterate` recursion. `prefix` is `dir`'s
+    /// persistent-relative path ("" at the root).
+    fn listPersistentDirFilesNative(
+        dir: std.Io.Dir,
+        io: std.Io,
+        prefix: []const u8,
+        allocator: std.mem.Allocator,
+        paths: *std.ArrayList([]const u8),
+    ) anyerror!void {
+        var iterator = dir.iterate();
+        while (try iterator.next(io)) |entry| {
+            if (isGameFolderTempName(entry.name)) continue;
+            const relative_path = if (prefix.len == 0)
+                try allocator.dupe(u8, entry.name)
+            else
+                try std.fmt.allocPrint(allocator, "{s}/{s}", .{ prefix, entry.name });
+            switch (entry.kind) {
+                .directory => {
+                    var sub_dir = dir.openDir(io, entry.name, .{ .iterate = true }) catch {
+                        allocator.free(relative_path);
+                        continue;
+                    };
+                    defer sub_dir.close(io);
+                    defer allocator.free(relative_path);
+                    try listPersistentDirFilesNative(sub_dir, io, relative_path, allocator, paths);
+                },
+                .file => try paths.append(allocator, relative_path),
+                else => allocator.free(relative_path),
+            }
+        }
+    }
+
+    /// Web path: the JS recursive walk (`FS.lookupPath` + `Object.keys` +
+    /// `FS.isDir`) writes the persistent-relative path list to the listing
+    /// temp (the `.saves_listing` seam at tree scale); Zig reads it back
+    /// (individual file reads work — only `Dir.iterate` is broken).
+    fn listPersistentDirFilesWeb(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        paths: *std.ArrayList([]const u8),
+    ) !void {
+        const script =
+            "(function() {" ++
+            "try {" ++
+            "  var out = [];" ++
+            "  function walk(path) {" ++
+            "    var node = FS.lookupPath(path);" ++
+            "    if (!node || !node.node) return;" ++
+            "    var names = Object.keys(node.node.contents);" ++
+            "    for (var i = 0; i < names.length; i++) {" ++
+            "      var child = node.node.contents[names[i]];" ++
+            "      if (!child) continue;" ++
+            "      var child_path = path + '/' + names[i];" ++
+            "      if (FS.isDir(child.mode)) walk(child_path);" ++
+            "      else if (names[i] !== '" ++ game_export_temp_path ++ "' && names[i] !== '" ++ game_folder_listing_temp ++ "') out.push(child_path.substring(" ++ persistent_mount_path ++ ".length));" ++
+            "    }" ++
+            "  }" ++
+            "  walk('" ++ persistent_mount_path ++ "');" ++
+            "  FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_folder_listing_temp ++ "', out.join('\\n'));" ++
+            "} catch(e) {" ++
+            "  try { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ game_folder_listing_temp ++ "', ''); } catch(e2) {}" ++
+            "}" ++
+            "})();";
+        emscripten_run_script(script);
+
+        const listing_bytes = self.persistent_dir.readFileAlloc(self.io, game_folder_listing_temp, allocator, read_limit) catch |err| switch (err) {
+            error.FileNotFound => return,
+            else => return err,
+        };
+        defer allocator.free(listing_bytes);
+        self.persistent_dir.deleteFile(self.io, game_folder_listing_temp) catch {};
+        var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
+        while (lines.next()) |path| {
+            if (path.len == 0) continue;
+            try paths.append(allocator, try allocator.dupe(u8, path));
+        }
+    }
 };
+
+/// Free a `listPersistentDirFiles` result.
+fn freePersistentDirFiles(allocator: std.mem.Allocator, paths: [][]const u8) void {
+    for (paths) |path| allocator.free(path);
+    allocator.free(paths);
+}
+
+/// Deterministic listing order: lexicographic path order.
+fn pathOrder(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.lessThan(u8, a, b);
+}
+
+/// True for the game-folder zip's staging + listing temp names (a crashed
+/// export's leftovers must not ride in a later export — see
+/// `listPersistentDirFiles`).
+fn isGameFolderTempName(name: []const u8) bool {
+    return std.mem.eql(u8, name, game_export_temp_path) or
+        std.mem.eql(u8, name, game_folder_listing_temp);
+}
+
 
 /// Scan a mission folder for files beyond the known config set
 /// (mission.txt, player.txt, level_<N>.txt) — anything else is a custom
@@ -904,15 +1030,27 @@ pub const import_marker_path = ".import_marker";
 /// after reading — same shape as `import_marker_path`.
 pub const mission_import_marker_path = ".mission_import_marker";
 
+/// Export Game's archive staging file (persistent-dir root, dot-prefixed
+/// so no scan sees it; see game_zip.zig). The persistent-dir listing
+/// EXCLUDES it — a crashed export's leftover must not ride in a later
+/// export. Deleted after the download reads it.
+pub const game_export_temp_path = ".game_export.zip";
+
+/// The temp listing for the recursive persistent-dir walk (the
+/// `.saves_listing` pattern at directory-tree scale — Export Game's
+/// source list; see game_zip.zig). Written by the web JS walk, read +
+/// deleted by Zig. Excluded from the listing like the staging temp.
+pub const game_folder_listing_temp = ".game_folder_listing";
+
 /// On web, offer a file from the persistent dir to the player as a browser
-/// download (anchor click on a Blob of the file's bytes). The file must
-/// already be written — this reads it back from the emscripten in-memory FS.
-/// On native this is a no-op (comptime-dead branch), so the extern is never
-/// linked outside web builds. `allocator` only backs the script-string
-/// formatting.
-pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8) void {
+/// download (anchor click on a Blob of the file's bytes) under the given
+/// download name (the staging path can be a dot-temp the download must not
+/// carry). The file must already be written — this reads it back from the
+/// emscripten in-memory FS. On native this is a no-op (comptime-dead
+/// branch), so the extern is never linked outside web builds. `allocator`
+/// only backs the script-string formatting.
+pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, download_name: []const u8) void {
     if (@import("builtin").os.tag == .emscripten) {
-        const file_name = std.fs.path.basename(path);
         const script_body = std.fmt.allocPrint(
             allocator,
             "(function() {{" ++
@@ -926,7 +1064,7 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8) vo
                 "a.click();" ++
                 "setTimeout(function() {{ URL.revokeObjectURL(url); a.remove(); }}, 1000);" ++
                 "}})();",
-            .{ persistent_mount_path, path, file_name },
+            .{ persistent_mount_path, path, download_name },
         ) catch @panic("failed to format download script");
         defer allocator.free(script_body);
         const script = allocator.dupeZ(u8, script_body) catch @panic("failed to null-terminate download script");

@@ -742,6 +742,13 @@ pub const PlayerInputEvent = union(enum) {
     save_game: struct {
         save_path: []const u8,
     },
+    // Export Game's autosave half: a game in progress (not during an
+    // editor run — throwaway run data) syncs PlayerData via
+    // build_data_from_player, then writes the AUTOSAVE so mid-level
+    // progress is in the exported zip (the zip + download themselves are
+    // an input-path side effect, the reset-to-defaults class). See
+    // game_zip.zig + DESIGN → File System & IO → Web storage model.
+    export_game: void,
     // Dismiss the mission-complete overlay (the Continue button). Clears
     // GameState.last_completed_mission. On the undo timeline so undo re-shows
     // the overlay, redo dismisses it. See DESIGN → Architecture.

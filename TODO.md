@@ -743,13 +743,12 @@ Open:
      the two-phase boot gate deleted (main runs the full session setup
      inline), -lidbfs.js dropped from the build. DONE — DONE.md; design:
      DESIGN → Web storage model.
-  2. [ ] Export Game — options menu (EVERY variant — the only menu surface
-     reachable mid-level), web only: push the autosave write FIRST when a
-     game is in progress (the end-of-level `write_save` push, so
-     mid-level progress is in the export — the user expects current
-     state, not just current files), then zip the FULL persistent dir (the
-     mission STORE zip writer is the machinery pattern) as `ziglop.zip` →
-     `triggerBrowserDownload`.
+  2. [x] Export Game — options menu (EVERY variant), web only: the
+     autosave write FIRST when a game is in progress (the `export_game`
+     orchestrator arm — mid-level progress is in the export), then the
+     FULL persistent dir zipped as ziglop.zip (the mission STORE zip
+     writer) → `triggerBrowserDownload`. DONE — DONE.md; design: DESIGN
+     → Web storage model.
   3. [ ] Import Game — main menu, web only: file picker → OVERLAY the
      ziglop.zip onto the persistent dir (the settled untrusted-zip rules
      live in DESIGN → Web storage model — Zip-Slip name validation, abort

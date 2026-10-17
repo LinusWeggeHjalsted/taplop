@@ -217,6 +217,59 @@ test "save_game: pushes timestamped write + autosave write after sync" {
     try testing.expectEqualStrings(writers.autosave_path, autosave.meta_event.write_save.save_path);
 }
 
+// `export_game` (the autosave half — the zip + download are an input-path
+// side effect, not an event): with a level live, the orchestrator pushes
+// the autosave write after the sync — mid-level progress rides in the
+// exported zip. No timestamped write (Export Save's spam-free sibling).
+test "export_game: a live level pushes the autosave write after sync" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    runToIdle(&history);
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .export_game,
+        history.current_arena.allocator(),
+    );
+    event_handlers.processEvent(&history);
+
+    // Stack after the player action was popped: [autosave, sync] (LIFO pops
+    // sync first → run order is sync, autosave write — the save_game
+    // ordering, minus the timestamped write).
+    try testing.expectEqual(@as(usize, 2), history.current_state.event_stack.len);
+    const sync = history.current_state.event_stack[1];
+    const autosave = history.current_state.event_stack[0];
+    try testing.expectEqual(@as(std.meta.Tag(events.SuperEvent), .build_data_from_player), std.meta.activeTag(sync.super_event));
+    try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .write_save), std.meta.activeTag(autosave.meta_event));
+    try testing.expectEqualStrings(writers.autosave_path, autosave.meta_event.write_save.save_path);
+}
+
+// `export_game` with NO game in progress (the main-menu/options-menu
+// context): no pushes at all — the folder zip alone (the input-path side
+// effect) is the whole export; the event stack stays empty.
+test "export_game: no game in progress pushes nothing" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null); // main-menu start
+    runToIdle(&history);
+
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .export_game,
+        history.current_arena.allocator(),
+    );
+    event_handlers.processEvent(&history);
+
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 // ───────────── backup_autosave (disk-touching, temp-dir isolated) ─────────────
 // See DESIGN → File System & IO (Autosave). These tests write real files,
 // so they use a temp-dir-backed FileSource (reassigned on the harness after

@@ -2279,6 +2279,7 @@ pub const GameStateHistory = struct {
                     .start_new_game,
                     .open_editor,
                     .save_game,
+                    .export_game,
                     .dismiss_mission_complete,
                     .swap_hands,
                     .move_player,

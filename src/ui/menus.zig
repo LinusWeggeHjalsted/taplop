@@ -207,6 +207,26 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
+    // Export Game (web only — the persistent-dir-path-null signal, the
+    // same web case the Export Save tooltip uses): downloads ziglop.zip,
+    // the FULL game folder (settings, saves, custom missions) — the web
+    // build's cross-session backup path (browser storage never persists
+    // sessions). Present in EVERY variant (the options menu is the only
+    // menu surface reachable mid-level, so in-session backups are always
+    // possible); a game in progress writes the autosave FIRST (the
+    // handler), so mid-level progress is in the zip. Native has no button
+    // — the real persistent dir IS the game folder.
+    if (persistent_dir_path == null) {
+        buttons[button_count] = .{
+            .label = "Export Game",
+            .action = .export_game,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Downloads ziglop.zip — your full game folder (settings, saves, custom missions)",
+            ))}) },
+        };
+        button_count += 1;
+    }
+
     // Settings: opens the settings overlay on top of this one (drill-in).
     // Present in every context the options menu appears in.
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
@@ -2792,6 +2812,53 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         const new_tooltip = new_mission_button.?.tooltip orelse @panic("New Mission button has no tooltip");
         const new_tooltip_text = new_tooltip.body[0][0].text;
         try std.testing.expectEqualStrings("Ctrl+N — replaces the mission being edited with a fresh one", new_tooltip_text);
+    }
+}
+
+test "buildOptionsMenu: Export Game on every variant, web only (null persistent dir path)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Web (null path): present on EVERY variant with the ziglop.zip
+    // tooltip + label — the options menu is the only menu surface
+    // reachable mid-level, so in-session backups are always possible.
+    for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, button_color, null);
+        const button = (for (elements.items) |element| switch (element) {
+            .button => |b| if (b.action == .export_game) break b,
+            else => {},
+        } else @panic("no Export Game button"));
+        const tooltip = button.tooltip orelse @panic("Export Game button has no tooltip");
+        try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+        try std.testing.expectEqualStrings(
+            "Downloads ziglop.zip — your full game folder (settings, saves, custom missions)",
+            tooltip.body[0][0].text,
+        );
+        var label_seen = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| if (std.mem.eql(u8, label.text, "Export Game")) {
+                label_seen = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(label_seen);
+    }
+
+    // Native (a path): no button at all — the real persistent dir IS the
+    // game folder.
+    for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, variant, null, button_color, "/home/tester/.ziglop");
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != .export_game),
+            else => {},
+        };
     }
 }
 

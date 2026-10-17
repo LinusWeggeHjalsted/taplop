@@ -17020,3 +17020,51 @@ user's call — it had already completed its one migration run (their
 browser's old-model leftover was wiped on first boot of the interim
 build). Nothing touches IndexedDB at all now, not even to delete it;
 `mountPersistentDir` is just the MEMFS mkdir+mount.
+
+## Web storage model slice 2: Export Game (ziglop.zip, every options-menu variant)
+
+The web build's cross-session data path, the outbound half: Export Game
+downloads the FULL game folder (the whole persistent dir — settings, saves
+incl. backups, custom missions, logs) as `ziglop.zip` (the name migrates
+with the project rename). Under the session-scoped model a downloaded
+archive is the only durable home for a web player's data — the bytes leave
+the browser entirely.
+
+- The button: options menu, EVERY variant (main menu / level / hub /
+  editor — the options menu is the only menu surface reachable mid-level,
+  so in-session backups are always possible), gated on
+  `persistent_dir_path == null` — the view's RUNTIME web signal (the
+  Export Save tooltip's null case), which makes web-only UI
+  headless-testable by passing null. Native has no button — the real
+  persistent dir IS the game folder. Button-only action (the save_game
+  discipline), classified in the three exhaustive maps (contexts:
+  menu+game+editor; button payload: none; replay legality: no-payload
+  group).
+- The event shape (the save_game architecture, minus the timestamped
+  write): the input arm drains a new `export_game` PlayerInput
+  orchestrator event — with a level/hub live (and not during an editor
+  run: throwaway run data) it pushes `build_data_from_player` +
+  `write_save{autosave}` so mid-level progress is IN the export — then
+  the zip + download run on the input path (live-only, the
+  reset-to-defaults class; no replay gate — the orchestrator's pushes
+  are pure and write_save's side effects are replay-gated as always).
+- The machinery: `FileSource.listPersistentDirFiles` (the
+  platform-split listing at tree scale: native `Dir.iterate` recursion;
+  web a recursive `FS.lookupPath`/`Object.keys`/`FS.isDir` JS walk
+  through the `.game_folder_listing` temp seam — new JS,
+  browser-verified) → `zip_writer` STORE archive (entry names are the
+  persistent-relative paths; the mission export's writer) → staged at
+  `.game_export.zip` (dot-temp, invisible to scans, deleted after the
+  download reads it; both temps excluded from the listing so a crashed
+  export's leftovers can't ride along) → `triggerBrowserDownload` —
+  which gained a `download_name` param (the staging temp must download
+  as ziglop.zip, not a dotfile). Best-effort (the autosave-backup
+  policy): failures surface the recoverable popup + abort.
+- Tests (headless): the listing + zip round-trip (a real tree → STORE
+  archive → `zip_reader` → identical names + bytes; temps excluded;
+  empty tree → empty list) in game_zip.zig; the orchestrator arm's
+  pushes (live level → sync+autosave push; no game → no pushes) in
+  handler_tests_autosave.zig; the button on every variant via the
+  null-path web simulation in menus.zig. Browser-verified (compile ≠
+  run): the JS walk, the staging + download + temp cleanup, and the
+  mid-level autosave landing in the archive — the emrun eyeball.

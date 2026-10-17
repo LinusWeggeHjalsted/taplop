@@ -19,3 +19,6 @@ zig-pkg/
 sound_report.md
 scratch/
 # Dev scratch data dir (--data-dir ./scratch, README) — untracked by design
+
+zig-cache/
+# Test scratch namespace (test_harnesss

@@ -344,6 +344,25 @@ pub fn handlePlayerInputEvent(
             }
         },
 
+        // Export Game's autosave half (the zip + download are an
+        // input-path side effect, the reset-to-defaults class — see
+        // game_zip.zig): a game in progress syncs PlayerData + writes the
+        // AUTOSAVE first, so mid-level progress is in the exported zip.
+        // Skipped during an editor run (playtest/validate) — the run's
+        // player_data is throwaway (the save_game discipline); the folder
+        // export itself still proceeds.
+        .export_game => {
+            if (current.editor) |editor| {
+                if (editor.mode != .edit) return;
+            }
+            if (current.level != null or current.hub != null) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
+                    .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
+                }, allocator);
+            }
+        },
+
         // --- Meta: open editor ---
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;

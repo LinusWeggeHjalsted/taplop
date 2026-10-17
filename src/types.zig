@@ -240,6 +240,13 @@ pub const Action = enum {
     zoom_reset,
     // Options menu commands (context-specific: hub vs level).
     save_game,
+    // Export the FULL game folder (the persistent dir) as a ziglop.zip
+    // browser download (the options menu's Export Game button — web only,
+    // button-only). A pure side effect (the dump_event_log class): a game
+    // in progress pushes the autosave write first (the `export_game`
+    // orchestrator arm), then the input path zips + downloads. See
+    // game_zip.zig + DESIGN → File System & IO → Web storage model.
+    export_game,
     // Save the edited mission to the persistent dir (the editor options
     // menu's Save Mission button + the ctrl+S binding). A pure side effect
     // — the dump_event_log class, not the save_game class: there is no
@@ -1048,7 +1055,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // Continue on the mission-complete overlay: in the hub (campaign)
         // or over the editor (the validation stats screen).
         .continue_after_mission,
-        => .{ .game = true, .editor = true },
+        // Export Game: the options menu shows it on EVERY variant (web
+        // only, button-only — this is the defensive future-keybind half,
+        // the save_game discipline).
+        .export_game,
+        => .{ .menu = true, .game = true, .editor = true },
     };
 }
 
@@ -1299,6 +1310,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .zoom_out,
         .zoom_reset,
         .save_game,
+        .export_game,
         .save_editor_mission,
         .export_editor_mission,
         .restart_mission,

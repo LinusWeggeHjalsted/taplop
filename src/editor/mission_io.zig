@@ -658,7 +658,7 @@ pub fn exportEditorMission(history: *GameStateHistory) void {
     };
     // Web: offer it as a download (reads it back from the mounted FS);
     // native: a comptime no-op.
-    file_source_mod.triggerBrowserDownload(scratch, zip_path);
+    file_source_mod.triggerBrowserDownload(scratch, zip_path, std.fs.path.basename(zip_path));
 }
 
 /// Consume the mission-import marker, if present: the picked .zip has landed

@@ -109,7 +109,7 @@ pub fn handleMetaEvent(
             // save file on disk doesn't require digging through browser
             // storage. No-op on native. See DESIGN → File System & IO.
             if (!std.mem.eql(u8, write.save_path, writers.autosave_path)) {
-                file_source_mod.triggerBrowserDownload(allocator, write.save_path);
+                file_source_mod.triggerBrowserDownload(allocator, write.save_path, std.fs.path.basename(write.save_path));
             }
         },
         .backup_autosave => {
