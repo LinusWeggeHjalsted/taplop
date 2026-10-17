@@ -25,9 +25,10 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
-- **Web storage model refactor** — session-scoped IDBFS + Import/Export
-  Game (design settled: DESIGN → File System & IO → Web storage model;
-  slices + open questions in Platform Layer → web storage model below).
+- **Web storage model refactor** — the in-memory persistent mount +
+  Import/Export Game (design settled: DESIGN → File System & IO → Web
+  storage model; slices + open questions in Platform Layer → web storage
+  model below).
 - [x] `toggle_options_menu` rename — DONE: the action is `escape` now (see
       DONE.md; existing installs self-heal via the warn+drop at load).
 - [x] **Art report (machine-derived asset inventory)** — DONE:
@@ -733,32 +734,41 @@ Open:
   (The WebGL1/WebGL2 build option is DONE — the web build is WebGL2-only;
   see DESIGN → Platform Seam → WebGL 2.)
 - **Web storage model refactor** — design SETTLED: DESIGN → File System &
-  IO → Web storage model (session-scoped IDBFS — the boot clears, nothing
-  persists between sessions by design; Import Game = full game-folder zip
-  upload, Export Game = full game-folder zip download; zero web users at
-  land time, so no migration machinery). Slices:
-  1. [ ] Boot clear — the `syncfs(true)` load callback unlinks the mount
-     contents + `syncfs(false)` before the boot gate opens (web.zig; the
-     two-phase boot machinery is otherwise unchanged).
+  IO → Web storage model (the persistent dir is an IN-MEMORY mount —
+  browser storage is never touched, nothing persists between sessions by
+  design; Import Game = full game-folder ziglop.zip overlay upload, Export
+  Game = full game-folder zip download). Slices:
+  1. [x] The in-memory mount — IDBFS deleted wholesale: plain MEMFS at
+     /ziglop, a fire-and-forget deleteDatabase of the old model's
+     leftover IndexedDB, ALL syncfs dropped (per-write flush, upload
+     seams, unload), the two-phase boot gate deleted (main runs the full
+     session setup inline), -lidbfs.js dropped from the build. DONE —
+     DONE.md; design: DESIGN → Web storage model.
   2. [ ] Export Game — options menu (EVERY variant — the only menu surface
      reachable mid-level), web only: push the autosave write FIRST when a
      game is in progress (the end-of-level `write_save` push, so
      mid-level progress is in the export — the user expects current
      state, not just current files), then zip the FULL persistent dir (the
-     mission STORE zip writer is the machinery pattern) →
+     mission STORE zip writer is the machinery pattern) as `ziglop.zip` →
      `triggerBrowserDownload`.
-  3. [ ] Import Game — main menu, web only: file picker → unzip into the
-     persistent dir (the import-marker poll pattern at directory scale).
-     OPEN: settings application AFTER import — `createSessionSetup` ran
-     at boot, so an imported settings.txt needs an overlay re-run +
-     live-apply (volumes, render resolution). A page reload is NOT an
-     option here: the next boot's clear would wipe the just-imported
-     files, so the apply has to happen in-session.
+  3. [ ] Import Game — main menu, web only: file picker → OVERLAY the
+     ziglop.zip onto the persistent dir (the settled untrusted-zip rules
+     live in DESIGN → Web storage model — Zip-Slip name validation, abort
+     on the first bad entry, streaming extraction, the 512 MB / 2 GB /
+     65,536 caps, shadow trees allowed via the raw dir handle; the
+     import-marker poll pattern at directory scale). OPEN: settings
+     application AFTER import — `createSessionSetup` ran at boot, so an
+     imported settings.txt needs an overlay re-run + live-apply (volumes,
+     render resolution). A page reload is NOT an option here: the next
+     boot starts from an empty in-memory mount anyway, so the apply has
+     to happen in-session.
   4. [ ] Disclaimer — main menu, centered above the title, web only, the
      chosen wording (DESIGN → Web storage model).
-  5. [ ] Staleness sweep — the DESIGN lines that assume IDBFS persists
-     across sessions ("Web save export"'s "IDBFS stays the smooth-resume
-     path", autosave-on-web prose) + web.zig's module doc.
+  5. [ ] Cleanup sweep — the `file_source.zig` platform-split directory
+     listings (the "Dir.iterate is broken on the IDBFS mount" workaround:
+     JS-path listings + per-file stats) may be deletable under the plain
+     MEMFS mount — browser-verified (compile ≠ run; harmless if kept) —
+     plus any remaining IDBFS-era prose.
 
 - **Load-save browser polish** (the browser itself is DONE — DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player

@@ -16953,3 +16953,64 @@ missing-art notes (Cross-cutting polish, Platform Layer's Missing-art
 audit, the View section's placeholder-id list) now point at the report
 instead; the NEXT-UP art-report item is checked off. AGENTS' machine-walked
 -truth pattern list gained `art_report.zig`.
+
+## Web storage model slice 1: the in-memory persistent mount (IDBFS deleted)
+
+The web build's browser-storage dependency is deleted wholesale. The WHY:
+IDBFS sits on IndexedDB, which browsers treat as best-effort —
+storage-pressure eviction deletes the least-recently-used origin's data,
+Safari deletes ALL script-writable storage for a site the user hasn't
+visited in 7 days, and quota failures surface only in the ASYNC syncfs
+callback (a write "succeeds" into the in-memory layer and the flush
+silently fails). None of it is fixable client-side, and the project pillar
+(fully playable offline, players' files player-owned, nothing
+server-side) means there is no server fallback either. The design
+conversation went: session-scoped IDBFS (clear on boot) → keep IDBFS but
+only touch it once per boot → the user's insight that after the one
+migration clear NOTHING ever reads the database again → the end state:
+**browser storage is never touched at all.**
+
+- `web.zig`: the persistent dir is a plain in-memory (MEMFS) mount at
+  `/ziglop`. One fire-and-forget `indexedDB.deleteDatabase('/ziglop')` at
+  boot deletes the OLD model's leftover (IDBFS names its database after
+  the mountpoint — verified in the emscripten libidbfs source we build
+  against); no gate, a harmless no-op where absent, and nothing can block
+  it (no ziglop tab ever opens a database again).
+- ALL syncfs dropped: the per-write flush in `FileSource.writeFile` (and
+  `flushPersistentDir` with it), the two inline flushes in the
+  upload-seam JS, and web.zig's beforeunload listener. The IDBFS-era
+  rationale for all of them ("persists across refresh") is void — a
+  refresh IS a session end now.
+- The TWO-PHASE BOOT GATE is deleted (the "Web IDBFS boot race" DESIGN
+  section went with it — this entry is its history): it existed solely
+  because the IDBFS load was async, so `main()` had to defer
+  `createSessionSetup` into a polled rAF callback phase
+  (`window.__ziglopSyncfsLoaded`). With synchronous MEMFS, `main()` runs
+  the full session setup inline (the native `run()` shape;
+  `frameCallback` is a plain one-frame-per-rAF driver) and the
+  BOOTING/booted phases, the flag poll, and the `emscripten_run_script_int`
+  extern are gone.
+- `build.zig`: `-lidbfs.js` dropped (MEMFS is core emscripten;
+  FORCE_FILESYSTEM stays — the JS download/upload seams use the FS API).
+- Design consequences, recorded in DESIGN → File System & IO → Web
+  storage model (rewritten): mid-session quota failures are structurally
+  impossible (no DB writes after boot); web crash bundles are session
+  artifacts (catch with Export Game or they're gone — native is the
+  reliable path); multi-tab is trivial (per-tab memory, nothing shared);
+  the Import/Export Game slices (the remaining work) carry the
+  cross-session story: `ziglop.zip` full-folder overlay upload / zip
+  download, with the settled untrusted-zip rules (Zip-Slip name
+  validation, abort on the first bad entry, streaming extraction, 512 MB
+  per-entry / 2 GB total / 65,536 entries, single-level, shadow trees
+  allowed via the raw dir handle).
+- Known follow-up (TODO slice 5): the `file_source.zig` platform-split
+  directory listings (the "`Dir.iterate` is broken on the IDBFS mount"
+  workaround) may be deletable under plain MEMFS — needs a
+  browser-verified run; harmless if kept.
+- Verified: native build + full suite PASS, web compile WEB OK, and the
+  node headless probe reaches the new boot path cleanly (the MEMFS mount
+  script + the deleteDatabase try/catch run, the in-memory `/ziglop`
+  dir opens; the probe dies at raylib's canvas lookup exactly as before,
+  which is past all of this). The in-`main()` session-setup portion
+  sits after GL init and needs the browser eyeball (emrun, main menu
+  loads) + a double-refresh to see the session-scoped behavior.

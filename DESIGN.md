@@ -1967,9 +1967,11 @@ Session-log bundle) — just named `crash_*` instead of `session_*`.
   and goes straight to the OS — the arena/integer-only model makes that
   rare; a SIGSEGV signal handler is a separate, more invasive step we don't
   take.
-- **Web is best-effort:** the IDBFS `syncfs` flush may not complete before
-  the tab closes on a panic, so a web crash file may be lost (in-memory FS
-  only for that session). Native is the reliable path. Accepted.
+- **Web is best-effort:** the persistent dir is in-memory only (the
+  session-scoped storage model — see File System & IO → Web storage
+  model), so a web crash bundle is a session artifact: catch it with
+  Export Game before refreshing, or it is gone. Native is the reliable
+  path. Accepted.
 
 ## File System & IO
 
@@ -2038,42 +2040,7 @@ The dir name (`ziglop`) rides the planned ziglop→taplop rename sweep — free
 pre-release (no real players with saves yet); the rename adds one site per
 platform default + the `$ZIGLOP_DATA` env var name.
 
-### Web IDBFS boot race (two-phase boot)
-
-IndexedDB is ASYNC-ONLY — there is no synchronous way to populate the
-in-memory IDBFS layer from it. `FS.syncfs(true, cb)` starts the load and
-fires `cb` on the event loop when the in-memory layer is ready. Any read
-before `cb` sees an empty layer (every file `FileNotFound`).
-
-`createSessionSetup` does startup reads against the persistent dir
-(`overlayUserSettings` reads `settings.txt`; the autosave detector stats
-`saves/autosave.txt`). If `web.zig:main()` ran it immediately after
-`mountPersistentDir()` (the old shape), those reads raced the syncfs load
-and missed persisted state EVERY launch — the settings overlay never
-applied on web, and Continue didn't appear until a later point-fix poll.
-
-Fix: TWO-PHASE boot. `main()` does only the window + IDBFS mount +
-FileSource/Backend construction, then registers `frameCallback` and
-returns. The callback polls `window.__ziglopSyncfsLoaded` (set in the
-`syncfs(true, …)` callback) each rAF; until set, it returns without
-rendering (a few brief blank frames — syncfs is typically <50ms). On the
-first rAF after the flag is set, it runs `createSessionSetup` +
-`initAudio` + `crash_dump.install` + `fixupPointers` ONCE (gated on
-`!booted`), then drives `game.frame` every call after. `main()`'s locals
-(`file_source`, `io`, `allocator`) live for the tab's lifetime because
-`emscripten_set_main_loop_arg`'s `simulate_infinite_loop` halts main's
-control flow, so the `WebSession`'s pointers into them stay valid.
-
-This fixed the root cause for both reads at once, so the per-frame lazy
-autosave recheck (formerly in `handleIdleInput` on the main menu) became
-dead code and was DELETED — Continue now appears on the first rendered
-frame instead of a few frames late. Under the session-scoped storage model
-the load callback additionally CLEARS the mount (recursive unlink + a
-`syncfs(false)` flush) before opening the boot gate — every session starts
-from an empty persistent dir (see Web storage model below).
-
-### Web storage model (session-scoped IDBFS + Import/Export Game)
-
+### Web storage model (session-scoped in-memory storage + Import/Export Game)
 The PILLAR (the project's Goal): the game is fully playable offline, and
 players' files are player-owned — nothing is ever stored server-side. Web
 services, when they land (leaderboards, the hosted custom-content browser),
@@ -2089,29 +2056,52 @@ into the in-memory layer and the flush silently fails — nothing at
 `writeFile` time ever sees the error); users clear site data. None of this
 is fixable client-side: the navigator.storage.persist() JS call only reduces the
 eviction risk (granted heuristically, no prompt), and nothing defeats the
-Safari cap or manual clearing.
+Safari cap or manual clearing. The conclusion: the web build doesn't
+MITIGATE browser storage — it never touches it at all.
 
 So the web build does NOT persist between sessions BY DESIGN:
 
-- **IDBFS is SESSION SCRATCH.** The boot's `syncfs(true)` load callback
-  clears the mount (see the boot-race section above) — every session starts
-  from an empty persistent dir, and a refresh (F5) IS a session end. Within
-  the session everything works unchanged from native: autosave, debounced
-  settings writes, timestamped backups, mission saves, crash dumps — the
-  whole persistent-dir machinery.
+- **The persistent dir is an IN-MEMORY MOUNT.** web.zig mounts a plain
+MEMFS directory at the virtual persistent path — the game touches NO
+browser storage (no IDBFS, no IndexedDB, no syncfs; `-lidbfs.js` dropped
+from the build). Nothing persists between sessions — a refresh (F5) IS a
+session end. Within the session everything works unchanged from native:
+autosave, debounced settings writes, timestamped backups, mission saves,
+crash dumps — the whole persistent-dir machinery. One fire-and-forget
+`indexedDB.deleteDatabase('/ziglop')` at boot deletes the OLD model's
+leftover IndexedDB (IDBFS named its database after the mountpoint): no
+gate (the game never reads any database, so completion is irrelevant), a
+harmless no-op where it doesn't exist, and nothing can block it (no ziglop
+tab ever opens a database again). Because the mount is synchronous MEMFS,
+the old two-phase boot gate is deleted — main() runs the full session
+setup inline (history in DONE.md).
 - **Import Game** (main menu, web only): a file picker uploads a full
-game-folder zip, unzipped into the persistent dir structure (the mission
-import-marker pattern at directory scale). The session continues with the
-imported state.
+game-folder zip (`ziglop.zip`), OVERLAID onto the persistent dir: same-path
+files are overwritten by the zip (restore wins), files the zip doesn't
+mention are kept (this session's new work survives — e.g. a custom mission
+made this session). UNTRUSTED-ZIP RULES: entry names must be relative,
+`..`-free (validated under `/` AND `\` separators), NUL-free, non-absolute
+(the Zip-Slip class) — anything else ABORTS the import with the
+recoverable popup naming the entry; extraction STREAMS entry-by-entry
+(memory = one entry), capped at 512 MB per entry / 2 GB total / 65,536
+entries (a generous tripwire — legitimate folders are a few MB; under the
+in-memory model the caps protect a busy tab, not a quota); single-level
+extraction (no zip-in-zip recursion); shadow trees (`data/`/`assets/` names
+under the persistent dir) are ALLOWED — a restore of the player's own
+folder — written through the RAW persistent-dir handle (not
+`FileSource.writeFile`, whose shipped-path write guard panics by design);
+no post-import flush (nothing to flush into). The open settings-apply
+question lives with the TODO slice.
 - **Export Game** (options menu, EVERY variant — the options menu is the
 only menu surface reachable mid-level, so in-session backups are always
 possible): a game in progress pushes the autosave write FIRST (the
 `end_hub`/`end_level` `write_save` push — mid-level progress is IN the
 export, not just the files already on disk), then zips the FULL persistent
 dir (the "game folder": settings, saves including backups, custom missions,
-logs) and triggers a browser download (`triggerBrowserDownload`). The
-download is the only guaranteed-safe home for web data — the bytes leave
-the browser entirely.
+logs) as `ziglop.zip` and triggers a browser download
+(`triggerBrowserDownload`). The download is the only guaranteed-safe home
+for web data — the bytes leave the browser entirely. (The file name
+migrates with the game rename.)
 - The ONE-FILE import/export flows (save files, mission STOREs) are
 UNCHANGED — different verbs (sharing one save / one custom mission) than
 the whole-game round-trip; both keep their existing homes.
@@ -2119,13 +2109,10 @@ the whole-game round-trip; both keep their existing homes.
 chosen wording: `WEB DISCLAIMER:` / `Your saved data does not persist
 between sessions on web - use the Import Game and Export Game functionality
 to load and save data for cross-session usage`.
-- **Multi-tab is ACCEPTED**: each tab loads its state into its own in-memory
-IDBFS layer at boot and only writes back afterwards — tabs trample the
-shared IndexedDB, but each tab's session is self-coherent (reads go to the
-tab's own memory layer). The edge case — a tab booting while another tab's
-clear lands — silently starts that tab fresh; import again.
+- **Multi-tab is TRIVIAL**: the persistent dir is per-tab memory — tabs
+share nothing at all (no database, no boot-clear races).
 - **Migration: none.** At the time of the change there were zero web users;
-the first boot's clear takes whatever the old model left, with no
+the deleteDatabase one-liner takes whatever the old model left, with no
 legacy-handling machinery.
 
 ### Autosave
@@ -2154,6 +2141,9 @@ suffix counter. The backup is a pure file copy (read autosave bytes → write
 at the timestamped path); no PlayerData decode/encode, so it can't corrupt.
 The reset-to-defaults settings backup follows this same policy
 (`settings-backup-…` in the persistent root — see Input → Keybinds tab).
+On web the autosave is SESSION-SCOPED (the in-memory persistent mount —
+see Web storage model): it resumes within the session; Export Game is the
+cross-session path.
 
 ### Raylib seam
 
@@ -2177,11 +2167,12 @@ player gets a save on disk without digging through IndexedDB. The seam is
 in-memory FS, anchor-clicks a Blob; comptime-dead on native so the extern
 never links outside web builds). Design points:
 
-- The AUTOSAVE never downloads — IDBFS stays the smooth-resume path; a
-  download prompt per autosave would be noise. Same for `backup_autosave`
-  (preservation, not a player action).
-- The timestamped save still lands in IDBFS too — the download is additive
-  redundancy, not a replacement.
+- The AUTOSAVE never downloads — it is the IN-SESSION resume path (the
+in-memory persistent dir is session-scoped — see Web storage model); a
+download prompt per autosave would be noise. Same for `backup_autosave`
+(preservation, not a player action).
+- The timestamped save still lands in the in-memory persistent dir too — the
+download is additive redundancy, not a replacement.
 - Replay-gated upstream (`write_save` skips side effects while replaying), so
   undo/redo scrubbing can't re-fire downloads.
 - The mount path constant is shared (`file_source.persistent_mount_path`)

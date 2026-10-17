@@ -207,7 +207,7 @@ session + the ButtonPayload migration):
   emrun` and confirm the main menu loads. Runtime web bugs can be debugged
   WITHOUT a browser: `node zig-out/web/ziglop.js` runs the emcc output
   headlessly — `std.debug.print` works there, so early-boot code paths
-  (anything before GL/IDBFS init) can be probed like a native CLI. That
+  (anything before GL init) can be probed like a native CLI. That
   technique diagnosed the 136-commit black screen entirely outside a
   browser.
 - macOS build: `zig build -Dtarget=aarch64-macos` cross-compiles from the
@@ -519,7 +519,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   insets, health bars) + camera math (computeCamera, tileToScreen) +
   sprite/flag frame/pivot constants.
 - `src/native.zig` — native exe entry (raylib); `src/web.zig` — web (emscripten)
-  exe entry (IDBFS persistence + emscripten main-loop driver);
+  exe entry (the in-memory persistent mount + emscripten main-loop driver);
   `src/raylib/backend.zig` — the raylib platform backend (window/clock/
   render target/render driver, the duck-typed `RaylibBackend` interface) +
   `src/raylib/input_poll.zig` (the key/mouse mapping tables + the per-frame
@@ -688,7 +688,8 @@ stay here in AGENTS; this map is the seam between the two.
 - **File system & IO** — DESIGN → File System & IO: single-file exe,
   FileSource (VFS/persistent/embedded), embedding, persistent path, raylib
   seam, settings ownership, reconstruction cache, web session-scoped
-  storage (IDBFS cleared per boot + Import/Export Game).
+  storage (an in-memory persistent mount, no browser storage, +
+  Import/Export Game).
 - **Custom missions & online services** — DESIGN → Custom Missions & Online
   Services: dreams, browser, content identity/hash, balance bounds, turn
   counters + author medals, auth/server seam.

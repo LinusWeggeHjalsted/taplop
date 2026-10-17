@@ -104,10 +104,10 @@ pub fn handleMetaEvent(
                 return;
             };
             // On web, the timestamped save (not the autosave — that's
-            // the smooth-resume path in IDBFS) is also offered to the
-            // player as a browser download, so a save file on disk
-            // doesn't require digging through browser storage. No-op
-            // on native. See DESIGN → File System & IO.
+            // the in-session resume path in the in-memory persistent dir)
+            // is also offered to the player as a browser download, so a
+            // save file on disk doesn't require digging through browser
+            // storage. No-op on native. See DESIGN → File System & IO.
             if (!std.mem.eql(u8, write.save_path, writers.autosave_path)) {
                 file_source_mod.triggerBrowserDownload(allocator, write.save_path);
             }

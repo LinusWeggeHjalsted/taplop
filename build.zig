@@ -307,11 +307,13 @@ pub fn build(b: *std.Build) void {
         emcc_settings.put("SAFE_HEAP", "0") catch @panic("emcc settings OOM");
         emcc_settings.put("USE_OFFSET_CONVERTER", "0") catch @panic("emcc settings OOM");
     }
-    // The game uses the emscripten filesystem: IDBFS for persistence (mounted
-    // at /ziglop in web.zig), and embedded assets fall back through
+    // The game uses the emscripten filesystem: an in-memory (MEMFS) mount at
+    // /ziglop for the persistent dir (web.zig — the session-scoped storage
+    // model; NO IDBFS, browser storage is never touched — see DESIGN → File
+    // System & IO → Web storage model), and embedded assets fall back through
     // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the
-    // FS API; -lidbfs.js includes the IDBFS backend (no longer default in
-    // recent emscripten). ALLOW_MEMORY_GROWTH lets the wasm heap expand.
+    // FS API (the JS download/upload seams use it).
+    // ALLOW_MEMORY_GROWTH lets the wasm heap expand.
     // USE_GLFW=3 links emscripten's GLFW3 shim (raylib's PLATFORM_WEB uses it).
     emcc_settings.put("FORCE_FILESYSTEM", "1") catch @panic("emcc settings OOM");
     emcc_settings.put("ALLOW_MEMORY_GROWTH", "1") catch @panic("emcc settings OOM");
@@ -330,10 +332,6 @@ pub fn build(b: *std.Build) void {
     // default 64KB stack overflows. 8MB is generous and matches typical native
     // thread stacks; ALLOW_MEMORY_GROWTH keeps the heap flexible regardless.
     emcc_settings.put("STACK_SIZE", "8mb") catch @panic("emcc settings OOM");
-
-    // -lidbfs.js: include the IDBFS backend (needed by web.zig's mount).
-    // Not a -s setting; passed as a linker flag via emcc_flags.
-    emcc_flags.put("-lidbfs.js", {}) catch @panic("emcc flags OOM");
 
     // Custom HTML shell (no emscripten/raylib branding). The canvas id
     // matches the one Module.canvas points at in the shell's <script>.

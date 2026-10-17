@@ -214,8 +214,10 @@ pub const FileSource = struct {
     /// that's the modding seam, not a game-driven write). Creates parent
     /// directories as needed so callers can write any subpath (e.g.
     /// `logs/session_log_*.txt`) without pre-creating the tree. On web
-    /// (emscripten), flushes the IDBFS layer to IndexedDB after the write so
-    /// the data survives a page refresh / browser close.
+    /// (emscripten), the write lands in the in-memory (MEMFS) persistent
+    /// mount only — the session-scoped storage model touches no browser
+    /// storage at all (no syncfs, no IDBFS; see DESIGN → File System & IO →
+    /// Web storage model).
     pub fn writeFile(
         self: *const FileSource,
         path: []const u8,
@@ -229,14 +231,6 @@ pub const FileSource = struct {
             .sub_path = path,
             .data = bytes,
         });
-        // On web, the emscripten FS writes to an in-memory layer; syncfs
-        // persists it to IndexedDB. The comptime gate ensures this branch is
-        // dead code on native (the extern is never referenced, so it won't
-        // need to link). The syncfs callback just logs errors — the write is
-        // already safe in memory, and the flush is best-effort persistence.
-        if (@import("builtin").os.tag == .emscripten) {
-            flushPersistentDir();
-        }
     }
 
     /// Create intermediate directories in the persistent dir for a file's
@@ -882,26 +876,17 @@ fn saveFileOrder(_: void, a: SaveFileEntry, b: SaveFileEntry) bool {
     return std.mem.lessThan(u8, a.name, b.name);
 }
 
-// Web-only: flush the IDBFS in-memory layer to IndexedDB. The extern is
-// declared here (not gated) because Zig only emits a symbol reference when the
-// call site is reachable — and flushPersistentDir is only called from the
-// comptime-gated emscripten branch in writeFile, so on native the linker never
-// needs to resolve emscripten_run_script. This keeps file_source.zig in the
-// headless test build without a link-time dependency on emscripten.
+// Web-only: run inline JS at the emscripten seams (browser download /
+// upload). The extern is declared here (not gated) because Zig only emits
+// a symbol reference when the call site is reachable — and every call site
+// lives in comptime-gated emscripten branches, so native (and the headless
+// test build) never needs to resolve it.
 extern fn emscripten_run_script(script: [*:0]const u8) void;
 
-/// Flush the IDBFS layer to IndexedDB (web only). Called after each
-/// FileSource.writeFile on emscripten. Best-effort: the syncfs callback just
-/// logs errors — the write is already safe in memory, and this persists it to
-/// IndexedDB so it survives a refresh/browser close. The JS runs synchronously
-/// up to the async syncfs call, which the browser completes in the background.
-fn flushPersistentDir() void {
-    emscripten_run_script("FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });");
-}
-
-/// The virtual path where web mounts the IDBFS-backed persistent dir
-/// (mirrors $HOME/.ziglop on native). Single source of truth for the mount
-/// (web.zig) and for absolute FS paths in JS seams like
+/// The virtual path where web mounts the in-memory persistent dir
+/// (mirrors $HOME/.ziglop on native — an in-memory MEMFS mount; see DESIGN
+/// → File System & IO → Web storage model). Single source of truth for
+/// the mount (web.zig) and for absolute FS paths in JS seams like
 /// `triggerBrowserDownload`.
 pub const persistent_mount_path = "/ziglop";
 
@@ -974,7 +959,6 @@ pub fn triggerBrowserUpload() void {
             "    FS.mkdirTree('" ++ persistent_mount_path ++ "/saves');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/saves/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ import_marker_path ++ "', 'saves/' + name);" ++
-            "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
             "  };" ++
             "  reader.readAsArrayBuffer(file);" ++
             "};" ++
@@ -1011,7 +995,6 @@ pub fn triggerBrowserMissionUpload() void {
             "    FS.mkdirTree('" ++ persistent_mount_path ++ "/imported_missions');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_missions/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ mission_import_marker_path ++ "', 'imported_missions/' + name);" ++
-            "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
             "  };" ++
             "  reader.readAsArrayBuffer(file);" ++
             "};" ++
