@@ -17014,3 +17014,9 @@ migration clear NOTHING ever reads the database again → the end state:
   which is past all of this). The in-`main()` session-setup portion
   sits after GL init and needs the browser eyeball (emrun, main menu
   loads) + a double-refresh to see the session-scoped behavior.
+
+Follow-up (same session): the deleteDatabase line was removed at the
+user's call — it had already completed its one migration run (their
+browser's old-model leftover was wiped on first boot of the interim
+build). Nothing touches IndexedDB at all now, not even to delete it;
+`mountPersistentDir` is just the MEMFS mkdir+mount.

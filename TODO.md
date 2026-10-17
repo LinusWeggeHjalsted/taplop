@@ -739,11 +739,10 @@ Open:
   design; Import Game = full game-folder ziglop.zip overlay upload, Export
   Game = full game-folder zip download). Slices:
   1. [x] The in-memory mount — IDBFS deleted wholesale: plain MEMFS at
-     /ziglop, a fire-and-forget deleteDatabase of the old model's
-     leftover IndexedDB, ALL syncfs dropped (per-write flush, upload
-     seams, unload), the two-phase boot gate deleted (main runs the full
-     session setup inline), -lidbfs.js dropped from the build. DONE —
-     DONE.md; design: DESIGN → Web storage model.
+     /ziglop, ALL syncfs dropped (per-write flush, upload seams, unload),
+     the two-phase boot gate deleted (main runs the full session setup
+     inline), -lidbfs.js dropped from the build. DONE — DONE.md; design:
+     DESIGN → Web storage model.
   2. [ ] Export Game — options menu (EVERY variant — the only menu surface
      reachable mid-level), web only: push the autosave write FIRST when a
      game is in progress (the end-of-level `write_save` push, so

@@ -2070,13 +2070,9 @@ browser storage (no IDBFS, no IndexedDB, no syncfs; `-lidbfs.js` dropped
 from the build). Nothing persists between sessions — a refresh (F5) IS a
 session end. Within the session everything works unchanged from native:
 autosave, debounced settings writes, timestamped backups, mission saves,
-crash dumps — the whole persistent-dir machinery. One fire-and-forget
-`indexedDB.deleteDatabase('/ziglop')` at boot deletes the OLD model's
-leftover IndexedDB (IDBFS named its database after the mountpoint): no
-gate (the game never reads any database, so completion is irrelevant), a
-harmless no-op where it doesn't exist, and nothing can block it (no ziglop
-tab ever opens a database again). Because the mount is synchronous MEMFS,
-the old two-phase boot gate is deleted — main() runs the full session
+crash dumps — the whole persistent-dir machinery. Nothing touches ANY
+database at all — not even to delete one. Because the mount is synchronous
+MEMFS, the old two-phase boot gate is deleted — main() runs the full session
 setup inline (history in DONE.md).
 - **Import Game** (main menu, web only): a file picker uploads a full
 game-folder zip (`ziglop.zip`), OVERLAID onto the persistent dir: same-path
@@ -2114,9 +2110,11 @@ between sessions on web - use the Import Game and Export Game functionality
 to load and save data for cross-session usage`.
 - **Multi-tab is TRIVIAL**: the persistent dir is per-tab memory — tabs
 share nothing at all (no database, no boot-clear races).
-- **Migration: none.** At the time of the change there were zero web users;
-the deleteDatabase one-liner takes whatever the old model left, with no
-legacy-handling machinery.
+- **Migration: none.** At the time of the change there were zero web users
+and the dev's own leftover was disposable: a brief interim build carried a
+fire-and-forget indexedDB.deleteDatabase('/ziglop') call that wiped it on
+first boot, then the line was removed — nothing touches a database at all
+now, not even to delete one (history in DONE.md).
 
 ### Autosave
 

@@ -85,23 +85,17 @@ fn frameCallback(arg: *anyopaque) callconv(.c) void {
     game.frame(&session.backend, &session.setup.frame_state);
 }
 
-/// Mount the persistent virtual path as a plain in-memory (MEMFS) directory
-/// — the session-scoped storage model (see DESIGN → File System & IO → Web
-/// storage model): the persistent dir lives ONLY in the tab's memory for the
-/// session; browser storage is NEVER touched by the game (no IDBFS, no
-/// syncfs — nothing persists between sessions by design, a refresh is a
-/// session end). Cross-session data lives in Import Game / Export Game
-/// (ziglop.zip round-trips). The fire-and-forget
-/// `indexedDB.deleteDatabase('/ziglop')` deletes the OLD model's leftover
-/// IndexedDB (IDBFS named its database after the mountpoint): no gate — the
-/// game never reads any database, so completion is irrelevant; a harmless
-/// no-op where it doesn't exist; and with no ziglop tab ever opening a
-/// database again, nothing can block the delete.
+/// Mount the persistent virtual path as a plain in-memory (MEMFS)
+/// directory — the session-scoped storage model (see DESIGN → File System
+/// & IO → Web storage model): the persistent dir lives ONLY in the tab's
+/// memory for the session; browser storage is NEVER touched by the game
+/// (no IDBFS, no syncfs — nothing persists between sessions by design, a
+/// refresh is a session end). Cross-session data lives in Import Game /
+/// Export Game (ziglop.zip round-trips).
 fn mountPersistentDir() void {
     const script =
         \\FS.mkdir('/ziglop');
         \\FS.mount(MEMFS, {}, '/ziglop');
-        \\try { indexedDB.deleteDatabase('/ziglop'); } catch (e) {}
     ;
     emscripten_run_script(script);
 }
