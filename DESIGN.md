@@ -2067,7 +2067,63 @@ control flow, so the `WebSession`'s pointers into them stay valid.
 This fixed the root cause for both reads at once, so the per-frame lazy
 autosave recheck (formerly in `handleIdleInput` on the main menu) became
 dead code and was DELETED — Continue now appears on the first rendered
-frame instead of a few frames late.
+frame instead of a few frames late. Under the session-scoped storage model
+the load callback additionally CLEARS the mount (recursive unlink + a
+`syncfs(false)` flush) before opening the boot gate — every session starts
+from an empty persistent dir (see Web storage model below).
+
+### Web storage model (session-scoped IDBFS + Import/Export Game)
+
+The PILLAR (the project's Goal): the game is fully playable offline, and
+players' files are player-owned — nothing is ever stored server-side. Web
+services, when they land (leaderboards, the hosted custom-content browser),
+connect only with explicit authentication and only for those web-dependent
+features; the storage model below does not change when they do.
+
+Browser storage is NOT a dependable home (why this model exists): IDBFS sits
+on IndexedDB, which browsers treat as best-effort — storage-pressure eviction
+deletes the least-recently-used origin's data; Safari deletes ALL
+script-writable storage for a site the user hasn't visited in 7 days; quota
+failures surface only in the ASYNC syncfs callback (the write "succeeds"
+into the in-memory layer and the flush silently fails — nothing at
+`writeFile` time ever sees the error); users clear site data. None of this
+is fixable client-side: the navigator.storage.persist() JS call only reduces the
+eviction risk (granted heuristically, no prompt), and nothing defeats the
+Safari cap or manual clearing.
+
+So the web build does NOT persist between sessions BY DESIGN:
+
+- **IDBFS is SESSION SCRATCH.** The boot's `syncfs(true)` load callback
+  clears the mount (see the boot-race section above) — every session starts
+  from an empty persistent dir, and a refresh (F5) IS a session end. Within
+  the session everything works unchanged from native: autosave, debounced
+  settings writes, timestamped backups, mission saves, crash dumps — the
+  whole persistent-dir machinery.
+- **Import Game** (main menu, web only): a file picker uploads a full
+game-folder zip, unzipped into the persistent dir structure (the mission
+import-marker pattern at directory scale). The session continues with the
+imported state.
+- **Export Game** (options menu, EVERY variant — the options menu is the
+only menu surface reachable mid-level, so in-session backups are always
+possible): zips the FULL persistent dir (the "game folder": settings,
+saves including backups, custom missions, logs) and triggers a browser
+download (`triggerBrowserDownload`). The download is the only guaranteed-
+safe home for web data — the bytes leave the browser entirely.
+- The ONE-FILE import/export flows (save files, mission STOREs) are
+UNCHANGED — different verbs (sharing one save / one custom mission) than
+the whole-game round-trip; both keep their existing homes.
+- **The disclaimer** (main menu, centered above the title, web only) — the
+chosen wording: `WEB DISCLAIMER:` / `Your saved data does not persist
+between sessions on web - use the Import Game and Export Game functionality
+to load and save data for cross-session usage`.
+- **Multi-tab is ACCEPTED**: each tab loads its state into its own in-memory
+IDBFS layer at boot and only writes back afterwards — tabs trample the
+shared IndexedDB, but each tab's session is self-coherent (reads go to the
+tab's own memory layer). The edge case — a tab booting while another tab's
+clear lands — silently starts that tab fresh; import again.
+- **Migration: none.** At the time of the change there were zero web users;
+the first boot's clear takes whatever the old model left, with no
+legacy-handling machinery.
 
 ### Autosave
 

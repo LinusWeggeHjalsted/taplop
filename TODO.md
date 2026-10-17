@@ -25,6 +25,9 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
+- **Web storage model refactor** — session-scoped IDBFS + Import/Export
+  Game (design settled: DESIGN → File System & IO → Web storage model;
+  slices + open questions in Platform Layer → web storage model below).
 - [x] `toggle_options_menu` rename — DONE: the action is `escape` now (see
       DONE.md; existing installs self-heal via the warn+drop at load).
 - [x] **Art report (machine-derived asset inventory)** — DONE:
@@ -729,6 +732,30 @@ Open:
   → Asset memory levers matter more for web than native); emrun polish.
   (The WebGL1/WebGL2 build option is DONE — the web build is WebGL2-only;
   see DESIGN → Platform Seam → WebGL 2.)
+- **Web storage model refactor** — design SETTLED: DESIGN → File System &
+  IO → Web storage model (session-scoped IDBFS — the boot clears, nothing
+  persists between sessions by design; Import Game = full game-folder zip
+  upload, Export Game = full game-folder zip download; zero web users at
+  land time, so no migration machinery). Slices:
+  1. [ ] Boot clear — the `syncfs(true)` load callback unlinks the mount
+     contents + `syncfs(false)` before the boot gate opens (web.zig; the
+     two-phase boot machinery is otherwise unchanged).
+  2. [ ] Export Game — options menu (EVERY variant — the only menu surface
+     reachable mid-level), web only: zip the FULL persistent dir (the
+     mission STORE zip writer is the machinery pattern) →
+     `triggerBrowserDownload`.
+  3. [ ] Import Game — main menu, web only: file picker → unzip into the
+     persistent dir (the import-marker poll pattern at directory scale).
+     OPEN: settings application AFTER import — `createSessionSetup` ran
+     at boot, so an imported settings.txt needs an overlay re-run +
+     live-apply (volumes, render resolution). A page reload is NOT an
+     option here: the next boot's clear would wipe the just-imported
+     files, so the apply has to happen in-session.
+  4. [ ] Disclaimer — main menu, centered above the title, web only, the
+     chosen wording (DESIGN → Web storage model).
+  5. [ ] Staleness sweep — the DESIGN lines that assume IDBFS persists
+     across sessions ("Web save export"'s "IDBFS stays the smooth-resume
+     path", autosave-on-web prose) + web.zig's module doc.
 
 - **Load-save browser polish** (the browser itself is DONE — DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player

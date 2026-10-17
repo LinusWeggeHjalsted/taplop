@@ -687,7 +687,8 @@ stay here in AGENTS; this map is the seam between the two.
   recording, crash dump.
 - **File system & IO** — DESIGN → File System & IO: single-file exe,
   FileSource (VFS/persistent/embedded), embedding, persistent path, raylib
-  seam, settings ownership, reconstruction cache.
+  seam, settings ownership, reconstruction cache, web session-scoped
+  storage (IDBFS cleared per boot + Import/Export Game).
 - **Custom missions & online services** — DESIGN → Custom Missions & Online
   Services: dreams, browser, content identity/hash, balance bounds, turn
   counters + author medals, auth/server seam.
