@@ -771,8 +771,10 @@ Open:
         `import_available`), `.import_game` action + the three exhaustive
         map classifications + the idle menu-action arm
         (`triggerBrowserGameUpload`'s caller — no DEAD pubs left).
-  4. [ ] Disclaimer — main menu, centered above the title, web only, the
-     chosen wording (DESIGN → Web storage model).
+  4. [x] Disclaimer — DONE: the chosen wording (DESIGN → Web storage
+     model), two centered lines above the title, riding the same
+     `persistent_dir_path` web signal (see DONE.md, "web storage model
+     slice 4").
   5. [ ] Cleanup sweep - the `file_source.zig` platform-split directory
      listings (the "Dir.iterate is broken on the IDBFS mount" workaround:
      JS-path listings + per-file stats) may be deletable under the plain

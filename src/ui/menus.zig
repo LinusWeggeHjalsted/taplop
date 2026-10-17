@@ -282,20 +282,30 @@ pub fn buildOptionsMenu(
 /// OPTIONS MENU's main-menu variant (reached via the top-bar options
 /// button / Escape — one convention from every screen); this stack holds
 /// only the session-flow verbs + mode entries.
+/// The web storage disclaimer's fonts + gap (main menu, web only — see
+/// DESIGN → File System & IO → Web storage model): a header line + a body
+/// line, centered above the title. Band heights are the font sizes (the
+/// title's convention — the labels are single-line).
+const main_menu_disclaimer_header_font_size: i32 = 60;
+const main_menu_disclaimer_body_font_size: i32 = 44;
+const main_menu_disclaimer_gap: i32 = 24;
+
 pub fn buildMainMenu(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
     continue_available: bool,
-    /// Import Game available — the web signal (threaded from
-    /// `SessionState.persistent_dir_path`: null on web, where the import is
-    /// a browser upload; the Export Game discipline). Native passes false —
-    /// the real persistent dir IS the game folder (drop files into it by
-    /// hand instead).
-    import_available: bool,
+    /// The session's persistent dir path (the buildOptionsMenu convention;
+    /// threaded from `SessionState.persistent_dir_path`). Null on web — the
+    /// web signal both web-only surfaces derive from: the Import Game
+    /// button + the web storage disclaimer (a browser upload / a download is
+    /// the cross-session path when there is no real dir). Native has a path —
+    /// no button, no disclaimer (the real dir IS the game folder).
+    persistent_dir_path: ?[]const u8,
     button_color: Color,
 ) !void {
+    const on_web = persistent_dir_path == null;
     const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
     var buttons: [5]MenuButton = undefined;
     var button_count: usize = 0;
@@ -307,14 +317,13 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
-    // Import Game (web only — the import_available signal): uploads a
-    // ziglop.zip OVER the game folder — the web build's cross-session
-    // RESTORE path (browser storage never persists sessions; a downloaded
-    // archive is the only durable home, Export Game writes it). The
-    // overlay lands via the every-frame marker poll + the session re-boots
-    // at the frame boundary — see game_zip.zig + DESIGN → File System &
-    // IO → Web storage model.
-    if (import_available) {
+    // Import Game (web only — the on_web signal): uploads a ziglop.zip OVER
+    // the game folder — the web build's cross-session RESTORE path (browser
+    // storage never persists sessions; a downloaded archive is the only
+    // durable home, Export Game writes it). The overlay lands via the
+    // every-frame marker poll + the session re-boots at the frame boundary
+    // — see game_zip.zig + DESIGN → File System & IO → Web storage model.
+    if (on_web) {
         buttons[button_count] = .{
             .label = "Import Game",
             .action = .import_game,
@@ -331,26 +340,66 @@ pub fn buildMainMenu(
     button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
-    // The title + button stack center together as one block: title band on
-    // top of the stack, both centered by one `placeCenter` over the combined
-    // height. Gap between title and first button = `main_menu_title_gap`.
+    // The web storage disclaimer (web only, the chosen wording — DESIGN →
+    // File System & IO → Web storage model): two centered lines above the
+    // title, part of the same centered block (the disclaimer band sits on
+    // top, then the title band, then the buttons).
+    const disclaimer_band_height: i32 = if (on_web)
+        main_menu_disclaimer_header_font_size + main_menu_disclaimer_gap +
+            main_menu_disclaimer_body_font_size + main_menu_title_gap
+    else
+        0;
+    // The title + disclaimer + button stack center together as one block:
+    // title band on top of the stack, both centered by one `placeCenter` over
+    // the combined height. Gap between title and first button = `main_menu_title_gap`.
     const title = "taplop";
     const title_width = font_metrics.measureSpanWidth(text(title), main_menu_title_font_size);
-    const block_height = main_menu_title_gap + main_menu_title_font_size + total_height;
+    const block_height = disclaimer_band_height + main_menu_title_gap + main_menu_title_font_size + total_height;
     const origin = screen
         .placeCenter(menu_button_width, block_height)
         .position();
+
+    if (on_web) {
+        const disclaimer_header = "WEB DISCLAIMER:";
+        const disclaimer_header_width = font_metrics.measureSpanWidth(
+            text(disclaimer_header),
+            main_menu_disclaimer_header_font_size,
+        );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = disclaimer_header,
+            .screen_position = .{
+                .x = origin.x + @divTrunc(menu_button_width - disclaimer_header_width, 2),
+                .y = origin.y,
+            },
+            .font_size = main_menu_disclaimer_header_font_size,
+            .blocks_input = false,
+        } });
+        const disclaimer_body = "Your saved data does not persist between sessions on web - use the Import Game and Export Game functionality to load and save data for cross-session usage";
+        const disclaimer_body_width = font_metrics.measureSpanWidth(
+            text(disclaimer_body),
+            main_menu_disclaimer_body_font_size,
+        );
+        try elements.append(allocator, .{ .text_label = .{
+            .text = disclaimer_body,
+            .screen_position = .{
+                .x = origin.x + @divTrunc(menu_button_width - disclaimer_body_width, 2),
+                .y = origin.y + main_menu_disclaimer_header_font_size + main_menu_disclaimer_gap,
+            },
+            .font_size = main_menu_disclaimer_body_font_size,
+            .blocks_input = false,
+        } });
+    }
 
     try elements.append(allocator, .{ .text_label = .{
         .text = title,
         .screen_position = .{
             .x = origin.x + @divTrunc(menu_button_width - title_width, 2),
-            .y = origin.y,
+            .y = origin.y + disclaimer_band_height,
         },
         .font_size = main_menu_title_font_size,
         .blocks_input = false,
     } });
-    const buttons_origin_y = origin.y + main_menu_title_gap + main_menu_title_font_size;
+    const buttons_origin_y = origin.y + disclaimer_band_height + main_menu_title_gap + main_menu_title_font_size;
 
     for (buttons[0..button_count], 0..) |menu_button, index| {
         const cell: Rectangle = .{
@@ -2707,7 +2756,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     // Continue present only when a game exists to resume.
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, true, null, button_color);
         var found_continue = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {
@@ -2719,7 +2768,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     }
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, false, false, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, false, null, button_color);
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .continue_game),
             else => {},
@@ -2730,7 +2779,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     // Credits moved to the options menu (the top-bar options button is
     // the entry point from every screen).
     var elements: UiElementList = .empty;
-    try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
+    try buildMainMenu(&elements, allocator, metrics, screen, true, null, button_color);
     for ([_]types.Action{ .new_game, .toggle_load_save_menu, .toggle_editor_browser }) |expected| {
         var found = false;
         for (elements.items) |element| switch (element) {
@@ -2749,7 +2798,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     }
 }
 
-test "buildMainMenu: Import Game web only (the import_available signal)" {
+test "buildMainMenu: Import Game + the web storage disclaimer are web only (the null persistent dir path)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -2758,29 +2807,42 @@ test "buildMainMenu: Import Game web only (the import_available signal)" {
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
-    // Web (the null persistent-dir-path signal, threaded as
-    // import_available): the button is present, between Load Save and
-    // Editor, with a tooltip.
+    // Web (the null persistent-dir-path signal): the Import Game button is
+    // present (with a tooltip) + the storage disclaimer is present above
+    // the title (both lines of the chosen wording — DESIGN → Web storage
+    // model).
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, true, true, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, true, null, button_color);
         var import_button: ?Button = null;
+        var found_disclaimer_header = false;
+        var found_disclaimer_body = false;
         for (elements.items) |element| switch (element) {
             .button => |b| {
                 if (b.action == .import_game) import_button = b;
+            },
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "WEB DISCLAIMER:")) found_disclaimer_header = true;
+                if (std.mem.indexOf(u8, label.text, "does not persist between sessions") != null)
+                    found_disclaimer_body = true;
             },
             else => {},
         };
         const found = import_button orelse @panic("no Import Game button on web");
         try std.testing.expect(found.tooltip != null);
+        try std.testing.expect(found_disclaimer_header);
+        try std.testing.expect(found_disclaimer_body);
     }
 
-    // Native (a real persistent dir path): no button.
+    // Native (a real persistent dir path): no button, no disclaimer.
     {
         var elements: UiElementList = .empty;
-        try buildMainMenu(&elements, allocator, metrics, screen, true, false, button_color);
+        try buildMainMenu(&elements, allocator, metrics, screen, true, "zig-cache/fake-persistent-dir", button_color);
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .import_game),
+            .text_label => |label| try std.testing.expect(
+                std.mem.indexOf(u8, label.text, "WEB DISCLAIMER:") == null,
+            ),
             else => {},
         };
     }

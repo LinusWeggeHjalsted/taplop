@@ -443,9 +443,10 @@ pub fn view(
             font_metrics,
             ui.screenRect(),
             continue_available,
-            // The web signal (the Export Save tooltip's null case): Import
-            // Game is a browser upload on web, absent on native.
-            session.persistent_dir_path == null,
+            // The web signal (the buildOptionsMenu convention): null on web
+            // (the Import Game button + the web storage disclaimer derive
+            // from it), the resolved path on native.
+            session.persistent_dir_path,
             button_color,
         ) catch @panic("failed to build main menu");
     }

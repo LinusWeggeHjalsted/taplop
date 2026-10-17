@@ -17220,3 +17220,27 @@ progress to save).
 Verified: full suite PASS (847), native + web compile OK, unused-pub
 report CLEAN of DEAD/UNUSED (the 3 pre-existing TEST-ONLY entries remain),
 sound report regenerated with the new layer path, doc-symbol check CLEAN.
+
+## Web storage model slice 4: the web storage disclaimer
+
+The last player-facing piece: the disclaimer lands on the main menu (web
+only), the chosen wording from DESIGN (WEB DISCLAIMER: / Your saved data
+does not persist between sessions on web - use the Import Game and Export
+Game functionality to load and save data for cross-session usage).
+
+- The web signal threading changed shape while landing: `buildMainMenu`'s
+  3c bool param (`import_available`) became `persistent_dir_path:
+  ?[]const u8` (the buildOptionsMenu convention) — the disclaimer + the
+  Import Game button derive from the same null case, and a bool named for
+  one consumer reads badly once two ride it.
+- Layout: the disclaimer band (header 60 + gap 24 + body 44) sits above
+  the title band inside the same centered block (one placeCenter over
+  disclaimer + title + buttons, so the whole stack centers together; the
+  title/buttons shift down by the band height on web only).
+- Both lines are non-blocking text labels (blocks_input false, the title's
+  convention), horizontally centered via measureSpanWidth.
+- Test: the web sim (null path) asserts the button + both disclaimer
+  lines; the native sim (a path) asserts neither. The full wording check
+  rides the emrun browser pass (the visual claim: fits, readable).
+
+Verified: full suite PASS (847), native + web compile OK.
