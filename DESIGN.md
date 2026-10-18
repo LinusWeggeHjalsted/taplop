@@ -2266,9 +2266,9 @@ the whole-game round-trip; both keep their existing homes.
 chosen wording, four outlined lines at one font size (the import/export
 sentence breaks at its phrase boundary so no line spans wider than
 ~1600px of the 3840px reference): `WEB DISCLAIMER:` / `Your saved data
-does not persist between sessions on web` / `Use the Import Game and
+does not persist between sessions on web.` / `Use the Import Game and
 Export Game functionality` / `to load and save data for cross-session
-usage`.
+usage.`.
 - **Multi-tab is TRIVIAL**: the persistent dir is per-tab memory - tabs
 share nothing at all (no database, no boot-clear races).
 - **Migration: none.** At the time of the change there were zero web users

@@ -303,9 +303,9 @@ const main_menu_disclaimer_gap: i32 = 24;
 /// the screen).
 const disclaimer_lines = [_][]const u8{
     "WEB DISCLAIMER:",
-    "Your saved data does not persist between sessions on web",
+    "Your saved data does not persist between sessions on web.",
     "Use the Import Game and Export Game functionality",
-    "to load and save data for cross-session usage",
+    "to load and save data for cross-session usage.",
 };
 
 pub fn buildMainMenu(
