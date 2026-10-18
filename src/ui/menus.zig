@@ -312,6 +312,9 @@ const disclaimer_lines = [_][]const u8{
 /// 48px is the smallest size that keeps the standard 8px outline clear of
 /// the SDF clamp floor (see DESIGN → Platform Seam → SDF text outline).
 const main_menu_version_font_size: i32 = 48;
+/// The stamp text: "v" + the build version (comptime concat - the version
+/// is a build-time constant).
+const version_stamp_text = "v" ++ build_info.game_version;
 
 pub fn buildMainMenu(
     elements: *UiElementList,
@@ -441,7 +444,7 @@ pub fn buildMainMenu(
     // the session log records). Outlined like the title + disclaimer
     // (same background, same readability pass); non-interactive.
     try elements.append(allocator, .{ .text_label = .{
-        .text = build_info.game_version,
+        .text = version_stamp_text,
         .screen_position = .{
             .x = screen.x + ui_gap,
             .y = screen.y + screen.height - main_menu_version_font_size - ui_gap,
@@ -2826,7 +2829,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
         var found_version_stamp = false;
         for (elements.items) |element| switch (element) {
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, build_info.game_version)) {
+                if (std.mem.eql(u8, label.text, version_stamp_text)) {
                     found_version_stamp = true;
                     try std.testing.expect(label.outlined);
                     try std.testing.expect(label.screen_position.x <= screen.x + 100);
