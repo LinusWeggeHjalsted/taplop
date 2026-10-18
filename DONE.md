@@ -17581,3 +17581,22 @@ entry: agents write freely, the script normalizes before commit).
   until release.
 - data/ hits were header `#` comments only (default_level.txt,
   editor_defaults.txt) - no layout-grid rows, no game content touched.
+
+## The dash rule relaxed - agents write freely, the sweep is the policy
+
+The old rule ("no em-dashes, en-dashes, or ellipses anywhere in the
+project") banned the characters outright, which cost a per-token tax: the
+agent spent real effort mid-task avoiding them in every comment and doc
+sentence. With the full-coverage atlas landed (previous entries: covered
+punctuation renders correctly, no more `?` bug) and scripts/dash_sweep.sh
+as cheap standing machinery, the ban's two justifications (the rendering
+bug + the manual cleanup cost) are both gone.
+
+New rule (AGENTS -> Code Style): the characters are ALLOWED while working;
+`scripts/dash_sweep.sh` normalizes before commit (`--check` gates, exit 1
+on findings). Shipped text stays plain by construction - the tree is
+normalized at every commit. The ASCII-only clause is deleted with it: the
+atlas bakes the font's full cmap coverage now, so "rendered strings are
+ASCII-only, period" was outdated; the surviving rendering caveat is only
+"codepoints the font lacks still draw `?`" (kept honest by the
+font_codepoints contract test).

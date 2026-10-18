@@ -259,16 +259,18 @@ session + the ButtonPayload migration):
 - Multiline function signatures - one parameter per line when long
 - All gameplay logic uses integers. Floats only for input, settings, rendering
 - No abbreviations
-- **No em-dashes, en-dashes, or ellipses anywhere in the project** (code,
-  comments, strings, docs): always plain `-` and `...`. Partly taste,
-  partly the atlas: the text font bakes the font's 95 ASCII glyphs
-  (0x20..0x7E), so any non-ASCII in a RENDERED string draws as a blank or
-  `?` - rendered strings are ASCII-only, period. If more symbols are
-  needed, find a new font that covers them (the atlas never grows a
-  hand-picked codepoint list). The one-time sweep over pre-rule text is a
-  TODO item (Tech Debt → the dash sweep). The banned characters are named
-  by codepoint here (em-dash U+2014, en-dash U+2013, ellipsis U+2026) so
-  the sweep can't corrupt this rule.
+- **Em-dashes, en-dashes, and ellipses are ALLOWED while working - the
+  sweep normalizes before commit.** Write naturally; avoiding them
+  per-token costs more than the cleanup. `scripts/dash_sweep.sh`
+  replaces em-dash (U+2014) and en-dash (U+2013) with `-` and ellipsis
+  (U+2026) with `...` across every tracked file - RUN IT BEFORE COMMITTING
+  (it is cheap; `--check` is the gate and exits 1 on findings, so a clean
+  commit needs a clean check). Shipped text stays plain by construction:
+  the tree is normalized at every commit. Rendering: the atlas bakes the
+  font's FULL cmap coverage (`src/font_codepoints.zig` - DESIGN → Platform
+  Seam → SDF text outline), so covered punctuation renders correctly; a
+  codepoint the font lacks still draws `?`, and the committed-plain rule
+  keeps the tree inside the covered set in practice.
 - **Minimize `pub`.** Mark a symbol `pub` only if another file imports it;
   everything else is `fn`/`const` (file-private). The compiler errors on
   unused file-private symbols, so this turns it into a free dead-code detector.
