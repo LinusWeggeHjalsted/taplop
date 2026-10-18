@@ -2263,9 +2263,10 @@ migrates with the game rename.)
 UNCHANGED - different verbs (sharing one save / one custom mission) than
 the whole-game round-trip; both keep their existing homes.
 - **The disclaimer** (main menu, centered above the title, web only) - the
-chosen wording: `WEB DISCLAIMER:` / `Your saved data does not persist
-between sessions on web - use the Import Game and Export Game functionality
-to load and save data for cross-session usage`.
+chosen wording, three outlined lines (the body splits at its dash):
+`WEB DISCLAIMER:` / `Your saved data does not persist between sessions on
+web` / `use the Import Game and Export Game functionality to load and save
+data for cross-session usage`.
 - **Multi-tab is TRIVIAL**: the persistent dir is per-tab memory - tabs
 share nothing at all (no database, no boot-clear races).
 - **Migration: none.** At the time of the change there were zero web users
