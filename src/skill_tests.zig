@@ -1,4 +1,4 @@
-//! Contract tests for skill implementations — the pure `Skill` interface
+//! Contract tests for skill implementations - the pure `Skill` interface
 //! functions (selectTarget / priority / getValidTargets / useSkill) tested
 //! directly against harness-built level states, independent of the handler
 //! drain. New skills add their tests here. Target-selection conventions
@@ -56,7 +56,7 @@ const promise_of_death_effect = @import("effects/promise_of_death.zig");
 const Vector2 = types.Vector2;
 
 /// A skill's options with a FRESH evaluation frame per call (a test block
-/// often mutates state between calls — a shared frame would serve stale
+/// often mutates state between calls - a shared frame would serve stale
 /// memoized options; within one real pass the state is frozen, but a test
 /// block isn't).
 fn freshOptions(
@@ -71,7 +71,7 @@ fn freshOptions(
 }
 
 /// Set one entity's cooldown entry on a const GameState's level (handlers
-/// mutate through @constCast the same way — see test_harness.levelEntity).
+/// mutate through @constCast the same way - see test_harness.levelEntity).
 fn setCooldown(
     game_state: anytype,
     entity_index: usize,
@@ -85,7 +85,7 @@ test "weakestTarget: picks the lowest-health hostile over the nearest" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    // Caster (team 1) at the origin; two hostiles — the wounded one is
+    // Caster (team 1) at the origin; two hostiles - the wounded one is
     // FARTHER, the healthy one adjacent. Focus-fire prefers the wounded.
     const caster = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 0 } };
     const wounded = types.Entity{ .team = 0, .position = .{ .x = 3, .y = 0 }, .current_health = 5 };
@@ -193,7 +193,7 @@ test "shoot: useSkill emits attack + retreat with main-hand damage" {
     const result = shoot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 3), result.len);
 
-    // ownedEvents returns LIFO order — attack, wait, retreat in execution
+    // ownedEvents returns LIFO order - attack, wait, retreat in execution
     // order → retreat, wait, attack in the slice (the wait is the pacing
     // gap ownedEvents interleaves between the recipe's events).
     const retreat = result[0].sub_level_event.retreat;
@@ -397,9 +397,9 @@ test "bash: option is 3 with the colliding pick, 2 on an open path" {
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
-    // Two adjacent targets — the FIRST in scan order is open, the second is
+    // Two adjacent targets - the FIRST in scan order is open, the second is
     // walled. The option carries BOTH the 3 rating and the walled target
-    // (one decision — the old split could rate off one target while
+    // (one decision - the old split could rate off one target while
     // selection attacked another).
     {
         const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
@@ -444,7 +444,7 @@ test "powerful shot: useSkill emits attack + knockback with half collision damag
     const result = powerful_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 3), result.len);
 
-    // ownedEvents returns LIFO order — attack, wait, knockback in execution
+    // ownedEvents returns LIFO order - attack, wait, knockback in execution
     // order → knockback, wait, attack in the slice.
     const knockback = result[0].sub_level_event.knockback;
     try testing.expectEqual(@as(u32, 0), knockback.attacker_index);
@@ -479,7 +479,7 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     // Near target open, far target walled (its 2-step push runs off the
-    // tile set) — both in range 3, any-collide bumps to 3.
+    // tile set) - both in range 3, any-collide bumps to 3.
     {
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
@@ -521,7 +521,7 @@ test "head shot: useSkill emits attack + stun with off-hand damage" {
     const result = head_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 3), result.len);
 
-    // LIFO order — attack, wait, stun in execution order → stun, wait,
+    // LIFO order - attack, wait, stun in execution order → stun, wait,
     // attack in the slice.
     const stun = result[0].sub_level_event.stun;
     try testing.expectEqual(@as(u32, 0), stun.attacker_index);
@@ -622,7 +622,7 @@ test "focus: options rate by ticking weapon-skill count, cantrips excluded" {
     const definitions = &harness.weapon_type_definitions;
 
     // A sword-carrier (slots: slice, spinblade, flash_strike) with one
-    // weapon skill + one cantrip ticking: rate = 1 — the cantrip doesn't
+    // weapon skill + one cantrip ticking: rate = 1 - the cantrip doesn't
     // count (the reset handler resolves slots 1-3 only).
     const caster = types.Entity{
         .team = 0,
@@ -658,10 +658,10 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
 
     // An axe-carrier BELOW half health with an unstunned hostile in
     // cleave range: chop rates 1 (its above-half bonus is gone) and
-    // cleave rates 2, so the planned ending cast is cleave — stone form
+    // cleave rates 2, so the planned ending cast is cleave - stone form
     // rates one above it, firing first in the chain (the +1 rule). Note
     // at FULL health chop ties cleave at 2 and slot order plans the
-    // chop — no stun planned, so stone form waits; that's the plan-
+    // chop - no stun planned, so stone form waits; that's the plan-
     // dependent rule working as settled.
     const axe_caster = types.Entity{
         .team = 0,
@@ -695,7 +695,7 @@ test "stone form: rates above the planned stun cast; HoT fallback without one" {
     }
 
     // Hostile far out of range: no planned ending cast, no stun cantrip
-    // ticking — the HoT fallback applies, and it offers 1 (below full).
+    // ticking - the HoT fallback applies, and it offers 1 (below full).
     @constCast(game_state.level.?.entities)[1].position = .{ .x = 30, .y = 30 };
     frame = skill_mod.EvalFrame.empty();
     try testing.expect(
@@ -730,13 +730,13 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
     const definitions = &harness.weapon_type_definitions;
 
     // Lingers + reaches equipped (both off cooldown): reaches carries a
-    // skill_duration and offers its cast, so lingers rates one above it —
+    // skill_duration and offers its cast, so lingers rates one above it -
     // firing FIRST in the chain so reaches' cast gains the +1 duration.
     // Lingers itself is cut from its own scan by the frame's in-progress
     // guard (it would otherwise count its own skill_duration).
     // Howl (radius 16) gives reaches a live range/radius beneficiary:
     // the fresh (inactive) hostile counts, so reaches rates howl's cast
-    // + 1 = 2, and lingers rates reaches' cast + 1 = 3 — the chain order
+    // + 1 = 2, and lingers rates reaches' cast + 1 = 3 - the chain order
     // is reaches -> howl... with lingers firing first of all so both
     // gain the +1 duration.
     const caster = types.Entity{
@@ -769,7 +769,7 @@ test "that which lingers: rates above a live duration beneficiary, nothing alone
     }
 
     // Lingers alone: extends nothing on its own (its recast is outside its
-    // 2-turn window) — no beneficiary, no cast (no fallback).
+    // 2-turn window) - no beneficiary, no cast (no fallback).
     const lone_caster = types.Entity{
         .team = 0,
         .position = .{ .x = 0, .y = 0 },
@@ -787,9 +787,9 @@ test "that which reaches: the sim differential enables an out-of-range attack" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // A sword-carrier (main hand: slice range 1, spinblade radius 1 —
+    // A sword-carrier (main hand: slice range 1, spinblade radius 1 -
     // slot 3 is the off-hand) with a hostile at distance 2: both attacks
-    // are out of range — no plan at all. With the effect virtually
+    // are out of range - no plan at all. With the effect virtually
     // applied, slice (range 2) reaches the hostile: the sim's ending
     // plan differs, so reaches rates the would-be slice + 1 = 2 and
     // fires; the re-evaluation then really casts it.
@@ -816,7 +816,7 @@ test "that which reaches: the sim differential enables an out-of-range attack" {
         try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
 
-    // Distance 3: even with +1 nothing reaches the hostile — no plan in
+    // Distance 3: even with +1 nothing reaches the hostile - no plan in
     // either world, no differential, no cast.
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -834,9 +834,9 @@ test "that which reaches: the sim differential enables a cantrip" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // No weapon at all — burst (radius 1) is the whole bar, with a hostile
+    // No weapon at all - burst (radius 1) is the whole bar, with a hostile
     // at distance 2: burst has nothing in radius. With +1 radius the
-    // hostile counts — the sim's non-ending plan differs, so reaches
+    // hostile counts - the sim's non-ending plan differs, so reaches
     // rates the would-be burst + 1 = 2.
     const caster = types.Entity{
         .team = 0,
@@ -861,7 +861,7 @@ test "that which reaches: an in-range plan is the base-value beneficiary" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // Hostile adjacent: the planned ending cast is slice (1, range 1) —
+    // Hostile adjacent: the planned ending cast is slice (1, range 1) -
     // the base-value rule counts it, reaches rates 1 + 1 = 2 and fires
     // first (the +1 range applies to the slice). The sim finds no
     // improvement worth more (same target, same rating).
@@ -890,7 +890,7 @@ test "that which rushes: rates above cooldown-bearing casts, never standalone" {
     const definitions = &harness.weapon_type_definitions;
 
     // A cantrip beneficiary: howl (cd 10) counts the fresh hostile, so
-    // rushes rates howl's cast + 1 = 2 — firing first, so howl's newly-set
+    // rushes rates howl's cast + 1 = 2 - firing first, so howl's newly-set
     // cooldown comes out one less.
     {
         const caster = types.Entity{
@@ -935,7 +935,7 @@ test "that which rushes: rates above cooldown-bearing casts, never standalone" {
         try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
 
-    // Nothing cooldown-bearing fires (slice, the plan, has NO cooldown) —
+    // Nothing cooldown-bearing fires (slice, the plan, has NO cooldown) -
     // the speed rider alone never justifies the cast: no fallback.
     {
         const caster = types.Entity{
@@ -963,10 +963,10 @@ test "that which bull form: the sim differential flips a short push into a colli
 
     // A shield-carrier (bash push 1, slam push 2) with the target at
     // distance 1 and a blocker at distance 4: nothing collides at base
-    // distances (the plan is bash @ 1 — a distance skill, so the
+    // distances (the plan is bash @ 1 - a distance skill, so the
     // base-value rule already rates bull form 2). With +10 distance
-    // virtually applied, bash's push reaches the blocker — the sim's
-    // plan rates 2 — so bull form rates 2 + 1 = 3 and fires first.
+    // virtually applied, bash's push reaches the blocker - the sim's
+    // plan rates 2 - so bull form rates 2 + 1 = 3 and fires first.
     const caster = types.Entity{
         .team = 0,
         .position = .{ .x = 0, .y = 0 },
@@ -995,7 +995,7 @@ test "that which bull form: the sim differential flips a short push into a colli
     }
 
     // A sword-carrier (no distance skills at all) with an adjacent
-    // hostile: nothing on the bar pushes, no differential — pure
+    // hostile: nothing on the bar pushes, no differential - pure
     // modifiers with nothing to enhance, no cast.
     {
         const sword_caster = types.Entity{
@@ -1020,7 +1020,7 @@ test "stunTarget: an unstunned target beats a weaker stunned one" {
     defer arena.deinit();
 
     // The wounded target is already stunned (a new 1-turn stun can't lower
-    // or usefully extend its 2) — the healthy unstunned one is the better
+    // or usefully extend its 2) - the healthy unstunned one is the better
     // stun victim despite focus-fire saying otherwise.
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
     const wounded_stunned = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 5, .stun_duration = 2 };
@@ -1106,7 +1106,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
     }
     // A cluster straddling tile (3,0): the hostile ON the tile is a direct
     // hit (distance 0), its diagonal neighbor at (4,1) is at distance 1 →
-    // the best center is the OCCUPIED tile itself — no off-tile center
+    // the best center is the OCCUPIED tile itself - no off-tile center
     // reaches both (Chebyshev makes (2,0)→(4,1) distance 2), and Flash
     // Strike wouldn't even consider (3,0) because it only teleports to
     // empty tiles → count 2 → priority 2.
@@ -1138,7 +1138,7 @@ test "meteor: options pick the tile with the most hostiles within radius" {
         try testing.expectEqual(@as(u32, 2), options[0].priority);
         try testing.expectEqual(caster.position, options[0].target.?);
     }
-    // A lone reachable hostile → a single-target cast rates 1 (a plain hit —
+    // A lone reachable hostile → a single-target cast rates 1 (a plain hit -
     // it ties the basic attack and loses to slot order, the cluster-saving
     // posture); on cooldown → no option.
     {
@@ -1187,7 +1187,7 @@ test "meteor: useSkill attacks each hostile within radius of the target tile" {
         try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
         try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
     }
-    // Meteor strikes the CENTER first, then the spiral — and useSkill
+    // Meteor strikes the CENTER first, then the spiral - and useSkill
     // returns the REVERSED array (ownedEvents; the last element executes
     // first), so the center target (`on_tile`, index 1) is the LAST element.
     try testing.expectEqual(@as(u32, 1), result[2].sub_level_event.attack.defender_index);
@@ -1463,7 +1463,7 @@ test "reflect: priority tiers by threat and health" {
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
-    // The old heuristic fired on ANY hostile within 2 tiles, aggro or not —
+    // The old heuristic fired on ANY hostile within 2 tiles, aggro or not -
     // an idle unaggroed enemy at distance 2 must not bait the cooldown.
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -1503,7 +1503,7 @@ test "hostileCountWithinRadius: counts living hostiles around a center" {
 
     try testing.expectEqual(@as(u32, 2), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 0, .y = 0 }, 1));
     // Centered at (1,1): all three hostiles sit within radius 1
-    // ((2,2) included — Chebyshev diagonals count as 1).
+    // ((2,2) included - Chebyshev diagonals count as 1).
     try testing.expectEqual(@as(u32, 3), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 1, .y = 1 }, 1));
     try testing.expectEqual(@as(u32, 1), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 2, .y = 2 }, 1));
 }
@@ -1550,7 +1550,7 @@ test "flash strike: priority counts hits over the best landing tile" {
     }
     // A landing tile at (3,0) is within range 3 and radius 1 of BOTH
     // hostiles → the max count is 2 → 4, and the option's target IS that
-    // tile — the cast lands where the rating was earned.
+    // tile - the cast lands where the rating was earned.
     {
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
@@ -1804,7 +1804,7 @@ test "shockwave: useSkill attacks then knockbacks each hostile in radius" {
     try testing.expectEqual(@as(usize, 2), attacks);
     try testing.expectEqual(@as(usize, 2), knockbacks);
     try testing.expectEqual(@as(usize, 3), waits);
-    // LIFO: the pair listed first (defender 1's attack) runs first — its
+    // LIFO: the pair listed first (defender 1's attack) runs first - its
     // knockback sits at the BOTTOM of the reversed slice.
     try testing.expectEqual(@as(u32, 1), result[6].sub_level_event.attack.defender_index);
     try testing.expectEqual(@as(u32, 1), result[4].sub_level_event.knockback.defender_index);
@@ -1870,7 +1870,7 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
         const options = freshOptions(.slam, 0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
-    // Cluster with one walled → 5 (the old AoE-bump-only rating said 4 —
+    // Cluster with one walled → 5 (the old AoE-bump-only rating said 4 -
     // it under-sold Slam's full-damage collisions).
     {
         const open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
@@ -2025,7 +2025,7 @@ test "chain lightning: an ally between hostiles breaks the chain" {
     defer arena.deinit();
 
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 6 } };
-    // Hostile — ally — hostile in a line: the two hostiles are Chebyshev 2
+    // Hostile - ally - hostile in a line: the two hostiles are Chebyshev 2
     // apart (the ally occupies the middle), beyond radius 1 → not
     // connected. Lightning arcs between enemies only.
     const near = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
@@ -2049,7 +2049,7 @@ test "chain lightning: options pick the target with the largest component" {
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
     // Two in-range candidates, geometrically separate: the lone target at
     // (-1,0) (component 1) and the head of a pair at (1,1)-(2,2)
-    // (component 2 — the pair head is NOT within radius of the lone one,
+    // (component 2 - the pair head is NOT within radius of the lone one,
     // unlike my first attempt at this test where a diagonal made them one
     // component). The pair wins, rated 2 in value units.
     const lone = types.Entity{ .team = 1, .position = .{ .x = -1, .y = 0 }, .current_health = 5 };
@@ -2075,7 +2075,7 @@ test "adrenaline surge: options rate the target by its ticking on-bar count" {
 
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
     // Two in-range sword-carriers: the wounded one has MORE ticking
-    // cooldowns (3 vs 1) — the count outranks focus-fire.
+    // cooldowns (3 vs 1) - the count outranks focus-fire.
     const lightly_cooled = types.Entity{
         .team = 1,
         .position = .{ .x = 1, .y = 0 },
@@ -2245,7 +2245,7 @@ test "modifier enchantments: reaching, bull, rushing apply their effects" {
         try testing.expectEqual(@as(i32, 1), modifiers.range);
         try testing.expectEqual(@as(i32, 1), modifiers.radius);
         // No hostiles, nothing range-bearing on the bar: no live
-        // beneficiary and no sim differential — nothing to cast (the old
+        // beneficiary and no sim differential - nothing to cast (the old
         // unconditional rating 1 is gone).
         try testing.expectEqual(@as(usize, 0), freshOptions(.that_which_reaches, 0, game_state, undefined, arena.allocator()).len);
     }
@@ -2300,7 +2300,7 @@ test "that which explodes: the radius goes through the holder's effective radius
 
     // Holder carries a +1 radius modifier (the That Which Reaches stack):
     // base radius 1 → effective 2, so the enemy at Chebyshev 2 is hit too.
-    // Regression guard for the effective-value audit — the radius used to
+    // Regression guard for the effective-value audit - the radius used to
     // be hardcoded 1, so radius modifiers did nothing for the explosion.
     const holder = types.Entity{
         .team = 0,
@@ -2381,7 +2381,7 @@ test "promise of death: full-sweep reset + full heal on opponent death" {
     setCooldown(game_state, 0, .slice, 2); // on-bar
     setCooldown(game_state, 0, .flash_strike, 3); // swap-available third
     setCooldown(game_state, 0, .blink, 1); // utility
-    setCooldown(game_state, 0, .skewer, 4); // OFF-BAR preserved — still swept
+    setCooldown(game_state, 0, .skewer, 4); // OFF-BAR preserved - still swept
 
     const events = promise_of_death_effect.effect.onOpponentDeath(0, game_state, arena.allocator());
     // Four resets (the full sweep incl. skewer) + the heal.
@@ -2405,8 +2405,8 @@ test "damage multiplier ordering: Throw's 1.5x applies to the modified total" {
     defer arena.deinit();
 
     // Off-hand 4 + gloves bonus 3 → effective 7; 1.5x of the MODIFIED
-    // total = 10. (The old order — 1.5x of the raw 4, then the gloves
-    // bonus — would give 9.) Regression guard for DESIGN → Architecture →
+    // total = 10. (The old order - 1.5x of the raw 4, then the gloves
+    // bonus - would give 9.) Regression guard for DESIGN → Architecture →
     // Damage multiplier ordering.
     const caster = types.Entity{
         .team = 0,

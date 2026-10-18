@@ -1,5 +1,5 @@
 //! The in-game bottom bar: inventory/gear/skills buttons, the health
-//! globe, weapon skill slots 1-3, swap, utility skills 4-8, skip — plus
+//! globe, weapon skill slots 1-3, swap, utility skills 4-8, skip - plus
 //! the momentum/turn-step/effect indicators.
 
 const std = @import("std");
@@ -46,7 +46,7 @@ const overlay_font_size = emit.overlay_font_size;
 ///   inventory, gear, skills, health, weapon-skills, swap, utility-skills, skip
 /// with `ui_gap` between top-level items. The two skill sub-bars pack
 /// their buttons flush (no gap). Skip appears only in levels. The bar has
-/// no background of its own — it is purely a layout region.
+/// no background of its own - it is purely a layout region.
 pub fn buildBottomBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -86,9 +86,9 @@ pub fn buildBottomBar(
     // Total content width, to size and center the row.
     var top_level_count: i32 = 7; // inventory,gear,skills,health,wpn,swap,util
     // The health globe cell is wider than slot_size to fit its border at
-    // native size (297 vs 256) — the border is authored wider than a slot, so
+    // native size (297 vs 256) - the border is authored wider than a slot, so
     // the cell matches it rather than letting the border overhang into the
-    // gaps (which crowded the neighbors — see health_globe_border_width).
+    // gaps (which crowded the neighbors - see health_globe_border_width).
     var content_width = slot_size * 3 // inventory, gear, skills
     + health_globe_border_width // health (wider than a slot)
     + weapon_skills_width + swap_button_size + utility_skills_width;
@@ -176,13 +176,13 @@ pub fn buildBottomBar(
         var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 1;
         while (slot <= 3) : (slot += 1) {
-            // Weapon-skill slots are derived from the equipped weapon — not
+            // Weapon-skill slots are derived from the equipped weapon - not
             // reorderable, so no drag ref.
             try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, active_theme.darkest, null, drag_source);
         }
     }
 
-    // Weapon swap button (128, centered vertically in its cell) — the
+    // Weapon swap button (128, centered vertically in its cell) - the
     // layered icon-button treatment: small-button background + the swap
     // icon on top (the small-button class migration; was the bare icon as
     // the button, border-tinted).
@@ -215,7 +215,7 @@ pub fn buildBottomBar(
         }
     }
 
-    // Skip button — levels only.
+    // Skip button - levels only.
     var skip_cell: ?Rectangle = null;
     if (in_level) {
         const cell = row.next(slot_size);
@@ -235,7 +235,7 @@ pub fn buildBottomBar(
         );
     }
 
-    // --- Indicators above the bar (flush, 128×128) — the dedicated strip
+    // --- Indicators above the bar (flush, 128×128) - the dedicated strip
     // between the middle panels' bottom edge and the bar top (the panels
     // are top-anchored with the inventory grid's exact-fit height; see
     // `middle_panel_height`). Flush, not gapped: the strip is exactly one

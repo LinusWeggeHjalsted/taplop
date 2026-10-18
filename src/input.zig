@@ -5,7 +5,7 @@
 //! (float inverse, for camera pan). `tile_size_pixels` (256) is the
 //! shared gameplay↔screen scale. The pointer lives in `PointerPosition`
 //! (f32, reference space); the UI layout grid is `types.ScreenPosition`
-//! (i32) — cross via `PointerPosition.toScreenPosition`.
+//! (i32) - cross via `PointerPosition.toScreenPosition`.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -20,13 +20,13 @@ const Settings = types.Settings;
 const Camera = types.Camera;
 
 // ============================================================
-// Platform layer types — raw input from JS/native
+// Platform layer types - raw input from JS/native
 // ============================================================
 
 /// Pointer position in reference space (window pixels mapped through the
 /// render letterbox inverse). Floats because the letterbox scale maps window
 /// pixels to reference space non-1:1, so the pointer legitimately lands
-/// between reference pixels — `screenToTile` needs that sub-pixel precision
+/// between reference pixels - `screenToTile` needs that sub-pixel precision
 /// at tile boundaries. Distinct from `types.ScreenPosition` (the integer
 /// layout grid UI/drawables live on); cross the seam via `toScreenPosition`.
 pub const PointerPosition = struct {
@@ -77,13 +77,13 @@ pub const PlatformInput = struct {
     events: []const PlatformInputEvent,
     viewport: ViewportSize,
     /// UTF-8 text characters typed this frame (the platform text/IME
-    /// queue — distinct from key edges; a held key's repeat arrives as a
+    /// queue - distinct from key edges; a held key's repeat arrives as a
     /// key edge, IME-composed text arrives here). Only consumed while a
     /// text field is focused; the backend drains the queue unconditionally
     /// so it can't back up. See DESIGN → UI Framework → Text input widget.
     text_characters: []const u8 = &.{},
     /// Semantic actions injected by the platform layer itself (the console
-    /// input channel's `action` command — see DESIGN → Input → Console
+    /// input channel's `action` command - see DESIGN → Input → Console
     /// input): folded into the frame's PlayerInput via `applyAction` right
     /// after `translateInput`, the same seam button clicks use. Empty for
     /// every hardware frame; only the console merge fills it.
@@ -91,7 +91,7 @@ pub const PlatformInput = struct {
 };
 
 // ============================================================
-// Input state — persistent across ticks, updated by translateInput
+// Input state - persistent across ticks, updated by translateInput
 // ============================================================
 
 /// Tracks which keys/buttons are currently held and pointer positions.
@@ -205,7 +205,7 @@ pub const InputState = struct {
     /// each key that has crossed its next-repeat threshold, append a
     /// synthetic edge to `repeated`. Fires at most once per key per tick
     /// (a stall that jumps past several intervals catches up by one repeat,
-    /// not a burst — real-time input does not accumulate).
+    /// not a burst - real-time input does not accumulate).
     fn advanceKeyRepeats(
         self: *InputState,
         delta_microseconds: u64,
@@ -227,7 +227,7 @@ pub const InputState = struct {
 };
 
 // ============================================================
-// Player input — semantic actions for the game logic
+// Player input - semantic actions for the game logic
 // ============================================================
 
 pub const PlayerInput = struct {
@@ -236,14 +236,14 @@ pub const PlayerInput = struct {
     pointer: PointerInput = .{},
     /// Current modifier-key state at input translation time. Read by the
     /// idle-input path for per-action overrides (e.g. ctrl held at click-time
-    /// forces the attack step even with auto_skip enabled). Not a binding —
+    /// forces the attack step even with auto_skip enabled). Not a binding -
     /// bindings filter on modifiers in checkAction; this is the raw held state.
     modifiers: Modifiers = .{},
     /// The clicked button's identity beyond its action (which row, which
     /// tab, which cell), set by the button-release dispatch in main.zig
-    /// (and by `applyAction`'s keyboard bridges — the payload is the
+    /// (and by `applyAction`'s keyboard bridges - the payload is the
     /// keyboard action's own identity there). Valid only in the same frame
-    /// as the click. Inert data — it never fires anything by itself, which
+    /// as the click. Inert data - it never fires anything by itself, which
     /// is why it rides `PlayerInput` directly rather than the anytime/idle
     /// sub-structs: those classify actions by when they may consume, and
     /// data doesn't consume. Read by the handler arm that fired the
@@ -251,15 +251,15 @@ pub const PlayerInput = struct {
     /// payloads.
     clicked_payload: ?types.ButtonPayload = null,
     /// Text-field keyboard resolution for this frame (Enter/Escape while a
-    /// field is focused — see DESIGN → UI Framework → Text input widget).
+    /// field is focused - see DESIGN → UI Framework → Text input widget).
     /// Resolved ONCE per frame by the caller (main), never per update()
     /// drain iteration. `.none` when no field is focused.
     text_edit_outcome: types.TextEditOutcome = .none,
-    /// One frame's keybind-listening outcome (the capture seam — the
+    /// One frame's keybind-listening outcome (the capture seam - the
     /// text-edit-outcome model). Set only while a keybind edit is active;
     /// resolved once per frame in `main.frame`.
     keybind_capture_outcome: types.KeybindCaptureOutcome = .none,
-    /// Every action that FIRED this frame (a set — a same-frame keybind +
+    /// Every action that FIRED this frame (a set - a same-frame keybind +
     /// button + console command on one action dedupes to one entry).
     /// Recorded by `applyAction` itself, so all three input seams report
     /// uniformly. The per-action dispatch choke point: the action-layer
@@ -288,7 +288,7 @@ pub const PointerInput = struct {
     held: bool = false, // primary button is held (for slider drag)
     position: PointerPosition = .{ .x = 0, .y = 0 },
     /// Secondary (right) button edges + held state, for the camera-pan drag.
-    /// Not a binding — like the tile cursor, this is raw pointer state
+    /// Not a binding - like the tile cursor, this is raw pointer state
     /// consumed in the input path (see handleCameraPan).
     right_pressed: bool = false,
     right_released: bool = false,
@@ -303,7 +303,7 @@ pub const PointerInput = struct {
 pub const AnytimeInput = struct {
     undo: bool = false,
     redo: bool = false,
-    /// Escape — drives the overlay-close chain in handleAnytimeInput (see
+    /// Escape - drives the overlay-close chain in handleAnytimeInput (see
     /// Action.escape + DESIGN → Input → Escape overlay chain).
     escape: bool = false,
     dump_event_log: bool = false,
@@ -324,7 +324,7 @@ pub const AnytimeInput = struct {
     error_scroll_up: bool = false,
     error_scroll_down: bool = false,
     scroll_delta: f32 = 0,
-    // Keyboard zoom shortcuts (PgUp / PgDn / ctrl+0). Press-only — the
+    // Keyboard zoom shortcuts (PgUp / PgDn / ctrl+0). Press-only - the
     // mouse wheel (scroll_delta) is the continuous path. See Action.zoom_*.
     zoom_in: bool = false,
     zoom_out: bool = false,
@@ -342,7 +342,7 @@ pub const AnytimeInput = struct {
     toggle_editor_browser: bool = false,
     /// Import a mission .zip (the mission browser's Import button + the
     /// ctrl+I binding). Web-only effect at the consumption site (the
-    /// upload trigger is comptime-dead on native — the skip_level
+    /// upload trigger is comptime-dead on native - the skip_level
     /// discipline); consumed only while the browser is open.
     import_editor_mission: bool = false,
     /// The fresh-mission open (the editor browser's New Mission button,
@@ -389,7 +389,7 @@ pub const InGameInput = struct {
     /// Direction of THIS tick's REAL press edges only (synthetic repeats
     /// excluded; -1/0/+1 per axis, summed like cursor_direction). The
     /// cursor resolution uses it as the fallback when the held vector
-    /// cancels to zero — a press landing while its opposite is still held
+    /// cancels to zero - a press landing while its opposite is still held
     /// (key rollover at fast input speeds) is fresh intent and must nudge
     /// in its own direction, while repeats during a deliberately-held
     /// opposite pair keep the frozen cancel.
@@ -409,7 +409,7 @@ pub const IdleInput = struct {
     // default_settings.txt and no-ops elsewhere. See DESIGN → Input.
     skip_level: bool = false,
     // Editor select tool: delete the current selection (Delete key,
-    // press-only). Consumed in handleIdleInput's editor arm — a no-op on
+    // press-only). Consumed in handleIdleInput's editor arm - a no-op on
     // every other screen. See DESIGN → Architecture → Level Editor →
     // Selection model.
     delete_editor_selection: bool = false,
@@ -418,7 +418,7 @@ pub const IdleInput = struct {
     clear_editor_selection: bool = false,
     // Editor select tool: select everything in the active level (ctrl+A,
     // press-only). Same consumption + no-op discipline as
-    // `delete_editor_selection` (plus a select-tool gate — every
+    // `delete_editor_selection` (plus a select-tool gate - every
     // selection op requires the select tool).
     select_editor_all: bool = false,
     /// A main-menu command (New Game / Load Save / ...), set only when a menu
@@ -427,7 +427,7 @@ pub const IdleInput = struct {
     menu_action: ?types.Action = null,
 };
 
-/// THE action→PlayerInput mapping — the one dispatch seam. All three input
+/// THE action→PlayerInput mapping - the one dispatch seam. All three input
 /// paths fold through it: UI button releases (main.zig), fired keybinds
 /// (translateInput's one dispatch pass), and console `action` commands. A
 /// binding and its button land on the exact same fields, and every action is
@@ -436,7 +436,7 @@ pub const IdleInput = struct {
 /// Main-menu commands (no default keybind) go to idle.menu_action.
 pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
     // The fired-actions record: the one choke point for per-action behavior
-    // (the action-layer sound now; analytics/policy later). A set — a
+    // (the action-layer sound now; analytics/policy later). A set - a
     // same-frame keybind + button + console command on one action records
     // once.
     player_input.fired_actions.insert(action);
@@ -458,7 +458,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .continue_after_mission, .replay_mission, .overwrite_clone, .overwrite_validation_replay => player_input.anytime.options_action = action,
         // Settings is reachable from both the main-menu button and the
         // options-menu button; routing through `options_action` lets one
-        // handler (in `handleAnytimeInput`) serve both contexts — the
+        // handler (in `handleAnytimeInput`) serve both contexts - the
         // options_action switch runs regardless of screen. See DESIGN → UI
         // Framework → Settings screen.
         .open_settings => player_input.anytime.options_action = action,
@@ -527,13 +527,13 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_browser => player_input.anytime.toggle_editor_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
-        // Keyboard-only editor shortcuts — no button carries these (the
+        // Keyboard-only editor shortcuts - no button carries these (the
         // palette cells use the payload-carrying click actions). The
         // keybind→click-action BRIDGE lives here: the keyboard action folds
         // onto the click paths' options_action + payload pair so keybind and
         // click share the consumption sites exactly, and the console `action`
         // commands get the same bridge (the console mirrors the keybind
-        // path). The payload is the keyboard action's own identity — no
+        // path). The payload is the keyboard action's own identity - no
         // runtime payload to ride along. A same-frame keypress + button
         // release on the same action is degenerate (the button's payload
         // lands last, at main.zig's release dispatch, and wins).
@@ -588,7 +588,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
-        // Import Game (web only, the main-menu button — a pure input-path
+        // Import Game (web only, the main-menu button - a pure input-path
         // side effect consumed in the main-menu idle arm).
         .import_game,
         => player_input.idle.menu_action = action,
@@ -596,7 +596,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
 }
 
 // ============================================================
-// Input translation — raw platform events → semantic PlayerInput
+// Input translation - raw platform events → semantic PlayerInput
 // ============================================================
 
 /// On-screen size of one tile in reference-space pixels at zoom 1.0. Sprites
@@ -626,7 +626,7 @@ pub fn screenToTile(
     };
 }
 
-/// The float world position (tile units) under a screen position — the
+/// The float world position (tile units) under a screen position - the
 /// inverse of the camera transform, before `@floor`. Used by the camera-pan
 /// anchor so the grabbed point tracks the cursor with the pointer's full
 /// sub-pixel precision. Kept beside screenToTile so the two halves of the
@@ -658,7 +658,7 @@ fn getModifiers(state: *const InputState) Modifiers {
     };
 }
 
-/// Count a binding's required modifiers — its specificity for precedence
+/// Count a binding's required modifiers - its specificity for precedence
 /// (see DESIGN → Input). A plain binding has specificity 0; ctrl+shift has 2.
 fn modifierSpecificity(modifiers: Modifiers) u8 {
     var count: u8 = 0;
@@ -669,13 +669,13 @@ fn modifierSpecificity(modifiers: Modifiers) u8 {
 }
 
 /// Hybrid precedence: `binding` (already matching the held modifiers + a
-/// pressed input) is suppressed if another binding on the SAME input —
+/// pressed input) is suppressed if another binding on the SAME input -
 /// with derived contexts (`actionBindingContexts(other.action)`)
-/// intersecting the frame's ACTIVE set — EITHER matches the held modifiers
+/// intersecting the frame's ACTIVE set - EITHER matches the held modifiers
 /// with strictly MORE required modifiers (a more-specific chord wins, a
 /// plain binding gives way to it), OR matches with EQUAL specificity but
 /// is a DIFFERENT action appearing EARLIER in the binding list (one combo
-/// fires one action per context; first-listed wins — the deterministic
+/// fires one action per context; first-listed wins - the deterministic
 /// fallback, reachable only via a hand-edited file since `loadSettings`
 /// warns + drops conflicts and the keybind UI prevents them). The same
 /// action earlier never suppresses (both entries fire the same flag).
@@ -739,7 +739,7 @@ fn isActionHeld(
 }
 
 /// Whether `action` fired on a REAL press edge this tick (synthetic repeats
-/// excluded) — the press-intent companion to `isActionHeld` (see
+/// excluded) - the press-intent companion to `isActionHeld` (see
 /// `InGameInput.cursor_press_direction`). Implemented as `bindingFires`
 /// with an empty repeat set, so every gate (derived contexts, required
 /// modifiers, hybrid precedence) is identical to the dispatch pass's.
@@ -770,7 +770,7 @@ fn actionPressedOnRealEdge(
 }
 
 /// Whether `action`'s bindings may fire on synthetic key-repeat edges (see
-/// `InputState.advanceKeyRepeats`): the repeated-firing whitelist —
+/// `InputState.advanceKeyRepeats`): the repeated-firing whitelist -
 /// undo/redo, skip, error-scroll, and the movement cursors. Everything else
 /// is press-only (a toggle firing every repeat interval of a held key would
 /// flip panels on repeat).
@@ -790,15 +790,15 @@ fn actionRepeats(action: types.Action) bool {
     };
 }
 
-/// Whether `binding` fires this tick — the per-binding gate of
+/// Whether `binding` fires this tick - the per-binding gate of
 /// translateInput's ONE dispatch pass (the loop inverted from the old
 /// per-action queries: the fired set is defined by the bindings, so iterate
-/// bindings, not actions — actions with no binding are never touched).
+/// bindings, not actions - actions with no binding are never touched).
 /// Gates in order: the action's derived binding contexts must intersect the
 /// frame's active set; the binding's required modifiers must be held; the
 /// bound input must have a real press edge (or a synthetic repeat edge,
 /// whitelist-permitting via `actionRepeats`); and no more-specific or earlier
-/// same-combo binding suppresses it (hybrid precedence — see DESIGN →
+/// same-combo binding suppresses it (hybrid precedence - see DESIGN →
 /// Input).
 fn bindingFires(
     binding: InputBinding,
@@ -813,7 +813,7 @@ fn bindingFires(
 ) bool {
     // Derived binding-context gate (see DESIGN → Input → Binding
     // contexts): a binding is active iff its action's contexts
-    // (`actionBindingContexts`) intersect the frame's active set —
+    // (`actionBindingContexts`) intersect the frame's active set -
     // same-combo cross-context pairs (Digit1 = skill 1 in game /
     // select tool in editor) never co-fire; the active set + the
     // derived contexts are the single disambiguator.
@@ -838,10 +838,10 @@ fn bindingFires(
     };
     if (!pressed) return false;
 
-    // Hybrid precedence — see DESIGN → Input. A more-specific chord
+    // Hybrid precedence - see DESIGN → Input. A more-specific chord
     // on the same input suppresses this binding; an equal-
     // specificity different-action conflict is won by the earlier
-    // list entry (first-match-wins — see isSuppressed).
+    // list entry (first-match-wins - see isSuppressed).
     if (isSuppressed(binding, binding_index, bindings, modifiers, active_contexts)) return false;
     return true;
 }
@@ -856,7 +856,7 @@ fn actionContextsActive(action: types.Action, active_contexts: types.BindingCont
 /// Process raw platform input events, update InputState, and produce
 /// a PlayerInput with semantic actions for the game logic.
 /// `active_contexts` is which BindingContexts are live this frame (the
-/// caller computes it from the screen + pending_error — see main.zig's
+/// caller computes it from the screen + pending_error - see main.zig's
 /// frame); bindings in inactive contexts never fire. Button clicks bypass
 /// this gate entirely (`applyAction`), since buttons only render in their
 /// context.
@@ -984,7 +984,7 @@ pub fn translateInput(
 
     // Text-field focus (see DESIGN → UI Framework → Text input widget):
     // while a field is focused, ALL binding translation is suppressed
-    // (chords too — ctrl+Z included; Escape discards first) and the raw
+    // (chords too - ctrl+Z included; Escape discards first) and the raw
     // keys + typed characters route into the field buffer instead. Pointer
     // facts, the wheel delta, and the cursor-resolution inputs still flow
     // (press arbitration is M2, at the press-dispatch site in update()).
@@ -1005,11 +1005,11 @@ pub fn translateInput(
     }
 
     // Keybind edit active (the Keybinds tab's listening / picker / pending
-    // state — the same suppression model as the text-field focus above):
+    // state - the same suppression model as the text-field focus above):
     // ALL binding translation is suppressed and the raw presses route into
     // the edit (capture during listening; Escape cancels at every phase).
     // Pointer facts + the wheel flow (Confirm/Cancel/tab buttons are
-    // clicks — the `applyAction` path, not bindings).
+    // clicks - the `applyAction` path, not bindings).
     if (keybind_edit) |edit_state| {
         result.keybind_capture_outcome = ui.routeKeybindCapture(
             edit_state,
@@ -1024,11 +1024,11 @@ pub fn translateInput(
     }
 
     // The ONE dispatch pass: every binding that passes its gates fires its
-    // action through `applyAction` — the same seam UI button releases
+    // action through `applyAction` - the same seam UI button releases
     // (main.zig) and console `action` commands fold through, so a binding
     // and its button land on the exact same fields, and every action is
     // uniformly keybindable (the keybinds tab's action picker lists the
-    // whole enum — a binding on ANY action, main-menu commands and click
+    // whole enum - a binding on ANY action, main-menu commands and click
     // actions included, is live; the derived binding-context gate keeps
     // each to its screens). Same-frame degeneracies resolve
     // first-listed-wins (the conflict rule's tiebreak): equal-specificity
@@ -1049,7 +1049,7 @@ pub fn translateInput(
             active_contexts,
         )) continue;
         // Skill slots assign by overwrite, and skill-slot bindings are
-        // press-only (the repeat whitelist — repeating would queue uses
+        // press-only (the repeat whitelist - repeating would queue uses
         // by accident): a same-frame double-slot press keeps the
         // FIRST-listed binding's slot.
         switch (binding.action) {
@@ -1080,7 +1080,7 @@ pub fn translateInput(
     result.anytime.in_game.cursor_direction = .{ .x = dir_x, .y = dir_y };
 
     // Press-edge direction from the same-frame press arrays (repeats
-    // excluded) — the rollover fallback vector (see
+    // excluded) - the rollover fallback vector (see
     // InGameInput.cursor_press_direction).
     var press_dir_x: i32 = 0;
     var press_dir_y: i32 = 0;
@@ -1132,7 +1132,7 @@ fn pointerFacts(
 }
 
 // ============================================================
-// Tests — binding contexts + hybrid input precedence (DESIGN → Input)
+// Tests - binding contexts + hybrid input precedence (DESIGN → Input)
 // ============================================================
 //
 // `checkAction` gates on the active binding-context set first (same-combo
@@ -1146,14 +1146,14 @@ const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = .{null} ** Input
 const no_repeat_keys: [0]?[]const u8 = .{};
 const no_keys: [0]?[]const u8 = .{};
 
-// The level-screen active set (anytime + game) — the context the chord-
+// The level-screen active set (anytime + game) - the context the chord-
 // precedence tests run under.
 const test_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
 
 test "translateInput: focused text field suppresses bindings, routes keys + chars" {
     // Enter is bound to confirm, Escape to the options menu. While a field
     // is focused those keys must resolve the FIELD (commit / discard) and
-    // no binding may fire — the M2 suppression rule (DESIGN → UI Framework
+    // no binding may fire - the M2 suppression rule (DESIGN → UI Framework
     // → Text input widget).
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
@@ -1231,10 +1231,10 @@ test "bindingFires: plain press (no chord modifiers) fires plain binding only" {
     try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
-test "bindingFires: same key, different contexts — exactly one fires" {
+test "bindingFires: same key, different contexts - exactly one fires" {
     // The shipped ArrowUp pattern under binding contexts: move_cursor_up
     // (game) + error_scroll_up (error_popup) share ArrowUp. The active
-    // context set is the single disambiguator — with the game set active
+    // context set is the single disambiguator - with the game set active
     // only the cursor binding fires, with the error-popup set active only
     // the scroll binding fires. They never co-fire, and neither suppresses
     // the other (an inactive-context binding is not a precedence
@@ -1254,7 +1254,7 @@ test "bindingFires: same key, different contexts — exactly one fires" {
 }
 
 test "bindingFires: editor bindings inactive on the level screen" {
-    // Digit1 bound twice — skill_slot_1 (game) + the editor select tool
+    // Digit1 bound twice - skill_slot_1 (game) + the editor select tool
     // (editor). On the level screen only the skill slot fires; on the
     // editor screen only the tool shortcut fires.
     const bindings = [_]InputBinding{
@@ -1271,13 +1271,13 @@ test "bindingFires: editor bindings inactive on the level screen" {
     try std.testing.expect(bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
 }
 
-test "bindingFires: equal-specificity conflict — earlier binding wins, one action fires" {
+test "bindingFires: equal-specificity conflict - earlier binding wins, one action fires" {
     // The conflict-rule fallback: one combo fires ONE action per context.
     // Two same-combo equal-specificity bindings on different actions
-    // (both game-context) would co-fire — the EARLIER list entry wins and
+    // (both game-context) would co-fire - the EARLIER list entry wins and
     // the later is suppressed. Reachable only via a hand-edited file
     // (`loadSettings` warns + drops conflicts; the keybind UI prevents
-    // them) — the deterministic fallback keeps replay safe. See DESIGN →
+    // them) - the deterministic fallback keeps replay safe. See DESIGN →
     // Input → Hybrid precedence + binding conflicts.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
@@ -1290,10 +1290,10 @@ test "bindingFires: equal-specificity conflict — earlier binding wins, one act
     try std.testing.expect(!bindingFires(bindings[1], 1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
 }
 
-test "bindingFires: same action twice on one combo — both entries fire it" {
+test "bindingFires: same action twice on one combo - both entries fire it" {
     // Duplicate entries on the SAME action are redundant, not conflicting:
-    // neither suppresses the other (both set the same flag — `applyAction`
-    // is idempotent — the loader warns + drops the duplicate; the engine
+    // neither suppresses the other (both set the same flag - `applyAction`
+    // is idempotent - the loader warns + drops the duplicate; the engine
     // stays permissive).
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
@@ -1309,7 +1309,7 @@ test "bindingFires: same action twice on one combo — both entries fire it" {
 test "bindingFires: a chord requiring an un-held modifier does not suppress" {
     // Enter → confirm (plain); Enter+shift → dump_event_log (shift). Pressing
     // Enter with ctrl held (not shift): the shift binding doesn't match the
-    // held modifiers, so it is NOT a competitor — confirm still fires.
+    // held modifiers, so it is NOT a competitor - confirm still fires.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .confirm },
         .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log },
@@ -1341,7 +1341,7 @@ test "bindingFires: synthetic repeat edges fire only repeat-whitelisted actions"
     // edges inside the per-binding gate (the old shape passed a per-action
     // repeat slice at each call site). Held keys crossing their repeat
     // threshold fire undo/redo, skip, error-scroll, and the movement
-    // cursors; everything else is press-only — escape held must NOT fire
+    // cursors; everything else is press-only - escape held must NOT fire
     // on repeat.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "KeyZ" }, .action = .undo },
@@ -1360,11 +1360,11 @@ test "bindingFires: synthetic repeat edges fire only repeat-whitelisted actions"
 test "translateInput: a menu-action binding fires on the main-menu set only" {
     // The convergence fix: the keybinds tab's action picker lists the whole
     // Action enum, but the old per-action dispatch lines never checked the
-    // menu commands — a binding on `new_game` was silently dead (the picker
+    // menu commands - a binding on `new_game` was silently dead (the picker
     // let you make it; translateInput never fired it). With the one
     // dispatch pass every action is live; the derived binding-context
     // gate (menu context, active only on the main-menu screen) keeps it
-    // to its screens — dormant on the level screen like any editor/menu
+    // to its screens - dormant on the level screen like any editor/menu
     // action.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "Enter" }, .action = .new_game },
@@ -1381,7 +1381,7 @@ test "translateInput: a menu-action binding fires on the main-menu set only" {
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .menu = true });
         try std.testing.expectEqual(types.Action.new_game, result.idle.menu_action);
     }
-    // Level screen: the menu context is dormant — no fire.
+    // Level screen: the menu context is dormant - no fire.
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
@@ -1390,12 +1390,12 @@ test "translateInput: a menu-action binding fires on the main-menu set only" {
 }
 
 test "translateInput: editor tool/palette keybinds bridge onto the click actions" {
-    // Digit1–5 on the editor screen (the first shipped same-combo
-    // cross-context pair — Digit1–8 are the in-game skill slots): the
+    // Digit1-5 on the editor screen (the first shipped same-combo
+    // cross-context pair - Digit1-8 are the in-game skill slots): the
     // tool shortcuts must land on options_action=.select_editor_tool with
     // the right editor_tool payload, and the group toggles on
     // options_action=.toggle_editor_palette_group with the right group
-    // index — the exact pairs the button-release dispatch produces, so
+    // index - the exact pairs the button-release dispatch produces, so
     // the click consumption sites serve both. On the game set the same
     // keys fire the skill slots and nothing editor-side.
     const bindings = [_]InputBinding{
@@ -1443,7 +1443,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         try std.testing.expectEqual(types.Action.toggle_editor_palette_group, result.anytime.options_action);
         try std.testing.expectEqual(@as(usize, 0), result.clicked_payload.?.editor_group);
     }
-    // Level screen: the same keys are the skill slots — no editor bridge.
+    // Level screen: the same keys are the skill slots - no editor bridge.
     {
         var input_state: InputState = .{};
         const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
@@ -1461,11 +1461,11 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
 test "translateInput: editor save/export chords reach the anytime flags" {
     // Regression: ctrl+S shipped bound in data/default_settings.txt with
     // every plumbing site wired, but translateInput never dispatched
-    // checkAction for save_editor_mission — the keybind was dead while the
+    // checkAction for save_editor_mission - the keybind was dead while the
     // options-menu button (applyAction) worked. This test pins the dispatch
     // itself, not just checkAction, so a missing line fails here. Runs on
     // the editor-screen context set; the same key's plain binding
-    // (toggle_skills, game context) is inactive there — the chord-vs-plain
+    // (toggle_skills, game context) is inactive there - the chord-vs-plain
     // precedence itself is pinned by the checkAction tests above.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills },
@@ -1493,7 +1493,7 @@ test "translateInput: editor save/export chords reach the anytime flags" {
 test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
     // The New Mission keybind's dispatch pin (the ctrl+S lesson: a binding
     // with every other site wired but no checkAction line is dead).
-    // new_editor_mission is in the editor-browser family — EDITOR-ONLY
+    // new_editor_mission is in the editor-browser family - EDITOR-ONLY
     // by classification (the browser still opens from the main menu via
     // its buttons; the keyboard shortcuts are editor-only). Dormant on
     // level/hub (a playtest/validation run) + the main menu.
@@ -1522,7 +1522,7 @@ test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .menu = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
     }
-    // Level/hub (a playtest/validation run — the binding must go dormant
+    // Level/hub (a playtest/validation run - the binding must go dormant
     // there): no fire.
     {
         var input_state: InputState = .{};
@@ -1552,16 +1552,16 @@ test "translateInput: an active keybind edit suppresses bindings + captures the 
     const result = translateInput(platform, &input_state, settings, camera, 0, null, if (ui_state.keybind_edit != null) &ui_state.keybind_edit.? else null, .{ .anytime = true, .game = true });
     // Suppressed: the KeyQ binding never fired.
     try std.testing.expect(!result.anytime.dump_event_log);
-    // Captured instead — with the held ctrl as the combo requirement.
+    // Captured instead - with the held ctrl as the combo requirement.
     try std.testing.expectEqual(types.KeybindCaptureOutcome.captured, result.keybind_capture_outcome);
     try std.testing.expectEqualStrings("KeyQ", ui_state.keybind_edit.?.capture.capturedId().?);
     try std.testing.expect(ui_state.keybind_edit.?.capture.modifiers.ctrl);
 }
 
-test "translateInput: cursor_press_direction — real press edges only (the rollover fallback vector)" {
+test "translateInput: cursor_press_direction - real press edges only (the rollover fallback vector)" {
     // The nudge vector derives from HELD keys (opposites cancel), so a
-    // press landing while its opposite is still held — key rollover at
-    // fast input speeds — produced a zero vector and its edge was
+    // press landing while its opposite is still held - key rollover at
+    // fast input speeds - produced a zero vector and its edge was
     // consumed with no movement (the arrow-key swallow; see
     // resolveTileCursor's fallback). cursor_press_direction carries the
     // real-press intent for that fallback: this tick's press edges,
@@ -1575,7 +1575,7 @@ test "translateInput: cursor_press_direction — real press edges only (the roll
     const game_set: types.BindingContextSet = .{ .anytime = true, .game = true };
     const viewport = ViewportSize{ .width = 2560, .height = 2160 };
 
-    // Rollover: right pressed on an earlier frame (still held — no
+    // Rollover: right pressed on an earlier frame (still held - no
     // release), left presses now. The held vector cancels to zero; the
     // press direction keeps the left intent.
     {
@@ -1608,7 +1608,7 @@ test "translateInput: cursor_press_direction — real press edges only (the roll
 
     // Synthetic repeat edges do NOT count as presses: right held past the
     // repeat threshold fires the move_cursor_right edge again, but the
-    // press direction stays zero — a deliberately-held opposite pair
+    // press direction stays zero - a deliberately-held opposite pair
     // keeps the frozen cancel, and the fallback cannot oscillate on
     // per-key repeat-timer drift.
     {

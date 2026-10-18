@@ -13,7 +13,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// That Which Rushes: an enchantment. Grants the That Which Rushes
-/// effect on the caster — cooldown -1 and speed +1 for the duration.
+/// effect on the caster - cooldown -1 and speed +1 for the duration.
 /// Non-turn-ending (the enchantment pool's ratings only order the
 /// non-ending skills).
 pub const skill = Skill{
@@ -34,19 +34,19 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: rated against the LIVE beneficiaries of the cooldown −1 —
+/// AI options: rated against the LIVE beneficiaries of the cooldown −1 -
 /// the casts that will actually fire this turn AND have a cooldown > 0
 /// (the modifier applies where cooldowns are set, in use_skill: each such
 /// cast's newly-set cooldown comes out one less): the planned ending
 /// cast when it carries a cooldown, plus every positive-rated off-cd
 /// non-ending skill with one (all positive cantrips/enchantments fire
 /// this turn). The speed +1 is a future-turn rider (the movement phase
-/// already ran) and never a standalone reason to cast — NO fallback: the
+/// already ran) and never a standalone reason to cast - NO fallback: the
 /// speed bonus is not worth a full turn's duration on its own. Rating =
 /// best such cast + 1 (fires first in the chain). See DESIGN →
 /// Architecture, AI rating scale.
@@ -63,7 +63,7 @@ fn aiOptions(
 
     var best_beneficiary: u32 = 0;
 
-    // The planned turn-ending cast — the only ending skill that fires
+    // The planned turn-ending cast - the only ending skill that fires
     // this turn. Counted only if its cooldown will actually tick down.
     const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
     if (casts.ending) |plan| {
@@ -95,7 +95,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

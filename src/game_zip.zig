@@ -30,14 +30,14 @@ const FileSource = file_source_mod.FileSource;
 pub const export_download_name = "ziglop.zip";
 
 /// Export the full game folder (the whole persistent dir) as a ziglop.zip
-/// browser download. Best-effort (the autosave-backup policy — see DESIGN →
+/// browser download. Best-effort (the autosave-backup policy - see DESIGN →
 /// File System & IO): any failure surfaces the recoverable popup and
 /// aborts; the staging temp is cleaned up best-effort (the listing also
 /// excludes it, so a leftover can never ride in a later export).
 pub fn exportGameFolder(history: *state.GameStateHistory) void {
     // The per-frame arena (the mission export's scratch convention):
-    // everything here is transient — the listing, the file bytes, the
-    // archive — and compacts away at the next idle point.
+    // everything here is transient - the listing, the file bytes, the
+    // archive - and compacts away at the next idle point.
     const scratch = history.current_arena.allocator();
     const fail = struct {
         fn note(history_arg: *state.GameStateHistory, reason: []const u8) void {
@@ -68,7 +68,7 @@ pub fn exportGameFolder(history: *state.GameStateHistory) void {
             @panic("failed to append zip entry");
     }
 
-    // The archive (STORE — the mission export's writer).
+    // The archive (STORE - the mission export's writer).
     const archive = zip_writer.writeZipArchive(entries.items, scratch) catch {
         fail.note(history, "failed to export game folder: could not build the zip archive");
         return;
@@ -292,7 +292,7 @@ pub fn pollGameImportMarker(history: *state.GameStateHistory) void {
 test "listPersistentDirFiles + zip round-trip: the full tree, temps excluded" {
     // The export's source list + the archive writer, round-tripped through
     // the reader (the import's future parse). Dedicated scratch trees (the
-    // harness's deleteTree-then-create pattern — fresh per run, nothing of
+    // harness's deleteTree-then-create pattern - fresh per run, nothing of
     // the project's or other tests' rides along).
     var threaded_io = std.Io.Threaded.init(std.testing.allocator, .{});
     defer threaded_io.deinit();
@@ -323,7 +323,7 @@ test "listPersistentDirFiles + zip round-trip: the full tree, temps excluded" {
     const allocator = arena.allocator();
 
     const paths = try file_source.listPersistentDirFiles(allocator);
-    // The exact expected list, derived from the same names (sorted — the
+    // The exact expected list, derived from the same names (sorted - the
     // listing is ordered for determinism).
     const expected = [_][]const u8{
         "missions/mine/mission.txt",

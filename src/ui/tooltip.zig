@@ -1,6 +1,6 @@
 //! Tooltip placement + content builders: `placeTooltip` (side-based pure
 //! geometry), `buildTooltip` (wrap + measure into a panel), and the
-//! authored content builders — `buildSkillTooltip`, `buildItemTooltip`
+//! authored content builders - `buildSkillTooltip`, `buildItemTooltip`
 //! (with equipped-gear stat comparisons + the learned-skill prompt). The
 //! span content model + `wrapRow` live in element.zig. See DESIGN → UI
 //! Framework.
@@ -35,12 +35,12 @@ pub const Side = enum { right, below, left, above };
 
 /// Place the tooltip flush against one side of the source element so they
 /// share an edge (not just a corner). Tries sides in a fixed preference
-/// order — above, below, right, left — and uses the first that fits on
+/// order - above, below, right, left - and uses the first that fits on
 /// screen without clamping, so tooltips prefer going above an element
 /// (the natural direction, especially for the bottom bar) and only fall
 /// sideways when there's no vertical room. If no side fits fully, falls back
 /// to the top preference (above) and clamps. Aligns the tooltip to the near
-/// corner along the chosen side — e.g. above with the source in the left
+/// corner along the chosen side - e.g. above with the source in the left
 /// half left-aligns the tooltip, so the shared edge runs from the source's
 /// top-left corner rightward. Clamping shifts the tooltip along the
 /// cross-axis, shrinking the shared edge but keeping the sides flush
@@ -82,10 +82,10 @@ fn placeTooltip(
             return .{ .x = pos.x, .y = pos.y };
     }
 
-    // None fit fully — fall back to the top preference (above), clamped.
-    // `@max(0, …)` guards an oversized tooltip (taller/wider than the
+    // None fit fully - fall back to the top preference (above), clamped.
+    // `@max(0, ...)` guards an oversized tooltip (taller/wider than the
     // reference screen): screen - tooltip goes negative, and clamp requires
-    // lo <= hi. Clamping to 0 pins the top-left corner — the best placement
+    // lo <= hi. Clamping to 0 pins the top-left corner - the best placement
     // when the panel can't fit anywhere.
     const fallback = positions[0];
     return .{
@@ -268,7 +268,7 @@ pub fn equippedGearFromEntity(entity: Entity) EquippedGear {
 }
 
 /// Green/red for stat feedback: gear-tooltip comparisons and combat
-/// damage/heal numbers (damage red, heals green — including 0 values).
+/// damage/heal numbers (damage red, heals green - including 0 values).
 pub const positive_color: Color = .{ .r = 0, .g = 255, .b = 0 };
 pub const negative_color: Color = .{ .r = 255, .g = 0, .b = 0 };
 
@@ -290,7 +290,7 @@ fn comparisonSpan(
 }
 
 /// A stat row: plain "Label value" when both baselines are null
-/// (comparison suppressed — gear panel, player inspect), "Label value (d)"
+/// (comparison suppressed - gear panel, player inspect), "Label value (d)"
 /// with one baseline, "Label value (d1, d2)" with both (weapons compare
 /// against each equipped hand). A non-null baseline of 0 means the slot is
 /// empty (compare against nothing equipped).
@@ -458,7 +458,7 @@ pub fn buildItemTooltip(
 /// (`handlers/player.zig` isSkillLearned) takes the same args; this local
 /// copy keeps src/ui/ self-contained (it doesn't import the handlers).
 /// Used by the item tooltip's tome line and by the emit-side unlearned-
-/// tome "!" marker (emitItemStatLabels) — pub for that import only.
+/// tome "!" marker (emitItemStatLabels) - pub for that import only.
 pub fn isSkillLearnedIn(learned_skills: []const types.SkillId, skill_id: types.SkillId) bool {
     for (learned_skills) |learned| {
         if (learned == skill_id) return true;
@@ -471,7 +471,7 @@ pub fn isSkillLearnedIn(learned_skills: []const types.SkillId, skill_id: types.S
 ///   description
 ///   skill type
 ///   one "Label N" row per non-null skill variable, in interface order
-/// No span styling yet — every row is a single plain span.
+/// No span styling yet - every row is a single plain span.
 pub fn buildSkillTooltip(allocator: std.mem.Allocator, skill: Skill) !Tooltip {
     var body: std.ArrayList(TooltipRow) = .empty;
     try body.append(allocator, try spanRow(allocator, text(skill.description)));
@@ -598,7 +598,7 @@ test "buildItemTooltip: coat compares each stat against the equipped coat" {
     defer arena.deinit();
     const coat = types.Item{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } };
     // Equipped coat: health 4 (worse: -1), defense 2 (equal: 0). Empty
-    // slots elsewhere must not matter — only the same slot's item is read.
+    // slots elsewhere must not matter - only the same slot's item is read.
     const equipped = EquippedGear{
         .coat = .{ .name = "Old Coat", .health_bonus = 4, .defense_bonus = 2 },
     };
@@ -678,7 +678,7 @@ test "placeTooltip: nothing fits → falls back to top preference (above), clamp
     try std.testing.expectEqual(@as(i32, 0), placement.y);
 }
 
-test "placeTooltip: shared edge — panel sits flush on the chosen side" {
+test "placeTooltip: shared edge - panel sits flush on the chosen side" {
     // Top preference `above` fits: the panel's bottom edge must equal the
     // source's top edge (shared edge, not just a corner touch).
     const source_y: i32 = 1500;

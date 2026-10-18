@@ -1,4 +1,4 @@
-//! Gradient contrast report generator — a build tool, never part of the
+//! Gradient contrast report generator - a build tool, never part of the
 //! game. `zig build gradient-report` (wrapped by scripts/gradient_report.sh)
 //! reads `data/color_themes.txt` through the GAME'S OWN parser + loader (no
 //! duplicate color list to drift) and writes `gradient_report.md` at the
@@ -22,7 +22,7 @@ const loaders = @import("loaders.zig");
 const flag_min_delta_e: f32 = 6.0;
 
 /// The luminance guard on the structural seams: a WCAG contrast ratio below
-/// this flags even when ΔE passes — same-luminance hue swaps score high on
+/// this flags even when ΔE passes - same-luminance hue swaps score high on
 /// ΔE while flat patches still read as one surface.
 const flag_min_contrast_ratio: f32 = 1.06;
 
@@ -40,7 +40,7 @@ const report_path = "gradient_report.md";
 
 const read_limit: std.Io.Limit = .limited(4 * 1024 * 1024);
 
-/// One color in CIE L\*a\*b\* (D65) — the perceptually-uniform-ish space the
+/// One color in CIE L\*a\*b\* (D65) - the perceptually-uniform-ish space the
 /// spacing math runs in.
 const Lab = struct {
     lightness: f32,
@@ -50,7 +50,7 @@ const Lab = struct {
 
 /// A ramp step that fell below the ΔE floor, plus its computed repair: the
 /// step's moved color (the darker of the pair, unless it is the last ramp
-/// color — then the lighter one moves instead), slid along the Lab line
+/// color - then the lighter one moves instead), slid along the Lab line
 /// toward its next neighbor until the step reaches the repair target.
 const StepViolation = struct {
     gradient_index: usize,
@@ -67,7 +67,7 @@ const StepViolation = struct {
     neighbor_delta_e: f32,
 };
 
-/// A structural seam that fell below the luminance guard (ΔE may pass —
+/// A structural seam that fell below the luminance guard (ΔE may pass -
 /// this is the same-luminance catch). No computed repair: it fires only on
 /// hand-authored hue swaps, which need an artist's eye.
 const SeamViolation = struct {
@@ -77,7 +77,7 @@ const SeamViolation = struct {
     contrast_ratio: f32,
 };
 
-/// The checkerboard pair 1-3 below the ΔE floor — a rendering-adjacent
+/// The checkerboard pair 1-3 below the ΔE floor - a rendering-adjacent
 /// seam that is NOT a ramp step, so no slide repair exists (moving color_2
 /// doesn't change it; the artist moves 1 or 3 by hand).
 const PairViolation = struct {
@@ -139,7 +139,7 @@ pub fn main() !void {
     try report.print(allocator,
         \\# Ziglop gradient contrast report
         \\
-        \\Auto-generated from `{s}` through the game's own parser + loader —
+        \\Auto-generated from `{s}` through the game's own parser + loader -
         \\regenerate with `scripts/gradient_report.sh` (the sound_report.md
         \\pattern). The numbers decide what is "too close", not memory.
         \\
@@ -156,21 +156,21 @@ pub fn main() !void {
         \\background). A gradient with a small 1-2 step shows the even tiles
         \\dissolving into the background.
         \\
-        \\## The rule — what "too close" means
+        \\## The rule - what "too close" means
         \\
         \\- **Step floor:** any two colors the renderer places adjacent (ramp
         \\  steps 0-1 through 4-5, plus the checkerboard pair 1-3) must be at
         \\  least ΔE {d} apart. ΔE76 is the CIE76 perceptual distance in Lab
-        \\  space — hue and lightness both count. Calibrated on the shipped
+        \\  space - hue and lightness both count. Calibrated on the shipped
         \\  wheel: the broken seam sits at ΔE 5.4, seams that read fine start
         \\  at ~6.8.
         \\- **Luminance guard:** the structural seams (1-2, 1-3, 2-3) must keep
-        \\  a WCAG contrast ratio of at least {d} — catches same-luminance hue
+        \\  a WCAG contrast ratio of at least {d} - catches same-luminance hue
         \\  swaps, which ΔE can score high while flat patches still read as
         \\  one surface.
         \\
         \\Not covered here: entity colors vs the tiles they stand on (team
-        \\gradients are separate gradients from the level's world gradient —
+        \\gradients are separate gradients from the level's world gradient -
         \\cross-gradient pairs, a separate calibration).
         \\
         \\
@@ -229,12 +229,12 @@ pub fn main() !void {
     if (step_violations.items.len == 0 and pair_violations.items.len == 0 and
         seam_violations.items.len == 0)
     {
-        try report.print(allocator, "CLEAN — no gradient below the floors.\n", .{});
+        try report.print(allocator, "CLEAN - no gradient below the floors.\n", .{});
     }
     for (step_violations.items) |violation| {
         const gradient = gradients[violation.gradient_index];
         try report.print(allocator,
-            \\- **gradient {d}, step {d}-{d}: ΔE {d:.1} < {d}** — color_{d} sits on top of color_{d}.
+            \\- **gradient {d}, step {d}-{d}: ΔE {d:.1} < {d}** - color_{d} sits on top of color_{d}.
             \\  Suggested repair: color_{d} `{s}` → `{s}` (moved toward color_{d} `{s}`)
             \\  → step {d}-{d} becomes ΔE {d:.1}, step {d}-{d} becomes ΔE {d:.1}.
             \\
@@ -261,17 +261,17 @@ pub fn main() !void {
     }
     for (pair_violations.items) |violation| {
         try report.print(allocator,
-            \\- **gradient {d}, checkerboard pair 1-3: ΔE {d:.1} < {d}** — the even/odd
+            \\- **gradient {d}, checkerboard pair 1-3: ΔE {d:.1} < {d}** - the even/odd
             \\  tiles read as one surface. No computed repair (moving color_2
-            \\  doesn't change it) — widen the 1-to-3 span by hand.
+            \\  doesn't change it) - widen the 1-to-3 span by hand.
             \\
         , .{ violation.gradient_index, violation.delta_e, flag_min_delta_e });
     }
     for (seam_violations.items) |violation| {
         try report.print(allocator,
-            \\- **gradient {d}, seam {d}-{d}: contrast {d:.2} < {d}** —
+            \\- **gradient {d}, seam {d}-{d}: contrast {d:.2} < {d}** -
             \\  near-identical luminance (ΔE may pass; hue is carrying it).
-            \\  Needs an artist's eye — no computed repair.
+            \\  Needs an artist's eye - no computed repair.
             \\
         , .{
             violation.gradient_index,
@@ -307,7 +307,7 @@ fn rampLabs(colors: [types.gradient_color_count]types.Color) [types.gradient_col
 }
 
 /// One flagged step's repair: slide the step's MOVED color (the darker of
-/// the pair, unless it is the last ramp color — then the lighter one moves
+/// the pair, unless it is the last ramp color - then the lighter one moves
 /// toward its own lighter neighbor instead) along the Lab line toward its
 /// next neighbor until the step reaches the repair target. Returns null if
 /// even adopting the neighbor outright can't clear the target (a compressed
@@ -335,7 +335,7 @@ fn stepRepair(
     var low: f32 = 0;
     var high: f32 = 1;
     if (deltaE76(labs[fixed_index], labs[toward_index]) < repair_target_delta_e) {
-        // Even adopting the neighbor outright can't clear the target — a
+        // Even adopting the neighbor outright can't clear the target - a
         // compressed ramp; suggest the neighbor as the best available slide
         // and report it honestly (the repaired step still misses).
         return .{
@@ -372,7 +372,7 @@ fn stepRepair(
 }
 
 /// The neighbor BEYOND `toward` (for reporting the far side's step after a
-/// repair) — the ramp's next index in the same direction, clamped.
+/// repair) - the ramp's next index in the same direction, clamped.
 fn nextToward(toward_index: usize, moved_index: usize) usize {
     if (toward_index > moved_index) {
         return @min(toward_index + 1, types.gradient_color_count - 1);
@@ -411,7 +411,7 @@ fn colorHex(allocator: std.mem.Allocator, color: types.Color) []const u8 {
 // ---------------------------------------------------------------------------
 // Color math: sRGB → (D65) CIE L*a*b* and back, ΔE76, WCAG contrast ratio.
 // Standard reference constants (sRGB transfer curve + D65 matrices); float
-// precision is plenty for a report — the values are compared to a floor of
+// precision is plenty for a report - the values are compared to a floor of
 // 6.0, not to each other's last digit.
 // ---------------------------------------------------------------------------
 

@@ -6,14 +6,14 @@
 //! The hash is a DERIVED property (computed on demand from the file set),
 //! not a stored field on Mission. It is load-bearing for replay pinning:
 //! the session-log bundle's manifest carries a per-file SHA-256 (the
-//! integrity + dedup key of its embedded content copies — see
+//! integrity + dedup key of its embedded content copies - see
 //! session_log_bundle.zig), and this mission-level content hash gates the
 //! validation replay's staleness (a mission edited since its replay was
 //! recorded shows "unvalidated").
 //!
 //! v1 scope: hashes CONFIG files only (mission.txt + player.txt if present +
 //! level_1..level_{count}.txt). Custom assets (sprites/audio under the
-//! mission folder) are not hashed — FileSource has no directory-listing API.
+//! mission folder) are not hashed - FileSource has no directory-listing API.
 //! The canonicalization scheme (path-sorted, path-prefixed entries) is stable
 //! and already handles an arbitrary file set, so extending to custom assets is
 //! additive.
@@ -35,16 +35,16 @@ pub const ContentHash = [32]u8;
 /// as `{mission_path}/level_{1..level_count}.txt`.
 ///
 /// Canonicalization: the file set is sorted lexicographically by path. Each
-/// file is fed into the hash as a path-prefixed entry — `<path>\n` then the
-/// raw bytes — so two files with identical content but different paths
+/// file is fed into the hash as a path-prefixed entry - `<path>\n` then the
+/// raw bytes - so two files with identical content but different paths
 /// contribute differently. No line-ending normalization (our files are
 /// authored consistently); tighten only if cross-platform drift shows up.
 ///
-/// `player.txt` is OPTIONAL — official missions ship one, but its absence is
+/// `player.txt` is OPTIONAL - official missions ship one, but its absence is
 /// a normal state (editor playtest loads it lazily). A missing optional file
 /// is simply skipped (contributes nothing to the hash). A missing REQUIRED
 /// file (mission.txt, any level_N.txt within the declared count) is an error
-/// — the mission is broken, fail fast.
+/// - the mission is broken, fail fast.
 pub fn computeMissionHash(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
@@ -58,10 +58,10 @@ pub fn computeMissionHash(
         paths.deinit(allocator);
     }
 
-    // mission.txt — required.
+    // mission.txt - required.
     try paths.append(allocator, try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{mission_path}));
 
-    // player.txt — optional (skip if absent).
+    // player.txt - optional (skip if absent).
     const player_path = try std.fmt.allocPrint(allocator, "{s}/player.txt", .{mission_path});
     if (fileExists(file_source, player_path)) {
         try paths.append(allocator, player_path);
@@ -69,7 +69,7 @@ pub fn computeMissionHash(
         allocator.free(player_path);
     }
 
-    // level_1..level_{count}.txt — required (count comes from mission.txt).
+    // level_1..level_{count}.txt - required (count comes from mission.txt).
     var level_index: u32 = 1;
     while (level_index <= level_count) : (level_index += 1) {
         try paths.append(allocator, try std.fmt.allocPrint(
@@ -107,7 +107,7 @@ pub fn computeMissionHash(
 /// Check whether a file exists in the file source (without allocating the
 /// full read). Used for the optional player.txt probe.
 fn fileExists(file_source: *const FileSource, path: []const u8) bool {
-    // Read with a tiny limit into a throwaway buffer — a FileNotFound miss
+    // Read with a tiny limit into a throwaway buffer - a FileNotFound miss
     // returns false; any hit (even truncated) returns true. We don't need
     // the bytes, only existence. readFile dupes embedded bytes, so to avoid
     // leaking even a small allocation we free immediately on the hit path.

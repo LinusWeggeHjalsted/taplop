@@ -3,7 +3,7 @@
 //! `GameStateHistory` wraps it with the append-only `event_history`, the
 //! snapshot/checkpoint rings, the reconstruction cache, and `SessionState`
 //! (transient view/input state off the undo timeline, plus the debounced
-//! settings persistence — `PendingWrite`/`markSettingsDirty`). All undo/redo/
+//! settings persistence - `PendingWrite`/`markSettingsDirty`). All undo/redo/
 //! replay flows through `recordEvent`/`replayTo`/`restoreTo`/`reconstructFromEventLog`.
 //! See DESIGN → Replay & Side Effects, Architecture (Allocator model), Input
 //! (Debounced writes).
@@ -89,8 +89,8 @@ pub const WaitState = struct {
     /// down to this depth so they're handled immediately instead of sitting
     /// on the stack until the wait elapses. Set by the `wait` handler to the
     /// post-pop stack length (the remaining enemy-turn events). Replay never
-    /// reads it — replay streams events straight through and clears
-    /// `waiting` after — so it's harmless dead data in any snapshot that
+    /// reads it - replay streams events straight through and clears
+    /// `waiting` after - so it's harmless dead data in any snapshot that
     /// catches a mid-wait state (and idle points are stack-empty, so a wait
     /// implies no snapshot is taken at that moment anyway).
     baseline_stack_depth: usize = 0,
@@ -98,8 +98,8 @@ pub const WaitState = struct {
 
 // Transient view/input state. Deliberately NOT part of the undoable GameState:
 // it never affects gameplay outcomes and is not reconstructed by event replay.
-// Lives on GameStateHistory alongside settings. This is classes 2–4 of the
-// UI state classification (view affordances, scrolls, gesture lifecycles —
+// Lives on GameStateHistory alongside settings. This is classes 2-4 of the
+// UI state classification (view affordances, scrolls, gesture lifecycles -
 // see DESIGN → UI Framework → UI state classification); the class-1 SEMANTIC
 // SURFACE state lives on GameState (`ui_surfaces`, event-driven). These
 // classes reset wholesale on screen/world change in the live loop (see
@@ -109,7 +109,7 @@ pub const WaitState = struct {
 // arrow-key driven). It lives here, not on GameState, because it is transient
 // input state: auto_target_at_cursor reads it in the input path
 // (handleIdleInput), and the resulting player_use_skill event is what replay
-// reproduces — the cursor value at prepare-time is never needed for
+// reproduces - the cursor value at prepare-time is never needed for
 // reconstruction. See DESIGN → Replay & Side Effects (SessionState rule).
 /// The session-scoped record of an editor save: the mission's resolved
 /// uuid + the persistent-dir path it landed in. Owned by
@@ -124,17 +124,17 @@ pub const EditorSavedMission = struct {
 /// tab (owned by `SessionState.editor_mission_sprites`). `pixel_dims` is
 /// the PNG's IHDR dims, resolved at scan time so `view()` stays
 /// file-free; (0, 0) when the file isn't a readable PNG (the cell
-/// aspect-fit degrades to the full cell — `scaleToFit`'s fallback).
+/// aspect-fit degrades to the full cell - `scaleToFit`'s fallback).
 pub const MissionSprite = struct {
     file_name: []const u8,
     /// The namespaced mission-local id (`custom/<mission-dir>/<stem>`)
-    /// — the sprite picker's pick payload + the id the edited type
+    /// - the sprite picker's pick payload + the id the edited type
     /// stores on commit. MINTED AT SCAN TIME (backing_allocator, freed
     /// with the list) so every consumer references session-owned bytes:
     /// the pick payload that rides `PlayerInput.clicked_payload`
     /// borrows this slice, and a same-frame borrow of session-lifetime
     /// bytes is safe indefinitely (the per-frame view mint it replaced
-    /// died at the frame's render reset — the lifetime hazard the
+    /// died at the frame's render reset - the lifetime hazard the
     /// observability stash exposed).
     stored_id: []const u8,
     pixel_dims: types.Vector2,
@@ -142,8 +142,8 @@ pub const MissionSprite = struct {
 
 /// Free the session-owned decoration registry (SessionState's
 /// `editor_decoration_registry`): the duped sprite strings (`id` aliases
-/// `sprite` — one free per definition), each layer's sprite, the footprint
-/// + layers arrays, and the slice. The OWNED shape — every string is duped
+/// `sprite` - one free per definition), each layer's sprite, the footprint
+/// + layers arrays, and the slice. The OWNED shape - every string is duped
 /// into the owning allocator at load (editor/handlers' registry load);
 /// loaders' freeDecorationRegistry is the borrowed-shape free (strings
 /// still owned by the parsed sections). Shared by the registry re-load's
@@ -162,7 +162,7 @@ pub fn freeEditorDecorationRegistry(
 }
 
 pub const SessionState = struct {
-    /// Sentinel for `save_files_last_scan_us` — no scan has run yet this
+    /// Sentinel for `save_files_last_scan_us` - no scan has run yet this
     /// session.
     pub const save_files_never_scanned: u64 = std.math.maxInt(u64);
 
@@ -171,7 +171,7 @@ pub const SessionState = struct {
     tile_cursor: ?types.Vector2 = null,
     /// Whether an autosave exists in the persistent dir at session start.
     /// Detected once in `createSessionSetup` (a file-stat, not per-frame I/O
-    /// — `view()` is pure over GameState + SessionState + frame arena, no
+    /// - `view()` is pure over GameState + SessionState + frame arena, no
     /// file access). Drives the main-menu Continue button on a fresh launch
     /// before PlayerData is populated; once PlayerData is populated (any
     /// path), the populated branch drives Continue instead. Off the undoable
@@ -181,7 +181,7 @@ pub const SessionState = struct {
 
     /// The on-disk path of the persistent data dir, for user-facing messages
     /// (the Export Save tooltip: "Saves to <dir>/saves/"). Set once by the
-    /// NATIVE entry from its resolved path (flag / env / $HOME — a
+    /// NATIVE entry from its resolved path (flag / env / $HOME - a
     /// process-lifetime allocation); null on web, where the export is a
     /// browser download with no user-visible path. Off the undoable
     /// GameState → replay-safe by construction.
@@ -189,7 +189,7 @@ pub const SessionState = struct {
 
     /// The save files listed in the load-save browser (newest first), plus
     /// the animation-clock stamp of the last scan. File-derived UI state
-    /// like `autosave_available` — off the undoable GameState, but scanned
+    /// like `autosave_available` - off the undoable GameState, but scanned
     /// from the input path (never `view()`, which stays file-free): on open
     /// + throttled periodic rescans while the browser is open, so files
     /// dropped into saves/ from outside appear live. Owned by
@@ -200,7 +200,7 @@ pub const SessionState = struct {
     /// The LOCAL missions listed in the editor's mission browser (the
     /// Your Missions tab: `missions/` in the persistent dir). Scanned from
     /// the input path when the browser OPENS (never `view()`, which stays
-    /// file-free) — no periodic rescan while open: nothing can add a local
+    /// file-free) - no periodic rescan while open: nothing can add a local
     /// mission while the modal is up (a web import triggers its own explicit
     /// rescan), so a reopen is the refresh path. Owned by
     /// `backing_allocator`; each scan frees the previous list, so the only
@@ -211,52 +211,52 @@ pub const SessionState = struct {
     /// The OFFICIAL missions listed in the editor's mission browser (the
     /// Official tab: the shipped embedded campaign missions). Parsed from
     /// the embedded mission.txt files at the browser's FIRST open of the
-    /// session (the embedded map is immutable per build — no rescan ever);
+    /// session (the embedded map is immutable per build - no rescan ever);
     /// `editor_official_missions_scanned` gates the one-time scan. Owned by
     /// `backing_allocator`; kept for the session (the only leak is the
-    /// final list at process exit — bounded, one slice).
+    /// final list at process exit - bounded, one slice).
     editor_official_missions: []file_source_mod.FileSource.MissionEntry = &.{},
     editor_official_missions_scanned: bool = false,
 
     /// The mission-local `.png`s for the editor sprite picker's Mission
-    /// tab (see DESIGN → Architecture → Level Editor → Editor UI layout —
+    /// tab (see DESIGN → Architecture → Level Editor → Editor UI layout -
     /// the centered sprite picker). Scanned from the input path when the
     /// picker OPENS (never `view()`, which stays file-free); re-scanned on
     /// every open, so a png dropped into the mission dir appears on the
     /// next open. Each entry carries the file's pixel dims (IHDR,
-    /// resolved at scan time — the decoration cells' aspect-fit needs
+    /// resolved at scan time - the decoration cells' aspect-fit needs
     /// them and view() must stay file-free). Owned by
     /// `backing_allocator`; each scan frees the previous list, so the only
     /// leak is the FINAL list at process exit (bounded, one slice).
     editor_mission_sprites: []MissionSprite = &.{},
 
-    /// The decoration registry (`data/decorations.txt` prefabs — the
+    /// The decoration registry (`data/decorations.txt` prefabs - the
     /// decoration sprite picker's Official tab + the commit site's
     /// prefab-adoption source). Loaded when the editor OPENS (never
     /// `view()`, which stays file-free); owned by `backing_allocator`,
     /// each load frees the previous list, so the only leak is the FINAL
     /// list at process exit (the editor_mission_sprites pattern).
     editor_decoration_registry: []const types.DecorationTypeDef = &.{},
-    /// The mission this editing session last SAVED — the write-only uuid
+    /// The mission this editing session last SAVED - the write-only uuid
     /// mint's memory. A re-save reuses the memo's uuid (stable identity
     /// across saves, no churn) instead of minting again; a mission OPENED
     /// from disk carries its uuid in `editor.mission` and doesn't need the
     /// memo. The save is an input-layer side effect off the undo timeline
     /// (replay never runs the input layer), so the random uuid living
-    /// HERE breaks nothing — GameState stays uuid-free for fresh missions.
+    /// HERE breaks nothing - GameState stays uuid-free for fresh missions.
     /// Backing-owned strings, freed + replaced on each save; the FINAL
     /// value leaks at process exit (the editor_mission_sprites pattern).
     editor_saved_mission: ?EditorSavedMission = null,
 
     /// The stashed bytes of a validation replay that was NOT auto-written
-    /// (the run was slower than the personal best — the personal-best
+    /// (the run was slower than the personal best - the personal-best
     /// overwrite guard; see DESIGN → Custom Missions & Online Services →
     /// Validation replay). Backing-allocator owned (survives arena
     /// compaction); freed + replaced by the next validation's stash, freed
     /// when the manual Overwrite Replay button writes it, freed when the
     /// next run starts (a new run retires the previous offer). Null when no
     /// overwrite is on offer. Set by mission_io.writeValidationReplay;
-    /// cleared at start_validation (both gated `!replaying` — side-effect
+    /// cleared at start_validation (both gated `!replaying` - side-effect
     /// state, replay must not eat a pending offer on undo/redo scrubbing).
     pending_validation_replay: ?[]const u8 = null,
 
@@ -266,17 +266,17 @@ pub const SessionState = struct {
     validation_replay_overwrite_offered: bool = false,
 
     /// The validated mission's personal-best turn count (the replay
-    /// FILE's derived turns — what the author medal targets derive from).
+    /// FILE's derived turns - what the author medal targets derive from).
     /// Captured at the validation-replay write site (both guard branches:
     /// the kept old file's turns, or the just-written run's). Null when
-    /// no replay has landed (a failed write — the popup says so). Display
+    /// no replay has landed (a failed write - the popup says so). Display
     /// state for the validation stats screen; the browser/UI derives from
     /// the file itself later.
     validation_personal_best_turns: ?u32 = null,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor + press position. Transient view
-    // state — off the undoable GameState, replay-safe by construction (like
+    // state - off the undoable GameState, replay-safe by construction (like
     // tile_cursor / the animation clock). Levels/hubs only; cleared on screen
     // transition and on player move (the camera recenters when the player
     // moves). The pan engages only once the pointer moves beyond
@@ -286,14 +286,14 @@ pub const SessionState = struct {
     camera_pan_anchor: ?CameraPanAnchor = null,
     // Press position (full-precision pointer space) of a right-drag that
     // hasn't crossed the drag threshold yet; dropped when the pan engages
-    // (latch — a wiggle back near the press point keeps panning) and on
+    // (latch - a wiggle back near the press point keeps panning) and on
     // release. Read only by handleCameraPan.
     camera_pan_press: ?input.PointerPosition = null,
 
     /// Held keyboard modifiers at this frame, copied from the per-frame
     /// `PlayerInput.modifiers` each tick in `update()`. Read by `view()` to
     /// highlight the salvage-tool indicator while Shift is held. Transient
-    /// view state — off the undoable GameState, replay-safe by construction
+    /// view state - off the undoable GameState, replay-safe by construction
     /// (like tile_cursor / camera_pan). See DESIGN → Input.
     held_modifiers: types.Modifiers = .{},
 
@@ -302,7 +302,7 @@ pub const SessionState = struct {
     /// pending error open), so anims freeze during pause and resume cleanly.
     /// Read by `view()` to pick sprite-animation frames (the flag banner) and
     /// gate one-shot anims (skill-icon pop, hit flash, damage/heal numbers).
-    /// NEVER read by event handlers — that would
+    /// NEVER read by event handlers - that would
     /// make a handler impure (its output would depend on wall-clock time),
     /// breaking the replay-verification invariant (handlers are deterministic
     /// functions of (state, event)). See DESIGN → Animation. Off the
@@ -313,19 +313,19 @@ pub const SessionState = struct {
 
     /// Non-pause-gated session-relative monotonic clock (accumulated
     /// microseconds). Unlike `animation_clock` (which freezes during pause),
-    /// this advances every frame regardless — the clock for
+    /// this advances every frame regardless - the clock for
     /// pause-independent timing: debounced write deadlines (currently
     /// settings persistence, so writes fire even while the options menu
-    /// is open — see DESIGN → Input) and the outline stripe phase (so UI
+    /// is open - see DESIGN → Input) and the outline stripe phase (so UI
     /// marching outlines animate everywhere, options/settings menus
-    /// included — see DESIGN → Animation). Off the undoable GameState, so
+    /// included - see DESIGN → Animation). Off the undoable GameState, so
     /// replay-safe by construction.
     session_clock: u64 = 0,
 
     /// Snapshot of the render resolution the last time `frame()` applied it
     /// to the backend. `frame()` compares `history.settings.render_resolution`
     /// against this and calls `backend.applyRenderResolution` on a diff, then
-    /// updates it on success. Initialized to the default preset — the backend
+    /// updates it on success. Initialized to the default preset - the backend
     /// creates its target at the same default before settings load, so the
     /// snapshot starts in sync and a default setting costs no first-frame
     /// swap. On apply failure the setting REVERTS to this value (the backend
@@ -336,7 +336,7 @@ pub const SessionState = struct {
     /// Smoothed FPS counter for the optional on-screen diagnostic overlay
     /// (`settings.show_fps`). An exponential moving average over the actual
     /// rendered frame interval (the time between consecutive renders, sampled
-    /// in `frame()`'s render gate). Transient view state — off the undoable
+    /// in `frame()`'s render gate). Transient view state - off the undoable
     /// GameState, advanced in `frame()` only (never in handlers, so the
     /// replay-purity invariant holds), so replay-safe by construction. 0
     /// until the first render lands (then seeded with the first instant FPS).
@@ -347,7 +347,7 @@ pub const SessionState = struct {
     /// Pending debounced writes (currently settings persistence). A small fixed array keyed by `PendingWrite.Tag`; each tag
     /// coalesces (a new dirty-mark refreshes the deadline rather than
     /// enqueueing a second write). Fired by `frame()` when the deadline
-    /// elapses (gated `!replaying` — but `frame()` is the live path, so the
+    /// elapses (gated `!replaying` - but `frame()` is the live path, so the
     /// gate is automatic). See DESIGN → Input.
     pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
 
@@ -356,7 +356,7 @@ pub const SessionState = struct {
     /// Drained by `frame()` after the update drain and played via the
     /// backend. Off the undoable GameState → replay-safe by construction
     /// (replay queues nothing; the `!replaying` gate is at the push site).
-    /// Backed by `backing_allocator` (not an arena — cleared each frame, so
+    /// Backed by `backing_allocator` (not an arena - cleared each frame, so
     /// an arena would leak growth). See DESIGN → Audio.
     pending_sounds: std.ArrayListUnmanaged(types.SoundCue) = .empty,
 
@@ -368,7 +368,7 @@ pub const SessionState = struct {
     pending_anims: std.ArrayListUnmanaged(types.PendingAnim) = .empty,
 
     /// Active one-shot anims. `view()` filters this each frame (event_index
-    /// < current_event_index AND animation_clock < end_clock) — no explicit
+    /// < current_event_index AND animation_clock < end_clock) - no explicit
     /// removal of elapsed/undone entries. Cleared on screen/world transition
     /// (an anim is out of scope once the world it belonged to is gone).
     /// Grows unbounded within a screen (accepted, same tradeoff as
@@ -415,12 +415,12 @@ pub const SessionState = struct {
     // dismiss (`Action.dismiss_error`). Off the undoable GameState, so
     // replay-safe by construction (like the other fields here). The message
     // is duped into `history_arena` (durable across frames until process
-    // exit); overwriting a prior error leaks the old bytes in the arena —
+    // exit); overwriting a prior error leaks the old bytes in the arena -
     // accepted, since errors are rare and small (same unbounded-arena
     // tradeoff as `event_history`). See DESIGN → Error Handling.
     pending_error: ?[]const u8 = null,
 
-    /// Scroll offset for the error popup's body, in LINES — the index of
+    /// Scroll offset for the error popup's body, in LINES - the index of
     /// the first visible body line (the game-wide row-scroll convention;
     /// see DESIGN → Error Handling → Recoverable error surface). Reset to
     /// 0 by `setPendingError`. Lower-clamped at the input site; upper-
@@ -429,7 +429,7 @@ pub const SessionState = struct {
     error_scroll_offset: i32 = 0,
 
     /// Exit Game requested (the main-menu options menu's Exit Game button,
-    /// native-only — the button is not emitted on web). A request, not a
+    /// native-only - the button is not emitted on web). A request, not a
     /// state transform: never recorded, off the undo timeline; the game
     /// loop's exit condition consumes it, and the shutdown defers flush
     /// pending writes + diagnostics on the way out.
@@ -451,7 +451,7 @@ pub const SessionState = struct {
     /// Copy `msg` into the durable history arena and set it as the pending
     /// error. Overwrites (leaks) any prior message. The caller passes
     /// `history_arena.allocator()` so the message outlives `current_arena`
-    // compaction (idle points) — a `current_arena`-backed message could be
+    // compaction (idle points) - a `current_arena`-backed message could be
     // freed while the popup is still displayed.
     pub fn setPendingError(
         self: *SessionState,
@@ -498,10 +498,10 @@ pub const SessionState = struct {
             @panic("failed to queue sound");
     }
 
-    /// Queue the layer half of an action cue for `action` — no base (the
+    /// Queue the layer half of an action cue for `action` - no base (the
     /// release seam owns the base up, and keyboard-triggered actions get
     /// the layer alone so keys stay click-sound-free). A missing layer
-    /// file is silent — no fallback. Callers gate on `!history.replaying`
+    /// file is silent - no fallback. Callers gate on `!history.replaying`
     /// (the `queueSound` convention).
     pub fn queueActionSound(
         self: *SessionState,
@@ -515,7 +515,7 @@ pub const SessionState = struct {
 
     /// Drain and return the pending sounds slice. The caller owns playing
     /// them; the queue length is reset to 0 (capacity retained) WITHOUT
-    /// memset — Zig's `clearRetainingCapacity` does `@memset(items,
+    /// memset - Zig's `clearRetainingCapacity` does `@memset(items,
     /// undefined)` which would clobber the slice the caller just received
     /// before they play it. We reset the length directly instead, leaving
     /// the backing bytes intact (they'll be overwritten on the next
@@ -543,7 +543,7 @@ pub const SessionState = struct {
     /// Drain and return the pending anims slice. The caller stamps
     /// `end_clock` and moves entries into `active_anims`; the queue length is
     /// reset to 0 (capacity retained) without memset, like
-    /// `drainPendingSounds` — the backing bytes stay valid until the next
+    /// `drainPendingSounds` - the backing bytes stay valid until the next
     /// `append` overwrites them. See DESIGN → Animation.
     pub fn drainPendingAnims(
         self: *SessionState,
@@ -565,7 +565,7 @@ pub const SessionState = struct {
     }
 
     /// Mark a debounced write as dirty. If a write with the same tag is
-    /// already pending, refresh its deadline (debounce — a burst of changes
+    /// already pending, refresh its deadline (debounce - a burst of changes
     /// coalesces into one write). If not, enqueue a new one. The max-wait cap
     /// guarantees a write fires within `write_max_wait_microseconds` of the
     /// first dirty mark even under continuous change (a steady stream that
@@ -605,14 +605,14 @@ pub const SessionState = struct {
                 return;
             }
         }
-        // No room — the array is too small (a real bug; max_pending_writes
+        // No room - the array is too small (a real bug; max_pending_writes
         // should cover all tags). Fire immediately as a fallback.
         write_fn(undefined);
     }
 
     /// Fire any pending writes whose deadline has elapsed. Called by `frame()`
     /// each tick after advancing `session_clock`. `history` is passed to each
-    /// writer fn. Gated `!replaying` — but `frame()` is the live path (replay
+    /// writer fn. Gated `!replaying` - but `frame()` is the live path (replay
     /// goes through `restoreTo`/`replayTo`, not `frame()`), so the gate is
     /// automatic. See DESIGN → Input.
     pub fn fireElapsedWrites(self: *SessionState, history: *GameStateHistory, now: u64) void {
@@ -661,12 +661,12 @@ pub const PendingWrite = struct {
 };
 
 /// Write the current settings to `settings.txt` in the persistent dir
-/// (best-effort — errors are swallowed since a failed preferences write is
+/// (best-effort - errors are swallowed since a failed preferences write is
 /// not critical; the preference just doesn't persist). The settings
 /// `PendingWrite` writer fn, shared by preference-change persistence and
 /// the startup repair write. Also called directly (a synchronous flush,
 /// bypassing the debounce) by the reset-to-defaults backup, so
-/// `settings.txt` holds the exact current settings before the byte copy —
+/// `settings.txt` holds the exact current settings before the byte copy -
 /// see `input_handlers.backUpSettingsFile`. See DESIGN → Input → Debounced
 /// writes.
 pub fn writeSettingsToFile(history: *GameStateHistory) void {
@@ -699,9 +699,9 @@ pub const GameState = struct {
     waiting: ?WaitState = null,
     /// The ACCELERATING-WAIT gap counter: how many `accelerating_wait` events
     /// have elapsed since the current effect chain began (reset by `use_skill`
-    /// — every attack is skill-mediated). The wait arm computes its duration
-    /// from this (125ms decayed by 3/4 per prior gap). Event-driven GameState —
-    /// carried in snapshots, recomputed identically on replay — so the derived
+    /// - every attack is skill-mediated). The wait arm computes its duration
+    /// from this (125ms decayed by 3/4 per prior gap). Event-driven GameState -
+    /// carried in snapshots, recomputed identically on replay - so the derived
     /// durations stay deterministic. See DESIGN → Architecture → Skill pacing.
     wait_acceleration: u32 = 0,
     player_data: PlayerData,
@@ -729,7 +729,7 @@ pub const GameState = struct {
     /// (the Continue button). See DESIGN → Architecture.
     last_completed_mission: ?types.MissionCompleteInfo = null,
 
-    /// Class-1 semantic surface state — what UI is open. On the undo timeline
+    /// Class-1 semantic surface state - what UI is open. On the undo timeline
     /// behind the `toggle_ui_surface` / `inspect_entity` events so replay
     /// reproduces it and `validatePlayerAction` can gate gameplay
     /// orchestrators on the surface that supplies their trigger. See
@@ -743,10 +743,10 @@ pub const GameState = struct {
     pub fn transitionScreen(self: *GameState, new_screen: Screen) void {
         self.event_stack = &.{};
 
-        // Close every UI surface — class-1 surface state lives on
+        // Close every UI surface - class-1 surface state lives on
         // GameState, so the close runs HERE (inside the handlers that
         // install worlds / change screens) for replay to reproduce it;
-        // the classes-2–4 wholesale reset stays in the live loop. Every
+        // the classes-2-4 wholesale reset stays in the live loop. Every
         // world install routes through this (start_level / start_hub /
         // start_playtest call it even when the screen enum stays the
         // same), so same-screen world swaps close surfaces too. See
@@ -791,17 +791,17 @@ pub const ReconstructionCacheEntry = struct {
 
 /// How a cross-session reconstruction (reconstructFromEventLog) resolves
 /// reconstruction reads. In-session replay (replayTo) is always
-/// authoritative — live play populated the cache.
+/// authoritative - live play populated the cache.
 pub const ReconstructionReadPolicy = enum {
     /// Every read the replay will make is already cached (a session-log
     /// bundle pre-populated the cache via loadReconstructionCache). A
-    /// cache miss is a broken or hand-edited bundle — fail fast, never
+    /// cache miss is a broken or hand-edited bundle - fail fast, never
     /// silently fall back to disk.
     authoritative,
     /// Misses fall back to file_source and cache the result (the
     /// revalidate path): the validation replay deliberately carries no
-    /// embedded cache — it replays against the mission's CURRENT files,
-    /// hash-gated upstream — so the disk is the intended source.
+    /// embedded cache - it replays against the mission's CURRENT files,
+    /// hash-gated upstream - so the disk is the intended source.
     lazy_disk,
 };
 
@@ -816,16 +816,16 @@ pub const ReplayRejection = struct {
     /// Index into the replayed event log where the divergence was caught
     /// (the event the verification was comparing when it failed).
     event_index: u32,
-    /// Human-readable description — the same text the fail-fast path
+    /// Human-readable description - the same text the fail-fast path
     /// panics with.
     message: []const u8,
 };
 
 pub const GameStateHistory = struct {
-    // Player preferences — not part of game state, not affected by undo/redo.
+    // Player preferences - not part of game state, not affected by undo/redo.
     settings: Settings,
 
-    // Transient view/input state — not part of game state, not affected by
+    // Transient view/input state - not part of game state, not affected by
     // undo/redo. See SessionState.
     session: SessionState = .{},
 
@@ -836,11 +836,11 @@ pub const GameStateHistory = struct {
 
     // Unified file I/O (read-only content via the embedded map + player
     // overrides; writable artifacts via the persistent dir). Session-resident,
-    // like settings — never deep-copied into snapshots, never touched by
+    // like settings - never deep-copied into snapshots, never touched by
     // replay. See DESIGN → File System & IO and file_source.zig.
     file_source: *const FileSource,
 
-    // The general I/O handle (clocks, etc.) — a sibling to `file_source`,
+    // The general I/O handle (clocks, etc.) - a sibling to `file_source`,
     // NOT nested inside it, because `std.Io` is broader than file reading/
     // writing. Callers that need the clock (e.g. formatSessionTimestamp)
     // read this directly instead of reaching through the file abstraction.
@@ -848,7 +848,7 @@ pub const GameStateHistory = struct {
     // also holds.
     io: std.Io,
 
-    // The initial game state at launch — ultimate fallback for replay.
+    // The initial game state at launch - ultimate fallback for replay.
     initial_state: GameState,
     initial_arena: std.heap.ArenaAllocator, // owns all memory referenced by initial_state
 
@@ -861,7 +861,7 @@ pub const GameStateHistory = struct {
     // event index under handling. Live reads cache their bytes here (in
     // history_arena); replay serves them back from the cache so the bytes a
     // reconstruction-read event applies are a pure function of its position
-    // in history — fully deterministic regardless of later file changes
+    // in history - fully deterministic regardless of later file changes
     // (e.g. editor saves overwrite a mission's files mid-session). Entries
     // are appended in monotonic event-index order; trimmed on branch
     // (discardFutureTimeline). See DESIGN → File System & IO → Reconstruction cache and the
@@ -897,12 +897,12 @@ pub const GameStateHistory = struct {
 
     // Durable arena for the append-only session log (event_history + idle_points
     // backing, plus deep-copied event payloads). Event payload slices are the
-    // replay source of truth, so they must outlive current_arena resets — hence
+    // replay source of truth, so they must outlive current_arena resets - hence
     // a separate arena from current_state's. Grows unbounded with the session
     // (accepted; see DESIGN → Memory & Budget); never reset.
     history_arena: std.heap.ArenaAllocator,
 
-    // The live game state — what update() works on and view() renders.
+    // The live game state - what update() works on and view() renders.
     current_state: GameState,
     current_arena: std.heap.ArenaAllocator, // owns all memory referenced by current_state
 
@@ -910,7 +910,7 @@ pub const GameStateHistory = struct {
     // Event handlers must run pure state transforms unconditionally, but gate
     // observable side effects (file writes, downloads, audio, dialogs) on
     // !replaying so scrubbing history doesn't re-fire them. Reconstruction
-    // reads (level/hub/save config) still run — the rebuilt state depends on
+    // reads (level/hub/save config) still run - the rebuilt state depends on
     // them. See processEvent handlers.
     replaying: bool = false,
 
@@ -922,34 +922,34 @@ pub const GameStateHistory = struct {
     // error via session.pending_error. Distinct from pending_error (which
     // is the user-facing message and can be set advisorially by key
     // validation without triggering a revert). A handler failure during
-    // replay panics instead (fail-fast — unexpected; in-session replay has
+    // replay panics instead (fail-fast - unexpected; in-session replay has
     // cached bytes). See DESIGN → Error Handling → three contexts.
     load_error: bool = false,
 
     // True only during lazy-disk cross-session reconstruction
-    // (reconstructFromEventLog with .lazy_disk — the revalidate path): the
+    // (reconstructFromEventLog with .lazy_disk - the revalidate path): the
     // validation replay deliberately carries no embedded cache, so on a
     // reconstruction-cache miss, readReconstructionFile falls back to
     // file_source and caches the result (establishing the cache
-    // retroactively) instead of panicking — the mission's CURRENT files
+    // retroactively) instead of panicking - the mission's CURRENT files
     // are the intended content there, hash-gated upstream. Session-log
-    // bundles (.authoritative — the cache pre-populated from the bundle
+    // bundles (.authoritative - the cache pre-populated from the bundle
     // via loadReconstructionCache) and in-session replay never set this:
-    // their caches cover every read, so a miss is a bug — fail fast
+    // their caches cover every read, so a miss is a bug - fail fast
     // rather than silently fall back to disk.
     reconstruction_disk_fallback: bool = false,
 
-    // Replay-verification CHECKING mode (the revalidate path — see
+    // Replay-verification CHECKING mode (the revalidate path - see
     // `rejectReplay`). False (normal replay/undo/redo/cross-session
-    // reconstruction): verification failures fail fast via @panic — a
+    // reconstruction): verification failures fail fast via @panic - a
     // diverging replay is an integrity violation. True: the first failure
-    // is recorded on `replay_rejection` and the replay loop aborts — the
+    // is recorded on `replay_rejection` and the replay loop aborts - the
     // same failure is a benign "run no longer matches the content"
     // report. Only set by `reconstructFromEventLogChecking`.
     replay_checking: bool = false,
 
     /// First verification failure of a checking-mode replay (null until
-    /// one fires; first wins — later rejections are ignored). The message
+    /// one fires; first wins - later rejections are ignored). The message
     /// is backing-allocator-owned: valid until the history's allocator
     /// deinits (checking mode runs on short-lived scratch histories).
     replay_rejection: ?ReplayRejection = null,
@@ -990,17 +990,17 @@ pub const GameStateHistory = struct {
     }
 
     /// Free everything the history owns: the session-owned config values
-    /// (settings bindings, theme gradients, salvage splits — all backing-
+    /// (settings bindings, theme gradients, salvage splits - all backing-
     /// allocator allocations, independent of the startup config bytes they
     /// were parsed from, so they are freed here BEFORE `freeSessionSetup`
     /// frees the tracked startup bytes + sections), SessionState's backing-
     /// owned lists + scan entries, the snapshot/checkpoint/initial arenas,
     /// and the two arenas (event_history + idle_points + the
     /// reconstruction cache + pending_error all live in history_arena;
-    /// current_state in current_arena — one deinit each covers them).
+    /// current_state in current_arena - one deinit each covers them).
     /// The FileSource + IO are NOT freed (owned by the platform driver,
     /// shared across re-boots). The web re-boot's prerequisite (a mid-frame
-    /// swap would be a use-after-free — run at the frame boundary); native
+    /// swap would be a use-after-free - run at the frame boundary); native
     /// never tears down (process lifetime). Test/scratch histories that
     /// live in a throwaway arena skip deinit (the arena reclaims).
     pub fn deinit(self: *GameStateHistory) void {
@@ -1086,11 +1086,11 @@ pub const GameStateHistory = struct {
     /// start_hub / start_mission / load_save). Live: reads via file_source
     /// and caches the bytes in history_arena, keyed by the event index
     /// under handling, and PROPAGATES a read error (a missing/unreadable
-    /// file is recoverable per DESIGN → Error Handling → context 2 — the
+    /// file is recoverable per DESIGN → Error Handling → context 2 - the
     /// caller turns it into `failReconstructionRead` + revert, not a crash).
     /// Replay: returns the cached bytes. This makes replay fully
     /// deterministic regardless of later file changes (e.g. editor saves
-    /// overwrite a mission's files mid-session) — the bytes a
+    /// overwrite a mission's files mid-session) - the bytes a
     /// reconstruction-read event reads are a pure function of its position
     /// in history. Call this INSTEAD of file_source.readFile from any event
     /// handler whose read result becomes part of the reconstructed state.
@@ -1100,7 +1100,7 @@ pub const GameStateHistory = struct {
     /// the cache via loadReconstructionCache), so we fail fast with a
     /// descriptive panic rather than silently falling back to disk (which
     /// would reintroduce divergence, just quieter). The only legitimate
-    /// miss is lazy-disk reconstruction (.lazy_disk — the revalidate
+    /// miss is lazy-disk reconstruction (.lazy_disk - the revalidate
     /// path), which reads the current files and caches retroactively; a
     /// read failure THERE is genuinely unrecoverable (the log references
     /// files that no longer exist) and panics.
@@ -1127,16 +1127,16 @@ pub const GameStateHistory = struct {
             while (index < items.len and items[index].event_index == event_index) : (index += 1) {
                 if (std.mem.eql(u8, items[index].path, path)) return items[index].bytes;
             }
-            // Miss. In-session replay (replayTo) never misses — live play
-            // cached before replay could reach this index — and a
+            // Miss. In-session replay (replayTo) never misses - live play
+            // cached before replay could reach this index - and a
             // session-log bundle pre-populated the cache from its
             // embedded copies, so a miss there means a broken or
             // hand-edited bundle: fail fast. Lazy-disk reconstruction
-            // (.lazy_disk — the revalidate path) starts with an empty
+            // (.lazy_disk - the revalidate path) starts with an empty
             // cache BY DESIGN: fall back to file_source and cache the
             // result (establishing the cache retroactively).
             if (!self.reconstruction_disk_fallback) {
-                @panic("reconstruction cache miss: no cached bytes for this event+path (a live read did not cache, or the replayed session-log bundle is missing its cache entry — broken or hand-edited bundle)");
+                @panic("reconstruction cache miss: no cached bytes for this event+path (a live read did not cache, or the replayed session-log bundle is missing its cache entry - broken or hand-edited bundle)");
             }
             const arena = self.history_arena.allocator();
             const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
@@ -1156,7 +1156,7 @@ pub const GameStateHistory = struct {
             // context 2): propagate so the caller's catch turns a
             // missing/unreadable file into a popup + revert, not a crash.
             // The dupe above leaked a few bytes into history_arena on a
-            // failed read — accepted (history_arena is unbounded, same
+            // failed read - accepted (history_arena is unbounded, same
             // tradeoff as event_history; not worth a two-phase alloc).
             return err;
         };
@@ -1168,7 +1168,7 @@ pub const GameStateHistory = struct {
         return bytes;
     }
 
-    /// Drop the recorded timeline ahead of the current position — the stale
+    /// Drop the recorded timeline ahead of the current position - the stale
     /// future left behind when the player undoes and then acts. Trims the event
     /// log and idle points to the current position and frees any snapshots /
     /// checkpoints that captured the abandoned branch (those at a later event
@@ -1202,7 +1202,7 @@ pub const GameStateHistory = struct {
         // appended in monotonic event-index order, so find the first with
         // event_index >= current_event_index and shrink to it. The bytes they
         // point at live in history_arena (never individually freed); trimming
-        // the list is enough — they're reclaimed only when history_arena is
+        // the list is enough - they're reclaimed only when history_arena is
         // torn down at process exit.
         var cache_keep: usize = self.reconstruction_cache.items.len;
         while (cache_keep > 0 and
@@ -1265,7 +1265,7 @@ pub const GameStateHistory = struct {
 
     /// Record an idle point: the live loop's stack-empty bookkeeping. Bundles
     /// snapshot + arena compaction so the live loop and reconstruction share
-    /// one action (detection of the idle boundary differs — the live loop
+    /// one action (detection of the idle boundary differs - the live loop
     /// watches the real stack drain; reconstruction tracks virtual stack
     /// depth over the recorded stream). Call only when the event stack is
     /// empty (live) or the virtual depth has hit 0 (reconstruction).
@@ -1282,11 +1282,11 @@ pub const GameStateHistory = struct {
     /// actually ran events this tick (drain loop: `had_events`; idle branch:
     /// `current_event_index` advanced). The recording fires only when events
     /// ran, the stack is now empty, and the current position isn't ALREADY an
-    /// idle point — that last check excludes undo/redo, which are anytime
+    /// idle point - that last check excludes undo/redo, which are anytime
     /// actions handled inside `update()` and land on an existing idle point
     /// (recording a duplicate there would corrupt the timeline and make
     /// undo/redo cycle between adjacent states). Reconstruction does not call
-    /// this — it records idle points from virtual stack depth in
+    /// this - it records idle points from virtual stack depth in
     /// `replayToWithIdleTracking`.
     pub fn maybeRecordIdlePoint(
         self: *GameStateHistory,
@@ -1294,7 +1294,7 @@ pub const GameStateHistory = struct {
     ) void {
         if (events_processed and
             self.current_state.event_stack.len == 0 and
-            // "Not already an idle point" — excludes undo/redo, which land
+            // "Not already an idle point" - excludes undo/redo, which land
             // on an existing idle point (recording a duplicate would corrupt
             // the timeline). Only meaningful when idle_points is non-empty;
             // when empty (the very first idle point at startup) the position
@@ -1310,7 +1310,7 @@ pub const GameStateHistory = struct {
     /// Compact current_state into a fresh arena, reclaiming the per-turn churn
     /// (abandoned event-stack reallocations, rebuilt slices, exited levels/hubs)
     /// that accumulated in current_arena since the last reset. Call at idle
-    /// points (stack empty) during live play only — replay manages current_arena
+    /// points (stack empty) during live play only - replay manages current_arena
     /// itself. Without this, current_arena grows unbounded across a long forward
     /// session (it is otherwise only reset on undo/redo reconstruction).
     fn compactCurrentArena(self: *GameStateHistory) void {
@@ -1386,9 +1386,9 @@ pub const GameStateHistory = struct {
     }
 
     /// Record (checking mode) or raise (normal mode) a replay-verification
-    /// failure. Normal mode: fail-fast @panic — a diverging replay is an
+    /// failure. Normal mode: fail-fast @panic - a diverging replay is an
     /// integrity violation (see DESIGN → Determinism & Tiebreaking →
-    /// Replay VERIFICATION). Checking mode (`replay_checking` — the
+    /// Replay VERIFICATION). Checking mode (`replay_checking` - the
     /// revalidate path): record the FIRST failure on `replay_rejection`
     /// and return, so the replay loop aborts without crashing; the same
     /// failure is a benign "run no longer matches the content" report.
@@ -1411,7 +1411,7 @@ pub const GameStateHistory = struct {
     /// `replayToWithIdleTracking`), for handler-pushed children AND seeded
     /// top-level events. For top-level events (just seeded from the
     /// recording) the check is trivially true; for handler-pushed children
-    /// it is the real verification — a handler that pushes a different child
+    /// it is the real verification - a handler that pushes a different child
     /// than the original session did panics here. A divergence means the
     /// engine's (state, event) → (state', children) transform is not a pure
     /// function of its inputs (a nondeterminism bug), so we fail fast.
@@ -1443,7 +1443,7 @@ pub const GameStateHistory = struct {
 
     /// The structural replay whitelist: is `event` a kind of event a player
     /// can push at an idle point at all? This is the OUTER replay-anti-cheat
-    /// gate — `verifyReplayMatch` only checks structural equality (trivially
+    /// gate - `verifyReplayMatch` only checks structural equality (trivially
     /// true for top-level seeded events), so without this a hand-crafted log
     /// could seed any handler-internal machinery event (`attack`, `turn_end`,
     /// `end_level`, `start_mission`, ...) at an idle point and the handlers
@@ -1468,7 +1468,7 @@ pub const GameStateHistory = struct {
     }
 
     /// Validate that a top-level player-action event was LEGAL at the point
-    /// it was recorded — i.e. the player could actually have done what the
+    /// it was recorded - i.e. the player could actually have done what the
     /// replay claims. This is the replay anti-cheat seam: `verifyReplayMatch`
     /// only checks structural equality (the handler would run the same
     /// event the recording has), and for TOP-LEVEL events that check is
@@ -1490,7 +1490,7 @@ pub const GameStateHistory = struct {
     /// Structural legality shared by the inspector's entity-edit commits
     /// (scalars + equipped-slot items): the editor screen with an editor
     /// present, and the target's palette index in range (a recorded commit
-    /// always has a live target — a stale focus records nothing at the
+    /// always has a live target - a stale focus records nothing at the
     /// would-change gate). Item VALUES are unrestricted (stats are clamped
     /// at the UI; a crafted out-of-range value is a harmless gameplay
     /// number, same class as an unbalanced base stat).
@@ -1539,7 +1539,7 @@ pub const GameStateHistory = struct {
     /// editor screen + editor present + decoration type id in range. The
     /// def commit's payload values are unrestricted at this seam (an empty
     /// footprint is defensively ignored by the handler, the
-    /// editor_set_tool posture — the live path can't produce one).
+    /// editor_set_tool posture - the live path can't produce one).
     fn validateInspectorDecorationEdit(self: *GameStateHistory, type_id: u32) void {
         if (self.current_state.screen != .editor) {
             self.rejectReplay("replay validation: decoration inspector commit outside editor screen");
@@ -1608,7 +1608,7 @@ pub const GameStateHistory = struct {
                     }
                 }
             },
-            // The player loadout has no layers — the live path never
+            // The player loadout has no layers - the live path never
             // targets it (the Layers section is enemy content only).
             .player_def => {
                 self.rejectReplay("replay validation: entity layer commit on the player loadout");
@@ -1619,7 +1619,7 @@ pub const GameStateHistory = struct {
 
     /// Structural legality shared by the decoration LAYER commits: the
     /// decoration scalar checks + the load-time invariant (a layer's pixel
-    /// dims must equal the base's — add/set only; remove carries no layer)
+    /// dims must equal the base's - add/set only; remove carries no layer)
     /// + the layer index in range for remove/set (null = add).
     fn validateInspectorDecorationLayerEdit(
         self: *GameStateHistory,
@@ -1651,10 +1651,10 @@ pub const GameStateHistory = struct {
             .player_input_event => |pi| {
                 // Surface-supply gate, hoisted: a click/drag orchestrator
                 // is only legal while the panel that renders its trigger
-                // is open — the legality mirror of the live pointer gate (a
+                // is open - the legality mirror of the live pointer gate (a
                 // slot only renders inside its open panel). The per-family
                 // mapping lives in `actionTriggerSurfaceOpen` (the bool
-                // core, tested directly — the no-expectPanics convention).
+                // core, tested directly - the no-expectPanics convention).
                 // See DESIGN → Determinism → Replay PLAYER-ACTION LEGALITY.
                 if (!actionTriggerSurfaceOpen(&self.current_state, pi)) {
                     self.rejectReplay("replay validation: click/drag action without its trigger panel open");
@@ -1679,7 +1679,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Editor Test button: only from the editor's edit mode —
+                    // Editor Test button: only from the editor's edit mode -
                     // the button exists only there, so anything else in a
                     // crafted log is rejected.
                     .player_start_playtest => {
@@ -1697,7 +1697,7 @@ pub const GameStateHistory = struct {
                         }
                     },
                     // Validate: file-based (the handler needs no editor), so
-                    // the legality bar is just "no run active" — which a
+                    // the legality bar is just "no run active" - which a
                     // fresh state satisfies, letting a cross-session
                     // validation replay seed this as its first event (see
                     // DESIGN → Custom Missions & Online Services → Validation
@@ -1713,7 +1713,7 @@ pub const GameStateHistory = struct {
                     // Revalidate: the options-menu button exists only on the
                     // editor screen with an editor present; the handler owns
                     // the rest (the replay file exists, the uuid identity
-                    // gate, the checking replay). File-based like validate —
+                    // gate, the checking replay). File-based like validate -
                     // no run-active check needed for a cross-session log.
                     .player_revalidate_mission => {
                         if (self.current_state.screen != .editor) {
@@ -1775,7 +1775,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: same shape — the live path is a
+                    // Structural legality: same shape - the live path is a
                     // palette group's "+" cell (the editor's bottom bar).
                     .player_add_editor_entity_type,
                     .player_add_editor_decoration_type,
@@ -1790,7 +1790,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: same shape — the live path is the
+                    // Structural legality: same shape - the live path is the
                     // top-bar add-level "+".
                     .player_add_editor_level => {
                         if (self.current_state.screen != .editor) {
@@ -1802,7 +1802,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: same shape — the live path is a level
+                    // Structural legality: same shape - the live path is a level
                     // tab's × button. The index must be in range AND the
                     // mission must keep ≥1 level (the handler enforces both as
                     // its documented invariant; this is the gate that keeps
@@ -1848,7 +1848,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: same shape — the live path is the
+                    // Structural legality: same shape - the live path is the
                     // editor's top-right toggle button.
                     .player_toggle_editor_metadata_sidebar => {
                         if (self.current_state.screen != .editor) {
@@ -1877,7 +1877,7 @@ pub const GameStateHistory = struct {
                         }
                     },
                     // Structural legality: right-click inspect is level-only (the
-                    // gesture's scope — hubs are excluded by design) and the
+                    // gesture's scope - hubs are excluded by design) and the
                     // target index must name a live entity.
                     .player_inspect_entity => |inspect| {
                         if (self.current_state.screen != .level) {
@@ -1892,7 +1892,7 @@ pub const GameStateHistory = struct {
                             }
                         }
                     },
-                    // Structural legality: same shape as the inspector toggle —
+                    // Structural legality: same shape as the inspector toggle -
                     // the live path is the picker's own open buttons, with the
                     // target's bounds validated here (type ids / level indices
                     // / layer indices in range against the palette).
@@ -1908,7 +1908,7 @@ pub const GameStateHistory = struct {
                         const target_legal = switch (open.target) {
                             .utility_skill_slot => |slot_index| slot_index < types.utility_skill_count,
                             .entity_sprite, .decoration_sprite => true,
-                            // A layer index is bounds-checked downstream — the
+                            // A layer index is bounds-checked downstream - the
                             // pick/commit handlers guard against
                             // `template.layers.len` (a stale index no-ops).
                             .entity_layer, .decoration_layer => true,
@@ -1930,7 +1930,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: same shape as the inspector toggle —
+                    // Structural legality: same shape as the inspector toggle -
                     // the live path is the player inspector's Import buttons
                     // (the session data + the max-player loadout).
                     .player_import_editor_player, .player_import_editor_max_player => {
@@ -1946,7 +1946,7 @@ pub const GameStateHistory = struct {
                     // Settings-sidebar commits. The mission-name commit needs
                     // only the editor context; the level-indexed commits bound
                     // the level index (the live path addresses the active tab;
-                    // a crafted log could name any level — the bound still
+                    // a crafted log could name any level - the bound still
                     // holds because the sidebar only ever renders real tabs).
                     .player_set_editor_mission_name => {
                         if (self.current_state.screen != .editor) {
@@ -1964,8 +1964,8 @@ pub const GameStateHistory = struct {
                     .player_set_editor_level_player_gradient => |set| self.validateEditorLevelMetadataCommit(set.level_index),
                     // Structural legality: the editor screen + editor + the
                     // target's palette index in range (the live path resolves
-                    // the target from the focused field; a stale focus — its
-                    // type deleted mid-edit — commits nothing, so an out-of-
+                    // the target from the focused field; a stale focus - its
+                    // type deleted mid-edit - commits nothing, so an out-of-
                     // range target here is a crafted log).
                     .player_set_editor_entity_name => |set| {
                         if (self.current_state.screen != .editor) {
@@ -2008,7 +2008,7 @@ pub const GameStateHistory = struct {
                     },
                     // The remaining inspector scalar commits share one structural
                     // legality (helper below): editor screen + editor + target
-                    // index in range (values are unrestricted — base stats are
+                    // index in range (values are unrestricted - base stats are
                     // unbounded by design, color_index is bounded by the swatch
                     // count at the UI, and a crafted out-of-range index is a
                     // harmless render-time clamp). Separate arms (not a
@@ -2020,7 +2020,7 @@ pub const GameStateHistory = struct {
                     .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
                     .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
                     .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
-                    // Team: enemy-authorable only — the player_def target is
+                    // Team: enemy-authorable only - the player_def target is
                     // rejected (the player's team is definitionally 0; a
                     // crafted log setting it would corrupt the win
                     // condition's team comparison).
@@ -2032,7 +2032,7 @@ pub const GameStateHistory = struct {
                         }
                     },
                     // The equipped-slot commit (one slot-parameterized event):
-                    // same structural legality — target in range. The payload's
+                    // same structural legality - target in range. The payload's
                     // kind/slot match + stat bounds are the handler's defensive
                     // posture (a mismatched payload is ignored, not rejected).
                     .player_set_editor_entity_gear => |set| self.validateInspectorEntityEdit(set.target),
@@ -2056,7 +2056,7 @@ pub const GameStateHistory = struct {
                     .player_set_editor_item_def => |set| self.validateInspectorItemEdit(set.type_id),
                     .player_set_editor_item_name => |set| self.validateInspectorItemEdit(set.type_id),
                     // Inventory-slot commits (the player loadout's Inventory
-                    // section): same structural legality — the editor screen
+                    // section): same structural legality - the editor screen
                     // with an editor present + the slot index in range. The
                     // payload's stat bounds are the handler's clamp (same
                     // posture as the item palette arms above).
@@ -2075,7 +2075,7 @@ pub const GameStateHistory = struct {
                     // viewport arm; the handler no-ops otherwise as the
                     // defensive path for machinery events). The position is
                     // unrestricted (empty-ground clicks are legal in a recorded
-                    // session — they plan empty and record nothing, but a
+                    // session - they plan empty and record nothing, but a
                     // hand-crafted log may contain one).
                     .player_toggle_editor_selection => {
                         if (self.current_state.screen != .editor) {
@@ -2118,7 +2118,7 @@ pub const GameStateHistory = struct {
                     // Same structural legality as the toggle (the marquee is the
                     // select tool's other gesture); the corner positions are
                     // unrestricted (an empty region is a legal no-op in a
-                    // recorded session — it plans empty and records nothing, but
+                    // recorded session - it plans empty and records nothing, but
                     // a hand-crafted log may contain one).
                     .player_select_editor_region => {
                         if (self.current_state.screen != .editor) {
@@ -2139,7 +2139,7 @@ pub const GameStateHistory = struct {
                         }
                     },
                     // Tool-agnostic (a non-select active tool is legal: the
-                    // action switches to select — see the handler). Same other
+                    // action switches to select - see the handler). Same other
                     // structural legality as the region select (ctrl+A is its
                     // unbounded form).
                     .player_select_editor_all => {
@@ -2176,7 +2176,7 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
-                    // Structural legality: screen + editor (no levels check —
+                    // Structural legality: screen + editor (no levels check -
                     // clearing needs no level; a crafted event with an empty
                     // selection is an idempotent no-op in the handler).
                     .player_clear_editor_selection => {
@@ -2191,7 +2191,7 @@ pub const GameStateHistory = struct {
                     },
                     // Same structural legality as the selection delete (the
                     // move reads the selection from state; the delta is
-                    // unrestricted — a zero delta is a legal no-op in a
+                    // unrestricted - a zero delta is a legal no-op in a
                     // recorded session, the live gesture never fires one).
                     .player_move_editor_selection => {
                         if (self.current_state.screen != .editor) {
@@ -2213,7 +2213,7 @@ pub const GameStateHistory = struct {
                     },
                     // Structural legality only: screen + editor + a level to
                     // paint on. The position is unrestricted (any tile
-                    // coordinate is a legal paint target — the handler no-ops
+                    // coordinate is a legal paint target - the handler no-ops
                     // on an existing tile, and a recorded session may contain
                     // such no-op clicks), so there is no position check here.
                     .player_paint_editor_tile => {
@@ -2232,7 +2232,7 @@ pub const GameStateHistory = struct {
                     },
                     // Structural legality: the paint checks + the entity type
                     // in palette range (an out-of-range type_id would create a
-                    // placement the view can't resolve — the live path can't
+                    // placement the view can't resolve - the live path can't
                     // produce one, a hand-crafted log could). The position is
                     // unrestricted (occupant no-op clicks are legal in a
                     // recorded session).
@@ -2298,7 +2298,7 @@ pub const GameStateHistory = struct {
                         }
                     },
                     // The right-click delete: screen + editor + a level. The
-                    // position is unrestricted — every branch (including the
+                    // position is unrestricted - every branch (including the
                     // no-op ones) is legal in a recorded session.
                     .player_delete_editor_at => {
                         if (self.current_state.screen != .editor) {
@@ -2492,11 +2492,11 @@ pub const GameStateHistory = struct {
     }
 
     /// Whether the surface state supplies the trigger for a click/drag
-    /// orchestrator — the legality mirror of the LIVE pointer gate (a
+    /// orchestrator - the legality mirror of the LIVE pointer gate (a
     /// slot only renders inside its open panel; the skill bar and world
     /// tiles always render, so their actions need no panel). The bool
     /// core under the hoisted gate in `validatePlayerAction` (the
-    /// no-expectPanics convention — tested directly). See DESIGN →
+    /// no-expectPanics convention - tested directly). See DESIGN →
     /// Determinism → Replay PLAYER-ACTION LEGALITY.
     fn actionTriggerSurfaceOpen(current: *const GameState, action: events.PlayerInputEvent) bool {
         const surfaces = &current.ui_surfaces;
@@ -2510,7 +2510,7 @@ pub const GameStateHistory = struct {
             .player_swap_inventory_items,
             => surfaces.isMiddlePanelOpen(.inventory),
             // The cross-panel drags (inventory → gear slot, gear slot →
-            // inventory): BOTH panels render — the drag's source and
+            // inventory): BOTH panels render - the drag's source and
             // target.
             .player_equip_to_gear,
             .player_unequip_from_gear,
@@ -2526,7 +2526,7 @@ pub const GameStateHistory = struct {
     }
 
     /// A surface toggle is legal only on the screens that surface exists
-    /// on — mirrors the live input gates (the in_game arms run at level/
+    /// on - mirrors the live input gates (the in_game arms run at level/
     /// hub, the main-menu-only modals' buttons render on the main menu,
     /// the editor browser is reachable on editor + main menu, and the
     /// options menu / settings are reachable from every screen via the
@@ -2649,7 +2649,7 @@ pub const GameStateHistory = struct {
                 }
                 self.validatePlayerAction(next);
                 // Checking mode: abort at the first recorded rejection
-                // (normal mode never records one — rejectReplay panics).
+                // (normal mode never records one - rejectReplay panics).
                 if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
             }
@@ -2677,16 +2677,16 @@ pub const GameStateHistory = struct {
     /// → Determinism & Tiebreaking → Replay VERIFICATION): instead of force-
     /// feeding each recorded event and discarding handler outputs, we let
     /// `processEvent`'s pop/push machinery run. The event stack IS the DFS
-    /// cursor — before each dispatch, the stack top is the event that should
+    /// cursor - before each dispatch, the stack top is the event that should
     /// run next, and we verify it equals the recorded event at
     /// `current_event_index`. Handler-pushed children naturally interleave
     /// with their own subtrees in the recorded stream, and the stack tracks
     /// that interleaving for free. When the stack drains, the next recorded
-    /// event is a fresh top-level player action — we seed it (top-level
+    /// event is a fresh top-level player action - we seed it (top-level
     /// events come from player input, not handlers, so the recording is the
     /// source of truth for them and the check is trivial there).
     ///
-    /// Idle points are simply stack-empty moments (depth 0) — the real stack
+    /// Idle points are simply stack-empty moments (depth 0) - the real stack
     /// depth replaces the old virtual-depth bookkeeping. This still relies on
     /// the one-orchestrator-event-per-player-action convention so that each
     /// idle point is a genuine player-action boundary.
@@ -2728,13 +2728,13 @@ pub const GameStateHistory = struct {
                 }
                 self.validatePlayerAction(next);
                 // Checking mode: abort at the first recorded rejection
-                // (normal mode never records one — rejectReplay panics).
+                // (normal mode never records one - rejectReplay panics).
                 if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
             }
 
             // Verify: the event about to run (stack top) matches the recording.
-            // For handler-pushed children this is the real check — a handler
+            // For handler-pushed children this is the real check - a handler
             // that pushes a different child than the original session did
             // panics here. For seeded top-level events this is trivially true.
             const expected = self.current_state.event_stack[
@@ -2745,7 +2745,7 @@ pub const GameStateHistory = struct {
 
             apply_event(self);
 
-            // Replay is instant — no real-time wait timer. A `wait` MetaEvent
+            // Replay is instant - no real-time wait timer. A `wait` MetaEvent
             // sets `waiting` during the loop, but replay never honors it, so
             // clear it immediately. Without this, snapshots taken at the
             // next stack-empty moment capture `waiting = true`, breaking the
@@ -2797,7 +2797,7 @@ pub const GameStateHistory = struct {
     /// still on the stack (e.g. enemy turns draining after the player ended
     /// their turn) or a wait is active, the last idle point
     /// (`current_idle_index`) is the state just before this drain started.
-    /// Revert TO it — cancelling the partial drain — rather than decrementing
+    /// Revert TO it - cancelling the partial drain - rather than decrementing
     /// to the idle point before it, which would skip past the state the
     /// player was just at. The partial drain's recorded events are discarded
     /// (the action never completed, so there's nothing to redo). See AGENTS
@@ -2829,7 +2829,7 @@ pub const GameStateHistory = struct {
         apply_event: *const fn (*GameStateHistory) void,
     ) bool {
         // The empty-list case is the fresh-boot state (no idle point recorded
-        // yet) — len - 1 would underflow, and there is nothing to redo.
+        // yet) - len - 1 would underflow, and there is nothing to redo.
         if (self.idle_points.items.len == 0 or
             self.current_idle_index >= self.idle_points.items.len - 1) return false;
 
@@ -2839,12 +2839,12 @@ pub const GameStateHistory = struct {
         return true;
     }
 
-    /// Whether an undo is available right now — the dim state of the undo
+    /// Whether an undo is available right now - the dim state of the undo
     /// button in the global top bar. Mirrors `undo`'s own branching:
     /// mid-drain (stack non-empty or a wait active) undo jumps to the
     /// CURRENT idle point, so any idle point must exist; otherwise there
     /// must be an earlier one to step back to. Clicking while unavailable
-    /// still routes through `undo` (a no-op) — this is purely the visual
+    /// still routes through `undo` (a no-op) - this is purely the visual
     /// truth, so the button can never disagree with the keybind.
     pub fn canUndo(self: *const GameStateHistory) bool {
         if (self.current_state.event_stack.len > 0 or self.current_state.waiting != null) {
@@ -2853,9 +2853,9 @@ pub const GameStateHistory = struct {
         return self.current_idle_index > 0;
     }
 
-    /// Whether a redo is available — the dim state of the redo button in
+    /// Whether a redo is available - the dim state of the redo button in
     /// the global top bar. Mirrors `redo`: false at the latest idle point,
-    /// and false with an empty timeline (fresh boot — the len - 1 compare
+    /// and false with an empty timeline (fresh boot - the len - 1 compare
     /// would underflow).
     pub fn canRedo(self: *const GameStateHistory) bool {
         if (self.idle_points.items.len == 0) return false;
@@ -2891,21 +2891,21 @@ pub const GameStateHistory = struct {
     /// the state is rebuilt from initial_state.
     ///
     /// Idle points are DERIVED during replay via virtual stack depth (see
-    /// replayToWithIdleTracking), NOT serialized — so a loaded session undoes/
+    /// replayToWithIdleTracking), NOT serialized - so a loaded session undoes/
     /// redoes and steps "as if played live", with matching idle point indices.
     /// This relies on the one-orchestrator-event-per-player-action convention.
     ///
     /// Must be called on a freshly-inited history whose initial_state matches
     /// the session's starting state; assumes an empty event_history (no live
-    /// timeline to branch from). Intended for session-log replay — the test
+    /// timeline to branch from). Intended for session-log replay - the test
     /// harness reconstructs to the end; the replay viewer steps by calling
     /// this (or restoreTo) at successive targets.
     /// Populate the reconstruction cache for cross-session bundle replay
     /// (the authoritative policy): append entries in manifest order
-    /// (monotonic by event_index — the binary-search invariant). Entries
+    /// (monotonic by event_index - the binary-search invariant). Entries
     /// must outlive the replayed session: the bundle loader
     /// (session_log_bundle.loadSessionLogBundle) allocates them in the
-    /// caller's allocator — pass the history arena in production.
+    /// caller's allocator - pass the history arena in production.
     pub fn loadReconstructionCache(
         self: *GameStateHistory,
         entries: []const ReconstructionCacheEntry,
@@ -2937,10 +2937,10 @@ pub const GameStateHistory = struct {
     /// Cross-session reconstruction in CHECKING mode (the revalidate
     /// path): identical to `reconstructFromEventLog`, but a
     /// verification failure ABORTS the replay and is returned instead of
-    /// panicking — the same failure is a benign "run no longer matches
+    /// panicking - the same failure is a benign "run no longer matches
     /// the content" report there. Null = the log replays cleanly against
     /// the current content. On a rejection the history is left in the
-    /// aborted mid-replay state — callers use a short-lived scratch
+    /// aborted mid-replay state - callers use a short-lived scratch
     /// history and discard it (see rejectReplay).
     pub fn reconstructFromEventLogChecking(
         self: *GameStateHistory,
@@ -2950,7 +2950,7 @@ pub const GameStateHistory = struct {
     ) ?ReplayRejection {
         self.replay_checking = true;
         defer self.replay_checking = false;
-        // The validation replay has no embedded cache — the mission's current
+        // The validation replay has no embedded cache - the mission's current
         // files are the content (hash-gated upstream).
         self.reconstructFromEventLog(event_log, target_event_index, apply_event, .lazy_disk);
         return self.replay_rejection;
@@ -3074,7 +3074,7 @@ test "actionTriggerSurfaceOpen: the click/drag families need their panels" {
 test "transitionScreen closes every UI surface" {
     // The class-1 surface state lives on GameState, so its screen/world-
     // change reset runs INSIDE the handlers (transitionScreen + the
-    // start_* world installs), not the live loop — replay reproduces it.
+    // start_* world installs), not the live loop - replay reproduces it.
     // See DESIGN → UI Framework → UI state classification.
     var current = GameState{
         .screen = .level,
@@ -3177,15 +3177,15 @@ test "canUndo/canRedo track the timeline head for the global-bar dim state" {
     try std.testing.expect(history.canRedo());
 
     // Mid-drain (stack non-empty): undo jumps to the CURRENT idle point, so
-    // it is available whenever any idle point exists — even at index 0.
+    // it is available whenever any idle point exists - even at index 0.
     history.current_event_index = 0;
     const stack: [1]Event = .{.{ .meta_event = .open_main_menu }};
     history.current_state.event_stack = &stack;
     try std.testing.expect(history.canUndo());
 
     // The awkward value: an EMPTY timeline is the fresh-boot state (the
-    // main menu before any event drains — the crash the global top bar's
-    // redo button hit at boot). Both unavailable, redo() a no-op — the
+    // main menu before any event drains - the crash the global top bar's
+    // redo button hit at boot). Both unavailable, redo() a no-op - the
     // len - 1 compares must not underflow.
     history.current_state.event_stack = &.{};
     history.idle_points.items.len = 0;
@@ -3262,7 +3262,7 @@ test "SessionState sound queue: drained slice stays valid after clear" {
     session.queueSound(allocator, .damage);
 
     const drained = session.drainPendingSounds();
-    // Read the slice AFTER the drain cleared the queue — the values must
+    // Read the slice AFTER the drain cleared the queue - the values must
     // still be the originals, not undefined garbage.
     try std.testing.expectEqual(@as(usize, 2), drained.len);
     try std.testing.expectEqual(types.SoundId.move, drained[0].base.?);
@@ -3316,7 +3316,7 @@ test "SessionState sound queue: layered cue queues base + layer together" {
 // The legality checks (bool-returning helpers) are tested directly; the
 // `validatePlayerAction` wrapper that formats + @panics is a thin policy
 // layer over them (Zig 0.16 has no expectPanics, so the panic path itself
-// isn't unit-tested — the logic it wraps is). See DESIGN → Determinism &
+// isn't unit-tested - the logic it wraps is). See DESIGN → Determinism &
 // Tiebreaking → Replay VERIFICATION.
 
 const test_harness = @import("test_harness.zig");
@@ -3432,9 +3432,9 @@ test "isPlayerAction: whitelist rejects machinery events" {
     try std.testing.expect(!history.isPlayerAction(.{ .level_event = .{ .move_entity = .{ .entity_index = 0, .destination = .{ .x = 0, .y = 0 } } } }));
     try std.testing.expect(!history.isPlayerAction(.{ .sub_level_event = .{ .attack = .{ .attacker_index = 0, .defender_index = 1, .outgoing_damage = 5 } } }));
 
-    // player machinery (inventory/gear — handler-pushed via drag, not idle input)
+    // player machinery (inventory/gear - handler-pushed via drag, not idle input)
     try std.testing.expect(!history.isPlayerAction(.{ .player_event = .{ .equip_item = .{ .inventory_slot_index = 0, .gear_slot = .amulet } } }));
 
-    // super/editor/sub_level/replay_viewer — all machinery
+    // super/editor/sub_level/replay_viewer - all machinery
     try std.testing.expect(!history.isPlayerAction(.{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } }));
 }

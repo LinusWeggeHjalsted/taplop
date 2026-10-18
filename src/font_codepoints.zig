@@ -1,7 +1,7 @@
 //! The TTF cmap reader behind the glyph-atlas codepoint set: every font
 //! bake (the build-time SDF atlas generator AND the runtime coverage-atlas
 //! fallback in src/raylib/text.zig) bakes EXACTLY the codepoints the font
-//! itself maps — derived from the font file, never a hand-maintained list,
+//! itself maps - derived from the font file, never a hand-maintained list,
 //! so a font swap changes the coverage automatically. Pure bytes-in,
 //! codepoints-out (raylib-free, I/O-free); on malformed input the callers
 //! degrade to raylib's default 95-ASCII bake (or panic, at build time).
@@ -22,7 +22,7 @@ pub const FontCodepointsError = error{ InvalidFont, OutOfMemory };
 pub const max_atlas_codepoints: usize = 1024;
 
 /// Every codepoint the font's cmap maps to a glyph (glyph 0 / notdef and
-/// NUL excluded — no string contains NUL, and many fonts map it to the
+/// NUL excluded - no string contains NUL, and many fonts map it to the
 /// blank .null glyph), sorted ascending and deduplicated. Caller owns the
 /// slice.
 pub fn fontCodepoints(
@@ -158,7 +158,7 @@ fn collectFormat4(
     for (0..segment_count) |segment_index| {
         const start = try be16(subtable, start_code_base + segment_index * 2);
         const end = try be16(subtable, end_code_base + segment_index * 2);
-        // Malformed segment (start past end) — skip, not fail: the rest of
+        // Malformed segment (start past end) - skip, not fail: the rest of
         // the cmap can still be valid.
         if (start > end) continue;
         // The mandatory trailing segment maps 0xFFFF to glyph 0 (notdef);
@@ -250,7 +250,7 @@ fn fixtureTtf(allocator: std.mem.Allocator, cmap_bytes: []const u8) []u8 {
 }
 
 /// Wrap `subtable` in a cmap header carrying one (platform 3, encoding 1)
-/// record pointing at it — the common Windows Unicode-BMP shape.
+/// record pointing at it - the common Windows Unicode-BMP shape.
 fn fixtureCmap(allocator: std.mem.Allocator, subtable: []const u8) []u8 {
     var cmap: std.ArrayListUnmanaged(u8) = .empty;
     cmap.appendSlice(allocator, &.{ 0x00, 0x00 }) catch unreachable; // version
@@ -335,7 +335,7 @@ fn fixtureFormat12(allocator: std.mem.Allocator, groups: []const Group) []u8 {
 
 test "format 4: mapped codepoints collected, glyph-0 and sentinel skipped" {
     const allocator = std.testing.allocator;
-    // Segment 0: NUL mapped to glyph 1 — the blank .null glyph many fonts
+    // Segment 0: NUL mapped to glyph 1 - the blank .null glyph many fonts
     // carry; no string contains NUL, so it must be EXCLUDED.
     // Segment 1: 'A'..'D' with delta -0x44 → 'D' resolves to glyph 0
     // (unmapped), 'A'..'C' to glyphs 1..3. Segment 2: en/em-dash via

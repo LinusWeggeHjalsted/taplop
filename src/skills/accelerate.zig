@@ -12,7 +12,7 @@ const Skill = skill_mod.Skill;
 
 /// Accelerate: a cantrip. Gains 2 momentum for each enemy within radius of
 /// the caster. Self-centered, non-turn-ending, deals no damage (momentum
-/// is a rider stat — its damage conversion is log2-sublinear).
+/// is a rider stat - its damage conversion is log2-sublinear).
 pub const skill = Skill{
     .name = "Accelerate",
     .skill_type = .cantrip,
@@ -31,13 +31,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast, rated = the enemy count (a direct
-/// count per the author's call — the cantrip pool's ratings only order
+/// count per the author's call - the cantrip pool's ratings only order
 /// the non-ending skills, all worthwhile ones fire regardless). No option
 /// with no enemy in radius.
 fn aiOptions(
@@ -57,7 +57,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = enemy_count });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

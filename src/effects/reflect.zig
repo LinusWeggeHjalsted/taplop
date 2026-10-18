@@ -21,7 +21,7 @@ pub const effect = Effect{
 
 /// Prevent the damage (return 0) and reflect it back to the attacker. The
 /// reflected attack has triggers_effects = false, so it skips the interception
-/// fold and other effect callbacks — preventing reflect-vs-reflect loops
+/// fold and other effect callbacks - preventing reflect-vs-reflect loops
 /// (mirrors Unity's isReflected flag).
 fn interceptIncomingDamage(
     receiver_index: u32,

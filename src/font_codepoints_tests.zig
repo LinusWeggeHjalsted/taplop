@@ -1,7 +1,7 @@
 //! Contract tests for the shipped font against the cmap reader
 //! (src/font_codepoints.zig). Lives in its own file (the
 //! content_validation_tests.zig pattern) because it imports the
-//! generated_assets module for the embedded TTF bytes — a named module the
+//! generated_assets module for the embedded TTF bytes - a named module the
 //! generator tool, which also compiles font_codepoints.zig, does not have.
 //! See DESIGN → Platform Seam → SDF text outline.
 
@@ -44,7 +44,7 @@ test "shipped font: full ASCII plus the atlas punctuation set is covered" {
     const codepoints = try font_codepoints.fontCodepoints(allocator, ttf_bytes);
     defer allocator.free(codepoints);
 
-    // The 95-codepoint set raylib's default bake uses stays covered — a
+    // The 95-codepoint set raylib's default bake uses stays covered - a
     // future font swap that drops any of it would render '?' for ASCII.
     for (0x20..0x7F) |codepoint| {
         try std.testing.expect(covered(@intCast(codepoint), codepoints));

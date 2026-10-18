@@ -1,5 +1,5 @@
 //! AI movement-mode selection: the per-turn decision of HOW a non-player
-//! entity moves — which reachable tile it seeks, and why. Pure functions
+//! entity moves - which reachable tile it seeks, and why. Pure functions
 //! over (caster, game state); the `enemy_turn_move` handler wires them
 //! into the turn flow (approach keeps its pathfinding there).
 //! See DESIGN → Architecture (AI movement modes).
@@ -19,7 +19,7 @@ const SkillId = types.SkillId;
 const WeaponTypeDefinitions = types.WeaponTypeDefinitions;
 
 /// How an entity moves on its turn. Selected fresh each `enemy_turn_move`,
-/// off the CURRENT cooldown state — a point-blank skill on cooldown does
+/// off the CURRENT cooldown state - a point-blank skill on cooldown does
 /// not shape that turn's movement (the entity kites or approaches instead,
 /// and clusters again once the skill is ready).
 pub const MovementMode = enum {
@@ -36,7 +36,7 @@ pub const MovementMode = enum {
 };
 
 /// Whether the entity has an OFF-COOLDOWN offensive point-blank area skill
-/// on its combat bar — the trigger for cluster-seeking movement.
+/// on its combat bar - the trigger for cluster-seeking movement.
 fn hasReadyOffensivePointBlankSkill(
     caster: Entity,
     weapon_type_definitions: WeaponTypeDefinitions,
@@ -55,7 +55,7 @@ fn hasReadyOffensivePointBlankSkill(
 /// off-cooldown offensive point-blank skill makes the entity cluster-seek;
 /// otherwise a kit whose minimum effective reach exceeds melee range
 /// (> 1) kites at that reach; everything else approaches. Cooldown
-/// dependent by design — see `MovementMode`.
+/// dependent by design - see `MovementMode`.
 pub fn selectMovementMode(
     caster_index: u32,
     game_state: GameState,
@@ -92,8 +92,8 @@ fn pointBlankClusterScore(
 /// point-blank skills: the reachable tile (current tile included) that has
 /// the most hostiles within one of those skills' effective radius.
 /// Null when no candidate has ANY hostile in radius (the caller should
-/// approach instead — there is nothing to cluster around yet). The
-/// current tile wins ties — an equal-count candidate never displaces it;
+/// approach instead - there is nothing to cluster around yet). The
+/// current tile wins ties - an equal-count candidate never displaces it;
 /// stay put unless a strictly more-targeted tile exists. Ties between
 /// reachable tiles break by the straighter line to the caster's nearest
 /// hostile (same-row chases walk the row), then the (x, y) tile
@@ -129,13 +129,13 @@ pub fn pointBlankClusterDestination(
         allocator,
     );
 
-    // Straightness anchor for score ties: the caster's nearest hostile —
+    // Straightness anchor for score ties: the caster's nearest hostile -
     // equal-count candidates order by the straighter line to it.
     const anchor = nearestHostilePosition(caster_index, game_state) orelse caster.position;
 
     // Current tile first so it wins score ties: an equal candidate NEVER
     // displaces the current tile (stay put unless a strictly better tile
-    // exists — shuffling between equal clusters reads as noise to the
+    // exists - shuffling between equal clusters reads as noise to the
     // player); straighterTileBefore only orders reachable-vs-reachable
     // ties.
     var best_tile: Vector2 = caster.position;
@@ -189,7 +189,7 @@ fn nearestHostileDistance(
 }
 
 /// The living hostile nearest to the CASTER (Chebyshev; ties keep the
-/// lowest entity_index — the scan-order convention). The straightness
+/// lowest entity_index - the scan-order convention). The straightness
 /// anchor for the movement-destination tiebreaks: metric-equal candidate
 /// tiles order by the straighter line to it.
 fn nearestHostilePosition(caster_index: u32, game_state: GameState) ?Vector2 {
@@ -212,11 +212,11 @@ fn nearestHostilePosition(caster_index: u32, game_state: GameState) ?Vector2 {
 
 /// The stand-off tile for a kiting entity: among the reachable tiles
 /// (current included) from which the entity can still act (some hostile
-/// within `computeMinRange`), the one FARTHEST from its nearest hostile —
+/// within `computeMinRange`), the one FARTHEST from its nearest hostile -
 /// approach converges on min range from outside, kiting opens to it from
 /// inside; both modes meet at the same distance. Null when no candidate
-/// is act-capable (opponents beyond reach — the caller should approach).
-/// The current tile wins ties — an equal-distance candidate never
+/// is act-capable (opponents beyond reach - the caller should approach).
+/// The current tile wins ties - an equal-distance candidate never
 /// displaces it; stay put unless a strictly farther act-capable tile
 /// exists. Ties between reachable tiles break by the straighter line to
 /// the caster's nearest hostile (the standoff stays in line with the
@@ -242,7 +242,7 @@ pub fn keepRangeDestination(
     );
 
     // Straightness anchor for distance ties: the caster's nearest hostile
-    // — equal-distance candidates order by the straighter line to it.
+    // - equal-distance candidates order by the straighter line to it.
     const anchor = nearestHostilePosition(caster_index, game_state) orelse caster.position;
 
     var best_tile: ?Vector2 = null;
@@ -300,7 +300,7 @@ fn tileGrid(comptime width: i32, comptime height: i32) [width * height]types.Vec
     return tiles;
 }
 
-/// Corridor grid: only column x = 1, y in [0, height) — movement is
+/// Corridor grid: only column x = 1, y in [0, height) - movement is
 /// forced along one axis, so stand-off distances are unambiguous.
 fn corridorGrid(comptime height: i32) [height]types.Vector2 {
     var tiles: [height]types.Vector2 = undefined;
@@ -320,7 +320,7 @@ test "selectMovementMode: off-cooldown point-blank skill cluster-seeks" {
 
     // Staff kit: spark (range 3) + meteor (range 3) exposed on the main
     // hand, plus blitz (radius 1, point-blank, cooldown 5) exposed as the
-    // OFF hand's third skill — the exposed-slot shape (collectSkillSlots,
+    // OFF hand's third skill - the exposed-slot shape (collectSkillSlots,
     // the same pool enemy_turn_attack casts from).
     const nine_by_nine = tileGrid(9, 9);
     const game_state = test_harness.levelStateWithEntities(
@@ -441,7 +441,7 @@ test "pointBlankClusterDestination: no hostiles in any radius -> null (approach)
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // The hostile is far outside the reachable tiles' spinblade radius —
+    // The hostile is far outside the reachable tiles' spinblade radius -
     // clustering has nothing to cluster around.
     const fifteen_by_fifteen = tileGrid(15, 15);
     const game_state = test_harness.levelStateWithEntities(
@@ -464,10 +464,10 @@ test "keepRangeDestination: retreats to exactly the standoff distance" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // Staff kit: spark + meteor (both range 3) exposed — min range 3, so the
+    // Staff kit: spark + meteor (both range 3) exposed - min range 3, so the
     // entity kites. Corridor: the entity at (1,4), the hostile at (1,3)
-    // (distance 1 — too close). Reachable retreat tiles: (1,2) distance 1,
-    // (1,5) distance 2, (1,6) distance 3 — the farthest act-capable tile is
+    // (distance 1 - too close). Reachable retreat tiles: (1,2) distance 1,
+    // (1,5) distance 2, (1,6) distance 3 - the farthest act-capable tile is
     // the standoff.
     const corridor = corridorGrid(9);
     const game_state = test_harness.levelStateWithEntities(
@@ -509,7 +509,7 @@ test "keepRangeDestination: cornered -> stands; hostile beyond reach -> null" {
 
     // Dead end: the entity is at the corridor's end (1,8), the hostile at
     // (1,6) (distance 2, act-capable at min range 3). The only reachable
-    // tile (1,7) is CLOSER — the current tile stands.
+    // tile (1,7) is CLOSER - the current tile stands.
     const cornered = test_harness.levelStateWithEntities(
         arena.allocator(),
         &.{
@@ -547,7 +547,7 @@ test "pointBlankClusterDestination: an equal-count tile never displaces the curr
     const definitions = &harness.weapon_type_definitions;
 
     // Spinblade (radius 1). The caster at (2,2) already covers both
-    // hostiles (score 2) — and the UP-LEFT reachable tile (2,1) covers
+    // hostiles (score 2) - and the UP-LEFT reachable tile (2,1) covers
     // exactly the same two (score 2). The (x, y) tile convention must NOT
     // lure the entity into shuffling there: as good as = stay.
     const nine_by_nine = tileGrid(9, 9);
@@ -566,7 +566,7 @@ test "pointBlankClusterDestination: an equal-count tile never displaces the curr
     );
 
     // A strictly better tile DOES move: one step up covers both hostiles
-    // PLUS a third one above — 3 beats 2.
+    // PLUS a third one above - 3 beats 2.
     const better_exists = test_harness.levelStateWithEntities(
         arena.allocator(),
         &.{
@@ -590,7 +590,7 @@ test "keepRangeDestination: an equal-distance tile never displaces the current t
     const definitions = &harness.weapon_type_definitions;
 
     // Staff kit, standoff 3. The caster at (4,4) already sits at the
-    // standoff from the hostile at (4,1) — and the LEFT reachable tile
+    // standoff from the hostile at (4,1) - and the LEFT reachable tile
     // (2,4) is also at distance 3. The (x, y) tile convention must NOT
     // shuffle it sideways: as good as = stay.
     const nine_by_nine = tileGrid(9, 9);
@@ -609,7 +609,7 @@ test "keepRangeDestination: an equal-distance tile never displaces the current t
 
     // A strictly farther act-capable tile DOES move: hostile at distance 1
     // (too close); the row 2 tiles up opens it to 3. Five reachable tiles
-    // sit at distance 3 ((2,6)..(6,6)) — the reachable-vs-reachable tie
+    // sit at distance 3 ((2,6)..(6,6)) - the reachable-vs-reachable tie
     // breaks by the straighter line to the hostile: (4,6) is directly in
     // line with it (the standoff stays on the duel line, not off to the
     // side).
@@ -633,12 +633,12 @@ test "pointBlankClusterDestination: same-row score ties walk the row" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // The observed bug's layout (y grows downward — y=0 is the top row):
+    // The observed bug's layout (y grows downward - y=0 is the top row):
     //   y=0:  .  .  .
     //   y=1:  !  .  E
     // A sword enemy (spinblade ready → cluster mode) at (2,1), the player
-    // at (0,1). The three tiles within spinblade radius 1 of the player —
-    // (1,0), (1,1), (1,2) — all score 1. The straightness tiebreak keeps
+    // at (0,1). The three tiles within spinblade radius 1 of the player -
+    // (1,0), (1,1), (1,2) - all score 1. The straightness tiebreak keeps
     // the chase ON THE ROW: (1,1) is on the mover→player line; the old
     // (x, y) tiebreak habitually picked the row-above tile (1,0).
     const three_by_two = tileGrid(3, 2);
@@ -658,7 +658,7 @@ test "pointBlankClusterDestination: same-row score ties walk the row" {
     // Speed 2 widens the tie field to the player's column too: (0,0) and
     // (0,2) (directly above/below the player) also cover the player and
     // are euclidean-equidistant with (1,1). The perpendicular-line key
-    // still keeps the chase on the row — cutting diagonally up to the
+    // still keeps the chase on the row - cutting diagonally up to the
     // player's column loses to the straight line.
     const five_by_three = tileGrid(5, 3);
     const wide_state = test_harness.levelStateWithEntities(

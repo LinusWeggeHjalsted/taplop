@@ -11,8 +11,8 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Worldfire: a spell. Attacks every hostile within a large radius of the
-/// caster for 1x effective spell damage (amulet-based — see
-/// Entity.getEffectiveSpellDamage). Self-centered — not targeted. The long
+/// caster for 1x effective spell damage (amulet-based - see
+/// Entity.getEffectiveSpellDamage). Self-centered - not targeted. The long
 /// cooldown makes it the "save it for clusters" nuke: the AoE bump rating
 /// encodes that posture for the AI for free (a single-target cast ties the
 /// basic attack at 3 and loses to slot order; a cluster rates 4).
@@ -35,13 +35,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast in value units (helpers.aoePriority
-/// over the hostile count in radius) — 1 per target hit. The long cooldown
+/// over the hostile count in radius) - 1 per target hit. The long cooldown
 /// makes it the "save it for clusters" nuke: a single-target cast ties the
 /// plain attacks at 1 and loses to slot order.
 fn aiOptions(
@@ -64,7 +64,7 @@ fn aiOptions(
     });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

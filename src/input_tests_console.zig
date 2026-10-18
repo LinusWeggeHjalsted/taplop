@@ -1,6 +1,6 @@
 //! Console-input regression pins (DESIGN → Input → Console input): the
 //! placement-class bugs the headless suite could not see before the console
-//! channel existed, driven end-to-end at the handler level — a parsed
+//! channel existed, driven end-to-end at the handler level - a parsed
 //! console command merged into a frame's PlatformInput, through
 //! `translateInput`, into the consumption layer (`handleAnytimeInput`).
 //! These pin the classes the design calls out: the dead-Escape class
@@ -28,7 +28,7 @@ const three_by_three = [_]types.Vector2{
 const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
 
 /// Whether `id` is in the input state's held-keys array (a local mirror of
-/// InputState's private isHeld — the assertion needs the fact, not the
+/// InputState's private isHeld - the assertion needs the fact, not the
 /// helper).
 fn keyHeld(input_state: *const input.InputState, id: []const u8) bool {
     for (input_state.keys_held) |slot| {
@@ -43,10 +43,10 @@ fn keyHeld(input_state: *const input.InputState, id: []const u8) bool {
 /// one per frame (the live drain's cadence) against `history`, returning the
 /// LAST frame's PlayerInput. Mirrors frame()'s seam order: poll (backend
 /// input) → applyFrameCommand → translateInput → fold injected actions.
-/// `arena` backs the merged bytes (the live seam's frame arena — not
+/// `arena` backs the merged bytes (the live seam's frame arena - not
 /// testing.allocator, whose leak check would fire on the merges).
 /// `hardware_pointer` simulates the native backend's UNCONDITIONAL per-frame
-/// mouse_move event (the hardware position it re-reports every frame — the
+/// mouse_move event (the hardware position it re-reports every frame - the
 /// behavior that would overwrite a scripted position between commands).
 fn runConsoleScript(
     history: *state.GameStateHistory,
@@ -56,11 +56,11 @@ fn runConsoleScript(
     script: []const []const u8,
 ) input.PlayerInput {
     var result: input.PlayerInput = .{};
-    // One queue for the whole script (the live queue lives on FrameState —
+    // One queue for the whole script (the live queue lives on FrameState -
     // the remembered pointer position persists across frames on it).
     var queue: console.ConsoleQueue = .{};
     for (script) |line| {
-        // The dump-path root, refreshed per frame (history by value — a
+        // The dump-path root, refreshed per frame (history by value - a
         // read-only shallow copy; the live path passes the real FrameState).
         const WalkerTestRoot = struct { history: state.GameStateHistory };
         var root = WalkerTestRoot{ .history = history.* };
@@ -119,7 +119,7 @@ test "console press Escape closes the options menu (merge → translate → hand
     try testing.expect(keyHeld(&input_state, "Escape"));
     try testing.expect(player_input.anytime.escape);
 
-    // And the handler layer closed the menu — the dead-Escape class pinned.
+    // And the handler layer closed the menu - the dead-Escape class pinned.
     input_handlers.handleAnytimeInput(
         &history,
         player_input.anytime,
@@ -259,7 +259,7 @@ test "console move persists to the command frame over the backend's per-frame ha
     // be overwritten before the next command lands. The remembered
     // position re-applies ahead of the command's events (last writer wins
     // within the frame), so the press acts where the console moved the
-    // pointer — frames later.
+    // pointer - frames later.
     var input_state: input.InputState = .{};
     const player_input = runConsoleScript(
         &history,
@@ -294,11 +294,11 @@ test "console move persists to the command frame over the backend's per-frame ha
 test "console press: held-key id survives the frame-arena reset (static-lifetime ids)" {
     // The live frame loop RESETS the frame arena every frame
     // (main.frame's `frame_arena.reset(.retain_capacity)`), so a console
-    // `press` id retained in InputState.keys_held — a held key stays held
-    // until its `release` — must point at static memory, not arena bytes.
+    // `press` id retained in InputState.keys_held - a held key stays held
+    // until its `release` - must point at static memory, not arena bytes.
     // Regression pin for the crash class: arena-duped ids dangled into the
     // reset arena; the next held-state comparison read dead memory (a live
-    // segfault in isHeld, and silently wrong held state — a "held" key
+    // segfault in isHeld, and silently wrong held state - a "held" key
     // vanishing mid-chord). The other console tests share one arena for
     // the whole script, which is why they could not see this class.
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -312,7 +312,7 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
     var frame_arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer frame_arena.deinit();
 
-    // Frame 1: press ArrowRight (never released — it stays held).
+    // Frame 1: press ArrowRight (never released - it stays held).
     queue.push(console.parseCommandLine("press ArrowRight").command);
     const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
     const backend_input = input.PlatformInput{
@@ -357,7 +357,7 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
     }
 
     // Frame 2: press ArrowLeft while ArrowRight is still held (the rollover
-    // shape). Right must STILL register as held — the held-opposite cancel
+    // shape). Right must STILL register as held - the held-opposite cancel
     // keeps cursor_direction.x at 0.
     queue.push(console.parseCommandLine("press ArrowLeft").command);
     {
@@ -393,16 +393,16 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
 test "console end-to-end: fast right-then-left arrow rollover moves the cursor both times" {
     // The reported bug, pinned end-to-end through the console channel at
     // the live loop's cadence: press right, then press left BEFORE
-    // releasing right (key rollover — what fast input actually does).
+    // releasing right (key rollover - what fast input actually does).
     // The nudge trigger is edge-based but the vector derived from HELD
     // keys (opposites cancel), so the left edge was consumed into a zero
-    // vector and never re-fired — only the right press registered. The
+    // vector and never re-fired - only the right press registered. The
     // press-direction fallback (cursor_press_direction) rescues the
     // rollover press at its own frame.
     //
-    // Drives the full live seam per frame — applyFrameCommand (with a
+    // Drives the full live seam per frame - applyFrameCommand (with a
     // per-frame arena RESET, like main.frame) → translateInput →
-    // resolveTileCursor — so the pin also re-exercises the held-id
+    // resolveTileCursor - so the pin also re-exercises the held-id
     // static-lifetime property every frame.
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
@@ -485,7 +485,7 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
 
-    // Control — sequential taps (right fully released before left presses)
+    // Control - sequential taps (right fully released before left presses)
     // registered at any speed before the fix and must stay identical.
     var tap_state: input.InputState = .{};
     var tap_queue: console.ConsoleQueue = .{};
@@ -541,7 +541,7 @@ test "dump path: the observability stash is addressable (previous_player_input /
 
     // The one string payload borrows session-owned scan bytes, so the
     // wholesale copy holds: a stashed editor_sprite payload reads back
-    // verbatim (content — the pointer-identity pin lives in the picker
+    // verbatim (content - the pointer-identity pin lives in the picker
     // test).
     root.previous_player_input.?.clicked_payload = .{ .editor_sprite = "custom/artists_den/boss" };
     var writer3 = std.Io.Writer.fixed(&buffer);

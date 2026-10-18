@@ -12,16 +12,16 @@ const SkillType = types.SkillType;
 
 const skill_id_count = @typeInfo(types.SkillId).@"enum".fields.len;
 
-/// The pass-scoped AI evaluation frame — the ONE mechanism behind
+/// The pass-scoped AI evaluation frame - the ONE mechanism behind
 /// consultation-safe rating and its performance: within one
 /// enemy_turn_attack re-evaluation pass the game state is frozen, so each
 /// skill's options are computed AT MOST ONCE (memoized in `results`) and
 /// every nested consultation reuses them. Recursion is cut by
 /// `in_progress`: a skill whose aiOptions is currently being computed
-/// (transitively) answers NOTHING to nested questions about it — which is
+/// (transitively) answers NOTHING to nested questions about it - which is
 /// also the correct semantics, e.g. an enhancer scanning beneficiaries
 /// must not count itself. Fresh frame per pass (never on GameState, never
-/// serialized — replay-safe by construction). Options slices are
+/// serialized - replay-safe by construction). Options slices are
 /// arena-owned (they outlive the frame). See DESIGN → Architecture
 /// (AI rating scale + AI cast selection).
 pub const EvalFrame = struct {
@@ -53,7 +53,7 @@ pub const Skill = struct {
     description: []const u8,
     uses_targeting: bool,
     /// Whether the skill's useSkill deals damage (directly or via
-    /// collision/knockback). Drives AI threat math — an enemy's damaging
+    /// collision/knockback). Drives AI threat math - an enemy's damaging
     /// reach (ai_threat.zig computeMaxDamageRange); control, mobility,
     /// and buff skills are false. Required (no default): a forgotten flag
     /// on a future damaging skill would silently under-report threat.
@@ -64,7 +64,7 @@ pub const Skill = struct {
     /// position, not a targeted tile. Drives AI movement-mode selection
     /// (ai_movement.zig): an entity with an OFF-COOLDOWN offensive
     /// point-blank skill seeks the tile with the most hostiles in radius.
-    /// Defaults false — a forgotten flag only makes the AI dumber (it walks
+    /// Defaults false - a forgotten flag only makes the AI dumber (it walks
     /// instead of cluster-seeking), it does not corrupt any mechanic.
     point_blank_area_of_effect: bool = false,
 
@@ -89,7 +89,7 @@ pub const Skill = struct {
 
     /// AI options: enumerate this skill's meaningful casts as
     /// (target, rating) pairs, best-first. Replaces the old
-    /// priority/selectTarget pair — the rating and the chosen target are
+    /// priority/selectTarget pair - the rating and the chosen target are
     /// one decision, so they cannot disagree (the old split's seams: bash
     /// rated "any colliding target" while selection attacked another;
     /// flash strike rated one landing tile and landed on another).
@@ -99,20 +99,20 @@ pub const Skill = struct {
     /// synchronously by the handler).
     ///
     /// RATING SCALE (value units): priority ≈ the cast's value in units of
-    /// a plain 1x hit — 0 = don't cast, 1 = a plain attack, +1 per
+    /// a plain 1x hit - 0 = don't cast, 1 = a plain attack, +1 per
     /// significant bonus (a conditional damage multiplier, a stun landing
     /// on a non-stunned target, collision damage, a control effect worth a
     /// hit; lifesteal only when the caster is below half health). AoE
     /// ratings sum per target (helpers.aoePriority / aoeKnockbackPriority);
     /// global riders (e.g. Flash Strike's teleport) count once. Ties mean
-    /// equal value — the handler's slot-order tiebreak then prefers the
+    /// equal value - the handler's slot-order tiebreak then prefers the
     /// skill further left. See DESIGN → Architecture (AI rating scale).
     ///
     /// PORTING NOTE: the Unity original INVERTS priority (lower number =
     /// higher priority, -1 = don't use). When porting a skill, FLIP the
     /// numbers to higher = better (Unity -1 = don't cast = emit nothing;
     /// Unity 0..N -> a positive rating). Turn-ending vs non-turn-ending is
-    /// decided by skill_type at the call site, not by the rating —
+    /// decided by skill_type at the call site, not by the rating -
     /// non-ending and ending skills are chosen from separate pools
     /// (enemy_turn_attack), so cantrip ratings only compete with each
     /// other; equal ratings keep bar order (the handler replaces only on
@@ -120,8 +120,8 @@ pub const Skill = struct {
     ///
     /// `frame` is the pass-scoped evaluation frame (EvalFrame above):
     /// consult other skills' options THROUGH it
-    /// (ai_select.optionsFor) — never call another skill's aiOptions
-    /// directly — so evaluations are memoized per pass and cycles are cut
+    /// (ai_select.optionsFor) - never call another skill's aiOptions
+    /// directly - so evaluations are memoized per pass and cycles are cut
     /// mechanically. A skill that doesn't consult others simply ignores it.
     ai_options_fn: *const fn (
         caster_index: u32,

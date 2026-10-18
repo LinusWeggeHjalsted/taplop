@@ -1,6 +1,6 @@
-//! Shared panel-builder primitives: the emit helpers every builder uses —
+//! Shared panel-builder primitives: the emit helpers every builder uses -
 //! panel headers, icon/panel/skill buttons, centered + corner number
-//! labels — plus the skill-slot Action mapping. Pure element-list
+//! labels - plus the skill-slot Action mapping. Pure element-list
 //! appends over element.zig vocabulary; no game-state reads.
 
 const std = @import("std");
@@ -48,7 +48,7 @@ const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 
 /// Font size of the material-count corner label on item icons (bottom bar,
-/// inventory, pickers) — shared with the editor material icons.
+/// inventory, pickers) - shared with the editor material icons.
 pub const material_count_font_size: i32 = 48;
 
 /// Inset of the material-count corner label from the icon's edge.
@@ -72,7 +72,7 @@ pub fn emitCenteredNumber(
     const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
     // Center on the MEASURED text width (not a font_size square) so multi-digit
     // numbers sit truly centered. Vertical centering uses the `font_size` glyph
-    // cell (not `lineHeight`) — raylib draws a glyph from the top of a
+    // cell (not `lineHeight`) - raylib draws a glyph from the top of a
     // font_size-tall cell, so centering that cell puts the visual mass on the
     // button's center; centering the taller lineHeight box would sit text high.
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
@@ -115,12 +115,12 @@ pub fn emitCornerNumber(
     } });
 }
 
-/// Sprite id of the reusable button background — a rounded panel drawn
+/// Sprite id of the reusable button background - a rounded panel drawn
 /// under an icon so the coloring framework can tint background and icon
 /// independently.
 pub const button_background_sprite_id: []const u8 = "ui/button_background";
 
-/// Sprite id of the small-button background — the 128px button class (the
+/// Sprite id of the small-button background - the 128px button class (the
 /// top bar + its dim washes, the editor's primary actions, the swap-hands
 /// button). `ui/button_background` is 256x256 art, so a 128px draw minifies
 /// it 2:1 and softens it; the small asset is authored at the class's own
@@ -130,7 +130,7 @@ pub const small_button_background_sprite_id: []const u8 = "ui/button_background_
 
 /// Emit a middle-panel header: a title `text_label` on the left (vertically
 /// centered in the `header_height` strip) + a close `button` flush in the
-/// panel's top-right corner. Returns the content bounds — the area below the
+/// panel's top-right corner. Returns the content bounds - the area below the
 /// header where the panel body lives. The close button carries the panel's
 /// toggle action (firing it while open closes the panel); the view() hover
 /// pass sets `highlighted` on the button under the pointer, so the renderer
@@ -247,7 +247,7 @@ pub fn emitPanelButton(
         .tooltip = tooltip,
     } });
     // Centered label. Horizontal centering uses the measurement seam;
-    // vertical centering uses the `font_size` glyph cell (not `lineHeight`) —
+    // vertical centering uses the `font_size` glyph cell (not `lineHeight`) -
     // raylib draws from the top of a font_size-tall cell, so centering that
     // cell (not the taller lineHeight box) puts the visual mass on the
     // button's center.
@@ -317,7 +317,7 @@ pub fn emitSkillButton(
     /// alpha). Caller passes the active theme's darkest color.
     cooldown_overlay_color: Color,
     /// Drag ref for this slot, if it's a reorderable utility slot. Null for
-    /// weapon-skill slots (1-3, derived from the equipped weapon — not
+    /// weapon-skill slots (1-3, derived from the equipped weapon - not
     /// draggable). Set by the caller for utility slots 4-8.
     drag_ref: ?SlotRef,
     /// The slot currently being dragged from, if any. The source slot renders
@@ -337,7 +337,7 @@ pub fn emitSkillButton(
     // Empty, or the drag source (skill is "in flight"): render the diamond
     // marker. For a reorderable utility slot this is a `.slot` carrying the
     // ref so it stays a DROP TARGET (an empty slot can receive a drop). For
-    // a weapon slot or the drag source it's a plain `.image` (inert — no
+    // a weapon slot or the drag source it's a plain `.image` (inert - no
     // ref, no action; a same-slot drop is already a no-op via the guard).
     if (skill_id == null or definition == null or is_drag_source) {
         if (drag_ref) |ref| {
@@ -391,7 +391,7 @@ pub fn emitSkillButton(
                 .height = cell.height,
                 .color = cooldown_overlay_color,
                 .alpha = 128,
-                // Overlay on the skill button — pass hover through to the button.
+                // Overlay on the skill button - pass hover through to the button.
                 .blocks_input = false,
             },
         });
@@ -399,7 +399,7 @@ pub fn emitSkillButton(
     }
 }
 
-/// returned slice is stable for the process lifetime (no allocation) —
+/// returned slice is stable for the process lifetime (no allocation) -
 /// drag ghosts borrow it across frames.
 pub fn skillIconSpriteId(skill_id: SkillId) []const u8 {
     const table = comptime blk: {
@@ -415,7 +415,7 @@ pub fn skillIconSpriteId(skill_id: SkillId) []const u8 {
 
 /// One entry in the inventory sidebar's material stack.
 /// Static display info for one material kind (the parts that don't vary by
-/// context). The single source of truth for the five-material icon set —
+/// context). The single source of truth for the five-material icon set -
 /// every material-icon site in the UI reads from `material_kinds` so the
 /// sprite / color / name mapping can't drift between them. Counts are
 /// context-specific (inventory totals vs mission-complete harvest vs new-
@@ -463,7 +463,7 @@ const MaterialIconDirection = enum { vertical, horizontal };
 /// starting at `origin` (top-left of the first icon), stepping by
 /// `direction`. `materials` supplies the per-kind counts. The shared body
 /// for the inventory sidebar, the mission-complete harvest column, and the
-/// new-clone summary row — so the icon set + tooltip format can't drift.
+/// new-clone summary row - so the icon set + tooltip format can't drift.
 pub fn emitMaterialIcons(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -512,9 +512,9 @@ pub fn emitMaterialIcons(
 
 /// The comparison color for one item stat number against its equipped
 /// baseline: green while better, red while worse, lightest while equal.
-/// A NULL baseline (no comparison — the gear panel / player inspect,
+/// A NULL baseline (no comparison - the gear panel / player inspect,
 /// where the items ARE the baseline) is lightest, plain. Weapons compare
-/// against BOTH hands and need the two-baseline rule — see
+/// against BOTH hands and need the two-baseline rule - see
 /// `emitItemStatLabels` / `weaponComparisonColor`.
 fn statComparisonColor(
     value: u32,
@@ -527,9 +527,9 @@ fn statComparisonColor(
     return active_theme.lightest;
 }
 
-/// The weapon's inclusive both-hands comparison color (the rule — see
+/// The weapon's inclusive both-hands comparison color (the rule - see
 /// `emitItemStatLabels`' doc). Strictly-baseline callers pass `null`
-/// (no comparison) as either hand — a null in EITHER hand is lightest,
+/// (no comparison) as either hand - a null in EITHER hand is lightest,
 /// plain (the rule needs both baselines live).
 fn weaponComparisonColor(
     weapon_damage: u32,
@@ -548,14 +548,14 @@ fn weaponComparisonColor(
 
 /// Which icon corner a stat number sits in: the first stat (single-stat
 /// items' only stat; armor's health bonus) sits BOTTOM-LEFT and armor's
-/// item-specific stat BOTTOM-RIGHT — both bottom-aligned (the material-
+/// item-specific stat BOTTOM-RIGHT - both bottom-aligned (the material-
 /// count row), never top-left: the icons' top-left carries defining
 /// sprite art (weapon silhouettes especially) that numbers must not
 /// cover.
 const StatNumberCorner = enum { bottom_left, bottom_right };
 
 /// One corner stat number on an inventory item icon: the stat VALUE (not
-/// the signed difference — the tooltip carries that), colored by the
+/// the signed difference - the tooltip carries that), colored by the
 /// equipped comparison, black-outlined. The material-count label recipe:
 /// same font size + inset, non-blocking so hover/click reach the slot
 /// beneath (the slot keeps its tooltip).
@@ -602,35 +602,35 @@ fn emitItemStatNumber(
     } });
 }
 
-/// Emit an inventory item's stat numbers directly on its icon — the
+/// Emit an inventory item's stat numbers directly on its icon - the
 /// at-a-glance version of the item tooltip's stat rows (same stats, same
 /// equipped baseline; the tooltip carries the signed differences). One
 /// number per stat, colored by the equipped comparison: green while
 /// better, red while worse, lightest while equal; a weapon compares
-/// INCLUSIVELY against both hands — green while it at least matches each
+/// INCLUSIVELY against both hands - green while it at least matches each
 /// hand AND strictly beats at least one (≥ each + > one: a weapon equal
-/// to your best hand is still green — it upgrades the other), red while
+/// to your best hand is still green - it upgrades the other), red while
 /// it at most matches each hand AND strictly loses to at least one (≤
 /// each + < one: no hand is an upgrade), lightest when it changes
-/// nothing (equal to BOTH hands — a pure sidegrade) or strictly beats
+/// nothing (equal to BOTH hands - a pure sidegrade) or strictly beats
 /// one hand and strictly loses to the other: no clear upgrade either
 /// way. An
 /// empty equipped slot compares against 0
-/// (an item beats nothing — green), matching the tooltip. Single-stat
+/// (an item beats nothing - green), matching the tooltip. Single-stat
 /// items (weapons: damage, amulets: spell damage) show the number
 /// bottom-left; armor shows the health bonus bottom-left and the
 /// item-specific stat (defense / damage / pickup radius / speed)
-/// bottom-right — both bottom-aligned, out of the icons' defining
+/// bottom-right - both bottom-aligned, out of the icons' defining
 /// top-left art. An UNLEARNED skill tome wears a green outlined "!" in
 /// the bottom-left corner (the at-a-glance version of the tooltip's
-/// "Activate to learn" line; a learned tome shows nothing — its skill
-/// is known, its only remaining value is salvaging) — baseline-
+/// "Activate to learn" line; a learned tome shows nothing - its skill
+/// is known, its only remaining value is salvaging) - baseline-
 /// independent, so it emits even while the stat comparison is suppressed.
-/// `equipped == null` (comparison suppressed — the gear panel / player
+/// `equipped == null` (comparison suppressed - the gear panel / player
 /// inspect, where the items ARE the baseline) renders the stat numbers
 /// plain LIGHTEST, no comparison. The
 /// caller suppresses on the drag source (rides the item
-/// icon — the item reads as in flight).
+/// icon - the item reads as in flight).
 pub fn emitItemStatLabels(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -668,7 +668,7 @@ pub fn emitItemStatLabels(
     }
     switch (item) {
         .weapon => |weapon| {
-            // No comparison (equipped null — both baselines null) → lightest
+            // No comparison (equipped null - both baselines null) → lightest
             // inside weaponComparisonColor; an empty equipped hand within a
             // live comparison is baseline 0 (an item beats nothing).
             const color: Color = if (equipped) |e| weaponComparisonColor(
@@ -804,7 +804,7 @@ pub fn emitItemStatLabels(
 /// Sprite id for an item's inventory/gear icon. Weapons resolve per
 /// `WeaponType` (Unity's `WandItem` maps to our `staff`); gear types have
 /// one icon each; `skill_tome` uses a single generic tome icon (the taught
-/// skill is separate info; a per-skill tome icon is not wired — see TODO →
+/// skill is separate info; a per-skill tome icon is not wired - see TODO →
 /// UI Framework). All item icons live under `assets/items/` at 128×128
 /// (ported from the Unity `Resources/Items/` sprites at native size). See
 /// DESIGN → UI Framework.
@@ -830,7 +830,7 @@ pub fn itemIconSpriteId(item: types.Item) []const u8 {
 /// The sprite id for an active-effect icon in the UI (bottom-bar effects
 /// grid + entity-inspect panel). Effects created by a skill share the skill's
 /// tag name (EffectId and SkillId overlap: `reflect`, `stone_form`,
-/// `that_which_lingers`), so the skill's icon (`skills/<tag>`) is used —
+/// `that_which_lingers`), so the skill's icon (`skills/<tag>`) is used -
 /// the effect's own `effect_sprite` is a WORLD overlay (under
 /// `assets/effects/`), not a UI icon. Non-skill effects without a
 /// matching SkillId fall back to the effect-sprite path

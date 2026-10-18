@@ -42,7 +42,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 2 — one
+/// AI options: the weakest hostile (focus-fire) at rating 2 - one
 /// significant bonus (1.5x + doubled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,
@@ -70,7 +70,7 @@ fn playerPrepareSkill(
 
 /// Use: attack for 1.5x the fully-modified main-hand damage, with the
 /// doubled converted momentum bonus folded in BEFORE the multiplier
-/// (multipliers apply last — see DESIGN → Architecture → Damage multiplier
+/// (multipliers apply last - see DESIGN → Architecture → Damage multiplier
 /// ordering). getEffectiveOutgoingDamage already adds converted momentum
 /// once (like the base attack), so adding one more getConvertedMomentum
 /// doubles it.

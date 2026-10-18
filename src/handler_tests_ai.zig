@@ -1,4 +1,4 @@
-//! Tier 3 handler tests — AI + determinism. `enemy_turn_move` (nearest-target
+//! Tier 3 handler tests - AI + determinism. `enemy_turn_move` (nearest-target
 //! tiebreak, min-range hold, reachable-tile fallback tiebreak), `enemy_turn_
 //! attack` (non-turn-ending-first by priority, then turn-ending; cooldown
 //! skip), `aggro_check` (self-centric radius activation), `pickup_around` (pure check → pushes pickup_items per in-range stack).
@@ -23,7 +23,7 @@ const LevelEvent = events.LevelEvent;
 const SubLevelEvent = events.SubLevelEvent;
 const SkillId = types.SkillId;
 
-/// A 5x5 tile grid (0,0)..(4,4) — enough room for AI movement + tiebreaks.
+/// A 5x5 tile grid (0,0)..(4,4) - enough room for AI movement + tiebreaks.
 const five_by_five = [_]Vector2{
     .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 0 },
     .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 3, .y = 1 }, .{ .x = 4, .y = 1 },
@@ -135,7 +135,7 @@ test "aggro_check: already-active entities stay active (no deactivation)" {
 
 // ───────────── hostile-effect activation (attack/stun/knockback/collision/swap) ─────────────
 // Being the defender of a hostile effect activates an inactive entity even
-// beyond aggro_range — the snipe fix. DESIGN → Architecture (the aggro
+// beyond aggro_range - the snipe fix. DESIGN → Architecture (the aggro
 // paragraph).
 
 test "attack: a hit from beyond aggro_range activates the inactive defender" {
@@ -145,7 +145,7 @@ test "attack: a hit from beyond aggro_range activates the inactive defender" {
     var history = harness.newHistory(test_harness.levelStateWithEntities(
         backing.allocator(),
         &.{
-            // Player and enemy 4 tiles apart — far outside both aggro
+            // Player and enemy 4 tiles apart - far outside both aggro
             // ranges, so proximity (aggro_check) can never fire.
             .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
             .{ .team = 1, .position = .{ .x = 0, .y = 4 }, .aggro_range = 1, .is_active = false },
@@ -188,7 +188,7 @@ test "knockback: shoving a distant inactive entity activates it" {
     var history = harness.newHistory(test_harness.levelStateWithEntities(
         backing.allocator(),
         &.{
-            // Knockback direction (1,0): the defender ends at (4,0) — the
+            // Knockback direction (1,0): the defender ends at (4,0) - the
             // forced move itself stays out of everyone's aggro_range, so
             // only the hostile-effect rule can activate it.
             .{ .team = 0, .position = .{ .x = 1, .y = 0 }, .aggro_range = 1 },
@@ -219,7 +219,7 @@ test "collision: a knockback shoved into an inactive third entity activates it" 
         &five_by_five,
     ));
     // Direct collision event (the knockback handler emits this shape when a
-    // shoved entity runs into someone) — the uninvolved inactive entity is
+    // shoved entity runs into someone) - the uninvolved inactive entity is
     // the defender.
     pushAndRunSub(&history, .{ .collision = .{
         .attacker_index = 0,
@@ -388,7 +388,7 @@ test "enemy_turn_move: moves up to speed steps toward the target" {
 
 // ────────────── movement modes (ai_movement.zig) ──────────────
 
-/// Corridor grid: only column x = 1 — forced one-axis movement so
+/// Corridor grid: only column x = 1 - forced one-axis movement so
 /// stand-off distances are unambiguous.
 const corridor = [_]Vector2{
     .{ .x = 1, .y = 0 }, .{ .x = 1, .y = 1 }, .{ .x = 1, .y = 2 },
@@ -401,7 +401,7 @@ test "enemy_turn_move: ready point-blank skill cluster-seeks" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     // Dual staff: spark + meteor exposed, blitz (radius-1 point-blank) as the
-    // off hand's third skill — blitz ready → cluster mode. Three targets
+    // off hand's third skill - blitz ready → cluster mode. Three targets
     // clustered around (0,2)-(0,4): tile (1,3) is within radius 1 of all
     // three, reachable in 3 steps from (4,3).
     var history = harness.newHistory(test_harness.levelStateWithEntities(
@@ -431,7 +431,7 @@ test "enemy_turn_move: point-blank skill on cooldown kites instead" {
     var harness = Harness.init(backing.allocator());
     // Same dual staff, blitz on cooldown: no point-blank skill ready, the
     // kit's min range is 3 (spark) → keep_range. Corridor: the entity at
-    // (1,4) with the hostile adjacent at (1,3) retreats to the standoff —
+    // (1,4) with the hostile adjacent at (1,3) retreats to the standoff -
     // (1,6) is the farthest act-capable tile (distance 3).
     const game_state = test_harness.levelStateWithEntities(
         backing.allocator(),
@@ -459,7 +459,7 @@ test "enemy_turn_move: ranged kit holds the standoff when closing in" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     // Main-hand staff only (spark + meteor, min range 3): keep_range. The
-    // entity starts at the standoff (distance 3) — no reachable tile is
+    // entity starts at the standoff (distance 3) - no reachable tile is
     // farther while staying act-capable, so it stands and attacks.
     var history = harness.newHistory(test_harness.levelStateWithEntities(
         backing.allocator(),
@@ -525,7 +525,7 @@ test "enemy_turn_attack: on-cooldown skill is skipped" {
         &five_by_five,
     ));
     // Put stab AND vampiric_strike on cooldown (vampiric is now always
-    // offered — rating 1 at full health, the lifesteal bonus only applies
+    // offered - rating 1 at full health, the lifesteal bonus only applies
     // below half) → no usable cast → turn_end, no damage.
     levelEntity(&history, 0).skill_cooldowns.set(.stab, 2);
     levelEntity(&history, 0).skill_cooldowns.set(.vampiric_strike, 2);

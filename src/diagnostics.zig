@@ -1,4 +1,4 @@
-//! Diagnostics: the Terminal-less platform-troubleshooting log — one
+//! Diagnostics: the Terminal-less platform-troubleshooting log - one
 //! `Diagnostics` instance (owned by the raylib backend) accumulating boot
 //! info, first-draw one-shot probes, and render-target readback samples
 //! into `logs/diagnostics.txt` in the persistent dir. Raylib-FREE by
@@ -6,7 +6,7 @@
 //! and records them here as plain data, so this file compiles in the
 //! headless test build and its section/flush policy is unit-tested.
 //! Activation is a RUNTIME flag (the `--diagnostics` CLI flag; dev-mode
-//! builds default active) — the code ships in every native build, so the
+//! builds default active) - the code ships in every native build, so the
 //! binary that exhibits a release-only failure can produce its own data.
 //! Writes are event-driven (a handful per session) and flushed at the
 //! end-of-frame safe point, never mid-draw; the file is rewritten whole on
@@ -32,7 +32,7 @@ fn statusString(compiled: bool) []const u8 {
 /// only the values cross the seam.
 pub const BootValues = struct {
     /// Window size in POINTS vs framebuffer PIXELS: a 2x gap means a
-    /// retina context without raylib's high-dpi flag — the letterbox /
+    /// retina context without raylib's high-dpi flag - the letterbox /
     /// pointer math operates on points either way.
     window_width: i32,
     window_height: i32,
@@ -45,16 +45,16 @@ pub const BootValues = struct {
     gl_version: []const u8,
     gl_shading_language_version: []const u8,
     /// Compile status of the three silent-degrade shaders: a FAILED
-    /// compile never crashes — the pass falls back to its pre-shader look
+    /// compile never crashes - the pass falls back to its pre-shader look
     /// (sprite LOD: trilinear; outline stripes: solid tint; SDF text:
-    /// shadow ring) — and nothing else surfaces it. The boot section is
+    /// shadow ring) - and nothing else surfaces it. The boot section is
     /// where the degrade becomes visible.
     sprite_shader_compiled: bool,
     outline_stripe_shader_compiled: bool,
     sdf_shader_compiled: bool,
 };
 
-/// First plain-sprite-draw probe values — the known-WORKING control the
+/// First plain-sprite-draw probe values - the known-WORKING control the
 /// first panel probe is diffed against.
 pub const SpriteDrawValues = struct {
     sprite_id: []const u8,
@@ -67,10 +67,10 @@ pub const SpriteDrawValues = struct {
     alpha: u8,
 };
 
-/// First 9-slice-panel-draw probe values — the full draw state (texture,
+/// First 9-slice-panel-draw probe values - the full draw state (texture,
 /// tint before + after default-tint resolution, destination, all nine
 /// source/destination rect pairs) to diff against the control. The pieces
-/// are the pure `ui.nineSlicePiecesAtScale` output (raylib-free — same seam).
+/// are the pure `ui.nineSlicePiecesAtScale` output (raylib-free - same seam).
 pub const PanelDrawValues = struct {
     sprite_id: []const u8,
     texture_id: u32,
@@ -87,7 +87,7 @@ pub const PanelDrawValues = struct {
 };
 
 /// One render-target pixel sample at a probed destination: the readback
-/// splits the pipeline in half — pixels PRESENT = the draw landed in the
+/// splits the pipeline in half - pixels PRESENT = the draw landed in the
 /// offscreen target, so a missing panel on screen is the blit/present
 /// path; pixels ABSENT = the batch draw itself failed. Coordinates are in
 /// TARGET space; the raylib side computes them (RenderTextures are stored
@@ -118,7 +118,7 @@ pub const Diagnostics = struct {
     sprite_probe_logged: bool = false,
     panel_probe_logged: bool = false,
     /// Reference-space destinations captured by the one-shot probes, read
-    /// back from the render target at the end of the same frame — the
+    /// back from the render target at the end of the same frame - the
     /// probes fire mid-draw, the pixels only exist after `endTextureMode`.
     panel_destination: ?types.Rectangle = null,
     sprite_destination: ?types.Rectangle = null,
@@ -151,7 +151,7 @@ pub const Diagnostics = struct {
 
     /// Append a pre-formatted message (the audio subsystem's load-time
     /// warning sink). Gated on `enabled`: an inactive instance must not
-    /// accumulate (nothing would ever flush it). Best-effort — an OOM
+    /// accumulate (nothing would ever flush it). Best-effort - an OOM
     /// write is dropped, never surfaced.
     pub fn append(self: *Diagnostics, comptime fmt: []const u8, args: anytype) void {
         if (!self.enabled) return;
@@ -196,7 +196,7 @@ pub const Diagnostics = struct {
         self.markFlushPending();
     }
 
-    /// One-shot probe of the first plain sprite draw — the known-WORKING
+    /// One-shot probe of the first plain sprite draw - the known-WORKING
     /// control the first panel probe is diffed against. Captures the
     /// destination for the end-of-frame readback.
     pub fn recordFirstSpriteDraw(self: *Diagnostics, values: SpriteDrawValues) void {
@@ -221,7 +221,7 @@ pub const Diagnostics = struct {
         self.markFlushPending();
     }
 
-    /// One-shot probe of the first 9-slice panel draw — full draw state to
+    /// One-shot probe of the first 9-slice panel draw - full draw state to
     /// diff against the control. Captures the destination for the
     /// end-of-frame readback.
     pub fn recordFirstPanelDraw(self: *Diagnostics, values: PanelDrawValues) void {
@@ -296,7 +296,7 @@ pub const Diagnostics = struct {
 
     /// Execute a pending flush: rewrite the whole file from the buffer.
     /// Called at the end-of-frame safe point (after present) and at clean
-    /// shutdown. Best-effort — a failed write is silent (diagnostics must
+    /// shutdown. Best-effort - a failed write is silent (diagnostics must
     /// never crash the game).
     pub fn flushIfPending(self: *Diagnostics) void {
         if (!self.enabled or !self.flush_pending) return;
@@ -386,7 +386,7 @@ test "section policy: one-shots record once, probes capture the readback destina
     try testing.expect(diagnostics.boot_logged);
     try testing.expect(diagnostics.flush_pending);
     // The shader-status lines land in the boot section (the fixture has the
-    // SDF deliberately FAILED — the silent-degrade case the line exists
+    // SDF deliberately FAILED - the silent-degrade case the line exists
     // to surface).
     try testing.expect(std.mem.indexOf(u8, diagnostics.buffer.items, "sprite_lod_shader compiled") != null);
     try testing.expect(std.mem.indexOf(u8, diagnostics.buffer.items, "outline_stripe_shader compiled") != null);
@@ -479,7 +479,7 @@ test "disabled: nothing recorded, no file written" {
     var diagnostics = Diagnostics{ .allocator = allocator, .file_source = &file_source, .enabled = false };
     defer diagnostics.deinit();
 
-    // No section records, no sink append, no flush — the file never exists.
+    // No section records, no sink append, no flush - the file never exists.
     try testing.expect(!diagnostics.shouldRecordBoot());
     try testing.expect(!diagnostics.shouldRecordFirstSpriteDraw());
     try testing.expect(!diagnostics.shouldRecordFirstPanelDraw());

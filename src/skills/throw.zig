@@ -41,7 +41,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 2 — one
+/// AI options: the weakest hostile (focus-fire) at rating 2 - one
 /// significant bonus (1.5x) over a plain hit.
 fn aiOptions(
     caster_index: u32,
@@ -68,7 +68,7 @@ fn playerPrepareSkill(
 }
 
 /// Use: attack the target for 1.5x the fully-modified off-hand damage
-/// (multipliers apply last — see DESIGN → Architecture → Damage multiplier
+/// (multipliers apply last - see DESIGN → Architecture → Damage multiplier
 /// ordering).
 fn useSkill(
     caster_index: u32,

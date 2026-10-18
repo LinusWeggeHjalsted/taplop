@@ -57,6 +57,6 @@ test "skip_level does not fire on the main menu (level-only gate)" {
 
     input_handlers.handleIdleInput(&history, .{ .skip_level = true }, null, .{});
 
-    // No end_level pushed — skip_level is gated to the level screen.
+    // No end_level pushed - skip_level is gated to the level screen.
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }

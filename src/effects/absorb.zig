@@ -8,10 +8,10 @@ const Event = events.Event;
 const Effect = effect_mod.Effect;
 const DamageInterception = effect_mod.DamageInterception;
 
-/// Absorb: while active, incoming attack damage is converted to healing —
+/// Absorb: while active, incoming attack damage is converted to healing -
 /// the interceptor zeroes the damage and heals the receiver for the
 /// pre-defense amount (the same stage and amount Reflect reflects back; the
-/// heal handler clamps to max). Like every interceptor, ATTACK-only —
+/// heal handler clamps to max). Like every interceptor, ATTACK-only -
 /// collision damage bypasses it (the deliberate Reflect counterplay rule,
 /// DESIGN → Architecture).
 pub const effect = Effect{

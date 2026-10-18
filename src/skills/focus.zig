@@ -30,12 +30,12 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-cast rated by the RESET COUNT — the number of
+/// AI options: one self-cast rated by the RESET COUNT - the number of
 /// ticking cooldowns among slots 1-3 (the same skillInSlot resolution the
 /// reset_weapon_cooldowns handler resets; a ticking cantrip alone offers
 /// nothing). Rate = reset count mirrors the meditate/adrenaline convention.
@@ -59,8 +59,8 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = reset_count });
 }
 
-/// Self-cast — no meaningful target.
-/// Self-cast — fires immediately.
+/// Self-cast - no meaningful target.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

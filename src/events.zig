@@ -21,8 +21,8 @@ const WeaponType = types.WeaponType;
 /// The flattened equipped-slot item payload, shared by
 /// `editor_set_entity_gear` + `player_set_editor_entity_gear` (the player
 /// wrapper forwards it verbatim). `equipped: false` = the clear; only the
-/// slot's kind's fields are meaningful while equipped — the defaults
-/// carry the rest (writer emits all, reader requires all — the
+/// slot's kind's fields are meaningful while equipped - the defaults
+/// carry the rest (writer emits all, reader requires all - the
 /// session-log field-presence contract; the defaults keep construction
 /// sites clean).
 pub const EntityGearPayload = struct {
@@ -59,11 +59,11 @@ pub const MetaEvent = union(enum) {
     wait: struct {
         duration_milliseconds: u32,
     },
-    // The intra-effect pacing wait — same stall machinery as `wait`, but the
+    // The intra-effect pacing wait - same stall machinery as `wait`, but the
     // duration is COMPUTED at pop time: `effect_step_wait_milliseconds`
     // decayed by 3/4 per prior accelerating wait in the chain
     // (`GameState.wait_acceleration`, reset by `use_skill`). Carries no
-    // payload because the duration is a pure function of state — which is
+    // payload because the duration is a pure function of state - which is
     // what keeps it replay-safe (the counter is event-driven GameState,
     // recomputed identically on replay/undo). See DESIGN → Architecture →
     // Skill pacing.
@@ -90,7 +90,7 @@ pub const MetaEvent = union(enum) {
     },
     end_mission: struct {
         hub_id: ?[]const u8,
-        // Non-null when the mission was completed (last level done) — carries
+        // Non-null when the mission was completed (last level done) - carries
         // the info for the mission-complete overlay through to start_hub.
         // Null when abandoning (exit_mission). See DESIGN → Architecture.
         completed_mission: ?MissionCompleteInfo = null,
@@ -110,7 +110,7 @@ pub const MetaEvent = union(enum) {
     start_hub: struct {
         hub_id: []const u8,
         sets_checkpoint: bool = true,
-        // Non-null when this hub entry follows a mission completion — sets
+        // Non-null when this hub entry follows a mission completion - sets
         // GameState.last_completed_mission so the overlay renders. Null on
         // a normal hub entry (clears any stale value). See DESIGN →
         // Architecture.
@@ -121,9 +121,9 @@ pub const MetaEvent = union(enum) {
     // reads a mission from disk into an Editor session; start_playtest /
     // end_playtest bracket a single-level playtest (in-memory, the editor
     // draft); start_validation / end_validation bracket a full-mission
-    // validation run of the SAVED mission dir (file-based — the artifact a
+    // validation run of the SAVED mission dir (file-based - the artifact a
     // player receives; the handler reads the dir's files through the
-    // reconstruction cache). The gameplay events stay pristine — end_level's
+    // reconstruction cache). The gameplay events stay pristine - end_level's
     // guard defers to these.
     close_editor: void,
     start_playtest: struct {
@@ -132,16 +132,16 @@ pub const MetaEvent = union(enum) {
     end_playtest: void,
     start_validation: struct {
         /// The saved mission dir the run certifies (the input layer saves
-        /// first and passes the dir here). A top-level string field —
+        /// first and passes the dir here). A top-level string field -
         /// verbatim in the session log, spaces-safe.
         mission_path: []const u8,
     },
     end_validation: struct {
         success: bool,
     },
-    // UI surface toggles (class-1 semantic surface state — see DESIGN →
+    // UI surface toggles (class-1 semantic surface state - see DESIGN →
     // UI Framework → UI state classification). The state lives on
-    // GameState.ui_surfaces so it rides the undo timeline and replays —
+    // GameState.ui_surfaces so it rides the undo timeline and replays -
     // which is what lets validatePlayerAction gate gameplay orchestrators
     // on the surface that supplies their trigger. Flip one surface (the
     // keyboard / menu-button semantics; the entity-inspect toggle also
@@ -152,7 +152,7 @@ pub const MetaEvent = union(enum) {
     // The right-click entity-inspect verb: a non-null index OPENS (or
     // retargets) the entity-inspect panel on that entity, null CLOSES it.
     // The gesture resolves same/different/none against current state and
-    // pushes the resolved intent — the event itself is unconditional.
+    // pushes the resolved intent - the event itself is unconditional.
     inspect_entity: struct {
         entity_index: ?u32,
     },
@@ -193,13 +193,13 @@ pub const SuperEvent = union(enum) {
 
 pub const EditorEvent = union(enum) {
     // scope: editor
-    // One EditorEvent per player action (the orchestrator convention — see
+    // One EditorEvent per player action (the orchestrator convention - see
     // DESIGN → Architecture). Most editor edits are a single verb, so they
     // live directly here as their own variant. The exception is
     // editor_delete_type, an orchestrator that pushes editor_delete_*_placement
     // sub-events (SubEditorEvent) for each referencing placement before
     // removing the type. All editor events mutate current.editor.?.levels[]
-    // or the palette directly — pure state transforms captured by deepCopy,
+    // or the palette directly - pure state transforms captured by deepCopy,
     // so undo/redo works by construction. See DESIGN → Architecture → Level
     // Editor → Editor UI layout for the full design.
 
@@ -214,39 +214,39 @@ pub const EditorEvent = union(enum) {
 
     // ── Inspector panel ──
     // Flip the inspector sidebar's open state (the top-left toggle button,
-    // below options; open by default — see `Editor.inspector_open` for why
+    // below options; open by default - see `Editor.inspector_open` for why
     // the flag lives on the Editor). Undo flips it back with the edit
     // history, same posture as `editor_set_tool`.
     editor_toggle_inspector: void,
-    // Flip the metadata sidebar's open state (the top-right toggle — same
+    // Flip the metadata sidebar's open state (the top-right toggle - same
     // convention as `editor_toggle_inspector`: the flag lives on the
     // Editor, the toggle rides the undo timeline).
     editor_toggle_metadata_sidebar: void,
-    // Open the centered picker on a target — class-1 surface state (the
+    // Open the centered picker on a target - class-1 surface state (the
     // picker is a modal surface; see DESIGN → UI Framework → UI state
     // classification). Sets `Editor.picker`, REPLACING any stale picker
-    // still open (the palette-group dropdown semantics — the open event is
+    // still open (the palette-group dropdown semantics - the open event is
     // the close of whatever it replaces, one action).
     editor_open_picker: struct {
         target: types.EditorPickerTarget,
     },
     // Close the centered picker. Pushed by the picker's Close button / a
     // no-change pick AND as a child of every picker-commit orchestrator
-    // (the commit's own handler pushes it — pick+close is one undo step).
+    // (the commit's own handler pushes it - pick+close is one undo step).
     // Closing a closed picker is a graceful no-op (crafted logs).
     editor_close_picker: void,
     // Import a loadout into the editor player (the player inspector's
     // Import buttons): the session's player data, or the new-game default
-    // save when the session has none. Handled INLINE in processEvent —
+    // save when the session has none. Handled INLINE in processEvent -
     // the default-save read needs the reconstruction cache.
     editor_import_player: void,
-    // The Max player import (data/max_player.txt — the author-times tool
+    // The Max player import (data/max_player.txt - the author-times tool
     // for official missions): same inline handling + same reason.
     editor_import_max_player: void,
 
     // ── Selection (the select tool) ──
     // Granular by design: a click toggles a GROUP (up to tile + entity +
-    // item), pushing one event per entry — they share the click's idle
+    // item), pushing one event per entry - they share the click's idle
     // point, so one undo step reverts the whole click, and a future
     // marquee / shift-click batch reads as a run of additions. Entries
     // address the ACTIVE level (see `types.Selectable`).
@@ -267,12 +267,12 @@ pub const EditorEvent = union(enum) {
     // Commit ONE link of a selection move's placement worklist (see
     // `player_move_editor_selection`). Chained by necessity: each entry is
     // planned against the LIVE post-delete state via the placement
-    // planners — up-front planning of the whole worklist breaks when two
+    // planners - up-front planning of the whole worklist breaks when two
     // entries' targets share a covering decoration (duplicate delete →
     // stale index) or an item entry's enemy-delete shifts an index a
     // later retype still addresses. Each link plans `entries[next_index]`,
-    // pushes `[next link, …plan]` (LIFO: the plan processes first), and the
-    // exhausted link clears the selection (a move deselects — nothing is
+    // pushes `[next link, ...plan]` (LIFO: the plan processes first), and the
+    // exhausted link clears the selection (a move deselects - nothing is
     // reselected). Recorded once per link; replay reproduces the chain.
     editor_commit_selection_move: struct {
         entries: []const types.EditorSelectionMoveEntry,
@@ -285,17 +285,17 @@ pub const EditorEvent = union(enum) {
         level_index: u32,
     },
     // Append a new level built from data/default_level.txt (the minimal `!=`
-    // template). No payload — the template is fixed; the author renames /
+    // template). No payload - the template is fixed; the author renames /
     // re-themes via the metadata events below. The same handler switches the
     // active tab to the new level (the author lands on the thing they just
-    // created — the add-type behavior) and syncs mission.level_count.
+    // created - the add-type behavior) and syncs mission.level_count.
     editor_add_level: void,
     // Delete a level. Handler removes it, shifts later indices down, syncs
     // mission.level_count, adjusts active_level_index (a delete BELOW the
     // active tab shifts it down; deleting the ACTIVE level clamps + clears
-    // the selection — the editor_set_active_level semantics; the selection
+    // the selection - the editor_set_active_level semantics; the selection
     // is active-level-relative). Gated on levels.len > 1 (a mission always
-    // has ≥1 level — the handler panics if violated; the UI shouldn't offer
+    // has ≥1 level - the handler panics if violated; the UI shouldn't offer
     // the × on the last tab, but the event enforces the invariant).
     editor_delete_level: struct {
         level_index: u32,
@@ -350,8 +350,8 @@ pub const EditorEvent = union(enum) {
 
     // ── Palette type management ──
     // Append a new type to the corresponding palette group, built from the
-    // shipped defaults (data/editor_defaults.txt — one entry per kind in
-    // the level-file formats). No payload — the default is fixed shipped
+    // shipped defaults (data/editor_defaults.txt - one entry per kind in
+    // the level-file formats). No payload - the default is fixed shipped
     // content; the handler reads it through the reconstruction cache so
     // replay reproduces the creation. The same handler makes the new type
     // the active tool and opens the inspector (the auto-open-on-creation
@@ -364,11 +364,11 @@ pub const EditorEvent = union(enum) {
     // `editor_delete_*_placement` sub-events for every referencing
     // placement (they own the order-preserving removal + the active-level
     // selection prune/remap), then removes the type and decrements every
-    // same-kind type id above it (palette indices shift down) — the one
+    // same-kind type id above it (palette indices shift down) - the one
     // orchestrator in this set. The active tool is reconciled in the same
     // event: the deleted type → select, a higher same-kind index →
     // decremented. All the events share the triggering player action's
-    // idle point — one undo step restores the type and every placement.
+    // idle point - one undo step restores the type and every placement.
     editor_delete_type: struct {
         type_kind: EditorTypeKind,
         type_id: u32,
@@ -376,8 +376,8 @@ pub const EditorEvent = union(enum) {
 
     // ── Placement (viewport clicks with a placement tool active) ──
     // Per-kind variants (not a Selectable-carrying generic event) so the
-    // exported log reads self-describing: `editor_place_entity { … }` over
-    // `editor_place { kind entity, … }`.
+    // exported log reads self-describing: `editor_place_entity { ... }` over
+    // `editor_place { kind entity, ... }`.
     editor_place_entity: struct {
         level_index: u32,
         type_id: u32,
@@ -407,7 +407,7 @@ pub const EditorEvent = union(enum) {
     },
     // Retype an entity placement to another palette type in place (the
     // entity-tool click on an occupied tile): identity (index) and position
-    // stay stable — nothing referencing the placement shifts. Preferred
+    // stay stable - nothing referencing the placement shifts. Preferred
     // over delete + re-place for exactly that reason.
     editor_set_entity_placement_type: struct {
         level_index: u32,
@@ -416,7 +416,7 @@ pub const EditorEvent = union(enum) {
     },
     // Retype an item placement to another palette type in place (the
     // ground-item-tool click on an occupied tile): identity (index) and
-    // position stay stable — same reasoning as
+    // position stay stable - same reasoning as
     // `editor_set_entity_placement_type`.
     editor_set_item_placement_type: struct {
         level_index: u32,
@@ -427,12 +427,12 @@ pub const EditorEvent = union(enum) {
     // ── Entity type editing (per-field, target covers entity_type | player_def) ──
     // Dedicated variants (not a generic field+value event) so the log reads
     // `editor_set_entity_name { target entity_type 0, name Skeleton Warrior }`
-    // — the variant name carries the field. Each is one field = one undo.
+    // - the variant name carries the field. Each is one field = one undo.
     editor_set_entity_name: struct {
         target: EntityEditTarget,
         value: []const u8,
     },
-    // Base-sprite pick commit. `keep_original_colors` rides the pick — the
+    // Base-sprite pick commit. `keep_original_colors` rides the pick - the
     // pick-time default follows the art source (official stem → false,
     // mission-local custom art → true; see DESIGN → Entity & UI Coloring,
     // keep_original_colors). One event = one undo step. Defaults false so
@@ -451,7 +451,7 @@ pub const EditorEvent = union(enum) {
         value: bool,
     },
     // The untinted-render toggle (see DESIGN → Entity & UI Coloring,
-    // keep_original_colors) — the displays_weapons toggle's shape.
+    // keep_original_colors) - the displays_weapons toggle's shape.
     editor_set_entity_keep_original_colors: struct {
         target: EntityEditTarget,
         value: bool,
@@ -474,18 +474,18 @@ pub const EditorEvent = union(enum) {
     },
     // Team is ENEMY-authorable only: 0 = the player's team (helpers the
     // player doesn't control), 1+ = mutually hostile enemy teams. The
-    // player_def target is rejected at the replay seam — the player's
+    // player_def target is rejected at the replay seam - the player's
     // team is definitionally 0.
     editor_set_entity_team: struct {
         target: EntityEditTarget,
         value: u32,
     },
     // Gear: ONE slot-parameterized event (equip/unequip/retype/field
-    // edit — the whole-definition commit, the editor_set_item_def /
+    // edit - the whole-definition commit, the editor_set_item_def /
     // editor_set_decoration_def shape). The item's fields are FLATTENED
     // onto the payload: a nested `?Weapon`-style value can't round-trip
     // the session log once its name contains a space (nested strings
-    // serialize as one space-separated token — see session_log.zig
+    // serialize as one space-separated token - see session_log.zig
     // parseScalarTokens), and the editor's own defaults ("New Sword")
     // carry spaces. `equipped: false` = the clear (Delete); only the
     // slot's kind's fields are meaningful while equipped (the handler
@@ -501,7 +501,7 @@ pub const EditorEvent = union(enum) {
     // Entity sprite layers (base + overlays). Add/remove/set per layer.
     // The layer's fields are FLATTENED to top level (a nested layer's
     // sprite string can't round-trip the session log once it contains a
-    // space — mission-dir names carry spaces; see session_log.zig).
+    // space - mission-dir names carry spaces; see session_log.zig).
     editor_add_entity_layer: struct {
         target: EntityEditTarget,
         sprite: []const u8,
@@ -523,9 +523,9 @@ pub const EditorEvent = union(enum) {
     // precedent): the inspector's sprite pick adopts a full prefab (sprite,
     // footprint, pixel dims, color index, layers) or a custom stem with a
     // derived default footprint, and a footprint change can invalidate the
-    // type's placements — one event = one undo step covering the retype +
+    // type's placements - one event = one undo step covering the retype +
     // the placement prune. The fields are FLATTENED to top level (the
-    // session-log reader doesn't regroup nested non-u8 slices — see
+    // session-log reader doesn't regroup nested non-u8 slices - see
     // session_log.zig parseScalarTokens). The palette label (`id`) always
     // tracks the sprite (a decoration's name IS its sprite path). Per-field
     // events remain for the verbs that don't retype: color_index (the
@@ -539,7 +539,7 @@ pub const EditorEvent = union(enum) {
         color_index: u32,
         // Whole-def commits carry the full visual identity incl. the
         // untinted-render flag (official picks adopt the prefab's false;
-        // mission-local picks carry true — see DESIGN → Entity & UI
+        // mission-local picks carry true - see DESIGN → Entity & UI
         // Coloring, keep_original_colors). Defaults false for pre-field
         // logs.
         keep_original_colors: bool = false,
@@ -550,7 +550,7 @@ pub const EditorEvent = union(enum) {
         value: u32,
     },
     // The decoration content's untinted-render toggle (the displays_weapons
-    // toggle's decoration counterpart; granular like the color_index event —
+    // toggle's decoration counterpart; granular like the color_index event -
     // the flag never affects placement validity, no prune).
     editor_set_decoration_keep_original_colors: struct {
         type_id: u32,
@@ -564,7 +564,7 @@ pub const EditorEvent = union(enum) {
         type_id: u32,
         sprite: []const u8,
         color_index: u32,
-        /// Draws behind the base — the picker commit adopts the registry
+        /// Draws behind the base - the picker commit adopts the registry
         /// prefab's authored draw side for the stem (tree_*_grass_back is
         /// true), else false (an overlay). Defaults false for pre-field logs.
         behind: bool = false,
@@ -588,15 +588,15 @@ pub const EditorEvent = union(enum) {
 
     // ── Item type editing ──
     // The whole definition commits in ONE event per edit (a type pick, a
-    // stat change — one undo step each). The item's fields are FLATTENED
+    // stat change - one undo step each). The item's fields are FLATTENED
     // to top level (the `editor_set_decoration_def` precedent): a nested
     // `Item` payload's name string can't round-trip the session log once
     // it contains a space (nested strings serialize as one space-separated
-    // token — see session_log.zig parseScalarTokens), and the default
+    // token - see session_log.zig parseScalarTokens), and the default
     // names ("New Sword") carry spaces by design. `item_kind` picks the
     // variant; only its fields are meaningful (the handler ignores the
     // rest). Skill tomes are NOT expressible (not authorable as ground
-    // items — the level-file Items section has no tome kind); `name`
+    // items - the level-file Items section has no tome kind); `name`
     // commits ride `editor_set_item_name` instead (a top-level string,
     // spaces fine). Stats are clamped to the `max_*` bounds by the live
     // path AND the handler (the editor never holds a state its own load
@@ -605,7 +605,7 @@ pub const EditorEvent = union(enum) {
         type_id: u32,
         item_kind: ItemKind,
         // Only the picked kind's fields are meaningful (writer emits all,
-        // reader requires all — the session-log field-presence contract;
+        // reader requires all - the session-log field-presence contract;
         // the defaults just keep construction sites clean).
         weapon_type: WeaponType = .sword,
         name: []const u8 = &.{},
@@ -623,15 +623,15 @@ pub const EditorEvent = union(enum) {
     },
 
     // ── Player loadout inventory editing ──
-    // The player-def inspector's Inventory section (the 16×6 slot grid —
+    // The player-def inspector's Inventory section (the 16×6 slot grid -
     // the same 96 `inventory_slot_count` indices the in-game 8×12 grid
     // shows, arranged to fit the panel). Same conventions as the item
     // type editing above: the def commit is FLATTENED (nested Item names
-    // can't round-trip the session log — same why), covers type picks
+    // can't round-trip the session log - same why), covers type picks
     // (reset-everything semantics) AND stat edits (one undo step each),
     // and the handler clamps stats; name commits ride their own event
     // (top-level string, spaces fine). Add creates the default sword
-    // ("New Sword", the editor_defaults.txt Items entry — the palette
+    // ("New Sword", the editor_defaults.txt Items entry - the palette
     // "+" default); Delete clears to null.
     editor_add_inventory_item: struct {
         index: u32,
@@ -669,7 +669,7 @@ pub const EditorTypeKind = enum {
 pub const PlayerEvent = union(enum) {
     // scope: hub or level
     // Player-inventory/gear/skill mutations pushed by the drag handler
-    // (machinery — not player-input events). `swap_hands` moved to
+    // (machinery - not player-input events). `swap_hands` moved to
     // `PlayerInputEvent` (it's a keybind/click, not a drag).
     learn_skill: struct {
         inventory_slot_index: u32,
@@ -715,23 +715,23 @@ pub const PlayerEvent = union(enum) {
     },
 };
 
-/// Player-input events — the ONLY events input handlers can push (via
+/// Player-input events - the ONLY events input handlers can push (via
 /// `pushPlayerAction`). Each maps 1:1 to a user action (keybind/click).
 /// The replay whitelist (`isPlayerAction`) is just `activeTag ==
-/// .player_input_event` — the type IS the whitelist, so it can't drift from
+/// .player_input_event` - the type IS the whitelist, so it can't drift from
 /// the push side. `player_skip_level` is additionally dev-gated in
 /// `isPlayerAction`. Handlers for these orchestrators push machinery events
 /// (`end_level`, `start_mission`, `move_entity`, `use_skill`, `turn_end`,
-/// ...) as children via `pushEvents` — those live in the machinery unions
+/// ...) as children via `pushEvents` - those live in the machinery unions
 /// (MetaEvent/LevelEvent/etc.) and are never seeded at an idle point.
 /// See DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
 pub const PlayerInputEvent = union(enum) {
     // --- Meta: scope transitions + save + overlay dismiss ---
     start_new_game: void,
     // Open the editor. Null mission_path = create a FRESH empty mission
-    // ("New Mission", one default-template level, empty palettes — the
+    // ("New Mission", one default-template level, empty palettes - the
     // New Mission buttons; the mission uuid is minted at SAVE time,
-    // never held in state — see DESIGN → Level Editor → Mission
+    // never held in state - see DESIGN → Level Editor → Mission
     // identity). A path = open that mission directory (the editor
     // browser's rows + the round-trip tests).
     open_editor: struct {
@@ -743,7 +743,7 @@ pub const PlayerInputEvent = union(enum) {
         save_path: []const u8,
     },
     // Export Game's autosave half: a game in progress (not during an
-    // editor run — throwaway run data) syncs PlayerData via
+    // editor run - throwaway run data) syncs PlayerData via
     // build_data_from_player, then writes the AUTOSAVE so mid-level
     // progress is in the exported zip (the zip + download themselves are
     // an input-path side effect, the reset-to-defaults class). See
@@ -761,9 +761,9 @@ pub const PlayerInputEvent = union(enum) {
     player_continue: void,
     // Main-menu load-save browser: load the save at `save_path` (a row
     // click, or the picked file from the web import). Handler pushes the
-    // meta `load_save` event — the normal load path, so replay re-reads the
+    // meta `load_save` event - the normal load path, so replay re-reads the
     // file silently. The path references a file already resident in the
-    // persistent dir (acquisition happened in idle input — see DESIGN →
+    // persistent dir (acquisition happened in idle input - see DESIGN →
     // Custom Missions for why that split matters).
     player_load_save: struct {
         save_path: []const u8,
@@ -801,14 +801,14 @@ pub const PlayerInputEvent = union(enum) {
     player_toggle_ui_surface: struct {
         surface: types.UiSurfaceId,
     },
-    // Right-click entity inspect (levels only): the RESOLVED intent —
+    // Right-click entity inspect (levels only): the RESOLVED intent -
     // non-null opens/retargets the entity-inspect panel, null closes it.
     // The handler pushes the meta `inspect_entity` verb.
     player_inspect_entity: struct {
         entity_index: ?u32,
     },
     // Editor picker open/close (the picker's own buttons, the rows that
-    // open it, a no-change pick's close): thin — the handler pushes
+    // open it, a no-change pick's close): thin - the handler pushes
     // `editor_open_picker` / `editor_close_picker`. The picker state
     // rides GameState (`Editor.picker`), so it rides the undo timeline.
     // See DESIGN → UI Framework → UI state classification.
@@ -819,7 +819,7 @@ pub const PlayerInputEvent = union(enum) {
     // Top-bar Test/Validate button clicks: start a single-level playtest
     // of the active level / a full-mission validation run of the SAVED
     // mission dir (the input layer saves first and passes the dir).
-    // Thin orchestrators — the machinery handlers (start_playtest /
+    // Thin orchestrators - the machinery handlers (start_playtest /
     // start_validation) own instantiation, PlayerData dormancy, and the
     // screen transition; end_level's editor guard owns the return path.
     // player_start_validation also serves as the validate-RESTART
@@ -839,9 +839,9 @@ pub const PlayerInputEvent = union(enum) {
     // recorded events against the mission files as they are NOW; any
     // divergence or illegality invalidates. On success the handler
     // rewrites validation_replay.txt with the same events + the NEW
-    // content hash (the original created stamp is kept — same run,
+    // content hash (the original created stamp is kept - same run,
     // re-certified). The consumption site saves first (the Validate
-    // contract — the check certifies the saved files). See DESIGN →
+    // contract - the check certifies the saved files). See DESIGN →
     // Custom Missions & Online Services → Validation replay.
     player_revalidate_mission: struct {
         /// The saved mission dir whose replay is re-certified (borrowed
@@ -850,24 +850,24 @@ pub const PlayerInputEvent = union(enum) {
     },
     // Player inspector Import-button click: copy the session's player data
     // (or, with none, the new-game default save) into the editor player
-    // loadout. The handler pushes `editor_import_player` — the loadout
+    // loadout. The handler pushes `editor_import_player` - the loadout
     // fields ride GameState, so the import is on the undo timeline.
     player_import_editor_player: void,
     // Player inspector Max-player Import-button click (the shipped
     // data/max_player.txt loadout): pushes `editor_import_max_player`.
     player_import_editor_max_player: void,
     // Palette group "+" click: append a new type to that group's palette
-    // (Entities / Decorations / Items). Thin orchestrator — the handler for
+    // (Entities / Decorations / Items). Thin orchestrator - the handler for
     // the `editor_add_*_type` event builds the type from the shipped
     // defaults (data/editor_defaults.txt, read through the reconstruction
     // cache), makes it the active tool, and opens the inspector. No payload
-    // — the group is named by the event variant.
+    // - the group is named by the event variant.
     player_add_editor_entity_type: void,
     player_add_editor_decoration_type: void,
     player_add_editor_item_type: void,
     // Palette tool-cell delete-button click: delete that palette type and
     // every placement referencing it across all levels. Thin orchestrator
-    // — the `editor_delete_type` handler owns the fan-out (per-placement
+    // - the `editor_delete_type` handler owns the fan-out (per-placement
     // deletes + the type removal + id remap + active-tool reconciliation),
     // all on the undo timeline as one step.
     player_delete_editor_type: struct {
@@ -876,20 +876,20 @@ pub const PlayerInputEvent = union(enum) {
     },
     // Add-level "+" click (top bar, right of the level tabs): append a new
     // level from the shipped template (data/default_level.txt) and switch
-    // to it. Thin orchestrator — the `editor_add_level` handler reads the
+    // to it. Thin orchestrator - the `editor_add_level` handler reads the
     // template through the reconstruction cache (replay reproduces the
     // creation), appends it, makes it the active tab, and syncs
     // mission.level_count; one undo step reverts the whole creation.
     player_add_editor_level: void,
-    // Level-tab × click: delete that level (gated on more than one — a
-    // mission always keeps ≥1). Thin orchestrator — the
+    // Level-tab × click: delete that level (gated on more than one - a
+    // mission always keeps ≥1). Thin orchestrator - the
     // `editor_delete_level` handler removes it, shifts later levels down,
     // syncs mission.level_count, and adjusts the active tab. One undo step
     // restores the level.
     player_delete_editor_level: struct {
         level_index: u32,
     },
-    // Settings-sidebar commits (mission + active-level metadata — see
+    // Settings-sidebar commits (mission + active-level metadata - see
     // DESIGN → Architecture → Level Editor → Editor UI layout (Settings
     // sidebar)). Thin orchestrators: the EditorEvents own the mutations.
     player_set_editor_mission_name: struct {
@@ -905,7 +905,7 @@ pub const PlayerInputEvent = union(enum) {
     },
     // A gradient pick for the enemy/player row (or the row's Auto toggle
     // reverting to null). Picking while the role is on auto flips it to
-    // manual in the same commit — one undo step per pick.
+    // manual in the same commit - one undo step per pick.
     player_set_editor_level_enemy_gradient: struct {
         level_index: u32,
         gradient_index: ?u32,
@@ -925,18 +925,18 @@ pub const PlayerInputEvent = union(enum) {
         position: Vector2,
     },
     // Select-tool PLAIN click (no Shift): REPLACE the selection with the
-    // clicked thing's group — clear everything, then select the group.
+    // clicked thing's group - clear everything, then select the group.
     // Clicking empty ground clears the selection (the clicky deselect-
     // all). A click that would change nothing (the selection already IS
     // the group) never fires. Fired from handleIdleInput's select arm and
     // the move-drag gesture's unpromoted release (a plain click on a
-    // selected thing — the press was claimed by the gesture).
+    // selected thing - the press was claimed by the gesture).
     player_replace_editor_selection: struct {
         position: Vector2,
     },
     // Select-tool shift+drag release in the editor viewport: ADD every
     // selectable thing inside the rectangle spanned by the two corner
-    // tiles (order-independent, inclusive) — skipping entries already in
+    // tiles (order-independent, inclusive) - skipping entries already in
     // the selection (an add, never a remove; the plain click toggles). A
     // decoration is in the region when ANY of its footprint tiles is. The
     // handler computes the granular editor_select plan from state; an
@@ -947,43 +947,43 @@ pub const PlayerInputEvent = union(enum) {
     },
     // ctrl+A: add EVERY selectable thing in the active level
     // (tiles, entity / item / decoration placements, the '!' / '=').
-    // Tool-agnostic — when another tool is active the action also switches
+    // Tool-agnostic - when another tool is active the action also switches
     // to select (the selection ⇔ select-tool invariant; the switch shares
     // this action's idle point, so one undo restores the previous tool +
     // the empty selection). No
-    // payload — the handler computes the granular editor_select plan from
+    // payload - the handler computes the granular editor_select plan from
     // state (the marquee's membership rule with no region bound); entries
     // already in the selection are skipped, so an all-selected level never
-    // fires. All the adds share this action's idle point — one undo step.
+    // fires. All the adds share this action's idle point - one undo step.
     player_select_editor_all: void,
-    // Select-tool Delete key: delete the current selection. No payload —
+    // Select-tool Delete key: delete the current selection. No payload -
     // the handler reads `editor.selection` from reconstructable state (the
     // whole point of the selection living on the timeline) and fans out
     // into the per-entry delete events (`planEditorSelectionDeleteActions`).
-    // The '!' / '=' entries and the tiles under them are never deleted —
+    // The '!' / '=' entries and the tiles under them are never deleted -
     // everything else in the selection goes. All the deletes share this
     // action's idle point, so one undo step reverts the whole deletion.
     player_delete_editor_selection: void,
-    // Select-tool ctrl+D: clear the whole selection. No payload — the
+    // Select-tool ctrl+D: clear the whole selection. No payload - the
     // handler pushes the single `editor_clear_selection`. The input layer
     // gates on a nonempty selection (no dead undo step on an empty one).
     player_clear_editor_selection: void,
     // Select-tool move drag release: move the whole selection by `delta`
-    // (release tile − press tile). No payload beyond the delta — the
+    // (release tile − press tile). No payload beyond the delta - the
     // handler is thin over the shared planner
     // (planning.planEditorSelectionMoveActions), which reads
     // `editor.selection` from reconstructable state, backs it up as
     // concrete things (`EditorSelectionMoveEntry`), and pushes the delete
     // plan + the chained `editor_commit_selection_move` worklist. A move
     // that would land a MARKER on the other marker is VETOED whole (empty
-    // plan; the input gate never fires it — see
+    // plan; the input gate never fires it - see
     // planning.editorSelectionMoveVetoed): '!' and '=' take one cell each
     // in the layout format, so `player_start == level_end` has no file
     // representation. The delete phase does NOT sweep occupants of selected
     // tiles (unlike the Delete key): an unselected occupant pins its tile
-    // — the tile stays underneath it and the moved tile lands at the
+    // - the tile stays underneath it and the moved tile lands at the
     // target instead. A selected MARKER takes its old ground with it (the
-    // tile it stood on is erased — nothing hosts it there anymore; the
+    // tile it stood on is erased - nothing hosts it there anymore; the
     // Delete key keeps marker tiles because the marker isn't moving
     // there). Things whose target overlaps the '!' / '=' plan
     // empty and are deleted fully. After the move the selection is
@@ -992,9 +992,9 @@ pub const PlayerInputEvent = union(enum) {
         delta: Vector2,
     },
     // Tile-paint click in the editor viewport (tile tool active): one click
-    // = one tile. The handler computes the effect from state — no-op when a
+    // = one tile. The handler computes the effect from state - no-op when a
     // tile is already there; every decoration whose footprint covers the
-    // position is deleted first (replace, not block — see DESIGN →
+    // position is deleted first (replace, not block - see DESIGN →
     // Decorations & Footprint → Placement invariant). Erase (right-click)
     // and drag-painting are deferred; each lands as its own gesture.
     player_paint_editor_tile: struct {
@@ -1003,13 +1003,13 @@ pub const PlayerInputEvent = union(enum) {
     // Enemy-tool click in the editor viewport: place the palette entity
     // type at the clicked tile. The handler computes the full effect from
     // state (see the placement-tools bullet in DESIGN → Architecture →
-    // Level Editor → Active-tool model): occupant replacement — covering
+    // Level Editor → Active-tool model): occupant replacement - covering
     // decorations are deleted, a missing tile is placed, a co-located
     // ground item is deleted, an existing enemy is RETYPED in place (not
     // delete + re-place), and the player start / level end are never
-    // overwritten (no-op). One thing per placed tile is an invariant —
+    // overwritten (no-op). One thing per placed tile is an invariant -
     // `editor_place_entity` panics on an occupied tile. `type_id` rides in
-    // the payload (handlers can't read UiState — replay doesn't
+    // the payload (handlers can't read UiState - replay doesn't
     // reconstruct it). Decoration/item tools land as their own slices.
     player_place_editor_entity: struct {
         type_id: u32,
@@ -1023,7 +1023,7 @@ pub const PlayerInputEvent = union(enum) {
     // tiles are erased along with anything standing on them (entities /
     // ground items); other decorations whose footprints overlap are
     // deleted; then the decoration is placed. `type_id` rides in the
-    // payload (handlers can't read UiState — replay doesn't reconstruct
+    // payload (handlers can't read UiState - replay doesn't reconstruct
     // it). The item tools land as their own slice.
     // Decoration-tool click: place the palette decoration type with its
     // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
@@ -1033,7 +1033,7 @@ pub const PlayerInputEvent = union(enum) {
     // tiles are erased along with anything standing on them (entities /
     // ground items); other decorations whose footprints overlap are
     // deleted; then the decoration is placed. `type_id` rides in the
-    // payload (handlers can't read UiState — replay doesn't reconstruct
+    // payload (handlers can't read UiState - replay doesn't reconstruct
     // it).
     player_place_editor_decoration: struct {
         type_id: u32,
@@ -1045,13 +1045,13 @@ pub const PlayerInputEvent = union(enum) {
     // missing tile → placed; covering decoration → deleted; '!' / '=' →
     // no-op; enemy on the tile → deleted; existing ground item → RETYPED
     // in place. `type_id` rides in the payload (handlers can't read
-    // UiState — replay doesn't reconstruct it).
+    // UiState - replay doesn't reconstruct it).
     player_place_editor_item: struct {
         type_id: u32,
         position: Vector2,
     },
     // Editor right-click: the TOOL-INDEPENDENT delete. One clean click
-    // deletes ONE thing at the pressed tile — priority: enemy / ground
+    // deletes ONE thing at the pressed tile - priority: enemy / ground
     // item occupant, then covering decoration, then the bare tile; the
     // '!' / '=' and empty ground are no-ops (all computed from state in
     // the handler). The gesture (click-vs-pan disambiguation) lives in
@@ -1062,11 +1062,11 @@ pub const PlayerInputEvent = union(enum) {
 
     // --- Editor: inspector field edits ---
     // One thin wrapper per field verb (the orchestrator convention; the
-    // EditorEvent owns the mutation — see DESIGN → Architecture → Level
+    // EditorEvent owns the mutation - see DESIGN → Architecture → Level
     // Editor → Editor UI layout → "Inspector fields"). The text-input
     // widget commits on Enter / OK / M2 click-away (DESIGN → UI Framework
     // → Text input widget); the input layer gates on would-change (an
-    // unchanged value records nothing — no dead undo step).
+    // unchanged value records nothing - no dead undo step).
     player_set_editor_entity_name: struct {
         target: EntityEditTarget,
         value: []const u8,
@@ -1104,7 +1104,7 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
-    // Team: enemy-authorable only (see editor_set_entity_team) — the
+    // Team: enemy-authorable only (see editor_set_entity_team) - the
     // player_def target is rejected at the replay seam.
     player_set_editor_entity_team: struct {
         target: EntityEditTarget,
@@ -1112,12 +1112,12 @@ pub const PlayerInputEvent = union(enum) {
     },
     // Equipped-slot commit (weapons + gear): ONE slot-parameterized
     // event carrying the FLATTENED item (see the editor_set_entity_gear
-    // comment for why flat + the shared payload type) — create / retype /
+    // comment for why flat + the shared payload type) - create / retype /
     // field-edit / clear all push it, so one event covers each (one undo
     // step either way).
     player_set_editor_entity_gear: EntityGearPayload,
     // Inspector utility-skill commit (the picker's pick, or its None
-    // option). Only UTILITY skills are legal on the bar — the picker
+    // option). Only UTILITY skills are legal on the bar - the picker
     // never offers weapon skills and validation rejects them (see
     // src/utility_skills.zig, the single source).
     player_set_editor_entity_utility_skill: struct {
@@ -1125,7 +1125,7 @@ pub const PlayerInputEvent = union(enum) {
         slot_index: u32,
         value: ?SkillId,
     },
-    // Inspector decoration commits (the decoration tool's fields — see the
+    // Inspector decoration commits (the decoration tool's fields - see the
     // editor_set_decoration_* block for the whole-def shape). The def
     // commit carries the resolved definition (prefab adopt or custom stem
     // with derived footprint); the color commit is the swatch pick.
@@ -1146,7 +1146,7 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         value: bool,
     },
-    // Inspector item-type commits (the Items palette group's content —
+    // Inspector item-type commits (the Items palette group's content -
     // see the editor_set_item_def block for the flattened shape + why).
     // The def commit covers type picks (reset-to-default semantics) and
     // stat edits; the name commit is its own event (a top-level string).
@@ -1168,7 +1168,7 @@ pub const PlayerInputEvent = union(enum) {
         value: []const u8,
     },
     // Inspector inventory-slot commits (the player loadout's Inventory
-    // section — see the editor_add_inventory_item block for the shape +
+    // section - see the editor_add_inventory_item block for the shape +
     // why). The player loadout is the only inventory owner, so these
     // carry just the slot index.
     player_add_editor_inventory_item: struct {
@@ -1194,7 +1194,7 @@ pub const PlayerInputEvent = union(enum) {
         index: u32,
         value: []const u8,
     },
-    // The footprint editor's confirm (the centered tile-grid picker —
+    // The footprint editor's confirm (the centered tile-grid picker -
     // see DESIGN → Level Editor → Editor UI layout, the footprint
     // editor): the resolved footprint in sprite-grid coords, row-major.
     // The EditorEvent owns the mutation + the placement prune.
@@ -1202,10 +1202,10 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         value: []const Vector2,
     },
-    // Inspector layer commits (the Layers sections — enemy types +
+    // Inspector layer commits (the Layers sections - enemy types +
     // decoration types; the player loadout has NO layers). The EditorEvents
     // own the mutations; set carries the WHOLE layer value (a sprite re-pick
-    // or a color swap — one event, one undo step). The layer's fields are
+    // or a color swap - one event, one undo step). The layer's fields are
     // FLATTENED like the editor events' (spaces-safe sprite strings).
     player_add_editor_entity_layer: struct {
         target: EntityEditTarget,
@@ -1260,7 +1260,7 @@ pub const PlayerInputEvent = union(enum) {
     // + end_hub (LIFO: end_hub syncs the hub player first).
     player_replay_mission: void,
     // Mission-complete overlay "Overwrite Clone" button (shown only when
-    // `MissionCompleteInfo.overwrite_offered` is set — a clone exists AND the
+    // `MissionCompleteInfo.overwrite_offered` is set - a clone exists AND the
     // just-completed run was not strictly faster). Handler reads
     // last_completed_mission and pushes save_clone_info with the run's data,
     // replacing the existing clone. See DESIGN → Clones (clone system).
@@ -1294,7 +1294,7 @@ pub const PlayerInputEvent = union(enum) {
     },
     // Pressing a skill slot during the player_move phase: skip the move step
     // and act in the attack step instead. The payload is the RESOLVED intent
-    // (prepare vs. use-with-target) — targeting resolution depends on the
+    // (prepare vs. use-with-target) - targeting resolution depends on the
     // transient tile_cursor (SessionState, off GameState), so it must happen
     // in the input path, not the handler (replay doesn't re-resolve input).
     // `prepare = true` → begin targeting; `prepare = false` → use now (target
@@ -1313,7 +1313,7 @@ pub const PlayerInputEvent = union(enum) {
         target: ?Vector2,
     },
     // Prepare a skill for targeting (from the attack phase). Also handler-
-    // pushed as a child of player_skip_move_to_skill — dual-nature, but that's
+    // pushed as a child of player_skip_move_to_skill - dual-nature, but that's
     // fine: the type marks it as player-pushable (passes the whitelist);
     // the handler-pushed form runs mid-drain and is verified by
     // verifyReplayMatch, never seeded at an idle point.
@@ -1452,7 +1452,7 @@ pub const SubLevelEvent = union(enum) {
     },
     /// Scan every inactive entity; for each, if any opposing entity is
     /// within ITS OWN `aggro_range`, activate it (+ aggro indicator anim).
-    /// Self-centric — one event covers the whole level. Pushed at level
+    /// Self-centric - one event covers the whole level. Pushed at level
     /// start and after every `move_entity`. See DESIGN → Architecture.
     aggro_check: struct {},
     /// Win-condition check: if the player is on `level_end` and no active
@@ -1491,7 +1491,7 @@ pub const SubLevelEvent = union(enum) {
     // Collision damage from a knockback that ran into an obstacle (tile edge
     // or another entity). Mirrors `attack`: carries the raw outgoing damage
     // (the knockback's knockback_damage); the handler applies only the
-    // defender's incoming modifiers (no attacker outgoing — collision isn't a
+    // defender's incoming modifiers (no attacker outgoing - collision isn't a
     // weapon hit), fires the collision + damage effect callbacks, and pushes
     // death if killed. Exists as its own event so the combat-log projection
     // sees collisions as first-class occurrences (the knockback handler used
@@ -1503,7 +1503,7 @@ pub const SubLevelEvent = union(enum) {
     },
     // Applied damage from a resolved `attack` or `collision`. The pusher
     // arm owns the RESOLUTION differences (attack runs the damage-intercept
-    // stage + defense; collision applies defense only — no intercepts, the
+    // stage + defense; collision applies defense only - no intercepts, the
     // deliberate Reflect counterplay) and pushes the resolved post-defense
     // amount here; this arm owns the shared apply pipeline (health, mission
     // stats, hit flash, damage number, damage callbacks, death, lifesteal).
@@ -1519,7 +1519,7 @@ pub const SubLevelEvent = union(enum) {
         amount: u32,
         // Mirrors `attack.triggers_effects` at the push site: gates the
         // damage-stage effect callbacks (a reflected attack does not
-        // re-trigger). Collisions pass the default (true) — their damage
+        // re-trigger). Collisions pass the default (true) - their damage
         // callbacks were ungated.
         triggers_effects: bool = true,
         heals_attacker: bool = false,
@@ -1551,25 +1551,25 @@ pub const SubLevelEvent = union(enum) {
     // Activate all opposing entities within an explicit radius (Howl).
     // Distinct from aggro_check, which uses each entity's own aggro_range.
     // aggro_in_radius uses an explicit radius and activates ALL entities
-    // (no team filter — Howl rallies same-team entities).
+    // (no team filter - Howl rallies same-team entities).
     aggro_in_radius: struct {
         entity_index: u32,
         radius: u32,
     },
     // Focus: reset the entity's equipped weapon-skill (slots 1-3) cooldowns.
-    // Orchestrator — the handler resolves the weapon skills (needs
+    // Orchestrator - the handler resolves the weapon skills (needs
     // weapon_type_definitions from GameStateHistory, unreachable from a skill)
     // and emits a change_cooldown per skill.
     reset_weapon_cooldowns: struct {
         entity_index: u32,
     },
     // Adrenaline Surge: reset the DEFENDER's on-bar cooldowns (all skills of
-    // both equipped weapons — the swap-available thirds included — plus the
+    // both equipped weapons - the swap-available thirds included - plus the
     // equipped utility skills; Entity.onBarSkillIds is the shared
     // enumeration) and the attacker strikes the defender once per cooldown
     // reset this way. Machinery for the same reason as
     // reset_weapon_cooldowns (the enumeration needs the definitions); the
-    // skill's aiOptions — which does receive them — computes the same
+    // skill's aiOptions - which does receive them - computes the same
     // count for its rating. The handler resets FIRST, then attacks, so the
     // resets land even when the attacks kill.
     adrenaline_surge: struct {
@@ -1581,8 +1581,8 @@ pub const SubLevelEvent = union(enum) {
     // stack (one per position), pushes this event with just the stack's
     // position. The handler looks up the stack at that position and transfers
     // items into the inventory until full or the stack is empty. Carrying only
-    // the position (not the items) keeps this event simple-fielded — the
-    // session-log serializer never has to handle the Item union — while still
+    // the position (not the items) keeps this event simple-fielded - the
+    // session-log serializer never has to handle the Item union - while still
     // giving the combat log a loggable "picked up at (x,y)" occurrence. An
     // empty-tile move pushes no pickup_items, so the log stays clean.
     pickup_items: struct {

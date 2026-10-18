@@ -2,7 +2,7 @@
 # Run the test suite and print an unambiguous PASS/FAIL summary.
 #
 # `zig build test` can emit a "failed command: .../test ..." line on SUCCESS
-# (exit 0) whenever a test writes to stderr — here, the advisory game_version
+# (exit 0) whenever a test writes to stderr - here, the advisory game_version
 # mismatch warning from the session-log repro test. That line looks like
 # failure and sent me fishing for stale binaries in .zig-cache. This script
 # is the fix: trust the exit code, surface only real failures + the advisory
@@ -26,18 +26,18 @@ fi
 # Same for saves/: some handler tests exercise real write_save paths through
 # cwd-backed FileSources (autosaves are not replay-gated), planting
 # saves/autosave*.txt in the project root. The test harness itself reads a
-# scratch dir (test_harness.zig), so these are inert artifacts — just tree
+# scratch dir (test_harness.zig), so these are inert artifacts - just tree
 # pollution.
 rm -rf crashes saves 2>/dev/null || true
 
-# Platform-seam boundary assert (machine-walked truth — see AGENTS →
+# Platform-seam boundary assert (machine-walked truth - see AGENTS →
 # Documentation): raylib may be imported ONLY from files under src/raylib/,
 # the directory the test-root scan excludes wholesale (build.zig
 # collectZigFiles). A stray import anywhere else would leak raylib into the
 # headless test build.
 violations="$(grep -rn '@import("raylib")' src --include='*.zig' | grep -v '^src/raylib/' || true)"
 if [ -n "$violations" ]; then
-    printf 'FAIL — raylib imported outside src/raylib/ (platform seam broken):\n%s\n' "$violations"
+    printf 'FAIL - raylib imported outside src/raylib/ (platform seam broken):\n%s\n' "$violations"
     exit 1
 fi
 
@@ -52,7 +52,7 @@ fi
 
 # Filtered view: real failures + the advisory warning (labeled), nothing else.
 # A real test failure shows as:   error: '<test name>' failed:
-# The game_version warning is advisory (exit 0) — label it so it's not mistaken
+# The game_version warning is advisory (exit 0) - label it so it's not mistaken
 # for failure.
 failures="$(printf '%s\n' "$output" | grep -E "^error: '|FAIL|panic|expected.*found" || true)"
 advisory="$(printf '%s\n' "$output" | grep -E "^warning: session log recorded on game_version" || true)"

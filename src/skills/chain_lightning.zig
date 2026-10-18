@@ -12,7 +12,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Chain Lightning: a spell. Attacks the target and every hostile connected
-/// to it via neighboring hostiles — the connected component (by the
+/// to it via neighboring hostiles - the connected component (by the
 /// skill's EFFECTIVE radius, Chebyshev) containing the target. Allies are
 /// not chain nodes, so a hostile line broken by an ally does not conduct:
 /// lightning arcs between enemies only.
@@ -45,7 +45,7 @@ fn getValidTargets(
 }
 
 /// AI options: the initial target whose connected component is LARGEST
-/// (ties by the focus-fire tail — health, distance, entity index), rated
+/// (ties by the focus-fire tail - health, distance, entity index), rated
 /// in value units: 1 per chained enemy (helpers.aoePriority over the
 /// component size). A 1-link chain rates like a plain attack; a 3-web
 /// rates 3.
@@ -136,7 +136,7 @@ fn useSkill(
 /// The connected component of hostiles containing the hostile at
 /// `start_position`: flood fill over hostiles where two hostiles within
 /// `radius` (Chebyshev) of each other are connected, transitively. Allies
-/// are not nodes — they cannot conduct, so two hostiles only bridge if
+/// are not nodes - they cannot conduct, so two hostiles only bridge if
 /// they are within radius of each other themselves. Discovery order is
 /// BFS from the start (deterministic). Empty if no hostile stands at the
 /// start.

@@ -1,7 +1,7 @@
-//! raylib platform backend — the composition root + driver of `src/raylib/`
+//! raylib platform backend - the composition root + driver of `src/raylib/`
 //! (the ONLY directory whose files import raylib directly; native.zig and
 //! web.zig import it through `raylib/backend.zig`; every file in it is
-//! excluded from the headless test-root scan in build.zig — see DESIGN →
+//! excluded from the headless test-root scan in build.zig - see DESIGN →
 //! Platform Seam). This file owns the window, the render target + render
 //! pass, the real clock, and the duck-typed `RaylibBackend` interface; the
 //! subsystems live in the sibling files (input_poll / audio / textures /
@@ -16,12 +16,12 @@
 //! Rendering model: all UI/world content is authored in a fixed reference
 //! (design) resolution (types.reference_width x types.reference_height = 4K).
 //! We draw it into a RenderTexture at a SEPARATE, possibly smaller render
-//! target resolution (the `render_resolution` setting — 720p…2160p presets,
+//! target resolution (the `render_resolution` setting - 720p...2160p presets,
 //! default 1080p, applied live via `applyRenderResolution`)
 //! via a `beginMode2D` camera zoom that scales 4K-space content down, then
 //! blit the target to the window letterboxed (aspect-preserving, centered).
 //! Input maps the pointer back through the inverse of the reference→window
-//! letterbox transform (independent of the render target size — the game
+//! letterbox transform (independent of the render target size - the game
 //! thinks in 4K design space), so clicks line up with what is drawn. Decoupling
 //! the render target from the design space lets us cut fill rate (the dominant
 //! cost on fill-rate-limited GPUs) without touching layout/view math. See
@@ -70,8 +70,8 @@ fn viewTransform() ViewTransform {
 
 /// Like `viewTransform` but for the render-target → window blit (the
 /// offscreen target is `render_width × render_height`, not the 4K reference).
-/// The pointer transform (`viewTransform`) stays reference-based — the game
-/// thinks in 4K design space — so these differ when the render target is
+/// The pointer transform (`viewTransform`) stays reference-based - the game
+/// thinks in 4K design space - so these differ when the render target is
 /// smaller than reference. They share the same aspect ratio (16:9, comptime-
 /// checked over the presets in types.zig), so the on-screen content is
 /// identical; only the intermediate pixel count changes. See DESIGN →
@@ -93,7 +93,7 @@ fn blitTransform(target_width_int: i32, target_height_int: i32) ViewTransform {
 /// default batch fragment shader (textured quad: texel × vertex tint) plus
 /// an `lodBias` uniform that snaps mip selection to the SHARPER adjacent
 /// level for the discrete camera-zoom × render-preset combos (see
-/// `spriteLodSnapBias`). Mirrors the default shader EXACTLY otherwise —
+/// `spriteLodSnapBias`). Mirrors the default shader EXACTLY otherwise -
 /// untextured draws (rect fills) bind raylib's white 1x1 texture, so the
 /// multiply passes them through untouched, and the blend mode is orthogonal
 /// to the shader. Desktop GL (GLSL 3.30).
@@ -111,7 +111,7 @@ const sprite_pass_fs_glsl330 =
     \\}
 ;
 
-/// WebGL variant (GLSL ES 3.00 — the web context is WebGL 2; same math as
+/// WebGL variant (GLSL ES 3.00 - the web context is WebGL 2; same math as
 /// the desktop one).
 const sprite_pass_fs_glsl300es =
     \\#version 300 es
@@ -136,14 +136,14 @@ else
     sprite_pass_fs_glsl330;
 
 /// Per-frame mip snap bias for the sprite pass: trilinear's fractional blend
-/// at a NON-dyadic minification over-blurs — at LOD 1.41 (zoom 0.75 on a
+/// at a NON-dyadic minification over-blurs - at LOD 1.41 (zoom 0.75 on a
 /// 1080p target) it mixes 41% of the heavily-averaged level 2 into the
 /// sample, which reads as the "washed out" zoom level. `total_scale` is the
 /// drawn sprite's whole minification (camera zoom × renderScale for world
 /// layers, renderScale for UI); the returned bias snaps sampling to the
 /// SHARPER adjacent level (subtracting the LOD's fractional part). Residual
 /// cost: the sharper level is undersampled by up to 2^frac (≤ 1.5× across
-/// the discrete zoom × preset combos — mild sparkle on fine detail instead
+/// the discrete zoom × preset combos - mild sparkle on fine detail instead
 /// of uniform blur). Returns 0 at exact powers of two and at magnification,
 /// so the on-level combos are unaffected.
 fn spriteLodSnapBias(total_scale: f32) f32 {
@@ -156,12 +156,12 @@ fn spriteLodSnapBias(total_scale: f32) f32 {
 /// Fragment shader for the outline stripe pass (see `beginOutlineStripeScope`):
 /// raylib's default batch fragment shader plus a diagonal marching-stripe flip
 /// between the incoming tint (theme `lightest` at every call site) and
-/// `stripeDark` (player gradient index 5, the button-tint class) — the
+/// `stripeDark` (player gradient index 5, the button-tint class) - the
 /// animated read-boost for outlines over busy art. Stripes run at 45° in
 /// render-target pixels (gl_FragCoord): `s = x - y - phase*period` (the
 /// y-flipped render target mirrors the on-screen diagonal), and
 /// `mod(s, period) < stripeBandWidth` flips the RGB to the dark color at the
-/// texel's own alpha (premultiplied output — the pass draws under
+/// texel's own alpha (premultiplied output - the pass draws under
 /// BLEND_ALPHA_PREMULTIPLY). Works for BOTH outline draw shapes: untextured
 /// quads (rectangle strokes bind the white 1×1 texture) and the icon halo
 /// masks (the white band flips, the transparent interior stays). Mirrors the
@@ -188,7 +188,7 @@ const outline_stripe_fs_glsl330 =
     \\}
 ;
 
-/// WebGL variant (GLSL ES 3.00 — the web context is WebGL 2; same math as
+/// WebGL variant (GLSL ES 3.00 - the web context is WebGL 2; same math as
 /// the desktop one).
 const outline_stripe_fs_glsl300es =
     \\#version 300 es
@@ -221,11 +221,11 @@ else
     outline_stripe_fs_glsl330;
 
 /// The stripe band size in multiples of the shared outline thickness (8
-/// source px), in REFERENCE pixels — ONE value for both outline families
+/// source px), in REFERENCE pixels - ONE value for both outline families
 /// (world + UI), zoom-independent: the crawl rate is one period per cycle,
-/// so a shared band means a shared period — both families march at the
+/// so a shared band means a shared period - both families march at the
 /// same size AND the same pixel speed (at the default zoom 0.5 a
-/// zoom-scaled world band was half the UI band — half the crawl speed, the
+/// zoom-scaled world band was half the UI band - half the crawl speed, the
 /// observed mismatch). The world bands therefore do NOT track the outline
 /// stroke's zoom-scaled thickness; family uniformity beats per-family
 /// thickness matching. Doubled after the first eyeball pass.
@@ -253,12 +253,12 @@ pub const RaylibBackend = struct {
     /// Sprite-pass shader (see `beginSpritePass`): the default batch fragment
     /// shader + an `lodBias` uniform that snaps mip selection for the discrete
     /// camera-zoom × render-preset combos. null → the shader failed to
-    /// compile and sprite draws use the plain default shader (trilinear —
+    /// compile and sprite draws use the plain default shader (trilinear -
     /// the washed-out intermediate zooms, accepted for a near-unreachable
     /// failure).
     sprite_shader: ?rl.Shader,
     /// Cached `lodBias` uniform location (-1 = not found; raylib's
-    /// setShaderValue no-ops on -1, degrading to an unbiasd — trilinear —
+    /// setShaderValue no-ops on -1, degrading to an unbiasd - trilinear -
     /// sprite pass, never a crash).
     sprite_lod_bias_location: i32,
     /// Outline-stripe shader (see `beginOutlineStripeScope`): the default
@@ -283,17 +283,17 @@ pub const RaylibBackend = struct {
     char_buffer: [input_poll.char_buffer_size]u8 = undefined,
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// The texture cache loads via loadImageFromMemory from this instead of
-    /// touching the filesystem directly — see DESIGN → File System & IO.
+    /// touching the filesystem directly - see DESIGN → File System & IO.
     file_source: *const @import("../file_source.zig").FileSource,
 
     /// The audio subsystem: the layered-cue sound caches + the ambient
     /// music intensity stack (see audio.zig + DESIGN → Audio). Thin
     /// wrappers below keep the duck-typed interface unchanged.
     audio: audio_mod.Audio,
-    /// Diagnostics: the boot/probe/readback log (src/diagnostics.zig — raylib-
+    /// Diagnostics: the boot/probe/readback log (src/diagnostics.zig - raylib-
     /// free; the GL-gathering probe sites live in raylib/diagnostics.zig).
     /// Runtime activation (`enabled`: the --diagnostics CLI flag ORs onto the
-    /// dev-mode default), so the code ships in every native build — a
+    /// dev-mode default), so the code ships in every native build - a
     /// release build can produce its own diagnostics. Flushes at the
     /// end-of-frame safe point + shutdown.
     diagnostics: diagnostics_mod.Diagnostics,
@@ -321,7 +321,7 @@ pub const RaylibBackend = struct {
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
 
         // Create the render target at the DEFAULT preset (settings load after
-        // init — the backend is passed into createSessionSetup). `run`'s
+        // init - the backend is passed into createSessionSetup). `run`'s
         // per-frame diff-and-apply (main.zig) recreates it at the user's
         // `render_resolution` on the first frame after settings load.
         const default_dims = types.default_render_resolution.pixelDimensions();
@@ -336,7 +336,7 @@ pub const RaylibBackend = struct {
 
         // Sprite-pass shader: the default batch fragment shader + an LOD snap
         // bias uniform (see `beginSpritePass`). Loaded unconditionally at init
-        // — a compile failure just means sprite draws keep the plain
+        // - a compile failure just means sprite draws keep the plain
         // trilinear filter (slice-1 look, washed-out intermediate zooms).
         const sprite_shader = rl.loadShaderFromMemory(null, sprite_pass_fs_source) catch null;
         const sprite_lod_bias_location: i32 = if (sprite_shader) |shader|
@@ -345,7 +345,7 @@ pub const RaylibBackend = struct {
             -1;
 
         // Outline-stripe shader (see `beginOutlineStripeScope`). Loaded
-        // unconditionally — a compile failure just means outline draws keep
+        // unconditionally - a compile failure just means outline draws keep
         // the plain solid tint (the pre-shader look).
         const outline_stripe_shader = rl.loadShaderFromMemory(null, outline_stripe_fs_source) catch null;
         const outline_stripe_dark_location: i32 = if (outline_stripe_shader) |shader|
@@ -400,7 +400,7 @@ pub const RaylibBackend = struct {
 
     /// Apply the vsync setting at runtime (toggles the vsync window state
     /// flag). Called after settings load, since setConfigFlags must run before
-    /// initWindow — init defaults to vsync-on (matching the Settings default),
+    /// initWindow - init defaults to vsync-on (matching the Settings default),
     /// and this syncs the window to the loaded setting.
     pub fn applyVsync(_: *RaylibBackend, vsync: bool) void {
         if (vsync) {
@@ -412,7 +412,7 @@ pub const RaylibBackend = struct {
 
     /// Recreate the render target at a new resolution preset. Creates the NEW
     /// target first and only unloads the old one on success, so a failed apply
-    /// (GPU/texture-size limits — `loadRenderTexture` returns an error) leaves
+    /// (GPU/texture-size limits - `loadRenderTexture` returns an error) leaves
     /// the session rendering at the current preset, untouched. Returns false
     /// on failure; the caller (main.zig's diff-and-apply) reverts the setting
     /// + surfaces the popup. See DESIGN → Platform Seam → Render target
@@ -421,7 +421,7 @@ pub const RaylibBackend = struct {
         const dims = resolution.pixelDimensions();
         if (dims.width == self.render_width and dims.height == self.render_height) return true;
         const new_target = rl.loadRenderTexture(dims.width, dims.height) catch return false;
-        // Bilinear smoothing on the target→window blit — same reasoning as
+        // Bilinear smoothing on the target→window blit - same reasoning as
         // init (point filtering turns smooth alpha edges into chunky
         // boundaries on the downscale).
         rl.setTextureFilter(new_target.texture, .bilinear);
@@ -435,18 +435,18 @@ pub const RaylibBackend = struct {
     /// The uniform camera zoom scaling 4K design-space draws into the render
     /// target (`render_width / reference_width`). Draw sites call it to convert
     /// reference-space sizes (e.g. the outline band width) into
-    /// render-target pixels — the space gl_FragCoord lives in.
+    /// render-target pixels - the space gl_FragCoord lives in.
     pub fn renderScale(self: *const RaylibBackend) f32 {
         return @as(f32, @floatFromInt(self.render_width)) / reference_width;
     }
 
-    /// Per-frame outline-stripe uniforms — ALL of them (the shader has no
+    /// Per-frame outline-stripe uniforms - ALL of them (the shader has no
     /// per-scope state): the dark stripe color (player gradient index 5,
-    /// the button-tint class — the light color rides the per-draw tint),
-    /// the phase (0..1 of the stripe cycle — view-side, from the animation
+    /// the button-tint class - the light color rides the per-draw tint),
+    /// the phase (0..1 of the stripe cycle - view-side, from the animation
     /// clock via `ViewState.outline_stripe_phase`), and the band width (the
     /// shared `outline_stripe_band_multiplier` × outline thickness ×
-    /// renderScale — one band for BOTH outline families, see the
+    /// renderScale - one band for BOTH outline families, see the
     /// multiplier's doc). Called once per frame from `render`. No-op when
     /// the shader is unavailable.
     fn setOutlineStripeFrameUniforms(self: *RaylibBackend, dark_color: types.Color, phase: f32) void {
@@ -466,9 +466,9 @@ pub const RaylibBackend = struct {
 
     /// Begin an outline-stripe draw scope: binds the stripe shader. Every
     /// stripe uniform is frame-level (see `setOutlineStripeFrameUniforms`)
-    /// — there is no per-scope state, only the bind. No-op when the shader
+    /// - there is no per-scope state, only the bind. No-op when the shader
     /// failed to compile (the outline draws keep the plain solid tint).
-    /// Draw sites open this INSIDE an enclosing sprite pass —
+    /// Draw sites open this INSIDE an enclosing sprite pass -
     /// `endOutlineStripeScope` restores it (see the endShaderMode trap
     /// there).
     pub fn beginOutlineStripeScope(self: *RaylibBackend) void {
@@ -476,11 +476,11 @@ pub const RaylibBackend = struct {
         rl.beginShaderMode(shader);
     }
 
-    /// Close a `beginOutlineStripeScope` scope — `total_scale` is the
+    /// Close a `beginOutlineStripeScope` scope - `total_scale` is the
     /// ENCLOSING sprite pass's scale (camera zoom × renderScale for world
     /// outlines, renderScale for UI). THE endShaderMode TRAP: raylib's
     /// endShaderMode restores the DEFAULT shader, not the sprite-pass
-    /// shader the scope opened inside — the rest of the enclosing pass
+    /// shader the scope opened inside - the rest of the enclosing pass
     /// would silently lose its LOD snap bias (the world layers share ONE
     /// sprite-pass scope; see `beginSpritePass`). So the close RE-OPENS the
     /// sprite pass with that scale. No-op when the stripe shader is
@@ -492,12 +492,12 @@ pub const RaylibBackend = struct {
     }
 
     /// Begin a sprite-pass draw scope under the sprite shader, with the LOD
-    /// snap bias for `total_scale` — the drawn sprites' whole minification
+    /// snap bias for `total_scale` - the drawn sprites' whole minification
     /// (camera zoom × renderScale for world layers, renderScale for UI).
     /// No-op when the shader failed to compile (plain trilinear). SCOPE
     /// GRANULARITY MATTERS: raylib's endShaderMode (nested SDF text draws)
     /// restores the DEFAULT shader, not this one, so a scope must not span
-    /// text draws — sprite-only runs share one scope, anything that can
+    /// text draws - sprite-only runs share one scope, anything that can
     /// contain text (world overlays, UI elements) scopes per item.
     /// See DESIGN → Platform Seam → Sprite-mipmap smoothing.
     fn beginSpritePass(self: *RaylibBackend, total_scale: f32) void {
@@ -513,12 +513,12 @@ pub const RaylibBackend = struct {
     }
 
     /// Open the audio device and load all sfx + the music streams (the
-    /// Audio subsystem — see audio.zig). Called once after construction
+    /// Audio subsystem - see audio.zig). Called once after construction
     /// (settings are available), and again by the web re-boot after a
     /// completed Import Game (the previous teardown ran `deinitAudio`;
     /// everything reloads with the imported settings). Idempotent: a second
     /// call when already ready no-ops. If the audio device can't open,
-    /// audio stays silent — the game runs, never crashes. See DESIGN → Audio.
+    /// audio stays silent - the game runs, never crashes. See DESIGN → Audio.
     pub fn initAudio(self: *RaylibBackend, settings: types.Settings) void {
         self.audio.init(settings, audioDiagnosticsSink, self);
     }
@@ -533,13 +533,13 @@ pub const RaylibBackend = struct {
     }
 
     /// Play the drained sound cues at the sfx/master settings volume (the
-    /// Audio subsystem — see audio.zig). No-op when audio isn't ready.
+    /// Audio subsystem - see audio.zig). No-op when audio isn't ready.
     pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundCue, settings: types.Settings) void {
         self.audio.playSounds(sounds, settings);
     }
 
     /// Advance the music streams + drive the intensity-layer volumes from
-    /// the frame's active-enemy projection (the Audio subsystem — see
+    /// the frame's active-enemy projection (the Audio subsystem - see
     /// audio.zig). No-op when audio isn't ready.
     pub fn updateMusic(
         self: *RaylibBackend,
@@ -551,7 +551,7 @@ pub const RaylibBackend = struct {
     }
 
     /// Extract per-glyph advance widths from the loaded font into a
-    /// raylib-free `ui.FontMetrics` value (the text subsystem — see
+    /// raylib-free `ui.FontMetrics` value (the text subsystem - see
     /// text.zig); the layout seam (`view()` + UI builders) measures text
     /// with the same advances the renderer draws with.
     pub fn fontMetrics(self: *RaylibBackend) ui.FontMetrics {
@@ -559,7 +559,7 @@ pub const RaylibBackend = struct {
     }
 
     /// Look up an ENTITY sprite's opaque-pixel bounds by its bare stem
-    /// (e.g. `skeleton_1`) — the texture subsystem (see textures.zig).
+    /// (e.g. `skeleton_1`) - the texture subsystem (see textures.zig).
     /// Used by `frame()` to build `RenderContext.sprite_bounds`.
     pub fn entitySpriteBounds(
         self: *RaylibBackend,
@@ -590,10 +590,10 @@ pub const RaylibBackend = struct {
     /// vsync is on, paces to the current monitor's refresh rate (queried each
     /// call so a monitor swap is picked up); the render_fps_cap setting is
     /// ignored. When vsync is off and cap > 0, paces to 1/cap. When vsync is
-    /// off and cap is 0, returns 0 (render every iteration — uncapped).
+    /// off and cap is 0, returns 0 (render every iteration - uncapped).
     ///
     /// On web (emscripten), the browser's requestAnimationFrame IS the vsync
-    /// pacer — getCurrentMonitor/getMonitorRefreshRate aren't implemented and
+    /// pacer - getCurrentMonitor/getMonitorRefreshRate aren't implemented and
     /// spam warnings. So on web with vsync on, return 0 (render every rAF
     /// call); the browser already paces to the display refresh.
     pub fn renderIntervalMicroseconds(
@@ -657,14 +657,14 @@ pub const RaylibBackend = struct {
         // composited texture (sprites, font atlas) is premultiplied at load,
         // so BLEND_ALPHA_PREMULTIPLY (ONE, ONE_MINUS_SRC_ALPHA) composites
         // them correctly AND lets bilinear downsampling blend in premult
-        // space — killing the dark halo straight-alpha textures show at
+        // space - killing the dark halo straight-alpha textures show at
         // transparent edges when downscaled. The SDF outline shader outputs
         // premultiplied too. Outline masks are binary (already premult).
         // See DESIGN → Platform Seam → Render target resolution.
         rl.beginBlendMode(.alpha_premultiply);
         rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = self.renderScale() });
         // Frame-level outline-stripe uniforms (dark color + phase + band
-        // width): set once per frame — uniform values live on the program,
+        // width): set once per frame - uniform values live on the program,
         // so the per-scope beginOutlineStripeScope only binds. The dark
         // color is player gradient index 5 (the button-tint class).
         self.setOutlineStripeFrameUniforms(
@@ -709,12 +709,12 @@ pub const RaylibBackend = struct {
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
         // y-flipped, so the source height is negated. The blit uses the RENDER
-        // target dims (not the 4K reference) — the pointer transform
+        // target dims (not the 4K reference) - the pointer transform
         // (`viewTransform`, window→4K) is independent and stays reference-
         // based.
         rl.beginDrawing();
         // With SUPPORT_CUSTOM_FRAME_CONTROL, endDrawing() only flushes the
-        // render batch — we swap the buffer ourselves (vsync paces here).
+        // render batch - we swap the buffer ourselves (vsync paces here).
         rl.clearBackground(rl.Color.black);
         const transform = blitTransform(self.render_width, self.render_height);
         const target_width: f32 = @floatFromInt(self.render_width);
@@ -735,7 +735,7 @@ pub const RaylibBackend = struct {
         rl.endDrawing();
         rl.swapScreenBuffer();
 
-        // End-of-frame diagnostics flush: AFTER present, never mid-draw —
+        // End-of-frame diagnostics flush: AFTER present, never mid-draw -
         // observation work inside the draw path perturbs the observed
         // system (the mac-hunt lesson). Sections only mark pending; this is
         // the safe point that writes.
@@ -744,7 +744,7 @@ pub const RaylibBackend = struct {
 };
 
 /// The Audio subsystem's load-time warning sink (see audio.zig): routes its
-/// formatted messages — e.g. the music phase-lock mismatch — into the
+/// formatted messages - e.g. the music phase-lock mismatch - into the
 /// diagnostics buffer. Wired unconditionally; the append self-gates on
 /// `enabled`, so an inactive instance accumulates nothing.
 fn audioDiagnosticsSink(context: ?*anyopaque, message: []const u8) void {

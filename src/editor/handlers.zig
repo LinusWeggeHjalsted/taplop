@@ -1,7 +1,7 @@
-//! Editor event handling: `handleEditorEvent` — the pure state transform
+//! Editor event handling: `handleEditorEvent` - the pure state transform
 //! behind processEvent's `.editor_event` arm (the cache-needing framing
 //! events are handled inline in the dispatch and call the session
-//! helpers here) — plus those session helpers (playtest player data, the
+//! helpers here) - plus those session helpers (playtest player data, the
 //! player-import sources, palette defaults, the fresh-mission open, the
 //! decoration registry) and the selection-mutation + template/layer
 //! edit helpers. The pure click planners live in planning.zig; the
@@ -36,11 +36,11 @@ const tileBefore = functions.tileBefore;
 
 /// Build the playtest PlayerData from the editor player loadout: the
 /// entity fields a level reads (name, gear, inventory, utility skills)
-/// plus learned_skills = EVERY utility skill — the editor player knows
+/// plus learned_skills = EVERY utility skill - the editor player knows
 /// everything, so tome pickups read already-learned, skill-tome salvage
 /// is consistent, and any future learned-gated path is permissive.
 /// Deep copies (the template's slices stay owned by the editor graph).
-/// Learned is implied, not authored — player.txt never carries it.
+/// Learned is implied, not authored - player.txt never carries it.
 pub fn buildPlaytestPlayerData(
     allocator: std.mem.Allocator,
     template: types.Entity,
@@ -79,18 +79,18 @@ pub fn restorePrePlaytestPlayerData(current: *GameState) void {
     }
 }
 
-/// The player inspector's Import: copy the session's player data — or,
-/// when the session has none (an empty `player_name` — a fresh editor
-/// launch from the main menu), the new-game default save — into the
+/// The player inspector's Import: copy the session's player data - or,
+/// when the session has none (an empty `player_name` - a fresh editor
+/// launch from the main menu), the new-game default save - into the
 /// editor player loadout. The copied field set mirrors
 /// `build_player_from_data`'s (name, gear, inventory, utility skills;
 /// PlayerData carries no base stats, so the template keeps its own). The
 /// copy is a DEEP one: the source's name slices stay owned by their own
-/// graph. The default-save read goes through the reconstruction cache —
+/// graph. The default-save read goes through the reconstruction cache -
 /// the import event is recorded, so replay re-reads the same bytes.
 /// Which loadout source an import pulls from: the session's player data
-/// (falling back to data/new_player.txt with none — the Player data
-/// button) or the shipped max loadout (data/max_player.txt — the Max
+/// (falling back to data/new_player.txt with none - the Player data
+/// button) or the shipped max loadout (data/max_player.txt - the Max
 /// player button, the author-times tool for official missions).
 const EditorPlayerImportSource = enum { session, max_player };
 
@@ -144,12 +144,12 @@ pub fn importEditorPlayer(
 /// Append a new palette type built from the shipped defaults
 /// (data/editor_defaults.txt) to `kind`'s palette group, make it the active
 /// tool, and open the inspector. The defaults read goes through the
-/// reconstruction cache — the add events are recorded, so replay re-reads
+/// reconstruction cache - the add events are recorded, so replay re-reads
 /// the same bytes and reproduces the creation. The read is a recoverable
 /// failure (the in-event-read pattern): a missing/corrupt defaults file
 /// reverts the event + surfaces the popup instead of failing the editor.
 /// One event = one undo step covering the append + the tool switch + the
-/// inspector open (and the selection clear the tool switch carries — the
+/// inspector open (and the selection clear the tool switch carries - the
 /// editor_set_tool invariant).
 pub fn addEditorPaletteType(
     history: *GameStateHistory,
@@ -216,7 +216,7 @@ fn readEditorDefaultLevel(
 }
 
 /// The maxed default loadout (data/max_player.txt) as an editor player
-/// template — the fallback when a mission carries no player.txt AND the
+/// template - the fallback when a mission carries no player.txt AND the
 /// fresh-mission seed (DESIGN → Level Editor → Player loadout). Returns
 /// null after surfacing the recoverable error (the caller aborts).
 /// pub: shared with the dispatch's open-editor arm (its player.txt
@@ -242,7 +242,7 @@ pub fn loadMaxPlayerLoadout(
     return loaders.playerLoadoutEntity(default_data);
 }
 
-/// Refresh `Editor.clamp_bounds` from the ACTIVE level's live tiles —
+/// Refresh `Editor.clamp_bounds` from the ACTIVE level's live tiles -
 /// the one place the camera-clamp snapshot is taken. Called only when the
 /// active level switches (open_editor both branches, editor_set_active_level,
 /// editor_add_level, editor_delete_level clamping onto new content): mid-edit
@@ -274,13 +274,13 @@ pub fn refreshEditorClampBounds(editor: *types.Editor) void {
 }
 
 /// Append a new level built from the shipped template
-/// (data/default_level.txt — the minimal `!=` layout), switch the active
+/// (data/default_level.txt - the minimal `!=` layout), switch the active
 /// tab to it, and sync mission.level_count. The template read goes through
-/// the reconstruction cache — the add event is recorded, so replay re-reads
+/// the reconstruction cache - the add event is recorded, so replay re-reads
 /// the same bytes and reproduces the creation; a read/parse failure takes
 /// the recoverable in-event-read path (revert + popup). One event = one
 /// undo step covering the append + the tab switch (and the selection clear
-/// it carries — the editor_set_active_level semantics).
+/// it carries - the editor_set_active_level semantics).
 pub fn addEditorLevel(
     history: *GameStateHistory,
     current: *GameState,
@@ -298,10 +298,10 @@ pub fn addEditorLevel(
     refreshEditorClampBounds(editor);
 }
 
-/// The fresh-mission branch of open_editor (null mission_path — the
+/// The fresh-mission branch of open_editor (null mission_path - the
 /// main-menu Editor button): "New Mission" with one default-template
 /// level, empty palettes, and the max-player loadout. The mission uuid
-/// stays EMPTY — identity is minted at save time, write-only, never held
+/// stays EMPTY - identity is minted at save time, write-only, never held
 /// in state (a random value in GameState would diverge on every replay;
 /// see DESIGN → Level Editor → Mission identity). Sets `current.editor`;
 /// a failed read surfaces the recoverable error and returns with the
@@ -329,10 +329,10 @@ pub fn openFreshEditorMission(
 }
 
 /// Load the decoration registry (`data/decorations.txt` prefabs) into
-/// `session.editor_decoration_registry` — the decoration sprite picker's
+/// `session.editor_decoration_registry` - the decoration sprite picker's
 /// Official tab + the commit site's prefab-adoption source. Called from
 /// the open_editor handler (gated `!replaying`: the registry feeds the
-/// input/view layers only — a replay never opens a picker — so it is a
+/// input/view layers only - a replay never opens a picker - so it is a
 /// session-side asset like `editor_mission_sprites`, not replayed
 /// state). The owned deep copy lives in the backing allocator (strings +
 /// arrays); the previous list is freed on reload, so the only leak is the
@@ -352,23 +352,23 @@ pub fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.m
         }
     };
     const bytes = history.readReconstructionFile("data/decorations.txt") catch {
-        degrade.note(history, "failed to read data/decorations.txt — the decoration picker's Official tab is unavailable");
+        degrade.note(history, "failed to read data/decorations.txt - the decoration picker's Official tab is unavailable");
         return;
     };
     const sections = parser.parseConfigFile(bytes, allocator) catch {
-        degrade.note(history, "failed to parse data/decorations.txt — the decoration picker's Official tab is unavailable");
+        degrade.note(history, "failed to parse data/decorations.txt - the decoration picker's Official tab is unavailable");
         return;
     };
     validateConfigKeys(history, sections, parser.decoration_registry_key_map, "data/decorations.txt", allocator);
     const loaded = loaders.loadDecorationRegistry(sections, history.file_source, allocator) catch {
-        degrade.note(history, "failed to parse data/decorations.txt — the decoration picker's Official tab is unavailable");
+        degrade.note(history, "failed to parse data/decorations.txt - the decoration picker's Official tab is unavailable");
         return;
     };
 
     // The owned copy: `loadDecorationRegistry` returns defs whose strings
     // BORROW the parsed sections (event-arena lifetime), so every string +
     // array is duped into the backing allocator before the arena goes.
-    // `id` aliases `sprite` (one dupe — a decoration's name IS its sprite
+    // `id` aliases `sprite` (one dupe - a decoration's name IS its sprite
     // path; freed once below).
     const owned = backing.alloc(types.DecorationTypeDef, loaded.len) catch
         @panic("failed to allocate decoration registry");
@@ -397,7 +397,7 @@ pub fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.m
         };
     }
 
-    // The previous registry's free (the shared session-owned free — the
+    // The previous registry's free (the shared session-owned free - the
     // history deinit uses the same one).
     state.freeEditorDecorationRegistry(session.editor_decoration_registry, backing);
     session.editor_decoration_registry = owned;
@@ -424,7 +424,7 @@ pub fn handleEditorEvent(
         .editor_set_tool => |set| {
             // Defensive against crafted logs: a tool index outside its
             // palette is ignored (same posture as editor_set_active_level's
-            // range check — validatePlayerAction rejects it at the replay
+            // range check - validatePlayerAction rejects it at the replay
             // seam, the live path can't produce it).
             const tool_valid = switch (set.tool) {
                 .select, .tile => true,
@@ -434,7 +434,7 @@ pub fn handleEditorEvent(
             };
             if (!tool_valid) return;
             editor.active_tool = set.tool;
-            // Invariant: selection nonempty ⇔ active tool is select — a
+            // Invariant: selection nonempty ⇔ active tool is select - a
             // switch away from the select tool takes the selection with it
             // (same event, so one undo step reverts both).
             if (set.tool != .select) editor.selection = &.{};
@@ -443,7 +443,7 @@ pub fn handleEditorEvent(
         // + level_count sync, one undo step. The guards PANIC (fail-fast):
         // the ≥1-level invariant is the event's documented contract, the
         // UI + the input layer + validatePlayerAction all gate it, and a
-        // crafted log that reaches these has bypassed three gates — the
+        // crafted log that reaches these has bypassed three gates - the
         // crash dump is the right response (the placement-delete posture).
         .editor_delete_level => |delete| {
             if (editor.levels.len <= 1) {
@@ -455,7 +455,7 @@ pub fn handleEditorEvent(
             layerListRemoveAt(types.EditorLevel, &editor.levels, delete.level_index, allocator);
             editor.mission.level_count = @intCast(editor.levels.len);
             // The selection is active-level-relative: deleting the ACTIVE
-            // level switches content under it — clamp + clear (the
+            // level switches content under it - clamp + clear (the
             // editor_set_active_level semantics); a delete below the active
             // tab shifts the tab down with its level; a delete above leaves
             // both alone (the active level's placements are untouched).
@@ -473,7 +473,7 @@ pub fn handleEditorEvent(
         // events (they own the order-preserving removal + the active-level
         // selection prune/remap), then removes the type + decrements every
         // same-kind type id above it + reconciles the active tool. All the
-        // events share the triggering player action's idle point — one
+        // events share the triggering player action's idle point - one
         // undo step restores everything. Defensive against crafted logs: an
         // out-of-range type id is ignored (the editor_set_tool posture).
         .editor_delete_type => |delete| {
@@ -487,7 +487,7 @@ pub fn handleEditorEvent(
             // The fan-out plan: one delete sub-event per referencing
             // placement, pushed in ascending (level, placement) order. The
             // stack is LIFO, so they PROCESS high-before-low within each
-            // level — every planned index is valid at its turn (removing a
+            // level - every planned index is valid at its turn (removing a
             // higher index never shifts a lower one). Type-id remapping
             // below doesn't shift placement indices, so the plan stays
             // addressable even though it runs after this handler returns.
@@ -555,7 +555,7 @@ pub fn handleEditorEvent(
 
             // Active-tool reconciliation: the deleted tool → select; a
             // higher same-kind index → decremented. The selection is NOT
-            // force-cleared — the placement deletes prune entries
+            // force-cleared - the placement deletes prune entries
             // referencing removed placements, and select + a surviving
             // selection is a legal state.
             switch (editor.active_tool) {
@@ -595,10 +595,10 @@ pub fn handleEditorEvent(
         .editor_toggle_metadata_sidebar => {
             editor.metadata_sidebar_open = !editor.metadata_sidebar_open;
         },
-        // The centered picker's open/close — class-1 surface state on the
+        // The centered picker's open/close - class-1 surface state on the
         // Editor (see DESIGN → UI Framework → UI state classification).
         // Opening REPLACES any stale picker still open (the palette-group
-        // dropdown semantics — one action, not a close+open pair); closing
+        // dropdown semantics - one action, not a close+open pair); closing
         // a closed picker is a graceful no-op (crafted logs).
         .editor_open_picker => |open| {
             editor.picker = open.target;
@@ -617,7 +617,7 @@ pub fn handleEditorEvent(
         .editor_set_entity_sprite => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.sprite = set.value;
-            // The pick-time default rides the pick event (one undo step —
+            // The pick-time default rides the pick event (one undo step -
             // see DESIGN → Entity & UI Coloring, keep_original_colors).
             template.keep_original_colors = set.keep_original_colors;
         },
@@ -653,10 +653,10 @@ pub fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.team = set.value;
         },
-        // The equipped-slot commit (ONE slot-parameterized event — see
+        // The equipped-slot commit (ONE slot-parameterized event - see
         // EntityGearPayload in events.zig). `equipped: false` clears the
         // slot; otherwise the slot's kind's fields rebuild the item, with
-        // stats clamped to the `max_*` bounds (the item-def posture — the
+        // stats clamped to the `max_*` bounds (the item-def posture - the
         // editor never holds a state its own load path would clamp away).
         // Both entity targets are valid (gear is player-authorable too).
         .editor_set_entity_gear => |set| {
@@ -695,7 +695,7 @@ pub fn handleEditorEvent(
         .editor_set_entity_utility_skill => |set| {
             // Defensive against crafted logs: the slot must be in range and
             // only UTILITY skills may sit on the bar (the live path can't
-            // produce a weapon skill here — the picker filters + validation
+            // produce a weapon skill here - the picker filters + validation
             // rejects; see src/utility_skills.zig).
             if (set.slot_index >= types.utility_skill_count) return;
             if (set.value) |skill_id| {
@@ -704,7 +704,7 @@ pub fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.equipped_utility_skills[set.slot_index] = set.value;
         },
-        // Entity layer edits (the enemy content's Layers section — the
+        // Entity layer edits (the enemy content's Layers section - the
         // player loadout has NO layers: a player_def target is ignored,
         // defensive against crafted logs; validation rejects them at the
         // replay seam). The layer index guards are the same posture.
@@ -729,14 +729,14 @@ pub fn handleEditorEvent(
             }, allocator);
         },
         // Decoration whole-def commit (a picker pick): adopt the full
-        // definition — sprite, footprint, pixel dims, color index, layers —
+        // definition - sprite, footprint, pixel dims, color index, layers -
         // with the palette label tracking the sprite (a decoration's name
         // IS its sprite path), then prune the type's placements the new
         // footprint invalidates (same event, so one undo step covers the
         // retype + the prune). Defensive against crafted logs: a type id
         // outside the palette is ignored (the live path resolves the
         // target from the inspector; the delete arms keep it valid), and
-        // an empty footprint is ignored — every pick path derives a
+        // an empty footprint is ignored - every pick path derives a
         // nonempty one (authored prefab or the custom-stem bottom-left
         // default).
         .editor_set_decoration_def => |set| {
@@ -753,20 +753,20 @@ pub fn handleEditorEvent(
             pruneDecorationPlacementsForType(editor, set.type_id, allocator);
         },
         // Decoration keep_original_colors toggle (the flag never affects
-        // placement validity — no prune).
+        // placement validity - no prune).
         .editor_set_decoration_keep_original_colors => |set| {
             if (set.type_id >= editor.decoration_types.len) return;
             @constCast(editor.decoration_types)[set.type_id].keep_original_colors = set.value;
         },
         // Decoration color swatch commit (color never affects placement
-        // validity — no prune).
+        // validity - no prune).
         .editor_set_decoration_color_index => |set| {
             if (set.type_id >= editor.decoration_types.len) return;
             @constCast(editor.decoration_types)[set.type_id].color_index = set.value;
         },
         // Decoration layer edits (the decoration content's Layers
-        // section). The load-time invariant — a layer's pixel dims must
-        // equal the base's (the level parser panics otherwise) — is
+        // section). The load-time invariant - a layer's pixel dims must
+        // equal the base's (the level parser panics otherwise) - is
         // enforced here too: a mismatched payload is ignored, so the
         // editor can never hold a state its own load path would reject
         // (the editor_set_entity_utility_skill posture; the live commit
@@ -810,15 +810,15 @@ pub fn handleEditorEvent(
         },
         // The footprint editor's confirm: adopt the new footprint (the
         // draft grid resolves to sprite-grid coords), then prune the
-        // type's placements the new footprint invalidates — an edited
+        // type's placements the new footprint invalidates - an edited
         // footprint re-anchors (the anchor is derived bottom-most-then-
         // left-most), so a placement's world tiles can shift onto level
         // tiles or other decorations exactly like a sprite retype. Same
         // event = one undo step covering both. Defensive against crafted
         // logs: a type id outside the palette, an EMPTY footprint (the
-        // load-time invariant — a decoration must reserve at least one
+        // load-time invariant - a decoration must reserve at least one
         // tile), or a tile outside the sprite grid (the parser's
-        // footprint-in-bbox check) is ignored — the live confirm site
+        // footprint-in-bbox check) is ignored - the live confirm site
         // can't produce any of them.
         .editor_set_decoration_footprint => |set| {
             if (set.type_id >= editor.decoration_types.len) return;
@@ -834,7 +834,7 @@ pub fn handleEditorEvent(
             pruneDecorationPlacementsForType(editor, set.type_id, allocator);
         },
         // Item-type whole-def commit (a type pick or a stat edit). Stats
-        // are clamped to the `max_*` bounds here too — the live path
+        // are clamped to the `max_*` bounds here too - the live path
         // clamps before pushing, the handler clamps again so the editor
         // can never hold a state its own load path (boundedU32) would
         // clamp away (the utility-skill posture). The palette label
@@ -849,7 +849,7 @@ pub fn handleEditorEvent(
             definition.id = loaders.itemDisplayName(item, allocator);
         },
         // Item-type name commit: rename in place; the label tracks (same
-        // event, one undo step). A skill tome has no name — the rename is
+        // event, one undo step). A skill tome has no name - the rename is
         // a no-op (itemWithName passes a tome through unchanged).
         .editor_set_item_name => |set| {
             if (set.type_id >= editor.item_types.len) return;
@@ -859,12 +859,12 @@ pub fn handleEditorEvent(
             definition.id = loaders.itemDisplayName(item, allocator);
         },
         // Player-loadout inventory slot commits (the inspector's
-        // Inventory section). The player_def template is the only owner —
+        // Inventory section). The player_def template is the only owner -
         // index-gated, no palette lookup. Defensive against crafted logs:
         // an index outside `inventory_slot_count` is ignored, an Add onto
         // an occupied slot, a Delete on an empty one, and a def/name
         // commit on an empty slot are no-ops (the live path can't produce
-        // any of them — the Add/Delete buttons and the detail fields only
+        // any of them - the Add/Delete buttons and the detail fields only
         // render in the matching state).
         .editor_add_inventory_item => |add| {
             if (add.index >= types.inventory_slot_count) return;
@@ -876,10 +876,10 @@ pub fn handleEditorEvent(
             if (delete.index >= types.inventory_slot_count) return;
             editor.player_def.template.inventory.slots[delete.index] = null;
         },
-        // A type pick (reset-everything semantics) or a stat edit — the
+        // A type pick (reset-everything semantics) or a stat edit - the
         // whole slot's item commits in ONE event, one undo step. Stats
         // clamp to the max_* bounds (itemFromDefSet, shared with the item
-        // palette path — the editor never holds a state its own load path
+        // palette path - the editor never holds a state its own load path
         // would clamp away).
         .editor_set_inventory_item_def => |set| {
             if (set.index >= types.inventory_slot_count) return;
@@ -895,7 +895,7 @@ pub fn handleEditorEvent(
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
-            // live plan can't violate either — validatePlayerAction rejects
+            // live plan can't violate either - validatePlayerAction rejects
             // the tool case at the replay seam).
             if (editor.active_tool != .select) return;
             const level = planning.activeEditorLevel(editor) orelse return;
@@ -923,7 +923,7 @@ pub fn handleEditorEvent(
             const level = &@constCast(editor.levels)[set.level_index];
             // A selected tile leaves the selection when the tile is
             // actually erased (an erase of an absent tile is an idempotent
-            // no-op — nothing to prune). Gated on the erase targeting the
+            // no-op - nothing to prune). Gated on the erase targeting the
             // active level (selection entries are active-level-relative).
             if (!set.is_floor and
                 set.level_index == editor.active_level_index and
@@ -945,7 +945,7 @@ pub fn handleEditorEvent(
                 types.DecorationPlacement,
                 level.decoration_placements.len - 1,
             ) catch @panic("failed to allocate decoration placements");
-            // Order-preserving removal — placement indices are the identity
+            // Order-preserving removal - placement indices are the identity
             // the move/delete events address, so reordering would corrupt
             // them (the orchestrator deletes high-before-low for exactly
             // this reason).
@@ -976,7 +976,7 @@ pub fn handleEditorEvent(
             // DESIGN → Level Editor → Active-tool model): a placement never
             // lands on a tile that already carries an entity or item. The
             // click orchestrator clears occupants first, so reaching here
-            // occupied is a logic bug — fail fast.
+            // occupied is a logic bug - fail fast.
             for (level.entity_placements) |placement| {
                 if (placement.position.x == place.position.x and
                     placement.position.y == place.position.y)
@@ -1027,7 +1027,7 @@ pub fn handleEditorEvent(
                 level.item_placements.len - 1,
             ) catch @panic("failed to allocate item placements");
             // Order-preserving removal (same reasoning as the decoration
-            // delete — indices are the identity the move/delete events
+            // delete - indices are the identity the move/delete events
             // address).
             @memcpy(
                 placements[0..delete.placement_index],
@@ -1092,12 +1092,12 @@ pub fn handleEditorEvent(
                 place.position,
                 allocator,
             );
-            // A decoration's footprint tiles are EXCLUSIVE — no level tile,
+            // A decoration's footprint tiles are EXCLUSIVE - no level tile,
             // no entity / item placement, no other decoration's footprint
             // under any of them (the parse-time placement invariant, now
             // enforced at the placement event; the click orchestrator
             // clears occupants first, so reaching here occupied is a logic
-            // bug — fail fast). See DESIGN → Decorations & Footprint →
+            // bug - fail fast). See DESIGN → Decorations & Footprint →
             // Placement invariant.
             for (footprint_tiles) |tile| {
                 if (functions.tileListContains(level.level_tiles, tile)) {
@@ -1141,7 +1141,7 @@ pub fn handleEditorEvent(
             // One thing per placed tile (see `editor_place_entity`): an
             // item never lands on a tile that already carries an entity or
             // item placement. The click orchestrator clears occupants
-            // first, so reaching here occupied is a logic bug — fail fast.
+            // first, so reaching here occupied is a logic bug - fail fast.
             for (level.entity_placements) |placement| {
                 if (placement.position.x == place.position.x and
                     placement.position.y == place.position.y)
@@ -1221,7 +1221,7 @@ pub fn handleEditorEvent(
             @constCast(editor.levels)[set.level_index].player_gradient_index = set.gradient_index;
         },
         .editor_commit_selection_move => |commit| {
-            // Final link: the worklist is exhausted — a move deselects
+            // Final link: the worklist is exhausted - a move deselects
             // (nothing is reselected; the clear phase's reconcile already
             // pruned the deleted entries, this drops the rest).
             if (commit.next_index >= commit.entries.len) {
@@ -1230,7 +1230,7 @@ pub fn handleEditorEvent(
             }
             const entry = commit.entries[commit.next_index];
 
-            // Plan THIS entry against the live post-clear state — the
+            // Plan THIS entry against the live post-clear state - the
             // placement planners are the current placement rules (a
             // marker target plans empty, so that thing was deleted fully
             // in the clear phase and simply doesn't place). Type ids from
@@ -1270,15 +1270,15 @@ pub fn handleEditorEvent(
                     ) catch @panic("failed to allocate editor selection move plan");
                 },
                 .player_start, .level_end => |position| {
-                    // Defensive (a crafted worklist — the live plan is vetoed
+                    // Defensive (a crafted worklist - the live plan is vetoed
                     // upstream in planning.planEditorSelectionMoveActions): a
                     // marker never lands on the STAYING other marker's cell
                     // ('!' and '=' take one cell each in the layout format).
                     // A LATER entry may still move the other marker away (a
-                    // swap — each marker lands where the other stood), so
+                    // swap - each marker lands where the other stood), so
                     // only a staying other blocks. A blocked entry plans
                     // empty: the marker simply doesn't place (it stays where
-                    // it stands — markers are never deletable, and rendering
+                    // it stands - markers are never deletable, and rendering
                     // and the layout writer need no floor tile under it).
                     var blocked = false;
                     if (planning.activeEditorLevel(editor)) |level| {
@@ -1314,7 +1314,7 @@ pub fn handleEditorEvent(
                 },
             }
 
-            // Push [next link, …plan] — LIFO runs this entry's plan first,
+            // Push [next link, ...plan] - LIFO runs this entry's plan first,
             // then the next link plans the following entry against the
             // result (the chain exists precisely so each entry sees the
             // fully-processed state; see the event's doc in events.zig).
@@ -1332,7 +1332,7 @@ pub fn handleEditorEvent(
 }
 
 /// Does the move worklist still move `marker_tag` at or after `from_index`?
-/// A later move vacates that marker's current cell (a swap — each marker
+/// A later move vacates that marker's current cell (a swap - each marker
 /// lands where the other stood), so a target overlapping the other
 /// marker's CURRENT position is legal after all. Used by the commit
 /// chain's marker arm (see `editor_commit_selection_move`).
@@ -1388,7 +1388,7 @@ fn setLevelTile(
 }
 
 /// Keep the select tool's selection consistent after a placement removal:
-/// drop the deleted entry and DECREMENT the selected indices above it — a
+/// drop the deleted entry and DECREMENT the selected indices above it - a
 /// removal shifts later placements down, so without the remap the
 /// surviving entries would point at the WRONG placements (skipping only
 /// out-of-range entries isn't enough). `kind` selects which placement
@@ -1442,13 +1442,13 @@ fn reconcileSelectionAfterPlacementDelete(
 
 /// Delete the type's placements that its (already-updated) footprint
 /// invalidates: a placement goes when its translated footprint covers a
-/// level tile or ANOTHER decoration placement's footprint — the placement
+/// level tile or ANOTHER decoration placement's footprint - the placement
 /// invariant `editor_place_decoration` enforces. Entity/item placements
 /// always sit ON level tiles, so the tile check subsumes them. The things
-/// under the new footprint are never touched — the decoration itself is
+/// under the new footprint are never touched - the decoration itself is
 /// deleted. Runs across EVERY level (the palette is mission-shared); the
 /// selection is reconciled for the active level's removals only
-/// (selection entries reference the active level — level-tab switches
+/// (selection entries reference the active level - level-tab switches
 /// clear the selection inside their own events). Shared by
 /// editor_set_decoration_def (a picker pick retypes the footprint) and
 /// the future editor_set_decoration_footprint handler.
@@ -1541,7 +1541,7 @@ fn pruneDecorationPlacementsForType(
 
 /// The editable template an `EntityEditTarget` addresses (a palette type's
 /// template, or the editor-global player definition), or null when the
-/// target is out of range — the inspector field-edit handlers no-op on
+/// target is out of range - the inspector field-edit handlers no-op on
 /// null (defensive: the live path commits nothing when a focused field's
 /// type was deleted mid-edit; crafted logs can name any index). pub: shared
 /// with input_handlers' text-field commit path.
@@ -1558,7 +1558,7 @@ pub fn editorEntityTemplate(
     };
 }
 
-/// The template an entity-LAYER edit applies to — `editorEntityTemplate`
+/// The template an entity-LAYER edit applies to - `editorEntityTemplate`
 /// minus the player (the player loadout has no layers; the Layers section
 /// is enemy content only).
 fn entityLayerEditTemplate(
@@ -1572,8 +1572,8 @@ fn entityLayerEditTemplate(
 }
 
 /// Does a decoration layer's pixel dims match its base type's? The
-/// load-time invariant (a mismatch degrades to warn + keep — see DESIGN →
-/// Custom Missions & Online Services → Custom-asset dimensions) —
+/// load-time invariant (a mismatch degrades to warn + keep - see DESIGN →
+/// Custom Missions & Online Services → Custom-asset dimensions) -
 /// shared by the layer-edit handler arms + the replay validation.
 fn decorationLayerDimsMatch(
     definition: *const types.DecorationTypeDef,
@@ -1584,7 +1584,7 @@ fn decorationLayerDimsMatch(
 }
 
 /// Append to a `[]const T` layer-list field (Entity.layers /
-/// DecorationTypeDef.layers — both `[]const`, so mutation is
+/// DecorationTypeDef.layers - both `[]const`, so mutation is
 /// copy-and-reassign).
 fn layerListAppend(
     comptime T: type,
@@ -1631,7 +1631,7 @@ fn layerListReplaceAt(
 
 /// Rebuild an `Item` from a flattened item-def event payload
 /// (`editor_set_item_def` / `player_set_editor_inventory_item_def` share
-/// the field set — hence `anytype`). Stats clamp to the `max_*` bounds (the
+/// the field set - hence `anytype`). Stats clamp to the `max_*` bounds (the
 /// editor never holds a state its own load path would clamp away); only the
 /// picked kind's fields are meaningful, the rest are ignored.
 fn itemFromDefSet(set: anytype) types.Item {
@@ -1669,7 +1669,7 @@ fn itemFromDefSet(set: anytype) types.Item {
 }
 
 /// The default item an inventory-slot Add creates: the new-sword default
-/// (the `data/editor_defaults.txt` Items entry — the palette "+" default,
+/// (the `data/editor_defaults.txt` Items entry - the palette "+" default,
 /// kept in sync with it).
 fn defaultInventoryItem() types.Item {
     return .{ .weapon = .{

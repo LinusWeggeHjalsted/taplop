@@ -9,10 +9,10 @@ const Event = events.Event;
 const Effect = effect_mod.Effect;
 
 /// Promise of Death: while active, when an opponent of the holder dies,
-/// the holder resets EVERY ticking cooldown — the full sweep, including
+/// the holder resets EVERY ticking cooldown - the full sweep, including
 /// off-bar preserved cooldowns (self-beneficial; the on-bar-only rule is
 /// an Adrenaline Surge balance concern about enemy-side inherited
-/// cooldowns driving damage, which cannot apply here) — and heals to full.
+/// cooldowns driving damage, which cannot apply here) - and heals to full.
 pub const effect = Effect{
     .name = "Promise of Death",
     .description = "Reset all cooldowns and gain full health if an enemy dies",

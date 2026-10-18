@@ -11,7 +11,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Burst: a cantrip. Attacks every hostile within radius of the caster for
-/// 1x effective spell damage. Non-turn-ending (the cantrip pool — the enemy
+/// 1x effective spell damage. Non-turn-ending (the cantrip pool - the enemy
 /// casts every worthwhile non-ending skill before its turn-ender). Mini
 /// Worldfire at a tenth of the cooldown.
 pub const skill = Skill{
@@ -33,13 +33,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast in value units (helpers.aoePriority
-/// over the hostile count in radius) — 1 per target hit. Non-ending pool:
+/// over the hostile count in radius) - 1 per target hit. Non-ending pool:
 /// the rating only orders the cantrips, all worthwhile ones fire.
 fn aiOptions(
     caster_index: u32,
@@ -61,7 +61,7 @@ fn aiOptions(
     });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

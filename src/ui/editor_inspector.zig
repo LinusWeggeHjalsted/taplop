@@ -3,7 +3,7 @@
 //! pipeline over entity/decoration/item/player targets) and
 //! `buildEditorMetadataSidebar` (the right sidebar's mission/level name +
 //! gradient rows), the inspector target inference (`editorInspectorTarget`
-//! — shared with the input layer), the field-control emitters, and the
+//! - shared with the input layer), the field-control emitters, and the
 //! M2 press arbitration (`textEditPressProceeds`). See DESIGN → Level
 //! Editor → Editor UI layout.
 
@@ -70,18 +70,18 @@ const spanRow = ui_tooltip.spanRow;
 const TextEditState = text_input.TextEditState;
 
 /// Width of the editor inspector sidebar's background panel. Placeholder
-/// value — revisit once the field layout lands and the real width is
+/// value - revisit once the field layout lands and the real width is
 /// visible.
 const editor_inspector_width: i32 = 1024;
 
 /// The Inventory section's slot-grid width: six square 128px cells fit a
 /// row with room for the gap rhythm; 16 rows × 6 = the full
 /// `inventory_slot_count` (the same 96 slots the in-game 8×12 grid
-/// shows — intentionally identical capacity, arranged to fit the panel).
+/// shows - intentionally identical capacity, arranged to fit the panel).
 const editor_inventory_slots_per_row: u32 = 6;
 const editor_inventory_row_count: u32 = types.inventory_slot_count / editor_inventory_slots_per_row;
 
-/// The inspector background panel's rect — the single source for the
+/// The inspector background panel's rect - the single source for the
 /// builder's layout AND the M2 press arbitration (DESIGN → UI Framework →
 /// Text input widget), so the two can't drift.
 pub fn editorInspectorPanelRect() Rectangle {
@@ -94,14 +94,14 @@ pub fn editorInspectorPanelRect() Rectangle {
 /// Editor inspector sidebar (the left bar): a top-left "Inspector" toggle
 /// button flush below the options button (the level-tab / group-header
 /// visual class: panel-backed, `editor_header_strip_height` tall, label +
-/// side padding wide), and — when open — a background panel underneath it
+/// side padding wide), and - when open - a background panel underneath it
 /// that will host the active tool's field editors (later slices; empty for
 /// now). The panel spans from below the button down to one `ui_gap` above
 /// the expanded palette groups' header strip (those headers sit `ui_gap` +
 /// one strip above the bottom bar; the extra gap keeps the panel from
-/// sitting flush against them — their x range overlaps the panel since the
+/// sitting flush against them - their x range overlaps the panel since the
 /// bottom bar is flush left). The open flag lives on the Editor (GameState)
-/// — the toggle rides the undo timeline via `editor_toggle_inspector`.
+/// - the toggle rides the undo timeline via `editor_toggle_inspector`.
 /// See DESIGN → Architecture → Level Editor → Editor UI layout (inspector).
 pub fn buildEditorInspectorPanel(
     elements: *UiElementList,
@@ -148,7 +148,7 @@ pub fn buildEditorInspectorPanel(
     } });
 
     // Background panel (when open): from below the button to one ui_gap
-    // above the expanded palette groups' header strip. Theme darkest —
+    // above the expanded palette groups' header strip. Theme darkest -
     // the background-panel class (button panels tint gradient[5] to read
     // as buttons against it).
     if (inspector_open) {
@@ -172,11 +172,11 @@ pub fn buildEditorInspectorPanel(
 }
 
 /// The editor's centered picker OVERLAY: the band between the two
-/// sidebars — full sidebar-panel height, a `ui_gap` in from each sidebar
-/// panel's edge. CONSTANT (independent of the sidebars' open state — the
+/// sidebars - full sidebar-panel height, a `ui_gap` in from each sidebar
+/// panel's edge. CONSTANT (independent of the sidebars' open state - the
 /// pickers keep their rect regardless; the gameplay scenes' middle-panel
 /// band is the model). The pickers' CONTENTS are fixed-size (256px cells,
-/// fixed strips) laid out inside it — the overlay never resizes with its
+/// fixed strips) laid out inside it - the overlay never resizes with its
 /// content. See DESIGN → Architecture → Level Editor → Editor UI layout.
 pub fn editorPickerOverlayRect() Rectangle {
     const top = top_bar_height + ui_gap + editor_header_strip_height + ui_gap;
@@ -194,7 +194,7 @@ pub fn editorPickerOverlayRect() Rectangle {
 /// inspector's placeholder width).
 const editor_metadata_sidebar_width: i32 = 1024;
 
-/// The metadata sidebar's panel rect — the inspector rect mirrored to the
+/// The metadata sidebar's panel rect - the inspector rect mirrored to the
 /// right edge. Single source for the builder's layout AND the M2 press
 /// arbitration, so the two can't drift.
 pub fn editorMetadataSidebarPanelRect() Rectangle {
@@ -211,10 +211,10 @@ pub fn editorMetadataSidebarPanelRect() Rectangle {
 
 /// Editor metadata sidebar (the right bar): a top-right "Settings" toggle
 /// button at the inspector toggle's height, flush to the right screen edge
-/// (the same visual class), and — when open — a background panel hosting
+/// (the same visual class), and - when open - a background panel hosting
 /// the mission + active-level metadata: the Mission section (name field)
 /// and the Level section (name field; the gradient rows land with the
-/// theme slice). The open flag lives on the Editor (GameState) — the
+/// theme slice). The open flag lives on the Editor (GameState) - the
 /// toggle rides the undo timeline via `editor_toggle_metadata_sidebar`.
 /// See DESIGN → Architecture → Level Editor → Editor UI layout (Settings
 /// sidebar).
@@ -274,11 +274,11 @@ pub fn buildEditorMetadataSidebar(
         .color = active_theme.darkest,
     } });
 
-    // Content: the INSPECTOR'S EXACT MODEL — a per-frame entry list over
+    // Content: the INSPECTOR'S EXACT MODEL - a per-frame entry list over
     // the expansion state, view-relative windowed emission (only rows
     // that FULLY fit), and a scrollbar when the content overflows. Both
     // sections COLLAPSED by default; the strips are the shared
-    // collapsible section headers (`emitInspectorSectionStrip` — the +/-
+    // collapsible section headers (`emitInspectorSectionStrip` - the +/-
     // marker, the whole-strip click, the shared expansion array keyed by
     // `EditorInspectorSectionId`).
     const content: Rectangle = .{
@@ -292,7 +292,7 @@ pub fn buildEditorMetadataSidebar(
 
     // The level the sidebar shows (the ACTIVE tab). The level index rides
     // the name field's ref target (a mid-edit tab switch can't retarget
-    // the commit). A level-less editor (defensive — open_editor
+    // the commit). A level-less editor (defensive - open_editor
     // guarantees ≥1) shows an empty field whose commit gates on the
     // index bound.
     const active_level: usize = @min(editor.active_level_index, editor.levels.len);
@@ -308,7 +308,7 @@ pub fn buildEditorMetadataSidebar(
         &ui_state.editor_inspector_section_expanded,
     );
 
-    // Unit math + scroll clamp — the inspector's (authoritative here: the
+    // Unit math + scroll clamp - the inspector's (authoritative here: the
     // builder knows the content height).
     var total_units: i32 = 0;
     for (entries) |entry| total_units += editorMetadataEntryUnits(entry);
@@ -336,7 +336,7 @@ pub fn buildEditorMetadataSidebar(
             .height = units * editor_inspector_row_height,
         };
         switch (entry) {
-            // A blank unit — the section-break gap.
+            // A blank unit - the section-break gap.
             .spacer => {},
             .section => |section_id| try emitInspectorSectionStrip(
                 elements,
@@ -380,7 +380,7 @@ pub fn buildEditorMetadataSidebar(
     }
 
     // Scrollbar (only when the content overflows): the inspector's
-    // geometry — track + proportional thumb in the right `ui_gap` margin,
+    // geometry - track + proportional thumb in the right `ui_gap` margin,
     // measured in row units.
     if (total_units > visible_rows) {
         const track_x = panel_rect.x + panel_rect.width - ui_gap +
@@ -430,8 +430,8 @@ const EditorGradientRow = struct {
     colors: [types.gradient_color_count]types.Color,
     gradient_override: ?u32,
     /// The role's EFFECTIVE gradient index (the override while manual, the
-    /// auto-derived one otherwise — `loaders.effectiveGradientIndex`). Null
-    /// on the level-less defensive path — no number shown.
+    /// auto-derived one otherwise - `loaders.effectiveGradientIndex`). Null
+    /// on the level-less defensive path - no number shown.
     effective_index: ?u32,
 };
 
@@ -447,7 +447,7 @@ fn editorMetadataEntryUnits(entry: EditorMetadataEntry) i32 {
 /// The metadata sidebar's content plan: the Mission section (the mission's
 /// name) then the Current-level section (the active level's name + the
 /// three gradient rows). Each section header is followed by its children
-/// WHILE EXPANDED (the shared `editor_inspector_section_expanded` state —
+/// WHILE EXPANDED (the shared `editor_inspector_section_expanded` state -
 /// collapse is a view affordance, off the undo timeline). The spacer
 /// belongs to the section ABOVE it (a collapsed section takes no gap).
 fn editorMetadataEntries(
@@ -515,7 +515,7 @@ fn editorMetadataEntries(
 }
 
 /// A level's effective gradient index for a role (the shared
-/// `loaders.effectiveGradientIndex` over the level's stored keys) — null
+/// `loaders.effectiveGradientIndex` over the level's stored keys) - null
 /// while there's no level to derive from (the defensive level-less path:
 /// no number shown, mirroring the picker's stale-level no-highlight).
 fn levelEffectiveGradientIndex(
@@ -534,9 +534,9 @@ fn levelEffectiveGradientIndex(
 }
 
 /// A metadata-sidebar gradient row (two-unit field entry, the inspector's
-/// geometry): the role label line above, the control line below — the
+/// geometry): the role label line above, the control line below - the
 /// role's EFFECTIVE gradient index flush right on the label line (the
-/// number the theme picker's matching row carries — see
+/// number the theme picker's matching row carries - see
 /// `EditorGradientRow.effective_index`), then the control line with the
 /// AUTO toggle (enemy/player roles only) and the full-gradient swatch
 /// strip, ONE button over the whole strip opening the theme picker.
@@ -555,7 +555,7 @@ fn emitSidebarGradientRow(
     active_theme: types.ActiveColorTheme,
 ) !void {
     // The descriptor line (the role's label), flush to the bottom of the
-    // upper unit — the inspector's field-entry convention.
+    // upper unit - the inspector's field-entry convention.
     try elements.append(allocator, .{ .text_label = .{
         .text = row.label,
         .screen_position = .{ .x = entry.x, .y = inspectorLabelY(entry) },
@@ -588,7 +588,7 @@ fn emitSidebarGradientRow(
 
     // The AUTO toggle (enemy/player rows only): highlighted while
     // deriving; a click while manual reverts (the input layer no-ops it
-    // while auto — the same-value rule).
+    // while auto - the same-value rule).
     var swatch_rect = control_rect;
     if (role != .world) {
         const auto_rect: Rectangle = .{
@@ -656,7 +656,7 @@ fn emitSidebarGradientRow(
             .payload = .{ .editor_gradient_role = role },
             // The outline marks the row's mode: the AUTO button carries it
             // while deriving, the SWATCH while an explicit pick is in force
-            // (the world row's swatch always — its index is always picked).
+            // (the world row's swatch always - its index is always picked).
             // The backend renders it as the lightest stroked rect.
             .highlighted = role == .world or gradient_override != null,
             .tooltip = .{ .header = try spanRow(allocator, text("Pick gradient")) },
@@ -696,9 +696,9 @@ fn emitSidebarNameField(
     );
 }
 
-/// Inspector content row pitch — the 128px UNIT: a section header is one
+/// Inspector content row pitch - the 128px UNIT: a section header is one
 /// unit; a field entry is TWO (the label line above, the editable value
-/// below — one thing per line, full width).
+/// below - one thing per line, full width).
 pub const editor_inspector_row_height: i32 = editor_header_strip_height;
 
 /// Inspector scrollbar track width, centered in the panel's right `ui_gap`
@@ -739,18 +739,18 @@ pub const EditorInspectorTarget = union(enum) {
 };
 
 /// The inspector's target: the ACTIVE placement tool (enemy, decoration,
-/// or item), or — while the select tool is active — the tool INFERRED
+/// or item), or - while the select tool is active - the tool INFERRED
 /// from the selection. The player is the fallback for everything else:
 /// the tile tool, an empty or ambiguous selection, an unresolvable
 /// reference. Inference rules: tiles and the '=' contribute NOTHING
-/// (legitimately uninspectable — mixing them with enemies still shows the
+/// (legitimately uninspectable - mixing them with enemies still shows the
 /// enemy); the '!' contributes a `.player` REFERENCE (so player-start +
-/// anything — or alone — resolves to the player); entity, decoration,
+/// anything - or alone - resolves to the player); entity, decoration,
 /// and ground-item placements contribute their type, resolved against
-/// the ACTIVE level — an out-of-range placement index or a stale palette
+/// the ACTIVE level - an out-of-range placement index or a stale palette
 /// type id is an unresolvable bug-state reference and forces the fallback
 /// (the delete arms keep the selection consistent, so this is defensive
-/// only — see `Selectable`). Exactly one distinct reference wins; two or
+/// only - see `Selectable`). Exactly one distinct reference wins; two or
 /// more (e.g. two enemy types, or an enemy plus a decoration) fall back
 /// to the player. See DESIGN → Architecture → Level Editor → Selection
 /// model (Inspector tool-type inference).
@@ -770,7 +770,7 @@ pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
             .{ .item_type = type_id }
         else
             .player,
-        // The tile tool has no fields — the player is the fallback.
+        // The tile tool has no fields - the player is the fallback.
         .tile => return .player,
     }
     if (editor.active_level_index >= editor.levels.len) return .player;
@@ -778,13 +778,13 @@ pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
     var inferred: ?EditorInspectorTarget = null;
     for (editor.selection) |selected| {
         const referenced: ?EditorInspectorTarget = switch (selected) {
-            // Legitimately uninspectable — contributes nothing (mixing
+            // Legitimately uninspectable - contributes nothing (mixing
             // tiles / the '=' with enemies still shows the enemy).
             .tile, .level_end => null,
             .player_start => .player,
             .entity_placement => |index| blk: {
                 // An out-of-range placement index or a stale palette type
-                // id is an unresolvable bug-state reference — it can't
+                // id is an unresolvable bug-state reference - it can't
                 // show anything, so it forces the fallback (defensive
                 // only; the placement arms keep both valid). A VALID
                 // reference contributes below (break) so later entries
@@ -835,7 +835,7 @@ fn editorInspectorTargetsEqual(
 /// The entity (enemy) type the inspector currently edits, or null when
 /// the resolved target (see `editorInspectorTarget`) is the player, a
 /// decoration type, or an item type. File-private: the inspector content
-/// builder is the only consumer — the input-side commit sites map the
+/// builder is the only consumer - the input-side commit sites map the
 /// full target instead (the player arm edits `player_def`, the
 /// decoration arm edits the decoration palette).
 fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
@@ -853,45 +853,45 @@ const EditorInspectorControl = union(enum) {
     text: types.TextFieldId,
     /// The base-sprite row (enemy identity): a button showing the current
     /// stem that opens the centered sprite picker (mission-local +
-    /// official tabs — see DESIGN → Level Editor → Editor UI layout, the
+    /// official tabs - see DESIGN → Level Editor → Editor UI layout, the
     /// centered sprite picker).
     sprite_button: void,
     /// The color_index swatch row (the enemy gradient, one swatch per
-    /// index — the settings screen's player-color row is the precedent).
+    /// index - the settings screen's player-color row is the precedent).
     swatches,
     /// A true/false toggle strip (the FORMAT's "true"/"false" vocabulary).
-    /// The plan builder resolves the current value + the flip action — the
+    /// The plan builder resolves the current value + the flip action - the
     /// same emitter serves the entity (displays_weapons, keep colors) and
     /// decoration (keep colors) toggles.
     toggle: struct { current: bool, action: types.Action },
-    /// The decoration content's sprite row — same button look as the
+    /// The decoration content's sprite row - same button look as the
     /// entity `sprite_button`, reading the decoration context instead.
     decoration_sprite_button: void,
-    /// The decoration content's color swatch row (the WORLD gradient —
+    /// The decoration content's color swatch row (the WORLD gradient -
     /// decorations index into it, matching the in-game tinting).
     decoration_swatches: void,
     /// The decoration content's footprint row: a button showing the tile
     /// count that opens the centered footprint editor (the tile-grid
     /// picker).
     footprint_button: void,
-    /// A palette item TYPE's field (the Items group's content — name or
+    /// A palette item TYPE's field (the Items group's content - name or
     /// one stat): the shared text-field element, reading the item context
     /// instead of an entity template.
     item_text: types.TextFieldId,
     /// An INVENTORY slot item's field (the player content's Inventory
-    /// section detail rows — name or one stat): the shared text-field
+    /// section detail rows - name or one stat): the shared text-field
     /// element, reading the selected slot's item.
     inventory_item_text: types.TextFieldId,
 };
 
-/// One line of inspector content — per the coupling contract in DESIGN →
+/// One line of inspector content - per the coupling contract in DESIGN →
 /// Architecture → Level Editor → Editor UI layout → Inspector fields. The
 /// list is built PER FRAME from the editor state (a present item adds its
 /// sub-field rows after its slot row). Sections carry their identity (not
 /// a label string): the id keys the expansion state + the label lookup.
 const EditorInspectorEntry = union(enum) {
     section: types.EditorInspectorSectionId,
-    /// One blank unit before every section header except the first — the
+    /// One blank unit before every section header except the first - the
     /// section break reads as a break, not just a different strip.
     spacer: void,
     field: struct {
@@ -908,7 +908,7 @@ const EditorInspectorEntry = union(enum) {
     /// skill slots (occupied = skill button + icon, empty = the diamond
     /// marker), each opening the centered picker.
     utility_skill_row: void,
-    /// The player loadout's name — a READ-ONLY value line (the name comes
+    /// The player loadout's name - a READ-ONLY value line (the name comes
     /// with the imported player data, it isn't hand-edited).
     player_name_line: void,
     /// The player inspector's Import button: copy the session's player
@@ -917,7 +917,7 @@ const EditorInspectorEntry = union(enum) {
     /// One ROW of the player loadout's inventory slot grid (six cells;
     /// `editor_inventory_slots_per_row`). While the section's selected
     /// slot sits in this row, the detail entries follow directly below
-    /// (the per-frame insert — see editorInspectorPlayerEntries).
+    /// (the per-frame insert - see editorInspectorPlayerEntries).
     inventory_slot_row: u32,
     /// The selected inventory slot's Add/Delete row: the "Slot N" label
     /// line + the half-width button (Add while the slot is empty, Delete
@@ -925,19 +925,19 @@ const EditorInspectorEntry = union(enum) {
     /// selected slot's row.
     inventory_item_button: u32,
     /// The selected inventory slot's type-pick rows (3 units: the "Type"
-    /// label line + the weapon row + the gear-kind row) — emitted ONLY
+    /// label line + the weapon row + the gear-kind row) - emitted ONLY
     /// while an item exists in the slot (author decision: an empty slot
     /// shows Add until an item does).
     inventory_item_type_rows: void,
     /// One ENEMY layer's slot row (label "Layer N"): the sprite-stem
     /// button (re-pick via the layer picker) + Delete. The Layers section
-    /// is enemy content only — the player loadout has no layers.
+    /// is enemy content only - the player loadout has no layers.
     entity_layer: u32,
     /// One enemy layer's color swatch row (the enemy gradient).
     entity_layer_color: u32,
     /// The enemy content's add-layer row (opens the picker in add mode).
     add_entity_layer: void,
-    /// One DECORATION layer's slot row — the entity_layer shape over the
+    /// One DECORATION layer's slot row - the entity_layer shape over the
     /// decoration context.
     decoration_layer: u32,
     /// One decoration layer's color swatch row (the world gradient).
@@ -946,7 +946,7 @@ const EditorInspectorEntry = union(enum) {
     add_decoration_layer: void,
     /// The item content's type-pick rows (3 units): the "Type" label line
     /// + the weapon-type row + the non-weapon-kind row. A differing pick
-    /// resets the item ("New <Kind>", zeroed stats) — the pick handler's
+    /// resets the item ("New <Kind>", zeroed stats) - the pick handler's
     /// job; the rows just render + carry payloads.
     item_type_rows: void,
 };
@@ -998,7 +998,7 @@ fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
 }
 
 /// The stat fields an item kind carries, in display order (the inspector
-/// only offers these — a stat the item doesn't have commits nothing by
+/// only offers these - a stat the item doesn't have commits nothing by
 /// construction).
 fn gearSlotStatSet(slot: types.GearSlot) []const types.ItemStatField {
     return switch (slot) {
@@ -1025,7 +1025,7 @@ fn itemStatLabel(stat: types.ItemStatField) []const u8 {
     };
 }
 
-/// The item content's standalone stat label (capitalized first letter —
+/// The item content's standalone stat label (capitalized first letter -
 /// the enemy content's "Max health" convention).
 fn itemStatFieldLabel(stat: types.ItemStatField) []const u8 {
     return switch (stat) {
@@ -1065,7 +1065,7 @@ fn appendInspectorSlotEntries(
 
 /// The Weapons + Gear sections (shared by the enemy + player content):
 /// each section header, then (while expanded) each slot's row followed by
-/// the equipped item's fields. The spacer BEFORE Weapons is the caller's —
+/// the equipped item's fields. The spacer BEFORE Weapons is the caller's -
 /// it belongs to the caller's preceding section (Stats for the enemy
 /// content, Player for the player content) and is emitted only while THAT
 /// section is expanded.
@@ -1093,10 +1093,10 @@ fn appendInspectorGearSections(
 }
 
 /// The enemy-type inspector's content plan: five sections over every
-/// field `parseEntityDefinition` reads (the coupling contract — anything
+/// field `parseEntityDefinition` reads (the coupling contract - anything
 /// editable by text-editing the level file is a row here). Each section
 /// header is followed by its children WHILE EXPANDED (collapsed sections
-/// carry the header only — see `UiState.editor_inspector_section_expanded`).
+/// carry the header only - see `UiState.editor_inspector_section_expanded`).
 /// The Weapons + Gear sections are state-dependent: each slot row is
 /// followed by the equipped item's Name + stat rows (nothing when the slot
 /// is empty).
@@ -1116,7 +1116,7 @@ fn editorInspectorEntityEntries(
             .{ .field = .{ .label = "Sprite", .control = .sprite_button } },
             // The Keep colors toggle sits ABOVE the swatches (it decides
             // whether they apply), and the Color row is HIDDEN while the
-            // flag is on — a tint row under an untinted type is a dead,
+            // flag is on - a tint row under an untinted type is a dead,
             // confusing control (the swatches do nothing).
             .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
                 .current = template.keep_original_colors,
@@ -1130,7 +1130,7 @@ fn editorInspectorEntityEntries(
             .current = template.displays_weapons,
             .action = .toggle_editor_entity_displays_weapons,
         } } } });
-        // The section-break spacer belongs to the section ABOVE it — a
+        // The section-break spacer belongs to the section ABOVE it - a
         // collapsed section takes no gap after it (headers stack flush).
         try entries.append(allocator, .spacer);
     }
@@ -1158,7 +1158,7 @@ fn editorInspectorEntityEntries(
     }
 
     // Layers: per layer a slot row (sprite re-pick + delete) + a color
-    // row, then the add button. The LAST section — the spacer above it
+    // row, then the add button. The LAST section - the spacer above it
     // belongs to utility_skills.
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .spacer);
@@ -1177,16 +1177,16 @@ fn editorInspectorEntityEntries(
     return entries.items;
 }
 
-/// The PLAYER content's entries (the fallback target — the '!' spawn's
+/// The PLAYER content's entries (the fallback target - the '!' spawn's
 /// loadout): the loadout header + (while expanded) the read-only name line
 /// + import button, the shared Weapons / Gear / Utility sections, and the
 /// inventory SLOT GRID (16 rows of six cells). While a slot is selected,
-/// its detail entries insert directly BELOW its slot row — the first
+/// its detail entries insert directly BELOW its slot row - the first
 /// in-section expansion in the inspector (the entries list is rebuilt per
 /// frame, so the insert is a conditional append): the Add/Delete row
-/// first, then — only while an item exists (author decision: no type
-/// rows while empty) — the type-pick rows + name + stats, mirroring the
-/// item tool inspector exactly. No Identity / Stats sections — base
+/// first, then - only while an item exists (author decision: no type
+/// rows while empty) - the type-pick rows + name + stats, mirroring the
+/// item tool inspector exactly. No Identity / Stats sections - base
 /// stats are enemy-authorable only; the player template keeps its
 /// defaults.
 fn editorInspectorPlayerEntries(
@@ -1203,7 +1203,7 @@ fn editorInspectorPlayerEntries(
             .{ .player_name_line = {} },
             .{ .import_player = {} },
         });
-        // The section-break spacer belongs to the section ABOVE it — a
+        // The section-break spacer belongs to the section ABOVE it - a
         // collapsed section takes no gap after it (headers stack flush).
         try entries.append(allocator, .spacer);
     }
@@ -1230,11 +1230,11 @@ fn editorInspectorPlayerEntries(
             try entries.append(allocator, .{ .inventory_slot_row = @intCast(row) });
             if (selected == null) continue;
             if (selected.? / editor_inventory_slots_per_row != row) continue;
-            // The detail block — directly below the selected slot's row.
+            // The detail block - directly below the selected slot's row.
             try entries.append(allocator, .{ .inventory_item_button = selected.? });
             const item = template.inventory.slots[selected.?] orelse continue;
             try entries.append(allocator, .{ .inventory_item_type_rows = {} });
-            // A skill tome has no name (it IS its skill) — no name row,
+            // A skill tome has no name (it IS its skill) - no name row,
             // and itemStatSet yields no stats for it either.
             if (std.meta.activeTag(item) != .skill_tome) {
                 try entries.append(allocator, .{ .field = .{
@@ -1254,7 +1254,7 @@ fn editorInspectorPlayerEntries(
     return entries.items;
 }
 
-/// The DECORATION content's entries: Identity (sprite + color — a
+/// The DECORATION content's entries: Identity (sprite + color - a
 /// decoration's name IS its sprite path, so there is no name row) +
 /// Footprint (a read-only tile count; the footprint editor is a later
 /// slice). Decoration layers are deferred with the layer editor (they
@@ -1271,7 +1271,7 @@ fn editorInspectorDecorationEntries(
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Sprite", .control = .decoration_sprite_button } },
             // Above the swatches; the Color row is hidden while the flag
-            // is on (the entity plan's rule — a dead tint control under an
+            // is on (the entity plan's rule - a dead tint control under an
             // untinted type confuses more than it informs).
             .{ .field = .{ .label = "Keep colors", .control = .{ .toggle = .{
                 .current = definition.keep_original_colors,
@@ -1292,7 +1292,7 @@ fn editorInspectorDecorationEntries(
     }
 
     // Layers: per layer a slot row (sprite re-pick + delete) + a color
-    // row, then the add button. The LAST section — the spacer above it
+    // row, then the add button. The LAST section - the spacer above it
     // belongs to footprint.
     try entries.append(allocator, .{ .section = .layers });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.layers)]) {
@@ -1309,10 +1309,10 @@ fn editorInspectorDecorationEntries(
 }
 
 /// The ITEM content's entries (the Items palette group's target): one
-/// collapsible section — the type-pick rows (weapon types + non-weapon
+/// collapsible section - the type-pick rows (weapon types + non-weapon
 /// kinds; a differing pick resets the item), then the name field + one
 /// numeric field per stat the kind carries. Skill tomes carry neither a
-/// name nor stats (and are never offered by the pick rows — not
+/// name nor stats (and are never offered by the pick rows - not
 /// level-authorable); a tome in the palette is unreachable in practice
 /// (buildEditorMission can't produce one) and renders bare rows here.
 fn editorInspectorItemEntries(
@@ -1325,7 +1325,7 @@ fn editorInspectorItemEntries(
     try entries.append(allocator, .{ .section = .item });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.item)]) {
         try entries.append(allocator, .{ .item_type_rows = {} });
-        // A skill tome has no name (it IS its skill) — no name row.
+        // A skill tome has no name (it IS its skill) - no name row.
         if (std.meta.activeTag(item) != .skill_tome) {
             try entries.append(allocator, .{ .field = .{
                 .label = "Name",
@@ -1344,18 +1344,18 @@ fn editorInspectorItemEntries(
 }
 
 /// Build the inspector's content inside the open panel (called by
-/// `buildEditorInspectorPanel`): the resolved target's entries — the
+/// `buildEditorInspectorPanel`): the resolved target's entries - the
 /// active entity tool's field rows, or the player loadout (the fallback
 /// target). View-relative windowed emission
 /// (the skills-panel model): only FULLY visible rows are emitted at the top
 /// of the content region, so nothing half-draws or overflows the panel; the
 /// scrollbar thumb conveys the position. `scroll_offset` (rows) is clamped
-/// here — authoritative, this fn knows the content height. The wheel
+/// here - authoritative, this fn knows the content height. The wheel
 /// routes here from handleAnytimeInput when the pointer is inside the panel
 /// rect; while a text field is focused the wheel still flows (only key
 /// bindings are suppressed).
 /// A section-header strip: panel-backed, the label left-padded and
-/// vertically centered (the group-header visual class) — and the section's
+/// vertically centered (the group-header visual class) - and the section's
 /// EXPAND/COLLAPSE button: the whole strip is clickable, the +/- marker
 /// prefix carries the state.
 fn emitInspectorSectionStrip(
@@ -1405,7 +1405,7 @@ fn emitInspectorSectionStrip(
 /// the inspector target (enemy type vs player loadout): the template its
 /// controls read, the `EntityEditTarget` its commits carry (text-field
 /// refs), and the team gradient its controls tint with (enemy content =
-/// enemy gradient, player content = player gradient — matching the
+/// enemy gradient, player content = player gradient - matching the
 /// entity-inspect panel's team-gradient coloring).
 pub const InspectorEntityContext = struct {
     template: types.Entity,
@@ -1416,7 +1416,7 @@ pub const InspectorEntityContext = struct {
 /// The decoration type an inspector content path edits, resolved from
 /// the inspector target: the definition its controls read. Coloring is
 /// the WORLD gradient (decorations index into it, matching the in-game
-/// tinting) — carried by the active theme, not this struct.
+/// tinting) - carried by the active theme, not this struct.
 pub const InspectorDecorationContext = struct {
     type_definition: types.DecorationTypeDef,
 };
@@ -1450,7 +1450,7 @@ fn buildEditorInspectorContent(
 
     // Target resolution: the active entity/decoration tool, a selection of
     // placements that all reference one type, or the PLAYER fallback (the
-    // '!' spawn's loadout) — see editorInspectorTarget. All paths share
+    // '!' spawn's loadout) - see editorInspectorTarget. All paths share
     // the windowing machinery below; they differ in entries + context.
     // Exactly one context is populated (the one its entries read).
     const target = editorInspectorTarget(editor);
@@ -1518,10 +1518,10 @@ fn buildEditorInspectorContent(
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
 
-    // Team gradient throughout — the context's gradient (enemy content
+    // Team gradient throughout - the context's gradient (enemy content
     // enemy, player content player; matching the entity-inspect panel's
     // team-gradient coloring). Decoration content tints with the WORLD
-    // gradient instead (the in-game decoration tinting) — one button
+    // gradient instead (the in-game decoration tinting) - one button
     // color, resolved per target (the section strips read it too). Item
     // content tints with the PLAYER gradient (matching the Items palette
     // group's tinting).
@@ -1540,7 +1540,7 @@ fn buildEditorInspectorContent(
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
     // Windowed emission (the skills-panel model, variable-height entries):
-    // an entry is emitted only when it FULLY fits the visible window —
+    // an entry is emitted only when it FULLY fits the visible window -
     // partially-visible entries are skipped (nothing half-draws or
     // overflows the panel; the scrollbar thumb conveys the position).
     var start_unit: i32 = 0;
@@ -1558,7 +1558,7 @@ fn buildEditorInspectorContent(
             .height = units * editor_inspector_row_height,
         };
         switch (entry) {
-            // A blank unit — the section-break gap.
+            // A blank unit - the section-break gap.
             .spacer => {},
             // Section header: a panel-backed strip (the group-header visual
             // class), label left-padded + vertically centered.
@@ -1572,7 +1572,7 @@ fn buildEditorInspectorContent(
                 active_theme,
             ),
             // Field entry (two lines): the label line on top, the editable
-            // value below it — full content width, one thing per line.
+            // value below it - full content width, one thing per line.
             .field => |row| {
                 try elements.append(allocator, .{ .text_label = .{
                     .text = row.label,
@@ -1593,7 +1593,7 @@ fn buildEditorInspectorContent(
                         control_rect,
                         active_theme,
                     ),
-                    // The decoration content's sprite row — same emitter,
+                    // The decoration content's sprite row - same emitter,
                     // decoration context (a decoration's sprite id is its
                     // bare stem or `custom/<mission>/<stem>`).
                     .decoration_sprite_button => try emitInspectorSpriteButton(
@@ -1615,7 +1615,7 @@ fn buildEditorInspectorContent(
                         field_id,
                         active_theme,
                     ),
-                    // A palette item TYPE's field (name / stat) — the same
+                    // A palette item TYPE's field (name / stat) - the same
                     // element, reading the item context (the `.item_type`
                     // ref target).
                     .item_text => |field_id| try emitInspectorItemTextField(
@@ -1628,7 +1628,7 @@ fn buildEditorInspectorContent(
                         field_id,
                         active_theme,
                     ),
-                    // An inventory slot item's field (name / stat) — the
+                    // An inventory slot item's field (name / stat) - the
                     // same element over the selected slot's item (the
                     // `.inventory_slot` ref target; the entries only
                     // exist while the slot is selected + occupied, so
@@ -1657,7 +1657,7 @@ fn buildEditorInspectorContent(
                         null,
                         control_rect,
                     ),
-                    // The decoration content's swatch row — the WORLD
+                    // The decoration content's swatch row - the WORLD
                     // gradient + the decoration commit action.
                     .decoration_swatches => try emitInspectorColorSwatches(
                         elements,
@@ -1715,7 +1715,7 @@ fn buildEditorInspectorContent(
                 );
             },
             // The utility-skill bar: the label line + one row of five
-            // 128×128 skill slots — the entity-inspect look (skill-button
+            // 128×128 skill slots - the entity-inspect look (skill-button
             // frame + icon, the empty diamond), each opening the picker.
             .utility_skill_row => {
                 try emitInspectorSlotLabel(elements, allocator, cell, "Skill bar", active_theme);
@@ -1748,7 +1748,7 @@ fn buildEditorInspectorContent(
                     active_theme,
                 );
             },
-            // The player loadout's name — a read-only value line (the
+            // The player loadout's name - a read-only value line (the
             // name arrives with the imported player data).
             .player_name_line => {
                 try emitInspectorSlotLabel(elements, allocator, cell, "Name", active_theme);
@@ -1765,9 +1765,9 @@ fn buildEditorInspectorContent(
             },
             // The Import button: copy the session's player data (or the
             // new-game default, with none) into the loadout.
-            // The Import row: TWO half-width buttons — Player data (the
+            // The Import row: TWO half-width buttons - Player data (the
             // session's data, or the new-game default with none) and Max
-            // player (the shipped data/max_player.txt loadout — the
+            // player (the shipped data/max_player.txt loadout - the
             // author-times tool for official missions).
             .import_player => {
                 try emitInspectorSlotLabel(elements, allocator, cell, "Import", active_theme);
@@ -1805,7 +1805,7 @@ fn buildEditorInspectorContent(
             // One row of the inventory slot grid: six square cells
             // (occupied = item icon overlay, the type-cell visual class;
             // the selected cell carries the edge highlight). Clicking a
-            // cell selects the slot — the detail entries below are the
+            // cell selects the slot - the detail entries below are the
             // per-frame insert.
             .inventory_slot_row => |row_index| {
                 try emitInspectorInventorySlotRow(
@@ -1819,7 +1819,7 @@ fn buildEditorInspectorContent(
             },
             // The selected slot's Add/Delete row (the FIRST detail
             // entry below its slot row): the "Slot N" label line + the
-            // half-width button — Add while the slot is empty, Delete
+            // half-width button - Add while the slot is empty, Delete
             // while an item is present.
             .inventory_item_button => |slot_index| {
                 const label = try std.fmt.allocPrint(allocator, "Slot {d}", .{slot_index + 1});
@@ -1844,7 +1844,7 @@ fn buildEditorInspectorContent(
                     active_theme.lightest,
                 );
             },
-            // The selected slot's type-pick rows — the item tool
+            // The selected slot's type-pick rows - the item tool
             // inspector's exact rows over the slot's item (reset-
             // everything picks; emitted only while occupied).
             .inventory_item_type_rows => {
@@ -1873,7 +1873,7 @@ fn buildEditorInspectorContent(
                     .select_editor_inventory_item_type,
                 );
             },
-            // One ENEMY layer: the slot row — the sprite-stem button (a
+            // One ENEMY layer: the slot row - the sprite-stem button (a
             // re-pick opens the layer picker for this index) + Delete.
             .entity_layer => |layer_index| {
                 try emitInspectorSlotLabel(
@@ -1941,7 +1941,7 @@ fn buildEditorInspectorContent(
                     active_theme.lightest,
                 );
             },
-            // One DECORATION layer — the entity arms' shape over the
+            // One DECORATION layer - the entity arms' shape over the
             // decoration context (world gradient, decoration actions).
             .decoration_layer => |layer_index| {
                 try emitInspectorSlotLabel(
@@ -2008,7 +2008,7 @@ fn buildEditorInspectorContent(
             },
             // The item content's type-pick rows: the "Type" label line +
             // the weapon-type row + the non-weapon-kind row (a differing
-            // pick resets the item — see emitInspectorItemTypeRows).
+            // pick resets the item - see emitInspectorItemTypeRows).
             .item_type_rows => {
                 try emitInspectorSlotLabel(elements, allocator, cell, "Type", active_theme);
                 const weapon_row: Rectangle = .{
@@ -2037,7 +2037,7 @@ fn buildEditorInspectorContent(
     }
 
     // Scrollbar (only when the content overflows): track + proportional
-    // thumb in the right `ui_gap` margin — the skills-panel geometry,
+    // thumb in the right `ui_gap` margin - the skills-panel geometry,
     // measured in row units.
     if (total_units > visible_rows) {
         const track_x = panel.x + panel.width - ui_gap +
@@ -2069,14 +2069,14 @@ fn buildEditorInspectorContent(
 /// computes ALL render data (it owns the metrics + the focused buffer):
 /// the display text is the live buffer while THIS field is focused, else
 /// the field's current value; the caret/selection geometry is measured
-/// from the buffer. Display text is duped into the frame allocator — an
+/// from the buffer. Display text is duped into the frame allocator - an
 /// element slice must never point into UiState (it mutates between
 /// frames, and the previous frame's elements are hit-tested a frame
 /// later).
 /// The base-sprite row's control (entity + decoration content): a
 /// half-width panel-backed button showing the current stem's FILE NAME
-/// (a custom namespaced stem displays as its last path segment — see
-/// `spriteDisplayName`) — clicking opens the centered sprite picker (the
+/// (a custom namespaced stem displays as its last path segment - see
+/// `spriteDisplayName`) - clicking opens the centered sprite picker (the
 /// input site routes entity vs decoration by the inspector target).
 fn emitInspectorSpriteButton(
     elements: *UiElementList,
@@ -2145,7 +2145,7 @@ fn emitInspectorTextField(
 }
 
 /// The inventory slot's text field (name / one stat): the item
-/// content's exact shape over the selected slot's item — the slot index
+/// content's exact shape over the selected slot's item - the slot index
 /// rides the `.inventory_slot` ref target (the level-name pattern, so a
 /// mid-edit selection change can't retarget the commit).
 fn emitInspectorInventoryItemTextField(
@@ -2174,7 +2174,7 @@ fn emitInspectorInventoryItemTextField(
 }
 
 /// One row of the Inventory section's slot grid: six square cells, one
-/// per slot (`ui/item_slot` button + item icon overlay while occupied —
+/// per slot (`ui/item_slot` button + item icon overlay while occupied -
 /// the type-cell visual class). The selected cell carries the edge
 /// highlight; every cell's click selects its slot.
 fn emitInspectorInventorySlotRow(
@@ -2228,7 +2228,7 @@ fn emitInspectorInventorySlotRow(
 }
 
 /// One of the player content's Import buttons (Player data / Max
-/// player): panel-backed spriteless button + centered label — the
+/// player): panel-backed spriteless button + centered label - the
 /// slot-button visual class.
 fn emitInspectorImportButton(
     elements: *UiElementList,
@@ -2280,7 +2280,7 @@ fn emitInspectorInventoryItemButton(
     label_color: Color,
 ) !void {
     const button_color = gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    // Half the panel width — full-width reads as a section header.
+    // Half the panel width - full-width reads as a section header.
     const rect: Rectangle = .{
         .x = control_rect.x,
         .y = control_rect.y,
@@ -2314,7 +2314,7 @@ fn emitInspectorInventoryItemButton(
 }
 
 /// The item content's text field (name / one stat): the entity field's
-/// exact shape over the item context — `itemTextFieldValue` is the value
+/// exact shape over the item context - `itemTextFieldValue` is the value
 /// source, `.item_type` the ref target.
 fn emitInspectorItemTextField(
     elements: *UiElementList,
@@ -2342,7 +2342,7 @@ fn emitInspectorItemTextField(
 
 /// The text-field ELEMENT (shared by the inspector's entity fields and
 /// the metadata sidebar's name fields): the paper-strip visual (lightest
-/// frame, pure-black text — the contrast is the point; the caret +
+/// frame, pure-black text - the contrast is the point; the caret +
 /// selection draw in the same color, see the backend arm) + the focused
 /// field's live buffer/caret/selection overlay.
 fn emitTextFieldUi(
@@ -2390,7 +2390,7 @@ fn emitTextFieldUi(
 
 /// The color_index control (base + layer rows, entity + decoration
 /// content): one swatch per gradient index (the settings screen's
-/// player-color row is the precedent — colored fill + invisible payload
+/// player-color row is the precedent - colored fill + invisible payload
 /// button + highlighted selection). The gradient source + commit action
 /// differ per content kind (enemy / player team gradient via
 /// `.select_editor_entity_color`, world gradient via
@@ -2437,7 +2437,7 @@ fn emitInspectorColorSwatches(
 }
 
 /// A true/false toggle strip: a panel-backed button showing the current
-/// value in the FORMAT's vocabulary ("true"/"false" — the exact tokens
+/// value in the FORMAT's vocabulary ("true"/"false" - the exact tokens
 /// `asBool` parses); clicking flips it via `action`. Shared by the entity
 /// + decoration toggle rows (the plan resolves current + action).
 fn emitInspectorToggle(
@@ -2451,7 +2451,7 @@ fn emitInspectorToggle(
     active_theme: types.ActiveColorTheme,
 ) !void {
     const label: []const u8 = if (current) "true" else "false";
-    // Half the panel width — full-width reads as a section header; the
+    // Half the panel width - full-width reads as a section header; the
     // value vocabulary ("true"/"false") carries the state, no highlight.
     const rect: Rectangle = .{
         .x = control_rect.x,
@@ -2504,7 +2504,7 @@ fn emitInspectorSlotLabel(
 
 /// A weapon slot's control line: the six weapon types as cells (the
 /// enemy_<type> silhouette the entity will actually wield, on the shared
-/// button background — the palette tool-cell visual class). Picking a type
+/// button background - the palette tool-cell visual class). Picking a type
 /// CREATES a default weapon while the slot is empty, or RETYPES in place
 /// (name/damage kept); the current type is highlighted. A Delete button
 /// follows while a weapon is equipped (clears the slot to null).
@@ -2548,7 +2548,7 @@ fn emitInspectorWeaponSlot(
             .highlighted = highlighted,
             .tooltip = .{ .header = try spanRow(allocator, text(types.weaponTypeLabel(weapon_type))) },
         } });
-        // The item icon (the inventory's `items/<type>` art — the author
+        // The item icon (the inventory's `items/<type>` art - the author
         // picks an ITEM, not an entity overlay), palette item-icon tint.
         const sprite_id = try std.fmt.allocPrint(
             allocator,
@@ -2590,11 +2590,11 @@ fn emitInspectorWeaponSlot(
 }
 
 /// The item content's type-pick rows: the six weapon types on the first
-/// row, the five non-weapon kinds on the second (skill tomes excluded —
+/// row, the five non-weapon kinds on the second (skill tomes excluded -
 /// not authorable as ground items). The weapon-slot cells' visual class
 /// (`ui/item_slot` button + the `items/<type>` icon, palette tinting).
 /// Any pick that DIFFERS from the current item resets it to a
-/// "New <Kind>" default with zeroed stats (author decision — no
+/// "New <Kind>" default with zeroed stats (author decision - no
 /// retype-keeps-identity case; the input handler owns that policy); an
 /// identical pick is a no-op. The current type/kind is highlighted.
 fn emitInspectorItemTypeRows(
@@ -2635,7 +2635,7 @@ fn emitInspectorItemTypeRows(
     }
 
     // Row 2: the non-weapon kinds (highlighted while the item is that
-    // kind). Skill tomes are never offered — not level-authorable.
+    // kind). Skill tomes are never offered - not level-authorable.
     const gear_kinds = [_]types.ItemKind{ .amulet, .coat, .gloves, .pants, .boots };
     for (gear_kinds, 0..) |kind, loop_index| {
         const highlighted = types.itemKindOf(item) == kind;
@@ -2719,7 +2719,7 @@ fn emitInspectorGearSlot(
     const occupied = context.template.gearSlotItem(slot) != null;
     const label: []const u8 = if (occupied) "Delete" else "Add";
     const action: types.Action = if (occupied) .delete_editor_item else .add_editor_item;
-    // Half the panel width — full-width reads as a section header.
+    // Half the panel width - full-width reads as a section header.
     const rect: Rectangle = .{
         .x = control_rect.x,
         .y = control_rect.y,
@@ -2740,7 +2740,7 @@ fn emitInspectorGearSlot(
 }
 
 /// A full-rect panel-backed slot button (Add / Delete): panel + spriteless
-/// button + centered label — the toggle's visual class.
+/// button + centered label - the toggle's visual class.
 fn emitInspectorSlotButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2779,7 +2779,7 @@ fn emitInspectorSlotButton(
 }
 
 /// The decoration content's Footprint row's control: a half-width
-/// panel-backed button showing the tile count — clicking opens the
+/// panel-backed button showing the tile count - clicking opens the
 /// centered footprint editor (the sprite button's look, its own action).
 fn emitInspectorFootprintButton(
     elements: *UiElementList,
@@ -2824,7 +2824,7 @@ fn emitInspectorFootprintButton(
 
 /// The display form of a sprite stem: the FILE STEM only. Official stems
 /// are already bare (`skeleton_1`); custom mission-bundled stems are
-/// namespaced `custom/<mission-dir>/<stem>` — the path is identity for
+/// namespaced `custom/<mission-dir>/<stem>` - the path is identity for
 /// the config + the pick payloads, noise for the author. A suffix slice
 /// of the input (no allocation).
 fn spriteDisplayName(sprite: []const u8) []const u8 {
@@ -2846,9 +2846,9 @@ fn inspectorLayerLabel(
 }
 
 /// One layer's slot row (the Layers section): the control line holds the
-/// sprite-stem button (showing the stem's FILE NAME — `spriteDisplayName`
-/// — a re-pick opens the layer picker for this index) +
-/// a Delete button — the weapon-slot row's layout, entity + decoration
+/// sprite-stem button (showing the stem's FILE NAME - `spriteDisplayName`
+/// - a re-pick opens the layer picker for this index) +
+/// a Delete button - the weapon-slot row's layout, entity + decoration
 /// content alike (the actions + button color differ per kind).
 fn emitInspectorLayerRow(
     elements: *UiElementList,
@@ -2858,7 +2858,7 @@ fn emitInspectorLayerRow(
     layer_index: u32,
     open_action: types.Action,
     delete_action: types.Action,
-    /// The layer's current draw side (decoration layers — Back/Front
+    /// The layer's current draw side (decoration layers - Back/Front
     /// button), or null when the row's kind has no draw side (entity
     /// layers are overlays only).
     behind: ?bool,
@@ -2920,7 +2920,7 @@ fn emitInspectorLayerRow(
     );
 
     // The draw-side toggle (decoration layers only): fills the row's
-    // remaining space after Delete — the label carries the state
+    // remaining space after Delete - the label carries the state
     // ("Back" draws before the base, "Front" over it).
     if (behind) |current_behind| {
         const behind_rect: Rectangle = .{
@@ -2944,7 +2944,7 @@ fn emitInspectorLayerRow(
 }
 
 /// A panel-backed layer button with a centered label (Delete / Pick
-/// sprite) carrying the layer-index payload — `emitInspectorSlotButton`'s
+/// sprite) carrying the layer-index payload - `emitInspectorSlotButton`'s
 /// visual class (null layer index = the add-layer button).
 pub fn emitInspectorLayerButton(
     elements: *UiElementList,
@@ -2983,9 +2983,9 @@ pub fn emitInspectorLayerButton(
     } });
 }
 /// A utility-skill slot's control line: a half-width button showing the
-/// slot's current skill (or "None") — clicking opens the centered skill
+/// slot's current skill (or "None") - clicking opens the centered skill
 /// picker for that slot.
-/// The utility-skill bar as ONE row of five 128×128 skill slots — the
+/// The utility-skill bar as ONE row of five 128×128 skill slots - the
 /// entity-inspect skill look: occupied = skill-button frame + full-size
 /// icon + skill tooltip; empty = the `ui/skill_slot_empty` diamond. Every
 /// slot opens the centered picker (the slot index rides the button). The
@@ -3034,7 +3034,7 @@ fn emitInspectorUtilitySkillRow(
                 .blocks_input = false,
             } });
         } else {
-            // Empty slot — the diamond marker (the skill-bar look); the
+            // Empty slot - the diamond marker (the skill-bar look); the
             // tooltip names the pick target.
             try elements.append(allocator, .{ .button = .{
                 .sprite_id = "ui/skill_slot_empty",
@@ -3052,7 +3052,7 @@ fn emitInspectorUtilitySkillRow(
 
 /// M2 press arbitration for a focused text field (see DESIGN → UI
 /// Framework → Text input widget): true when a left press may PROCEED
-/// after committing the field — the press is on a sibling control of the
+/// after committing the field - the press is on a sibling control of the
 /// field's own panel (anything inside the open inspector panel or the
 /// open metadata sidebar, or either toggle button); false when it must be
 /// consumed as pure dismissal. Callers gate on a focused field before
@@ -3069,7 +3069,7 @@ pub fn textEditPressProceeds(
         if (action == .toggle_editor_inspector) return true;
         if (action == .toggle_editor_metadata_sidebar) return true;
         // A picker surface (a skill cell, a sprite cell, a picker tab, or
-        // the close button): the picker is the ACTIVE interaction — commit
+        // the close button): the picker is the ACTIVE interaction - commit
         // the field and let the pick fire in the same click (it floats
         // outside the panel rects, so the region checks below wouldn't
         // cover it).
@@ -3083,7 +3083,7 @@ pub fn textEditPressProceeds(
     return false;
 }
 
-/// All inspector sections expanded — the content tests' standard state
+/// All inspector sections expanded - the content tests' standard state
 /// (the shipped default is ALL COLLAPSED; see
 /// `UiState.editor_inspector_section_expanded`). Pub for the main.zig
 /// focus-on-click test, which builds the inspector through the real view.
@@ -3159,7 +3159,7 @@ const MetadataSidebarPanel = struct {
     }
 };
 
-/// The scrollbar's track + thumb rects (the shared scrollbar grays) —
+/// The scrollbar's track + thumb rects (the shared scrollbar grays) -
 /// presence means the builder judged the content as overflowing the
 /// window.
 fn countScrollbarRects(elements: *const UiElementList) usize {
@@ -3193,7 +3193,7 @@ fn expectInspectorToggleShape(elements: *const UiElementList) !void {
     try std.testing.expectEqual(Action.toggle_editor_inspector, button.action);
     try std.testing.expect(!button.highlighted);
     try std.testing.expect(button.sprite_id == null);
-    // The toggle is self-explanatory (its label says what it does) — no
+    // The toggle is self-explanatory (its label says what it does) - no
     // tooltip by design.
     try std.testing.expect(button.tooltip == null);
 
@@ -3235,7 +3235,7 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         try std.testing.expect(name_field.caret == null);
         try std.testing.expect(name_field.selection == null);
         // The paper-strip treatment: lightest frame, PURE-black text
-        // (literal 0,0,0 — the caret/selection follow the text color).
+        // (literal 0,0,0 - the caret/selection follow the text color).
         try std.testing.expectEqual(theme.lightest, name_field.frame_color);
         try std.testing.expectEqual(types.Color{ .r = 0, .g = 0, .b = 0 }, name_field.text_color);
         try std.testing.expectEqual(
@@ -3266,7 +3266,7 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         const name_field = findTextField(&elements, .entity_name).?;
         try std.testing.expectEqualStrings("Skeleton W", name_field.text);
-        // Selection spans buffer glyphs 8..10, caret sits at index 8 — the
+        // Selection spans buffer glyphs 8..10, caret sits at index 8 - the
         // geometry is the metrics' own measurement of those slices (the
         // accumulation truncates once at the end, so per-glyph arithmetic
         // would drift; measure the same way the builder does).
@@ -3316,7 +3316,7 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
     };
 
     // Every scroll offset is scanned; each fact is asserted wherever it
-    // is visible (the exhaustiveness shape — geometry is the input,
+    // is visible (the exhaustiveness shape - geometry is the input,
     // never the expectation; DESIGN → Testing → Assertion patterns).
     const panel = InspectorPanel{
         .arena = arena.allocator(),
@@ -3439,7 +3439,7 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
             .name = "Boss",
             .sprite = "custom/artists_den/boss",
             .team = 1,
-            // Flag ON: custom art keeps its own colors — and the Color
+            // Flag ON: custom art keeps its own colors - and the Color
             // row is hidden while it is (no dead tint control).
             .keep_original_colors = true,
             .layers = &entity_layers,
@@ -3450,7 +3450,7 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // The display is a pure projection — the state keeps the full
+    // The display is a pure projection - the state keeps the full
     // namespaced stem (pick payloads + the level file carry the path).
     try std.testing.expectEqualStrings(
         "custom/artists_den/boss",
@@ -3602,7 +3602,7 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
             },
             .solid_rect => |rect| {
                 // The WORLD gradient's index-3 color is the swatch fill for
-                // index 3 (the others are black — assert the distinctive one).
+                // index 3 (the others are black - assert the distinctive one).
                 if (std.meta.eql(rect.color, world_three)) world_fill_seen = true;
             },
             else => {},
@@ -3678,7 +3678,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         _ = try panel.buildAt(scroll, &elements);
 
         // The equipped weapon's fields carry its values (the pair is
-        // adjacent 1-unit rows — gate on both so a window edge between
+        // adjacent 1-unit rows - gate on both so a window edge between
         // them doesn't false-fail).
         const main_hand_name = findTextField(&elements, .{ .item_name = .main_hand });
         const main_hand_damage = findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } });
@@ -3691,7 +3691,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
             off_hand_fields_seen = true;
         }
 
-        // Type cells: one full row per hand — the main hand's carries the
+        // Type cells: one full row per hand - the main hand's carries the
         // highlighted sword + a Delete; the off hand's carries neither.
         var main_hand_cells: usize = 0;
         var main_hand_highlighted: ?types.WeaponType = null;
@@ -3835,7 +3835,7 @@ test "editorInspectorTarget: one shared enemy type wins; tiles and the '=' are i
     );
 
     // Several enemies of the SAME type, mixed with tiles and the '='
-    // (legitimately uninspectable — they contribute nothing) → still that
+    // (legitimately uninspectable - they contribute nothing) → still that
     // one type.
     try std.testing.expectEqual(
         EditorInspectorTarget{ .entity_type = 0 },
@@ -3909,7 +3909,7 @@ test "editorInspectorTarget: selected decorations resolve to their type" {
     );
 
     // An out-of-range placement index or a stale palette type id is an
-    // unresolvable bug-state reference — fallback, not a crash (the
+    // unresolvable bug-state reference - fallback, not a crash (the
     // delete arms keep the selection consistent, so this is defensive).
     try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .decoration_placement = 99 }}));
 
@@ -4002,7 +4002,7 @@ test "editorInspectorTarget: unresolvable references force the player fallback" 
     );
 
     // An out-of-range placement index or a stale palette type id is an
-    // unresolvable bug-state reference — fallback, not a crash (the
+    // unresolvable bug-state reference - fallback, not a crash (the
     // delete arms keep the selection consistent, so this is defensive).
     try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .entity_placement = 99 }}));
     try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .ground_item_placement = 99 }}));
@@ -4172,7 +4172,7 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // A coat (two stats) — the field set follows the kind; a stat the
+    // A coat (two stats) - the field set follows the kind; a stat the
     // kind doesn't carry is never offered at any offset.
     {
         const item_types = [_]types.ItemTypeDef{.{
@@ -4220,7 +4220,7 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
         try std.testing.expect(!weapon_damage_seen);
     }
 
-    // A skill tome (unreachable live — not authorable): no name field, no
+    // A skill tome (unreachable live - not authorable): no name field, no
     // stat fields at any offset, but the type rows still render.
     {
         const item_types = [_]types.ItemTypeDef{.{
@@ -4283,7 +4283,7 @@ test "textEditPressProceeds: M2 region is the open inspector panel + its toggle"
     try std.testing.expect(!textEditPressProceeds(true, false, outside_panel, .undo));
     try std.testing.expect(!textEditPressProceeds(true, false, over_viewport, null));
     // Picker surfaces float OUTSIDE the panel rect but are the active
-    // interaction — the press proceeds (commit + pick in one click).
+    // interaction - the press proceeds (commit + pick in one click).
     try std.testing.expect(textEditPressProceeds(true, false, outside_panel, .select_editor_utility_skill));
     try std.testing.expect(textEditPressProceeds(true, false, outside_panel, .close_editor_picker));
     // The metadata sidebar's rect + toggle behave the same (a sibling
@@ -4312,13 +4312,13 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     // Select tool, empty selection: the open panel carries the PLAYER
-    // content (the fallback target) — ALL SECTIONS COLLAPSED by default:
+    // content (the fallback target) - ALL SECTIONS COLLAPSED by default:
     // five headers (+ markers) + spacers, everything fits, no scrollbar.
     const editor: types.Editor = .{};
 
     // Open (the default): the toggle trio + background panel + five
     // collapsed section strips. The exhaustive census over the single
-    // window (all-collapsed content fits — max scroll 0) pins the exact
+    // window (all-collapsed content fits - max scroll 0) pins the exact
     // ordered content.
     {
         var elements: UiElementList = .empty;
@@ -4339,7 +4339,7 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
 
         // The background panel: flush left, below the button, down to one
         // ui_gap above the expanded palette groups' header strip, tinted
-        // darkest (the background-panel class — button panels tint
+        // darkest (the background-panel class - button panels tint
         // gradient[5]).
         const panel = elements.items[3].nine_slice_panel;
         try std.testing.expectEqualStrings("ui/panel", panel.sprite_id);
@@ -4353,7 +4353,7 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         try std.testing.expectEqual(expanded_header_top - ui_gap, panel.screen_position.y + panel.height);
         try std.testing.expectEqual(theme.darkest, panel.color);
         try std.testing.expect(panel.blocks_input);
-        // The builder draws exactly the shared rect fn — the M2 press
+        // The builder draws exactly the shared rect fn - the M2 press
         // arbitration (`textEditPressProceeds`) reads the same geometry,
         // so the two cannot drift.
         try std.testing.expectEqual(
@@ -4419,7 +4419,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
 
     // THE exhaustive census: every window's labels are an ordered subset
     // of the full content list, and the union of all windows covers it
-    // completely — no never-emitted row, no unreachable row. The list is
+    // completely - no never-emitted row, no unreachable row. The list is
     // the panel's semantic content contract, NOT a window snapshot.
     try census.expectContentReachable(arena.allocator(), panel, &.{
         "Inspector",        "- Identity",  "Name",
@@ -4454,7 +4454,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     }
 
     // The skill row: five picker slots (utility_skill_count), all empty
-    // diamonds for this unequipped template — asserted wherever the
+    // diamonds for this unequipped template - asserted wherever the
     // row is fully visible.
     {
         var skill_row_seen = false;
@@ -4480,7 +4480,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     }
 
     // A stale tool id (the type deleted mid-edit) falls back to the
-    // PLAYER content: the full slot grid is reachable — every inventory
+    // PLAYER content: the full slot grid is reachable - every inventory
     // slot button appears at some offset.
     {
         const stale_editor: types.Editor = .{
@@ -4543,7 +4543,7 @@ test "inspector utility-skill row: occupied slots show the skill, empty the diam
     const max_scroll = try census.maxScroll(panel);
 
     // Wherever the skill row is fully visible: five picker buttons
-    // (utility_skill_count) — blink's slot is the skill button, the rest
+    // (utility_skill_count) - blink's slot is the skill button, the rest
     // the empty diamond, every slot riding its index; the occupied slot
     // carries the full-size skill icon; the cells pitch row height +
     // ui_gap.
@@ -4630,9 +4630,9 @@ test "inspector player content: gear + skills + inventory over player_def, commi
     };
     const max_scroll = try census.maxScroll(panel);
 
-    // The equipped main hand's fields carry `.player_def` — the player
-    // content's commits route there — and the equipped hand shows its
-    // Delete (not Add). The Import row renders BOTH buttons — Player
+    // The equipped main hand's fields carry `.player_def` - the player
+    // content's commits route there - and the equipped hand shows its
+    // Delete (not Add). The Import row renders BOTH buttons - Player
     // data (the session import) and Max player (the shipped max
     // loadout). The skill row: blink occupied in slot 0, the rest
     // diamonds. The inventory grid's first row: the two equipped items
@@ -4866,7 +4866,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         .player_gradient = .{ .colors = .{black} ** 5 ++ .{player_five} },
     };
     // The definitions the gradient rows' derived indices come from: 3
-    // gradients, the active level's wheel index 0 — world 0, enemy
+    // gradients, the active level's wheel index 0 - world 0, enemy
     // AUTO-derives to 1 (0 + 3/3), player is MANUAL at 2.
     const gradients = [_]types.ColorGradient{
         .{ .colors = .{black} ** 6 },
@@ -4905,7 +4905,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     }
 
     // Open + COLLAPSED (the default): the background panel + two section
-    // headers only — the inspector's all-collapsed convention.
+    // headers only - the inspector's all-collapsed convention.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
@@ -4958,7 +4958,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
 
         // The semantic facts, asserted wherever visible: the mission +
         // level name fields' values + targets; the WORLD swatch ALWAYS
-        // outlined (its index is always an explicit pick — no Auto state
+        // outlined (its index is always an explicit pick - no Auto state
         // to carry the outline instead); the outline marks the mode on
         // the enemy (auto) + player (manual, override 2) rows; the
         // scrollbar (track + thumb) present while overflowing.
@@ -4969,7 +4969,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         var player_row_mode_seen = false;
         var scrollbar_seen = false;
         // The gradient rows' index numbers, one seen-flag per role
-        // (world/enemy/player) — the association check fires wherever a
+        // (world/enemy/player) - the association check fires wherever a
         // row's label line is visible.
         var gradient_number_seen: [3]bool = .{ false, false, false };
         var scroll: i32 = 0;
@@ -5049,7 +5049,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
 
             // The gradient rows' index numbers: wherever a row's role
             // label line is visible, a number sits on the SAME line and
-            // carries the semantic values — world 0, enemy AUTO-derived 1
+            // carries the semantic values - world 0, enemy AUTO-derived 1
             // (wheel 0 + 1 of 3), player MANUAL 2.
             const expected_indices = [_]u32{ 0, 1, 2 };
             for (role_label_y, 0..) |maybe_y, role_index| {
@@ -5073,7 +5073,7 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expect(scrollbar_seen);
 
         // Clamp semantics: an out-of-range scroll clamps to the content
-        // max, and the max window shows the TAIL — the mission name
+        // max, and the max window shows the TAIL - the mission name
         // field (the topmost row) is windowed out there.
         var tail_elements: UiElementList = .empty;
         const clamped = try panel.buildAt(99, &tail_elements);
@@ -5123,7 +5123,7 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
     };
     const max_scroll = try census.maxScroll(panel);
 
-    // No selection: bare slot rows only — the section header reachable,
+    // No selection: bare slot rows only - the section header reachable,
     // and NO detail buttons at ANY offset (stronger than any single
     // window).
     {
@@ -5151,7 +5151,7 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
     }
 
     // Selected OCCUPIED slot 4: the detail block inserts directly below
-    // its slot row — Delete (not Add), the type rows (the amulet cell
+    // its slot row - Delete (not Add), the type rows (the amulet cell
     // highlighted), name + spell damage fields, all targeting slot 4;
     // the slot's own cell highlighted. Facts asserted wherever visible.
     {
@@ -5211,7 +5211,7 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
         try std.testing.expect(amulet_cell_seen);
     }
 
-    // Selected EMPTY slot 13: Add only — no type rows, no fields at ANY
+    // Selected EMPTY slot 13: Add only - no type rows, no fields at ANY
     // offset (author decision: an empty slot shows Add until an item
     // exists).
     {
@@ -5268,7 +5268,7 @@ test "inspector team gradient: a team-0 entity type tints with the player gradie
 
     // Same type shape, differing only in team: 0 = helper (player
     // gradient), 2 = enemy team (enemy gradient). The Identity section
-    // strip's panel color is the observable — the context's gradient[5].
+    // strip's panel color is the observable - the context's gradient[5].
     const helper_types = [_]types.EntityTypeDef{.{
         .id = "Helper",
         .template = .{ .name = "Helper", .team = 0 },
@@ -5285,7 +5285,7 @@ test "inspector team gradient: a team-0 entity type tints with the player gradie
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, case.editor, theme, true, &ui_state);
-        // All sections collapsed by default — the first content element
+        // All sections collapsed by default - the first content element
         // (index 4, after the toggle's 3 + the background panel) is the
         // Identity strip; its panel tint is the team gradient's index 5.
         try std.testing.expectEqualStrings("+ Identity", elements.items[6].text_label.text);

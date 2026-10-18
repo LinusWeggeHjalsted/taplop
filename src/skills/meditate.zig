@@ -13,7 +13,7 @@ const Skill = skill_mod.Skill;
 /// Meditate: a cantrip. Resets the cooldown of each OTHER equipped
 /// utility skill (Meditate itself excluded). Self-cast, non-turn-ending.
 /// Simpler than Focus: utility slots live on the entity itself, so useSkill
-/// composes change_cooldown directly — no defs, no machinery event.
+/// composes change_cooldown directly - no defs, no machinery event.
 pub const skill = Skill{
     .name = "Meditate",
     .skill_type = .cantrip,
@@ -32,12 +32,12 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// The number of OTHER equipped utility skills currently ticking —
+/// The number of OTHER equipped utility skills currently ticking -
 /// Meditate's reset count (and, in value units, its rating).
 fn otherTickingUtilityCount(caster: types.Entity) u32 {
     var count: u32 = 0;
@@ -68,7 +68,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = count });
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

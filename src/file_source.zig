@@ -8,13 +8,13 @@
 //! game never depends on the current working directory.
 //!
 //! Read order (first hit wins):
-//!   1. in-memory VFS — uploaded zips / fetched custom missions (transient;
+//!   1. in-memory VFS - uploaded zips / fetched custom missions (transient;
 //!      not wired)
-//!   2. persistent dir — `~/.ziglop/<path>`
-//!   3. embedded map — `data/**` + `assets/**` baked into the exe
+//!   2. persistent dir - `~/.ziglop/<path>`
+//!   3. embedded map - `data/**` + `assets/**` baked into the exe
 //!
 //! Because the persistent dir is checked before the embedded map, a player can
-//! drop a file at `~/.ziglop/<shipped-path>` to shadow shipped content — a
+//! drop a file at `~/.ziglop/<shipped-path>` to shadow shipped content - a
 //! modding seam by side effect (accepted as-is; see DESIGN → File System & IO). Writes
 //! target the persistent dir only and reject `data/`/`assets/` prefixes so the
 //! game itself can never shadow its own shipped content.
@@ -33,7 +33,7 @@ const loaders = @import("loaders.zig");
 const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 
 /// The shipped campaign mission-directory paths (e.g.
-/// "data/campaigns/main_campaign/missions/beginnings") — the mission
+/// "data/campaigns/main_campaign/missions/beginnings") - the mission
 /// browser's Official tab. Comptime from the embedded map (shipped content
 /// is immutable per build); sorted for a stable browser order. Mirrors
 /// ui/editor_pickers.zig's `official_entity_sprite_stems` comptime scan.
@@ -51,7 +51,7 @@ const official_mission_dir_paths: []const []const u8 = build: {
         const stem = key[missions_index + "/missions/".len .. key.len - "/mission.txt".len];
         if (stem.len == 0 or std.mem.indexOfScalar(u8, stem, '/') != null) continue;
         const dir_path = key[0 .. key.len - "/mission.txt".len];
-        // Insert in sorted position (comptime slices have const elements —
+        // Insert in sorted position (comptime slices have const elements -
         // no in-place sort).
         var insert_index: usize = 0;
         while (insert_index < paths.len and std.mem.lessThan(u8, paths[insert_index], dir_path)) : (insert_index += 1) {}
@@ -80,7 +80,7 @@ pub const FileSource = struct {
         allocator: std.mem.Allocator,
         path: []const u8,
     ) ![]u8 {
-        // 1. in-memory VFS — not wired.
+        // 1. in-memory VFS - not wired.
 
         // 2. persistent dir (player overrides / custom content).
         if (self.persistent_dir.readFileAlloc(self.io, path, allocator, read_limit)) |bytes| {
@@ -125,7 +125,7 @@ pub const FileSource = struct {
         format: [:0]const u8,
     };
 
-    /// The accepted audio-file extensions, in lookup priority order — see
+    /// The accepted audio-file extensions, in lookup priority order - see
     /// DESIGN → Audio (file formats). `.wav` MUST be tried first: the
     /// layering is per-path and every shipped sound is an `.ogg` in the
     /// embedded map, so an `.ogg`-first order would always hit the embedded
@@ -135,7 +135,7 @@ pub const FileSource = struct {
     pub const audio_file_extensions = [2][:0]const u8{ ".wav", ".ogg" };
 
     /// Read the first existing audio file at `path_without_extension` plus
-    /// each accepted extension, in `audio_file_extensions` priority order —
+    /// each accepted extension, in `audio_file_extensions` priority order -
     /// every candidate goes through the normal `readFile` layering
     /// (persistent dir first, embedded second). Returns the bytes + the
     /// extension that hit as the format tag, or null when no candidate
@@ -165,7 +165,7 @@ pub const FileSource = struct {
     /// relative path. Does NOT consult the embedded map (shipped content is
     /// always present; this is for detecting player-written artifacts like an
     /// autosave). No allocation. Returns false on any non-FileNotFound stat
-    /// error too (treated as "not available" — the caller degrades to
+    /// error too (treated as "not available" - the caller degrades to
     /// "no autosave" rather than crashing at startup over a permission quirk).
     pub fn fileExists(self: *const FileSource, path: []const u8) bool {
         _ = self.persistent_dir.statFile(self.io, path, .{}) catch return false;
@@ -173,11 +173,11 @@ pub const FileSource = struct {
     }
 
     /// List the `.png` FILE NAMES (sorted, extension included) directly
-    /// inside `dir_path` under the persistent dir — the mission-local
+    /// inside `dir_path` under the persistent dir - the mission-local
     /// sprite picker's source list (a flat scan of the mission directory;
-    /// see DESIGN → Architecture → Level Editor → Editor UI layout — the
+    /// see DESIGN → Architecture → Level Editor → Editor UI layout - the
     /// centered sprite picker). Empty when the dir doesn't exist. Shipped
-    /// (embedded) dirs are NOT scanned — shipped missions carry no PNGs,
+    /// (embedded) dirs are NOT scanned - shipped missions carry no PNGs,
     /// so the mission-local tab is empty for them by construction.
     pub fn listPersistentPngFiles(
         self: *const FileSource,
@@ -209,13 +209,13 @@ pub const FileSource = struct {
     }
 
     /// Write a file to the persistent dir only. Rejects `data/`/`assets/`
-    /// prefixes — shipped content is immutable from the game's perspective
+    /// prefixes - shipped content is immutable from the game's perspective
     /// (players may still drop override files into the persistent dir by hand;
     /// that's the modding seam, not a game-driven write). Creates parent
     /// directories as needed so callers can write any subpath (e.g.
     /// `logs/session_log_*.txt`) without pre-creating the tree. On web
     /// (emscripten), the write lands in the in-memory (MEMFS) persistent
-    /// mount only — the session-scoped storage model touches no browser
+    /// mount only - the session-scoped storage model touches no browser
     /// storage at all (no syncfs, no IDBFS; see DESIGN → File System & IO →
     /// Web storage model).
     pub fn writeFile(
@@ -224,7 +224,7 @@ pub const FileSource = struct {
         bytes: []const u8,
     ) !void {
         if (std.mem.startsWith(u8, path, "data/") or std.mem.startsWith(u8, path, "assets/")) {
-            @panic("FileSource.writeFile: refused write to shipped path — built-in data/assets are immutable");
+            @panic("FileSource.writeFile: refused write to shipped path - built-in data/assets are immutable");
         }
         try self.ensureParentDirs(path);
         try self.persistent_dir.writeFile(self.io, .{
@@ -239,13 +239,13 @@ pub const FileSource = struct {
         const dir = std.fs.path.dirname(path) orelse return;
         if (dir.len == 0) return;
         // createDirPath is idempotent (succeeds if the dir already exists), so
-        // any error here is a genuine problem (permissions, disk full, etc.) —
+        // any error here is a genuine problem (permissions, disk full, etc.) -
         // propagate it rather than silently swallowing.
         try self.persistent_dir.createDirPath(self.io, dir);
     }
 
     /// One mission in the player's local collection. `id` is the folder
-    /// name under `missions/` — for editor-saved and online-downloaded
+    /// name under `missions/` - for editor-saved and online-downloaded
     /// missions this is `<uuid>_<slug>`; for hand-placed or imported
     /// folders it's whatever the folder is named (all accepted). `path` is
     /// the mission-directory path ("missions/<id>") as `open_editor` /
@@ -254,7 +254,7 @@ pub const FileSource = struct {
     /// file beyond the known config set (mission.txt / player.txt /
     /// level_*.txt). `author_turns` is the validation run's turn count (the
     /// author medal target), read from the validation replay file's
-    /// metadata — null when the mission hasn't been validated (no replay
+    /// metadata - null when the mission hasn't been validated (no replay
     /// file). Medal targets (gold/silver/bronze) are DERIVED from
     /// `author_turns` at display time, not stored here.
     pub const MissionEntry = struct {
@@ -265,7 +265,7 @@ pub const FileSource = struct {
         has_custom_assets: bool,
         author_turns: ?u32,
         /// The local tab's recency sort key: the MAX mtime across the
-        /// mission folder's files — any change (editor save, custom png,
+        /// mission folder's files - any change (editor save, custom png,
         /// validation replay) counts as an update. 0 for official entries
         /// (embedded content has no filesystem; the Official tab keeps its
         /// comptime order).
@@ -274,12 +274,12 @@ pub const FileSource = struct {
 
     /// Enumerate the player's local mission collection under `missions/`
     /// in the persistent dir (editor saves land in `missions/<uuid>_<slug>/`;
-    /// hand-placed and imported folders of any name are accepted too — the
+    /// hand-placed and imported folders of any name are accepted too - the
     /// id is whatever the folder is named). Returns one entry per
     /// subdirectory, with metadata read from each mission's `mission.txt`,
-    /// sorted NEWEST FIRST (max folder-file mtime descending — any change
+    /// sorted NEWEST FIRST (max folder-file mtime descending - any change
     /// to any file is an update; name ascending breaks mtime ties
-    /// deterministically — the load-save browser's ordering).
+    /// deterministically - the load-save browser's ordering).
     /// Folders without a readable `mission.txt` are SKIPPED (a half-installed
     /// or broken mission is not listed; the browser shouldn't offer to start
     /// something unparseable). The caller owns the returned slice and all
@@ -291,7 +291,7 @@ pub const FileSource = struct {
     /// appear here. See DESIGN → Custom Missions & Online Services.
     ///
     /// The per-mission work (mission.txt probe + parse + the custom-assets
-    /// check) is shared below — the folder scan runs the same
+    /// check) is shared below - the folder scan runs the same
     /// `Dir.iterate` path on every platform (the old IDBFS-era platform
     /// split is gone; see DONE.md "web storage model slice 5").
     pub fn listMissions(
@@ -322,12 +322,12 @@ pub const FileSource = struct {
             defer allocator.free(mission_txt_path);
 
             // Read mission.txt from this subfolder via the FileSource (so the
-            // read goes through the same layering as gameplay reads — though
+            // read goes through the same layering as gameplay reads - though
             // for local missions it's always the persistent dir).
             const mission_bytes = self.readFile(allocator, mission_txt_path) catch |err| switch (err) {
                 // No mission.txt (or unreadable) → skip this folder; it's not
                 // an openable mission. `continue` discards the errdefers, so
-                // free manually. (On `return err` below the errdefers fire —
+                // free manually. (On `return err` below the errdefers fire -
                 // never free manually on an error-return path; that's a
                 // double-free.)
                 error.FileNotFound => {
@@ -339,7 +339,7 @@ pub const FileSource = struct {
             };
 
             // Parse just enough metadata (name + level_count) in a throwaway
-            // arena — the sections are large and we only keep two duped
+            // arena - the sections are large and we only keep two duped
             // strings out of them. A full loadMission would also validate
             // file_format_version etc.; for a browser listing we tolerate
             // slightly-malformed missions (show it's there), skipping on
@@ -369,7 +369,7 @@ pub const FileSource = struct {
             allocator.free(mission_bytes);
 
             // Folder scan: custom-asset detection + the recency stamp
-            // (the max file mtime — any change is an update).
+            // (the max file mtime - any change is an update).
             const folder_scan = try self.scanMissionFolder(
                 allocator,
                 mission_id,
@@ -423,8 +423,8 @@ pub const FileSource = struct {
     /// One mission folder's scan results for the browser listing: whether
     /// the folder holds anything beyond the known config files
     /// (mission.txt / player.txt / level_<N>.txt), and the recency stamp
-    /// (the max mtime across the folder's files — see
-    /// `MissionEntry.mtime_ns`). An unreadable folder behaves the same —
+    /// (the max mtime across the folder's files - see
+    /// `MissionEntry.mtime_ns`). An unreadable folder behaves the same -
     /// the scan never blocks the listing.
     fn scanMissionFolder(
         self: *const FileSource,
@@ -456,12 +456,12 @@ pub const FileSource = struct {
     /// Enumerate the OFFICIAL missions (shipped embedded campaign content)
     /// for the mission browser's Official tab. Metadata (name +
     /// level_count) is parsed from each mission's embedded mission.txt at
-    /// call time — the path list is comptime-known, the parse is not.
+    /// call time - the path list is comptime-known, the parse is not.
     /// Entries mirror `listMissions` (same `MissionEntry` shape; `id` is the
     /// mission's folder stem, `path` is the embedded dir path exactly as
     /// `open_editor` consumes it). The caller owns the returned slice +
     /// strings (`freeMissions`). A mission whose mission.txt is unreadable
-    /// or unparseable is SKIPPED (shouldn't happen for shipped content — an
+    /// or unparseable is SKIPPED (shouldn't happen for shipped content - an
     /// absent row means a broken build).
     pub fn listOfficialMissions(
         self: *const FileSource,
@@ -478,7 +478,7 @@ pub const FileSource = struct {
             defer allocator.free(mission_txt_path);
             const mission_bytes = self.readEmbeddedFile(allocator, mission_txt_path) catch continue;
 
-            // Throwaway parse arena — same shape as listMissions: keep only
+            // Throwaway parse arena - same shape as listMissions: keep only
             // the duped id/path/name out of it.
             var parse_arena = std.heap.ArenaAllocator.init(allocator);
             defer parse_arena.deinit();
@@ -497,7 +497,7 @@ pub const FileSource = struct {
             errdefer allocator.free(id);
             const path = try allocator.dupe(u8, dir_path);
             errdefer allocator.free(path);
-            // loadMission borrows into the parse arena — dupe before it dies.
+            // loadMission borrows into the parse arena - dupe before it dies.
             const name = try allocator.dupe(u8, mission.name);
             errdefer allocator.free(name);
             allocator.free(mission_bytes);
@@ -517,7 +517,7 @@ pub const FileSource = struct {
 
     /// List the save files in saves/ (including the autosave), newest first
     /// (mtime descending; name ascending breaks mtime ties deterministically).
-    /// Only `*.txt` files count — the dir is also where stray non-save artifacts
+    /// Only `*.txt` files count - the dir is also where stray non-save artifacts
     /// would land. A missing saves/ dir is an empty list (fresh install), not an
     /// error. Caller owns the returned slice + its strings (`freeSaveFiles`).
     pub fn listSaveFiles(
@@ -528,8 +528,8 @@ pub const FileSource = struct {
         errdefer freeSaveFiles(allocator, entries.items);
 
         // The one path, every platform: open saves/, iterate, filter .txt,
-        // stat each. (The old emscripten platform split — a JS enumeration
-        // via a listing temp because IDBFS's readdir was broken — died with
+        // stat each. (The old emscripten platform split - a JS enumeration
+        // via a listing temp because IDBFS's readdir was broken - died with
         // the IDBFS mount itself: plain MEMFS readdir works; browser-verified,
         // see DONE.md "web storage model slice 5".)
         const maybe_saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
@@ -547,7 +547,7 @@ pub const FileSource = struct {
                 if (dir_entry.kind != .file) continue;
                 if (!std.mem.endsWith(u8, dir_entry.name, ".txt")) continue;
 
-                // Stat through the open saves_dir by bare name — a failure
+                // Stat through the open saves_dir by bare name - a failure
                 // here (vanished between iterate + stat, permissions
                 // quirk) skips the entry without having allocated
                 // anything for it yet.
@@ -571,19 +571,19 @@ pub const FileSource = struct {
 
 
     /// Delete a file from the persistent dir (used to consume the import
-    /// marker). Missing file is an error like any other — callers poll with
+    /// marker). Missing file is an error like any other - callers poll with
     /// `fileExists` first.
     pub fn deleteFile(self: *const FileSource, path: []const u8) !void {
         try self.persistent_dir.deleteFile(self.io, path);
     }
 
     /// Recursively list every FILE under the persistent dir as
-    /// `/`-separated persistent-relative paths — the game-folder zip's
+    /// `/`-separated persistent-relative paths - the game-folder zip's
     /// source list (Export Game; see game_zip.zig). Platform-split (the
-    /// `Dir.iterate`-is-broken-on-IDBFS story — see `listSaveFiles`):
+    /// `Dir.iterate`-is-broken-on-IDBFS story - see `listSaveFiles`):
     /// native walks the tree via `Dir.iterate` recursion; web walks it via
     /// JS (a recursive `FS.lookupPath` pass writing the path list to a
-    /// temp listing — the `.saves_listing` pattern at tree scale), then
+    /// temp listing - the `.saves_listing` pattern at tree scale), then
     /// reads the list back. The staging + listing temps + import markers
     /// (`persistent_dir_artifact_names` - the whole root-artifact set) are
     /// excluded on both platforms: a crashed export's or import's
@@ -598,7 +598,7 @@ pub const FileSource = struct {
         var paths: std.ArrayList([]const u8) = .empty;
         errdefer freePersistentDirFiles(allocator, paths.items);
         // The one path, every platform (the old emscripten JS-walk split
-        // died with the IDBFS mount — plain MEMFS readdir works; see
+        // died with the IDBFS mount - plain MEMFS readdir works; see
         // DONE.md "web storage model slice 5").
         try collectPersistentDirFiles(self.persistent_dir, self.io, "", allocator, &paths);
         std.mem.sort([]const u8, paths.items, {}, pathOrder);
@@ -676,12 +676,12 @@ fn isPersistentDirArtifactName(name: []const u8) bool {
 
 
 /// Scan a mission folder for files beyond the known config set
-/// (mission.txt, player.txt, level_<N>.txt) — anything else is a custom
+/// (mission.txt, player.txt, level_<N>.txt) - anything else is a custom
 /// asset (sprites, audio). The ENUMERATION is platform-split (see
 /// `FileSource.hasMissionCustomAssets`): native iterates the folder; web
 /// uses a JS listing. Both share `isKnownMissionConfigFile`.
 /// True if `name` is one of the KNOWN mission config files (mission.txt,
-/// player.txt, level_<N>.txt for 1 <= N <= level_count) — anything else is
+/// player.txt, level_<N>.txt for 1 <= N <= level_count) - anything else is
 /// a custom asset. Shared by the native folder iteration + the web JS
 /// listing (both has-custom-assets paths).
 fn isKnownMissionConfigFile(name: []const u8, level_count: u32) bool {
@@ -704,7 +704,7 @@ fn matchesLevelFile(name: []const u8, level_count: u32) bool {
 /// relative (what load_save expects); `name` is the bare filename (the
 /// browser's display label); `mtime_ns` is the file's last-modified time,
 /// the browser's sort key (newest first). Saves are write-once, so mtime
-/// is the creation time in practice — Linux commonly doesn't expose a
+/// is the creation time in practice - Linux commonly doesn't expose a
 /// true creation time, and Io.Stat's mtime works on both native and the
 /// IDBFS mount.
 pub const SaveFileEntry = struct {
@@ -731,7 +731,7 @@ fn freeMissionEntry(allocator: std.mem.Allocator, entry: FileSource.MissionEntry
 
 /// Free a slice returned by `FileSource.listMissions` or
 /// `FileSource.listOfficialMissions` (entries + strings). A zero-length
-/// slice (`&.{}` from an empty collection) is a no-op — `allocator.free`
+/// slice (`&.{}` from an empty collection) is a no-op - `allocator.free`
 /// on an empty slice at a non-owned address would be invalid.
 pub fn freeMissions(allocator: std.mem.Allocator, missions: []const FileSource.MissionEntry) void {
     if (missions.len == 0) return;
@@ -764,13 +764,13 @@ fn saveFileOrder(_: void, a: SaveFileEntry, b: SaveFileEntry) bool {
 
 // Web-only: run inline JS at the emscripten seams (browser download /
 // upload). The extern is declared here (not gated) because Zig only emits
-// a symbol reference when the call site is reachable — and every call site
+// a symbol reference when the call site is reachable - and every call site
 // lives in comptime-gated emscripten branches, so native (and the headless
 // test build) never needs to resolve it.
 extern fn emscripten_run_script(script: [*:0]const u8) void;
 
 /// The virtual path where web mounts the in-memory persistent dir
-/// (mirrors $HOME/.ziglop on native — an in-memory MEMFS mount; see DESIGN
+/// (mirrors $HOME/.ziglop on native - an in-memory MEMFS mount; see DESIGN
 /// → File System & IO → Web storage model). Single source of truth for
 /// the mount (web.zig) and for absolute FS paths in JS seams like
 /// `triggerBrowserDownload`.
@@ -778,7 +778,7 @@ pub const persistent_mount_path = "/ziglop";
 
 /// Marker file (persistent-dir root) written by the web import JS after the
 /// picked save file has landed in saves/. Zig polls it while the load-save
-/// browser is open; finding it means "an import completed — load this path".
+/// browser is open; finding it means "an import completed - load this path".
 /// Deleted immediately after reading. Lives OUTSIDE saves/ so the save-list
 /// scan never sees it.
 pub const import_marker_path = ".import_marker";
@@ -786,13 +786,13 @@ pub const import_marker_path = ".import_marker";
 /// Marker file (persistent-dir root) written by the web mission-import JS
 /// after the picked mission .zip has landed in imported_missions/. Zig polls
 /// it while the editor's mission browser is open; finding it means "an import
-/// upload completed — extract this zip into missions/". Deleted immediately
-/// after reading — same shape as `import_marker_path`.
+/// upload completed - extract this zip into missions/". Deleted immediately
+/// after reading - same shape as `import_marker_path`.
 pub const mission_import_marker_path = ".mission_import_marker";
 
 /// Export Game's archive staging file (persistent-dir root, dot-prefixed
 /// so no scan sees it; see game_zip.zig). The persistent-dir listing
-/// EXCLUDES it — a crashed export's leftover must not ride in a later
+/// EXCLUDES it - a crashed export's leftover must not ride in a later
 /// export. Deleted after the download reads it.
 pub const game_export_temp_path = ".game_export.zip";
 
@@ -816,11 +816,11 @@ pub const game_import_marker_path = ".game_import_marker";
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes) under the given
 /// download name (the staging path can be a dot-temp the download must not
-/// carry). The file must already be written — this reads it back from the
-/// emscripten in-memory FS as BINARY (no `{encoding:'utf8'}` — emscripten's
+/// carry). The file must already be written - this reads it back from the
+/// emscripten in-memory FS as BINARY (no `{encoding:'utf8'}` - emscripten's
 /// utf8 read has C-string semantics: it stops at the FIRST NUL byte, which
 /// truncated every downloaded ZIP to its first 5 bytes (`PK\x03\x04\x14`,
-/// the header up to the first NUL — the shipped ziglop.zip + mission
+/// the header up to the first NUL - the shipped ziglop.zip + mission
 /// exports; a binary read is correct for every file, text included) and
 /// blobbed as octet-stream). On native this is a no-op (comptime-dead
 /// branch), so the extern is never linked outside web builds. `allocator`
@@ -854,7 +854,7 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, do
 /// marker is written so the Zig-side poll picks it up and loads it. The
 /// write order (save first, marker second) guarantees the bytes exist when
 /// the marker does. Native is a no-op (comptime-dead branch). The filename
-/// is sanitized in JS (path-traversal + quote safety) — barebones allowlist.
+/// is sanitized in JS (path-traversal + quote safety) - barebones allowlist.
 /// Static script (no per-call formatting), so no allocator needed.
 pub fn triggerBrowserUpload() void {
     if (@import("builtin").os.tag == .emscripten) {
@@ -889,7 +889,7 @@ pub fn triggerBrowserUpload() void {
 /// own name, then the mission import marker is written so the Zig-side
 /// poll (while the mission browser is open) picks it up and extracts it
 /// into missions/. Same write-order + sanitization discipline as
-/// `triggerBrowserUpload`. Native is a no-op (comptime-dead branch) —
+/// `triggerBrowserUpload`. Native is a no-op (comptime-dead branch) -
 /// the editor browser never emits the button there, and the ctrl+I
 /// binding parses but no-ops (the skip_level discipline).
 pub fn triggerBrowserMissionUpload() void {
@@ -995,7 +995,7 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     file_source.writeFile("missions/skeleton_attack/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
     file_source.writeFile("missions/skeleton_attack/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
     // Sleep between the two missions so their mtimes are strictly ordered
-    // (sequential writes can tie within filesystem mtime resolution — the
+    // (sequential writes can tie within filesystem mtime resolution - the
     // listSaveFiles test's discipline).
     try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
 
@@ -1005,14 +1005,14 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_2.txt", "Metadata\nfile_format_version 1\n\nLayout\n.!\n") catch @panic("w5");
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/custom_tree.png", "fake png bytes") catch @panic("w6");
 
-    // Mission 3: missing mission.txt — should be SKIPPED.
+    // Mission 3: missing mission.txt - should be SKIPPED.
     file_source.writeFile("missions/broken/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w7");
 
     const list = try file_source.listMissions(allocator);
     defer freeMissions(allocator, list);
 
     // Two openable missions (broken one is skipped). The list is sorted
-    // NEWEST FIRST — Tree Grove was written after Skeleton Attack, so it
+    // NEWEST FIRST - Tree Grove was written after Skeleton Attack, so it
     // leads; find-by-id below still checks each entry's metadata.
     try testing.expectEqual(@as(usize, 2), list.len);
     try testing.expect(std.mem.startsWith(u8, list[0].id, "a1b2c3d4"));
@@ -1041,7 +1041,7 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     try testing.expect(found_tree);
 }
 
-test "listMissions: newest first — any file change (custom png) is an update" {
+test "listMissions: newest first - any file change (custom png) is an update" {
     const allocator = testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
@@ -1054,7 +1054,7 @@ test "listMissions: newest first — any file change (custom png) is an update" 
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Alpha saved first, beta second — then a custom png lands in ALPHA's
+    // Alpha saved first, beta second - then a custom png lands in ALPHA's
     // folder. The png is NOT a config file, but it must bump alpha's
     // recency above beta's: the sort key is the max mtime across ALL
     // folder files. Sleeps force distinct stamps (the tie discipline
@@ -1103,7 +1103,7 @@ test "listOfficialMissions: the shipped campaign missions with paths + metadata"
     const list = try file_source.listOfficialMissions(allocator);
     defer freeMissions(allocator, list);
 
-    // The four shipped main-campaign missions (fixed shipped content — a
+    // The four shipped main-campaign missions (fixed shipped content - a
     // missing entry means a broken build, so exact stems are asserted).
     try testing.expectEqual(@as(usize, 4), list.len);
     const expected = [_][]const u8{ "beginnings", "forest", "seatown", "wetlands" };
@@ -1201,12 +1201,12 @@ test "readAudioFile: embedded .ogg fallback, .wav shadow wins, priority order" {
     const file_source = FileSource.init(io, dir);
 
     // Shadows are hand-dropped files, so they can't go through
-    // FileSource.writeFile (it refuses assets/ paths) — write through the
+    // FileSource.writeFile (it refuses assets/ paths) - write through the
     // raw dir handle, exactly like a player would by hand.
     try dir.createDirPath(io, "assets/audio/sfx");
 
     // No shadow: the shipped damage sound is served from the embedded map
-    // as .ogg (we ship no .wav — that's what makes a .wav-first candidate
+    // as .ogg (we ship no .wav - that's what makes a .wav-first candidate
     // order safe).
     const embedded = file_source.readAudioFile(allocator, "assets/audio/sfx/damage") orelse
         return error.TestUnexpectedResult;

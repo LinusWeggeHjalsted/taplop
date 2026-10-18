@@ -1,25 +1,25 @@
-//! Art asset overview generator — a build tool, never part of the game.
+//! Art asset overview generator - a build tool, never part of the game.
 //! `zig build art-report` (wrapped by scripts/art_report.sh) enumerates every
 //! sprite id the game can consume and writes art_report.md at the project
 //! root: per-id status (shipped / shadowed / MISSING-draws-magenta) plus
-//! the shipped sprites no shipped content references — entity/decoration
+//! the shipped sprites no shipped content references - entity/decoration
 //! sprites are editor palette stock BY DESIGN (every shipped sprite is
 //! player-placeable), so unreferenced is not unused. Three machine-walked
 //! sources, so new
-//! consumption appears automatically — no hand-maintained list to drift:
+//! consumption appears automatically - no hand-maintained list to drift:
 //!   1. The engine's enums + derivation shapes (skills via ui's
 //!      skillIconSpriteId, effect overlays via the definitions' effect_sprite,
-//!      items via the Item/WeaponType tags — a mirror of ui's
-//!      itemIconSpriteId closed set — and weapons via WeaponType — a mirror
+//!      items via the Item/WeaponType tags - a mirror of ui's
+//!      itemIconSpriteId closed set - and weapons via WeaponType - a mirror
 //!      of view.zig's `weapons/{enemy_}?<type>` derivation).
 //!   2. Every sprite-id string literal in shipped code under src/ (the
-//!      tool's own file excluded; test blocks excluded — fixture ids are
+//!      tool's own file excluded; test blocks excluded - fixture ids are
 //!      structure-asserted, never loaded, and would put phantom assets on
 //!      the shopping list).
 //!   3. Every `sprite <stem>` reference in shipped data (levels, hubs,
 //!      decorations.txt, editor defaults), mapped by section: Entities ->
 //!      entities/, Decorations -> decorations/, NPCs -> npcs/.
-//! Plus two hand-maintained notes that are not machine-derivable today —
+//! Plus two hand-maintained notes that are not machine-derivable today -
 //! see `manual_notes`. See DESIGN → Testing for why enum/table walks beat
 //! coverage matrices; the sound_report.zig pattern throughout.
 
@@ -28,7 +28,7 @@ const types = @import("types.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 
-/// The sprite namespaces the game consumes — the first path segment of a
+/// The sprite namespaces the game consumes - the first path segment of a
 /// sprite id. Everything else under assets/ (audio, fonts) is not a sprite.
 const sprite_namespaces = [_][]const u8{
     "entities", "weapons", "items", "skills", "effects", "npcs", "decorations", "ui", "world",
@@ -59,7 +59,7 @@ const manual_notes = [_][]const u8{
 ,
     \\The `npcs/` palette (dream_guide, gear_upgrader) is future stock for the
     \\campaign editor's `npc_type` model (DESIGN → Campaigns & the Campaign
-    \\Editor → File formats) — nothing consumes the namespace until that slice
+    \\Editor → File formats) - nothing consumes the namespace until that slice
     \\lands; today hub NPCs render through the entity path.
 ,
 };
@@ -95,7 +95,7 @@ pub fn main() !void {
         }
         // The UI icon (ui.effectIconSpriteId) is either the caster skill's
         // icon (already covered by the SkillId walk), this same effects/<x>
-        // overlay id, or the definition's display name (not a sprite id) —
+        // overlay id, or the definition's display name (not a sprite id) -
         // nothing new to add, so it is not called.
     }
     const ItemTag = @typeInfo(types.Item).@"union".tag_type.?;
@@ -160,14 +160,14 @@ pub fn main() !void {
         \\# Ziglop art asset overview
         \\
         \\Auto-generated from the engine's enums, the source tree's sprite-id
-        \\literals, and the shipped content's `sprite` references — every
+        \\literals, and the shipped content's `sprite` references - every
         \\sprite id the game can consume, with status. Regenerate with
         \\`scripts/art_report.sh`.
         \\
         \\**How to add or replace art:** drop a PNG at
-        \\`{s}/assets/<id>.png` — the persistent directory overrides the
+        \\`{s}/assets/<id>.png` - the persistent directory overrides the
         \\shipped copy (asset shadowing) and is checked at every launch. Or
-        \\place it in the repo's `assets/` tree (shipped) — the game embeds
+        \\place it in the repo's `assets/` tree (shipped) - the game embeds
         \\assets at BUILD time, so a repo copy needs a rebuild to show up.
         \\
         \\**Missing = magenta.** A missing sprite draws a magenta placeholder
@@ -176,7 +176,7 @@ pub fn main() !void {
         \\
         \\Included consumption sources: engine enums + derivations (skills,
         \\effects, items, weapons), every sprite-id string literal in shipped
-        \\code (test blocks excluded — fixture ids are not game consumption),
+        \\code (test blocks excluded - fixture ids are not game consumption),
         \\and every `sprite <stem>` reference in shipped data (levels/hubs/
         \\decorations/editor defaults, mapped by section: Entities ->
         \\entities/, Decorations -> decorations/, NPCs -> npcs/).
@@ -189,7 +189,7 @@ pub fn main() !void {
     }
 
     // The shopping list first: every MISSING id across all namespaces.
-    try report.print(allocator, "\n## MISSING — the shopping list\n\n", .{});
+    try report.print(allocator, "\n## MISSING - the shopping list\n\n", .{});
     var missing_count: usize = 0;
     for (sprite_namespaces) |namespace| {
         for (consumedIdsIn(&consumed, allocator, namespace)) |entry| {
@@ -197,14 +197,14 @@ pub fn main() !void {
             if (status.shipped == null and status.shadowed == null) {
                 counts.missing += 1;
                 missing_count += 1;
-                try report.print(allocator, "- `assets/{s}.png` — {s} **[MISSING (draws magenta)]**\n", .{
+                try report.print(allocator, "- `assets/{s}.png` - {s} **[MISSING (draws magenta)]**\n", .{
                     entry.id, entry.description,
                 });
             }
         }
     }
     if (missing_count == 0) {
-        try report.print(allocator, "- (nothing missing — every consumed id resolves)\n", .{});
+        try report.print(allocator, "- (nothing missing - every consumed id resolves)\n", .{});
     }
 
     // Per-namespace sections: every consumed id with its status.
@@ -222,7 +222,7 @@ pub fn main() !void {
     // player-placeable), so unreferenced is not unused.
     try report.print(allocator, "\n## Shipped but unreferenced by shipped content\n\n", .{});
     try report.print(allocator,
-        \\Entity + decoration sprites are editor palette stock BY DESIGN —
+        \\Entity + decoration sprites are editor palette stock BY DESIGN -
         \\every shipped sprite is player-placeable in the editor, so
         \\unreferenced is NOT unused: this section tracks what the official
         \\campaign does not use yet (real content authoring rides the campaign
@@ -241,7 +241,7 @@ pub fn main() !void {
         orphan_count += namespace_orphans.items.len;
         try report.print(allocator, "\n**{s}:**\n\n", .{namespace});
         for (namespace_orphans.items) |id| {
-            try report.print(allocator, "- `assets/{s}.png` — shipped, not referenced by shipped content (editor palette stock)\n", .{id});
+            try report.print(allocator, "- `assets/{s}.png` - shipped, not referenced by shipped content (editor palette stock)\n", .{id});
         }
     }
     if (orphan_count == 0) {
@@ -259,7 +259,7 @@ pub fn main() !void {
     );
 }
 
-/// Add a consumed id unless it is already in the table (first add wins —
+/// Add a consumed id unless it is already in the table (first add wins -
 /// the enum walks run first so their descriptions beat the raw scans).
 fn addConsumed(
     consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
@@ -286,7 +286,7 @@ fn reportAsset(
 ) !void {
     const status = assetStatus(io, cwd, persistent_dir, entry.id);
     const status_text: []const u8 = if (status.shipped != null and status.shadowed != null)
-        "shipped + shadowed — shadow wins"
+        "shipped + shadowed - shadow wins"
     else if (status.shipped != null)
         "shipped"
     else if (status.shadowed != null)
@@ -295,7 +295,7 @@ fn reportAsset(
         "MISSING (draws magenta)";
     if (status.shipped != null) counts.shipped += 1;
     if (status.shadowed != null) counts.shadowed += 1;
-    try report.print(allocator, "- `assets/{s}.png` — {s} **[{s}]**\n", .{
+    try report.print(allocator, "- `assets/{s}.png` - {s} **[{s}]**\n", .{
         entry.id, entry.description, status_text,
     });
 }
@@ -330,9 +330,9 @@ fn isFile(io: std.Io, dir: std.Io.Dir, path: []const u8) bool {
 
 /// Scan source bytes for quoted string literals that are sprite ids (a
 /// namespace prefix + [a-z0-9_] stem). Literal consumption is the truth for
-/// the UI/world icon set — there is no enum to walk. Test blocks are
+/// the UI/world icon set - there is no enum to walk. Test blocks are
 /// EXCLUDED (they are not game consumption: a test's fixture ids are
-/// structure-asserted, never loaded — reporting them would put phantom
+/// structure-asserted, never loaded - reporting them would put phantom
 /// assets on the shopping list, the custom_fighter/moss_vine class). Zig
 /// source is zig-fmt'd, so the exclusion is exact: test declarations are
 /// top-level (`test ...` at column 0) and their block closes with a lone
@@ -387,7 +387,7 @@ fn scanLineLiterals(
 }
 
 /// Scan data bytes for `sprite <stem>` lines, mapping the stem to its
-/// namespace by the current section header (Entities/Decorations/NPCs — the
+/// namespace by the current section header (Entities/Decorations/NPCs - the
 /// parser's section model). Mirrors the loaders' namespace derivation.
 fn scanDataSpriteLines(
     consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
@@ -421,7 +421,7 @@ fn scanDataSpriteLines(
     }
 }
 
-/// A section header line: a single CamelCase word (the config format — see
+/// A section header line: a single CamelCase word (the config format - see
 /// parser.zig). Length-gated so a lone grid letter can't pose as one.
 fn isSectionHeader(line: []const u8) bool {
     if (line.len < 4) return false;
@@ -452,7 +452,7 @@ fn idNamespace(id: []const u8) ?[]const u8 {
     return null;
 }
 
-/// All consumed entries whose id starts with `<namespace>/`, sorted by id —
+/// All consumed entries whose id starts with `<namespace>/`, sorted by id -
 /// the per-namespace report section + the MISSING walk.
 fn consumedIdsIn(
     consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
@@ -479,7 +479,7 @@ fn consumedIdsIn(
 
 /// Recursively collect file paths under `dir_path` ending with `extension`.
 /// Missing/unreadable directories are skipped (the report degrades, never
-/// crashes — the `fileExists` discipline).
+/// crashes - the `fileExists` discipline).
 fn walkFiles(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -492,7 +492,7 @@ fn walkFiles(
     defer dir.close(io);
     var iterator = dir.iterate();
     while (iterator.next(io) catch return) |entry| {
-        // entry.name dies at the next iteration — allocPrint copies it.
+        // entry.name dies at the next iteration - allocPrint copies it.
         const child_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir_path, entry.name });
         switch (entry.kind) {
             .directory => try walkFiles(allocator, io, cwd, child_path, extension, out),
@@ -516,7 +516,7 @@ fn stripPrefixSuffix(path: []const u8, prefix: []const u8, suffix: []const u8) ?
 }
 
 /// The per-OS persistent data directory (mirrors sound_report.zig's
-/// resolvePersistentPath — the native.zig discipline, minus the CLI flag).
+/// resolvePersistentPath - the native.zig discipline, minus the CLI flag).
 fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
     if (std.c.getenv("ZIGLOP_DATA")) |override| {
         return allocator.dupe(u8, std.mem.sliceTo(override, 0));

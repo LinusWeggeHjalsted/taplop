@@ -119,7 +119,7 @@ test "options menu on the main menu: credits toggles via options_action; exit ga
     input_handlers.handleAnytimeInput(&history, anytime_close, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.credits_open);
 
-    // Exit Game: a request flag for the game loop's exit condition — not
+    // Exit Game: a request flag for the game loop's exit condition - not
     // a state transform, nothing recorded.
     var anytime_exit: input.AnytimeInput = .{};
     anytime_exit.options_action = .exit_game;

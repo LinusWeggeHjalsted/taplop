@@ -3,9 +3,9 @@
 //! download on web), import (the web zip-upload marker poll + extraction
 //! with junk/root-strip/safety filtering), the mission-list /
 //! mission-sprite rescans, and the validation-replay write (the one
-//! HANDLER-owned side effect here — the end_validation success handler
+//! HANDLER-owned side effect here - the end_validation success handler
 //! calls it gated `!replaying`; everything else is an input-layer side
-//! effect off the undo timeline, dump_event_log-class — no recorded
+//! effect off the undo timeline, dump_event_log-class - no recorded
 //! events). See DESIGN → Level Editor (the save/export flow + the mission
 //! browser) + DESIGN → Custom Missions & Online Services → Validation
 //! replay + DESIGN → File System & IO.
@@ -27,13 +27,13 @@ const GameStateHistory = state.GameStateHistory;
 /// Scan the mission directory's .pngs into `session.editor_mission_sprites`
 /// (the sprite picker's mission-local tab): one entry per file, each
 /// carrying its namespaced id (`custom/<mission-dir>/<stem>`, minted HERE
-/// so the pick payload + the commit id reference session-owned bytes —
+/// so the pick payload + the commit id reference session-owned bytes -
 /// see MissionSprite.stored_id) and the PNG's pixel dims (IHDR read at
-/// scan time — the decoration cells' aspect-fit needs them; an
+/// scan time - the decoration cells' aspect-fit needs them; an
 /// unreadable/non-PNG file degrades to (0, 0), `scaleToFit`'s fallback).
-/// Frees the previous scan — the list is session-owned (backing
+/// Frees the previous scan - the list is session-owned (backing
 /// allocator); the final list's leak at process exit is bounded (the
-/// save_files pattern). An IO failure degrades to an empty list — the
+/// save_files pattern). An IO failure degrades to an empty list - the
 /// Mission tab shows "No sprites" while the Official tab stays usable
 /// (recoverable-degrade; a popup would interrupt the click flow for a dev
 /// tool).
@@ -77,14 +77,14 @@ pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Edit
 }
 
 /// A random v4-format uuid (the shipped mission.txt format: 8-4-4-4-12
-/// lowercase hex). Called ONLY from the save path — an input-layer side
+/// lowercase hex). Called ONLY from the save path - an input-layer side
 /// effect that never enters GameState or a recorded event, so the
 /// randomness is replay-safe by construction. See DESIGN → Level Editor →
 /// Mission identity.
 fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
     var bytes: [16]u8 = undefined;
     // Seed a CSPRNG from the wall clock (the same clock the session
-    // timestamps read) + the raw nanoseconds — good enough for identity
+    // timestamps read) + the raw nanoseconds - good enough for identity
     // minting, and the result never enters replayed state anyway.
     const now = std.Io.Clock.now(.real, history.io);
     var seed: [32]u8 = std.mem.zeroes([32]u8);
@@ -126,21 +126,21 @@ fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []
 
 /// Save the edited mission to the persistent dir: resolve the mission's
 /// uuid (in-memory if it was opened from disk, else the session memo of a
-/// previous save — stable identity across saves — else a fresh mint),
+/// previous save - stable identity across saves - else a fresh mint),
 /// project the Editor into files with the pure writer
 /// (writers.writeEditorMission), and write mission.txt + player.txt +
 /// level_N.txt under `missions/<uuid>_<name>/`. The session memo records
 /// the uuid + dir for subsequent saves.
 ///
 /// Returns the saved dir path on success (borrowed from the session memo
-/// — stable until the NEXT save replaces the memo; deep-copy if kept past
+/// - stable until the NEXT save replaces the memo; deep-copy if kept past
 /// that), null on failure. On failure a recoverable popup is already
-/// surfaced and the memo is NOT updated — callers must not read it after
+/// surfaced and the memo is NOT updated - callers must not read it after
 /// a null return (it would point at a PREVIOUS save's dir). Callers that
-/// need the save to have landed (validate — the run reads the dir; export
-/// — the bundle reads the files) gate on the return value.
+/// need the save to have landed (validate - the run reads the dir; export
+/// - the bundle reads the files) gate on the return value.
 ///
-/// A pure side effect — the dump_event_log class, NOT the save_game class:
+/// A pure side effect - the dump_event_log class, NOT the save_game class:
 /// there is no GameState component to record, so it pushes no event and
 /// takes no undo step (a recorded event would mint dead undo steps), and
 /// replay never runs the input layer so it never re-fires. Always deriving
@@ -148,8 +148,8 @@ fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []
 /// re-save of an unchanged custom mission lands in the same dir, a RENAMED
 /// mission lands in a NEW dir (the old one stays behind), and an OFFICIAL
 /// mission opened for editing is saved as a persistent-dir copy (shipped
-/// data is immutable — FileSource refuses data/ writes). Failures are
-/// recoverable (the pending_error popup; nothing to revert — state is
+/// data is immutable - FileSource refuses data/ writes). Failures are
+/// recoverable (the pending_error popup; nothing to revert - state is
 /// fine, the files just didn't land). See DESIGN → Level Editor → Mission
 /// identity.
 pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
@@ -158,7 +158,7 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     const durable = history.backing_allocator;
 
     // 1. Resolve the uuid: opened-from-disk → in memory; saved this session
-    //    → the memo; else mint (the write-only rule — the minted value
+    //    → the memo; else mint (the write-only rule - the minted value
     //    never enters GameState).
     var uuid: []const u8 = editor.mission.uuid;
     if (uuid.len == 0) {
@@ -170,9 +170,9 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         uuid = minted_uuid.?;
     }
 
-    // 2. Derive the save target's dir name — the stem-namespace target
+    // 2. Derive the save target's dir name - the stem-namespace target
     //    (the writer normalizes custom sprite stems to it) + the art-copy
-    //    target — then project the editor into file contents (transient —
+    //    target - then project the editor into file contents (transient -
     //    the scratch arena reclaims them at the next idle point).
     const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
     const mission_dir_name = std.fmt.allocPrint(
@@ -238,7 +238,7 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     }
 
     // 3b. Carry the referenced custom art into the save target (the
-    //     single-dir rule — see copyReferencedCustomSprites). A copy WRITE
+    //     single-dir rule - see copyReferencedCustomSprites). A copy WRITE
     //     failure fails the save like a config write failure.
     if (!copyReferencedCustomSprites(history, editor, dir_path)) {
         durable.free(dir_path);
@@ -250,7 +250,7 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     //    ownership pattern: free the previous memo's strings, then store).
     //    The uuid slice: a fresh mint or the previous memo's REUSED slice is
     //    memo-owned; an OPENED mission's uuid borrows the editor's
-    //    (current-arena) graph — dupe it durable so the memo never dangles
+    //    (current-arena) graph - dupe it durable so the memo never dangles
     //    past an arena compaction.
     var reused_previous_uuid = false;
     if (history.session.editor_saved_mission) |previous| {
@@ -274,16 +274,16 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     return dir_path;
 }
 
-/// Copy every REFERENCED custom sprite PNG — entity + decoration palette
+/// Copy every REFERENCED custom sprite PNG - entity + decoration palette
 /// types, base + layers (placements reference types; the player has no
-/// custom sprite) — into the save target dir. The single-dir rule: custom
+/// custom sprite) - into the save target dir. The single-dir rule: custom
 /// art lives in the mission's OWN directory, and the save is where a
 /// renamed mission carries its art forward (the writer normalizes the
 /// stems' namespace to the same target in the same save). Source
 /// resolution: the mission's CURRENT dir first (the rule's home), then
-/// the stem's embedded namespace — legacy content authored before a
+/// the stem's embedded namespace - legacy content authored before a
 /// rename, a one-time migration read that self-heals it. A missing
-/// source is skipped — the load side already warned. Returns false only
+/// source is skipped - the load side already warned. Returns false only
 /// on a target WRITE failure (the config-write failure class), with the
 /// popup already surfaced.
 fn copyReferencedCustomSprites(
@@ -330,14 +330,14 @@ fn copyOneReferencedCustomSprite(
     ) catch @panic("failed to build custom sprite source path");
     const bytes = history.file_source.readFile(scratch, current_dir_path) catch blk: {
         // Legacy source: the stem's embedded namespace (pre-rename
-        // content — the migration read).
+        // content - the migration read).
         const embedded_path = std.fmt.allocPrint(
             scratch,
             "missions/{s}.png",
             .{sprite_stem["custom/".len..]},
         ) catch @panic("failed to build custom sprite legacy source path");
         break :blk history.file_source.readFile(scratch, embedded_path) catch
-            return true; // missing source: skip — already warned at load
+            return true; // missing source: skip - already warned at load
     };
     const target_path = std.fmt.allocPrint(
         scratch,
@@ -355,7 +355,7 @@ fn copyOneReferencedCustomSprite(
 }
 
 /// Free the previous stash + store the new replay bytes on the session,
-/// backing-owned (the editor_saved_mission ownership pattern — the stash
+/// backing-owned (the editor_saved_mission ownership pattern - the stash
 /// must survive arena compaction; the Overwrite Replay button may be
 /// clicked long after the run's idle point).
 fn stashValidationReplay(history: *GameStateHistory, bytes: []const u8) void {
@@ -367,7 +367,7 @@ fn stashValidationReplay(history: *GameStateHistory, bytes: []const u8) void {
 
 /// Drop the stash + the offer flag: after an auto-write, after a manual
 /// overwrite write, or when the next run starts (a new run retires the
-/// previous offer). The callers gate on `!replaying` — side-effect state,
+/// previous offer). The callers gate on `!replaying` - side-effect state,
 /// replay must not eat a pending offer on undo/redo scrubbing.
 pub fn clearPendingValidationReplay(history: *GameStateHistory) void {
     if (history.session.pending_validation_replay) |stashed| {
@@ -377,19 +377,19 @@ pub fn clearPendingValidationReplay(history: *GameStateHistory) void {
     history.session.validation_replay_overwrite_offered = false;
 }
 
-/// Write the validation replay for a just-SUCCEEDED validation run — the
+/// Write the validation replay for a just-SUCCEEDED validation run - the
 /// end_validation success handler calls this, gated `!replaying` at the
 /// call site (the save_game class: a recorded event owns the side effect,
 /// replay never re-fires it, undo past the run doesn't rewrite). The
-/// artifact is the final attempt's verbatim event slice — event_history
+/// artifact is the final attempt's verbatim event slice - event_history
 /// from the LAST player_start_validation through the end_validation itself
-/// — with `mission_uuid` + `content_hash` Metadata (the replay certifies
+/// - with `mission_uuid` + `content_hash` Metadata (the replay certifies
 /// THIS content; a later hash mismatch reads as "unvalidated"). The
 /// personal-best guard decides: auto-write when the old file is
 /// absent/unreadable, its hash no longer matches the mission, or the new
 /// run is strictly faster; otherwise keep the old file + stash the new
 /// bytes + flag the manual-overwrite offer (the stats screen's Overwrite
-/// Replay button writes the STASHED bytes — never a re-slice of a possibly
+/// Replay button writes the STASHED bytes - never a re-slice of a possibly
 /// trimmed timeline). Turn count is DERIVED from the events (never
 /// stored). See DESIGN → Custom Missions & Online Services → Validation
 /// replay.
@@ -401,7 +401,7 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
     // The slice start: the LAST player_start_validation in the recorded
     // stream. Every attempt begins with that orchestrator (the edit-mode
     // button or the restart re-entry), so the last one is the final
-    // attempt's start — restarts and failed attempts fall outside the
+    // attempt's start - restarts and failed attempts fall outside the
     // slice by construction.
     var slice_start: ?usize = null;
     for (history.event_history.items, 0..) |event, index| {
@@ -458,7 +458,7 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
         .keep_offer_overwrite => {
             stashValidationReplay(history, replay_bytes);
             history.session.validation_replay_overwrite_offered = true;
-            // The personal-best line follows the FILE — the kept old run.
+            // The personal-best line follows the FILE - the kept old run.
             if (existing) |old| {
                 history.session.validation_personal_best_turns = old.turns;
             }
@@ -483,12 +483,12 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
 }
 
 /// Write the stashed (slower-run) validation replay over the personal
-/// best — the validation stats screen's manual Overwrite Replay button
-/// (a pure input-layer side effect, the dump_event_log class — the bytes
+/// best - the validation stats screen's manual Overwrite Replay button
+/// (a pure input-layer side effect, the dump_event_log class - the bytes
 /// are session-side, no GameState component to record). The stash was
-/// captured at end_validation (the BYTES, not a re-slice — the timeline
+/// captured at end_validation (the BYTES, not a re-slice - the timeline
 /// may have moved since) and is SELF-DESCRIBING: its first event carries
-/// the mission dir the run validated, so that's where it goes back — no
+/// the mission dir the run validated, so that's where it goes back - no
 /// session-memo dependency (a stashed run always has one, but the stash
 /// naming its own target is stricter). Clears the stash + the offer on
 /// success and follows the personal-best line to the newly written file;
@@ -497,7 +497,7 @@ pub fn overwritePendingValidationReplay(history: *GameStateHistory) void {
     const stashed = history.session.pending_validation_replay orelse return;
     const scratch = history.current_arena.allocator();
 
-    // The stash is our own serialized output — a parse failure is
+    // The stash is our own serialized output - a parse failure is
     // impossible, but a corrupt stash must never overwrite the best:
     // drop the offer instead of writing garbage.
     const sections = parser.parseConfigFile(stashed, scratch) catch {
@@ -542,21 +542,21 @@ fn appendExportFile(
 }
 
 /// Export the edited mission as a .zip (the editor options menu's Export
-/// Mission button — button-only, no keybind): SAVE first (the settled
-/// order — the bundle is always the current state), then bundle the saved
+/// Mission button - button-only, no keybind): SAVE first (the settled
+/// order - the bundle is always the current state), then bundle the saved
 /// mission files + the mission directory's custom sprites (a fresh
-/// mission's pngs sit in its placeholder dir — they bundle even though the
+/// mission's pngs sit in its placeholder dir - they bundle even though the
 /// save itself writes elsewhere) + a validation_replay.txt when one
 /// exists (it lands with the validation slice) into a STORE archive at
 /// `exported_missions/<uuid>_<name>.zip` in the persistent dir. On web
-/// that file is then offered as a browser download (the Export Save seam —
+/// that file is then offered as a browser download (the Export Save seam -
 /// triggerBrowserDownload reads it back from the mounted FS; a comptime
 /// no-op on native). A pure side effect like the save (the dump_event_log
 /// class). See DESIGN → Level Editor (the export flow).
 pub fn exportEditorMission(history: *GameStateHistory) void {
-    // Save first (the settled order — the bundle is always the current
+    // Save first (the settled order - the bundle is always the current
     // state). A failed save surfaces its own popup and the memo is NOT
-    // current (it would point at a PREVIOUS save's dir) — abort.
+    // current (it would point at a PREVIOUS save's dir) - abort.
     if (saveEditorMission(history) == null) return;
     const saved = history.session.editor_saved_mission.?;
     const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
@@ -662,7 +662,7 @@ pub fn exportEditorMission(history: *GameStateHistory) void {
 }
 
 /// Consume the mission-import marker, if present: the picked .zip has landed
-/// in imported_missions/ — delete the marker, extract the zip into missions/
+/// in imported_missions/ - delete the marker, extract the zip into missions/
 /// (see importMissionFromZip), and rescan so the row appears. The web-only
 /// upload (the browser's Import button / ctrl+I) lands the zip + marker; the
 /// extraction is platform-neutral file I/O. A failure surfaces the
@@ -697,9 +697,9 @@ fn isMissionImportJunk(name: []const u8) bool {
 
 /// Strip a single common ROOT folder from every entry name, if there is
 /// one: an OS "compress folder" zip wraps the mission's files in
-/// `<folder>/…`, while our own exports are flat at the archive root.
+/// `<folder>/...`, while our own exports are flat at the archive root.
 /// Mixed shapes (some entries at the root, some under a folder, or two
-/// different folders) strip nothing — the mission.txt lookup then fails and
+/// different folders) strip nothing - the mission.txt lookup then fails and
 /// the popup explains. Mutates `entries` in place (the caller's scratch-
 /// arena copy of the filtered list).
 fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
@@ -726,7 +726,7 @@ fn isUnsafeMissionImportName(name: []const u8) bool {
 }
 
 /// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the
-/// editor save's dir convention — a re-import of the same zip overwrites
+/// editor save's dir convention - a re-import of the same zip overwrites
 /// the same dir, idempotent; a mission without a uuid lands under
 /// `missions/<sanitized name>/`). All names are validated BEFORE the first
 /// write: a hostile or malformed zip fails whole, never half-imported.
@@ -822,7 +822,7 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         };
     }
 
-    // Success: the zip has served its purpose (delete it — the extracted
+    // Success: the zip has served its purpose (delete it - the extracted
     // folder is the artifact), and the browser's list rescans so the row
     // appears immediately.
     history.file_source.deleteFile(zip_path) catch {};
@@ -832,9 +832,9 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
 /// Scan both mission-browser lists into SessionState, freeing the previous
 /// local list (the save_files pattern). The LOCAL list is the persistent
 /// `missions/` dir; the OFFICIAL list is parsed from the embedded mission
-/// files ONCE per session (the embedded map is immutable per build — no
+/// files ONCE per session (the embedded map is immutable per build - no
 /// rescan). Runs when the browser OPENS (never in `view()`, which stays
-/// file-free) — no periodic rescan while open: nothing can add a local
+/// file-free) - no periodic rescan while open: nothing can add a local
 /// mission while the modal is up (a web import triggers its own explicit
 /// rescan), so reopening is the refresh path. An unreadable dir keeps the
 /// previous list rather than blanking the browser.
@@ -843,7 +843,7 @@ pub fn rescanEditorMissionsNow(history: *GameStateHistory) void {
 
     // The two scans are INDEPENDENT: a failure in one keeps that list's
     // previous contents and never blocks the other (a local-scan failure
-    // on web's broken-readdir mount must not blank the OFFICIAL tab too —
+    // on web's broken-readdir mount must not blank the OFFICIAL tab too -
     // the tabs fail separately or not at all).
     if (history.file_source.listMissions(allocator)) |local| {
         file_source_mod.freeMissions(allocator, history.session.editor_local_missions);

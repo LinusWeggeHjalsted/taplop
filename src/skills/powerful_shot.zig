@@ -13,7 +13,7 @@ const Skill = skill_mod.Skill;
 
 /// Powerful Shot: the crossbow's second (main-hand) skill. Attacks a single
 /// target within range and knocks it back, dealing +0.5x main-hand damage on
-/// collision — Bash's shape at range.
+/// collision - Bash's shape at range.
 pub const skill = Skill{
     .name = "Powerful Shot",
     .skill_type = .weapon_skill,
@@ -42,7 +42,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the knockback pick (collide-preferring, then focus-fire —
+/// AI options: the knockback pick (collide-preferring, then focus-fire -
 /// helpers.knockbackTarget). Rated on the PICK (value units): 2 when that
 /// target's push would collide (the collision damage is worth ~a hit),
 /// else 1 (displacement alone isn't).
@@ -91,7 +91,7 @@ fn useSkill(
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     // Both attack and collision damage derive from the effective outgoing
-    // damage (gloves + converted momentum + outgoing effects), then scale —
+    // damage (gloves + converted momentum + outgoing effects), then scale -
     // collision is half. Mirrors how `attack` applies outgoing modifiers at
     // the skill site; the collision handler still applies only the
     // defender's incoming modifiers.

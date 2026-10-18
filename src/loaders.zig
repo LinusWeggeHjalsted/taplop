@@ -1,4 +1,4 @@
-//! Game-content loaders — convert parsed config sections (parser.zig) into
+//! Game-content loaders - convert parsed config sections (parser.zig) into
 //! typed game objects (`types.*`). Owns decoration footprint/anchor validation,
 //! the editor dedup (`buildEditorMission`), editor level instantiation, the
 //! `free*`/`clone*`/equality helpers for test ownership, balance bounds
@@ -43,7 +43,7 @@ const player_loadout_file_format_version = parser.player_loadout_file_format_ver
 const decorations_file_format_version = parser.decorations_file_format_version;
 const editor_defaults_file_format_version = parser.editor_defaults_file_format_version;
 /// camera_zoom valid range (hundredths). Mirrors `input_handlers`'s
-/// `min_camera_zoom`/`max_camera_zoom` — duplicated here because loaders
+/// `min_camera_zoom`/`max_camera_zoom` - duplicated here because loaders
 /// must not import the input layer; the 4-choice values (25/50/75/100) are
 /// the single source of truth in DESIGN → UI Framework → Settings screen.
 const min_camera_zoom: u32 = 25;
@@ -93,19 +93,19 @@ fn parsePngDimensions(bytes: []const u8) ?types.Vector2 {
 }
 
 /// The sprite-grid tile size: decoration art must be whole multiples of this
-/// in both dimensions — the view math chunks a decoration sprite into one
+/// in both dimensions - the view math chunks a decoration sprite into one
 /// 256px piece per bbox tile (see DESIGN → Decorations & Footprint).
 const sprite_grid_tile_pixels: i32 = 256;
 
 /// The soft ceiling for custom sprite dimensions (either axis): WebGL2's
 /// guaranteed minimum max texture size is 2048 (ES 3.0 baseline), but 4096+
-/// is universal in practice — beyond this a sprite may fail to upload on
+/// is universal in practice - beyond this a sprite may fail to upload on
 /// some devices. Warned at load, never rejected.
 const max_custom_sprite_dimension: i32 = 4096;
 
 /// Floor sprite dims onto the 256px sprite grid, minimum one tile per axis
 /// (sub-256 or non-multiple art degrades to its largest whole-tile region;
-/// zero/negative dims clamp to one tile). Pure — the same file bytes always
+/// zero/negative dims clamp to one tile). Pure - the same file bytes always
 /// produce the same result, so replay is unaffected.
 fn flooredSpriteGridDims(dims: types.Vector2) types.Vector2 {
     const floorToGrid = struct {
@@ -120,7 +120,7 @@ fn flooredSpriteGridDims(dims: types.Vector2) types.Vector2 {
 }
 
 /// Append a formatted warning to the optional load-warnings list (surfaced
-/// as one pending_error popup via `surfaceWarnings` — advisory, the load
+/// as one pending_error popup via `surfaceWarnings` - advisory, the load
 /// continues). Custom-content validation uses this everywhere: degrade +
 /// warn, never reject, never crash.
 fn appendLoadWarning(
@@ -138,7 +138,7 @@ fn appendLoadWarning(
 /// Resolve a mission-local sprite's pixel dims (the decoration picker's
 /// custom-stem commit path): read `<mission_path>/<file_stem>.png` via the
 /// file source and parse its IHDR. Returns null when the file is missing
-/// or not a valid PNG — the commit site degrades (nothing records; the
+/// or not a valid PNG - the commit site degrades (nothing records; the
 /// next picker open re-scans the directory, so a vanished file stops
 /// being offered).
 pub fn resolveMissionSpriteDimensions(
@@ -156,7 +156,7 @@ pub fn resolveMissionSpriteDimensions(
 }
 
 /// Resolve a SHIPPED decoration sprite's dims from the comptime metadata
-/// table (the layer picker's official-stem commit path — no IO). Returns
+/// table (the layer picker's official-stem commit path - no IO). Returns
 /// null when the stem isn't shipped decoration art.
 pub fn resolveShippedDecorationSpriteDimensions(
     stem: []const u8,
@@ -170,7 +170,7 @@ pub fn resolveShippedDecorationSpriteDimensions(
 }
 
 /// Parse a `"w h"` string (as emitted by generated_sprite_metadata.zig) into a
-/// Vector2. Panics on malformed input — the table is build-generated, so a
+/// Vector2. Panics on malformed input - the table is build-generated, so a
 /// bad value is a build bug.
 fn parseDimsString(dims_str: []const u8) types.Vector2 {
     var it = std.mem.tokenizeScalar(u8, dims_str, ' ');
@@ -185,12 +185,12 @@ fn parseDimsString(dims_str: []const u8) types.Vector2 {
 // ── Balance bounds (parse-time, uniform across all content) ──
 //
 // The max_* constants live in types.zig (the single source shared with the
-// editor inspector's commit-time clamp — see DESIGN → Custom Missions →
+// editor inspector's commit-time clamp - see DESIGN → Custom Missions →
 // Balance bounds + DESIGN → Level Editor → Inspector fields). Every parsed
 // gear-stat field routes through `boundedU32`, which clamps out-of-range
 // values to the max and appends a warning (so the game stays playable +
 // the author is told). Entity base stats (max_health, defense, speed,
-// aggro_range) are NOT bounded — only gear stats.
+// aggro_range) are NOT bounded - only gear stats.
 
 /// parse failure (same as `asU32`). See DESIGN → Custom Missions → Balance
 /// bounds.
@@ -234,8 +234,8 @@ pub fn loadSettings(
     allocator: std.mem.Allocator,
     base: ?Settings,
     /// Receives binding-level config warnings (unknown action; duplicate
-    /// or conflicting combos — see the conflict scan below). Null on the
-    /// defaults path (`loadSettingsWrapped`) — the shipped file is
+    /// or conflicting combos - see the conflict scan below). Null on the
+    /// defaults path (`loadSettingsWrapped`) - the shipped file is
     /// round-trip-tested, so binding warnings there are dev noise.
     warnings: ?*std.ArrayList([]const u8),
 ) !Settings {
@@ -244,7 +244,7 @@ pub fn loadSettings(
     var settings: Settings = base orelse .{ .input_bindings = &.{} };
     const has_base = base != null;
 
-    // Audio — volumes are u32 percentages 0–100, clamped inline (a
+    // Audio - volumes are u32 percentages 0-100, clamped inline (a
     // hand-edited file with >100 silently clamps; settings are preferences,
     // not gameplay, so no warning popup). See DESIGN → UI Framework →
     // Settings screen (Volume integer migration).
@@ -334,7 +334,7 @@ pub fn loadSettings(
                 continue;
             };
 
-            // The entry's `context` line, if present, is IGNORED — a
+            // The entry's `context` line, if present, is IGNORED - a
             // binding's active contexts are DERIVED from the action
             // (`actionBindingContexts`); see DESIGN → Input → Binding
             // contexts. (No validity check needed: there is nothing to
@@ -345,8 +345,8 @@ pub fn loadSettings(
 
             // Dupe the input_name into the allocator so the returned Settings
             // OWNS its strings (it doesn't borrow from the raw file buffer).
-            // This makes the result self-contained — the caller may free the
-            // raw bytes immediately — and enables leak-checked tests under
+            // This makes the result self-contained - the caller may free the
+            // raw bytes immediately - and enables leak-checked tests under
             // testing.allocator (the old borrow-into-freed-bytes pattern was
             // invisible under an arena). See DESIGN → File System & IO →
             // Settings ownership.
@@ -359,10 +359,10 @@ pub fn loadSettings(
 
             // Dead-binding advisory (see `types.producible_key_ids`): a
             // binding naming an input id no platform table can produce can
-            // never fire (a typo'd hand-edit — or a table/list drift bug;
+            // never fire (a typo'd hand-edit - or a table/list drift bug;
             // the missing-Escape regression's failure mode). Warn + KEEP
             // the entry (the id may be valid on another platform or a
-            // future table — dropping would lose it); the startup popup
+            // future table - dropping would lose it); the startup popup
             // deliberately repeats until the file names a producible id.
             if (warnings) |w| {
                 if (!types.inputIdProducible(input)) {
@@ -384,14 +384,14 @@ pub fn loadSettings(
             });
         }
 
-        // How many entries came from the user file — everything appended
+        // How many entries came from the user file - everything appended
         // after this count is an INJECTED default (the per-action migration
         // below). The conflict scan uses it: a dropped INJECTED default is
         // silent (see the scan's comment).
         const user_binding_count = bindings.items.len;
 
         // Inject default bindings for actions the user file doesn't mention
-        // — the per-action migration (see DESIGN → Input → Binding overlay
+        // - the per-action migration (see DESIGN → Input → Binding overlay
         // semantics): the user file is authoritative for the actions it
         // names, but actions it doesn't name fall back to their defaults, so
         // a NEW official binding (skip_level, future editor keys, renames)
@@ -430,16 +430,16 @@ pub fn loadSettings(
             }
         }
 
-        // Conflict scan (the load-time mirror of the keybind UI's rule —
+        // Conflict scan (the load-time mirror of the keybind UI's rule -
         // see DESIGN → Input → Hybrid precedence + binding conflicts):
         // one combo (same input + same required modifiers) fires ONE
         // action per context. A duplicate combo on the SAME action, or on
         // DIFFERENT actions whose derived contexts intersect (they would
         // co-fire), is a config error: warn + drop the LATER entry (first
-        // listed wins) — but ONLY when the dropped entry came from the
+        // listed wins) - but ONLY when the dropped entry came from the
         // user file. A dropped INJECTED default is SILENT: the user bound
         // a combo that a default for an unmentioned action also occupies
-        // (user Enter→skip vs injected confirm→Enter) — nothing in the
+        // (user Enter→skip vs injected confirm→Enter) - nothing in the
         // user's file is wrong, and the injection re-runs every launch, so
         // warning would pop the same message every launch with nothing to
         // repair. The engine's first-match-wins tiebreak makes any residual
@@ -471,11 +471,11 @@ pub fn loadSettings(
                     }
                     // Different actions: a conflict ONLY when their derived
                     // contexts can be SIMULTANEOUSLY ACTIVE (they would
-                    // co-fire — `bindingContextsCoFire`, NOT plain
+                    // co-fire - `bindingContextsCoFire`, NOT plain
                     // intersection: {anytime} co-fires with {game} in-game
                     // though the sets are disjoint). Cross-context same-combo
                     // pairs (Digit1 = skill in game / tool in editor) are
-                    // LEGAL — keep both, no warning.
+                    // LEGAL - keep both, no warning.
                     if (!types.bindingContextsCoFire(
                         types.actionBindingContexts(binding.action),
                         types.actionBindingContexts(kept_binding.action),
@@ -503,11 +503,11 @@ pub fn loadSettings(
         }
 
         // Free the base's bindings before replacing (when a base is provided,
-        // its bindings — and their owned input_name strings — were heap-
+        // its bindings - and their owned input_name strings - were heap-
         // allocated by a prior loadSettings call; when no base,
         // input_bindings is the static &.{} and must not be freed). The
         // strings are owned (duped above), so free them too, not just the
-        // slice — otherwise replacing bindings leaks the old names.
+        // slice - otherwise replacing bindings leaks the old names.
         if (has_base and settings.input_bindings.len > 0) {
             for (settings.input_bindings) |*binding| {
                 freeRawInputString(binding.input, allocator);
@@ -521,7 +521,7 @@ pub fn loadSettings(
 }
 
 /// Free a `RawInput`'s owned string slice (the active union variant).
-/// Only valid for inputs whose string was duped by `loadSettings` — a
+/// Only valid for inputs whose string was duped by `loadSettings` - a
 /// borrowed slice (e.g. the static `&.{}` empty-bindings default, which has
 /// no strings) must not be passed. Used by `freeSettings` and by the
 /// binding-replace path in `loadSettings`.
@@ -538,7 +538,7 @@ pub fn freeRawInputString(input: types.RawInput, allocator: std.mem.Allocator) v
 /// no allocation. Use in tests under `testing.allocator` to assert no leaks;
 /// production never frees settings (process lifetime). A `Settings` whose
 /// `input_bindings` is the static `&.{}` default (len 0, never passed through
-/// `loadSettings`) is safe to pass — the loop is empty and the len guard
+/// `loadSettings`) is safe to pass - the loop is empty and the len guard
 /// skips the slice free.
 pub fn freeSettings(settings: types.Settings, allocator: std.mem.Allocator) void {
     for (settings.input_bindings) |*binding| {
@@ -641,7 +641,7 @@ fn parseEntityDefinition(
     // Utility skills (slot_4..slot_8, matching the save format). Enemy types
     // can carry a bar if present; the player loadout normally does. Only
     // UTILITY skills are legal on the bar (weapon skills belong to the
-    // equipped weapon) — a weapon skill here is warned + dropped.
+    // equipped weapon) - a weapon skill here is warned + dropped.
     var slot_key_buf: [16]u8 = undefined;
     for (0..types.utility_skill_count) |i| {
         const key = std.fmt.bufPrint(&slot_key_buf, "slot_{d}", .{i + 4}) catch continue;
@@ -712,7 +712,7 @@ fn parseEntityDefinition(
 
 /// Load a player start loadout from a mission's player.txt. The file is
 /// SAVE-SHAPED (the loadout sections of a player save: weapons, gear,
-/// inventory, utility skills — no Info / stats / hubs / clones /
+/// inventory, utility skills - no Info / stats / hubs / clones /
 /// UnlockedSkills; base stats are NOT authorable, the template keeps the
 /// Entity defaults, and learned is implied for the editor player). The
 /// parsed fields map onto the player template exactly as
@@ -730,11 +730,11 @@ pub fn loadPlayerLoadout(
     return playerLoadoutEntity(player_data);
 }
 
-/// Map a PlayerData's loadout onto the editor player template — the
+/// Map a PlayerData's loadout onto the editor player template - the
 /// `build_player_from_data` field set (name, gear, inventory, utility
 /// skills). BORROWS the source's slices; the caller owns both graphs (the
 /// loaders parse into the same arena, the import handler deep-copies
-/// first). A nameless source (a mission player.txt — the loadout sections
+/// first). A nameless source (a mission player.txt - the loadout sections
 /// carry no name) defaults to "Player".
 pub fn playerLoadoutEntity(player_data: PlayerData) types.Entity {
     return .{
@@ -754,7 +754,7 @@ pub fn playerLoadoutEntity(player_data: PlayerData) types.Entity {
 }
 
 /// Compare two entity definitions for palette dedup. Compares the DEFINITION
-/// fields only (name, sprite, team, stats, weapons, gear, utility skills) —
+/// fields only (name, sprite, team, stats, weapons, gear, utility skills) -
 /// NOT runtime fields (position, current_health, is_active, momentum, stun,
 /// cooldowns, active_effects, inventory), which are reset on instantiate and
 /// meaningless on a template. Slice fields (names) compared by content.
@@ -848,7 +848,7 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
 }
 
 /// Build an Editor session from already-parsed mission/player/level sections.
-/// Pure (no file I/O) — the caller (open_editor handler) reads via
+/// Pure (no file I/O) - the caller (open_editor handler) reads via
 /// history.readReconstructionFile so the reconstruction cache makes undo
 /// replay deterministic. Dedups the levels' inline entity/decoration/item
 /// definitions into a shared palette (entity_types / decoration_types /
@@ -873,7 +873,7 @@ pub fn buildEditorMission(
     for (parsed_level_sections) |sections| {
         const level = try loadLevel(sections, file_source, allocator, mission_path, mission_path, warnings);
 
-        // Entity placements: entity 0 is the player (skip — loadout comes from
+        // Entity placements: entity 0 is the player (skip - loadout comes from
         // player_def, spawn is player_start). entities 1..N dedup into the palette.
         var placements: std.ArrayList(types.EntityPlacement) = .empty;
         for (level.entities[1..]) |entity| {
@@ -934,7 +934,7 @@ pub fn buildEditorMission(
         }
 
         // Ground item placements: one placement per item (level files author
-        // single-item stacks — one layout char per item; runtime drops can
+        // single-item stacks - one layout char per item; runtime drops can
         // merge stacks, but those never round-trip through the editor).
         // Dedup by full item equality (name + stats + type) into the shared
         // item palette.
@@ -987,11 +987,11 @@ pub fn buildEditorMission(
 }
 
 /// The editor's new-level template (data/default_level.txt): the minimal
-/// valid layout — '!' at (0,0), '=' at (1,0), no floor, no entries. Loaded
+/// valid layout - '!' at (0,0), '=' at (1,0), no floor, no entries. Loaded
 /// by the `editor_add_level` handler through the reconstruction cache. The
 /// template contract is STRICT: a level end must be present (the `!=`
 /// shape) and no enemies / decorations / ground items may be authored into
-/// it — placements belong to the palette + the viewport, not the template,
+/// it - placements belong to the palette + the viewport, not the template,
 /// so anything more is a content error surfaced at the read site (the
 /// editor-defaults posture), never silently dropped.
 pub fn loadEditorDefaultLevel(
@@ -1002,7 +1002,7 @@ pub fn loadEditorDefaultLevel(
     warnings: ?*std.ArrayList([]const u8),
 ) !types.EditorLevel {
     // The template contract forbids decorations, so it carries no
-    // mission-bundled stems — an empty mission path makes any custom
+    // mission-bundled stems - an empty mission path makes any custom
     // stem fail fast.
     const level = try loadLevel(sections, file_source, allocator, "", file_path, warnings);
     if (level.level_end == null) return error.MissingDefaultLevelEnd;
@@ -1032,10 +1032,10 @@ pub fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vecto
 }
 
 /// User-facing palette id for a ground-item type: the item's own name, or
-/// "<Skill> Tome" for skill tomes (which carry no name field — mirrors the
+/// "<Skill> Tome" for skill tomes (which carry no name field - mirrors the
 /// item-tooltip naming in ui/tooltip.zig).
 /// The item's palette display name (the Items group's label; the editor's
-/// item defs keep `id` synced to this — the decoration id-tracks-the-sprite
+/// item defs keep `id` synced to this - the decoration id-tracks-the-sprite
 /// rule). pub: shared by the editor item-def handlers.
 pub fn itemDisplayName(item: types.Item, allocator: std.mem.Allocator) []const u8 {
     return switch (item) {
@@ -1076,7 +1076,7 @@ pub fn instantiateEditorLevel(
     var player = editor.player_def.template;
     resetRuntimeFields(&player);
     // The player's inventory is LOADOUT data (imported or authored), not
-    // a combat-runtime field — entity 0 keeps the template's.
+    // a combat-runtime field - entity 0 keeps the template's.
     player.inventory = editor.player_def.template.inventory;
     player.position = editor_level.player_start;
     entities.append(allocator, player) catch @panic("failed to append player entity");
@@ -1178,7 +1178,7 @@ const DecorationDefinition = struct {
 };
 
 /// Derive the anchor (bottom-most-then-left-most) from a sprite-grid footprint.
-/// Returns null if the footprint is empty — the caller panics (a decoration
+/// Returns null if the footprint is empty - the caller panics (a decoration
 /// with no footprint tiles is a malformed level). Shared with the editor's
 /// placement hit-testing (event_handlers.decorationFootprintCovers).
 pub fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
@@ -1198,7 +1198,7 @@ pub fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
 /// The world tiles a decoration placement reserves: the footprint's
 /// sprite-grid coords translated so the ANCHOR tile (bottom-most-then-
 /// left-most) sits at `anchor_position` (the placement's position). The
-/// single source of this formula — the parse-time invariant check, the
+/// single source of this formula - the parse-time invariant check, the
 /// editor placement orchestrators, and the footprint preview all read it.
 /// An empty footprint reserves nothing (the loader rejects those at parse;
 /// callers treat empty as "covers nothing").
@@ -1237,7 +1237,7 @@ pub fn decorationFootprintCovers(
     return false;
 }
 
-/// Warn (never reject) when a custom entity sprite — base or layer —
+/// Warn (never reject) when a custom entity sprite - base or layer -
 /// doesn't follow the fixed 512x640 entity frame. Warn-only at load (the
 /// entity still spawns); the render-side gate (`customSpriteDimsPassGate`)
 /// makes wrong-dims art draw as the magenta fallback, and the warning
@@ -1256,7 +1256,7 @@ fn warnEntitySpriteDimensions(
         appendLoadWarning(
             allocator,
             warnings,
-            "entity sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) — will render as fallback",
+            "entity sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) - will render as fallback",
             .{ entity.sprite, file_path },
         );
         return;
@@ -1265,7 +1265,7 @@ fn warnEntitySpriteDimensions(
         appendLoadWarning(
             allocator,
             warnings,
-            "entity sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; will render as fallback",
+            "entity sprite '{s}' in {s} is {d}x{d} - entity art must be 512x640; will render as fallback",
             .{ entity.sprite, file_path, dims.x, dims.y },
         );
     }
@@ -1275,7 +1275,7 @@ fn warnEntitySpriteDimensions(
             appendLoadWarning(
                 allocator,
                 warnings,
-                "entity layer sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) — will render as fallback",
+                "entity layer sprite '{s}' in {s} could not be resolved (missing or invalid mission PNG) - will render as fallback",
                 .{ layer.sprite, file_path },
             );
             continue;
@@ -1284,14 +1284,14 @@ fn warnEntitySpriteDimensions(
             appendLoadWarning(
                 allocator,
                 warnings,
-                "entity layer sprite '{s}' in {s} is {d}x{d} — entity art must be 512x640; will render as fallback",
+                "entity layer sprite '{s}' in {s} is {d}x{d} - entity art must be 512x640; will render as fallback",
                 .{ layer.sprite, file_path, layer_dims.x, layer_dims.y },
             );
         }
     }
 }
 
-/// Clamp a placed decoration's footprint to what the level can honor —
+/// Clamp a placed decoration's footprint to what the level can honor -
 /// hand-authored content is UNTRUSTED: invalid footprint tiles are DROPPED
 /// with a warning, never a crash, and an emptied (or authored-empty)
 /// footprint falls back to the sprite grid's bottom-left tile (the pick-
@@ -1300,7 +1300,7 @@ fn warnEntitySpriteDimensions(
 /// walk's per-placement clone owns the slice).
 ///   - footprint tiles outside the sprite bbox → dropped
 ///   - world footprint tiles overlapping a level/hub tile → dropped
-///     (placement invariant — see DESIGN → Decorations & Footprint)
+///     (placement invariant - see DESIGN → Decorations & Footprint)
 fn clampDecorationFootprint(
     decoration: *types.Decoration,
     tile_set: *const std.AutoHashMap(types.Vector2, void),
@@ -1326,12 +1326,12 @@ fn clampDecorationFootprint(
         appendLoadWarning(
             allocator,
             warnings,
-            "{d} footprint tiles on decoration '{s}' in {s} are outside the sprite bbox — dropped",
+            "{d} footprint tiles on decoration '{s}' in {s} are outside the sprite bbox - dropped",
             .{ dropped_outside, decoration.name, file_path },
         );
     }
 
-    // Pass 2: drop world-tile overlaps. Runs on the SURVIVORS — world
+    // Pass 2: drop world-tile overlaps. Runs on the SURVIVORS - world
     // positions derive from the anchor, which the survivors determine.
     var dropped_overlap: usize = 0;
     if (kept.items.len > 0) {
@@ -1352,7 +1352,7 @@ fn clampDecorationFootprint(
         appendLoadWarning(
             allocator,
             warnings,
-            "{d} footprint tiles on decoration '{s}' in {s} overlap level/hub tiles — dropped",
+            "{d} footprint tiles on decoration '{s}' in {s} overlap level/hub tiles - dropped",
             .{ dropped_overlap, decoration.name, file_path },
         );
     }
@@ -1365,14 +1365,14 @@ fn clampDecorationFootprint(
             appendLoadWarning(
                 allocator,
                 warnings,
-                "decoration '{s}' in {s} has no footprint tiles — defaulted to the sprite grid's bottom-left tile",
+                "decoration '{s}' in {s} has no footprint tiles - defaulted to the sprite grid's bottom-left tile",
                 .{ decoration.name, file_path },
             );
         } else {
             appendLoadWarning(
                 allocator,
                 warnings,
-                "decoration '{s}' in {s}: every footprint tile was dropped — defaulted to the sprite grid's bottom-left tile",
+                "decoration '{s}' in {s}: every footprint tile was dropped - defaulted to the sprite grid's bottom-left tile",
                 .{ decoration.name, file_path },
             );
         }
@@ -1396,7 +1396,7 @@ fn clampDecorationFootprint(
 /// Parse one decoration entry's pairs (sprite / color_index / footprint /
 /// layers) into a `DecorationDefinition`. Shared by the per-level inline
 /// parser (keyed by `character_code`) and the registry parser (no
-/// `character_code`). The `character_code` key, if present, is ignored here —
+/// `character_code`). The `character_code` key, if present, is ignored here -
 /// the caller handles it. See `parseDecorationDefinitions` for the entry
 /// shape + `layer` delimiter semantics.
 fn parseDecorationEntry(
@@ -1413,7 +1413,7 @@ fn parseDecorationEntry(
 
     // Resolve the base sprite's dims, degrading with warnings on every
     // spec violation (custom content is untrusted: warn + degrade, never
-    // reject, never crash — the balance-bounds posture):
+    // reject, never crash - the balance-bounds posture):
     //   - unresolvable (unknown shipped stem / missing or invalid mission
     //     PNG) → a one-tile 256x256 fallback; renders magenta (the texture
     //     store can't resolve it either)
@@ -1427,7 +1427,7 @@ fn parseDecorationEntry(
         appendLoadWarning(
             allocator,
             warnings,
-            "decoration sprite '{s}' in {s} could not be resolved (not shipped, or a missing/invalid mission PNG) — falling back to 256x256",
+            "decoration sprite '{s}' in {s} could not be resolved (not shipped, or a missing/invalid mission PNG) - falling back to 256x256",
             .{ base_sprite, file_path },
         );
         base_pixel_dims = .{ .x = sprite_grid_tile_pixels, .y = sprite_grid_tile_pixels };
@@ -1437,7 +1437,7 @@ fn parseDecorationEntry(
         appendLoadWarning(
             allocator,
             warnings,
-            "decoration sprite '{s}' in {s} is {d}x{d} — not a whole multiple of 256; floored to {d}x{d} (edge pixels crop)",
+            "decoration sprite '{s}' in {s} is {d}x{d} - not a whole multiple of 256; floored to {d}x{d} (edge pixels crop)",
             .{ base_sprite, file_path, base_pixel_dims.x, base_pixel_dims.y, floored_base_dims.x, floored_base_dims.y },
         );
         base_pixel_dims = floored_base_dims;
@@ -1446,7 +1446,7 @@ fn parseDecorationEntry(
         appendLoadWarning(
             allocator,
             warnings,
-            "decoration sprite '{s}' in {s} is {d}x{d} — exceeds 4096px and may not render on some devices (max texture size)",
+            "decoration sprite '{s}' in {s} is {d}x{d} - exceeds 4096px and may not render on some devices (max texture size)",
             .{ base_sprite, file_path, base_pixel_dims.x, base_pixel_dims.y },
         );
     }
@@ -1502,7 +1502,7 @@ fn parseDecorationEntry(
                     appendLoadWarning(
                         allocator,
                         warnings,
-                        "malformed footprint line '{s}' on decoration '{s}' in {s} — skipped",
+                        "malformed footprint line '{s}' on decoration '{s}' in {s} - skipped",
                         .{ pair.value, base_sprite, file_path },
                     );
                     continue;
@@ -1544,7 +1544,7 @@ fn parseDecorationEntry(
 /// No-op (appends nothing) when the layer had no `sprite`. Degrade + warn on
 /// spec violations, never a panic: an unresolvable layer sprite is kept
 /// (renders as fallback), and a dims mismatch against the base is kept too
-/// (renders cropped to the base's grid — the view builds layer pieces from
+/// (renders cropped to the base's grid - the view builds layer pieces from
 /// the BASE's source rects).
 fn finishLayer(
     layer_sprite: ?[]const u8,
@@ -1564,7 +1564,7 @@ fn finishLayer(
         appendLoadWarning(
             allocator,
             warnings,
-            "layer sprite '{s}' on decoration '{s}' in {s} could not be resolved — kept, will render as fallback",
+            "layer sprite '{s}' on decoration '{s}' in {s} could not be resolved - kept, will render as fallback",
             .{ sprite, base_sprite, file_path },
         );
         layers.append(allocator, .{
@@ -1580,7 +1580,7 @@ fn finishLayer(
         appendLoadWarning(
             allocator,
             warnings,
-            "layer sprite '{s}' on decoration '{s}' in {s} is {d}x{d} but the base is {d}x{d} — kept, will render cropped to the base grid",
+            "layer sprite '{s}' on decoration '{s}' in {s} is {d}x{d} but the base is {d}x{d} - kept, will render cropped to the base grid",
             .{ sprite, base_sprite, file_path, floored_layer_dims.x, floored_layer_dims.y, base_pixel_dims.x, base_pixel_dims.y },
         );
     }
@@ -1596,17 +1596,17 @@ fn finishLayer(
 /// into a hashmap keyed by character code. Each entry group has:
 ///   character_code X  (single char)
 ///   sprite <name>        (base sprite)
-///   color_index N        (optional, default 0 — world gradient index)
+///   color_index N        (optional, default 0 - world gradient index)
 ///   footprint x y        (one or more lines, sprite-grid coords)
-///   layer                (delimiter — starts a layer sub-group)
+///   layer                (delimiter - starts a layer sub-group)
 ///     sprite <name>      (layer sprite, must be same pixel dims as base)
 ///     color_index N      (layer color index)
-///     behind true|false  (optional — draw behind the base instead of over)
+///     behind true|false  (optional - draw behind the base instead of over)
 /// A `layer` line is a delimiter: the following `sprite`/`color_index` pairs
 /// belong to that layer until the next `layer` or end of entry. Pixel dims
 /// are resolved from the comptime sprite-metadata table (shipped) or the file
 /// source (custom). Spec violations (unresolvable sprites, non-grid dims, a
-/// layer/base dims mismatch) degrade with a warning — see
+/// layer/base dims mismatch) degrade with a warning - see
 /// `parseDecorationEntry` + `finishLayer`.
 fn parseDecorationDefinitions(
     sections: []const Section,
@@ -1628,7 +1628,7 @@ fn parseDecorationDefinitions(
     return definitions;
 }
 
-/// Load the decoration registry (`data/decorations.txt`) — one entry per
+/// Load the decoration registry (`data/decorations.txt`) - one entry per
 /// shipped decoration sprite, as editor-palette prefabs for "add new
 /// decoration." Each entry has the same shape as a level's Decorations entry
 /// MINUS `character_code` (registry entries are prefabs identified by sprite
@@ -1647,7 +1647,7 @@ pub fn loadDecorationRegistry(
     var list: std.ArrayList(types.DecorationTypeDef) = .empty;
     if (findSection(sections, "Decorations")) |section| {
         for (section.entry_groups) |group| {
-            // Skip an empty group (no sprite) — e.g. a trailing blank-line
+            // Skip an empty group (no sprite) - e.g. a trailing blank-line
             // artifact. A real entry must have a `sprite` key.
             if (findValue(group.pairs, "sprite") == null) continue;
             // Shipped content; warnings are null (registry regressions are
@@ -1668,14 +1668,14 @@ pub fn loadDecorationRegistry(
 }
 
 /// The three editor palette "+" defaults (data/editor_defaults.txt): one
-/// entry per kind in the level-file section formats — Entities (the shared
+/// entry per kind in the level-file section formats - Entities (the shared
 /// parseEntityDefinition body, team 1), Decorations (a registry-shaped entry:
 /// sprite + footprint + color_index + layers), Items (an Items entry). No
-/// character_code anywhere — the code is a level-Layout concern (the
+/// character_code anywhere - the code is a level-Layout concern (the
 /// data/decorations.txt precedent). The file is shipped content, so a missing
 /// section or entry is a CONTENT error surfaced as a load error (the
 /// add-type handler turns it into the recoverable popup), never a silent
-/// fallback. Key validation reuses the level key map — the sections are the
+/// fallback. Key validation reuses the level key map - the sections are the
 /// level formats verbatim.
 pub const EditorDefaults = struct {
     entity: types.EntityTypeDef,
@@ -1693,7 +1693,7 @@ pub fn loadEditorDefaults(
     try validateSections(sections, &parser.editor_defaults_sections);
     try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version);
 
-    // Entity: the first Entities entry. name + sprite are required — the
+    // Entity: the first Entities entry. name + sprite are required - the
     // template's other absent keys are exactly the "none of it" defaults
     // (no weapons / gear / utility skills / layers).
     const entities_section = findSection(sections, "Entities") orelse return error.MissingDefaultEntry;
@@ -1711,7 +1711,7 @@ pub fn loadEditorDefaults(
     const decoration_pairs = decorations_section.entry_groups[0].pairs;
     if (findValue(decoration_pairs, "sprite") == null) return error.MissingDefaultEntry;
     // Registry + editor-defaults entries are shipped, mission-agnostic
-    // content — a custom (mission-bundled) stem can't resolve here; it
+    // content - a custom (mission-bundled) stem can't resolve here; it
     // degrades to the 256x256 fallback with a warning.
     const decoration_definition = parseDecorationEntry(decoration_pairs, "", file_source, allocator, warnings, file_path);
 
@@ -1746,7 +1746,7 @@ fn parseVector2Pair(value: []const u8) ?types.Vector2 {
 }
 
 /// Extract the file stem from a namespaced custom stem
-/// (`custom/<mission-dir>/<file-stem>` — the last path segment; the dir
+/// (`custom/<mission-dir>/<file-stem>` - the last path segment; the dir
 /// name is namespace-only, never a read path). Returns null for a stem
 /// with no segment after the last slash.
 fn customFileStem(sprite_stem: []const u8) ?[]const u8 {
@@ -1758,7 +1758,7 @@ fn customFileStem(sprite_stem: []const u8) ?[]const u8 {
 /// Resolve a namespaced custom stem's pixel dims by reading
 /// `<mission_path>/<file-stem>.png` and parsing its IHDR. Returns null
 /// when the stem is malformed, the mission path or file source is
-/// missing, or the file is unreadable or not a valid PNG — callers
+/// missing, or the file is unreadable or not a valid PNG - callers
 /// degrade with a warning (custom content is untrusted; never a crash).
 fn resolveCustomSpriteFileDims(
     sprite_stem: []const u8,
@@ -1778,7 +1778,7 @@ fn resolveCustomSpriteFileDims(
 }
 
 /// The pick-commit backstop for custom ENTITY sprites (the picker filter's
-/// defense-in-depth — a stale scan or crafted input): does the namespaced
+/// defense-in-depth - a stale scan or crafted input): does the namespaced
 /// stem resolve to a PNG with exactly the fixed 512x640 entity frame?
 /// False on missing/invalid files too.
 pub fn customEntitySpriteConforms(
@@ -1793,15 +1793,15 @@ pub fn customEntitySpriteConforms(
 }
 
 /// Resolve a decoration sprite's pixel dims at LOAD time. Exactly two
-/// channels — custom assets are always mission-bundled and never live
+/// channels - custom assets are always mission-bundled and never live
 /// under assets/ (see DESIGN → Custom Missions & Online Services):
 ///   1. a `custom/<mission-dir>/<file-stem>` stem reads the PNG from the
 ///      mission directory being loaded (`{mission_path}/{file-stem}.png`)
-///   2. anything else must be a shipped decoration (comptime table —
+///   2. anything else must be a shipped decoration (comptime table -
 ///      keyed by the asset-relative path `decorations/tree_1`, so the
 ///      bare config stem gets the `decorations/` prefix)
 /// Returns null when neither channel resolves (an unknown shipped stem,
-/// or a missing/invalid mission PNG) — the caller degrades with a
+/// or a missing/invalid mission PNG) - the caller degrades with a
 /// warning (custom content is untrusted; never a crash).
 fn resolveDecorationSpriteDimensions(
     sprite_stem: []const u8,
@@ -1828,7 +1828,7 @@ fn resolveDecorationSpriteDimensions(
 // are OWNED via `toOwnedSlice`. The layout walk CLONES each placed
 // entity/decoration/item so the level fully owns its data (no sharing with
 // the definition hashmaps). `freeLevel`/`freeHub` then deep-free everything
-// uniformly — use them in tests with `std.testing.allocator`. In production,
+// uniformly - use them in tests with `std.testing.allocator`. In production,
 // the arena absorbs all allocations, so these frees are no-ops.
 
 fn dupeString(allocator: std.mem.Allocator, s: []const u8) []const u8 {
@@ -1994,7 +1994,7 @@ fn freeEntityDefinitions(definitions: *std.AutoHashMap(u8, types.Entity), alloca
 
 /// Parse one Items entry's pairs (item_type + item_name + the kind's stat
 /// keys) into an Item. Shared by the level Items parser (keyed by
-/// character_code) and the editor palette defaults (no character_code —
+/// character_code) and the editor palette defaults (no character_code -
 /// nothing is placed). Returns null when the entry carries no valid
 /// `item_type` (the level parser skips such groups). Skill tomes are not
 /// level-authorable and have no entry shape here.
@@ -2077,7 +2077,7 @@ pub fn loadLevel(
 
     // Parse decoration definitions keyed by character code (sprite +
     // sprite-grid footprint + pixel dims). Replaces the old decoration_codes
-    // list — the layout walk now looks up the full definition per char.
+    // list - the layout walk now looks up the full definition per char.
     var decoration_definitions = parseDecorationDefinitions(sections, mission_path, file_source, allocator, warnings, file_path);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
     var entity_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
@@ -2153,7 +2153,7 @@ pub fn loadLevel(
                             cloneDecorationOwned(&decoration, allocator);
                             decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
                         } else {
-                            // Not a decoration — this tile is walkable.
+                            // Not a decoration - this tile is walkable.
                             try tile_positions.append(allocator, position);
 
                             // Match character to enemy or item definition.
@@ -2185,7 +2185,7 @@ pub fn loadLevel(
 
     // Spawn-relative coordinates: displace everything so the player
     // spawn ('!') is the origin (0,0). World positions then stay
-    // invariant under layout-bbox growth in any direction — a decoration
+    // invariant under layout-bbox growth in any direction - a decoration
     // placed off the playable area expands the grid but shifts nothing,
     // so absolute positions in recorded replays remain valid. The editor
     // load path (buildEditorMission) reuses this loader, so editor
@@ -2213,8 +2213,8 @@ pub fn loadLevel(
     }
 
     // Clamp decoration footprints: invalid tiles are dropped with a
-    // warning (untrusted content — never a crash); a world footprint tile
-    // must not overlap a level tile (placement invariant — see DESIGN →
+    // warning (untrusted content - never a crash); a world footprint tile
+    // must not overlap a level tile (placement invariant - see DESIGN →
     // Decorations & Footprint). Build a tile-position set for O(1) lookup.
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
@@ -2258,7 +2258,7 @@ pub fn loadHub(
     }
 
     // Parse decoration definitions keyed by character code (same as levels).
-    // Hubs carry no mission-bundled stems (campaign content only) — a custom
+    // Hubs carry no mission-bundled stems (campaign content only) - a custom
     // stem can't resolve against the empty mission path and degrades to the
     // fallback with a warning.
     var decoration_definitions = parseDecorationDefinitions(sections, "", file_source, allocator, warnings, file_path);
@@ -2355,7 +2355,7 @@ pub fn loadHub(
         }
     }
 
-    // Spawn-relative coordinates — the same normalization as loadLevel
+    // Spawn-relative coordinates - the same normalization as loadLevel
     // ('!' → origin): session-log/crash replay reconstructs through hubs
     // against current files, so hub positions must be bbox-growth-invariant
     // too. See the loadLevel site + DESIGN → Logging & Replay →
@@ -2377,7 +2377,7 @@ pub fn loadHub(
         hub.player.position = .{ .x = hub.player.position.x + offset.x, .y = hub.player.position.y + offset.y };
     }
 
-    // Clamp decoration footprints (same as levels — see DESIGN →
+    // Clamp decoration footprints (same as levels - see DESIGN →
     // Decorations & Footprint).
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
@@ -2440,7 +2440,7 @@ pub fn loadMission(
 }
 
 /// Parse the shared LOADOUT sections (MainHandWeapon .. UtilitySkills,
-/// including Inventory) into `player_data` — the sections a player save
+/// including Inventory) into `player_data` - the sections a player save
 /// and a mission player.txt have in common. Used by `loadPlayerSave`
 /// (which adds Info / DiscoveredHubs / UnlockedSkills / CloneData) and
 /// `loadPlayerLoadout` (which maps the result onto the player template).
@@ -2548,7 +2548,7 @@ fn parsePlayerLoadoutFields(
 
             // A skill tome must never carry a weapon skill (weapon skills
             // belong to the equipped weapon, and can never sit on the
-            // utility bar a tome feeds) — warned + the item dropped.
+            // utility bar a tome feeds) - warned + the item dropped.
             if (item_type_id == .skill_tome) {
                 if (findValue(pairs, "skill_name")) |skill_name| {
                     if (parseEnum(types.SkillId, skill_name)) |skill_id| {
@@ -2674,7 +2674,7 @@ pub fn loadPlayerSave(
         player_data.learned_skills = try skills.toOwnedSlice(allocator);
     }
 
-    // DiscoveredHubs — one `name` per entry group (the writer's shape;
+    // DiscoveredHubs - one `name` per entry group (the writer's shape;
     // parsing it here closes a writer/reader asymmetry that silently
     // dropped discovery on every save/load round trip).
     if (findSection(sections, "DiscoveredHubs")) |section| {
@@ -2755,7 +2755,7 @@ pub fn loadColorThemeDefinitions(
         }
     }
 
-    // Gradients — each entry group is one gradient, starting with gradient_index
+    // Gradients - each entry group is one gradient, starting with gradient_index
     if (findSection(sections, "Gradients")) |section| {
         var gradient_list: std.ArrayList(ColorGradient) = .empty;
 
@@ -2806,8 +2806,8 @@ pub fn autoDerivedGradientIndex(
     };
 }
 
-/// The level's EFFECTIVE gradient index for a role — the role's explicit
-/// override while manual, the auto-derived one otherwise — normalized by
+/// The level's EFFECTIVE gradient index for a role - the role's explicit
+/// override while manual, the auto-derived one otherwise - normalized by
 /// the same modulo `deriveActiveColorTheme` applies. Single source for the
 /// editor UI's index displays (the metadata sidebar's swatch number + the
 /// theme picker's current-row highlight) so both always agree with the
@@ -2838,7 +2838,7 @@ pub fn effectiveGradientIndex(
 /// The world gradient is at the given index; enemy and player gradients
 /// are evenly spaced around the wheel (at 1/3 and 2/3 offsets) unless an
 /// optional override index names a specific gradient (the editor's
-/// per-role manual picks — null = auto-derive). See DESIGN → Level Editor
+/// per-role manual picks - null = auto-derive). See DESIGN → Level Editor
 /// → Level theme.
 pub fn deriveActiveColorTheme(
     color_theme_definitions: ColorThemeDefinitions,
@@ -2910,7 +2910,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     const settings = try loadSettings(sections, allocator, null, null);
     defer freeSettings(settings, allocator);
 
-    // Audio values (u32 percentages 0–100)
+    // Audio values (u32 percentages 0-100)
     try std.testing.expectEqual(@as(u32, 80), settings.music_volume);
     try std.testing.expectEqual(@as(u32, 30), settings.sound_effects_volume);
 
@@ -3089,7 +3089,7 @@ test "loadLevel multi-tile decoration footprint" {
     const allocator = std.testing.allocator;
     // tree_1 is 768x768 = 3x3 bbox. Footprint is just the trunk tile at
     // sprite-grid (1,2) (bottom-middle). The canopy overhangs the other 8
-    // bbox tiles — those are NOT footprint tiles and may overlap level tiles.
+    // bbox tiles - those are NOT footprint tiles and may overlap level tiles.
     const raw_text =
         \\Metadata
         \\file_format_version 1
@@ -3117,7 +3117,7 @@ test "loadLevel multi-tile decoration footprint" {
     defer freeLevel(level, allocator);
 
     // T is at row 0, col 0 -> world (0, 0) (natural reading order). The
-    // footprint world tile is (0, 0) — not a level tile (decoration char adds
+    // footprint world tile is (0, 0) - not a level tile (decoration char adds
     // no tile). The other 8 positions are all '.' -> 8 tiles.
     try std.testing.expectEqual(8, level.level_tiles.len);
 
@@ -3237,7 +3237,7 @@ test "loadLevel decoration with layers" {
 
 /// A minimal PNG byte sequence: signature + IHDR chunk (dims + zeros).
 /// `parsePngDimensions` reads only the signature + IHDR dims, so the
-/// pixel data + CRC are absent — this is a fixture, not a decodable image.
+/// pixel data + CRC are absent - this is a fixture, not a decodable image.
 /// pub ONLY as the cross-file test-fixture helper (handler tests build
 /// conforming custom-sprite PNGs with it; production code never calls it).
 pub fn minimalPngHeader(allocator: std.mem.Allocator, width: u32, height: u32) []u8 {
@@ -3247,7 +3247,7 @@ pub fn minimalPngHeader(allocator: std.mem.Allocator, width: u32, height: u32) [
     @memcpy(bytes[12..16], "IHDR");
     std.mem.writeInt(u32, bytes[16..20], width, .big);
     std.mem.writeInt(u32, bytes[20..24], height, .big);
-    // bit depth / color type / compression / filter / interlace + CRC —
+    // bit depth / color type / compression / filter / interlace + CRC -
     // never parsed; zeroed for a well-formed-looking chunk.
     @memset(bytes[24..33], 0);
     return bytes;
@@ -3257,7 +3257,7 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
     const allocator = std.testing.allocator;
     // Custom assets are mission-bundled: a `custom/<mission-dir>/<stem>`
     // decoration stem must resolve its pixel dims from the mission being
-    // LOADED (`{mission_path}/{file-stem}.png`), never from assets/ — the
+    // LOADED (`{mission_path}/{file-stem}.png`), never from assets/ - the
     // reload path that used to panic (see DESIGN → Custom Missions & Online
     // Services → the centered sprite picker). Base + layer both route.
     var threaded_io = std.Io.Threaded.init(allocator, .{});
@@ -3315,7 +3315,7 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
 
 /// Test helper: does the collected load-warnings list contain a message with
 /// the given substring? Tests assert warning PRESENCE by substring rather
-/// than exact counts or full text — the contract is WHICH conditions warn,
+/// than exact counts or full text - the contract is WHICH conditions warn,
 /// not the wording.
 fn hasLoadWarningContaining(warnings: []const []const u8, needle: []const u8) bool {
     for (warnings) |warning| {
@@ -3391,7 +3391,7 @@ test "loadLevel clamps invalid decoration footprints (malformed, out-of-bbox, ov
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "every footprint tile was dropped"));
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "overlap level/hub tiles"));
     // Exactly one warning per clamp class: A 2 (malformed + empty), B 2
-    // (out-of-bbox + emptied), C 1 (overlap), D 0 (valid) — pins that the
+    // (out-of-bbox + emptied), C 1 (overlap), D 0 (valid) - pins that the
     // valid decoration never warns and no class double-warns.
     try std.testing.expectEqual(@as(usize, 5), warnings.items.len);
 }
@@ -3486,7 +3486,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "'custom/test_m/ghost'"));
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "'tree_99'"));
     // huge is grid-conformant: no floor warning for it (the >4096 device
-    // warning still names its dims — different needle).
+    // warning still names its dims - different needle).
     try std.testing.expect(!hasLoadWarningContaining(warnings.items, "floored to 8192"));
 }
 
@@ -3496,7 +3496,7 @@ test "decoration layer dims mismatch vs base: kept + warned (no panic)" {
     const arena = arena_state.allocator();
 
     // tree_1 base (768x768) with a stone_1 layer (256x256): the mismatch
-    // warns and the layer is KEPT (renders cropped to the base grid) —
+    // warns and the layer is KEPT (renders cropped to the base grid) -
     // the old behavior was a load-time panic.
     const raw_text =
         \\Metadata
@@ -3546,7 +3546,7 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
     const file_source = @import("file_source.zig").FileSource.init(io, temp_dir);
 
     // hero: conforming 512x640 (silent). tiny: wrong dims. missing: no
-    // PNG at all. All warn-only — the fixed-frame render continues.
+    // PNG at all. All warn-only - the fixed-frame render continues.
     const hero_png = minimalPngHeader(std.testing.allocator, 512, 640);
     defer std.testing.allocator.free(hero_png);
     file_source.writeFile("test_m/hero.png", hero_png) catch @panic("write hero.png");
@@ -3592,7 +3592,7 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
     var warnings: std.ArrayList([]const u8) = .empty;
     const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", "test_m", &warnings);
 
-    // All four entities load regardless of sprite spec — warn-only.
+    // All four entities load regardless of sprite spec - warn-only.
     try std.testing.expectEqual(5, level.entities.len);
     try std.testing.expectEqualStrings("custom/test_m/hero", level.entities[1].sprite);
     try std.testing.expectEqualStrings("custom/test_m/tiny", level.entities[2].sprite);
@@ -3627,8 +3627,8 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     defer freeDecorationRegistry(registry, allocator);
 
     // One entry per shipped decoration base sprite: 5 trees + tent + 11
-    // ruins + 5 statues + 6 stones = 28. (Layer stems — canopy, moss, grass,
-    // grass_back — belong to their base's entry, not their own.)
+    // ruins + 5 statues + 6 stones = 28. (Layer stems - canopy, moss, grass,
+    // grass_back - belong to their base's entry, not their own.)
     try std.testing.expectEqual(@as(usize, 28), registry.len);
 
     // Find the tree entry (first, with a layer), a stone (single-tile), a
@@ -3661,7 +3661,7 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(true, t5.layers[3].behind);
 
     // tree_1: 3x3 bbox (768x768), footprint at (1,2), color 4, four layers
-    // in config order (canopy, moss, grass, grass_back — each color 2, the
+    // in config order (canopy, moss, grass, grass_back - each color 2, the
     // canopy's index, same dims).
     const t = tree.?;
     try std.testing.expectEqual(@as(i32, 768), t.pixel_dims.x);
@@ -3709,7 +3709,7 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
 }
 
 test "loadEditorDefaults parses the shipped palette defaults" {
-    // The shipped data/editor_defaults.txt via the real FileSource — the
+    // The shipped data/editor_defaults.txt via the real FileSource - the
     // registry test's read-the-shipped-file pattern, so the test guards the
     // file's content against drift. Arena-wrapped: the parsed defs borrow
     // the section strings (the loader-borrowing convention).
@@ -3727,7 +3727,7 @@ test "loadEditorDefaults parses the shipped palette defaults" {
     const defaults = try loadEditorDefaults(sections, &file_source, allocator, "data/editor_defaults.txt", null);
 
     // Entity: "New Entity" on skeleton_1, team 1, color 4, weapons shown,
-    // 20/0/1/3 stats, and nothing else — no weapons, gear, utility skills,
+    // 20/0/1/3 stats, and nothing else - no weapons, gear, utility skills,
     // or layers (the absent keys are the point).
     try std.testing.expectEqualStrings("New Entity", defaults.entity.id);
     try std.testing.expectEqualStrings("New Entity", defaults.entity.template.name);
@@ -3751,7 +3751,7 @@ test "loadEditorDefaults parses the shipped palette defaults" {
     }
     try std.testing.expectEqual(@as(usize, 0), defaults.entity.template.layers.len);
 
-    // Decoration: the stone_1 prefab duplicated — single (0,0) footprint,
+    // Decoration: the stone_1 prefab duplicated - single (0,0) footprint,
     // color 5, 256x256 dims, no layers; the palette id tracks the sprite.
     try std.testing.expectEqualStrings("stone_1", defaults.decoration.id);
     try std.testing.expectEqualStrings("stone_1", defaults.decoration.sprite);
@@ -3775,7 +3775,7 @@ test "loadEditorDefaults rejects missing entries and format drift" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // Metadata only — every kind's entry is missing.
+    // Metadata only - every kind's entry is missing.
     {
         const sections = try parseConfigFile(
             "Metadata\nfile_format_version 1\n",
@@ -3786,7 +3786,7 @@ test "loadEditorDefaults rejects missing entries and format drift" {
             loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
         );
     }
-    // An Entities entry without a name — a sprite-only entry is not a
+    // An Entities entry without a name - a sprite-only entry is not a
     // usable enemy default.
     {
         const sections = try parseConfigFile(
@@ -3839,7 +3839,7 @@ test "loadEditorDefaults rejects missing entries and format drift" {
 
 test "instantiateEditorLevel regroups co-located item placements into one stack" {
     // Level files author one item per stack, but the editor UI can place two
-    // item types on the same tile — instantiation must regroup co-located
+    // item types on the same tile - instantiation must regroup co-located
     // placements into a single multi-item stack (first-seen position order,
     // items in placement order).
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -4146,13 +4146,13 @@ test "loadPlayerSave parses a save file" {
     try std.testing.expectEqual(1, player_data.pants.?.pickup_radius_bonus);
     try std.testing.expectEqual(1, player_data.boots.?.speed_bonus);
 
-    // Inventory — items at slots 1 and 2
+    // Inventory - items at slots 1 and 2
     try std.testing.expect(player_data.inventory.slots[1] != null);
     try std.testing.expect(player_data.inventory.slots[2] != null);
     try std.testing.expectEqualStrings("Rusty Dagger", player_data.inventory.slots[1].?.weapon.name);
     try std.testing.expectEqualStrings("Old Coat", player_data.inventory.slots[2].?.coat.name);
 
-    // Utility skills — first slot is replenish, rest are defaults
+    // Utility skills - first slot is replenish, rest are defaults
     try std.testing.expectEqual(.replenish, player_data.equipped_utility_skills[0]);
 
     // Clone data
@@ -4410,7 +4410,7 @@ fn testOwnedBindings(
 test "loadSettings injects default bindings for actions the user file doesn't mention" {
     // The per-action migration: a user InputBindings section is authoritative
     // for the actions it names, but unmentioned actions fall back to their
-    // DEFAULT bindings (injected) — so a new official binding reaches
+    // DEFAULT bindings (injected) - so a new official binding reaches
     // existing installs whose user file predates it (the skip_level gap).
     const allocator = std.testing.allocator;
 
@@ -4423,10 +4423,10 @@ test "loadSettings injects default bindings for actions the user file doesn't me
         }),
     };
     // loadSettings CONSUMES the base's bindings (frees them on replace;
-    // aliases them otherwise) — only the merged result is freed here (same
+    // aliases them otherwise) - only the merged result is freed here (same
     // ownership shape as the session_setup overlay test).
 
-    // User file mentions ONLY skip (rebound to Enter) — e.g. an old install
+    // User file mentions ONLY skip (rebound to Enter) - e.g. an old install
     // whose file predates the dump_event_log + undo defaults.
     const raw_text =
         \\Metadata
@@ -4448,7 +4448,7 @@ test "loadSettings injects default bindings for actions the user file doesn't me
     // is NOT carried over (mentioned = user-authoritative).
     try std.testing.expectEqual(@as(usize, 3), merged.input_bindings.len);
     // The user's skip binding is the ONLY skip binding (Enter, not the
-    // default Space) — mentioned means user-authoritative, not additive.
+    // default Space) - mentioned means user-authoritative, not additive.
     for (merged.input_bindings) |binding| {
         if (binding.action == .skip) {
             try std.testing.expectEqualStrings("Enter", binding.input.key);
@@ -4482,10 +4482,10 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
             .{ .key = "L", .ctrl = true, .action = .dump_event_log },
         }),
     };
-    // loadSettings consumes the base's bindings — free merged only.
+    // loadSettings consumes the base's bindings - free merged only.
 
     // The post-write file: skip (still default) + dump_event_log (still
-    // default) — the exact content writeSettings would emit after injection.
+    // default) - the exact content writeSettings would emit after injection.
     const raw_text =
         \\Metadata
         \\file_format_version 2
@@ -4508,12 +4508,12 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
     const merged = try loadSettings(sections, allocator, base, null);
     defer freeSettings(merged, allocator);
 
-    // Exactly the user file's two bindings — no duplicate injection.
+    // Exactly the user file's two bindings - no duplicate injection.
     try std.testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
 }
 
 test "loadSettings accepts a context-less binding (contexts are derived)" {
-    // The `context` line is optional + informational — a binding's active
+    // The `context` line is optional + informational - a binding's active
     // contexts are DERIVED from the action (`actionBindingContexts`); the
     // loader ignores the line entirely. A pre-migration context-less user
     // file therefore loads as-is (no drop, no warning). See DESIGN → Input
@@ -4525,7 +4525,7 @@ test "loadSettings accepts a context-less binding (contexts are derived)" {
             .{ .key = "Space", .action = .skip },
         }),
     };
-    // loadSettings consumes the base's bindings on replace — free merged only.
+    // loadSettings consumes the base's bindings on replace - free merged only.
 
     const raw_text =
         \\Metadata
@@ -4548,7 +4548,7 @@ test "loadSettings accepts a context-less binding (contexts are derived)" {
     defer freeSettings(merged, allocator);
 
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
-    // The user's rebinding is authoritative — skip bound to Enter, the
+    // The user's rebinding is authoritative - skip bound to Enter, the
     // default (Space) replaced, nothing dropped.
     try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
     try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
@@ -4556,11 +4556,11 @@ test "loadSettings accepts a context-less binding (contexts are derived)" {
 }
 
 test "loadSettings ignores the binding context line (contexts are derived)" {
-    // `context game` on an editor-context action — under the OLD authored-
+    // `context game` on an editor-context action - under the OLD authored-
     // context model this was a dead binding (warned + dropped); with derived
     // contexts the line is ignored and the binding's active contexts come
     // from `actionBindingContexts` (select_editor_tool → editor). The
-    // engine's context gate (checkAction) is where that lands — covered by
+    // engine's context gate (checkAction) is where that lands - covered by
     // the editor-inactive-on-level tests in input.zig. See DESIGN → Input →
     // Binding contexts.
     const allocator = std.testing.allocator;
@@ -4628,13 +4628,13 @@ test "loadSettings warns + drops a conflicting combo (same context, different ac
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "already fires") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "confirm") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "skip") != null);
-    // First listed wins — confirm kept, the skip binding dropped.
+    // First listed wins - confirm kept, the skip binding dropped.
     try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
     try std.testing.expectEqual(.confirm, settings.input_bindings[0].action);
 }
 
 test "loadSettings warns + drops a duplicate combo (same action twice)" {
-    // Same combo on the SAME action is redundant, not conflicting — but the
+    // Same combo on the SAME action is redundant, not conflicting - but the
     // file should carry one entry per combo; the later duplicate is warned
     // + dropped (the repair write cleans it).
     const allocator = std.testing.allocator;
@@ -4673,7 +4673,7 @@ test "loadSettings warns + drops a duplicate combo (same action twice)" {
 
 test "loadSettings keeps cross-context same-combo bindings (no conflict)" {
     // Overlap ACROSS contexts is legal (Digit1 = skill 1 in game, select
-    // tool in editor — never simultaneously active). Also covers modifier-
+    // tool in editor - never simultaneously active). Also covers modifier-
     // distinguished combos on one key: plain Enter (confirm) + ctrl Enter
     // (skip) are different combos. Neither pair warns or drops. See
     // DESIGN → Input → Hybrid precedence + binding conflicts.
@@ -4722,10 +4722,10 @@ test "loadSettings keeps cross-context same-combo bindings (no conflict)" {
 
 test "loadSettings: a user combo colliding with an injected default drops the default silently" {
     // The no-popup-loop contract: the user bound Enter to skip; the
-    // per-action injection still injects confirm's default (Enter —
+    // per-action injection still injects confirm's default (Enter -
     // confirm is unmentioned in the user file), and the conflict scan
     // drops the INJECTED default. It must drop SILENTLY: nothing in the
-    // user's file is wrong, and the injection re-runs every launch — a
+    // user's file is wrong, and the injection re-runs every launch - a
     // warning would pop the same message every launch with nothing to
     // repair (the repair write can't remove an injection). See DESIGN →
     // Input → Hybrid precedence + binding conflicts.
@@ -4738,7 +4738,7 @@ test "loadSettings: a user combo colliding with an injected default drops the de
             .{ .key = "Space", .action = .skip },
         }),
     };
-    // loadSettings consumes the base's bindings on replace — free merged only.
+    // loadSettings consumes the base's bindings on replace - free merged only.
 
     const raw_text =
         \\Metadata
@@ -4799,7 +4799,7 @@ test "loadSettings warns + drops a binding naming an unknown action" {
 
 test "loadSettings without an InputBindings section keeps the base bindings untouched" {
     // A user file that only touches scalars (no bindings section) leaves the
-    // defaults in place — the injection lives in the bindings branch only.
+    // defaults in place - the injection lives in the bindings branch only.
     const allocator = std.testing.allocator;
 
     const base = Settings{
@@ -4808,7 +4808,7 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
         }),
     };
     // No InputBindings section → the base's bindings are aliased into the
-    // merged result (not consumed) — free merged only.
+    // merged result (not consumed) - free merged only.
 
     const raw_text =
         \\Metadata
@@ -4868,7 +4868,7 @@ test "entity utility slots: a weapon skill is warned + dropped, utility skills k
     for (warnings.items) |w| allocator.free(w);
 }
 
-test "loadPlayerLoadout: save-shaped player.txt — loadout fields, default stats, name defaults to Player" {
+test "loadPlayerLoadout: save-shaped player.txt - loadout fields, default stats, name defaults to Player" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
@@ -4903,7 +4903,7 @@ test "loadPlayerLoadout: save-shaped player.txt — loadout fields, default stat
     try std.testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
     try std.testing.expectEqualStrings("Spare Dagger", template.inventory.slots[0].?.weapon.name);
     try std.testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
-    // Base stats are NOT authorable — the Entity defaults hold.
+    // Base stats are NOT authorable - the Entity defaults hold.
     try std.testing.expectEqual(@as(u32, 20), template.max_health);
     try std.testing.expectEqual(@as(u32, 0), template.defense);
     try std.testing.expectEqual(@as(u32, 1), template.speed);
@@ -4925,7 +4925,7 @@ test "loadPlayerLoadout: the v1 PlayerLoadout format is rejected" {
     defer freeParsedSections(sections, allocator);
 
     // The section validation fires first (PlayerLoadout is not a loadout
-    // section anymore) — the old format is rejected either way.
+    // section anymore) - the old format is rejected either way.
     try std.testing.expectError(
         error.UnexpectedSection,
         loadPlayerLoadout(sections, allocator, "player.txt", null),
@@ -4949,7 +4949,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     defer allocator.free(player_data.discovered_hubs);
 
     try std.testing.expectEqualStrings("New Player", player_data.player_name);
-    // No weapons or utility skills EQUIPPED — the arsenal is inventory + learned.
+    // No weapons or utility skills EQUIPPED - the arsenal is inventory + learned.
     try std.testing.expect(player_data.main_hand_weapon == null);
     try std.testing.expect(player_data.off_hand_weapon == null);
     for (player_data.equipped_utility_skills) |slot| try std.testing.expect(slot == null);
@@ -5021,7 +5021,7 @@ test "the shipped beginnings player.txt loads in the save-shaped format" {
 
 test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
     // Arena-wrapped: buildEditorMission borrows into its allocator (the
-    // editor is not yet self-owned — see AGENTS → Testing discipline).
+    // editor is not yet self-owned - see AGENTS → Testing discipline).
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const allocator = backing.allocator();
@@ -5094,7 +5094,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
 test "loadSettings warns (keeps) a binding naming an unproducible input id" {
     // The dead-binding advisory (the missing-Escape regression's class): a
     // binding naming an id no platform table can produce can never fire.
-    // Warned — with the exact failure mode — but KEPT (dropping would lose
+    // Warned - with the exact failure mode - but KEPT (dropping would lose
     // the entry; the id may be valid on another platform or a future
     // table). The popup deliberately repeats until the file names a
     // producible id. See `types.producible_key_ids`.
@@ -5123,7 +5123,7 @@ test "loadSettings warns (keeps) a binding naming an unproducible input id" {
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "can never fire") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "Escapee") != null);
-    // Kept, not dropped — the advisory leaves the entry in place.
+    // Kept, not dropped - the advisory leaves the entry in place.
     try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
     try std.testing.expectEqual(.escape, settings.input_bindings[0].action);
 }

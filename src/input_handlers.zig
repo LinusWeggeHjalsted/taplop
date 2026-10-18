@@ -1,11 +1,11 @@
-//! Input consumption — the semantic layer that turns a `PlayerInput` into
+//! Input consumption - the semantic layer that turns a `PlayerInput` into
 //! gameplay actions (event pushes) and transient state changes.
 //!
 //! `input.zig` is the *translation* layer (raw platform events → semantic
 //! `PlayerInput`); this file is the *consumption* layer: `handleAnytimeInput`,
 //! `handleIdleInput`, and `resolveTileCursor` resolve a player input into
 //! event pushes (via `event_push.pushEvents`) or direct `SessionState`
-//! writes (transient view/input state — never undoable `GameState`).
+//! writes (transient view/input state - never undoable `GameState`).
 //! Session-log dev tooling (`dumpEventLog`, the build-version advisory
 //! warn, the timestamp formatter) lives here too, called from the anytime
 //! path. The pointer gestures (drag/click/pan/sliders/right-click intents
@@ -46,7 +46,7 @@ const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 
 /// Mouse-wheel zoom cadence + bounds. Additive in fixed steps (one zoom-in
-/// then one zoom-out returns to the exact same value — no float drift).
+/// then one zoom-out returns to the exact same value - no float drift).
 /// Default 0.5; scroll up zooms in, scroll down zooms out. The minimum is
 /// always one step (so the floor divides evenly into the range). Tune from
 /// feel; if linear spacing feels uneven across the range, swap the additive
@@ -58,7 +58,7 @@ const default_camera_zoom: u32 = 50;
 
 /// Camera zoom (wheel + keyboard) is a world-view control: only the screens
 /// that render a camera (levels, hubs, the editor viewport) zoom. The main
-/// menu and the replay viewer have no meaningful zoom — the wheel and the
+/// menu and the replay viewer have no meaningful zoom - the wheel and the
 /// zoom keys are simply unused there instead of silently mutating the
 /// `camera_zoom` setting. The consumption-site gate (not a binding context):
 /// the wheel isn't a binding at all, and the keys must gate uniformly across
@@ -93,12 +93,12 @@ pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
 /// Write the full session event history + reconstruction cache as a
 /// session-log bundle to `logs/session_<YYYYMMDD_HHMMSS>/` in the persistent
 /// data dir (session_log.txt + content/ byte copies; see
-/// session_log_bundle.writeSessionLogBundle) — the bundle embeds every file
+/// session_log_bundle.writeSessionLogBundle) - the bundle embeds every file
 /// the session's reconstruction reads, so it replays deterministically
 /// regardless of later file changes (the autosave is overwritten by later
 /// sessions; custom missions are re-saved by the editor). A dev tool bound
 /// to ctrl+L. Runs only from the input path, so it never fires during replay.
-/// The timestamp is UTC (no timezone handling) — fine for a folder name.
+/// The timestamp is UTC (no timezone handling) - fine for a folder name.
 fn dumpEventLog(history: *GameStateHistory) void {
     var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
     defer arena.deinit();
@@ -136,17 +136,17 @@ fn dumpEventLog(history: *GameStateHistory) void {
 /// Push a player-action orchestrator event and drain it (plus its handler-
 /// pushed children) to completion within this call. Used by the
 /// options_action dispatch and the Escape overlay chain, both inside
-/// handleAnytimeInput — which runs before update()'s options-menu/pause
+/// handleAnytimeInput - which runs before update()'s options-menu/pause
 /// gates, so the drain proceeds even while a modal overlay is open. The
 /// overlay opened in a previous frame and nothing drains while it's open
 /// (update() returns at its gate), so event_stack.len on entry equals the
-/// depth when the overlay opened — that's the drain baseline. Draining back
+/// depth when the overlay opened - that's the drain baseline. Draining back
 /// DOWN to the baseline leaves anything pushed beneath (e.g. a mid-drain
 /// enemy turn) intact. Idle-point recording is left to the normal
 /// maybeRecordIdlePoint in gameLoop (no special case): if the stack empties
 /// (overlay opened from idle) an undo stop is recorded; mid-enemy-turn the
 /// action bundles into that drain's idle point. Aborts on load_error (the
-/// drain-loop convention — the error popup takes over).
+/// drain-loop convention - the error popup takes over).
 fn pushPlayerActionAndDrain(
     history: *GameStateHistory,
     action: events.PlayerInputEvent,
@@ -162,9 +162,9 @@ fn pushPlayerActionAndDrain(
 }
 
 /// Resolve a focused text field's keyboard outcome (Enter commits,
-/// Escape discards — see DESIGN → UI Framework → Text input widget).
+/// Escape discards - see DESIGN → UI Framework → Text input widget).
 /// Called ONCE per frame from main (after translateInput, before the
-/// drain) — never per update() drain iteration.
+/// drain) - never per update() drain iteration.
 pub fn resolveTextEditOutcome(
     history: *GameStateHistory,
     outcome: types.TextEditOutcome,
@@ -178,7 +178,7 @@ pub fn resolveTextEditOutcome(
 
 /// Commit the focused text field (Enter/OK, or the M2 click-away path):
 /// push the field's wrapper event + drain, then drop focus. The
-/// field-kind switch lives HERE — the UI framework is field-agnostic;
+/// field-kind switch lives HERE - the UI framework is field-agnostic;
 /// this is where a TextFieldId becomes a player action. A no-op edit (the
 /// buffer equals the current value) records nothing; a stale focus (no
 /// editor, or the target type deleted mid-edit) just drops the buffer.
@@ -191,7 +191,7 @@ fn parseUnboundedStatValue(value: []const u8) ?u32 {
     };
 }
 
-/// Parse + clamp to a bounded stat's max (the gear-stat balance bounds —
+/// Parse + clamp to a bounded stat's max (the gear-stat balance bounds -
 /// the same max_* the parser clamps with; the single source is types.zig).
 fn parseBoundedStatValue(value: []const u8, max: u32) ?u32 {
     const parsed = parseUnboundedStatValue(value) orelse return null;
@@ -200,10 +200,10 @@ fn parseBoundedStatValue(value: []const u8, max: u32) ?u32 {
 
 /// The inspector's current edit target as the entity-edit events carry
 /// it: the enemy type the inspector is showing, or `player_def` when the
-/// player (the fallback target) is showing — NULL when a decoration type
+/// player (the fallback target) is showing - NULL when a decoration type
 /// is showing (the entity controls don't render for decoration content,
 /// so a null here is a crafted click; the caller bails). See
-/// `ui.editorInspectorTarget` — the resolution's single seam.
+/// `ui.editorInspectorTarget` - the resolution's single seam.
 fn editorEntityEditTarget(editor: types.Editor) ?types.EntityEditTarget {
     return switch (ui.editorInspectorTarget(editor)) {
         .entity_type => |type_index| .{ .entity_type = type_index },
@@ -214,7 +214,7 @@ fn editorEntityEditTarget(editor: types.Editor) ?types.EntityEditTarget {
 
 /// The palette item type the inspector currently edits (the Items
 /// group's content), or null on any other target. The item commit sites'
-/// single seam — the entity-target wrapper's shape.
+/// single seam - the entity-target wrapper's shape.
 fn editorItemEditTarget(editor: types.Editor) ?u32 {
     return switch (ui.editorInspectorTarget(editor)) {
         .item_type => |type_index| if (type_index < editor.item_types.len) type_index else null,
@@ -224,7 +224,7 @@ fn editorItemEditTarget(editor: types.Editor) ?u32 {
 
 /// The inventory-slot item-def player action: `editorItemDefAction`'s
 /// exact shape with the slot index instead of the palette type id (the
-/// inventory detail rows' type picks + stat edits — one event, one undo
+/// inventory detail rows' type picks + stat edits - one event, one undo
 /// step).
 fn editorInventoryItemDefAction(
     slot_index: u32,
@@ -277,8 +277,8 @@ fn editorInventoryItemDefAction(
 }
 
 /// The item-def player action carrying a WHOLE item (a type pick, a stat
-/// edit — one event, one undo step), flattened to the event's top-level
-/// fields. Null for a skill tome (not expressible as an `ItemKind` — the
+/// edit - one event, one undo step), flattened to the event's top-level
+/// fields. Null for a skill tome (not expressible as an `ItemKind` - the
 /// editor authoring surface excludes tomes; unreachable live, defensive
 /// for crafted state).
 fn editorItemDefAction(
@@ -331,12 +331,12 @@ fn editorItemDefAction(
     };
 }
 
-/// The gear-slot player action (create / retype / field-edit / clear —
+/// The gear-slot player action (create / retype / field-edit / clear -
 /// one event, one undo step), carrying the FLATTENED item (a nested
 /// `?Weapon`-style value can't round-trip the session log once its name
-/// contains a space — see EntityGearPayload in events.zig). A null `item`
+/// contains a space - see EntityGearPayload in events.zig). A null `item`
 /// is the clear (`equipped: false`). The item's kind must match the slot
-/// (it always does — items are read from the slot itself or built for
+/// (it always does - items are read from the slot itself or built for
 /// it); a mismatch or a skill tome records nothing (crafted state).
 fn editorGearSlotAction(
     target: types.EntityEditTarget,
@@ -388,7 +388,7 @@ fn editorGearSlotAction(
 
 /// A default item for an EMPTY gear slot (the Add button / a weapon-type
 /// pick on an empty hand): "New <Slot>", zero stats. Weapons are created
-/// by the TYPE row (not here) — null for the hands.
+/// by the TYPE row (not here) - null for the hands.
 fn defaultItemForSlot(history: *GameStateHistory, slot: types.GearSlot) ?types.Item {
     const name = std.fmt.allocPrint(
         history.current_arena.allocator(),
@@ -406,7 +406,7 @@ fn defaultItemForSlot(history: *GameStateHistory, slot: types.GearSlot) ?types.I
 }
 
 /// The shared gate for the picker-pick arms: the open picker must be
-/// kind `kind`, else null (no picker open, or another kind — each pick
+/// kind `kind`, else null (no picker open, or another kind - each pick
 /// arm handles its own kind; a crafted click while the wrong picker is
 /// open no-ops). The switch enumerates every EditorPickerTarget variant
 /// so adding a kind is a compile error HERE, not a silent no-op gap in
@@ -462,7 +462,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const editor: *types.Editor = &history.current_state.editor.?;
             const entity_target = field.target.entity;
             const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
-            // Base stats are UNBOUNDED by design — see DESIGN → Level
+            // Base stats are UNBOUNDED by design - see DESIGN → Level
             // Editor → Inspector fields.
             const parsed = parseUnboundedStatValue(value) orelse return;
             // Would-change gate with NUMERIC semantics ("020" == 20).
@@ -523,7 +523,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const item = template.gearSlotItem(item_field.slot) orelse return;
             const current = types.itemStatValue(item, item_field.stat) orelse return;
             // Item stats are BOUNDED (the player can pick up exactly these
-            // items — the same max_* the parser clamps with).
+            // items - the same max_* the parser clamps with).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(item_field.stat)) orelse return;
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_base_up);
@@ -534,7 +534,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             ) orelse return;
             pushPlayerActionAndDrain(history, action);
         },
-        // The item content's fields (the Items palette group — target:
+        // The item content's fields (the Items palette group - target:
         // `.item_type`). Same gates as the entity arms: would-change never
         // records; a stat the kind doesn't carry, a stale palette index,
         // or a skill tome commits nothing; stats clamp to `itemStatMax`.
@@ -547,7 +547,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             };
             if (type_id >= editor.item_types.len) return;
             const item = editor.item_types[type_id].item;
-            // A skill tome has no name (unreachable live — tomes are never
+            // A skill tome has no name (unreachable live - tomes are never
             // offered; the gate holds for crafted state).
             if (std.meta.activeTag(item) == .skill_tome) return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
@@ -568,7 +568,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const item = editor.item_types[type_id].item;
             const current = types.itemStatValue(item, stat) orelse return;
             // Item stats are BOUNDED (the player can pick up exactly these
-            // items — the same max_* the parser clamps with).
+            // items - the same max_* the parser clamps with).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_base_up);
@@ -579,7 +579,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             pushPlayerActionAndDrain(history, action);
         },
         // The inventory detail rows' fields (the player loadout's
-        // Inventory section — target: `.inventory_slot`). Same gates as
+        // Inventory section - target: `.inventory_slot`). Same gates as
         // the item_def arms: would-change never records; an empty slot,
         // a stale slot index, a stat the kind doesn't carry, or a skill
         // tome commits nothing; stats clamp to `itemStatMax`.
@@ -611,7 +611,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const item = editor.player_def.template.inventory.slots[slot_index] orelse return;
             const current = types.itemStatValue(item, stat) orelse return;
             // Item stats are BOUNDED (the same max_* the parser clamps
-            // with — the player can pick up exactly these items).
+            // with - the player can pick up exactly these items).
             const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_base_up);
@@ -651,19 +651,19 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     // A committed edit is ONE undo step: record the idle point HERE. The
     // keyboard-resolution path commits from frame() BEFORE the drain, so
     // no other site would record it (the idle update() sees an empty
-    // stack + no input, and its events_processed check comes up false) —
+    // stack + no input, and its events_processed check comes up false) -
     // without this, undo steps PAST the edit and discards it from the
     // future timeline. The M2 click-away path (inside update()) lands on
     // this same recording; its own later maybeRecordIdlePoint dedupes via
     // the not-already-an-idle-point guard. Mid-drain commits (a non-empty
-    // stack) are absorbed into the surrounding drain's idle point — the
+    // stack) are absorbed into the surrounding drain's idle point - the
     // stack-empty check inside maybeRecordIdlePoint skips them.
     history.maybeRecordIdlePoint(true);
 }
 
 /// Focus a text field (its element was clicked): read the field's current
 /// value from GameState and seed the edit buffer. Focusing records
-/// nothing — the COMMIT is the event.
+/// nothing - the COMMIT is the event.
 pub fn beginFocusedTextEdit(
     history: *GameStateHistory,
     field: types.TextFieldRef,
@@ -714,15 +714,15 @@ pub fn beginFocusedTextEdit(
 }
 
 /// The ONE per-action sound choke point: every action that FIRED this
-/// frame queues its action layer here (once per action — `fired_actions`
+/// frame queues its action layer here (once per action - `fired_actions`
 /// is a set, so a same-frame keybind + button + console command on one
 /// action queues one layer), replacing the per-flag queue sites across
 /// the input handlers. The base halves stay at the button press/release
-/// seam (main.zig) — this is the effect-site half, so keyboard-triggered
+/// seam (main.zig) - this is the effect-site half, so keyboard-triggered
 /// actions play the layer alone (the no-click-sounds-for-keys rule).
 /// Two documented exclusions (the layer does NOT ride the firing):
-/// `types.actionSoundUnwired` — no action layer by design; and the
-/// outcome-gated set (`actionLayerRidesConsumptionSite` below) — those
+/// `types.actionSoundUnwired` - no action layer by design; and the
+/// outcome-gated set (`actionLayerRidesConsumptionSite` below) - those
 /// keep their per-site queues. See DESIGN → Audio (layered cues).
 pub fn dispatchFiredActionSounds(
     history: *GameStateHistory,
@@ -739,16 +739,16 @@ pub fn dispatchFiredActionSounds(
 
 /// Actions whose action layer rides the CONSUMPTION site (excluded from the
 /// fired-actions choke point): the layer must reflect the consumption
-/// OUTCOME, not the firing — undo/redo sound only when a step actually
+/// OUTCOME, not the firing - undo/redo sound only when a step actually
 /// happened (a no-op at the timeline start stays silent), swap_weapons
 /// only past its any-weapon/prepared gate, cancel only with a live
 /// preparation to cancel, the skill slots play their layer only on
-/// prepare/unprepare (an auto-fire cast plays the full skill cue instead —
+/// prepare/unprepare (an auto-fire cast plays the full skill cue instead -
 /// see main.zig's release-seam skill-slot skip), and skip only when the
-/// skip orchestrator actually fires (the handler's queue — the layer
+/// skip orchestrator actually fires (the handler's queue - the layer
 /// plays once; a skip that never reaches the orchestrator stays silent).
 /// A missing entry here DOUBLE-PLAYS the layer (the choke point + the
-/// consumption site) — the shipped skip layer did exactly that before
+/// consumption site) - the shipped skip layer did exactly that before
 /// `.skip` joined this set.
 fn actionLayerRidesConsumptionSite(action: types.Action) bool {
     return switch (action) {
@@ -759,7 +759,7 @@ fn actionLayerRidesConsumptionSite(action: types.Action) bool {
 
 /// The screens where the editor browser and its in-window actions
 /// (New Mission, tabs, rows) are consumed: the editor screen (with the
-/// editor state populated — the save_editor_mission discipline) and the
+/// editor state populated - the save_editor_mission discipline) and the
 /// main menu (the Editor button's entry point). Button-only from the
 /// main menu: the browser keybinds ship editor-context, so on the main
 /// menu only the button path reaches these consumption sites.
@@ -773,7 +773,7 @@ fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
 /// (topmost surface first; the error popup is more-modal still but is
 /// consumed by the pending_error gate at the top of handleAnytimeInput).
 /// Mission fail/complete reuse the exact orchestrator events their overlay
-/// buttons push, so Escape ≡ clicking the button — both land on the undo
+/// buttons push, so Escape ≡ clicking the button - both land on the undo
 /// timeline as recorded player actions. See DESIGN → Input → Escape overlay
 /// chain.
 // --- Keybinds tab editing (TODO → Keybind editor slice 4) ---
@@ -783,10 +783,10 @@ fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
 // capture seam lives in `translateInput` (`ui.routeKeybindCapture`).
 
 /// Resolve one frame's keybind-capture outcome (`main.frame`'s
-/// once-per-frame site — the text-edit-resolution model). Canceled: drop
+/// once-per-frame site - the text-edit-resolution model). Canceled: drop
 /// the edit. Captured (only during a LISTENING edit): build the PENDING
-/// proposal — the target's action + the captured combo (the held
-/// modifiers became the requirements) — and scan for the steal. Pure
+/// proposal - the target's action + the captured combo (the held
+/// modifiers became the requirements) - and scan for the steal. Pure
 /// UiState writes; the settings mutation happens only at Confirm.
 pub fn resolveKeybindCaptureOutcome(
     history: *GameStateHistory,
@@ -798,7 +798,7 @@ pub fn resolveKeybindCaptureOutcome(
         .none => {},
         .canceled => ui_state.keybind_edit = null,
         // Enter during pending: apply the proposal (the modal-capture-state
-        // convention — the Confirm button's keyboard path).
+        // convention - the Confirm button's keyboard path).
         .confirmed => applyKeybindEdit(history),
         .captured => {
             const target = switch (edit_state.edit) {
@@ -831,14 +831,14 @@ pub fn resolveKeybindCaptureOutcome(
     }
 }
 
-/// The steal scan (the keybind UI's half of the one-combo-one-action rule —
+/// The steal scan (the keybind UI's half of the one-combo-one-action rule -
 /// see DESIGN → Input → Hybrid precedence + binding conflicts): the first
 /// binding other than `exclude_index` (the row being edited) that occupies
 /// the candidate's combo AND would co-fire with it (different actions whose
-/// derived contexts intersect) or duplicates it (same action — a redundant
+/// derived contexts intersect) or duplicates it (same action - a redundant
 /// entry; confirming dedupes). Cross-context same-combo pairs are LEGAL
-/// (kept — the scan continues past them). Confirming REMOVES the returned
-/// entry — the edited row wins (the loader's first-listed-wins rule).
+/// (kept - the scan continues past them). Confirming REMOVES the returned
+/// entry - the edited row wins (the loader's first-listed-wins rule).
 fn findKeybindSteal(
     bindings: []const types.InputBinding,
     candidate: types.InputBinding,
@@ -859,7 +859,7 @@ fn findKeybindSteal(
 }
 
 /// Dupe a binding's input id so a rebuilt list owns its strings (the
-/// loadSettings ownership contract — see DESIGN → File System & IO →
+/// loadSettings ownership contract - see DESIGN → File System & IO →
 /// Settings ownership).
 fn dupeBindingInput(raw_input: types.RawInput, allocator: std.mem.Allocator) types.RawInput {
     return switch (raw_input) {
@@ -870,7 +870,7 @@ fn dupeBindingInput(raw_input: types.RawInput, allocator: std.mem.Allocator) typ
 }
 
 /// Rebuild `settings.input_bindings` around an edit: the caller decides per
-/// index (keep / drop — freeing the entry's owned string) and supplies the
+/// index (keep / drop - freeing the entry's owned string) and supplies the
 /// entries to append. Kept entries' strings MOVE into the new list (only the
 /// old slice backing is freed, not the strings); dropped + appended
 /// entries' strings are freed / duped respectively. The camera_zoom
@@ -904,8 +904,8 @@ fn rebuildInputBindings(
 }
 
 /// Apply the pending proposal (Confirm): replace the target entry (or
-/// append — an add) and REMOVE the stolen entry. The pending combo's id
-/// lives in the capture's buffer — duped into the settings allocation here.
+/// append - an add) and REMOVE the stolen entry. The pending combo's id
+/// lives in the capture's buffer - duped into the settings allocation here.
 fn applyKeybindEdit(history: *GameStateHistory) void {
     const ui_state = &history.session.ui_state;
     const edit_state = &(ui_state.keybind_edit orelse return);
@@ -926,7 +926,7 @@ fn applyKeybindEdit(history: *GameStateHistory) void {
     ui_state.keybind_edit = null;
 }
 
-/// Remove one binding (the row's X — direct, no confirm; Reset to defaults
+/// Remove one binding (the row's X - direct, no confirm; Reset to defaults
 /// is the safety net).
 fn removeKeybindBinding(history: *GameStateHistory, index: usize) void {
     const allocator = history.backing_allocator;
@@ -942,9 +942,9 @@ fn removeKeybindBinding(history: *GameStateHistory, index: usize) void {
 /// Replace ALL settings (every preference + bindings) with the shipped
 /// defaults (Reset to Defaults): back up the current settings first (see
 /// `backUpSettingsFile`), then re-load the embedded
-/// `data/default_settings.txt` wholesale — the current settings are freed
+/// `data/default_settings.txt` wholesale - the current settings are freed
 /// via `freeSettings` and replaced. `Settings` carries no identity data
-/// (no player name — that lives in the player save), so a full reset is
+/// (no player name - that lives in the player save), so a full reset is
 /// purely preferences + bindings. The fresh settings' strings are
 /// loadSettings-owned (the standard ownership contract). Reset to Defaults
 /// is the undo for the whole editing UI (settings changes carry no undo
@@ -965,15 +965,15 @@ fn resetSettingsToDefaults(history: *GameStateHistory) void {
 }
 
 /// Back up `settings.txt` before Reset to Defaults overwrites it (the
-/// `backup_autosave` policy — see DESIGN → File System & IO): a
+/// `backup_autosave` policy - see DESIGN → File System & IO): a
 /// synchronous flush FIRST (the debounced writer, so the file is the exact
 /// current settings, not up to the 5s debounced-write max-stale), then a
 /// byte copy to `settings-backup-<timestamp>.txt` in the persistent root
-/// (next to `settings.txt` — `saves/` stays for save files). Best-effort:
+/// (next to `settings.txt` - `saves/` stays for save files). Best-effort:
 /// a failure surfaces the recoverable-error popup but does NOT stop the
 /// reset (the reset is what the user asked for; informed destruction). A
-/// fresh install with no `settings.txt` yet has nothing to back up —
-/// silent skip. Same-second collision overwrites (accepted — the
+/// fresh install with no `settings.txt` yet has nothing to back up -
+/// silent skip. Same-second collision overwrites (accepted - the
 /// autosave-backup convention). Live-path side effect (input handling is
 /// never replayed), so no `!replaying` gate needed.
 fn backUpSettingsFile(history: *GameStateHistory) void {
@@ -1009,13 +1009,13 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // The chain is ordered to mirror the view's z-order (topmost first);
     // the census test in view.zig pins the emission ladder this mirrors.
     // Every close/open is a `player_toggle_ui_surface` push + drain (the
-    // class-1 surface state rides the undo timeline — see DESIGN → UI
+    // class-1 surface state rides the undo timeline - see DESIGN → UI
     // Framework → UI state classification); the immediate drain is what
     // lets this frame's own options-menu gate below see the flipped state
     // (the swap_weapons interjection discipline).
 
     // Editor browser (opens over the editor, on top of the options menu,
-    // or over the main menu): Escape steps back one layer — only the
+    // or over the main menu): Escape steps back one layer - only the
     // browser closes. Above the settings screen in the ladder (the
     // browser block emits after it in view()).
     if (surfaces.editor_browser_open) {
@@ -1027,7 +1027,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
 
     // Settings overlay. In-game
     // it opens on top of the options menu, so Escape steps back to the menu
-    // underneath — only the settings layer closes.
+    // underneath - only the settings layer closes.
     if (surfaces.settings_open) {
         pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
             .surface = .settings,
@@ -1036,9 +1036,9 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     }
 
     // Mission-complete overlay: Escape fires the Continue button's
-    // dismiss_mission_complete (on the undo timeline — undo re-shows, redo
+    // dismiss_mission_complete (on the undo timeline - undo re-shows, redo
     // dismisses). Above the mission-fail overlay in the ladder (never
-    // co-rendered — complete shows in the hub/editor, fail on a level).
+    // co-rendered - complete shows in the hub/editor, fail on a level).
     if (current.last_completed_mission != null) {
         pushPlayerActionAndDrain(history, .dismiss_mission_complete);
         return;
@@ -1054,7 +1054,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
-    // Main-menu overlays (load-save browser, credits — both reachable
+    // Main-menu overlays (load-save browser, credits - both reachable
     // from the main menu's own stack/options menu; they open on top of
     // the options menu, so they sit topmost whenever they're up).
     if (surfaces.load_save_menu_open) {
@@ -1093,7 +1093,7 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     }
 
     // Nothing to close: open the options menu. Every screen has a variant
-    // — the main menu's carries Settings/Credits/Exit Game instead of the
+    // - the main menu's carries Settings/Credits/Exit Game instead of the
     // session verbs (see buildOptionsMenu).
     pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
         .surface = .options_menu,
@@ -1111,7 +1111,7 @@ fn fullScreenOverlaySurfaceId(overlay_id: types.FullScreenOverlayId) types.UiSur
 }
 
 /// The value `payloadAs` returns for `tag`: the variant's payload type,
-/// with an inner optional flattened — `.editor_layer`'s ?u32 stays ?u32
+/// with an inner optional flattened - `.editor_layer`'s ?u32 stays ?u32
 /// (not ??u32), so the null-meaningful variants read exactly like the old
 /// per-field optionals did.
 fn PayloadAsType(comptime tag: types.ButtonPayloadTag) type {
@@ -1128,10 +1128,10 @@ fn PayloadAsType(comptime tag: types.ButtonPayloadTag) type {
     }
 }
 
-/// The frame's clicked-button payload when it is `tag`, else null — the
+/// The frame's clicked-button payload when it is `tag`, else null - the
 /// consumption-site read shape: "my arm's variant, or the click didn't
 /// happen". Belt-and-suspenders behind main.zig's relay fail-fast check
-/// (the console path fires payload-needing actions with no payload — they
+/// (the console path fires payload-needing actions with no payload - they
 /// no-op here by design; the payload IS the click).
 fn payloadAs(
     comptime tag: types.ButtonPayloadTag,
@@ -1146,14 +1146,14 @@ pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
     /// The frame's clicked-button payload (see `types.ButtonPayload`),
-    /// riding alongside `anytime.options_action` — the handler arm that
+    /// riding alongside `anytime.options_action` - the handler arm that
     /// fires the action reads its variant.
     clicked_payload: ?types.ButtonPayload,
     /// Pointer position this frame, for scroll-delta routing (skills browser
     /// scroll vs camera zoom). The skills panel is scrolled when the pointer
-    /// is over one of its slots — see `skillsSlotUnderPointer`.
+    /// is over one of its slots - see `skillsSlotUnderPointer`.
     pointer_position: types.ScreenPosition,
-    /// Last frame's UI elements — the pointer is over what was just drawn.
+    /// Last frame's UI elements - the pointer is over what was just drawn.
     ui_elements: []const ui.UiElement,
 ) void {
     // Recoverable error popup is modal: when a pending error is set, only
@@ -1163,12 +1163,12 @@ pub fn handleAnytimeInput(
     // already been reverted by the time the error is set, so there is
     // nothing to undo. The wheel (`scroll_delta`) is redirected here to
     // scroll the popup body instead of zooming the camera. Scrolling is
-    // LINE-based — the game-wide row-scroll convention (the inspector /
+    // LINE-based - the game-wide row-scroll convention (the inspector /
     // skills-panel / browser model): the offset is the first visible body
     // line, the wheel scrolls one line per notch with wheel-up = earlier
     // lines (offset decreases), and the arrow keys 3 lines per press.
     // Lower clamp here; `buildErrorPopup` clamps the upper bound in place
-    // (authoritative — only the view knows the wrapped line count).
+    // (authoritative - only the view knows the wrapped line count).
     // See DESIGN → Error Handling → Recoverable error surface.
     if (history.session.pending_error != null) {
         if (anytime.dismiss_error) {
@@ -1208,7 +1208,7 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.save_editor_mission) {
-        // The editor's save: a pure side effect (the dump_event_log class —
+        // The editor's save: a pure side effect (the dump_event_log class -
         // no recorded event, no undo step; replay never runs the input
         // layer). Editor-only; every other screen no-ops (the
         // delete_editor_selection discipline).
@@ -1220,7 +1220,7 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.export_editor_mission) {
-        // The mission export — same side-effect class + gates as the save.
+        // The mission export - same side-effect class + gates as the save.
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             mission_io.exportEditorMission(history);
         }
@@ -1234,7 +1234,7 @@ pub fn handleAnytimeInput(
         if (editorBrowserReachableScreen(&history.current_state)) {
             // Fresh view state on every open (the load-save browser's
             // reset-on-open pattern): scroll to the top + the local tab
-            // (your collection is the primary target), then scan now —
+            // (your collection is the primary target), then scan now -
             // decided from the pre-toggle state (class-2 view state, direct
             // writes; the open/close itself is the recorded surface event).
             if (!history.current_state.ui_surfaces.editor_browser_open) {
@@ -1271,7 +1271,7 @@ pub fn handleAnytimeInput(
     // pushPlayerActionAndDrain's job (see its doc for the baseline reasoning).
     if (anytime.options_action) |action| {
         // The action's layer queues ONCE at the fired-actions choke point
-        // (`dispatchFiredActionSounds` — see DESIGN → Audio, layered cues);
+        // (`dispatchFiredActionSounds` - see DESIGN → Audio, layered cues);
         // the release seam owns the base up.
         const current = &history.current_state;
         const allocator = history.current_arena.allocator();
@@ -1280,7 +1280,7 @@ pub fn handleAnytimeInput(
                 // Never during an editor run (playtest/validate): the run's
                 // player_data is temporary (rebuilt from the editor loadout,
                 // restored on exit), so a save would write the throwaway run
-                // data as a campaign save — the same reason buildOptionsMenu
+                // data as a campaign save - the same reason buildOptionsMenu
                 // hides the Export Save button mid-run. `save_game` is
                 // button-only today (no binding ships), so this gate is the
                 // defensive half for a future keybind; the button half lives
@@ -1296,12 +1296,12 @@ pub fn handleAnytimeInput(
                 ) catch @panic("failed to format save path");
                 pushPlayerActionAndDrain(history, .{ .save_game = .{ .save_path = save_path } });
             },
-            // Export Game (web only — the view gates on the web signal,
+            // Export Game (web only - the view gates on the web signal,
             // `persistent_dir_path == null`; the comptime gate here is the
             // defensive half for a future keybind, the Exit Game
             // discipline). The autosave write (a game in progress) drains
-            // FIRST via the orchestrator arm — mid-level progress is in the
-            // zip — then the zip + download run here (a live-path side
+            // FIRST via the orchestrator arm - mid-level progress is in the
+            // zip - then the zip + download run here (a live-path side
             // effect, the reset-to-defaults class: input handling never
             // replays, so no replay gate).
             .export_game => {
@@ -1324,7 +1324,7 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .player_exit_to_menu);
             },
             // Mission-complete overlay: Continue pushes dismiss_mission_complete
-            // (on the undo timeline — undo re-shows, redo dismisses). Replay
+            // (on the undo timeline - undo re-shows, redo dismisses). Replay
             // re-enters the mission: end_hub syncs the hub player entity first
             // (LIFO), then start_mission reloads from the completed-mission
             // path. The overlay disappears on the screen transition (renders
@@ -1344,7 +1344,7 @@ pub fn handleAnytimeInput(
             },
             // The validation stats screen's manual Overwrite Replay button:
             // write the STASHED slower-run replay bytes over the personal
-            // best (a pure side effect — the bytes are session-side, no
+            // best (a pure side effect - the bytes are session-side, no
             // recorded event; the mission_io fn owns the write + the
             // stash/offer/pb cleanup). Gated on the offer: the button only
             // shows while offered, but a stale click (an offer retired by
@@ -1363,14 +1363,14 @@ pub fn handleAnytimeInput(
                 .surface = .settings,
             } }),
             // Credits (the main-menu options menu variant): toggle the
-            // overlay — it opens on top of this menu, and the Back button
+            // overlay - it opens on top of this menu, and the Back button
             // reuses this action to close (the load-save browser's toggle
             // pattern). Routed through `options_action` because idle input
             // is gated while the options menu is open.
             .open_credits => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .credits,
             } }),
-            // Exit Game (the main-menu options menu variant, native only —
+            // Exit Game (the main-menu options menu variant, native only -
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's
             // exit condition consumes it and the shutdown defers flush.
@@ -1385,7 +1385,7 @@ pub fn handleAnytimeInput(
             // rides this one action + the `KeybindCommand` payload). All
             // phase transitions are direct UiState writes (off the undo
             // timeline); the SETTINGS mutation happens only at remove /
-            // confirm / reset (the camera_zoom discipline — mutate + mark
+            // confirm / reset (the camera_zoom discipline - mutate + mark
             // dirty). The key-capture seam lives in `translateInput`
             // (`ui.routeKeybindCapture`) + main.frame's
             // `resolveKeybindCaptureOutcome`; the builder renders the
@@ -1452,7 +1452,7 @@ pub fn handleAnytimeInput(
                 }
             },
             // A settings screen content tab was clicked (Settings /
-            // Keybinds). A view affordance — direct UiState write, off the
+            // Keybinds). A view affordance - direct UiState write, off the
             // undo timeline (the editor-browser tab convention); the scroll
             // resets on switch (the other tab's list has its own extent)
             // and an active keybind edit is discarded (a hidden surface
@@ -1467,7 +1467,7 @@ pub fn handleAnytimeInput(
             },
             // A settings toggle or choice was clicked (the `SettingRef`
             // payload). Mutate `history.settings` (a
-            // direct write — settings are off the undo timeline, like
+            // direct write - settings are off the undo timeline, like
             // `ui_state` toggles) + mark dirty for debounced persistence.
             // See DESIGN → UI Framework → Settings screen.
             .change_setting => {
@@ -1497,7 +1497,7 @@ pub fn handleAnytimeInput(
             },
             // Editor palette group header (expand/collapse). The group
             // index rides the payload. View-side
-            // display state — a direct UiState write, off the undo timeline
+            // display state - a direct UiState write, off the undo timeline
             // (same class as the panel-toggle flags). Accordion: expanding
             // a group collapses the others (one group open at a time);
             // collapsing just closes the clicked one.
@@ -1514,11 +1514,11 @@ pub fn handleAnytimeInput(
                 }
             },
             // Palette group "+" (add-new type): push the per-kind
-            // orchestrator + drain — the handler builds the type from the
+            // orchestrator + drain - the handler builds the type from the
             // shipped defaults (data/editor_defaults.txt), makes it the
             // active tool, and opens the inspector. For enemies +
             // decorations the base-sprite picker then opens on the new
-            // type (the mission rescan + Mission-tab reset — the inspector
+            // type (the mission rescan + Mission-tab reset - the inspector
             // Sprite row's open path; the picker's commit targets the new
             // type through the active tool it set). Ground items have no
             // sprite to pick.
@@ -1532,12 +1532,12 @@ pub fn handleAnytimeInput(
                     else => return,
                 }
                 // A failed defaults read reverts the action (the popup path)
-                // — no picker on top of a reverted creation.
+                // - no picker on top of a reverted creation.
                 if (history.load_error) return;
                 // The new type lands at the END of its group's list (the
                 // handler appends + points the active tool at it), so the
-                // group expands — accordion: the others collapse, the
-                // header-toggle discipline — and its window scrolls to the
+                // group expands - accordion: the others collapse, the
+                // header-toggle discipline - and its window scrolls to the
                 // end, making the new cell the last visible one. View-side
                 // display state, off the undo timeline (the toggle branch's
                 // class).
@@ -1556,12 +1556,12 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.editor_palette_scroll[group_index] =
                         @intCast(group_size -| ui.editor_palette_max_tools);
                 }
-                // The tool switch the handler made retargets the inspector —
+                // The tool switch the handler made retargets the inspector -
                 // any picker still open is stale, so a group 0/1 click
                 // OPENS the fresh picker (the open event REPLACES the stale
-                // one — dropdown semantics, one action); a group 2 click
+                // one - dropdown semantics, one action); a group 2 click
                 // closes any stale picker. The picker state rides
-                // GameState (`Editor.picker`) — see DESIGN → UI Framework
+                // GameState (`Editor.picker`) - see DESIGN → UI Framework
                 // → UI state classification.
                 if (group_index <= 1) {
                     const editor = &(history.current_state.editor orelse return);
@@ -1581,11 +1581,11 @@ pub fn handleAnytimeInput(
                 }
             },
             // Palette tool-cell delete button: push the per-kind
-            // orchestrator + drain — the editor_delete_type handler fans
+            // orchestrator + drain - the editor_delete_type handler fans
             // out into the per-placement deletes (across ALL levels),
             // removes the type, remaps the ids above it, and reconciles
             // the active tool; one undo step restores everything. The
-            // fixed tools have no delete button — a crafted
+            // fixed tools have no delete button - a crafted
             // select/tile-targeted click does nothing.
             .delete_editor_palette_type => {
                 const tool = payloadAs(.editor_tool, clicked_payload) orelse return;
@@ -1603,7 +1603,7 @@ pub fn handleAnytimeInput(
                     .select, .tile => return,
                 }
             },
-            // Top-bar add-level "+": push the orchestrator + drain — the
+            // Top-bar add-level "+": push the orchestrator + drain - the
             // handler reads the shipped template (data/default_level.txt)
             // through the reconstruction cache, appends the level, switches
             // to it, and syncs level_count; one undo step reverts it all.
@@ -1611,7 +1611,7 @@ pub fn handleAnytimeInput(
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_add_editor_level);
             },
-            // Level-tab ×: push the orchestrator + drain — the handler
+            // Level-tab ×: push the orchestrator + drain - the handler
             // removes the level, shifts later levels down, syncs
             // level_count, and adjusts the active tab. Gated here too (the
             // UI only offers the × above one level, but a crafted click
@@ -1627,9 +1627,9 @@ pub fn handleAnytimeInput(
             },
             // Inspector section header (expand/collapse). The section id
             // rides the payload. View-side display
-            // state — a direct UiState write, off the undo timeline (same
+            // state - a direct UiState write, off the undo timeline (same
             // class as the palette accordion). INDEPENDENT toggles, no
-            // accordion — sections are per-topic and often wanted together
+            // accordion - sections are per-topic and often wanted together
             // (e.g. Weapons + Gear).
             .toggle_editor_inspector_section => {
                 const section = payloadAs(.editor_section, clicked_payload) orelse return;
@@ -1638,7 +1638,7 @@ pub fn handleAnytimeInput(
                     !history.session.ui_state.editor_inspector_section_expanded[section_index];
             },
             // The inspector's Sprite row: open the centered sprite picker.
-            // The mission-local scan happens HERE (idle input — interactive
+            // The mission-local scan happens HERE (idle input - interactive
             // IO lives at open time, never in the view or handlers; the
             // list is cached on SessionState, re-scanned on every open so
             // a png dropped into the mission dir appears on the next
@@ -1646,14 +1646,14 @@ pub fn handleAnytimeInput(
             // priority over shipped ones). The picker KIND follows the
             // inspector target: the decoration content's row opens the
             // decoration picker (registry-fed Official tab, prefab-adopting
-            // commits) — the same panel, target-resolved inside the builder.
+            // commits) - the same panel, target-resolved inside the builder.
             .open_editor_sprite_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
                 const picker_target: types.EditorPickerTarget = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => .{ .decoration_sprite = {} },
                     .entity_type, .player => .{ .entity_sprite = {} },
-                    // No sprite row in the item content — a crafted click
+                    // No sprite row in the item content - a crafted click
                     // opens nothing.
                     .item_type => return,
                 };
@@ -1663,7 +1663,7 @@ pub fn handleAnytimeInput(
                 } });
             },
             // A Layers-section sprite button (add + per-layer re-pick): the
-            // same open path — the mission rescan, the Mission-tab reset —
+            // same open path - the mission rescan, the Mission-tab reset -
             // with the picker kind fixed by the button's content and the
             // layer index riding the payload (null = add mode).
             .open_editor_entity_layer_picker => {
@@ -1683,12 +1683,12 @@ pub fn handleAnytimeInput(
                 } });
             },
             // The Footprint row's button: open the centered footprint
-            // editor — seed the draft grid from the type's current
+            // editor - seed the draft grid from the type's current
             // footprint (a direct UiState write; the draft is transient
             // view state, the confirm is what records). The picker target
             // carries the TYPE ID, so a mid-edit tool switch can never
             // silently retarget the draft. A grid beyond the draft
-            // capacity (custom art >8x8 tiles) doesn't open — a deliberate
+            // capacity (custom art >8x8 tiles) doesn't open - a deliberate
             // UI gate, not a rejection (huge art keeps its committed
             // footprint; see DESIGN → Custom Missions & Online Services →
             // Custom-asset dimensions).
@@ -1715,11 +1715,11 @@ pub fn handleAnytimeInput(
                     .target = .{ .decoration_footprint = type_id },
                 } });
             },
-            // A footprint-editor tile cell: flip that draft cell — a
+            // A footprint-editor tile cell: flip that draft cell - a
             // direct UiState write (off the undo timeline; the confirm is
             // the event). The cell index is bounds-checked against the
             // stored type's CURRENT grid (a stale index can't come from
-            // the live buttons — the builder re-derives the grid every
+            // the live buttons - the builder re-derives the grid every
             // frame).
             .toggle_editor_footprint_tile => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
@@ -1736,7 +1736,7 @@ pub fn handleAnytimeInput(
             // The footprint editor's Confirm: close the picker and commit
             // the draft IF it differs (row-major sprite-grid coords). An
             // UNCHANGED draft closes without recording; an EMPTY draft
-            // stays open — a footprint must reserve at least one tile
+            // stays open - a footprint must reserve at least one tile
             // (the load-time invariant), so the confirm visibly doesn't
             // take. The handler prunes the type's now-invalid placements
             // (an edited footprint re-anchors).
@@ -1760,10 +1760,10 @@ pub fn handleAnytimeInput(
                     }
                 }
                 if (footprint.items.len == 0) return;
-                // An UNCHANGED draft closes without committing — the close
+                // An UNCHANGED draft closes without committing - the close
                 // itself is the recorded change (the picker surface event;
                 // a changed draft commits, and the commit orchestrator's
-                // handler pushes the close as a child — pick+close is one
+                // handler pushes the close as a child - pick+close is one
                 // undo step).
                 if (loaders.decorationFootprintEqual(definition.footprint, footprint.items)) {
                     pushPlayerActionAndDrain(history, .player_close_editor_picker);
@@ -1776,7 +1776,7 @@ pub fn handleAnytimeInput(
             },
             // The metadata sidebar's gradient swatch: open the centered
             // theme picker for that role. The target snapshots the ACTIVE
-            // level index — a mid-edit tab switch can't retarget the pick
+            // level index - a mid-edit tab switch can't retarget the pick
             // (the footprint editor's convention).
             .open_editor_level_gradient_picker => {
                 if (current.editor == null) return;
@@ -1791,7 +1791,7 @@ pub fn handleAnytimeInput(
                     } },
                 } });
                 // Scroll the CURRENT gradient into view on open (the level
-                // tab follow's rule — the highlight is the point of the
+                // tab follow's rule - the highlight is the point of the
                 // list, an offscreen one reads as broken): the smallest
                 // offset whose window still contains it. The builder clamps
                 // authoritatively next frame.
@@ -1809,12 +1809,12 @@ pub fn handleAnytimeInput(
             },
             // A theme-picker row: set the level's index for the picker's
             // role and close. Same-value picks close WITHOUT COMMITTING
-            // (the close itself is the recorded change — the picker surface
+            // (the close itself is the recorded change - the picker surface
             // event); a changed pick commits, and the commit orchestrator's
             // handler pushes the close as a child (pick+close is one undo
             // step). A pick while an enemy/player role is on AUTO flips it
             // to manual in the same commit (the explicit pick IS the manual
-            // choice — the state change null→index records even when the
+            // choice - the state change null→index records even when the
             // derived gradient was visually the same).
             .select_editor_level_gradient => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
@@ -1859,11 +1859,11 @@ pub fn handleAnytimeInput(
                     },
                 }
             },
-            // An enemy/player gradient row's Auto button — a TRUE toggle
+            // An enemy/player gradient row's Auto button - a TRUE toggle
             // both ways: while MANUAL it reverts to auto-derivation (the
             // null override); while AUTO it flips to manual by FREEZING
             // the currently-derived index as the explicit pick (the
-            // visuals don't change — the outline moves from the Auto
+            // visuals don't change - the outline moves from the Auto
             // button to the swatch; a later pick replaces the frozen
             // index). The world row has no Auto button (its index is
             // always picked).
@@ -1920,9 +1920,9 @@ pub fn handleAnytimeInput(
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 // Pick-commit backstop (the picker filter's defense-in-depth
-                // — a stale scan or crafted input): a custom sprite that
+                // - a stale scan or crafted input): a custom sprite that
                 // doesn't resolve to exactly the fixed 512x640 frame no-ops
-                // the COMMIT — only the close records. The load + render
+                // the COMMIT - only the close records. The load + render
                 // sides degrade the same art anyway; committing it would
                 // only mint a guaranteed-magenta type.
                 if (std.mem.startsWith(u8, sprite, "custom/") and
@@ -1942,11 +1942,11 @@ pub fn handleAnytimeInput(
                 }
                 // Pick-time default follows the art source: official stems
                 // tint (false), mission-local custom art keeps its own
-                // colors (true) — see DESIGN → Entity & UI Coloring,
+                // colors (true) - see DESIGN → Entity & UI Coloring,
                 // keep_original_colors. The same-sprite gate above keeps a
                 // manual override intact on a re-pick.
                 const keep_original_colors = std.mem.startsWith(u8, sprite, "custom/");
-                // Dupe into the current arena BEFORE pushing — the payload
+                // Dupe into the current arena BEFORE pushing - the payload
                 // slice must not point into the view's frame allocation
                 // (the text-commit path's ordering rule).
                 const value = history.current_arena.allocator().dupe(u8, sprite) catch
@@ -1959,7 +1959,7 @@ pub fn handleAnytimeInput(
             },
             // A DECORATION picker cell: adopt the picked sprite into the
             // edited decoration type and close the picker. An Official-tab
-            // pick (a registry stem) adopts the WHOLE prefab — footprint,
+            // pick (a registry stem) adopts the WHOLE prefab - footprint,
             // pixel dims, color, layers ("loading a prefab"); a Mission-tab
             // pick stores the namespaced stem with pixel dims read from the
             // PNG and a default single-tile footprint at the sprite grid's
@@ -1967,10 +1967,10 @@ pub fn handleAnytimeInput(
             // slice; dims verification for custom art is a TODO). The def
             // commit prunes the type's now-invalid placements (see the
             // handler). Same-definition picks close WITHOUT COMMITTING (the
-            // close itself is the recorded change) — a
+            // close itself is the recorded change) - a
             // re-pick of the current prefab AFTER a color tweak does record
             // (it re-adopts the authored color). A pick that fails its dims
-            // resolution keeps the picker OPEN, nothing recorded — the
+            // resolution keeps the picker OPEN, nothing recorded - the
             // pick visibly didn't take (the decoration-LAYER arm's semantic).
             .select_editor_decoration_sprite => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
@@ -1985,7 +1985,7 @@ pub fn handleAnytimeInput(
 
                 // Resolve the new definition from the pick: a registry
                 // stem adopts its prefab, anything else is a mission-local
-                // stem (`custom/<mission-dir>/<file-stem>` — the file stem
+                // stem (`custom/<mission-dir>/<file-stem>` - the file stem
                 // is the last path segment; file names carry no '/').
                 var prefab: ?types.DecorationTypeDef = null;
                 for (history.session.editor_decoration_registry) |definition| {
@@ -2000,7 +2000,7 @@ pub fn handleAnytimeInput(
                     .footprint = definition.footprint,
                     .pixel_dims = definition.pixel_dims,
                     .color_index = definition.color_index,
-                    // Prefabs are shipped (grayscale) art — an official
+                    // Prefabs are shipped (grayscale) art - an official
                     // pick adopts the prefab's flag (false).
                     .keep_original_colors = definition.keep_original_colors,
                     .layers = definition.layers,
@@ -2014,13 +2014,13 @@ pub fn handleAnytimeInput(
                         arena,
                     ) orelse return;
                     // Pick-commit backstop (the picker filter's
-                    // defense-in-depth): whole 256px tiles only — also
+                    // defense-in-depth): whole 256px tiles only - also
                     // covers the old positive-dims check (conforming dims
                     // are strictly positive).
                     if (!types.decorationSpriteDimsConform(pixel_dims)) return;
                     // The sprite grid's tile rows (256px per tile); the
                     // default footprint reserves the bottom-left tile.
-                    // Duped HERE (an arena slice) — a runtime-sized array
+                    // Duped HERE (an arena slice) - a runtime-sized array
                     // literal can't safely escape this block as a pointer.
                     const sprite_grid_rows = @divTrunc(pixel_dims.y + 255, 256);
                     const default_footprint = [_]types.Vector2{.{ .x = 0, .y = sprite_grid_rows - 1 }};
@@ -2030,10 +2030,10 @@ pub fn handleAnytimeInput(
                         .footprint = arena.dupe(types.Vector2, &default_footprint) catch
                             @panic("failed to allocate default decoration footprint"),
                         .pixel_dims = pixel_dims,
-                        // A custom stem has no authored values — the type's
+                        // A custom stem has no authored values - the type's
                         // current color + layers stay (the swatch adjusts
                         // color; layer editing is deferred). The custom
-                        // art IS pre-colored — the pick-time default flips
+                        // art IS pre-colored - the pick-time default flips
                         // the untinted-render flag on (see DESIGN → Entity
                         // & UI Coloring, keep_original_colors).
                         .color_index = current_definition.color_index,
@@ -2042,7 +2042,7 @@ pub fn handleAnytimeInput(
                     };
                 };
 
-                // Same-definition picks never fire (the FULL definition —
+                // Same-definition picks never fire (the FULL definition -
                 // sprite, footprint, dims, color, layers, the untinted flag).
                 const unchanged = std.mem.eql(u8, current_definition.sprite, new_definition.sprite) and
                     loaders.decorationFootprintEqual(current_definition.footprint, new_definition.footprint) and
@@ -2078,12 +2078,12 @@ pub fn handleAnytimeInput(
                 } });
             },
             // An ENTITY layer picker cell: add a new layer (add mode) or
-            // re-pick the edited layer's sprite (edit mode — the layer's
+            // re-pick the edited layer's sprite (edit mode - the layer's
             // color is kept, the weapon-retype semantics). A new layer
             // starts at color 0 (no authored source for entity layers).
             // Same-layer picks close WITHOUT COMMITTING (the close itself
             // is the recorded change). Entities share the
-            // fixed 512×640 frame — no dims to check.
+            // fixed 512×640 frame - no dims to check.
             .select_editor_entity_layer => {
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const layer_index = expectPickerKind(editor, .entity_layer) orelse return;
@@ -2093,7 +2093,7 @@ pub fn handleAnytimeInput(
                 const arena = history.current_arena.allocator();
                 // Pick-commit backstop (same rule as the base-sprite arm):
                 // a custom layer sprite that isn't the fixed 512x640 frame
-                // no-ops — nothing recorded.
+                // no-ops - nothing recorded.
                 if (std.mem.startsWith(u8, sprite, "custom/") and
                     !loaders.customEntitySpriteConforms(
                         history.file_source,
@@ -2128,14 +2128,14 @@ pub fn handleAnytimeInput(
                     } });
                 }
             },
-            // A DECORATION layer picker cell — the entity arm's shape plus
+            // A DECORATION layer picker cell - the entity arm's shape plus
             // the dims invariant: the layer's pixel dims must equal the
-            // base type's (a mismatch warns + degrades at load — see
+            // base type's (a mismatch warns + degrades at load - see
             // DESIGN → Custom Missions & Online Services → Custom-asset
             // dimensions). A custom stem's dims come from its PNG; an
             // official stem's from the comptime metadata table. A MISMATCH
             // (or a vanished/corrupt file) keeps the picker OPEN and
-            // records nothing — the pick visibly didn't take (the official
+            // records nothing - the pick visibly didn't take (the official
             // tab already filters to matching dims, so this only guards
             // mission-local picks). A new layer's color adopts a registry
             // prefab's authored layer color when the stem is one (tree_1's
@@ -2228,7 +2228,7 @@ pub fn handleAnytimeInput(
                     } });
                 }
             },
-            // A sprite picker tab button (Mission / Official): switch tabs —
+            // A sprite picker tab button (Mission / Official): switch tabs -
             // a direct UiState write (view affordance).
             .select_editor_sprite_tab => {
                 const tab = payloadAs(.editor_sprite_tab, clicked_payload) orelse return;
@@ -2237,8 +2237,8 @@ pub fn handleAnytimeInput(
             // Editor tool cell click (make it the active tool). The
             // EditorToolId rides the payload. Push the
             // orchestrator and drain (same as level tabs): the tool pointer
-            // lives on the Editor (GameState), so the switch — and the
-            // selection clear it carries — rides the undo timeline
+            // lives on the Editor (GameState), so the switch - and the
+            // selection clear it carries - rides the undo timeline
             // (`editor_set_tool`). Re-selecting the active tool changes
             // nothing (no event, no undo step).
             .select_editor_tool => {
@@ -2251,7 +2251,7 @@ pub fn handleAnytimeInput(
             },
             // Level-tab click: push the orchestrator (the EditorEvent owns
             // the mutation; the switch rides the undo timeline) and drain.
-            // Re-clicking the ACTIVE tab fires nothing — beyond the dead
+            // Re-clicking the ACTIVE tab fires nothing - beyond the dead
             // undo step, the same-value event would also clear the
             // selection as a side effect (the select_editor_tool
             // same-value gate).
@@ -2265,14 +2265,14 @@ pub fn handleAnytimeInput(
             },
             // Inspector toggle button (editor top-left, below options): push
             // the orchestrator (the open flag lives on the Editor, GameState,
-            // so the toggle rides the undo timeline) and drain. No payload —
+            // so the toggle rides the undo timeline) and drain. No payload -
             // the event is a bare flip.
             .toggle_editor_inspector => {
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
             },
             // Settings-sidebar toggle button (editor top-right, at the
-            // inspector toggle's height): same shape — push the orchestrator
+            // inspector toggle's height): same shape - push the orchestrator
             // and drain.
             .toggle_editor_metadata_sidebar => {
                 if (current.editor == null) return;
@@ -2285,12 +2285,12 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .player_start_playtest);
             },
             // Top-bar Validate button: start the full-mission validation
-            // run of the SAVED mission dir (file-based — the run certifies
+            // run of the SAVED mission dir (file-based - the run certifies
             // the artifact a player receives, not the editor memory; see
             // DESIGN → Level Editor → Playtest/validate framing). SAVE
             // FIRST: the run needs a dir to read, and the eventual
             // validation_replay.txt needs a dir to live in. A failed save
-            // surfaces its own popup — abort without starting the run.
+            // surfaces its own popup - abort without starting the run.
             // The payload borrows the memo's durable dir string: valid
             // through the drain (no other save can run mid-drain), and
             // deep-copied when the orchestrator is recorded.
@@ -2303,9 +2303,9 @@ pub fn handleAnytimeInput(
             },
             // Options-menu Revalidate Mission: re-certify the stored
             // validation replay against the current SAVED content. SAVE
-            // FIRST — same contract as Validate (the check certifies the
+            // FIRST - same contract as Validate (the check certifies the
             // files a player receives, and the hash binding must match
-            // them). A failed save surfaces its own popup — abort without
+            // them). A failed save surfaces its own popup - abort without
             // revalidating.
             .revalidate_editor_mission => {
                 if (current.editor == null) return;
@@ -2432,7 +2432,7 @@ pub fn handleAnytimeInput(
             // A decoration layer's draw-side toggle (the Back/Front button
             // on the layer's slot row): flip the layer's `behind` flag,
             // committing the WHOLE layer value through the set event
-            // (sprite + color + dims kept — the color swatch's commit
+            // (sprite + color + dims kept - the color swatch's commit
             // shape). Always changes (a flip), so no would-change gate.
             .toggle_editor_decoration_layer_behind => {
                 const layer_index = payloadAs(.editor_layer, clicked_payload) orelse return;
@@ -2464,7 +2464,7 @@ pub fn handleAnytimeInput(
                 } });
             },
             // Inspector keep-original-colors toggles (entity + decoration):
-            // flip the edited type's flag — always changes (a flip), so no
+            // flip the edited type's flag - always changes (a flip), so no
             // would-change gate. Same shape as the displays-weapons toggle.
             .toggle_editor_entity_keep_original_colors => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
@@ -2505,7 +2505,7 @@ pub fn handleAnytimeInput(
                 };
                 if (equipped) |weapon| {
                     if (weapon.weapon_type == weapon_type) return;
-                    // Retype in place — identity (name/damage) stay stable.
+                    // Retype in place - identity (name/damage) stay stable.
                     var retyped = weapon;
                     retyped.weapon_type = weapon_type;
                     const retype_action = editorGearSlotAction(target, hand, .{ .weapon = retyped }) orelse return;
@@ -2526,13 +2526,13 @@ pub fn handleAnytimeInput(
                 }
             },
             // Item-TYPE pick cell (the Items group's inspector content):
-            // RESET-EVERYTHING semantics (author decision) — any pick that
+            // RESET-EVERYTHING semantics (author decision) - any pick that
             // differs from the current item replaces it with a
             // "New <Kind>" default (weapon: "New <WeaponType>"), zeroed
             // stats. No retype-keeps-identity case (unlike the entity
             // weapon slots); an identical pick never fires. A weapon cell
             // without its weapon-type payload, or a tome-kind target
-            // item, commits nothing (defensive — the cells always carry
+            // item, commits nothing (defensive - the cells always carry
             // both, tomes are never offered).
             .select_editor_item_type => {
                 const cell = payloadAs(.editor_item_kind_cell, clicked_payload) orelse return;
@@ -2566,7 +2566,7 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, item_action);
             },
             // Gear Add: create a default item in the EMPTY slot (a
-            // present item never re-adds — its fields edit in place).
+            // present item never re-adds - its fields edit in place).
             .add_editor_item => {
                 const slot = payloadAs(.editor_gear_slot, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
@@ -2578,10 +2578,10 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, add_action);
             },
             // Item Delete: clear the slot to null (an empty slot is a
-            // no-op — the button isn't rendered then, but the gate holds
+            // no-op - the button isn't rendered then, but the gate holds
             // for crafted input).
             // An inspector utility-slot button: open the centered skill
-            // picker for that slot — the open is the recorded surface
+            // picker for that slot - the open is the recorded surface
             // event (the picker state rides GameState; the PICK is a
             // separate action).
             .open_editor_skill_picker => {
@@ -2593,7 +2593,7 @@ pub fn handleAnytimeInput(
             },
             // A picker cell: assign to the picker's slot (the skill rode in
             // skill; a null editor_skill payload = the None cell) and close.
-            // The picker is a DROPDOWN, not a modal — everything else stays
+            // The picker is a DROPDOWN, not a modal - everything else stays
             // live while it's open (see DESIGN → Level Editor → Editor UI
             // layout); this arm just no-ops when no picker is open.
             // Same-value picks (incl. None-on-empty) close WITHOUT
@@ -2627,8 +2627,8 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, clear_action);
             },
             // An inventory slot cell (the player inspector's Inventory
-            // section): select it — a direct UiState write (selection is
-            // navigation, not authored content — the section-expansion
+            // section): select it - a direct UiState write (selection is
+            // navigation, not authored content - the section-expansion
             // discipline); clicking the already-selected slot deselects
             // (the detail block collapses). A crafted out-of-range index
             // never selects.
@@ -2654,7 +2654,7 @@ pub fn handleAnytimeInput(
                 } });
             },
             // Inventory-slot Delete: clear the slot to null (an empty
-            // slot is a no-op — the button isn't rendered then, but the
+            // slot is a no-op - the button isn't rendered then, but the
             // gate holds for crafted input).
             .delete_editor_inventory_item => {
                 const slot = payloadAs(.editor_inventory_slot, clicked_payload) orelse return;
@@ -2668,7 +2668,7 @@ pub fn handleAnytimeInput(
             // An inventory-slot item-TYPE pick cell (the detail block's
             // type rows): same reset-everything semantics as
             // `.select_editor_item_type`, targeting the SELECTED slot's
-            // item. The rows only render while the slot is occupied — an
+            // item. The rows only render while the slot is occupied - an
             // empty selection commits nothing (author decision: an empty
             // slot shows Add until an item exists).
             .select_editor_inventory_item_type => {
@@ -2705,7 +2705,7 @@ pub fn handleAnytimeInput(
             },
             // Editor-browser kind tab switch (Mission today; Hub /
             // Campaign when those editors land): switches the browser
-            // content to that kind. A view affordance — direct UiState
+            // content to that kind. A view affordance - direct UiState
             // write, off the undo timeline; the scroll resets like a
             // list-tab switch (the other kind's list has its own extent).
             .select_editor_kind_tab => {
@@ -2714,24 +2714,24 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_browser_kind = kind;
                 history.session.ui_state.editor_mission_scroll_offset = 0;
             },
-            // Mission-list tab switch (Your Missions / Official — the
-            // active kind's content tab). A view affordance — direct UiState
+            // Mission-list tab switch (Your Missions / Official - the
+            // active kind's content tab). A view affordance - direct UiState
             // write, off the undo timeline (the sprite-picker tab's
             // convention).
             .select_editor_mission_tab => {
                 if (!history.current_state.ui_surfaces.editor_browser_open) return;
                 const tab = payloadAs(.editor_mission_tab, clicked_payload) orelse return;
                 history.session.ui_state.editor_mission_browser_tab = tab;
-                // A tab switch resets the scroll — the other tab's list has
+                // A tab switch resets the scroll - the other tab's list has
                 // its own extent, and a stale offset can clamp past its end.
                 history.session.ui_state.editor_mission_scroll_offset = 0;
             },
             // A mission row was clicked: open that mission in the editor
-            // (replacing the one being edited — no unsaved-changes confirm,
+            // (replacing the one being edited - no unsaved-changes confirm,
             // by design). The recorded event is the ordinary `open_editor`
             // with the row's path (already a whitelisted player action); the
             // acquisition (the scan that produced the row) happened in idle
-            // input, so replay re-reads the files silently — the
+            // input, so replay re-reads the files silently - the
             // player_load_save shape. On failure the recoverable popup
             // surfaces and the browser stays open (the revert restores
             // world_generation, so the transition UI reset never fires).
@@ -2744,7 +2744,7 @@ pub fn handleAnytimeInput(
                 };
                 if (row >= missions.len) return; // stale-list belt (list can't shift mid-open, but cheap)
                 // Dupe the path into the current arena: the session list's
-                // strings are backing-owned and a later scan frees them —
+                // strings are backing-owned and a later scan frees them -
                 // the recorded event must not borrow across frames
                 // (recordEvent deep-copies at drain time, next frame).
                 const mission_path = allocator.dupe(u8, missions[row].path) catch
@@ -2760,15 +2760,15 @@ pub fn handleAnytimeInput(
     // Editor browser: a modal on top of everything but the error
     // popup (which gated above) and above the options menu it opened from.
     // Its own interactions were folded into the anytime / options_action
-    // fields above (toggle, tabs, rows — the options-menu-before-the-gate
+    // fields above (toggle, tabs, rows - the options-menu-before-the-gate
     // dispatch); while it's open, everything else is blocked. The wheel
-    // scrolls the row list — whole-row ticks (the load-save browser's
+    // scrolls the row list - whole-row ticks (the load-save browser's
     // model), lower clamp here, upper clamp authoritative in the builder.
     // No periodic rescan while open (see SessionState.editor_local_missions).
     // The zip-import marker is polled here: a completed web upload extracts
     // into missions/ + rescans, so the new row appears immediately.
     if (history.current_state.ui_surfaces.editor_browser_open) {
-        // The Import trigger (web-only effect at the seam; native no-ops —
+        // The Import trigger (web-only effect at the seam; native no-ops -
         // the button is never emitted there and the binding parses +
         // no-ops, the skip_level discipline).
         if (anytime.import_editor_mission) {
@@ -2790,14 +2790,14 @@ pub fn handleAnytimeInput(
     // run before the gate's return (the slider-drag-before-the-gate
     // pattern in main's frame). One wheel notch = one row (whole visible
     // rows); lower clamp here, upper clamp authoritative in the builder.
-    // The Settings tab has no scrollable content — the wheel no-ops there.
+    // The Settings tab has no scrollable content - the wheel no-ops there.
     if (history.current_state.ui_surfaces.settings_open and
         history.session.ui_state.settings_tab == .keybinds and
         anytime.scroll_delta != 0)
     {
         const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
         // While the action picker is open, the wheel scrolls the PICKER
-        // (the picker owns the interaction — the binding list behind it
+        // (the picker owns the interaction - the binding list behind it
         // scrolls once it closes).
         if (history.session.ui_state.keybind_edit) |*edit_state| {
             if (edit_state.edit == .picker) {
@@ -2820,7 +2820,7 @@ pub fn handleAnytimeInput(
     if (anytime.scroll_delta != 0) {
         // Editor palette group under the pointer, if any. Computed up front
         // (the screen + editor gating lives here, not in the chain below).
-        // Geometric detection over the emitted tool cells — see
+        // Geometric detection over the emitted tool cells - see
         // `ui.editorPaletteGroupAt`.
         const editor_palette_group: ?usize = if (history.current_state.screen == .editor)
             if (history.current_state.editor) |editor|
@@ -2837,7 +2837,7 @@ pub fn handleAnytimeInput(
         // Load-save browser open: the wheel scrolls the save list, one full
         // row per notch (whole-row ticks keep text placement identical at
         // every offset). The panel is a fullscreen modal, so any wheel input
-        // while it's open belongs to the list — never the camera (which has
+        // while it's open belongs to the list - never the camera (which has
         // no meaning on the main menu anyway). Upper clamp is authoritative
         // in the builder; the lower clamp here prevents negative drift.
         if (history.current_state.ui_surfaces.load_save_menu_open) {
@@ -2853,9 +2853,9 @@ pub fn handleAnytimeInput(
         {
             // Editor inspector content scroll (vertical): one wheel notch =
             // one row. The wheel over the OPEN inspector panel belongs to
-            // the panel — never the camera — whether or not a field target
+            // the panel - never the camera - whether or not a field target
             // exists (the empty state clamps to 0). Lower clamp here; the
-            // builder clamps the upper bound in place (authoritative — it
+            // builder clamps the upper bound in place (authoritative - it
             // knows the content height). See DESIGN → Architecture →
             // Level Editor → Editor UI layout (inspector).
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
@@ -2869,10 +2869,10 @@ pub fn handleAnytimeInput(
             history.current_state.editor.?.picker.? == .level_gradient)
         {
             // The theme picker owns the wheel while it's open (the keybind
-            // action picker's rule — a modal picker's list scrolls, not the
+            // action picker's rule - a modal picker's list scrolls, not the
             // world behind it): one notch = one gradient row, wheel-up =
             // earlier rows. Lower clamp here; the builder clamps the upper
-            // bound (authoritative — it knows the visible row count).
+            // bound (authoritative - it knows the visible row count).
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.editor_theme_picker_scroll_offset -= delta_rows;
             if (history.session.ui_state.editor_theme_picker_scroll_offset < 0) {
@@ -2883,7 +2883,7 @@ pub fn handleAnytimeInput(
             history.current_state.editor.?.metadata_sidebar_open and
             ui.editorMetadataSidebarPanelRect().contains(pointer_position))
         {
-            // The metadata sidebar's content scroll — the inspector's exact
+            // The metadata sidebar's content scroll - the inspector's exact
             // model: one wheel notch = one row, lower clamp here, the
             // builder clamps the upper bound (authoritative).
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
@@ -2898,7 +2898,7 @@ pub fn handleAnytimeInput(
             // Level-tab window scroll (horizontal): one wheel notch = one
             // tab, wheel-up = earlier tabs (the palette window model).
             // Lower clamp here; `buildEditorLevelTabs` clamps the upper
-            // bound in place (authoritative — it knows the tab widths).
+            // bound in place (authoritative - it knows the tab widths).
             const delta_tabs: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.editor_level_tab_scroll -= delta_tabs;
             if (history.session.ui_state.editor_level_tab_scroll < 0) {
@@ -2972,7 +2972,7 @@ pub fn handleAnytimeInput(
         const in_game = anytime.in_game;
 
         // Middle-panel + overlay toggles: one `player_toggle_ui_surface`
-        // per key (the surface state rides GameState — see DESIGN → UI
+        // per key (the surface state rides GameState - see DESIGN → UI
         // Framework → UI state classification). The push+drain is the
         // swap_weapons interjection shape: processed inside this update
         // call, so the frame's own gates below see the flipped state.
@@ -3010,13 +3010,13 @@ pub fn handleAnytimeInput(
         }
 
         // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
-        // dedicated step in update(), after UI arbitration — it needs
+        // dedicated step in update(), after UI arbitration - it needs
         // ui_elements + world tiles, which live in main.zig's world.
 
         if (in_game.swap_weapons) {
             // No-op gate: with both hands empty and nothing prepared, the
             // swap is a recorded no-op (swap_hands also cancels a
-            // preparation, which IS a change — see the handler).
+            // preparation, which IS a change - see the handler).
             const player = ui.playerEntity(current) orelse types.Entity{};
             const skill_prepared = if (current.level) |level|
                 level.prepared_skill != null
@@ -3034,7 +3034,7 @@ pub fn handleAnytimeInput(
 /// Handle inputs that are only accepted when the event stack is empty.
 /// A resolved skill-bar slot press: use the skill now (auto-target hit or
 /// no-targeting skill, with an optional target tile), begin targeting
-/// (prepare), or toggle an already-prepared skill back off (unprepare —
+/// (prepare), or toggle an already-prepared skill back off (unprepare -
 /// re-preparing the same skill would be a recorded no-op undo step).
 /// Produced by `resolveSkillSlotAction` and consumed by both the
 /// player_move and player_attack turn phases.
@@ -3046,12 +3046,12 @@ const SkillSlotAction = union(enum) {
 
 /// Resolve a skill-bar slot press into a concrete action. Returns null when
 /// the slot is empty, the skill is on cooldown, or the skill definition is
-/// missing — the caller drops the input silently (matching the prior inline
+/// missing - the caller drops the input silently (matching the prior inline
 /// behavior). Shared by the player_move (skip-to-skill) and player_attack
 /// (in-phase) paths so both follow one resolution path. Targeting
 /// resolution depends on the transient `tile_cursor` (SessionState, off
 /// GameState), so it lives here in the input path, not in an event handler
-/// (replay doesn't re-resolve input — the orchestrator carries the result).
+/// (replay doesn't re-resolve input - the orchestrator carries the result).
 fn resolveSkillSlotAction(
     history: *GameStateHistory,
     current: *GameState,
@@ -3082,7 +3082,7 @@ fn resolveSkillSlotAction(
     // Same skill already prepared → toggle it off. Auto-target above wins
     // when the cursor sits on a valid target (the press fires there), so
     // this only claims the press that would otherwise re-prepare
-    // identically — a recorded no-op undo step.
+    // identically - a recorded no-op undo step.
     if (level.prepared_skill == skill_id) return .unprepare;
     return .{ .prepare = skill_id };
 }
@@ -3102,7 +3102,7 @@ fn rescanSaveFilesNow(history: *GameStateHistory) void {
 }
 
 /// Rescan interval in animation-clock microseconds. One directory iterate +
-/// stat-per-file + sort per interval — cheap, but not free, so not per-frame.
+/// stat-per-file + sort per interval - cheap, but not free, so not per-frame.
 const save_file_rescan_interval_us: u64 = 500_000;
 
 /// Throttled wrapper: rescans only when the interval elapsed since the last
@@ -3121,7 +3121,7 @@ fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
 }
 
 /// Consume the web import marker, if present: the picked file has landed in
-/// saves/ — delete the marker, rescan (so the file shows in the list), and
+/// saves/ - delete the marker, rescan (so the file shows in the list), and
 /// load it. A parse failure inside the load surfaces the recoverable popup
 /// and leaves the browser open with the imported file visible for retry.
 fn pollImportMarker(history: *GameStateHistory) void {
@@ -3154,14 +3154,14 @@ pub fn handleIdleInput(
     history: *GameStateHistory,
     idle_input: input.IdleInput,
     /// The frame's clicked-button payload (see `types.ButtonPayload`),
-    /// riding alongside the menu action that consumed the click — the
+    /// riding alongside the menu action that consumed the click - the
     /// `.load_save_row` arm reads `.save_row`.
     clicked_payload: ?types.ButtonPayload,
     modifiers: input.Modifiers,
 ) void {
     // Enter acts as a click on the active tile cursor: fold it into
     // tile_clicked so the existing click handlers (player_move, player_attack,
-    // hub) do the work — one path, no duplication. Only when a real click
+    // hub) do the work - one path, no duplication. Only when a real click
     // didn't already happen this frame (a click takes precedence).
     var idle = idle_input;
     if (idle.confirm and idle.tile_clicked == null) {
@@ -3177,7 +3177,7 @@ pub fn handleIdleInput(
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
             // The action's layer queues once at the fired-actions choke
-            // point (`dispatchFiredActionSounds` — the menu actions are
+            // point (`dispatchFiredActionSounds` - the menu actions are
             // keybindable too since the dispatch convergence); the release
             // seam owns the base up.
             switch (action) {
@@ -3192,7 +3192,7 @@ pub fn handleIdleInput(
                 .toggle_load_save_menu => {
                     // On open, scan now + reset the scroll (the list may be
                     // stale from a previous open or never scanned this
-                    // session) — decided from the pre-toggle state; the
+                    // session) - decided from the pre-toggle state; the
                     // open/close itself is the recorded surface event.
                     if (!history.current_state.ui_surfaces.load_save_menu_open) {
                         history.session.ui_state.load_save_scroll_offset = 0;
@@ -3205,7 +3205,7 @@ pub fn handleIdleInput(
                 // A save row was clicked. The row index rides the
                 // `.save_row` payload (set by the button-release dispatch
                 // in main.zig) and refers to the list the CLICKED BUTTON was
-                // rendered from — which is why the rescan/poll below runs
+                // rendered from - which is why the rescan/poll below runs
                 // AFTER this switch: it must not replace the list between
                 // the dispatch (start of update) and this resolution.
                 // Bounds-checked against the current list as a belt-and-
@@ -3218,7 +3218,7 @@ pub fn handleIdleInput(
                     // list's strings are backing-owned and the housekeeping
                     // rescan below can free them THIS frame, while the
                     // pushed event isn't recorded (deep-copied) until the
-                    // next frame's drain — a borrowed path could dangle.
+                    // next frame's drain - a borrowed path could dangle.
                     const save_path = allocator.dupe(u8, history.session.save_files[row].path) catch
                         @panic("failed to allocate save path");
                     event_push.pushPlayerAction(current, .{ .player_load_save = .{
@@ -3228,16 +3228,16 @@ pub fn handleIdleInput(
                 // Web import: open the browser file picker. The picked file
                 // lands in saves/ and the import marker is written; the poll
                 // above picks it up next frame. No-op on native (the button
-                // is never emitted there — drop files into the persistent
+                // is never emitted there - drop files into the persistent
                 // saves/ dir by hand instead).
                 .import_save => file_source_mod.triggerBrowserUpload(),
                 // Import Game: open the browser file picker for a full
                 // ziglop.zip. The picked file lands at the staging temp +
                 // the game import marker is written; the EVERY-FRAME poll
-                // in main.frame consumes it whenever it lands — the
+                // in main.frame consumes it whenever it lands - the
                 // overlay runs there, then the session re-boots at the
                 // frame boundary. No-op on native (the button is never
-                // emitted there — the real persistent dir IS the game
+                // emitted there - the real persistent dir IS the game
                 // folder). A pure input-path side effect (no event,
                 // nothing recorded: the import replaces the session, so
                 // there is no timeline to record into).
@@ -3247,10 +3247,10 @@ pub fn handleIdleInput(
         }
 
         // Load-save browser housekeeping (every frame while open, AFTER the
-        // action switch — see the load_save_row arm for why). Poll the
-        // import marker (web — a picked file has landed in saves/) and
+        // action switch - see the load_save_row arm for why). Poll the
+        // import marker (web - a picked file has landed in saves/) and
         // rescan the directory on a throttle so files dropped in from
-        // outside appear live. Both are acquisition steps in idle input —
+        // outside appear live. Both are acquisition steps in idle input -
         // never in an event handler (see DESIGN → Custom Missions for the
         // replay-safety rationale).
         if (history.current_state.ui_surfaces.load_save_menu_open) {
@@ -3261,9 +3261,9 @@ pub fn handleIdleInput(
     }
 
     // Dev tool: skip the current level (ctrl+Enter). Gated to dev builds
-    // (`-Ddev-mode`, defaulted to debug) — the binding ships in
+    // (`-Ddev-mode`, defaulted to debug) - the binding ships in
     // default_settings.txt and no-ops in release/web builds. Pushes end_level
-    // with the default continuation (next level or mission-end cascade —
+    // with the default continuation (next level or mission-end cascade -
     // the same path the options-menu exit uses). handleIdleInput only runs
     // with an empty stack + no active wait, so this never interleaves with a
     // draining enemy turn. See DESIGN → Input + AGENTS → Dev Tools.
@@ -3280,12 +3280,12 @@ pub fn handleIdleInput(
     // cursor too. Landed tools: tile paint + enemy + decoration + ground
     // item placement + selection; all tools have viewport input now.
     // No-op gate: a click whose plan is empty never fires the player
-    // action — it would land in the event log as an undo/replay step that
+    // action - it would land in the event log as an undo/replay step that
     // changes nothing (see the planEditor*Actions planners / DESIGN →
     // Level Editor → Active-tool model).
     if (current.screen == .editor) {
         // Delete key: delete the current selection (the select tool's bulk
-        // delete — see planEditorSelectionDeleteActions). Same no-op gate:
+        // delete - see planEditorSelectionDeleteActions). Same no-op gate:
         // an empty or all-marker selection never fires.
         if (idle.delete_editor_selection) {
             if (current.editor) |*editor| {
@@ -3296,7 +3296,7 @@ pub fn handleIdleInput(
             }
         }
         // ctrl+D: clear the whole selection. Gated on a nonempty selection
-        // — an empty one never fires (no dead undo step).
+        // - an empty one never fires (no dead undo step).
         if (idle.clear_editor_selection) {
             if (current.editor) |*editor| {
                 if (editor.selection.len > 0) {
@@ -3304,10 +3304,10 @@ pub fn handleIdleInput(
                 }
             }
         }
-        // ctrl+A: select everything in the active level. Tool-agnostic —
+        // ctrl+A: select everything in the active level. Tool-agnostic -
         // the action switches to the select tool when it isn't active
         // (the selection can only live there; see the handler). Gated on a
-        // nonempty plan (an all-selected level never fires — no dead undo
+        // nonempty plan (an all-selected level never fires - no dead undo
         // step).
         if (idle.select_editor_all) {
             if (current.editor) |*editor| {
@@ -3322,7 +3322,7 @@ pub fn handleIdleInput(
                     .tile => {
                         // The paint-drag gesture owns the pointer press
                         // (press paints immediately, held paints each
-                        // newly-visited tile — handleEditorTileDrag); the
+                        // newly-visited tile - handleEditorTileDrag); the
                         // arm defers while a drag is active so a claimed
                         // press can't double-fire. The keyboard confirm-
                         // at-cursor path still lands here when no drag is
@@ -3364,10 +3364,10 @@ pub fn handleIdleInput(
                     },
                     .select => {
                         // While Shift is held the marquee gesture owns the
-                        // press (`handleEditorMarquee` — shift+click is the
+                        // press (`handleEditorMarquee` - shift+click is the
                         // TOGGLE path), and while a move drag is in
                         // progress it owns the press (`handleEditorMoveDrag`
-                        // — an unpromoted release fires the replace from
+                        // - an unpromoted release fires the replace from
                         // there). An unclaimed plain press REPLACES the
                         // selection with the clicked group (empty ground →
                         // the clear alone).
@@ -3392,7 +3392,7 @@ pub fn handleIdleInput(
             switch (turn_phase) {
                 .player_move => {
                     // Pressing a skill slot during the move step skips the
-                    // move and acts in the attack step instead — no need to
+                    // move and acts in the attack step instead - no need to
                     // manually skip the move when you don't intend to move.
                     if (idle.skill_slot_selected) |slot| {
                         if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
@@ -3416,7 +3416,7 @@ pub fn handleIdleInput(
                                 .unprepare => {
                                     // Unreachable in the move phase (a skill
                                     // is only prepared during the attack
-                                    // phase) — the arm keeps the shared union
+                                    // phase) - the arm keeps the shared union
                                     // switch total; the cancel is the sane
                                     // behavior if that invariant ever breaks.
                                     if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
@@ -3475,7 +3475,7 @@ pub fn handleIdleInput(
                                     } }, allocator);
                                 },
                                 .unprepare => {
-                                    // Toggle the prepared skill back off —
+                                    // Toggle the prepared skill back off -
                                     // the same cancel path as the cancel
                                     // binding (clear highlights + clear the
                                     // preparation), so the press is a real
@@ -3538,7 +3538,7 @@ pub fn handleIdleInput(
     if (idle.tile_clicked) |clicked_position| {
         if (current.hub) |hub| {
             // An NPC on the clicked tile: interaction is an unimplemented
-            // stub (TODO → NPC Interaction), so the click does nothing —
+            // stub (TODO → NPC Interaction), so the click does nothing -
             // firing interact_with_npc would record a no-op undo step, and
             // walking onto the NPC would misread a click addressed to the
             // NPC as a click addressed to the tile. When the system lands,
@@ -3555,7 +3555,7 @@ pub fn handleIdleInput(
 
             // Move to the clicked tile if walkable. The player's own tile
             // is walkable (they stand on it), but a same-position move
-            // would be a recorded no-op — gated. The player never overlaps
+            // would be a recorded no-op - gated. The player never overlaps
             // a mission exit (hubs spawn them at the layout's '!'), so an
             // own-tile click can't be an intentional mission entry.
             var is_walkable = false;
@@ -3586,7 +3586,7 @@ pub fn handleIdleInput(
 /// CROSSES THE GAP: the cursor jumps to the first tile on the ray in the
 /// nudge direction (no tile in that direction → it stays). Runs in a
 /// level/hub (needs world tiles + the player position); the editor screen
-/// has its own arm with paint semantics (`resolveEditorTileCursor` — no
+/// has its own arm with paint semantics (`resolveEditorTileCursor` - no
 /// tile-membership check, no nudge clamp, always one step).
 pub fn resolveTileCursor(
     history: *GameStateHistory,
@@ -3596,7 +3596,7 @@ pub fn resolveTileCursor(
     const current = &history.current_state;
 
     // Editor edit mode: every tool resolves the tile cursor (paint / place
-    // / anchor / select target — the view branches per tool for the
+    // / anchor / select target - the view branches per tool for the
     // outline: single tile, footprint region, or the select tool's
     // hovered-decoration preview).
     if (current.screen == .editor) {
@@ -3632,10 +3632,10 @@ pub fn resolveTileCursor(
         return;
     }
 
-    // Mouse idle — arrow keys nudge the cursor. The four move_cursor_* bools
+    // Mouse idle - arrow keys nudge the cursor. The four move_cursor_* bools
     // are the TRIGGER (an edge/repeat fired this frame); the nudge VECTOR is
     // derived from HELD cursor keys (cursor_direction), so a diagonal nudge
-    // fires when any one of the two held keys edges/repeats — two physical
+    // fires when any one of the two held keys edges/repeats - two physical
     // presses rarely land in one tick, and per-key repeat timers drift, so
     // requiring both to fire in the same frame was inconsistent.
     const nudge_up = in_game.move_cursor_up;
@@ -3659,7 +3659,7 @@ pub fn resolveTileCursor(
     // work via two held keys, opposite keys cancel). FALLBACK when the held
     // vector cancels to zero: a REAL press edge that landed while its
     // opposite was still held (key rollover at fast input speeds) nudges by
-    // the press's own direction instead — the edge is the intent signal,
+    // the press's own direction instead - the edge is the intent signal,
     // and it would otherwise be consumed into a zero vector and never
     // re-fire (the opposite's release produces no edge). Synthetic repeats
     // keep the cancel: deliberately holding both opposites stays frozen
@@ -3689,7 +3689,7 @@ pub fn resolveTileCursor(
 }
 /// Editor arm of the tile-cursor resolution. The cursor follows the mouse
 /// to ANY tile position (cleared over blocking UI, like levels/hubs); arrow
-/// keys nudge freely — there is no clamp-to-real-tile because acting over
+/// keys nudge freely - there is no clamp-to-real-tile because acting over
 /// empty space is the point. A null cursor snaps to the active level's
 /// player_start (the '!', the editor's player-position analog). What the
 /// cursor MEANS is per-tool (view renders the fitting outline); for the
@@ -3712,7 +3712,7 @@ fn resolveEditorTileCursor(
         return;
     }
 
-    // Mouse idle — arrow keys nudge the cursor (same trigger/derive split
+    // Mouse idle - arrow keys nudge the cursor (same trigger/derive split
     // as levels/hubs: the move_cursor_* edges fire, the direction comes
     // from held keys).
     const nudge_up = in_game.move_cursor_up;
@@ -3857,8 +3857,8 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
-/// A shift+click toggle (the player orchestrator — exactly what the
-/// marquee gesture's unpromoted shift release fires) drained to idle —
+/// A shift+click toggle (the player orchestrator - exactly what the
+/// marquee gesture's unpromoted shift release fires) drained to idle -
 /// the contract-level toggle used by the selection tests.
 fn toggleSelectionAt(history: *GameStateHistory, position: types.Vector2) void {
     event_push.pushPlayerAction(
@@ -3929,7 +3929,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
         try std.testing.expectEqual(@as(u32, 0), selection[2].ground_item_placement);
     }
 
-    // Clicking the same tile again toggles the WHOLE group off — the tile
+    // Clicking the same tile again toggles the WHOLE group off - the tile
     // AND its occupants leave together.
     toggleSelectionAt(&history, .{ .x = 1, .y = 1 });
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
@@ -3937,7 +3937,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     toggleSelectionAt(&history, .{ .x = 1, .y = 1 });
     try std.testing.expectEqual(@as(usize, 3), history.current_state.editor.?.selection.len);
 
-    // The '!' and '=' singletons are selectable — and toggleable.
+    // The '!' and '=' singletons are selectable - and toggleable.
     toggleSelectionAt(&history, .{ .x = 0, .y = 0 });
     try std.testing.expectEqual(
         types.Selectable.player_start,
@@ -3951,7 +3951,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     toggleSelectionAt(&history, .{ .x = 0, .y = 0 });
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
-    // The covering decoration (by index) — and toggling it off.
+    // The covering decoration (by index) - and toggling it off.
     toggleSelectionAt(&history, .{ .x = 7, .y = 7 });
     try std.testing.expectEqual(
         @as(u32, 0),
@@ -3960,7 +3960,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     toggleSelectionAt(&history, .{ .x = 7, .y = 7 });
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
-    // Empty ground: nothing to select — the toggle PLANS empty (the
+    // Empty ground: nothing to select - the toggle PLANS empty (the
     // input gate never fires a player action for it).
     try std.testing.expectEqual(
         @as(usize, 0),
@@ -3973,7 +3973,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
     // The selection rides the undo timeline: undo reverts the decoration
-    // OFF-toggle (the last recorded click) — the decoration entry returns.
+    // OFF-toggle (the last recorded click) - the decoration entry returns.
     // Redo walks forward again.
     try std.testing.expect(history.undo(event_handlers.processEvent));
     {
@@ -4080,7 +4080,7 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
 
-    // --- Shift+click WITHOUT drag: the TOGGLE path — the toggle fires
+    // --- Shift+click WITHOUT drag: the TOGGLE path - the toggle fires
     // at the press tile (the select arm deferred to the gesture while
     // Shift was held; a plain click would REPLACE). ---
     handleEditorMarquee(
@@ -4107,7 +4107,7 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
 
-    // --- Shift released mid-drag: the marquee cancels — no region, no
+    // --- Shift released mid-drag: the marquee cancels - no region, no
     // toggle (the gesture consumed the press). ---
     handleEditorMarquee(
         &history,
@@ -4229,7 +4229,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
-    // The moved tile painted at (4,4) (already a tile there — the paint
+    // The moved tile painted at (4,4) (already a tile there - the paint
     // plan is empty, so the tile was deleted fully) and the move
     // deselects.
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
@@ -4276,9 +4276,9 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
 
     // --- An UNPROMOTED release acts as a plain click: the REPLACE fires
     // at the press tile, collapsing the selection to the clicked group.
-    // (The re-seeded selection must reference things that still EXIST —
+    // (The re-seeded selection must reference things that still EXIST -
     // the first move deleted (1,1) fully when it landed on the existing
-    // tile at (4,4) — and must contain MORE than the clicked group, or
+    // tile at (4,4) - and must contain MORE than the clicked group, or
     // the replace would be a no-op that never fires.) ---
     const surviving_selection = [_]types.Selectable{ .{ .tile = .{ .x = 4, .y = 4 } }, .player_start };
     history.current_state.editor.?.selection = &surviving_selection;
@@ -4307,7 +4307,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     // --- An UNSELECTED-but-selectable press CLAIMS: the player-start
     // marker at (0,0) is not selected (the selection is the (4,4) group
     // after the replace above), but dragging it selects it and moves it
-    // in one gesture. The release pushes the move + replace PAIR — the
+    // in one gesture. The release pushes the move + replace PAIR - the
     // replace on top, so the LIFO drain selects the grabbed group before
     // the move orchestrator plans against it. ---
     @import("event_handlers.zig").processEvent(&history);
@@ -4356,7 +4356,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     @import("test_harness.zig").runToIdle(&history);
     // The marker moved to (1,1) and the move deselects (the move
     // machinery's clear + chained-commit semantics have their own tests
-    // — this pins that the gesture's push order delivers them a replaced
+    // - this pins that the gesture's push order delivers them a replaced
     // selection).
     try std.testing.expectEqual(
         types.Vector2{ .x = 1, .y = 1 },
@@ -4380,7 +4380,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     );
 
     // --- A zero-delta unselected-claim drag (the grab-and-drop-in-place
-    // wobble): just the replace fires — the thing ends up selected, like
+    // wobble): just the replace fires - the thing ends up selected, like
     // a click. ---
     handleEditorMoveDrag(
         &history,
@@ -4500,7 +4500,7 @@ test "handleEditorMoveDrag: a marker dragged onto the other marker never fires t
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
 
     // '!' at (0,0), '=' at (3,3). Dragging '=' onto (0,0) would leave both
-    // markers on one tile — no file representation — so the move is
+    // markers on one tile - no file representation - so the move is
     // VETOED at the input gate (no dead undo step). The unselected-claim
     // path still fires its replace (the selection change is legal on its
     // own); the selected-at-press path fires nothing at all.
@@ -4633,7 +4633,7 @@ test "camera zoom (wheel + keys): gated to camera-bearing screens" {
     handleAnytimeInput(&history, .{ .zoom_in = true }, null, pointer, &.{});
     try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
 
-    // Replay viewer: same — no camera, no zoom.
+    // Replay viewer: same - no camera, no zoom.
     history.current_state.screen = .replay_viewer;
     handleAnytimeInput(&history, .{ .scroll_delta = 3 }, null, pointer, &.{});
     try std.testing.expectEqual(zoom_before, history.settings.camera_zoom);
@@ -4682,7 +4682,7 @@ test "handleCameraPan: pan engages only past the drag threshold" {
     try std.testing.expect(history.session.camera_pan_press != null);
     try std.testing.expect(history.session.camera_pan == null);
 
-    // Exactly AT the threshold (strict `>`): still no pan — a sub-threshold
+    // Exactly AT the threshold (strict `>`): still no pan - a sub-threshold
     // wiggle pans nothing, so a clean right-click stays clean.
     input_gestures.handleCameraPan(
         &history,
@@ -4708,7 +4708,7 @@ test "handleCameraPan: pan engages only past the drag threshold" {
     try std.testing.expect(history.session.camera_pan_press == null);
     try std.testing.expect(history.session.camera_pan != null);
 
-    // Release: anchor + press clear; the offset persists (sticky pan —
+    // Release: anchor + press clear; the offset persists (sticky pan -
     // cleared on player move / screen transition, not on release).
     input_gestures.handleCameraPan(
         &history,
@@ -4876,13 +4876,13 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
         try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
     }
 
-    // Clicking the exact current selection is a NO-OP — no event fires.
+    // Clicking the exact current selection is a NO-OP - no event fires.
     const history_length_before = history.event_history.items.len;
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expectEqual(history_length_before, history.event_history.items.len);
 
-    // A plain click on EMPTY GROUND clears the selection — the clicky
+    // A plain click on EMPTY GROUND clears the selection - the clicky
     // deselect-all.
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, null, .{});
     @import("test_harness.zig").runToIdle(&history);
@@ -4929,7 +4929,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         .hub = null,
     });
 
-    // Mouse owns the cursor when it moved — at a position with NO tile
+    // Mouse owns the cursor when it moved - at a position with NO tile
     // (paint semantics: any tile position is a legal target).
     history.current_state.editor.?.active_tool = .tile;
     resolveTileCursor(
@@ -4961,7 +4961,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
 
     // Arrow nudge with a null cursor snaps to player_start first, then
-    // nudges — no clamp-to-real-tile (empty space is a legal paint target).
+    // nudges - no clamp-to-real-tile (empty space is a legal paint target).
     history.current_state.editor.?.active_tool = .tile;
     resolveTileCursor(
         &history,
@@ -4974,7 +4974,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
 
     // The select tool resolves the tile cursor as well (its outline
-    // previews what a click would select — a covering decoration's
+    // previews what a click would select - a covering decoration's
     // footprint region, else the single tile).
     history.current_state.editor.?.active_tool = .select;
     resolveTileCursor(
@@ -4987,7 +4987,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     );
     try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
 
-    // The entity tool is a tile-cursor tool too (same semantics — any
+    // The entity tool is a tile-cursor tool too (same semantics - any
     // position is a legal place target).
     history.current_state.editor.?.active_tool = .{ .entity_type = 0 };
     resolveTileCursor(
@@ -5000,7 +5000,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     );
     try std.testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, history.session.tile_cursor.?);
 
-    // The decoration tool as well — the cursor tile is the placement
+    // The decoration tool as well - the cursor tile is the placement
     // ANCHOR tile (the view draws the footprint region outline around it).
     history.current_state.editor.?.active_tool = .{ .decoration_type = 0 };
     resolveTileCursor(
@@ -5064,7 +5064,7 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 
-    // The tool pointer AND the selection ride the undo timeline — one undo
+    // The tool pointer AND the selection ride the undo timeline - one undo
     // step reverts the switch together with its selection clear.
     try std.testing.expect(history.undo(event_handlers.processEvent));
     try std.testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
@@ -5075,8 +5075,8 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
 
 test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
     // The game-wide scroll convention, pinned for the error popup (the
-    // old code stepped in pixels, added the wheel delta — wheel-up scrolled
-    // DOWN — and its step unit (56px) didn't even match the view's line
+    // old code stepped in pixels, added the wheel delta - wheel-up scrolled
+    // DOWN - and its step unit (56px) didn't even match the view's line
     // height (67px), so windows were never line-aligned). See DESIGN →
     // Error Handling → Recoverable error surface.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -5103,7 +5103,7 @@ test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
     try std.testing.expectEqual(@as(i32, 0), history.session.error_scroll_offset);
 
     // Wheel: one line per notch; POSITIVE delta (wheel up) scrolls toward
-    // the top — offset DECREASES (the load-save browser / inspector /
+    // the top - offset DECREASES (the load-save browser / inspector /
     // skills-panel model).
     history.session.error_scroll_offset = 5;
     handleAnytimeInput(&history, .{ .scroll_delta = 1.0 }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -5111,7 +5111,7 @@ test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
     handleAnytimeInput(&history, .{ .scroll_delta = -2.0 }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(i32, 6), history.session.error_scroll_offset);
 
-    // Lower clamp at the input site (the upper clamp is the view's — only
+    // Lower clamp at the input site (the upper clamp is the view's - only
     // the view knows the wrapped line count).
     history.session.error_scroll_offset = 1;
     handleAnytimeInput(&history, .{ .error_scroll_up = true }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -5124,7 +5124,7 @@ test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------
 // Re-activating the slot of an already-prepared skill toggles the
-// preparation off (the auto-target hit still fires the skill instead —
+// preparation off (the auto-target hit still fires the skill instead -
 // resolveSkillSlotAction resolves the press one way or the other, never to
 // a recorded no-op). Flash Strike (targeting, range 3) in utility slot 4
 // is the fixture.
@@ -5180,7 +5180,7 @@ test "resolveSkillSlotAction: auto-target hit fires instead of unprepare" {
     defer backing.deinit();
     var history = preparedSkillToggleHistory(&backing, .flash_strike);
 
-    // The cursor sits on (1,0) — an empty tile within range 3, a valid
+    // The cursor sits on (1,0) - an empty tile within range 3, a valid
     // Flash Strike target. The press fires there, NOT a toggle.
     history.session.tile_cursor = .{ .x = 1, .y = 0 };
     const action = resolveSkillSlotAction(
@@ -5230,7 +5230,7 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .player_cancel_skill);
     @import("test_harness.zig").runToIdle(&history);
 
-    // Both the preparation and its highlight are cleared — a real change,
+    // Both the preparation and its highlight are cleared - a real change,
     // so undo is a meaningful step (restores both).
     try std.testing.expect(history.current_state.level.?.prepared_skill == null);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.level.?.highlighted_tiles.len);
@@ -5268,11 +5268,11 @@ test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     });
     @import("test_harness.zig").runToIdle(&history);
 
-    // Own tile: a same-position move would be a recorded no-op — no fire.
+    // Own tile: a same-position move would be a recorded no-op - no fire.
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // NPC tile: the interact_with_npc handler is an unimplemented stub —
+    // NPC tile: the interact_with_npc handler is an unimplemented stub -
     // no fire (no recorded no-op).
     handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, null, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -5304,7 +5304,7 @@ test "swap_weapons with both hands empty fires nothing" {
     @import("test_harness.zig").runToIdle(&history);
 
     // Both hands empty, nothing prepared: the swap would be a recorded
-    // no-op — no fire (and no click sound).
+    // no-op - no fire (and no click sound).
     handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, null, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
@@ -5336,7 +5336,7 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
     @import("test_harness.zig").runToIdle(&history);
     history.session.tile_cursor = .{ .x = 1, .y = 0 };
 
-    // Right from (1,0): (2,0) is empty — the cursor crosses the gap to
+    // Right from (1,0): (2,0) is empty - the cursor crosses the gap to
     // (5,0) instead of stopping.
     resolveTileCursor(
         &history,
@@ -5348,7 +5348,7 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
     );
     try std.testing.expectEqual(types.Vector2{ .x = 5, .y = 0 }, history.session.tile_cursor.?);
 
-    // Right from (5,0): no tile in that direction at all — the cursor stays.
+    // Right from (5,0): no tile in that direction at all - the cursor stays.
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -5372,9 +5372,9 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
 }
 
 test "findKeybindSteal: co-firing conflicts + duplicates steal; cross-context is legal" {
-    // undo (anytime) + skip (game) on Enter — contexts intersect (they would
+    // undo (anytime) + skip (game) on Enter - contexts intersect (they would
     // co-fire): steal. skill_slot_1 (game) + editor_select_tool (editor) on
-    // Digit1 — cross-context: LEGAL. undo on KeyZ: the candidate's own row
+    // Digit1 - cross-context: LEGAL. undo on KeyZ: the candidate's own row
     // (excluded) never steals; another undo combo on the same combo steals
     // as a redundant duplicate.
     const bindings = [_]types.InputBinding{
@@ -5384,7 +5384,7 @@ test "findKeybindSteal: co-firing conflicts + duplicates steal; cross-context is
         .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool },
         .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
     };
-    // A rekey of undo (index 0) to Enter: co-fires with skip — steal.
+    // A rekey of undo (index 0) to Enter: co-fires with skip - steal.
     const candidate: types.InputBinding = .{ .input = .{ .key = "Enter" }, .action = .undo };
     try std.testing.expectEqual(@as(?usize, 1), findKeybindSteal(&bindings, candidate, 0));
     // The excluded row itself never steals.
@@ -5393,7 +5393,7 @@ test "findKeybindSteal: co-firing conflicts + duplicates steal; cross-context is
     // A same-action duplicate steals (confirming dedupes).
     const duplicate: types.InputBinding = .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo };
     try std.testing.expectEqual(@as(?usize, 4), findKeybindSteal(&bindings, duplicate, 0));
-    // Cross-context same-combo is legal — never stolen.
+    // Cross-context same-combo is legal - never stolen.
     const cross_context: types.InputBinding = .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1 };
     try std.testing.expectEqual(@as(?usize, null), findKeybindSteal(&bindings, cross_context, 2));
 }
@@ -5402,11 +5402,11 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     // The rebuild path frees + dupes binding strings via the history's
     // BACKING allocator, so the leak check only fires when the history
     // runs on std.testing.allocator AND the binding strings are
-    // SELF-OWNED under it (the overlay-test model — an arena would mask
+    // SELF-OWNED under it (the overlay-test model - an arena would mask
     // a forgotten free). The harness arena carries only the config
     // bootstrap, untouched by this flow; the history itself runs on
     // testing.allocator, so any allocation anywhere in the confirm/
-    // remove flow that isn't freed surfaces at test end — the flow must
+    // remove flow that isn't freed surfaces at test end - the flow must
     // be pure settings/ui mutation.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -5443,7 +5443,7 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     // --- A rekey that STEALS: keep (row 2 moves) + drop (the stolen row's
     // string + the old slice freed) + replace (the new combo duped onto
     // the replaced row's slot). Listening on row 0 (escape), capture
-    // Enter — Enter currently fires skip (game); escape is anytime, so
+    // Enter - Enter currently fires skip (game); escape is anytime, so
     // the contexts intersect and the proposal steals row 1.
     history.session.ui_state.keybind_edit = .{
         .edit = .{ .listening = .{ .binding = 0 } },
@@ -5461,7 +5461,7 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     // REPLACE is drop + append: the rekeyed row moves to the END of the
     // list (the keybinds tab sorts its rows by action, and the conflict
     // rule leaves no co-firing same-combo pair whose order could matter
-    // for first-match-wins — list order carries no meaning).
+    // for first-match-wins - list order carries no meaning).
     try std.testing.expectEqual(@as(usize, 2), history.settings.input_bindings.len);
     try std.testing.expectEqualStrings("KeyZ", history.settings.input_bindings[0].input.key);
     try std.testing.expectEqual(types.Action.undo, history.settings.input_bindings[0].action);
@@ -5497,7 +5497,7 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
     try std.testing.expectEqual(types.Action.skill_slot_1, history.settings.input_bindings[1].action);
 
     // Each mutation marks settings dirty (the mutate + mark-dirty
-    // discipline) — one debounced settings write is pending.
+    // discipline) - one debounced settings write is pending.
     var settings_write_pending = false;
     for (history.session.pending_writes) |slot| {
         if (slot) |entry| {
@@ -5508,7 +5508,7 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
 
     // Teardown balances the ownership ledger: the final list's kept
     // entries MOVED from the self-owned set, the replaced/added entries
-    // were duped by the rebuild, and the slice is rebuild-allocated —
+    // were duped by the rebuild, and the slice is rebuild-allocated -
     // freeSettings frees exactly those under testing.allocator. Any
     // imbalance (a rebuild that forgot a free, freed a moved string, or
     // leaked the slice) fails the leak check at test end.
@@ -5520,7 +5520,7 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
     // by the embedded defaults; the backup is a flush-then-copy of
     // settings.txt (the exact pre-reset bytes) to a timestamped sibling.
     // The history runs on std.testing.allocator (the keybind-edit test's
-    // leak-checked model — the handler's alloc/free ledger must balance).
+    // leak-checked model - the handler's alloc/free ledger must balance).
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -5632,7 +5632,7 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
     try std.testing.expect(settings_write_pending);
 
     // Teardown: the fresh bindings are history-owned under
-    // testing.allocator — freeSettings balances the ledger.
+    // testing.allocator - freeSettings balances the ledger.
     loaders.freeSettings(history.settings, std.testing.allocator);
 }
 
@@ -5682,7 +5682,7 @@ test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" 
     // The per-action sound choke point: exactly ONE action layer per
     // fired action, and only for the non-excluded classes. The
     // `.change_setting` DOUBLE-PLAY (the options_action top-of-switch
-    // queue + the arm's own queue — two layers per click) shipped for
+    // queue + the arm's own queue - two layers per click) shipped for
     // months because only ears could catch it; this pins it headless.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -5690,7 +5690,7 @@ test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" 
     var history = harness.newHistory(null);
 
     // A same-frame keybind + button + console command on ONE action fires
-    // applyAction repeatedly — the set dedupes, one layer.
+    // applyAction repeatedly - the set dedupes, one layer.
     var player_input = input.PlayerInput{};
     input.applyAction(&player_input, .change_setting);
     input.applyAction(&player_input, .change_setting);
@@ -5705,7 +5705,7 @@ test "dispatchFiredActionSounds: one layer per fired action, exclusions silent" 
 
     dispatchFiredActionSounds(&history, player_input.fired_actions);
 
-    // One layer cue per non-excluded fired action, and nothing else —
+    // One layer cue per non-excluded fired action, and nothing else -
     // layer alone, no base (keys stay click-sound-free).
     const sounds = history.session.pending_sounds.items;
     try std.testing.expectEqual(@as(usize, 2), sounds.len);
@@ -5747,7 +5747,7 @@ test "resolveTileCursor: rollover press nudges by the pressed direction; repeats
     @import("test_harness.zig").runToIdle(&history);
     history.session.tile_cursor = .{ .x = 1, .y = 0 };
 
-    // ROLLOVER: the left edge fires while right is still held — the held
+    // ROLLOVER: the left edge fires while right is still held - the held
     // vector cancels to zero, the press direction carries the intent, and
     // the cursor moves LEFT. This is the fast-input shape the held-vector
     // model swallowed whole (the press edge consumed into a zero vector,
@@ -5764,7 +5764,7 @@ test "resolveTileCursor: rollover press nudges by the pressed direction; repeats
     try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
 
     // REPEATS ONLY: a synthetic repeat edge with both opposites held (a
-    // deliberate freeze) — no real press, so the cancel holds and the
+    // deliberate freeze) - no real press, so the cancel holds and the
     // cursor stays put. The fallback must not oscillate on per-key
     // repeat-timer drift.
     history.session.tile_cursor = .{ .x = 2, .y = 0 };
@@ -5816,7 +5816,7 @@ test "resolveEditorTileCursor: rollover press nudges by the pressed direction (s
     history.current_state.editor.?.active_tool = .tile;
 
     // Null cursor + a rollover left press (right still held): snap to
-    // player_start, then nudge by the PRESS direction — unclamped (empty
+    // player_start, then nudge by the PRESS direction - unclamped (empty
     // space is a legal paint target).
     resolveTileCursor(
         &history,

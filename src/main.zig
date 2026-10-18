@@ -3,7 +3,7 @@
 //! polling, event processing, and view construction together, and the
 //! round-trip reconstruction test. Startup config loading lives in
 //! `session_setup.zig`; the entry files build the `SessionSetup` there and
-//! hand it to `run`. Never imports raylib — the platform driver
+//! hand it to `run`. Never imports raylib - the platform driver
 //! (`native.zig`/`web.zig`) calls `run` with a duck-typed backend and drives
 //! `frame` per platform. See DESIGN → Platform Seam for the frame/driver
 //! split and the budget-driven drain.
@@ -69,7 +69,7 @@ const utility_skill_count = types.utility_skill_count;
 /// produces, or null for an invalid / no-op drop. The switch on the source
 /// enforces the item/skill domain split: item sources (inventory/gear) only
 /// yield events for item targets, skill sources (skill_bar/learned_skill) only
-/// for skill targets — everything cross-domain or nonsensical falls to null.
+/// for skill targets - everything cross-domain or nonsensical falls to null.
 /// Process the next event on the stack, with player input handling.
 fn update(
     history: *GameStateHistory,
@@ -89,22 +89,22 @@ fn update(
 
     // Track held modifiers per-frame so `view()` can render modifier-keyed
     // feedback (salvage-tool highlight while Shift is held). Transient view
-    // state — see SessionState.held_modifiers.
+    // state - see SessionState.held_modifiers.
     history.session.held_modifiers = player_input.modifiers;
 
     // Button click resolution: press records the button + queues the
     // down-sound + consumes the world click; release fires the action +
     // queues the up-sound ONLY if the release is over the same button that
-    // was pressed (drag-off cancels — no sound, no action). This is the
+    // was pressed (drag-off cancels - no sound, no action). This is the
     // standard UI press/release model. A press on any blocking UI surface
     // (button or not) consumes the world click so it doesn't also act on the
     // level/hub behind it (world/UI arbitration). See DESIGN → Input.
     if (player_input.pointer.pressed) {
         const pointer_position = player_input.pointer.position.toScreenPosition();
-        // Text-field focus arbitration (M2 — DESIGN → UI Framework → Text
+        // Text-field focus arbitration (M2 - DESIGN → UI Framework → Text
         // input widget): a left press while a field is focused COMMITS it,
         // then either proceeds (the press is on a sibling inspector
-        // control — one-click field switching) or is consumed as pure
+        // control - one-click field switching) or is consumed as pure
         // dismissal (no tool/world action as a side effect of ending an
         // edit; e.g. Undo-while-focused eats the click so the NEXT click
         // undoes the just-committed value). Idempotent across the drain's
@@ -112,7 +112,7 @@ fn update(
         // take the normal path below.
         var consumed_by_text_edit = false;
         if (history.session.ui_state.text_edit != null) {
-            // Pressing the FOCUSED field itself does not commit — the press
+            // Pressing the FOCUSED field itself does not commit - the press
             // tracks for caret positioning at release. Any other press
             // commits first, then the M2 proceed/consume split.
             const pressed_field = ui.textFieldAt(ui_elements, pointer_position);
@@ -148,7 +148,7 @@ fn update(
         } else if (ui.textFieldAt(ui_elements, pointer_position)) |field| {
             // A text-field press: tracks like a button press (release over
             // the SAME field focuses it / positions the caret; drag-off
-            // cancels). A field is not a button — pressed_button stays null.
+            // cancels). A field is not a button - pressed_button stays null.
             history.session.pressed_text_field = field.ref;
             history.session.pressed_button = null;
             player_input.idle.tile_clicked = null;
@@ -171,10 +171,10 @@ fn update(
         // An in-flight drag owns the release: the button-click model yields so
         // `handleDrag` can resolve the drop (or no-op for a drag-back-to-
         // source). `drag` still reflects the promoted state from the prior
-        // move frame — `handleDrag` hasn't run yet this frame.
+        // move frame - `handleDrag` hasn't run yet this frame.
         if (history.session.ui_state.drag == null) {
             if (history.session.pressed_text_field) |pressed_ref| {
-                // Release over the SAME field that was pressed: focus it —
+                // Release over the SAME field that was pressed: focus it -
                 // or, when it is already the focused field, position the
                 // caret at the click x (measured with the metrics the field
                 // was laid out with, read off the previous view state).
@@ -203,21 +203,21 @@ fn update(
                     if (button.action == pressed_action) {
                         input.applyAction(&player_input, button.action);
                         // The button's payload rides the frame's input
-                        // alongside the folded action — one relay line, the
+                        // alongside the folded action - one relay line, the
                         // 28 per-field dispatch lines collapsed. The
                         // fail-fast check catches a payload/action mismatch
                         // (a wrong or missing variant would otherwise be
                         // silently eaten by the consumption arm's
-                        // `orelse return` — the bug class this seam kills).
+                        // `orelse return` - the bug class this seam kills).
                         // See types.ButtonPayload + DESIGN → Input → Button
                         // payloads.
                         if (button.payload) |payload| {
                             if (types.actionButtonPayload(button.action)) |expected| {
                                 if (std.meta.activeTag(payload) != expected) {
-                                    @panic("button payload variant does not match its action — see types.actionButtonPayload");
+                                    @panic("button payload variant does not match its action - see types.actionButtonPayload");
                                 }
                             } else {
-                                @panic("button payload on an action that carries none — see types.actionButtonPayload");
+                                @panic("button payload on an action that carries none - see types.actionButtonPayload");
                             }
                             player_input.clicked_payload = payload;
                         }
@@ -250,7 +250,7 @@ fn update(
     input_handlers.resolveTileCursor(history, player_input, ui_elements);
 
     // The per-action dispatch choke point: queue the action layer for
-    // every fired action (the set is recorded by `applyAction` — keybind,
+    // every fired action (the set is recorded by `applyAction` - keybind,
     // button, and console commands alike; the exclusions live at the choke
     // point). Runs before the handlers so the layer queues ahead of
     // consumption-produced cues. See DESIGN → Audio (layered cues).
@@ -273,7 +273,7 @@ fn update(
     if (history.current_state.ui_surfaces.options_menu_open or
         history.current_state.ui_surfaces.editor_browser_open) return;
 
-    // Recoverable error popup pauses the game (modal — same as options).
+    // Recoverable error popup pauses the game (modal - same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
     // frame, so a dismiss releases the modal within the same frame.
     if (history.session.pending_error != null) return;
@@ -296,7 +296,7 @@ fn update(
     input_gestures.handleRightClickInspect(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor right-click: the tool-independent delete (clean click) vs the
-    // camera pan (right-drag) — same disambiguation, owning the
+    // camera pan (right-drag) - same disambiguation, owning the
     // `.editor_delete` pending kind on the editor screen. Runs after the
     // inspect handler (which clears only its own kind elsewhere).
     input_gestures.handleRightClickEditorDelete(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
@@ -310,13 +310,13 @@ fn update(
     // Editor select-tool selection move (plain left press on a selected
     // thing OR on an unselected-but-selectable thing, drag, release).
     // Runs after the marquee (a Shift press is the marquee's; a plain
-    // press on a claimable thing is the move's — the two gestures are
+    // press on a claimable thing is the move's - the two gestures are
     // exclusive by press modifier + claimability).
     input_gestures.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor tile-tool paint drag (plain left press paints the press tile;
     // held + move paints each newly-visited tile). Runs after the move
-    // drag — the gestures are exclusive by tool (tile vs select), and a
+    // drag - the gestures are exclusive by tool (tile vs select), and a
     // tile-tool press never reaches the select gestures.
     input_gestures.handleEditorTileDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
@@ -352,19 +352,19 @@ fn update(
         // Process next pushed event
         event_handlers.processEvent(history);
     } else {
-        // Stack empty — accept gameplay input
+        // Stack empty - accept gameplay input
         input_handlers.handleIdleInput(history, player_input.idle, player_input.clicked_payload, player_input.modifiers);
     }
 }
 
 /// Build a ViewState describing what to render for the current game state.
-/// The frame_allocator is a per-frame arena — everything the ViewState
+/// The frame_allocator is a per-frame arena - everything the ViewState
 /// points at is allocated from it and lives until the next frame.
 /// Live-apply the `render_resolution` setting (called from `frame()` each
 /// iteration): compare against the last-applied snapshot and swap the
 /// backend's render target on a diff. Same diff-and-apply shape as the audio
 /// volumes block above. On apply failure the backend kept its old target, so
-/// the setting REVERTS to the currently-running preset — dirty-marked so the
+/// the setting REVERTS to the currently-running preset - dirty-marked so the
 /// revert persists, and surfaced via the pending-error popup. The revert also
 /// stops a retry loop: the setting now matches the snapshot, so the user's
 /// next click on the failed preset (a fresh diff) is the only re-attempt.
@@ -381,7 +381,7 @@ fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) vo
     state.markSettingsDirty(history);
     const message = std.fmt.allocPrint(
         history.history_arena.allocator(),
-        "{s} rendering is not supported on this system — kept {s}.",
+        "{s} rendering is not supported on this system - kept {s}.",
         .{ requested.label(), kept.label() },
     ) catch @panic("failed to format render resolution error message");
     history.session.setPendingError(history.history_arena.allocator(), message);
@@ -396,10 +396,10 @@ fn applyRenderResolutionSetting(backend: anytype, history: *GameStateHistory) vo
 /// 10ms is a starting value.
 const drain_budget_microseconds: u64 = 10 * std.time.ms_per_s;
 
-/// One frame's worth of work — the platform-agnostic core, shared by both the
-/// The number of ALIVE, AGGRO'D, enemy-team entities — the music
+/// One frame's worth of work - the platform-agnostic core, shared by both the
+/// The number of ALIVE, AGGRO'D, enemy-team entities - the music
 /// intensity projection (one ambient layer per active enemy; see DESIGN →
-/// Audio — layered music). Pure integer gameplay logic; a state projection
+/// Audio - layered music). Pure integer gameplay logic; a state projection
 /// computed per frame (never an event), so replay/undo are safe by
 /// construction. Hubs have no `level` → 0 layers there.
 fn countActiveEnemies(game_state: *const state.GameState) u32 {
@@ -408,7 +408,7 @@ fn countActiveEnemies(game_state: *const state.GameState) u32 {
     for (level.entities) |entity| {
         if (entity.team == 0) continue; // the player + same-team helpers
         if (entity.current_health == 0) continue;
-        if (!entity.is_active) continue; // not yet aggroed — no intensity
+        if (!entity.is_active) continue; // not yet aggroed - no intensity
         count += 1;
     }
     return count;
@@ -419,7 +419,7 @@ fn countActiveEnemies(game_state: *const state.GameState) u32 {
 /// deltas, both identical across platforms; only wall-clock drain
 /// duration differs (native drains as fast as the CPU allows within the
 /// budget, web drains within the budget per requestAnimationFrame). This
-/// function NEVER yields/sleeps — scheduling is the driver's job (native
+/// function NEVER yields/sleeps - scheduling is the driver's job (native
 /// sleeps via backend.waitTime; web lets the browser schedule rAFs).
 pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const history = &frame_state.history;
@@ -427,7 +427,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Real-clock delta since the last frame (NOT frame-rate based), so the
     // wait timer drains in real time regardless of how often frame() is called.
     // Computed ONCE at the top of the frame and shared by every consumer
-    // (music lerp, wait timer, session/animation clocks) — deltaMicroseconds()
+    // (music lerp, wait timer, session/animation clocks) - deltaMicroseconds()
     // is stateful (each call returns time since the previous call), so a
     // second call would hand the gameplay clocks a near-zero delta. Also
     // computed before translateInput so synthetic key-repeat cadence (see
@@ -462,7 +462,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     const backend_input = backend.pollInput();
     // Camera is derived (centered on the player + clamped to the view
-    // region — see DESIGN → Platform Seam → Camera clamping), computed
+    // region - see DESIGN → Platform Seam → Camera clamping), computed
     // each frame so input (screenToTile) and rendering stay in sync.
     // Computed BEFORE the console drain below so the level dump projects
     // tiles through the frame's live camera.
@@ -478,7 +478,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // view. The render camera is recomputed post-update below so it tracks
     // the state being drawn (see the render gate).
     const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, view_region);
-    // Console input (stdin — a scripted/TAS channel): drain one command per
+    // Console input (stdin - a scripted/TAS channel): drain one command per
     // frame and merge it into this frame's PlatformInput, so injected input
     // rides the identical pipeline as hardware input from here down (see
     // DESIGN → Input → Console input). No reader thread (web, or a
@@ -489,11 +489,11 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend_input,
         frame_state.frame_arena.allocator(),
         history,
-        // The dump-path root: the FrameState itself — every `dump <path>`
+        // The dump-path root: the FrameState itself - every `dump <path>`
         // is a field path from here (see dump_walker.zig). Passed by
         // mutable pointer; the walker const-asserts it.
         frame_state,
-        // The last-rendered UI — the same element list the press/release
+        // The last-rendered UI - the same element list the press/release
         // dispatch hit-tests against; the ui dump lists it. Empty before the
         // first render.
         if (frame_state.previous_view_state) |*previous_view_state|
@@ -505,11 +505,11 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     );
     // Which binding contexts are live this frame (see DESIGN → Input →
     // Binding contexts). The error popup is modal: while up, ONLY the
-    // error_popup context is active (everything else — including `anytime`
-    // — is swallowed until dismissal, mirroring the pending_error gate in
+    // error_popup context is active (everything else - including `anytime`
+    // - is swallowed until dismissal, mirroring the pending_error gate in
     // handleAnytimeInput). Otherwise the current screen picks its context
     // (an editor playtest/validation run is a `.level` screen, so the game
-    // set activates and the editor set goes dormant — the run plays like
+    // set activates and the editor set goes dormant - the run plays like
     // gameplay for free); `anytime` rides along everywhere. The replay
     // viewer has no context-specific bindings yet (`anytime` only).
     const active_contexts: types.BindingContextSet = if (history.session.pending_error != null)
@@ -527,13 +527,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         camera,
         delta_microseconds,
         // The focused text field, if any (binding translation is suppressed
-        // while set — see DESIGN → UI Framework → Text input widget).
+        // while set - see DESIGN → UI Framework → Text input widget).
         if (history.session.ui_state.text_edit != null)
             &history.session.ui_state.text_edit.?
         else
             null,
         // The active keybind edit, if any (the Keybinds tab's listening /
-        // picker / pending state — binding translation is suppressed while
+        // picker / pending state - binding translation is suppressed while
         // set; see DESIGN → UI Framework → Settings screen).
         if (history.session.ui_state.keybind_edit != null)
             &history.session.ui_state.keybind_edit.?
@@ -542,7 +542,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         active_contexts,
     );
     // Console `action <name>` commands (merged into PlatformInput.actions
-    // above): fold via applyAction — the same seam button clicks use.
+    // above): fold via applyAction - the same seam button clicks use.
     // Keybind-path firing cadence (the flag rides the frame's PlayerInput
     // through the drain), NOT the button path's pressed_button guard. See
     // DESIGN → Input → Console input.
@@ -552,7 +552,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // delta, dumpable via `dump previous_player_input...` (see DESIGN →
     // Input → Console input → dump paths). Written once per frame, right
     // after the last producer of PlayerInput content (translateInput +
-    // the console fold) — everything below only reads it. A plain copy:
+    // the console fold) - everything below only reads it. A plain copy:
     // the one string payload borrows session-owned scan bytes
     // (MissionSprite.stored_id), so nothing dangles into the frame-arena
     // reset.
@@ -560,7 +560,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     frame_state.previous_delta_microseconds = delta_microseconds;
 
     // Text-field keyboard resolution (Enter commits, Escape discards). Once
-    // per frame HERE, before the drain — update() re-runs per drain
+    // per frame HERE, before the drain - update() re-runs per drain
     // iteration and must not re-resolve. A commit pushes + drains its own
     // event, so the drain below sees the resulting stack state.
     if (player_input.text_edit_outcome != .none) {
@@ -569,7 +569,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     // Keybind-capture resolution (a key was captured → pending; Escape →
     // cancel). Same once-per-frame-here rule as the text-field resolution
-    // above — the drain re-runs update() per iteration.
+    // above - the drain re-runs update() per iteration.
     if (player_input.keybind_capture_outcome != .none) {
         input_handlers.resolveKeybindCaptureOutcome(history, player_input.keybind_capture_outcome);
     }
@@ -591,7 +591,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     history.session.session_clock +%= delta_microseconds;
 
     // Drain: call update() repeatedly until the stack empties, a wait
-    // activates, or the drain budget elapses — whichever comes first. update()
+    // activates, or the drain budget elapses - whichever comes first. update()
     // handles one event OR one idle input per call (plus anytime input, drag,
     // and the wait-timer drain); when the stack is empty, the final update()
     // processes one idle input and the drain then exits via the empty-stack
@@ -613,10 +613,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
         // A reconstruction-read handler failed during the event just
         // processed. Revert to the last idle-point snapshot (guaranteed
-        // exact — it was just taken, no snapshots since — and stack-empty by
+        // exact - it was just taken, no snapshots since - and stack-empty by
         // construction), trim the failed transaction's recorded events, and
         // exit the drain. The handler already set session.pending_error with
-        // a descriptive message (it survives the revert — SessionState is
+        // a descriptive message (it survives the revert - SessionState is
         // off GameState). See DESIGN → Error Handling → three contexts.
         if (history.load_error) {
             history.load_error = false;
@@ -628,21 +628,21 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
         const has_events = history.current_state.event_stack.len > 0;
 
-        // Classes-2–4 UI state (view affordances, scrolls, gesture
+        // Classes-2-4 UI state (view affordances, scrolls, gesture
         // lifecycles), the tile cursor, and the camera/pressed-button
         // transients are view/input state off the undoable GameState. Reset
         // them whenever the screen changes OR a new world is installed
         // (start_hub / start_level / start_playtest all bump
-        // world_generation even when the Screen enum stays the same — e.g.
+        // world_generation even when the Screen enum stays the same - e.g.
         // level-to-level keeps screen == .level, so the screen check alone
         // would leave a stale tile cursor positioned in the old level's
         // grid; start_validation chains start_level, so its world installs
         // bump the same way). undo/redo across a screen boundary runs
         // through update() too, so both signals fire there as well. The
-        // class-1 SURFACE state is NOT reset here — it lives on GameState
+        // class-1 SURFACE state is NOT reset here - it lives on GameState
         // and is closed by the handlers (transitionScreen / start_level /
         // start_hub), so replay reproduces it. Input state is deliberately
-        // left alone — it is live hardware state.
+        // left alone - it is live hardware state.
         if (history.current_state.screen != screen_before_update or
             history.current_state.world_generation != world_generation_before_update)
         {
@@ -656,7 +656,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         }
 
         if (had_events and !has_events) {
-            // Stack just emptied — record the idle point (snapshot + compact
+            // Stack just emptied - record the idle point (snapshot + compact
             // current_arena so per-turn churn and any exited level/hub are
             // reclaimed instead of accumulating across the session). Shared
             // with reconstruction via recordIdlePoint. Condition delegated to
@@ -692,7 +692,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // An anytime action (e.g. swap_weapons) can push events onto the
         // empty stack and process them within this one update() call. If
         // events were processed and the stack is empty again with no active
-        // wait, it's an idle boundary — record the undo stop via
+        // wait, it's an idle boundary - record the undo stop via
         // maybeRecordIdlePoint (shared with the drain loop). The helper's
         // "not already an idle point" check excludes undo/redo, which are
         // also anytime actions handled inside update() and land on an
@@ -700,7 +700,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // undo/redo cycle). A mid-wait anytime interjection is drained to
         // baseline inside update() and leaves the stack at baseline
         // (non-empty during an enemy turn), so it does not record an idle
-        // point here — it stays absorbed into the surrounding drain's idle
+        // point here - it stays absorbed into the surrounding drain's idle
         // point, as intended.
         const events_processed = history.current_event_index != event_index_before_update;
         history.maybeRecordIdlePoint(events_processed);
@@ -760,7 +760,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     // Player-move recenter: if the player's tile changed this frame (a move
     // event in the drain or a click-to-move in the idle update), clear the
-    // camera pan so the camera recenters on the player — pan drifts off the
+    // camera pan so the camera recenters on the player - pan drifts off the
     // player while looking around, and a move is the natural "look, then go"
     // hand-off back to player-centered framing. The editor's active level
     // index rides the key too: a level-tab switch recenters even when two
@@ -773,7 +773,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     }
 
     // Advance the animation clock by this frame's real-time delta, but only
-    // when the world isn't paused (options menu / pending error open — same
+    // when the world isn't paused (options menu / pending error open - same
     // gates as `update()`). The clock is session-relative (starts at 0) and
     // off the undoable GameState, so looping anims wave continuously across
     // undo/redo without phase jumps, and pausing freezes anims in place. Read
@@ -785,13 +785,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Fire any debounced writes whose deadline has elapsed (currently
     // settings persistence). Runs after all updates so dirty
     // marks from this frame's input are registered before the check.
-    // `frame()` is the live path — replay goes through restoreTo/replayTo,
-    // not here — so the !replaying gate is automatic. See DESIGN → Input.
+    // `frame()` is the live path - replay goes through restoreTo/replayTo,
+    // not here - so the !replaying gate is automatic. See DESIGN → Input.
     history.session.fireElapsedWrites(history, history.session.session_clock);
 
     // Render gate: only build+render a frame when enough real time has elapsed
     // since the last render AND we're not mid-drain. During an active event
-    // drain (stack non-empty, no wait) we skip rendering — intermediate states
+    // drain (stack non-empty, no wait) we skip rendering - intermediate states
     // flash by in <1ms and aren't worth a frame, and vsync (swapScreenBuffer)
     // blocks the thread for a full refresh, frame-locking the drain to the
     // render rate. We render when the drain completes (stack empties) or
@@ -800,7 +800,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const now = backend.realClockMicroseconds();
     const since_last_render = now - frame_state.last_render_time;
     // A pending error pauses the drain (the modal popup blocks event
-    // processing) — treat it like a wait for render-gate purposes so the
+    // processing) - treat it like a wait for render-gate purposes so the
     // popup is visible. See DESIGN → Error Handling.
     const drain_in_progress = history.current_state.event_stack.len > 0 and
         history.current_state.waiting == null and
@@ -808,7 +808,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     if (!drain_in_progress and since_last_render >= render_interval) {
         // Smoothed FPS: an EMA over the actual rendered frame interval
         // (`since_last_render` IS the time between this render and the last).
-        // Advanced here, in `frame()` only — never in handlers, so the
+        // Advanced here, in `frame()` only - never in handlers, so the
         // replay-purity invariant holds (handlers never touch wall-clock).
         // Read by `view()` for the optional `show_fps` overlay. See DESIGN
         // → Animation for the clock-in-`frame()`-only rule this mirrors.
@@ -827,11 +827,11 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // the previously-rendered view (clicks are made against what's on
         // screen); the render camera must track the state being drawn. Without
         // this recompute, a move completed this frame draws the player at the
-        // new position under a camera still centered on the old one — a
+        // new position under a camera still centered on the old one - a
         // one-frame glitch where the player appears jumped/shifted before the
         // camera catches up next frame. computeCamera is cheap; recompute it
         // here so render never lags the state by a frame. The view region is
-        // recomputed too — panels can open/close mid-drain (the surface
+        // recomputed too - panels can open/close mid-drain (the surface
         // events drain immediately), and the clamp must match the state
         // being drawn.
         const render_view_region = view_mod.cameraViewRegion(
@@ -844,7 +844,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // Per-frame lookup of entity-sprite top-y (topmost non-transparent
         // pixel), so `view()` can place floating indicators above the actual
         // art top. Built here (not in `view()`) because `view()` is pure /
-        // raylib-free — the backend owns the decode + cache (same shape as
+        // raylib-free - the backend owns the decode + cache (same shape as
         // the outline-mask cache). Keyed by bare sprite stem; `view()` looks
         // up `entity.sprite`. Frame-arena-backed (no deinit). See DESIGN →
         // Animation.
@@ -911,7 +911,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);
 
         // Advance last_render to the most recent ideal frame boundary so the
-        // schedule never drifts — a slightly-late frame self-corrects on the
+        // schedule never drifts - a slightly-late frame self-corrects on the
         // next, and a long hitch skips missed frames (no burst-rendering)
         // while staying phase-aligned. `elapsed % interval` is how far past
         // the last ideal boundary we are; subtract it from `now`.
@@ -926,21 +926,21 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 /// Native driver: a blocking while-loop that calls frame() each iteration and
 /// yields (sleeps ~0.1ms) when idle so the loop doesn't busy-spin at 100% CPU.
 /// The web driver (web.zig) replaces this with
-/// emscripten_set_main_loop(frame_callback, -1, true) — the browser schedules
+/// emscripten_set_main_loop(frame_callback, -1, true) - the browser schedules
 /// frames and handles yielding, so no sleep is needed there. Both drivers call
 /// the SAME frame() function, so gameplay outcome is identical across platforms.
 fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     // Idle/wait yield: when the stack is empty OR a wait is active, there's no
-    // event-drain work to do — only the wait timer (drained by real-clock
+    // event-drain work to do - only the wait timer (drained by real-clock
     // deltas on wake) and anytime input (undo/redo/options, handled every
     // frame()) need attention. Sleep briefly so the loop doesn't busy-spin at
     // 100% CPU. 0.1ms keeps input latency ~0.1ms (well under a 60Hz frame) at
     // ~10% CPU on one core. During active event drains the loop spins freely
-    // (useful work, no yield). Web doesn't sleep at all — the browser's rAF
+    // (useful work, no yield). Web doesn't sleep at all - the browser's rAF
     // scheduling IS the yield.
-    const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see DESIGN → Platform Seam (idle yield)
+    const idle_yield_seconds: f64 = 0.0001; // 0.1ms - see DESIGN → Platform Seam (idle yield)
     // Exit conditions: the window's close button OR a requested quit (the
-    // main-menu options menu's Exit Game — native only; web never sets it).
+    // main-menu options menu's Exit Game - native only; web never sets it).
     // The run() defers flush pending writes + diagnostics on the way out.
     while (!backend.shouldClose() and !frame_state.history.session.quit_requested) {
         frame(backend, frame_state);
@@ -953,7 +953,7 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
 }
 
 /// Load a session-log BUNDLE from `path` (cwd-relative or absolute; a
-/// directory containing `session_log.txt` + `content/` — see
+/// directory containing `session_log.txt` + `content/` - see
 /// session_log_bundle.zig) and reconstruct the session from its event
 /// history, resuming at the end of the log. Used by the native `--replay
 /// <path>` CLI flag. Raylib-free so it's unit-testable.
@@ -967,7 +967,7 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
 /// Recoverable: on any load failure (bundle missing, session_log.txt
 /// corrupt, unsupported `file_format_version`, missing/tampered content
 /// copy), sets a dismissible `pending_error` popup and returns WITHOUT
-/// reconstructing — the game falls back to the seeded main-menu state the
+/// reconstructing - the game falls back to the seeded main-menu state the
 /// caller already set up. Reconstruction divergence still panics per the
 /// replay-verification policy; with the content embedded, a divergence is a
 /// real bug, not a changed file. See DESIGN → Logging & Replay.
@@ -988,7 +988,7 @@ pub fn loadAndReconstructSession(
     };
     input_handlers.warnIfSessionLogFromDifferentBuild(bundle.log.game_version);
     // Populate the cache from the bundle's embedded copies (manifest order
-    // preserved), then replay authoritatively — every reconstruction read
+    // preserved), then replay authoritatively - every reconstruction read
     // serves the bundle's bytes.
     history.loadReconstructionCache(bundle.cache_entries);
     history.reconstructFromEventLog(
@@ -1028,7 +1028,7 @@ pub fn run(
 /// loop, so waits are cleared rather than timed). Mirrors the live gameLoop's
 /// idle bookkeeping: on stack-empty, recordIdlePoint (snapshot + compact), so
 /// a forward-played session accumulates the same idle points the live loop
-/// would — which reconstruction then derives from virtual depth.
+/// would - which reconstruction then derives from virtual depth.
 fn runToIdle(history: *GameStateHistory) void {
     while (history.current_state.event_stack.len > 0) {
         event_handlers.processEvent(history);
@@ -1054,7 +1054,7 @@ const FakeRenderBackend = struct {
 };
 
 test "countActiveEnemies: alive + aggro'd + enemy-team only, null level is 0" {
-    // The music intensity projection (see DESIGN → Audio — layered music).
+    // The music intensity projection (see DESIGN → Audio - layered music).
     var entities = [_]types.Entity{
         .{ .team = 0, .current_health = 10, .is_active = true }, // player
         .{ .team = 1, .current_health = 10, .is_active = true }, // active enemy
@@ -1080,7 +1080,7 @@ test "countActiveEnemies: alive + aggro'd + enemy-team only, null level is 0" {
     game_state.level = level;
     try std.testing.expectEqual(@as(u32, 2), countActiveEnemies(&game_state));
 
-    // No level (hub, main menu) — nothing to project.
+    // No level (hub, main menu) - nothing to project.
     game_state.level = null;
     try std.testing.expectEqual(@as(u32, 0), countActiveEnemies(&game_state));
 }
@@ -1094,7 +1094,7 @@ test "applyRenderResolutionSetting: applies on diff, snapshot follows, no-op wit
     var history = harness.newHistory(null);
 
     // The snapshot starts in sync with the backend's init-time target (both
-    // default) — the harness settings load the same default.
+    // default) - the harness settings load the same default.
     try std.testing.expectEqual(types.default_render_resolution, history.session.last_applied_render_resolution);
 
     // No diff → no backend call.
@@ -1194,7 +1194,7 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
 
     // Virtual-depth reconstruction must derive the SAME idle points the live
-    // loop recorded (not serialized — derived from the event stream). This is
+    // loop recorded (not serialized - derived from the event stream). This is
     // what makes a loaded session undo/redo "as if played live".
     try std.testing.expectEqualSlices(
         u32,
@@ -1220,7 +1220,7 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
     // real artifact path (`writeSessionLogBundle` → `loadAndReconstructSession`)
     // instead of calling `reconstructFromEventLog` directly: forward-play a
     // session, write its bundle, load + reconstruct into a fresh history,
-    // assert the final state matches forward play — including the embedded
+    // assert the final state matches forward play - including the embedded
     // reconstruction cache (the authoritative-replay input). See DESIGN →
     // Logging & Replay.
     const allocator = std.testing.allocator;
@@ -1284,7 +1284,7 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
     );
 
     // The motivating regression: the file the session read CHANGES between
-    // record and replay. Here the mutation rides the mod-shadowing seam —
+    // record and replay. Here the mutation rides the mod-shadowing seam -
     // a persistent-dir copy of data/new_player.txt that overrides the
     // embedded map (the in-game case is the autosave: overwritten by every
     // later session). Under the old lazy-disk fallback the replay would
@@ -1366,7 +1366,7 @@ test "loadAndReconstructSession: missing file sets pending_error, stays at main 
 
     // A pending error popup is set (the dismissible warning).
     try std.testing.expect(history.session.pendingError() != null);
-    // The state is unchanged from the seed — still at the main menu.
+    // The state is unchanged from the seed - still at the main menu.
     try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
     try std.testing.expectEqual(@as(u32, 0), history.current_event_index);
 }
@@ -1379,7 +1379,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     // breaking the live-loop invariant (idle-point snapshots never carry
     // `waiting`). On undo, `restoreTo`'s fast path restored that buggy
     // snapshot, and `undo`'s mid-drain special case (`waiting != null`)
-    // spun on the same idle point — undo appeared "swallowed" and redo
+    // spun on the same idle point - undo appeared "swallowed" and redo
     // history was eaten by `discardFutureTimeline` on each spin.
     //
     // This test forward-plays a session that includes enemy turns (which
@@ -1525,7 +1525,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     }
     try std.testing.expect(undo_steps > 0); // at least one undo worked
 
-    // (3) Redo back to the start — reversible. Each redo strictly increases
+    // (3) Redo back to the start - reversible. Each redo strictly increases
     // the idle index, and the final state matches the pre-undo state.
     var redo_steps: u32 = 0;
     while (redo_steps < undo_steps and history2.redo(&event_handlers.processEvent)) {
@@ -1544,7 +1544,7 @@ test "replay verification: clean replay through the slow path passes" {
     // exact snapshot exists, so here we force it: forward-play a session, then
     // NULL every snapshot + checkpoint so any undo/redo replays the whole
     // history from initial_state. A clean replay must verify every event
-    // without tripping the panic — this is the positive integration proof
+    // without tripping the panic - this is the positive integration proof
     // that the check is wired and sound. (A tampered event_history would trip
     // the panic; deepEqual/firstDiffField unit tests in deep_copy.zig prove
     // the comparison detects that.)
@@ -1608,7 +1608,7 @@ test "replay verification: clean replay through the slow path passes" {
 test "ported campaign missions load through the event path" {
     // The 4 designed missions ported from the Unity project (beginnings,
     // forest, wetlands, seatown) plus the Camp at the Crossroads hub must
-    // load end-to-end through the event path — not just the parser. Each
+    // load end-to-end through the event path - not just the parser. Each
     // start_mission reads mission.txt + level_1.txt via the reconstruction
     // cache, transitions to .level, and instantiates entities. This catches
     // mission/hub wiring + level loading issues that parser-only tests miss.
@@ -1693,7 +1693,7 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
 
     // Minimal history: readReconstructionFile touches current_event_index,
     // replaying, reconstruction_disk_fallback, reconstruction_cache, history_arena,
-    // and file_source — the rest is left undefined (the method never reads it).
+    // and file_source - the rest is left undefined (the method never reads it).
     var history: GameStateHistory = undefined;
     history.backing_allocator = allocator;
     history.history_arena = std.heap.ArenaAllocator.init(allocator);
@@ -1778,8 +1778,8 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expectEqual(@as(usize, 3), editor.levels[0].entity_placements.len);
     try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
     // Ground items: mission-wide item palette. beginnings level_1 authors one
-    // ground item (Comfortable Boots at 'a' — raw (3,6), (0,2) spawn-relative),
-    // level_2 another (Bamboo Spear) — two distinct types; level 0 has one
+    // ground item (Comfortable Boots at 'a' - raw (3,6), (0,2) spawn-relative),
+    // level_2 another (Bamboo Spear) - two distinct types; level 0 has one
     // placement. Level files author one item per stack (one layout char per
     // item), so one placement per stack here.
     try std.testing.expectEqual(@as(usize, 2), editor.item_types.len);
@@ -1814,7 +1814,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items[0].items.len);
     try std.testing.expectEqualStrings("Comfortable Boots", history.current_state.level.?.ground_items[0].items[0].boots.name);
 
-    // End the playtest (simulating the player completing the level — in live
+    // End the playtest (simulating the player completing the level - in live
     // play, end_level's guard pushes end_playtest; here we push it directly).
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1869,7 +1869,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     runToIdle(&history);
 
     // The main-menu Editor button's flow: null mission_path = a FRESH
-    // empty mission (no uuid — identity is minted at save time, never
+    // empty mission (no uuid - identity is minted at save time, never
     // held in state; see DESIGN → Level Editor → Mission identity).
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{
         .open_editor = .{ .mission_path = null },
@@ -1885,7 +1885,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     try std.testing.expectEqual(@as(usize, 0), editor.mission.uuid.len);
 
     // One default-template level: the minimal `!=` layout (the markers
-    // carry their own ground — exactly two tiles), unnamed, no placements.
+    // carry their own ground - exactly two tiles), unnamed, no placements.
     try std.testing.expectEqual(@as(usize, 1), editor.levels.len);
     const template_level = editor.levels[0];
     try std.testing.expectEqual(@as(usize, 0), template_level.name.len);
@@ -1896,7 +1896,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     try std.testing.expectEqual(@as(usize, 0), template_level.decoration_placements.len);
     try std.testing.expectEqual(@as(usize, 0), template_level.item_placements.len);
 
-    // Empty palettes — no tools in any group.
+    // Empty palettes - no tools in any group.
     try std.testing.expectEqual(@as(usize, 0), editor.entity_types.len);
     try std.testing.expectEqual(@as(usize, 0), editor.decoration_types.len);
     try std.testing.expectEqual(@as(usize, 0), editor.item_types.len);
@@ -1928,7 +1928,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     // The player's turn_start (entity_index == 0) increments the per-mission
     // turns_spent (scoped to the current playthrough) and the cumulative
     // player_data.turns (lifetime). In editor playtest/validate the
-    // cumulative counter is SKIPPED (discard-semantics — the editor session
+    // cumulative counter is SKIPPED (discard-semantics - the editor session
     // must not inflate the player's real turn count); the per-mission
     // counter still increments (discarded with the mission on exit). This
     // uses the editor playtest path to enter a level and take one turn.
@@ -1983,7 +1983,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     // Skip the player's move phase. If enemies are active, this enters the
     // attack phase; if not, auto_skip_attack_step_out_of_combat completes
     // the whole turn (turn_end fires during the drain, and the round
-    // builder queues the NEXT turn_start — the second begun turn). The
+    // builder queues the NEXT turn_start - the second begun turn). The
     // per-mission counter increments again; the cumulative counter does
     // NOT (editor mode).
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
@@ -1991,7 +1991,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
 
     // If auto-skip didn't fire (we're in the attack phase), skip it to
     // complete the turn. If it did fire, we're back in player_move for the
-    // next turn — don't push another skip (it would start a second turn).
+    // next turn - don't push another skip (it would start a second turn).
     if (history.current_state.level.?.turn_phase == .player_attack) {
         event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history.current_arena.allocator());
         runToIdle(&history);
@@ -2000,7 +2000,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     try std.testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
     try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
 
-    // End the playtest (discard semantics — counters are discarded with the
+    // End the playtest (discard semantics - counters are discarded with the
     // mission; player_data.turns was never touched).
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -2011,7 +2011,7 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     // The mission browser opens an existing mission while ALREADY in the
     // editor: the screen stays .editor, so the driver's transition UI reset
     // only fires if open_editor bumps world_generation (the same signal
-    // start_level/start_hub use). Without it, the stale classes-2–4 view
+    // start_level/start_hub use). Without it, the stale classes-2-4 view
     // state would survive the mission swap (the class-1 surface state
     // closes via transitionScreen, which the handler reaches).
     const allocator = std.testing.allocator;
@@ -2070,7 +2070,7 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     runToIdle(&history);
 
     // The swap landed (Beginnings, three levels) and the screen stayed
-    // .editor — but the generation bumped, so the driver's UI reset fires.
+    // .editor - but the generation bumped, so the driver's UI reset fires.
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
     try std.testing.expectEqualStrings("Beginnings", history.current_state.editor.?.mission.name);
     try std.testing.expectEqual(@as(u32, 3), history.current_state.editor.?.mission.level_count);
@@ -2178,7 +2178,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     // A write_save event whose target dir parent is a FILE (not a dir)
     // fails on ensureParentDirs (createDirPath can't make a dir where a
     // file exists). The handler surfaces pending_error and returns instead
-    // of panicking. State is unchanged (the save just didn't happen — no
+    // of panicking. State is unchanged (the save just didn't happen - no
     // revert needed for a failed write). See DESIGN → Error Handling.
     const allocator = std.testing.allocator;
 
@@ -2191,7 +2191,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     const io = threaded_io.io();
 
     // Scratch persistent dir with a file at "saves" (so writing to
-    // "saves/test_save.txt" fails — ensureParentDirs can't create the
+    // "saves/test_save.txt" fails - ensureParentDirs can't create the
     // "saves" dir because a file with that name exists).
     const scratch = "zig-cache/test-write-save-fail";
     const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
@@ -2226,7 +2226,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
 
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
 
-    // Push write_save to "saves/test_save.txt" — ensureParentDirs tries to
+    // Push write_save to "saves/test_save.txt" - ensureParentDirs tries to
     // create the "saves" dir, fails because "saves" is a file.
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .write_save = .{
         .save_path = "saves/test_save.txt",
@@ -2234,11 +2234,11 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     event_handlers.processEvent(&history);
 
     // The write failed → pending_error is set, load_error is NOT (writes
-    // don't need a revert — state is fine, just the file didn't write).
+    // don't need a revert - state is fine, just the file didn't write).
     try std.testing.expect(history.session.pending_error != null);
     try std.testing.expect(!history.load_error);
 
-    // State is unchanged — the save didn't happen, but player_data is intact.
+    // State is unchanged - the save didn't happen, but player_data is intact.
     try std.testing.expectEqualStrings("Test", history.current_state.player_data.player_name);
 
     history.session.clearPendingError();
@@ -2252,7 +2252,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
 // swapping during an enemy-turn wait sat on the stack until the wait elapsed
 // (~500ms delay). The fix: update()'s wait branch drains anytime-interjected
 // events down to the wait's baseline_stack_depth (immediate, no delay, no idle
-// point — absorbed into the surrounding drain), and frame()'s idle branch
+// point - absorbed into the surrounding drain), and frame()'s idle branch
 // records an idle point when update() advanced the index and left the stack
 // empty with no active wait. These tests exercise update() directly (both
 // changes are inside it) and replicate the frame() idle-branch condition for
@@ -2291,7 +2291,7 @@ test "anytime swap_weapons while idle: records an undoable idle point" {
     const event_index_before = history.current_event_index;
     try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
 
-    // Drive one update() with swap_weapons set — mirrors what frame()'s idle
+    // Drive one update() with swap_weapons set - mirrors what frame()'s idle
     // branch does: handleAnytimeInput pushes swap_hands, then update()'s tail
     // processes it (stack non-empty → processEvent), leaving stack empty.
     var player_input: input.PlayerInput = .{};
@@ -2305,7 +2305,7 @@ test "anytime swap_weapons while idle: records an undoable idle point" {
     try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].off_hand_weapon.?.weapon_type);
     // The swap was recorded into event_history.
     try std.testing.expect(history.current_event_index == event_index_before + 1);
-    // Stack is empty, no wait active — the frame() idle-branch condition.
+    // Stack is empty, no wait active - the frame() idle-branch condition.
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.waiting == null);
     // Replicate frame()'s idle-branch check: index advanced + stack empty +
@@ -2351,7 +2351,7 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 
     // Drive update() with swap_weapons set and a delta (100ms) smaller than
-    // the wait remaining (500ms) — so the wait does NOT elapse this tick.
+    // the wait remaining (500ms) - so the wait does NOT elapse this tick.
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
@@ -2364,13 +2364,13 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].off_hand_weapon.?.weapon_type);
     // The swap was recorded into event_history.
     try std.testing.expect(history.current_event_index == event_index_before + 1);
-    // The wait is still active — remaining reduced by exactly the delta.
+    // The wait is still active - remaining reduced by exactly the delta.
     try std.testing.expect(history.current_state.waiting != null);
     try std.testing.expectEqual(@as(u64, 400_000), history.current_state.waiting.?.remaining_microseconds);
-    // The baseline event (clear_highlights) is still on the stack — the
+    // The baseline event (clear_highlights) is still on the stack - the
     // interjection drained only down to baseline_stack_depth.
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
-    // No idle point was recorded for the interjection — it stays absorbed
+    // No idle point was recorded for the interjection - it stays absorbed
     // into the surrounding enemy-turn drain's eventual idle point.
     try std.testing.expectEqual(idle_count_before, history.idle_points.items.len);
 }
@@ -2379,7 +2379,7 @@ test "undo/redo via anytime input does not record duplicate idle points (no cycl
     // Regression: the idle-branch idle-point recording fired for ANY index
     // change inside update(), including undo/redo (which are anytime actions).
     // undo/redo set current_idle_index + restoreTo(current_event_index), so
-    // after update() the position is already indexed — recording a duplicate
+    // after update() the position is already indexed - recording a duplicate
     // grew idle_points with near-duplicate entries and made undo/redo cycle
     // between two states instead of walking the timeline. The fix gates the
     // recording on `idle_points[current_idle_index] != current_event_index`,
@@ -2414,12 +2414,12 @@ test "undo/redo via anytime input does not record duplicate idle points (no cycl
     try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
     try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len); // no duplicate recorded
 
-    // Undo again — must go further back to idle point 0, NOT cycle forward to
+    // Undo again - must go further back to idle point 0, NOT cycle forward to
     // idle point 2 (the cycling symptom). Without the fix, this second undo
     // recorded a duplicate and subsequent undos bounced between swap1/swap2.
     doAnytime(&history, .{ .undo = true });
     try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len); // still no duplicate
-    // At the earliest idle point — one more undo is a no-op.
+    // At the earliest idle point - one more undo is a no-op.
     try std.testing.expect(!history.undo(&event_handlers.processEvent));
 
     // Redo walks forward without recording duplicates either.
@@ -2432,7 +2432,7 @@ test "undo/redo via anytime input does not record duplicate idle points (no cycl
 }
 
 /// Drive one update() in the idle frame and replicate frame()'s idle-branch
-/// idle-point recording — the exact path the duplicate-idle-point bug lived
+/// idle-point recording - the exact path the duplicate-idle-point bug lived
 /// in. Shared by doIdleSwap (a new action) and doAnytime (undo/redo), so both
 /// exercise the same condition the production idle branch uses.
 fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) void {
@@ -2445,7 +2445,7 @@ fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) vo
 }
 
 /// Drive an idle swap_weapons through update() and replicate frame()'s
-/// idle-branch idle-point recording — the exact path the bug lived in.
+/// idle-branch idle-point recording - the exact path the bug lived in.
 fn doIdleSwap(history: *GameStateHistory) void {
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
@@ -2453,7 +2453,7 @@ fn doIdleSwap(history: *GameStateHistory) void {
 }
 
 /// Drive an anytime action (undo/redo/etc.) through update() and replicate
-/// frame()'s idle-branch idle-point recording — the path that recorded
+/// frame()'s idle-branch idle-point recording - the path that recorded
 /// duplicate idle points on undo/redo before the fix.
 fn doAnytime(history: *GameStateHistory, anytime: input.AnytimeInput) void {
     var player_input: input.PlayerInput = .{};
@@ -2486,7 +2486,7 @@ test "undo during a mid-drain reverts to the current idle point, not one further
 
     // Simulate a mid-drain: an in-progress player action's subtree is on the
     // stack with a wait active (e.g. enemy turns draining). current_idle_index
-    // still points at idle point 2 — the state just before the drain started.
+    // still points at idle point 2 - the state just before the drain started.
     event_push.pushEvents(&history.current_state, &.{.{
         .level_event = .clear_highlights,
     }}, history.current_arena.allocator());
@@ -2504,7 +2504,7 @@ test "undo during a mid-drain reverts to the current idle point, not one further
     // Stack cleared + wait cleared (restoreTo clears waiting).
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.waiting == null);
-    // The partial drain's events were discarded — event_history trimmed to
+    // The partial drain's events were discarded - event_history trimmed to
     // the current event index, idle_points trimmed to current_idle_index + 1.
     try std.testing.expectEqual(@as(usize, history.current_event_index), history.event_history.items.len);
     try std.testing.expectEqual(@as(usize, idle_index_before + 1), history.idle_points.items.len);
@@ -2536,7 +2536,7 @@ test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-b
     try std.testing.expectEqual(@as(u32, 0), history.current_event_index);
 
     // Process one event (swap_hands) directly, then call maybeRecordIdlePoint
-    // with empty idle_points — must record the first idle point, not crash.
+    // with empty idle_points - must record the first idle point, not crash.
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .swap_hands }}, history.current_arena.allocator());
     event_handlers.processEvent(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -2576,7 +2576,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
     runToIdle(&history);
 
     // The inspector's sections start ALL COLLAPSED (the shipped default)
-    // — expand them so the fields render.
+    // - expand them so the fields render.
     history.session.ui_state.editor_inspector_section_expanded = ui.allInspectorSectionsExpanded();
 
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
@@ -2709,7 +2709,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
             history.current_state.editor.?.picker.?,
         );
         try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
-        // Close it — the drag-off block below needs a clean slate.
+        // Close it - the drag-off block below needs a clean slate.
         player_input = .{};
         player_input.pointer.pressed = true;
         player_input.pointer.position = .{ .x = 2400, .y = 2400 };
@@ -2717,7 +2717,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
     }
 
     // Drag-off: press on the name field, release far away. The PRESS
-    // already committed the sprite field (M2 — focus dropped); the missed
+    // already committed the sprite field (M2 - focus dropped); the missed
     // release cancels the name focus too, so no field is focused.
     {
         var player_input = input.PlayerInput{};

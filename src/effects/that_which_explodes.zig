@@ -13,7 +13,7 @@ const Effect = effect_mod.Effect;
 /// That Which Explodes: while active, when the holder is dealt attack
 /// damage, the holder attacks every hostile within its EFFECTIVE radius
 /// (base 1, effects carry no per-skill config) for 1x effective SPELL
-/// damage (utility-skill damage rule — see DESIGN → Architecture).
+/// damage (utility-skill damage rule - see DESIGN → Architecture).
 pub const effect = Effect{
     .name = "That Which Explodes",
     .description = "Attack each enemy within radius when dealt damage",

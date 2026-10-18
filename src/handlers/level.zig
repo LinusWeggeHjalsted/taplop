@@ -1,6 +1,6 @@
 //! Combat turn-flow + level mechanics: the `.level_event` and
 //! `.sub_level_event` arms of processEvent (`handleLevelEvent` /
-//! `handleSubLevelEvent`) plus their helpers — entity activation, the
+//! `handleSubLevelEvent`) plus their helpers - entity activation, the
 //! damage/heal number anim direction, and the current-mission accessor.
 //! The enemy AI range/threat math lives in `ai_threat.zig`.
 //! Pure state transforms; sound/anim side effects gate on `!replaying`
@@ -33,7 +33,7 @@ const getLevelEntity = shared.getLevelEntity;
 const refreshMoveHighlights = shared.refreshMoveHighlights;
 
 // Real-time pause inserted between enemy turn actions (before moving, before
-// each skill) so enemy turns don't resolve instantly. Not skippable — see the
+// each skill) so enemy turns don't resolve instantly. Not skippable - see the
 // wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
 
@@ -45,7 +45,7 @@ fn sign(value: i32) i32 {
 
 /// Damage-number travel direction: the normalized attacker→defender delta
 /// (one of 8), or top-right `{1, -1}` (same as heals) when the delta is
-/// `{0,0}` — i.e. self-damage (attacker == defender, no direction away from
+/// `{0,0}` - i.e. self-damage (attacker == defender, no direction away from
 /// an attacker exists). The fallback avoids a divide-by-zero NaN in
 /// `view.numberAnimPosition`'s unit-vector math. See AGENTS Animation.
 fn damageNumberDirection(attacker_position: Vector2, defender_position: Vector2) Vector2 {
@@ -74,7 +74,7 @@ fn activateEntity(
     entity.is_active = true;
     if (history.replaying) return;
     // The combat-start sting: one per newly-aggroed enemy (a group aggro
-    // stings once per enemy — same moment in practice; tuned with real
+    // stings once per enemy - same moment in practice; tuned with real
     // assets). Every activation path (aggro_check, aggro_in_radius, the
     // hostile-effect arms) routes through here. See DESIGN → Audio.
     history.session.queueSound(history.backing_allocator, .aggro);
@@ -192,7 +192,7 @@ fn enemyApproachTurn(
                     pushEnemyAttack(current, entity_index, allocator);
                 }
             } else {
-                // No direct path — use reachable tiles, pick closest to target
+                // No direct path - use reachable tiles, pick closest to target
                 const reachable = functions.reachableTiles(
                     level.*,
                     entity.position,
@@ -230,20 +230,20 @@ fn enemyApproachTurn(
                 if (best_tile) |destination| {
                     pushEnemyMoveThenAttack(current, entity_index, destination, allocator);
                 } else {
-                    // Can't improve position — just attack
+                    // Can't improve position - just attack
                     pushEnemyAttack(current, entity_index, allocator);
                 }
             }
         }
     } else {
-        // No targets — skip to turn end
+        // No targets - skip to turn end
         pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
             .entity_index = entity_index,
         } } }}, allocator);
     }
 }
 
-/// Handle a `LevelEvent` — the turn-flow machinery (turn start/end,
+/// Handle a `LevelEvent` - the turn-flow machinery (turn start/end,
 /// player/enemy move + attack steps, skill use, highlights). Called from
 /// processEvent's `.level_event` arm.
 pub fn handleLevelEvent(
@@ -261,15 +261,15 @@ pub fn handleLevelEvent(
 
             // Turn counters, incremented when the player's turn BEGINS:
             // the final turn (walking onto the level exit) never reaches
-            // turn_end — end_level's screen transition clears the stack
-            // mid-turn — so end-counting silently dropped it. The
+            // turn_end - end_level's screen transition clears the stack
+            // mid-turn - so end-counting silently dropped it. The
             // per-mission counter (turns_spent) lives on the live mission
-            // working copy and is discarded with it on exit — it scopes a
+            // working copy and is discarded with it on exit - it scopes a
             // single playthrough for the mission-complete screen and the
             // validation replay's author medal target. The cumulative
             // lifetime counter (player_data.turns) persists across the
             // campaign for historical stats; it is SKIPPED in editor
-            // playtest/validate (discard-semantics — the editor session
+            // playtest/validate (discard-semantics - the editor session
             // must not inflate the player's real turn count). Both are
             // direct GameState writes inside an event handler, so they
             // are reproduced on replay. See DESIGN → Custom Missions &
@@ -343,7 +343,7 @@ pub fn handleLevelEvent(
             //
             // The round events are pushed BEFORE on_end_turn effect hooks
             // so the heals (and any other on_end_turn events) land on TOP
-            // of the LIFO stack and run before any turn_starts — i.e. at
+            // of the LIFO stack and run before any turn_starts - i.e. at
             // the END of this turn, not the start of the next. (Swapping
             // the two blocks was the fix for Stone Form healing at the
             // start of the player's next turn instead of the end of the
@@ -371,7 +371,7 @@ pub fn handleLevelEvent(
                 }
 
                 // Sort by distance ascending (closest first). std.mem.sort
-                // is unstable, so break ties explicitly by entity_index —
+                // is unstable, so break ties explicitly by entity_index -
                 // otherwise equal-distance enemies would take turns in an
                 // arbitrary order (see DESIGN → Determinism & Tiebreaking).
                 std.mem.sort(EntityDistance, enemy_distances.items, {}, struct {
@@ -409,7 +409,7 @@ pub fn handleLevelEvent(
             // Trigger on_end_turn for all active effects. Pushed AFTER the
             // round events (above) so on_end_turn events (e.g. Stone Form
             // heal) sit on top of the LIFO stack and run before any
-            // turn_starts — at the END of this turn, not the start of the
+            // turn_starts - at the END of this turn, not the start of the
             // next.
             for (entity.active_effects) |active_effect| {
                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
@@ -423,7 +423,7 @@ pub fn handleLevelEvent(
             level.turn_phase = .player_move;
             refreshMoveHighlights(current, allocator);
 
-            // Event stack is now empty — handleIdleInput will pick up
+            // Event stack is now empty - handleIdleInput will pick up
             // tile clicks and skip actions based on turn_phase.
         },
         .player_turn_attack => |attack| {
@@ -445,14 +445,14 @@ pub fn handleLevelEvent(
 
             level.turn_phase = .player_attack;
 
-            // Event stack is now empty — handleIdleInput will pick up
+            // Event stack is now empty - handleIdleInput will pick up
             // skill slot selection, skip, and swap weapons based on turn_phase.
         },
         .enemy_turn_move => |enemy_move| {
             const level = &current.level.?;
             const entity = level.entities[enemy_move.entity_index];
 
-            // A dead entity can't take its turn — skip to turn_end to
+            // A dead entity can't take its turn - skip to turn_end to
             // advance the cycle. (Reactive effects like Reflect can
             // kill an entity mid-turn, leaving its turn events already
             // on the stack.)
@@ -467,7 +467,7 @@ pub fn handleLevelEvent(
             // offensive point-blank skill is ready; kite at min range when
             // the whole kit outranges melee; else approach. A mode
             // destination of null means the mode found nothing to work
-            // with this turn (no cluster, nobody in reach) — approach flows
+            // with this turn (no cluster, nobody in reach) - approach flows
             // through the same path. See DESIGN → Architecture (AI
             // movement modes).
             const entity_index = enemy_move.entity_index;
@@ -495,7 +495,7 @@ pub fn handleLevelEvent(
                 if (mode_destination.x != entity.position.x or mode_destination.y != entity.position.y) {
                     pushEnemyMoveThenAttack(current, entity_index, mode_destination, allocator);
                 } else {
-                    // The mode's best tile is the entity's own — stand and
+                    // The mode's best tile is the entity's own - stand and
                     // attack from here.
                     pushEnemyAttack(current, entity_index, allocator);
                 }
@@ -507,7 +507,7 @@ pub fn handleLevelEvent(
             const level = &current.level.?;
             const entity = level.entities[enemy_attack.entity_index];
 
-            // A dead entity can't take its turn — skip to turn_end to
+            // A dead entity can't take its turn - skip to turn_end to
             // advance the cycle. (Reactive effects like Reflect can
             // kill an entity mid-turn, leaving its turn events already
             // on the stack.)
@@ -533,7 +533,7 @@ pub fn handleLevelEvent(
             );
 
             // Use non-turn-ending skills first, then turn-ending
-            // (the shared selection — see ai_select.zig).
+            // (the shared selection - see ai_select.zig).
             if (casts.non_ending) |chosen| {
                 // Push another enemy_turn_attack after use_skill to re-evaluate.
                 // Order (LIFO, last runs first): wait, then skill, then re-evaluate.
@@ -562,7 +562,7 @@ pub fn handleLevelEvent(
                     .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                 }, allocator);
             } else {
-                // No usable cast — end turn
+                // No usable cast - end turn
                 pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
                     .entity_index = enemy_attack.entity_index,
                 } } }}, allocator);
@@ -574,7 +574,7 @@ pub fn handleLevelEvent(
 
             // Every attack is skill-mediated (the player's attack step IS a
             // weapon-skill use; enemies cast through bestCasts), so this is
-            // the ONE chain start — the accelerating-wait counter resets
+            // the ONE chain start - the accelerating-wait counter resets
             // here. See DESIGN → Architecture → Skill pacing.
             current.wait_acceleration = 0;
 
@@ -672,7 +672,7 @@ pub fn handleLevelEvent(
     }
 }
 
-/// Handle a `SubLevelEvent` — the combat primitives (attacks, stun,
+/// Handle a `SubLevelEvent` - the combat primitives (attacks, stun,
 /// knockback, effects, deaths, pickups, aggro). Called from processEvent's
 /// `.sub_level_event` arm.
 pub fn handleSubLevelEvent(
@@ -685,7 +685,7 @@ pub fn handleSubLevelEvent(
         .aggro_check => {
             // Scan every inactive entity; for each, if any opposing
             // entity is within ITS OWN aggro_range, activate it.
-            // Self-centric — one event covers the whole level. See
+            // Self-centric - one event covers the whole level. See
             // DESIGN → Architecture.
             const level = &current.level.?;
             for (level.entities, 0..) |*entity, entity_index| {
@@ -710,7 +710,7 @@ pub fn handleSubLevelEvent(
         },
         .check_level_end => {
             // Lose condition: if the player is dead, the mission is
-            // failed — don't check the win condition (a dead player
+            // failed - don't check the win condition (a dead player
             // on the exit with no enemies would falsely trigger
             // level completion). The mission_fail overlay is derived
             // from player health in view(); see DESIGN → Architecture.
@@ -779,7 +779,7 @@ pub fn handleSubLevelEvent(
             // slot); collect the ones that don't fit as leftovers.
             // Items the PLAYER actually picks up also count toward the
             // mission's converted-materials accumulator (the clone's
-            // rate numerator) — valued at salvage value regardless of
+            // rate numerator) - valued at salvage value regardless of
             // what the player later does with the item. Leftover items
             // that don't fit stay on the ground and don't count. See
             // DESIGN → Clones (clone system).
@@ -835,14 +835,14 @@ pub fn handleSubLevelEvent(
             if (attacker.current_health == 0) return;
             if (defender.current_health == 0) return;
 
-            // Hostile-effect activation — see the attack arm.
+            // Hostile-effect activation - see the attack arm.
             if (!defender.is_active) activateEntity(history, defender, stun.defender_index);
 
             const effective_duration = defender.getEffectiveIncomingStunDuration(stun.stun_duration);
 
             if (effective_duration > 0) {
                 // MAX, not sum: a new stun takes the longer of current vs
-                // incoming, never stacks — a player facing multiple stunning
+                // incoming, never stacks - a player facing multiple stunning
                 // enemies can't be mega-stunlocked. Stun skills' AI reflects
                 // this (they rate/prefer unstunned targets). See DESIGN →
                 // Architecture (the stun rule).
@@ -872,7 +872,7 @@ pub fn handleSubLevelEvent(
             if (attacker.current_health == 0) return;
             if (defender.current_health == 0) return;
 
-            // Hostile-effect activation — see the attack arm.
+            // Hostile-effect activation - see the attack arm.
             if (!defender.is_active) activateEntity(history, defender, knockback.defender_index);
 
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .knockback);
@@ -927,7 +927,7 @@ pub fn handleSubLevelEvent(
                 destination = next_position;
             }
 
-            // Collision event FIRST, forced move SECOND — LIFO pops the
+            // Collision event FIRST, forced move SECOND - LIFO pops the
             // move first, so the slide lands BEFORE the crunch resolves
             // (with the collision → damage wait, the impact visuals land
             // after the push is visible). Pushing the move first would
@@ -961,7 +961,7 @@ pub fn handleSubLevelEvent(
 
             if (defender.current_health == 0) return;
 
-            // Hostile-effect activation — a knockback shoved into an
+            // Hostile-effect activation - a knockback shoved into an
             // uninvolved inactive entity aggros it. See the attack arm.
             if (!defender.is_active) activateEntity(history, defender, collision.defender_index);
 
@@ -983,16 +983,16 @@ pub fn handleSubLevelEvent(
             // applied the attacker's outgoing modifiers (same as
             // `attack`); the handler applies only the defender's
             // incoming modifiers. Collision does NOT go through
-            // damage intercepts — deliberate counterplay around
+            // damage intercepts - deliberate counterplay around
             // Reflect. See DESIGN → Architecture.
             const incoming_damage = defender.getEffectiveIncomingDamage(collision.damage);
 
             // Hand the resolved amount to the shared damage apply arm
             // (attack/collision converge there; the `triggers_effects`
-            // default is true — collision damage callbacks were ungated),
+            // default is true - collision damage callbacks were ungated),
             // with an intra-hit pacing wait between resolve and apply (see
             // DESIGN → Architecture → Skill pacing). LIFO: the wait sits
-            // LAST so it pops FIRST — the damage lands once it elapses.
+            // LAST so it pops FIRST - the damage lands once it elapses.
             pushEvents(current, &.{
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = collision.attacker_index,
@@ -1004,7 +1004,7 @@ pub fn handleSubLevelEvent(
         },
         .damage => |damage_event| {
             // Shared damage apply pipeline for `attack` and `collision` (the
-            // resolution differences stay at their pusher arms — see the
+            // resolution differences stay at their pusher arms - see the
             // event's doc comment in events.zig).
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
             const attacker = getLevelEntity(current, damage_event.attacker_index);
@@ -1013,7 +1013,7 @@ pub fn handleSubLevelEvent(
             if (defender.current_health == 0) return;
 
             // Damage number always shows (even 0) so a connecting
-            // hit is observable — a fully-absorbed attack no longer
+            // hit is observable - a fully-absorbed attack no longer
             // looks like a whiff. The hit flash stays gated on > 0
             // (a flash reads as "damage was dealt"). See DESIGN →
             // Animation.
@@ -1104,7 +1104,7 @@ pub fn handleSubLevelEvent(
             if (defender.current_health == 0) return;
 
             // Being the defender of a hostile effect activates an inactive
-            // entity — a hit from beyond aggro_range aggros, even when the
+            // entity - a hit from beyond aggro_range aggros, even when the
             // damage is fully mitigated (targeted counts). See DESIGN →
             // Architecture (the aggro paragraph).
             if (!defender.is_active) activateEntity(history, defender, attack.defender_index);
@@ -1123,7 +1123,7 @@ pub fn handleSubLevelEvent(
             // can change the outgoing damage before defense (Reflect
             // zeroes it and reflects it back). Gated on triggers_effects
             // so a reflected attack (triggers_effects=false) is not
-            // re-intercepted — no reflect-vs-reflect loops.
+            // re-intercepted - no reflect-vs-reflect loops.
             var effective_outgoing = attack.outgoing_damage;
             if (attack.triggers_effects) {
                 for (defender.active_effects) |active_effect| {
@@ -1146,7 +1146,7 @@ pub fn handleSubLevelEvent(
             // Hand the resolved amount to the shared damage apply arm, with
             // an intra-hit pacing wait between resolve and apply (see DESIGN →
             // Architecture → Skill pacing). LIFO: the wait sits LAST in the
-            // array so it pops FIRST — the damage lands once it elapses.
+            // array so it pops FIRST - the damage lands once it elapses.
             pushEvents(current, &.{
                 .{ .sub_level_event = .{ .damage = .{
                     .attacker_index = attack.attacker_index,
@@ -1184,7 +1184,7 @@ pub fn handleSubLevelEvent(
                 }
             }
 
-            // Check if receiver already has this effect — extend duration if so
+            // Check if receiver already has this effect - extend duration if so
             const effect_definition = lookups.getEffectDefinition(create.effect_id);
             var found_existing = false;
             for (@constCast(receiver.active_effects)) |*active_effect| {
@@ -1219,7 +1219,7 @@ pub fn handleSubLevelEvent(
             const entity = level.entities[death.entity_index];
 
             // Player death: play the defeat sound (side effect,
-            // gated !replaying) and freeze-frame — clear the
+            // gated !replaying) and freeze-frame - clear the
             // remaining event stack so the rest of the enemy turn
             // doesn't play out. The mission_fail overlay is derived
             // from player health in view(), so no flag or event is
@@ -1453,7 +1453,7 @@ pub fn handleSubLevelEvent(
             const entity_a = getLevelEntity(current, swap.entity_a_index);
             const entity_b = getLevelEntity(current, swap.entity_b_index);
             if (entity_a.current_health == 0 or entity_b.current_health == 0) return;
-            // Hostile-effect activation — the swap TARGET (entity_b) is
+            // Hostile-effect activation - the swap TARGET (entity_b) is
             // targeted even though no damage lands. See the attack arm.
             if (!entity_b.is_active) activateEntity(history, entity_b, swap.entity_b_index);
             // Capture both positions before either move, then reuse
@@ -1488,7 +1488,7 @@ pub fn handleSubLevelEvent(
                 // No team filter: Howl rallies same-team entities
                 // (a wolf howling to aggro its pack), and aggroing
                 // opposing entities (including the player) is
-                // harmless — `is_active` on the player is ignored by
+                // harmless - `is_active` on the player is ignored by
                 // the loops that skip entity 0.
                 if (functions.chebyshevDistance(entity.position, other_entity.position) <= radius) {
                     activateEntity(history, @constCast(other_entity), @intCast(other_index));
@@ -1496,7 +1496,7 @@ pub fn handleSubLevelEvent(
             }
         },
         .reset_weapon_cooldowns => |reset| {
-            // Resolve the entity's weapon skills (slots 1-3) — needs
+            // Resolve the entity's weapon skills (slots 1-3) - needs
             // weapon_type_definitions from history, hence a handler and
             // not the skill's useSkill. Emit a change_cooldown per
             // skill on cooldown (composes the cooldown primitive).
@@ -1517,7 +1517,7 @@ pub fn handleSubLevelEvent(
             }
         },
         .adrenaline_surge => |surge| {
-            // Reset the defender's on-bar cooldowns (Entity.onBarSkillIds —
+            // Reset the defender's on-bar cooldowns (Entity.onBarSkillIds -
             // both weapons' full sets + utility), then the attacker strikes
             // once per reset. Enumeration needs weapon_type_definitions
             // (the reset_weapon_cooldowns precedent); the count drives the
@@ -1544,7 +1544,7 @@ pub fn handleSubLevelEvent(
             if (reset_count == 0) return;
 
             // LIFO: later pushes drain first, so the RESETS go on the stack
-            // LAST — they run before the attacks, landing even when the
+            // LAST - they run before the attacks, landing even when the
             // attacks kill the defender (change_cooldown no-ops on a dead
             // entity, so the reverse order would lose the resets).
             const damage = attacker.getEffectiveSpellDamage();

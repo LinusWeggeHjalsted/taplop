@@ -39,27 +39,27 @@ pub const FrameState = struct {
     frame_arena: std.heap.ArenaAllocator,
     /// Last render time (real-clock microseconds) for the render-interval gate.
     last_render_time: u64,
-    /// The console input queue (stdin — see DESIGN → Input → Console input).
+    /// The console input queue (stdin - see DESIGN → Input → Console input).
     /// Empty without a reader thread (web, or a native launch without stdin,
     /// which is immediate EOF); the native driver spawns the reader and wires
     /// the dump output writer.
     console_queue: console.ConsoleQueue = .{},
-    /// The previous frame's translated input + real-clock delta — the
+    /// The previous frame's translated input + real-clock delta - the
     /// observability stash (see DESIGN → Input → Console input → dump
     /// paths): written once per frame in `main.frame` right after
     /// translateInput + the console action fold, read by `dump
     /// previous_player_input...` / `dump previous_delta_microseconds`.
     /// Null before the first frame. The `previous_` naming follows
     /// previous_view_state ("what was true last frame is what you act
-    /// against this frame") — and a dump executed on frame N+1 shows
+    /// against this frame") - and a dump executed on frame N+1 shows
     /// frame N's translation, so `press X` followed by `dump
     /// previous_player_input...` asserts what the press DID.
-    /// Plain wholesale copy — PlayerInput is all values except one string
+    /// Plain wholesale copy - PlayerInput is all values except one string
     /// payload, and that payload (clicked_payload's editor_sprite variant) borrows
     /// session-owned scan bytes (MissionSprite.stored_id), so nothing in
     /// the stash can dangle into the reset frame arena.
     previous_player_input: ?input.PlayerInput = null,
-    /// The previous frame's real-clock delta — the timing fact the stash
+    /// The previous frame's real-clock delta - the timing fact the stash
     /// exists for (before it, the frame period had to be measured by
     /// timing whole process runs against each other).
     previous_delta_microseconds: u64 = 0,
@@ -73,7 +73,7 @@ pub const FrameState = struct {
 /// history is created (the popup lives on SessionState, which is on
 /// GameStateHistory). The warning strings are backing-allocator-owned,
 /// tracked in the SessionSetup's StartupMemory, and freed by
-/// `freeSessionSetup` (the web re-boot's teardown) — process-lifetime on
+/// `freeSessionSetup` (the web re-boot's teardown) - process-lifetime on
 /// native. See DESIGN → Error Handling → three contexts.
 const Warnings = *std.ArrayList([]const u8);
 
@@ -82,7 +82,7 @@ const Warnings = *std.ArrayList([]const u8);
 /// their own strings/slices (duped by the loaders), but the bytes +
 /// section containers stay referenced for the session (the values' fields
 /// can borrow from section strings), so they are tracked here and freed by
-/// `freeSessionSetup` — AFTER the history deinit freed the loaded values
+/// `freeSessionSetup` - AFTER the history deinit freed the loaded values
 /// (values first, then section containers, then bytes).
 pub const StartupAllocation = struct {
     config_bytes: []const u8,
@@ -91,7 +91,7 @@ pub const StartupAllocation = struct {
 
 /// Tracked startup memory (the teardown's bookkeeping): every retained
 /// bytes + sections pair plus the startup warning strings. Production
-/// never frees it (process lifetime — native never tears down); the web
+/// never frees it (process lifetime - native never tears down); the web
 /// re-boot's teardown (`freeSessionSetup`) frees it all so a re-booted
 /// session doesn't leak the previous session's startup memory on every
 /// Import Game. Owned by `SessionSetup` (filled by `createSessionSetup`
@@ -114,10 +114,10 @@ pub const StartupMemory = struct {
 
 /// Read + parse a config file and load it via `load_fn`, falling back to the
 /// embedded copy if the first attempt (persistent-dir shadow → embedded) fails
-/// at any stage — read, parse, or `load_fn`. On a successful first attempt,
+/// at any stage - read, parse, or `load_fn`. On a successful first attempt,
 /// returns the loaded value with no warning. On a failed first attempt +
 /// successful embedded retry, appends a warning to `startup.warnings` and
-/// returns the value. If the embedded copy also fails, panics — shipped
+/// returns the value. If the embedded copy also fails, panics - shipped
 /// content is broken, a real bug. See DESIGN → Error Handling → three
 /// contexts.
 ///
@@ -125,7 +125,7 @@ pub const StartupMemory = struct {
 /// (the common loader shape; `loadWeaponTypeDefinition` is wrapped to match).
 /// The bytes + sections of every RETAINED attempt (a successful load, or a
 /// load_fn failure that falls through to the retry) are tracked in
-/// `startup` — process-lifetime on native, freed by the web re-boot's
+/// `startup` - process-lifetime on native, freed by the web re-boot's
 /// teardown (`freeSessionSetup`) via the same tracking.
 fn loadConfigWithFallback(
     comptime T: type,
@@ -146,7 +146,7 @@ fn loadConfigWithFallback(
                 return result;
             } else |_| {
                 // A load_fn failure falls through to the embedded retry with
-                // the attempt's bytes + sections retained (tracked — freed
+                // the attempt's bytes + sections retained (tracked - freed
                 // by the teardown; a failed load_fn may have left partial
                 // allocations that cannot be named here).
                 startup.retain(allocator, bytes, sections);
@@ -163,7 +163,7 @@ fn loadConfigWithFallback(
         @panic("failed to parse embedded startup config file");
     const result = load_fn(sections, allocator) catch
         @panic("failed to load embedded startup config file");
-    // Validate the embedded copy too — an unknown key in a parsing-OK
+    // Validate the embedded copy too - an unknown key in a parsing-OK
     // embedded file is a softer issue worth surfacing (the panic above
     // fires first on a parse/load failure).
     parser.validateKeys(sections, key_map, path, allocator, warnings);
@@ -200,10 +200,10 @@ fn loadSettingsWrapped(
 
 /// Load settings from data/default_settings.txt, falling back to the embedded
 /// copy on parse failure (see DESIGN → Error Handling). The embedded copy is a
-/// better fallback than hardcoded defaults — it preserves keybindings and
+/// better fallback than hardcoded defaults - it preserves keybindings and
 /// other authored values; hardcoded defaults are only the "embedded copy
 /// missing entirely" panic case (a real bug). User preferences live in a
-/// separate persistent `settings.txt` overlaid on top of these defaults —
+/// separate persistent `settings.txt` overlaid on top of these defaults -
 /// see `overlayUserSettings`.
 pub fn loadSettingsFromDisk(
     file_source: *const FileSource,
@@ -217,14 +217,14 @@ pub fn loadSettingsFromDisk(
 /// of the shipped defaults. The user file is the SAME FORMAT as
 /// `data/default_settings.txt` but carries only the fields the player has
 /// changed: scalars overlay per-field (user value wins, missing keeps
-/// default); InputBindings overlay PER-ACTION — bindings for actions the
+/// default); InputBindings overlay PER-ACTION - bindings for actions the
 /// user file names are authoritative (replacing the defaults' bindings for
 /// those actions), while actions it doesn't name fall back to their default
-/// bindings (injected on load; persisted by the next debounced write —
+/// bindings (injected on load; persisted by the next debounced write -
 /// see DESIGN → Input → Binding overlay semantics). A missing or
 /// unparseable user file leaves the defaults untouched (with a warning).
 /// `repair_write_needed` (out-param) is set when the user file PARSED and
-/// LOADED but produced warnings (dropped bindings, unknown keys) — the merged
+/// LOADED but produced warnings (dropped bindings, unknown keys) - the merged
 /// settings are authoritative there, so a full-format write repairs the
 /// file and the warnings don't repeat next launch. NOT set when the user
 /// file failed to parse or load: the overlay fell back to defaults, and
@@ -242,7 +242,7 @@ fn overlayUserSettings(
         return defaults; // No user settings file → defaults are authoritative.
     };
     // `loadSettings` dupes each input_name into the allocator, so the merged
-    // Settings OWNS its strings — it does not borrow from user_bytes. We free
+    // Settings OWNS its strings - it does not borrow from user_bytes. We free
     // user_bytes + the parsed sections eagerly on every path below (success
     // and error). See DESIGN → File System & IO → Settings ownership.
 
@@ -256,7 +256,7 @@ fn overlayUserSettings(
     defer parser.freeParsedSections(user_sections, allocator);
     defer allocator.free(user_bytes);
 
-    // Load with the defaults as the base — loadSettings overlays present
+    // Load with the defaults as the base - loadSettings overlays present
     // fields and overlays bindings per-action (user bindings for named
     // actions + injected defaults for unmentioned ones; the base's owned
     // binding strings are freed on replace). A file_format_version mismatch
@@ -329,7 +329,7 @@ pub fn loadSalvageDefinitionsFromDisk(
 /// Owns the session-long setup state (config definitions + FrameState) that
 /// both platform drivers need. The `weapon_type_definitions` array is stored
 /// BY VALUE here (not on the caller's stack) because GameStateHistory holds a
-/// pointer to it — the pointer must remain valid for the whole session. On
+/// pointer to it - the pointer must remain valid for the whole session. On
 /// native, the SessionSetup lives on run()'s stack for the game's duration;
 /// on web, it's heap-allocated (the WebSession owns it) since main() returns
 /// immediately. fixupPointers() must be called once the struct is in its final
@@ -339,7 +339,7 @@ pub const SessionSetup = struct {
     /// The tracked startup memory (see StartupMemory): every retained
     /// config bytes + sections pair + the startup warning strings. Filled
     /// by `createSessionSetup`; freed by `freeSessionSetup` (the web
-    /// re-boot's teardown — native never tears down, process lifetime).
+    /// re-boot's teardown - native never tears down, process lifetime).
     startup: StartupMemory,
     frame_state: FrameState,
 
@@ -388,11 +388,11 @@ pub fn createSessionSetup(
     // Create the history with a temporary pointer to weapon_type_definitions
     // (a local). The caller fixes this up via fixupPointers() once the
     // SessionSetup is in its final location. The temporary pointer is fine
-    // because createSessionSetup hasn't returned yet — both the local and the
+    // because createSessionSetup hasn't returned yet - both the local and the
     // returned struct's field hold the same array value at this point.
     // Detect an existing autosave ONCE at startup so the main-menu Continue
     // button can show on a fresh launch (before PlayerData is populated). Not
-    // per-frame — view() is pure and does no file access. See DESIGN → File
+    // per-frame - view() is pure and does no file access. See DESIGN → File
     // System & IO (autosave).
     const autosave_available = file_source.fileExists(writers.autosave_path);
 
@@ -412,7 +412,7 @@ pub fn createSessionSetup(
     // (dropped bindings, unknown keys) is rewritten full-format through the
     // same debounced path as preference changes (fires ~1s after boot; the
     // shutdown flushes cover a quick quit), so the startup warnings don't
-    // repeat every launch. An unparseable user file does NOT trigger this —
+    // repeat every launch. An unparseable user file does NOT trigger this -
     // see overlayUserSettings. See DESIGN → Input → Binding overlay semantics.
     if (repair_write_needed) state.markSettingsDirty(&history);
 
@@ -444,7 +444,7 @@ pub fn createSessionSetup(
     };
 }
 
-/// Tear down a SessionSetup (the web re-boot's prerequisite — run at the
+/// Tear down a SessionSetup (the web re-boot's prerequisite - run at the
 /// frame boundary, AFTER `frame` returned; a mid-frame swap would be a
 /// use-after-free of the old history, which the running frame holds
 /// references into). Frees the frame arena, everything the history owns
@@ -455,7 +455,7 @@ pub fn createSessionSetup(
 /// then the raw bytes, then the warning strings. The FileSource + IO are
 /// NOT freed (owned by the platform driver, shared across re-boots).
 /// Native never tears down (process lifetime); test histories living in
-/// throwaway arenas skip it (the arena reclaims — deinit would also work,
+/// throwaway arenas skip it (the arena reclaims - deinit would also work,
 /// arena frees are no-ops except the arena deinit).
 pub fn freeSessionSetup(setup: *SessionSetup) void {
     const allocator = setup.frame_state.history.backing_allocator;
@@ -493,7 +493,7 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Write a broken settings shadow — invalid content that will fail to
+    // Write a broken settings shadow - invalid content that will fail to
     // parse. Goes directly through the persistent dir (FileSource.writeFile
     // rejects data/ paths by policy, so we write via the dir handle).
     dir.createDirPath(io, "data") catch @panic("failed to create data dir");
@@ -510,7 +510,7 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     // The warning mentions the path.
     try testing.expect(std.mem.indexOf(u8, startup.warnings.items[0], "data/default_settings.txt") != null);
     // Both retained attempts are tracked for the teardown: the shadow's
-    // (it parses but fails to LOAD, so its bytes + sections stay retained —
+    // (it parses but fails to LOAD, so its bytes + sections stay retained -
     // see loadConfigWithFallback) + the embedded retry's.
     try testing.expectEqual(@as(usize, 2), startup.allocations.items.len);
 }
@@ -536,7 +536,7 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
 
     // The embedded copy loaded.
     try testing.expect(settings.input_bindings.len > 0);
-    // No warning — the normal read path (persistent miss → embedded hit) is
+    // No warning - the normal read path (persistent miss → embedded hit) is
     // not a "fallback"; only a parse failure that retries embedded is.
     try testing.expectEqual(@as(usize, 0), startup.warnings.items.len);
     // The normal embedded hit is still a RETAINED attempt (tracked).
@@ -544,7 +544,7 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
 }
 
 /// Build self-owned defaults WITHOUT going through loadConfigWithFallback
-/// (which intentionally leaks the raw bytes for process lifetime — a leak
+/// (which intentionally leaks the raw bytes for process lifetime - a leak
 /// `testing.allocator` would flag). readEmbeddedFile + parse + loadSettings
 /// (dupes) + free bytes + free sections gives owned defaults with no leak.
 /// The defaults base for the overlay tests below.
@@ -569,7 +569,7 @@ fn loadOwnedDefaults(
 // stays mapped and readable, so a dangling slice returns stale-but-valid
 // bytes). loadSettings now dupes each input_name so the merged Settings OWNS
 // its strings and overlayUserSettings frees user_bytes + the parsed sections
-// eagerly — so the overlay path is leak-clean and can be tested under
+// eagerly - so the overlay path is leak-clean and can be tested under
 // testing.allocator, whose leak detection catches a forgotten free (the
 // remaining risk after the ownership fix). The use-after-free class is gone
 // by construction (nothing borrows from user_bytes anymore). See DESIGN →
@@ -613,8 +613,8 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     var startup: StartupMemory = .{};
     var repair_write_needed = false;
     const merged = overlayUserSettings(defaults, &file_source, allocator, &startup, &repair_write_needed);
-    // No warnings on a valid user file — so no warning strings were allocated
-    // into `allocator` (which would leak since the test doesn't free them) —
+    // No warnings on a valid user file - so no warning strings were allocated
+    // into `allocator` (which would leak since the test doesn't free them) -
     // and no repair write is scheduled (nothing to repair). The overlay path
     // frees its bytes + sections eagerly, so nothing is tracked either.
     try testing.expectEqual(@as(usize, 0), startup.warnings.items.len);
@@ -624,9 +624,9 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     // Overlay is PER-ACTION: the user's bindings for undo/redo win (owned
     // strings, duped by loadSettings; the defaults' undo/redo bindings are
     // NOT carried over), while every action the user file doesn't mention
-    // falls back to its default binding — injected, so no official binding
+    // falls back to its default binding - injected, so no official binding
     // is lost to the full-set replace (the skip_level gap). The old base
-    // bindings were freed inside loadSettings on replace — no leak.
+    // bindings were freed inside loadSettings on replace - no leak.
     var found_user_undo = false;
     var found_user_redo = false;
     for (merged.input_bindings) |binding| {
@@ -656,19 +656,19 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyZ") != null);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyY") != null);
     // The write is full-format including the binding context (the field the
-    // next load REQUIRES — a written file must reparse cleanly).
+    // next load REQUIRES - a written file must reparse cleanly).
     try testing.expect(std.mem.indexOf(u8, written, "action undo\ncontext anytime") != null);
 
     // Free the merged bindings (owned strings + slice). testing.allocator's
     // leak detection at test-end catches if overlayUserSettings or
     // loadSettings forgot to free user_bytes / the old base strings / the
-    // parsed sections — the arena-wrapped tests can't see those.
+    // parsed sections - the arena-wrapped tests can't see those.
     loaders.freeSettings(merged, allocator);
 }
 
 // Stale user settings (pre-rename binding + unknown key): the overlay sets
 // the repair flag, and the heal write (exactly what writeSettingsToFile
-// persists) produces a file that re-overlays with ZERO warnings — the
+// persists) produces a file that re-overlays with ZERO warnings - the
 // idempotency contract that makes the startup popup not repeat next launch.
 // Under testing.allocator (no arena): the warning strings are allocPrint'd
 // single allocations, freed by the test, so the leak checker still covers the
@@ -730,7 +730,7 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
     try testing.expect(repair_write_needed);
     try testing.expect(found_repair_note);
     // The dropped binding's action (renamed to `escape`) got its default
-    // injected — the stale entry costs the player nothing.
+    // injected - the stale entry costs the player nothing.
     var found_escape = false;
     for (merged.input_bindings) |binding| {
         if (binding.action == .escape) found_escape = true;
@@ -755,9 +755,9 @@ test "overlayUserSettings: stale entries set repair flag; heal write is idempote
 }
 
 // The data-loss guard: a user file that fails to load must NOT set the
-// repair flag — the overlay fell back to defaults, and rewriting the file
+// repair flag - the overlay fell back to defaults, and rewriting the file
 // would overwrite possibly hand-recoverable content. (The garbage content
-// actually parses — lowercase lines become header-less key-value pairs —
+// actually parses - lowercase lines become header-less key-value pairs -
 // and then fails to load: no Metadata/file_format_version. Both the
 // parse-fail and load-fail branches share this guard.) The warning still
 // repeats (deliberately) until the player fixes or deletes the file.
@@ -854,7 +854,7 @@ test "createSessionSetup: stale settings.txt schedules the repair write" {
 
     // Fire it (frame()'s path; the clock is past the 1s debounce deadline
     // markWriteDirty set from session_clock = 0), then re-overlay: the
-    // on-disk file is warning-free — the popup won't repeat next launch.
+    // on-disk file is warning-free - the popup won't repeat next launch.
     setup.frame_state.history.session.fireElapsedWrites(&setup.frame_state.history, 2 * std.time.us_per_s);
 
     var startup_after: StartupMemory = .{};
@@ -880,7 +880,7 @@ test "createSessionSetup: stale settings.txt schedules the repair write" {
 
 // The web re-boot's teardown contract: the createSessionSetup +
 // freeSessionSetup round-trip is leak-clean under testing.allocator (NO
-// arena — the leak checker catches every startup allocation the tracking
+// arena - the leak checker catches every startup allocation the tracking
 // misses and every history-owned allocation the deinit misses; the web
 // driver re-boots the session after every Import Game, so a miss is a
 // per-boot leak). The drain runs the real event path (open_main_menu -> the
@@ -920,7 +920,7 @@ test "createSessionSetup + freeSessionSetup round-trip: leak-clean under testing
     var setup = createSessionSetup(allocator, &file_source, io, &fake_backend);
 
     // The startup repair + warning paths ran (tracked + freed by the
-    // teardown below — asserted by the leak checker itself).
+    // teardown below - asserted by the leak checker itself).
     try testing.expect(setup.startup.warnings.items.len > 0);
     try testing.expect(setup.startup.allocations.items.len > 0);
 

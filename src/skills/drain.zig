@@ -11,10 +11,10 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Drain: the idol's third (off-hand) skill. Attacks every hostile within
-/// radius of the caster and heals for the damage dealt — each hit
+/// radius of the caster and heals for the damage dealt - each hit
 /// lifesteals (the heals_attacker flag heals the POST-DEFENSE applied
 /// amount, which the skill cannot know ahead of the handler). Self-centered
-/// — not targeted.
+/// - not targeted.
 pub const skill = Skill{
     .name = "Drain",
     .skill_type = .weapon_skill,
@@ -34,16 +34,16 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-centered cast in value units — 1 per target hit
+/// AI options: one self-centered cast in value units - 1 per target hit
 /// (helpers.hostileCountWithinRadius), +1 more when the caster is below
 /// half health (the per-hit lifesteal then pays ~a hit's worth). Priority
 /// note: threatened + below half, Absorb's 4 wins (and ties resolve to
-/// Absorb by slot order) — prevention first, per the threat model.
+/// Absorb by slot order) - prevention first, per the threat model.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -63,7 +63,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = target_count + lifesteal_bonus });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

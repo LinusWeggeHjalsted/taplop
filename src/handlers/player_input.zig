@@ -2,7 +2,7 @@
 //! fn behind processEvent's `.player_input_event` arm. Each variant is a
 //! player-initiated action (keybind or click); simple variants do inline
 //! work, orchestrator variants push machinery events as children via
-//! `pushEvents` (the orchestrator convention — see DESIGN → Architecture
+//! `pushEvents` (the orchestrator convention - see DESIGN → Architecture
 //! + DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION LEGALITY).
 
 const std = @import("std");
@@ -46,7 +46,7 @@ const cancelPreparedSkill = shared.cancelPreparedSkill;
 const isSkillLearned = player_handlers.isSkillLearned;
 const salvageRegionOccupiedSlots = player_handlers.salvageRegionOccupiedSlots;
 
-/// Handle a `PlayerInputEvent` — the handler for the `.player_input_event`
+/// Handle a `PlayerInputEvent` - the handler for the `.player_input_event`
 /// arm in `processEvent`. Each variant is a player-initiated action (keybind
 /// or click). Simple variants do inline work; orchestrator variants push
 /// machinery events as children via `pushEvents`. See `PlayerInputEvent` in
@@ -54,11 +54,11 @@ const salvageRegionOccupiedSlots = player_handlers.salvageRegionOccupiedSlots;
 /// LEGALITY.
 /// The revalidate orchestrator's body: load the stored validation replay,
 /// re-certify it against the current content (validation_replay.
-/// revalidateMission — the checking-mode replay), and on success rewrite
+/// revalidateMission - the checking-mode replay), and on success rewrite
 /// the file with the same events + the NEW content hash (the original
-/// created stamp is kept — same run, re-certified; the derived turn count
+/// created stamp is kept - same run, re-certified; the derived turn count
 /// is unchanged with it). Every failure surfaces via the error popup
-/// (recoverable class — the live session's state is untouched; the old
+/// (recoverable class - the live session's state is untouched; the old
 /// replay file is kept so it still certifies the content it was recorded
 /// against).
 /// One stem's spec check for the Revalidate art report: skips non-custom
@@ -116,12 +116,12 @@ fn reportStemIfViolating(
 }
 
 /// The publish-checkpoint art-spec scan for Revalidate: list every custom
-/// sprite the mission references that violates its kind's spec — an
+/// sprite the mission references that violates its kind's spec - an
 /// unresolvable PNG (missing/invalid) or wrong dims (entity art must be
 /// 512x640, decoration art whole 256px tiles; same rules as the load-side
 /// warnings + the render gate). Returns null when everything conforms;
 /// otherwise a newline-joined report (one line per distinct stem).
-/// Revalidation still PASSES on violations — they degrade to the magenta
+/// Revalidation still PASSES on violations - they degrade to the magenta
 /// fallback at runtime; the report rides the success message so the
 /// author certifies with eyes open. Requires the live editor (Revalidate
 /// is editor-only); null editor → no report.
@@ -168,7 +168,7 @@ fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8
     const replay_bytes = history.file_source.readFile(scratch, replay_path) catch {
         history.session.setPendingError(
             history.history_arena.allocator(),
-            "This mission has no validation replay yet — run Validate first.",
+            "This mission has no validation replay yet - run Validate first.",
         );
         return;
     };
@@ -223,22 +223,22 @@ fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8
             };
             // The publish-checkpoint art-spec report: revalidation PASSES
             // regardless (violations degrade to the magenta fallback at
-            // runtime), but the author certifies with eyes open — the
+            // runtime), but the author certifies with eyes open - the
             // success message carries the violation list when there is
-            // one (customSpriteSpecReport — same spec as the load warnings
+            // one (customSpriteSpecReport - same spec as the load warnings
             // + the render gate).
             const spec_report = customSpriteSpecReport(history, scratch);
             if (spec_report) |report| {
                 const message = std.fmt.allocPrint(
                     scratch,
-                    "Revalidation passed — the stored replay again certifies the current mission content.\n\nCustom art spec warnings:\n{s}",
+                    "Revalidation passed - the stored replay again certifies the current mission content.\n\nCustom art spec warnings:\n{s}",
                     .{report},
                 ) catch @panic("failed to format the revalidation success message");
                 history.session.setPendingError(history.history_arena.allocator(), message);
             } else {
                 history.session.setPendingError(
                     history.history_arena.allocator(),
-                    "Revalidation passed — the stored replay again certifies the current mission content.",
+                    "Revalidation passed - the stored replay again certifies the current mission content.",
                 );
             }
         },
@@ -279,7 +279,7 @@ pub fn handlePlayerInputEvent(
         // in idle input; here we just feed the resident path to the normal
         // load path (read → parse → load → resume at the save's hub). A
         // corrupt/missing file fails inside `load_save` recoverably (popup +
-        // revert) — the browser stays open for another pick.
+        // revert) - the browser stays open for another pick.
         .player_load_save => |load| {
             pushEvents(current, &.{.{ .meta_event = .{ .load_save = .{
                 .save_path = load.save_path,
@@ -345,10 +345,10 @@ pub fn handlePlayerInputEvent(
         },
 
         // Export Game's autosave half (the zip + download are an
-        // input-path side effect, the reset-to-defaults class — see
+        // input-path side effect, the reset-to-defaults class - see
         // game_zip.zig): a game in progress syncs PlayerData + writes the
         // AUTOSAVE first, so mid-level progress is in the exported zip.
-        // Skipped during an editor run (playtest/validate) — the run's
+        // Skipped during an editor run (playtest/validate) - the run's
         // player_data is throwaway (the save_game discipline); the folder
         // export itself still proceeds.
         .export_game => {
@@ -367,13 +367,13 @@ pub fn handlePlayerInputEvent(
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
             // Null path = the fresh empty mission (the main-menu Editor
-            // button) — the short-circuit branch below; a path = the
+            // button) - the short-circuit branch below; a path = the
             // mission-directory open (the future mission browser + the
             // round-trip tests).
             if (start.mission_path == null) {
                 editor_handlers.openFreshEditorMission(history, current, allocator, &balance_warnings);
                 // A failed open surfaced the recoverable error and left
-                // the editor unset — skip the transition (the drain loop
+                // the editor unset - skip the transition (the drain loop
                 // reverts).
                 if (current.editor == null) return;
                 editor_handlers.loadEditorDecorationRegistry(history, allocator);
@@ -381,7 +381,7 @@ pub fn handlePlayerInputEvent(
                 // A newly installed editor mission is a new world: bump so
                 // the transition UI reset in the driver fires even when the
                 // screen STAYS .editor (an open-from-the-editor via the
-                // mission browser) — stale view state (open panels, the
+                // mission browser) - stale view state (open panels, the
                 // browser itself, scroll offsets) must not survive the
                 // mission swap. start_level/start_hub bump for the same
                 // reason.
@@ -424,8 +424,8 @@ pub fn handlePlayerInputEvent(
                         failReconstructionRead(history, "failed to read player.txt");
                         return;
                     }
-                    // No player.txt in the mission — the maxed default
-                    // loadout (the shared fresh-mission seed helper —
+                    // No player.txt in the mission - the maxed default
+                    // loadout (the shared fresh-mission seed helper -
                     // data/max_player.txt, a full player save; its loadout
                     // sections map onto the template).
                     break :blk editor_handlers.loadMaxPlayerLoadout(history, allocator, &balance_warnings) orelse return;
@@ -473,7 +473,7 @@ pub fn handlePlayerInputEvent(
                 failReconstructionRead(history, "failed to build editor mission");
                 return;
             };
-            // The mission's own path (the payload slice — same borrow as
+            // The mission's own path (the payload slice - same borrow as
             // start_mission's): the sprite picker's mission-local scan +
             // the editor save read it.
             current.editor.?.mission.path = mission_path;
@@ -512,7 +512,7 @@ pub fn handlePlayerInputEvent(
             } else if (current.screen == .editor) {
                 // close_editor owns the teardown AND the transition (its
                 // handler calls transitionScreen(.main_menu), which clears
-                // the editor via the screen-scope swap) — no sibling
+                // the editor via the screen-scope swap) - no sibling
                 // open_main_menu needed.
                 pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
             }
@@ -531,7 +531,7 @@ pub fn handlePlayerInputEvent(
             }, allocator);
         },
         // Level-tab click: switch the editor's active level. Thin orchestrator
-        // — the EditorEvent owns the mutation (undo rides the timeline).
+        // - the EditorEvent owns the mutation (undo rides the timeline).
         .player_set_editor_level => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_active_level = .{
                 .level_index = set.level_index,
@@ -550,12 +550,12 @@ pub fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_inspector }}, allocator);
         },
         // Settings-sidebar toggle-button click: same shape (the flag
-        // lives on the Editor — the toggle is undoable).
+        // lives on the Editor - the toggle is undoable).
         .player_toggle_editor_metadata_sidebar => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_metadata_sidebar }}, allocator);
         },
         // Surface-toggle orchestrator (escape chain, panel keybinds, modal
-        // buttons): thin — the meta `toggle_ui_surface` owns the flip; the
+        // buttons): thin - the meta `toggle_ui_surface` owns the flip; the
         // surface state rides GameState (`ui_surfaces`), so a toggle fired
         // while idle is its own undo step. See DESIGN → UI Framework → UI
         // state classification.
@@ -564,7 +564,7 @@ pub fn handlePlayerInputEvent(
                 .surface = toggle.surface,
             } } }}, allocator);
         },
-        // Right-click entity inspect: thin — the meta `inspect_entity` verb
+        // Right-click entity inspect: thin - the meta `inspect_entity` verb
         // owns the open/retarget/close (the resolved intent rides the
         // payload; the gesture computed same/different/none).
         .player_inspect_entity => |inspect| {
@@ -573,7 +573,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Editor picker open/close (the picker's own buttons, the rows
-        // that open it, a no-change pick's close): thin — the
+        // that open it, a no-change pick's close): thin - the
         // `editor_open_picker` / `editor_close_picker` events own the
         // mutation. The picker state rides GameState (`Editor.picker`),
         // so it rides the undo timeline. See DESIGN → UI Framework → UI
@@ -597,7 +597,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Top-bar Validate button: start the full-mission validation run
-        // from the SAVED mission dir (the input layer saved first — the
+        // from the SAVED mission dir (the input layer saved first - the
         // machinery handler reads the files, not the editor memory). Also
         // the validate-RESTART re-entry (pushed by end_level's guard):
         // every attempt begins with this seedable orchestrator, which is
@@ -608,7 +608,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Options-menu Revalidate Mission (see the event's doc): entirely
-        // live-only — the artifact write is a side effect, and the check
+        // live-only - the artifact write is a side effect, and the check
         // reads the mission files as they are NOW (not a pure function of
         // recorded state), so a replayed/reconstructed session re-records
         // the click but re-runs nothing.
@@ -617,11 +617,11 @@ pub fn handlePlayerInputEvent(
             revalidateMissionArtifact(history, revalidate.mission_path);
         },
         // Player inspector Import-button click: push the machinery event
-        // (the loadout fields ride GameState — the import is undoable).
+        // (the loadout fields ride GameState - the import is undoable).
         .player_import_editor_player => {
             pushEvents(current, &.{.{ .editor_event = .editor_import_player }}, allocator);
         },
-        // The Max player Import (the shipped data/max_player.txt loadout —
+        // The Max player Import (the shipped data/max_player.txt loadout -
         // the author-times tool for official missions): thin forward, the
         // EditorEvent owns the mutation.
         .player_import_editor_max_player => {
@@ -629,7 +629,7 @@ pub fn handlePlayerInputEvent(
         },
         // Palette group "+" clicks: push the machinery event (the handler
         // builds the type from the shipped defaults, makes it the active
-        // tool, and opens the inspector — one undo step covers it all).
+        // tool, and opens the inspector - one undo step covers it all).
         .player_add_editor_entity_type => {
             pushEvents(current, &.{.{ .editor_event = .editor_add_entity_type }}, allocator);
         },
@@ -640,7 +640,7 @@ pub fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .editor_add_item_type }}, allocator);
         },
         // Palette tool-cell delete-button click: push the machinery
-        // orchestrator — the editor_delete_type handler fans out into the
+        // orchestrator - the editor_delete_type handler fans out into the
         // per-placement deletes + removes the type + remaps ids + fixes
         // the active tool, all as one undo step.
         .player_delete_editor_type => |delete| {
@@ -649,14 +649,14 @@ pub fn handlePlayerInputEvent(
                 .type_id = delete.type_id,
             } } }}, allocator);
         },
-        // Add-level "+" click (top bar): push the machinery event — the
+        // Add-level "+" click (top bar): push the machinery event - the
         // handler reads the shipped template through the reconstruction
         // cache, appends the level, switches to it, and syncs level_count;
         // one undo step reverts the whole creation.
         .player_add_editor_level => {
             pushEvents(current, &.{.{ .editor_event = .editor_add_level }}, allocator);
         },
-        // Level-tab × click: push the machinery event — the handler removes
+        // Level-tab × click: push the machinery event - the handler removes
         // the level, shifts later levels down, syncs level_count, and
         // adjusts the active tab; one undo step restores it.
         .player_delete_editor_level => |delete| {
@@ -665,7 +665,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Settings-sidebar commits (mission + active-level metadata): thin
-        // forwards — the EditorEvents own the mutations. The level-indexed
+        // forwards - the EditorEvents own the mutations. The level-indexed
         // wrappers address the level the sidebar showed at click time.
         .player_set_editor_mission_name => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_mission_name = .{
@@ -708,7 +708,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Inspector entity-sprite commit: same shape (the sprite id is a
-        // plain text field in v1 — the centered sprite picker replaces it
+        // plain text field in v1 - the centered sprite picker replaces it
         // later; see DESIGN → Level Editor → Editor UI layout).
         .player_set_editor_entity_sprite => |set| {
             pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_entity_sprite = .{
@@ -718,7 +718,7 @@ pub fn handlePlayerInputEvent(
             } } } }, allocator);
         },
         // Inspector scalar commits (swatch pick, toggle flip, stat fields):
-        // thin forwards — the EditorEvents own the mutations.
+        // thin forwards - the EditorEvents own the mutations.
         .player_set_editor_entity_color_index => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_color_index = .{
                 .target = set.target,
@@ -781,7 +781,7 @@ pub fn handlePlayerInputEvent(
             } } } }, allocator);
         },
         // Inspector decoration commits: thin forwards (the EditorEvents own
-        // the mutations — the def event's handler also prunes the type's
+        // the mutations - the def event's handler also prunes the type's
         // now-invalid placements).
         .player_set_editor_decoration_def => |set| {
             pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_decoration_def = .{
@@ -815,7 +815,7 @@ pub fn handlePlayerInputEvent(
             } } } }, allocator);
         },
         // Inspector item commits (the Items palette group): thin forwards
-        // — the EditorEvents own the mutations + the id sync.
+        // - the EditorEvents own the mutations + the id sync.
         .player_set_editor_item_def => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_item_def = .{
                 .type_id = set.type_id,
@@ -838,7 +838,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Inspector inventory-slot commits (the player loadout's
-        // Inventory section) — thin forwards, the EditorEvents own the
+        // Inventory section) - thin forwards, the EditorEvents own the
         // mutations.
         .player_add_editor_inventory_item => |add| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_add_inventory_item = .{
@@ -872,7 +872,7 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Inspector layer commits (the Layers sections): thin forwards.
-        // The player loadout has no layers — the handler ignores a
+        // The player loadout has no layers - the handler ignores a
         // player_def entity-layer target (validation rejects it at the
         // replay seam).
         .player_add_editor_entity_layer => |set| {
@@ -922,14 +922,14 @@ pub fn handlePlayerInputEvent(
             } } } }, allocator);
         },
         // Select-tool click: thin over the shared planner (the input layer
-        // fires only nonempty plans — see planning.planEditorSelectionActions).
+        // fires only nonempty plans - see planning.planEditorSelectionActions).
         .player_toggle_editor_selection => |toggle| {
             if (current.editor) |*editor| {
                 pushEvents(current, planning.planEditorSelectionActions(editor, toggle.position, allocator), allocator);
             }
         },
         // Select-tool plain click: thin over the shared planner (the input
-        // layer fires only nonempty plans — see
+        // layer fires only nonempty plans - see
         // planning.planEditorReplaceSelectionActions).
         .player_replace_editor_selection => |replace| {
             if (current.editor) |*editor| {
@@ -937,7 +937,7 @@ pub fn handlePlayerInputEvent(
             }
         },
         // Select-tool marquee release: thin over the shared planner (the
-        // gesture handler fires only nonempty plans — see
+        // gesture handler fires only nonempty plans - see
         // planning.planEditorRegionSelectActions).
         .player_select_editor_region => |select| {
             if (current.editor) |*editor| {
@@ -949,9 +949,9 @@ pub fn handlePlayerInputEvent(
             }
         },
         // ctrl+A select-all: thin over the shared planner (the input layer
-        // fires only nonempty plans — see planning.planEditorSelectAllActions).
+        // fires only nonempty plans - see planning.planEditorSelectAllActions).
         // Tool-agnostic: when another tool is active the action also
-        // switches to select — the selection can only live there (the
+        // switches to select - the selection can only live there (the
         // selection ⇔ select-tool invariant), and the follow-ups (move /
         // delete / refine) are select-tool verbs anyway. The switch rides
         // the same idle point (one undo step restores the previous tool +
@@ -976,7 +976,7 @@ pub fn handlePlayerInputEvent(
             }
         },
         // Select-tool Delete key: thin over the shared planner (the input
-        // layer fires only nonempty plans — see
+        // layer fires only nonempty plans - see
         // planning.planEditorSelectionDeleteActions).
         .player_delete_editor_selection => {
             if (current.editor) |*editor| {
@@ -989,11 +989,11 @@ pub fn handlePlayerInputEvent(
         },
         // Select-tool move-drag release: back the selection up as concrete
         // things at their translated positions, then push [commit link 0,
-        // …clear plan] — LIFO runs the clear phase first, then the commit
+        // ...clear plan] - LIFO runs the clear phase first, then the commit
         // chain places the worklist one entry at a time against the live
         // post-clear state (see editor_commit_selection_move).
         // Select-tool move drag release: thin over the shared planner (the
-        // plan covers the marker-overlap veto — an empty plan is a move
+        // plan covers the marker-overlap veto - an empty plan is a move
         // that never happened; see
         // planning.planEditorSelectionMoveActions).
         .player_move_editor_selection => |move| {
@@ -1006,21 +1006,21 @@ pub fn handlePlayerInputEvent(
             }
         },
         // Tile-paint click: thin over the shared planner (the input layer
-        // fires only nonempty plans — see planning.planEditorTilePaintActions).
+        // fires only nonempty plans - see planning.planEditorTilePaintActions).
         .player_paint_editor_tile => |paint| {
             if (current.editor) |*editor| {
                 pushEvents(current, planning.planEditorTilePaintActions(editor, paint.position, allocator), allocator);
             }
         },
         // Enemy-tool click: thin over the shared planner (the input layer
-        // fires only nonempty plans — see planning.planEditorEntityPlacementActions).
+        // fires only nonempty plans - see planning.planEditorEntityPlacementActions).
         .player_place_editor_entity => |place| {
             if (current.editor) |*editor| {
                 pushEvents(current, planning.planEditorEntityPlacementActions(editor, place.type_id, place.position, allocator), allocator);
             }
         },
         // Decoration-tool click: thin over the shared planner (the input
-        // layer fires only nonempty plans — see
+        // layer fires only nonempty plans - see
         // planning.planEditorDecorationPlacementActions).
         .player_place_editor_decoration => |place| {
             if (current.editor) |*editor| {
@@ -1028,7 +1028,7 @@ pub fn handlePlayerInputEvent(
             }
         },
         // Ground-item-tool click: thin over the shared planner (the input
-        // layer fires only nonempty plans — see
+        // layer fires only nonempty plans - see
         // planning.planEditorItemPlacementActions).
         .player_place_editor_item => |place| {
             if (current.editor) |*editor| {
@@ -1036,7 +1036,7 @@ pub fn handlePlayerInputEvent(
             }
         },
         // Editor right-click delete: thin over the shared planner (the
-        // input layer fires only nonempty plans — see
+        // input layer fires only nonempty plans - see
         // planning.planEditorDeleteActions).
         .player_delete_editor_at => |delete| {
             if (current.editor) |*editor| {
@@ -1188,8 +1188,8 @@ pub fn handlePlayerInputEvent(
             const level = &current.level.?;
             // Switching skills RESETS the previous skill's targeting UI:
             // the new skill's prepare event replaces the highlights only
-            // when it has targets (a no-target prepare pushes no event —
-            // `hostilesInRange` returns null, not empty — so without this
+            // when it has targets (a no-target prepare pushes no event -
+            // `hostilesInRange` returns null, not empty - so without this
             // clear the previous skill's tiles would linger as stale
             // targeting UI; the observed bug).
             level.highlighted_tiles = &.{};
@@ -1255,7 +1255,7 @@ pub fn handlePlayerInputEvent(
         },
         .player_salvage_inventory_region => |region| {
             // One salvage_item per occupied slot in the region's bounding
-            // box — the slot list comes from the shared region helper (the
+            // box - the slot list comes from the shared region helper (the
             // input-side no-op gate reads the same definition).
             const player = getPlayerEntity(current, 0);
             const occupied_slots = salvageRegionOccupiedSlots(

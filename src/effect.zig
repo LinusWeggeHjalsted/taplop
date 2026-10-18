@@ -23,11 +23,11 @@ pub const DamageInterception = struct {
 ///
 /// An incoming attack resolves in stages; two hook KINDS reflect this:
 ///   1. attacker's outgoing damage is computed
-///   2. defender's INTERCEPTORS transform it (intercept_incoming_damage) —
+///   2. defender's INTERCEPTORS transform it (intercept_incoming_damage) -
 ///      can prevent/reduce/redirect; sees the pre-defense amount
 ///   3. defender's defense + additive incoming modifiers apply
 ///   4. damage is applied to health
-///   5. defender's REACTORS fire (on_incoming_damage etc.) — know the final
+///   5. defender's REACTORS fire (on_incoming_damage etc.) - know the final
 ///      applied amount and whether the target died; can only emit events
 /// So intercept_* is a TRANSFORM (returns modified damage + events) and the
 /// on_* family is REACTIVE (fires after the fact, returns ?[]const Event).
@@ -35,7 +35,7 @@ pub const DamageInterception = struct {
 /// -> ?[]const Event.
 ///
 /// Every callback field has a no-op DEFAULT (the interceptor passes damage
-/// through unchanged) — an effect file declares only the hooks it implements.
+/// through unchanged) - an effect file declares only the hooks it implements.
 pub const Effect = struct {
     name: []const u8,
     description: []const u8,

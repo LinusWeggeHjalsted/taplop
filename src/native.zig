@@ -1,17 +1,17 @@
 //! Native (desktop) entry point. Root source of the native exe. This is one
-//! of the files that compile against raylib (via `raylib/backend.zig` — the
+//! of the files that compile against raylib (via `raylib/backend.zig` - the
 //! only directory importing raylib); the
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
-//! IO, the persistent data directory (per-OS default — `$HOME/.ziglop` on
-//! Linux, `$HOME/Library/Application Support/ziglop` on macOS — overridable
+//! IO, the persistent data directory (per-OS default - `$HOME/.ziglop` on
+//! Linux, `$HOME/Library/Application Support/ziglop` on macOS - overridable
 //! via --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
 //! main.run with a RaylibBackend. Optional flags: `--replay <path>` loads a
-//! session-log bundle (a directory containing session_log.txt + content/ —
+//! session-log bundle (a directory containing session_log.txt + content/ -
 //! see session_log_bundle.zig) and reconstructs the session before the loop
 //! starts;
 //! `--diagnostics` activates the platform diagnostics log in ANY build
-//! (release included — dev-mode builds default active). Also spawns the
-//! console reader thread (stdin — always on; see DESIGN → Input → Console
+//! (release included - dev-mode builds default active). Also spawns the
+//! console reader thread (stdin - always on; see DESIGN → Input → Console
 //! input). See DESIGN → File System & IO + Logging & Replay + Platform Seam
 //! → Diagnostics.
 
@@ -31,8 +31,8 @@ pub const panic = crash_dump.panic;
 
 pub fn main(init: std.process.Init.Minimal) void {
     // Debug + ReleaseSafe: DebugAllocator (double-free detection; stack
-    // traces are Debug-only — the std default zeroes them elsewhere).
-    // Other release configs: libc malloc, same as the web build — at those
+    // traces are Debug-only - the std default zeroes them elsewhere).
+    // Other release configs: libc malloc, same as the web build - at those
     // optimize levels DebugAllocator's safety is off by default
     // (std.debug.runtime_safety), leaving only its mmap-backed slowness.
     // The leak report never fires in any config: main() doesn't deinit the
@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     //   1. --data-dir <path> command-line flag (explicit, per-invocation)
     //   2. $ZIGLOP_DATA env var (ambient, applies to every run)
     //   3. per-OS default ($HOME/.ziglop on Linux,
-    //      $HOME/Library/Application Support/ziglop on macOS — the mac
+    //      $HOME/Library/Application Support/ziglop on macOS - the mac
     //      player-visible convention; see DESIGN → File System & IO)
     // Created if missing. All writable artifacts (saves, logs, replays) live
     // here, and shipped-content reads check here first for player mods.
@@ -83,7 +83,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     defer backend.deinit();
 
     // Diagnostics activation (--diagnostics): the runtime on-switch for the
-    // platform log, valid on ANY build including plain release — the binary
+    // platform log, valid on ANY build including plain release - the binary
     // that exhibits a bug produces its own data. Dev-mode builds default
     // active (set at backend init); the flag ORs in before the first render.
     // See DESIGN → Platform Seam → Diagnostics.
@@ -100,30 +100,30 @@ pub fn main(init: std.process.Init.Minimal) void {
     // load + reconstruct the session from the event history before entering
     // the game loop, with the bundle's embedded content as the authority
     // (the exact bytes the original session read, regardless of later file
-    // changes). The game resumes at the end of the log. Recoverable — a bad
+    // changes). The game resumes at the end of the log. Recoverable - a bad
     // path / corrupt bundle surfaces a dismissible popup and the game falls
     // back to the main menu instead of crashing. See DESIGN → Logging &
     // Replay.
     if (replay_path) |path| {
         game.loadAndReconstructSession(&setup.frame_state.history, path, io);
     }
-    // Console input (stdin — always on, native only; see DESIGN → Input →
+    // Console input (stdin - always on, native only; see DESIGN → Input →
     // Console input): the dump output writer goes on the queue first (the
-    // MAIN thread's Io — dumps are written from frame()), then the reader
+    // MAIN thread's Io - dumps are written from frame()), then the reader
     // thread blocks on stdin lines and parses them into the queue. The
     // game's frame drain (main.frame's applyFrameCommand call) consumes one
     // command per frame. An stdin-less launch (double-click, the mac app
-    // bundle) is immediate EOF — the thread exits, zero cost.
+    // bundle) is immediate EOF - the thread exits, zero cost.
     setup.frame_state.console_queue.output = std.Io.File.stdout().writer(
         io,
         &setup.frame_state.console_queue.output_buffer,
     );
-    // The console-ready prompt gates on stdin being a TTY — "a human is
+    // The console-ready prompt gates on stdin being a TTY - "a human is
     // typing at the other end". The channel itself stays always-on: a
     // piped script drives identically, just unprompted (a prompt over a
     // pipe would invite typing the script's pipe can never receive), and
     // an stdin-less launch (double-click, the mac bundle) prints nothing.
-    // A failed check degrades to silent — the prompt is a convenience,
+    // A failed check degrades to silent - the prompt is a convenience,
     // never a gate on the channel.
     setup.frame_state.console_queue.interactive =
         std.Io.File.stdin().isTty(io) catch false;
@@ -135,7 +135,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     ) catch null;
     if (console_reader) |thread| {
         // Detached: a quit while the reader is blocked on stdin leaves the
-        // thread to die with the process — joining would hang the exit
+        // thread to die with the process - joining would hang the exit
         // waiting for input that never comes.
         thread.detach();
     } else {
@@ -151,7 +151,7 @@ pub fn main(init: std.process.Init.Minimal) void {
 
 /// The console reader thread: blocks on stdin lines, parses each into the
 /// session's console queue (the game's frame drain consumes one command per
-/// frame). EOF — or a read error / oversized line — exits the thread; parse
+/// frame). EOF - or a read error / oversized line - exits the thread; parse
 /// errors report on stderr and keep reading. The queue outlives the thread
 /// (it lives on the SessionSetup, which lives in main's frame for the whole
 /// process).
@@ -181,7 +181,7 @@ fn consoleReaderThread(queue: *console.ConsoleQueue) void {
 /// isn't given. A `--name` with no following value prints a warning and is
 /// treated as absent. Used for `--data-dir` and `--replay`.
 ///
-/// A leading `~/` (or a lone `~`) in the value is expanded to `$HOME` —
+/// A leading `~/` (or a lone `~`) in the value is expanded to `$HOME` -
 /// bash doesn't perform tilde expansion after `=` in command arguments, so
 /// `--replay=~/.ziglop/...` would otherwise arrive with a literal `~`.
 fn parseStringFlag(
@@ -210,7 +210,7 @@ fn parseStringFlag(
     return null;
 }
 
-/// Whether a boolean flag (`--name`) is present in argv. No value form —
+/// Whether a boolean flag (`--name`) is present in argv. No value form -
 /// presence is the whole meaning. Used for `--diagnostics`.
 fn parseBoolFlag(args: std.process.Args, name: []const u8) bool {
     var iter = std.process.Args.Iterator.init(args);
@@ -243,7 +243,7 @@ fn openPersistentDir(
     io: std.Io,
     path: []const u8,
 ) !std.Io.Dir {
-    // mkdir -p then open. Idempotent — succeeds if the dir already exists.
+    // mkdir -p then open. Idempotent - succeeds if the dir already exists.
     return std.Io.Dir.cwd().createDirPathOpen(io, path, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },
     });
@@ -255,7 +255,7 @@ fn openPersistentDir(
 ///   3. per-OS default: `$HOME/.ziglop` on Linux,
 ///      `$HOME/Library/Application Support/ziglop` on macOS
 /// The mac default follows the platform convention for player-visible save
-/// data (Finder's Go→Folder knows it) — the same discoverability-over-
+/// data (Finder's Go→Folder knows it) - the same discoverability-over-
 /// convention reasoning that picked the Linux dotfile. Returned bytes are
 /// caller-owned. Returns an error if none are available.
 fn resolvePersistentPath(

@@ -11,9 +11,9 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Shockwave: a spell. Attacks every hostile within radius of the caster
-/// for 1x effective spell damage, then knocks each back — +0.5x effective
+/// for 1x effective spell damage, then knocks each back - +0.5x effective
 /// spell damage on collision. Bash's attack+knockback pair, AoE'd.
-/// Self-centered — not targeted.
+/// Self-centered - not targeted.
 pub const skill = Skill{
     .name = "Shockwave",
     .skill_type = .spell,
@@ -33,13 +33,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast in value units
-/// (helpers.aoeKnockbackPriority) — 1 per target hit + 1 per target whose
+/// (helpers.aoeKnockbackPriority) - 1 per target hit + 1 per target whose
 /// push would collide.
 fn aiOptions(
     caster_index: u32,
@@ -63,7 +63,7 @@ fn aiOptions(
     });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

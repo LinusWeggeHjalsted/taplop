@@ -12,7 +12,7 @@ const Skill = skill_mod.Skill;
 
 /// Slam: a main-hand AoE skill. Knocks back and stuns every hostile within
 /// radius of the caster, dealing 1x main-hand damage on collision.
-/// Self-centered — not targeted.
+/// Self-centered - not targeted.
 pub const skill = Skill{
     .name = "Slam",
     .skill_type = .weapon_skill,
@@ -32,13 +32,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no target selection.
+/// Self-centered - no target selection.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast in value units
-/// (helpers.aoeKnockbackPriority) — 1 per target (the stun; Slam's damage
+/// (helpers.aoeKnockbackPriority) - 1 per target (the stun; Slam's damage
 /// IS the 1x collision) + 1 per target whose push would collide.
 fn aiOptions(
     caster_index: u32,
@@ -62,7 +62,7 @@ fn aiOptions(
     });
 }
 
-/// Self-centered — fires immediately, no highlight step.
+/// Self-centered - fires immediately, no highlight step.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }
@@ -85,7 +85,7 @@ fn useSkill(
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     // Collision damage uses the effective outgoing damage (gloves +
-    // converted momentum + outgoing effects), same as an `attack` would —
+    // converted momentum + outgoing effects), same as an `attack` would -
     // unifying collision and attack damage on one outgoing pipeline.
     const collision_damage = caster.getEffectiveOutgoingDamage(main_hand_damage);
     const push_distance = caster.getEffectiveDistance(skill.distance.?);

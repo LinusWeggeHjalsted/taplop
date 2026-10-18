@@ -5,22 +5,22 @@
 //! verification mismatch, force-unwrap, safety check) dumps the live
 //! `event_history` to `crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent
 //! dir before trapping. `event_history` is always a complete real-time log
-//! (B-simple per-dispatch recording — see DESIGN → Error Handling), so a
+//! (B-simple per-dispatch recording - see DESIGN → Error Handling), so a
 //! crash dump carries every event up to the crash, enough to reconstruct the
 //! session via the existing replay machinery.
 //!
 //! Scope: Zig panics ONLY. A raw segfault (wild pointer) bypasses this and
-//! goes straight to the OS — the arena/integer-only model makes that rare;
+//! goes straight to the OS - the arena/integer-only model makes that rare;
 //! a SIGSEGV signal handler is a separate, more invasive step we don't take.
 //!
 //! Safety: the dump uses the transient allocator (`transient_allocator.zig`)
 //! for its OUTPUT buffer
 //! (never the game's arenas, which may be in an inconsistent state at panic
-//! time). It READS `event_history.items` (history_arena-backed) — a panic is
+//! time). It READS `event_history.items` (history_arena-backed) - a panic is
 //! almost always a logic error, not heap corruption, so the arenas are
 //! normally intact. The io handle + persistent dir are entry-file-owned
 //! (independent of the game arenas), so reusing them is safe. Every failure
-//! in the dump path is swallowed — we're already crashing; the dump is a
+//! in the dump path is swallowed - we're already crashing; the dump is a
 //! bonus, never a cascade.
 
 const std = @import("std");
@@ -44,19 +44,19 @@ pub fn install(history: *GameStateHistory) void {
 }
 
 /// Clear the registered history (clean shutdown). A panic after this skips
-/// the dump — the session is already over.
+/// the dump - the session is already over.
 pub fn uninstall() void {
     crash_history = null;
 }
 
 /// Best-effort dump of `event_history` + the reconstruction cache to
-/// `crashes/crash_<timestamp>/` in the persistent dir — a full session-log
+/// `crashes/crash_<timestamp>/` in the persistent dir - a full session-log
 /// BUNDLE (session_log.txt + content/ byte copies; see
 /// session_log_bundle.writeSessionLogBundle). Every failure is swallowed
 /// (returns silently). The output is loadable by
 /// `session_log_bundle.loadSessionLogBundle` and reconstructable via the
 /// existing replay path, with the embedded content making the crash report
-/// exactly reproducible — a crash bundle is a replayable session log, just
+/// exactly reproducible - a crash bundle is a replayable session log, just
 /// named differently. `pub` for testing.
 pub fn dump(history: *GameStateHistory) void {
     const allocator = transient_allocator.allocator;
@@ -88,7 +88,7 @@ pub fn dump(history: *GameStateHistory) void {
     });
 }
 
-/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" — mirrors
+/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" - mirrors
 /// `session_log.formatSessionTimestamp` but uses the transient allocator
 /// and never panics (returns an error on allocation/clock failure so the caller
 /// can fall back).
@@ -298,7 +298,7 @@ test "install/uninstall: set and clear the crash history pointer" {
     // install/uninstall themselves are trivial (set a file-private global),
     // so this only confirms they don't crash and the module compiles in the
     // test build. The pointer's effect is only observable via panic.call,
-    // which traps the process — not unit-testable.
+    // which traps the process - not unit-testable.
     const testing = std.testing;
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

@@ -40,7 +40,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the stun pick (unstunned-preferred, then focus-fire —
+/// AI options: the stun pick (unstunned-preferred, then focus-fire -
 /// helpers.stunTarget). Rated on the PICK (value units): 2 when it is
 /// unstunned (attack 1 + stun worth ~a hit; stuns take the max, never
 /// stack), else 1 (the attack only).

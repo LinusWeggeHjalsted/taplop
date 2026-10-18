@@ -12,12 +12,12 @@ const types = @import("types.zig");
 const Vector2 = types.Vector2;
 const Level = types.Level;
 
-/// The A* heuristic: Chebyshev distance to the destination — the EXACT
+/// The A* heuristic: Chebyshev distance to the destination - the EXACT
 /// remaining cost on open ground (every step, diagonal included, costs 1),
 /// so it never overestimates. The old Manhattan heuristic overestimated up
 /// to 2x whenever the destination sat diagonally from a node, which could
 /// pop the goal via a longer route before the shorter route's nodes were
-/// ever expanded (reproduced by fuzzing — see the admissibility test).
+/// ever expanded (reproduced by fuzzing - see the admissibility test).
 fn chebyshevHeuristic(position: Vector2, destination: Vector2) u32 {
     return @intCast(chebyshevDistance(position, destination));
 }
@@ -27,7 +27,7 @@ const PathNode = struct {
     parent: ?Vector2,
     g_cost: u32,
     h_cost: u32,
-    /// Squared euclidean distance to the destination — the f-cost tiebreak
+    /// Squared euclidean distance to the destination - the f-cost tiebreak
     /// key (see `comparePathNodes`).
     distance_squared: u32,
 
@@ -38,7 +38,7 @@ const PathNode = struct {
 
 /// Compare PathNodes for the priority queue: lower f-cost first, then
 /// break ties by squared euclidean distance to the destination (with an
-/// exact heuristic f-ties are common — this keeps same-row chases on the
+/// exact heuristic f-ties are common - this keeps same-row chases on the
 /// row: the row node is really closer than the row-above diagonal), then
 /// by position for a total deterministic order.
 fn comparePathNodes(
@@ -68,10 +68,10 @@ const neighbor_deltas = [8]Vector2{
 };
 
 /// A* shortest path over the 8-neighborhood (every step costs 1, diagonal
-/// included). Heuristic: Chebyshev — the exact remaining cost on open ground
+/// included). Heuristic: Chebyshev - the exact remaining cost on open ground
 /// (`chebyshevHeuristic`); f-cost ties (common with an exact heuristic)
 /// break by squared euclidean distance to the destination so ties resolve
-/// to the really-closer node — a same-row chase walks the row.
+/// to the really-closer node - a same-row chase walks the row.
 ///
 /// Tiles occupied by entities are not traversable, except for the
 /// destination tile. The mover's own position is also excluded from
@@ -93,7 +93,7 @@ pub fn shortestPath(
     }
 
     // Build a set of occupied positions (all live entities except the
-    // mover). Dead entities (current_health == 0) don't block movement — a
+    // mover). Dead entities (current_health == 0) don't block movement - a
     // tile they died on is traversable.
     var occupied = std.AutoHashMap(Vector2, void).init(allocator);
     defer occupied.deinit();
@@ -212,7 +212,7 @@ pub fn chebyshevDistance(a: Vector2, b: Vector2) i32 {
 }
 
 /// Does the tile-position list contain `position`? Editor levels keep
-/// their tiles as a flat position list (no set), and the lists are small —
+/// their tiles as a flat position list (no set), and the lists are small -
 /// a linear scan. Shared by the editor placement orchestrators
 /// (event_handlers) and the footprint preview (view).
 pub fn tileListContains(tiles: []const Vector2, position: Vector2) bool {
@@ -223,12 +223,12 @@ pub fn tileListContains(tiles: []const Vector2, position: Vector2) bool {
 }
 
 /// The nearest tile strictly beyond `origin` along `direction` (each axis
-/// -1/0/1, not both zero) — the first tile on the ray origin + k·direction
-/// for k ≥ 1 — or null when no tile lies in that direction. A tile
+/// -1/0/1, not both zero) - the first tile on the ray origin + k·direction
+/// for k ≥ 1 - or null when no tile lies in that direction. A tile
 /// qualifies when its offset from `origin` is the SAME positive integer
 /// multiple of `direction` on both axes; the smallest multiple wins. Used
 /// by the tile-cursor nudge to CROSS GAPS (keyboard navigation reaches
-/// disconnected tile groups instead of stopping at the edge) — see
+/// disconnected tile groups instead of stopping at the edge) - see
 /// DESIGN → Input.
 pub fn nearestTileAlongDirection(
     tiles: []const Vector2,
@@ -301,7 +301,7 @@ pub fn reachableTiles(
     }
 
     // Build a set of occupied positions (all live entities except the
-    // mover). Dead entities (current_health == 0) don't block movement — a
+    // mover). Dead entities (current_health == 0) don't block movement - a
     // tile they died on is traversable.
     var occupied = std.AutoHashMap(Vector2, void).init(allocator);
     defer occupied.deinit();
@@ -421,7 +421,7 @@ test "shortestPath routes around blocking entities" {
     try std.testing.expect(path != null);
     defer allocator.free(path.?);
 
-    // Must go around the blocker — path should be longer than 2
+    // Must go around the blocker - path should be longer than 2
     try std.testing.expect(path.?.len > 2);
 
     // None of the path steps should be the blocker position
@@ -434,7 +434,7 @@ test "shortestPath returns null when no path exists" {
     const allocator = std.testing.allocator;
 
     // Mover at (0,0), destination (2,0), but (1,0) and (1,1) are blocked
-    // and there's no tile at (0,1) — completely walled off
+    // and there's no tile at (0,1) - completely walled off
     const tiles = [_]Vector2{
         .{ .x = 0, .y = 0 },
         .{ .x = 1, .y = 0 },
@@ -456,7 +456,7 @@ test "shortestPath returns null when no path exists" {
 test "shortestPath allows moving onto a tile occupied by destination entity" {
     const allocator = std.testing.allocator;
 
-    // Mover at (0,0), target entity at (1,0) — should be able to path to it
+    // Mover at (0,0), target entity at (1,0) - should be able to path to it
     const tiles = [_]Vector2{
         .{ .x = 0, .y = 0 },
         .{ .x = 1, .y = 0 },
@@ -482,7 +482,7 @@ test "shortestPath allows moving onto a tile occupied by destination entity" {
 test "shortestPath: same-row chase walks the row" {
     const allocator = std.testing.allocator;
 
-    // 5x3 open grid; mover at (4,1), target at (0,1) — same row. The
+    // 5x3 open grid; mover at (4,1), target at (0,1) - same row. The
     // straight row walk is the path (not a diagonal staircase up a row:
     // with the exact Chebyshev heuristic the row node and the row-above
     // diagonal tie on f-cost, and the squared-euclidean tiebreak keeps
@@ -518,7 +518,7 @@ test "shortestPath: same-row chase walks the row" {
 test "shortestPath: diagonal chase walks the diagonal" {
     const allocator = std.testing.allocator;
 
-    // Mover at (0,0), target at (4,4) — the pure diagonal is the path,
+    // Mover at (0,0), target at (4,4) - the pure diagonal is the path,
     // not an axis-hugging staircase.
     var tiles: [25]Vector2 = undefined;
     var index: usize = 0;
@@ -553,7 +553,7 @@ test "shortestPath: optimal path around obstacles (heuristic admissibility)" {
     const allocator = std.testing.allocator;
 
     // The counterexample found by fuzzing shortestPath against a reference
-    // BFS (with the old Manhattan heuristic — which stays suboptimal even
+    // BFS (with the old Manhattan heuristic - which stays suboptimal even
     // under the new euclidean tiebreak, so this pins the HEURISTIC, not the
     // tiebreak): Manhattan overestimates the remaining cost whenever the
     // goal sits diagonally from a node, which can pop the goal via a longer
@@ -749,7 +749,7 @@ test "computeSalvageValue skill tome" {
 
 test "nearestTileAlongDirection: orthogonal gap jump picks the first tile on the ray" {
     const tiles = [_]Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 5, .y = 0 } };
-    // Right from (1,0): (2,0) is empty — the ray continues to (5,0).
+    // Right from (1,0): (2,0) is empty - the ray continues to (5,0).
     try std.testing.expectEqual(
         Vector2{ .x = 5, .y = 0 },
         nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = 1, .y = 0 }).?,
@@ -759,7 +759,7 @@ test "nearestTileAlongDirection: orthogonal gap jump picks the first tile on the
         Vector2{ .x = 0, .y = 0 },
         nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = -1, .y = 0 }).?,
     );
-    // Up from (1,0): no tile in that column above — null.
+    // Up from (1,0): no tile in that column above - null.
     try std.testing.expectEqual(
         @as(?Vector2, null),
         nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }),
@@ -770,14 +770,14 @@ test "nearestTileAlongDirection: diagonal ray needs the same multiple on both ax
     const tiles = [_]Vector2{
         .{ .x = 2, .y = 2 },
         .{ .x = 3, .y = 3 },
-        .{ .x = 3, .y = 4 }, // off the diagonal ray — ignored
+        .{ .x = 3, .y = 4 }, // off the diagonal ray - ignored
     };
     try std.testing.expectEqual(
         Vector2{ .x = 2, .y = 2 },
         nearestTileAlongDirection(&tiles, .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 }).?,
     );
     // Anti-diagonal from (3,4) down-left: (2,2) is not on it, (3,3) is not
-    // either — nothing → null.
+    // either - nothing → null.
     try std.testing.expectEqual(
         @as(?Vector2, null),
         nearestTileAlongDirection(&tiles, .{ .x = 3, .y = 4 }, .{ .x = -1, .y = -1 }),
@@ -786,7 +786,7 @@ test "nearestTileAlongDirection: diagonal ray needs the same multiple on both ax
 
 test "nearestTileAlongDirection: tiles behind the origin and the origin itself are ignored" {
     const tiles = [_]Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 5, .y = 0 } };
-    // Right from (2,0): (0,0) is behind, (2,0) is the origin — (5,0) wins.
+    // Right from (2,0): (0,0) is behind, (2,0) is the origin - (5,0) wins.
     try std.testing.expectEqual(
         Vector2{ .x = 5, .y = 0 },
         nearestTileAlongDirection(&tiles, .{ .x = 2, .y = 0 }, .{ .x = 1, .y = 0 }).?,
@@ -804,7 +804,7 @@ test "nearestTileAlongDirection: tiles behind the origin and the origin itself a
     );
 }
 
-/// Row-major (x, then y) tile order — the canonical ordering convention
+/// Row-major (x, then y) tile order - the canonical ordering convention
 /// for tile lists (editor insertions keep it) and the FINAL fallback tier
 /// of `straighterTileBefore`. See DESIGN → Determinism & Tiebreaking.
 pub fn tileBefore(a: types.Vector2, b: types.Vector2) bool {
@@ -812,7 +812,7 @@ pub fn tileBefore(a: types.Vector2, b: types.Vector2) bool {
     return a.y < b.y;
 }
 
-/// Squared euclidean distance — the "real" distance as an integer (no
+/// Squared euclidean distance - the "real" distance as an integer (no
 /// floats in gameplay logic; squaring preserves order).
 fn squaredEuclideanDistance(a: types.Vector2, b: types.Vector2) u32 {
     const dx = a.x - b.x;
@@ -821,7 +821,7 @@ fn squaredEuclideanDistance(a: types.Vector2, b: types.Vector2) u32 {
 }
 
 /// Perpendicular offset of `position` from the mover→anchor line, in
-/// cross-product units — 0 means the tile is ON the line. Integer-only.
+/// cross-product units - 0 means the tile is ON the line. Integer-only.
 fn crossLineOffset(
     position: types.Vector2,
     mover_position: types.Vector2,
@@ -836,7 +836,7 @@ fn crossLineOffset(
 
 /// Movement-destination tiebreak: when the primary metric (cluster score /
 /// Chebyshev distance) ties between candidate tiles, prefer the STRAIGHTER
-/// line to the anchor — first by perpendicular offset from the
+/// line to the anchor - first by perpendicular offset from the
 /// mover→anchor line (a same-row chase stays on its row; a 45° chase walks
 /// the diagonal), then by squared euclidean distance to the anchor, then
 /// the (x, y) tile convention for a total deterministic order. See DESIGN →
@@ -857,7 +857,7 @@ pub fn straighterTileBefore(
 }
 
 test "straighterTileBefore: same-row chase stays on the row" {
-    // Mover at (2,1), anchor (target) at (0,1) — the row tile (1,1) is on
+    // Mover at (2,1), anchor (target) at (0,1) - the row tile (1,1) is on
     // the mover→anchor line; the row-above/below diagonals are not.
     const mover = Vector2{ .x = 2, .y = 1 };
     const anchor = Vector2{ .x = 0, .y = 1 };
@@ -867,7 +867,7 @@ test "straighterTileBefore: same-row chase stays on the row" {
 }
 
 test "straighterTileBefore: diagonal chase walks the diagonal" {
-    // Mover at (0,0), anchor at (2,2) — the diagonal tile (1,1) is on the
+    // Mover at (0,0), anchor at (2,2) - the diagonal tile (1,1) is on the
     // line; the orthogonal neighbors are equidistant in Chebyshev but off
     // the line.
     const mover = Vector2{ .x = 0, .y = 0 };
@@ -878,7 +878,7 @@ test "straighterTileBefore: diagonal chase walks the diagonal" {
 
 test "straighterTileBefore: equal line offset falls to euclidean, then (x, y)" {
     // Mover (0,0), anchor (4,0): (1,1) and (2,1) sit equally off the row
-    // line — the closer-in-euclid (2,1) orders first.
+    // line - the closer-in-euclid (2,1) orders first.
     const mover = Vector2{ .x = 0, .y = 0 };
     const anchor = Vector2{ .x = 4, .y = 0 };
     try std.testing.expect(straighterTileBefore(.{ .x = 2, .y = 1 }, .{ .x = 1, .y = 1 }, mover, anchor));

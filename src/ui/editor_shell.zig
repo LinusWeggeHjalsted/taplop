@@ -1,6 +1,6 @@
 //! Editor shell: the tool palette (bottom bar with fixed tools +
 //! palette groups + add-new "+" cells), the level tab row, and the
-//! Test/Validate primary actions — plus the shared editor layout
+//! Test/Validate primary actions - plus the shared editor layout
 //! constants and the palette group math used by the input-side wheel
 //! routing. The inspector/metadata sidebar live in editor_inspector.zig,
 //! the centered pickers in editor_pickers.zig.
@@ -51,7 +51,7 @@ const button_background_sprite_id = emit.button_background_sprite_id;
 const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 const spanRow = @import("tooltip.zig").spanRow;
 
-/// All entity sprites share one 512x640 frame — the canonical constants
+/// All entity sprites share one 512x640 frame - the canonical constants
 /// live in types.zig (`types.entity_sprite_frame_*`). Duplicated here
 /// because src/ui/ can't import view.zig (view imports the
 /// ui facade).
@@ -60,12 +60,12 @@ pub const editor_entity_frame_height: i32 = types.entity_sprite_frame_height;
 
 /// Native size of the square tile-class tool graphics (the `world/tile`
 /// sprite; the Select tool's fitted square too). The retired
-/// `world/tile_highlight.png` marching-ants sheet shared the size — the
+/// `world/tile_highlight.png` marching-ants sheet shared the size - the
 /// Select graphic is now the inset stroked square (see the fixed-tools
 /// emission).
 const tool_graphic_tile_size: i32 = 256;
 
-/// Font size for the editor palette group headers ("Entities", …).
+/// Font size for the editor palette group headers ("Entities", ...).
 pub const editor_group_header_font_size: i32 = 64;
 
 /// Height of the group header buttons and the editor "+" cells: 128.
@@ -97,7 +97,7 @@ pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
 /// Which editor palette group's tool cells contain `position`, if any.
 /// Tool cells are Buttons whose sprite is `ui/button_background` (the
 /// header buttons are spriteless over panels and the "+" cells are
-/// panels — neither matches), so detection matches those in the
+/// panels - neither matches), so detection matches those in the
 /// bottom-bar band and
 /// segments the emission order: 2 fixed tools, then per EXPANDED group
 /// `min(size, max_tools)` type cells (collapsed groups contribute none).
@@ -170,7 +170,7 @@ pub fn scaleToFit(cell: Rectangle, sprite_width: i32, sprite_height: i32) Rectan
 /// action + payload + tooltip. Selecting the tool makes it active; the
 /// ACTIVE tool's button is highlighted (lightest edge outline), as is the
 /// hovered one via the generic hover pass in `view()`. The cell's graphic
-/// (one image or a composed stack) is emitted on top by the caller —
+/// (one image or a composed stack) is emitted on top by the caller -
 /// graphics pass hover through to the button (`blocks_input = false`).
 fn emitEditorToolCellButton(
     elements: *UiElementList,
@@ -197,7 +197,7 @@ fn emitEditorToolCellButton(
 /// Emit one editor tool cell: a `ui/button_background` Button tinted as a
 /// button (player gradient index 5) carrying the tool's action + payload +
 /// tooltip + input, with the tool's graphic scaled to fit (aspect-preserved,
-/// centered, then multiplied by `graphic_scale`) on top — the icon passes
+/// centered, then multiplied by `graphic_scale`) on top - the icon passes
 /// hover through to the button. Selecting the tool makes it active; the
 /// ACTIVE tool's button is highlighted (lightest edge outline), as is the
 /// hovered one via the generic hover pass in `view()`.
@@ -225,7 +225,7 @@ fn emitEditorToolCell(
         active_tool,
     );
     // Fit the graphic at native dims, then shrink the fitted rect by
-    // `graphic_scale`. (Scaling the INPUT dims is a no-op — scaleToFit
+    // `graphic_scale`. (Scaling the INPUT dims is a no-op - scaleToFit
     // grows or shrinks to fill the cell, so the aspect ratio erases any
     // uniform pre-scale.)
     const fitted_full = scaleToFit(cell, graphic_width, graphic_height);
@@ -243,7 +243,7 @@ fn emitEditorToolCell(
 }
 
 /// One non-blocking image of a composed palette-cell graphic, drawn at the
-/// precomputed fitted rect (all images of one cell share it — entity +
+/// precomputed fitted rect (all images of one cell share it - entity +
 /// decoration art stacks are same-frame overlays, so they must land
 /// pixel-identical to each other like they do in the scene).
 fn appendCellGraphicImage(
@@ -266,12 +266,12 @@ fn appendCellGraphicImage(
 }
 
 /// Emit an ENTITY palette tool cell: the tool button + the entity's scene
-/// composition at cell scale — base sprite, then overlay layers, then
+/// composition at cell scale - base sprite, then overlay layers, then
 /// weapons (main hand as-authored, off hand mirrored), all sharing one
 /// fitted rect because entity art shares the 512x640 frame + pivot. Tints
 /// follow `entityDrawable` (view.zig): base + layers at their own
-/// color_index into the team gradient — or UNTINTED when
-/// `keep_original_colors` is set — and weapons at team gradient index 1
+/// color_index into the team gradient - or UNTINTED when
+/// `keep_original_colors` is set - and weapons at team gradient index 1
 /// (our art, always themed); weapons are suppressed when
 /// `displays_weapons` is false (e.g. wolves).
 fn emitEditorEntityToolCell(
@@ -297,7 +297,7 @@ fn emitEditorEntityToolCell(
     const fitted = scaleToFit(cell, editor_entity_frame_width, editor_entity_frame_height);
 
     // Base + layers untinted (pure white) when keep_original_colors is
-    // set — the art keeps its own colors; weapons below stay themed.
+    // set - the art keeps its own colors; weapons below stay themed.
     const base_sprite_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{template.sprite});
     const base_color_index = @min(template.color_index, types.gradient_color_count - 1);
     const base_color = if (template.keep_original_colors)
@@ -332,7 +332,7 @@ fn emitEditorEntityToolCell(
 
     if (template.displays_weapons) {
         // Team 0 bodies wield the plain weapon art; enemy silhouettes the
-        // enemy_ variant — the scene's weaponSprite rule.
+        // enemy_ variant - the scene's weaponSprite rule.
         const variant_prefix = if (template.team == 0) "" else "enemy_";
         const weapon_color = team_gradient[1];
         if (template.main_hand_weapon) |weapon| {
@@ -355,11 +355,11 @@ fn emitEditorEntityToolCell(
 }
 
 /// Emit a DECORATION palette tool cell: the tool button + the decoration's
-/// scene composition at cell scale — base sprite, then overlay layers, all
+/// scene composition at cell scale - base sprite, then overlay layers, all
 /// sharing one fitted rect (layers are validated to match the base's pixel
 /// dims, so one fit covers the whole stack). Tints follow the scene's
 /// decoration pass: base + layers at their own color_index into the world
-/// gradient — or UNTINTED when `keep_original_colors` is set.
+/// gradient - or UNTINTED when `keep_original_colors` is set.
 fn emitEditorDecorationToolCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -383,7 +383,7 @@ fn emitEditorDecorationToolCell(
     const fitted = scaleToFit(cell, type_definition.pixel_dims.x, type_definition.pixel_dims.y);
 
     // Base + layers untinted (pure white) when keep_original_colors is
-    // set — the art keeps its own colors.
+    // set - the art keeps its own colors.
     const base_sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
     const base_color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
     const base_color = if (type_definition.keep_original_colors)
@@ -392,7 +392,7 @@ fn emitEditorDecorationToolCell(
         world_gradient[base_color_index];
 
     // The scene's draw order (draw.zig): back layers (`behind`), then the
-    // base, then overlay layers — element order in the flat list.
+    // base, then overlay layers - element order in the flat list.
     for (type_definition.layers) |layer| {
         if (!layer.behind) continue;
         try appendDecorationLayerCellImage(
@@ -426,7 +426,7 @@ fn emitEditorDecorationToolCell(
 }
 
 /// One decoration layer's image in a palette tool cell (the fitted rect
-/// shared with the base — layers match the base's pixel dims). Tinted with
+/// shared with the base - layers match the base's pixel dims). Tinted with
 /// the layer's own color_index into the world gradient, or untinted when
 /// the type keeps its original colors.
 fn appendDecorationLayerCellImage(
@@ -454,7 +454,7 @@ fn appendDecorationLayerCellImage(
 }
 
 /// The small delete button flush in a palette tool cell's top-right corner
-/// — the shared close-button visual (`close_button_sprite_id`, the picker
+/// - the shared close-button visual (`close_button_sprite_id`, the picker
 /// panel / in-game middle-panel close class). Deletes the tool's palette
 /// type + every placement referencing it across all levels
 /// (`.delete_editor_palette_type`); the cell's tool rides the
@@ -485,15 +485,15 @@ fn emitEditorToolDeleteButton(
 
 /// Editor top row: level tabs, emitted to the RIGHT of the global top
 /// bar's options + undo + redo buttons (those come from
-/// `buildGlobalTopBar` — the always-on-top layer; the tabs deliberately
+/// `buildGlobalTopBar` - the always-on-top layer; the tabs deliberately
 /// stay UNDER overlays). One 128-high panel-backed button per level (the
 /// palette group-header visual class), labeled with the level's name or
 /// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
-/// outline — the same path as tool cells); clicking switches the active
+/// outline - the same path as tool cells); clicking switches the active
 /// level (payload = level index → `.select_editor_level` →
 /// `player_set_editor_level`, which rides the undo timeline). Each tab
 /// carries a small close-button (the shared `ui/close_button` class) flush
-/// in its top-right corner — `.delete_editor_level` deletes the level;
+/// in its top-right corner - `.delete_editor_level` deletes the level;
 /// offered only while the mission has more than one level (a mission
 /// always keeps ≥1). The row is bounded on the right by the primary-actions
 /// block (Test + Validate); when the tabs overflow it, the row shows a
@@ -517,7 +517,7 @@ pub fn buildEditorLevelTabs(
     // Tabs start right of the global top bar's three cells (options + undo
     // + redo joined by ui_gap in buildGlobalTopBar's Row; one more gap
     // separates the tabs), flush against the top of the screen, and end at
-    // the pinned add-level "+" — one ui_gap clear of it, one clear of the
+    // the pinned add-level "+" - one ui_gap clear of it, one clear of the
     // primary-actions block.
     const region_left: i32 = 3 * (top_bar_slot_size + ui_gap);
     const plus_cell: Rectangle = .{
@@ -558,7 +558,7 @@ pub fn buildEditorLevelTabs(
         };
     }
 
-    // Scroll clamp (authoritative, in place — the builder knows the tab
+    // Scroll clamp (authoritative, in place - the builder knows the tab
     // widths): the max offset is the smallest offset whose remaining tab
     // suffix fits the region; scrolling past it would only hide tabs at
     // the front. Capped at the last tab so a tab wider than the whole
@@ -579,14 +579,14 @@ pub fn buildEditorLevelTabs(
         scroll_offset.* = @min(@max(scroll_offset.*, 0), @as(i32, @intCast(max_offset)));
     }
 
-    // Active-tab follow — ONLY on a change of the active tab (tracked via
+    // Active-tab follow - ONLY on a change of the active tab (tracked via
     // `editor_level_tab_last_active`): the add-level flow switches to the
     // newly created LAST tab ("the author lands on the thing they just
     // created"), which a scrolled window would hide. Firing on every
     // frame would snap the window back to the active tab and make manual
     // scrolling impossible, so the follow scrolls the minimum distance
     // that brings the active tab into the window exactly once per change
-    // — never past the clamp above.
+    // - never past the clamp above.
     const active = @min(editor.active_level_index, editor.levels.len - 1);
     if (ui_state.editor_level_tab_last_active != @as(i32, @intCast(active))) {
         const first: usize = @intCast(scroll_offset.*);
@@ -618,7 +618,7 @@ pub fn buildEditorLevelTabs(
     }
 
     // Emit the visible window: fully-fitting tabs only (the palette
-    // window model — offscreen tabs can't be clicked). The FIRST visible
+    // window model - offscreen tabs can't be clicked). The FIRST visible
     // tab always renders, its width clamped to the region.
     const first_visible: usize = @intCast(scroll_offset.*);
     var x = region_left;
@@ -658,7 +658,7 @@ pub fn buildEditorLevelTabs(
             .text_label = .{
                 .text = label,
                 // Centered in the zone LEFT of the delete button, not the
-                // full tab — the × owns the top-right corner.
+                // full tab - the × owns the top-right corner.
                 .screen_position = .{
                     .x = cell.x + @divFloor(width - delete_zone_width - label_width, 2),
                     .y = cell.y + @divFloor(
@@ -674,7 +674,7 @@ pub fn buildEditorLevelTabs(
         // The tab's × (delete level): the shared close-button visual, flush
         // in the tab's top-right corner, emitted AFTER the tab so hit-
         // testing (last-wins) prefers it where the two overlap. Offered
-        // only while the mission has more than one level — a mission
+        // only while the mission has more than one level - a mission
         // always keeps ≥1 (the handler enforces it as its invariant).
         if (editor.levels.len > 1) {
             try elements.append(allocator, .{ .button = .{
@@ -695,7 +695,7 @@ pub fn buildEditorLevelTabs(
     }
 
     // Add-level "+": square panel cell PINNED flush at the row's right
-    // edge (always reachable while the tab window scrolls) — a BUTTON
+    // edge (always reachable while the tab window scrolls) - a BUTTON
     // (spriteless over the panel, the group-header class):
     // `.add_editor_level` appends the template level + switches to it.
     try emitEditorPlusCell(
@@ -735,7 +735,7 @@ pub fn editorLevelTabScrollRegion() Rectangle {
 /// single-level playtest of the active level) and the Validate button (a
 /// full-mission validation run from level 1). The options/undo icon class
 /// (`emitIconButton`: button background + icon, `slot_size` square) at the
-/// top bar's height, flush against the right screen edge — the visual
+/// top bar's height, flush against the right screen edge - the visual
 /// mirror of options/undo at the top-left. The icon sprites
 /// (`ui/icon_playtest`, `ui/icon_validate`) are placeholder art until
 /// assets land. See DESIGN → Architecture → Level Editor → Editor UI
@@ -752,7 +752,7 @@ pub fn buildEditorPrimaryActions(
     const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
     // Flush right, reading left-to-right: Test, then Validate. The
-    // block's total width is `editor_primary_actions_width` — the shared
+    // block's total width is `editor_primary_actions_width` - the shared
     // bound the level-tab row clamps against.
     const validate_cell: Rectangle = .{
         .x = types.reference_width - top_bar_slot_size,
@@ -796,15 +796,15 @@ pub fn buildEditorPrimaryActions(
 }
 
 /// Editor bottom bar: the tool palette. Fixed tools first
-/// (Select, Tile), then three groups — Entities, Decorations, Items —
+/// (Select, Tile), then three groups - Entities, Decorations, Items -
 /// each a header toggle + a square panel "+" (add-new) cell + one slot per
 /// palette type. Expanded groups put their header + "+" in the strip above
 /// the bar; collapsed (or empty) groups put them flush against the bottom
 /// of the screen. Every tool renders the shared button background plus a
 /// distinguishing graphic: Select = the inset square outline (the
-/// clickable-tile highlight's look — see the fixed-tools emission), Tile =
+/// clickable-tile highlight's look - see the fixed-tools emission), Tile =
 /// `world/tile`, entities + decorations = their FULL scene composition
-/// (base + layers, plus weapons for entities — off-hand mirrored,
+/// (base + layers, plus weapons for entities - off-hand mirrored,
 /// suppressed when `displays_weapons` is false), each layer tinted exactly
 /// as `entityDrawable` / the decoration pass tints them (see DESIGN →
 /// Entity & UI Coloring), so the palette preview matches what a placement
@@ -813,7 +813,7 @@ pub fn buildEditorPrimaryActions(
 /// the ITEM's icon for authoring distinction). Interaction is wired: tool
 /// cells make themselves the active tool (`player_set_editor_tool`),
 /// headers toggle collapse, and the "+" cells append a new type from the
-/// shipped defaults (`player_add_editor_*_type`) — the entity/decoration
+/// shipped defaults (`player_add_editor_*_type`) - the entity/decoration
 /// ones also open the base-sprite picker. Horizontal
 /// scrolling: a group shows at most `editor_palette_max_tools` type cells;
 /// `scroll_offsets[group]` (clamped in place here to `[0, size - max]`) is
@@ -838,7 +838,7 @@ pub fn buildEditorBottomBar(
     const enemy = active_theme.enemy_gradient.colors;
 
     const group_labels = [_][]const u8{ "Entities", "Decorations", "Items" };
-    // The groups' "+" add-new tooltips (singular, tool-shaped — the
+    // The groups' "+" add-new tooltips (singular, tool-shaped - the
     // labels are plural group names).
     const group_plus_tooltips = [_][]const u8{ "Add Entity Tool", "Add Decoration Tool", "Add Item Tool" };
     const group_sizes = [3]usize{
@@ -857,7 +857,7 @@ pub fn buildEditorBottomBar(
     // Row footprint per group: expanded = its visible type cells;
     // collapsed (or empty) = the header + "+" extent. The header-to-"+"
     // gap is INCLUDED in that extent, so the row's join gap stays a real
-    // gap AFTER the "+" (not eaten by it) — and an expanded group whose
+    // gap AFTER the "+" (not eaten by it) - and an expanded group whose
     // cells are narrower than its header + "+" (a 1-2-type group) takes
     // the extent as its footprint, so the "+" can't overlap the next
     // group's header in the strip above. Total content width joins the
@@ -879,19 +879,19 @@ pub fn buildEditorBottomBar(
 
     // The bar is flush against the screen's LEFT edge (not centered): the
     // content width changes as groups expand/collapse, and centering would
-    // move the fixed tools — left-anchoring keeps Select/Tile stable.
+    // move the fixed tools - left-anchoring keeps Select/Tile stable.
     const bar = screen.placeBottomLeft(content_width, bottom_bar_height, 0);
     var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
 
     // Fixed tools. The tile graphic draws at half size (the tile art is
     // busy at full cell scale).
     //
-    // Select: the clickable-tile highlight's look — an inset square
+    // Select: the clickable-tile highlight's look - an inset square
     // outline, inset by the shared `tile_highlight_inset_divisor` (the
     // prototype sheet's band position) with the CONSTANT outline-class
     // stroke (types.outline_thickness, independent of the cell size). A
     // stroked solid_rect IS the outline class, so it draws through the
-    // stripe shader — the icon animates exactly like the world highlight.
+    // stripe shader - the icon animates exactly like the world highlight.
     {
         const cell = row.next(slot_size);
         try emitEditorToolCellButton(
@@ -934,7 +934,7 @@ pub fn buildEditorBottomBar(
     // button (square ui/panel cells, same visual class as the level tabs)
     // and its visible window of type cells in the row (none when
     // collapsed). An EXPANDED group's header + "+" sit in the strip above
-    // the bar — even when the group is EMPTY (the header rises on expand,
+    // the bar - even when the group is EMPTY (the header rises on expand,
     // consistently, instead of staying pinned to the bottom edge); a
     // COLLAPSED group has no cells to label, so it drops flush against
     // the bottom of the screen instead of hovering above the bar. The
@@ -983,7 +983,7 @@ pub fn buildEditorBottomBar(
         } });
 
         // "+" (add-new): square ui/panel cell one ui_gap right of the
-        // header (adjacent — reads as tied to the group; the gap keeps
+        // header (adjacent - reads as tied to the group; the gap keeps
         // the two cells visually distinct), carrying the add-new action
         // + the group index payload. The handler builds the type from
         // the shipped defaults, makes it the active tool, and opens the
@@ -1009,7 +1009,7 @@ pub fn buildEditorBottomBar(
 
         // Type cells: the visible window (skipped entirely when collapsed).
         if (!collapsed[group_index] and size > 0) {
-            // Clamp the window offset in place (authoritative — the wheel
+            // Clamp the window offset in place (authoritative - the wheel
             // handler also bounds-checks, but the builder owns the truth).
             const max_offset: i32 = @intCast(size -| editor_palette_max_tools);
             scroll_offsets[group_index] = @min(@max(scroll_offsets[group_index], 0), max_offset);
@@ -1018,7 +1018,7 @@ pub fn buildEditorBottomBar(
 
             switch (group_index) {
                 0 => for (editor.entity_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
-                    // The team gradient at the template's color_index — a
+                    // The team gradient at the template's color_index - a
                     // team-0 type is a player-team helper and tints with the
                     // player gradient (DESIGN → Entity & UI Coloring).
                     const team_gradient = if (type_definition.template.team == 0) p else enemy;
@@ -1088,7 +1088,7 @@ pub fn buildEditorBottomBar(
         }
 
         // Advance the row cursor past the group's footprint + inter-group
-        // gap (explicit — groups don't use `Row.next`, whose per-cell
+        // gap (explicit - groups don't use `Row.next`, whose per-cell
         // trailing gap would double the inter-group spacing).
         row.cursor_x += footprint + ui_gap;
     }
@@ -1105,11 +1105,11 @@ fn cellAt(bar_y: i32, group_left: i32, ordinal: usize) Rectangle {
     };
 }
 
-/// A square ui/panel "+" cell (the editor's add-new affordance — palette
+/// A square ui/panel "+" cell (the editor's add-new affordance - palette
 /// group pluses and the level-tab add-level plus): a panel + a spriteless
 /// button over it (the group-header class) carrying the tooltip + a
 /// centered "+" glyph. `cell` should be square. The tooltip rides the
-/// BUTTON, not the panel — hitTest halts at the first blocking element,
+/// BUTTON, not the panel - hitTest halts at the first blocking element,
 /// so a panel-level tooltip would be shielded by the button covering it.
 fn emitEditorPlusCell(
     elements: *UiElementList,
@@ -1248,7 +1248,7 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
             close_button.screen_position.x,
         );
         // The widened tab: the label sits fully clear of the ×'s zone
-        // (centered in the area left of it — the tab grew by exactly
+        // (centered in the area left of it - the tab grew by exactly
         // that zone's width; at least a full ui_gap of clearance).
         try std.testing.expect(
             label.screen_position.x + metrics.measureSpanWidth(
@@ -1264,9 +1264,9 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     }
 
     // Add-level "+": square ui/panel cell to the right of the last tab,
-    // top-aligned with the tabs — a BUTTON (spriteless over the panel)
+    // top-aligned with the tabs - a BUTTON (spriteless over the panel)
     // carrying the tooltip: `.add_editor_level` appends the template
-    // level. The tooltip rides the button, not the panel — hitTest halts
+    // level. The tooltip rides the button, not the panel - hitTest halts
     // at the first blocking element, so a panel-level tooltip would be
     // shielded by the button covering it.
     const plus_panel = elements.items[12].nine_slice_panel;
@@ -1287,7 +1287,7 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     try std.testing.expect(!elements.items[14].text_label.blocks_input);
 
     // A single-level mission offers NO × (a mission always keeps ≥1 level
-    // — the delete gate): one tab x (panel + button + label) + the "+"
+    // - the delete gate): one tab x (panel + button + label) + the "+"
     // trio = 6 elements.
     {
         var single_elements: UiElementList = .empty;
@@ -1383,7 +1383,7 @@ test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the 
     };
 
     // An over-scrolled offset clamps to the max (the last tab): the
-    // window shows exactly tab 7. (The active tab is 7 too — the
+    // window shows exactly tab 7. (The active tab is 7 too - the
     // active-follow below must NOT move the window past the clamp.)
     {
         var elements: UiElementList = .empty;
@@ -1435,7 +1435,7 @@ test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the 
     }
     {
         // A MANUAL scroll away from the active tab STICKS: the follow fires
-        // only on a CHANGE of the active tab (the regression — running it
+        // only on a CHANGE of the active tab (the regression - running it
         // every frame snapped the window back and made scrolling
         // impossible, with the reachable band depending on the active
         // tab's position).
@@ -1509,7 +1509,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     try std.testing.expectEqual(@as(usize, 2 * 2 + 3 * 9), elements.items.len);
 
     // Every tool graphic sits on a button_background cell at the bottom of the
-    // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" cells are
+    // screen: 5 tool cells (2 fixed + 3 palette types) - the "+" cells are
     // square ui/panel cells in the header strip, out of the bar band.
     var background_count: usize = 0;
     for (elements.items) |element| switch (element) {
@@ -1533,7 +1533,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     try std.testing.expectEqual(@as(usize, tool_cell_count), background_count);
 
     // Fixed tools: Select draws as an inset STROKED square (the
-    // clickable-tile highlight's outline class — the retired
+    // clickable-tile highlight's outline class - the retired
     // tile_highlight sheet is gone); Tile uses world/tile tinted with the
     // world gradient index 1.
     var found_select_outline = false;
@@ -1583,7 +1583,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     var enemy_cell_index: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| {
-            // The header + "+" buttons BOTH carry the group payload — tell
+            // The header + "+" buttons BOTH carry the group payload - tell
             // them apart by action.
             if (button.action == .toggle_editor_palette_group and button.payload.?.editor_group == 0) {
                 enemies_header_button = button.screen_position;
@@ -1616,7 +1616,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
                 std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                 button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
-                // Cells emit in order: Select, Tile, enemy, …
+                // Cells emit in order: Select, Tile, enemy, ...
                 if (enemy_cell_index == 2) first_enemy_cell = button.screen_position;
                 enemy_cell_index += 1;
             }
@@ -1684,7 +1684,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // A layered, dual-wielding enemy — the composed case.
+    // A layered, dual-wielding enemy - the composed case.
     var skeleton: types.Entity = .{};
     skeleton.sprite = "skeleton";
     skeleton.team = 1;
@@ -1694,14 +1694,14 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     skeleton.main_hand_weapon = .{ .weapon_type = .sword };
     skeleton.off_hand_weapon = .{ .weapon_type = .dagger };
 
-    // A weapon-suppressed enemy — weapons stay hidden even when equipped.
+    // A weapon-suppressed enemy - weapons stay hidden even when equipped.
     var wolf: types.Entity = .{};
     wolf.sprite = "wolf";
     wolf.team = 1;
     wolf.displays_weapons = false;
     wolf.main_hand_weapon = .{ .weapon_type = .axe };
 
-    // A keep_original_colors enemy — base + layers UNTINTED, weapons
+    // A keep_original_colors enemy - base + layers UNTINTED, weapons
     // still themed (our art).
     var custom_fighter: types.Entity = .{};
     custom_fighter.sprite = "custom_fighter";
@@ -1804,7 +1804,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     };
 
     // Entity stack: base at the template's color_index, layer at its own,
-    // weapons at gradient index 1 — the entityDrawable tint rules.
+    // weapons at gradient index 1 - the entityDrawable tint rules.
     try std.testing.expect(base_image != null);
     try std.testing.expect(layer_image != null);
     try std.testing.expect(main_weapon_image != null);
@@ -1815,7 +1815,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     try std.testing.expect(std.meta.eql(off_weapon_image.?.color, enemy_one));
 
     // The whole stack shares one fitted rect (entity art shares the
-    // 512x640 frame + pivot) — the off-hand mirrors instead of moving.
+    // 512x640 frame + pivot) - the off-hand mirrors instead of moving.
     try std.testing.expect(!main_weapon_image.?.flip_horizontal);
     try std.testing.expect(off_weapon_image.?.flip_horizontal);
     for ([_]?Image{ layer_image, main_weapon_image, off_weapon_image }) |maybe_image| {
@@ -1848,7 +1848,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
     try std.testing.expectEqual(decoration_base_image.?.height, decoration_layer_image.?.height);
 
     // keep_original_colors cells: base + layers UNTINTED (the entity's
-    // weapons stay gradient index 1 — our art, always themed).
+    // weapons stay gradient index 1 - our art, always themed).
     var fighter_base_untinted = false;
     var fighter_layer_untinted = false;
     var fighter_weapons_themed = false;
@@ -1861,7 +1861,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
             } else if (std.mem.eql(u8, image.sprite_id, "entities/custom_helmet")) {
                 fighter_layer_untinted = std.meta.eql(image.color, default_tint);
             } else if (std.mem.eql(u8, image.sprite_id, "weapons/enemy_spear")) {
-                // The fighter's weapon stays gradient index 1 — the flag
+                // The fighter's weapon stays gradient index 1 - the flag
                 // untints the asset's art, not ours (the wolf's spear is
                 // suppressed, so this image is the fighter's).
                 fighter_weapons_themed = std.meta.eql(image.color, enemy_one);
@@ -1997,7 +1997,7 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
     try std.testing.expect(decoration_header_x != null);
 
     // An EXPANDED group with NO tools rises to the strip too: the header
-    // moves on expand consistently — it doesn't stay pinned to the bottom
+    // moves on expand consistently - it doesn't stay pinned to the bottom
     // edge just because there are no cells to label. (The editor above
     // has no decoration types, so group 1 expanded = the empty case.)
     {
@@ -2092,8 +2092,8 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
 
     // Count decoration tool cells: exactly 8 (the window). Tooltips live
     // on the button_background image, which is emitted immediately BEFORE
-    // its graphic — pair them by position. The window starting at 4 shows
-    // types 4..11 — the FIRST type ("Ruin 0") is NOT among them, the LAST
+    // its graphic - pair them by position. The window starting at 4 shows
+    // types 4..11 - the FIRST type ("Ruin 0") is NOT among them, the LAST
     // ("Ruin 11") is.
     var decoration_cells: usize = 0;
     var found_first = false;
@@ -2142,7 +2142,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     );
 
     // The first decoration window cell (found by the button that
-    // immediately precedes its graphic — the button/image pairing, not
+    // immediately precedes its graphic - the button/image pairing, not
     // an emission index): group detection maps it to group 1
     // (Decorations).
     var decoration_cell_center: ?types.ScreenPosition = null;
@@ -2171,7 +2171,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         @as(?usize, null),
         editorPaletteGroupAt(editor, collapsed, elements.items, .{ .x = decoration_cell_center.?.x, .y = 0 }),
     );
-    // Fixed tool (first cell): null — not a palette group.
+    // Fixed tool (first cell): null - not a palette group.
     var first_cell_center: ?types.ScreenPosition = null;
     {
         var index: usize = 0;
@@ -2217,7 +2217,7 @@ test "buildEditorBottomBar: a team-0 entity tool cell tints with the player grad
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // A player-team HELPER: team 0 with its own color_index (2) — the cell
+    // A player-team HELPER: team 0 with its own color_index (2) - the cell
     // graphic tints player-gradient[2], not the enemy gradient (DESIGN →
     // Entity & UI Coloring).
     const entity_types = [_]types.EntityTypeDef{.{

@@ -1,4 +1,4 @@
-//! Utility-skill policy — the single source for which skills are legal on
+//! Utility-skill policy - the single source for which skills are legal on
 //! the utility bar: anything but weapon skills (spells, cantrips,
 //! enchantments, curses). Weapon skills belong to the equipped weapon's
 //! three slots, never the bar. Read by the parsers (a weapon skill in
@@ -18,7 +18,7 @@ pub fn isUtilitySkill(skill_id: types.SkillId) bool {
     return definition.skill_type != .weapon_skill;
 }
 
-/// Every utility-eligible skill, in enum order — the picker's option list
+/// Every utility-eligible skill, in enum order - the picker's option list
 /// (and any future "what can be a tome" check). Comptime-evaluated: the
 /// skill definitions are comptime-known, so new skills join automatically.
 pub const utility_skill_ids: []const types.SkillId = build: {
@@ -37,7 +37,7 @@ test "utility-skill policy: weapon skills excluded, the rest eligible" {
     try std.testing.expect(!isUtilitySkill(.spinblade));
     try std.testing.expect(isUtilitySkill(.blink));
     try std.testing.expect(isUtilitySkill(.stone_form));
-    // No snapshot count — the list grows with every new spell/cantrip/
+    // No snapshot count - the list grows with every new spell/cantrip/
     // enchantment/curse, and a hardcoded number was churn on every landing.
     // The structural coverage (one picker cell per offered skill) lives in
     // the editor skill-picker test, derived from this same list.

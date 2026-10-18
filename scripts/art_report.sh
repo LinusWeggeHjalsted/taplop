@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Regenerates art_report.md — the complete inventory of every sprite id the
+# Regenerates art_report.md - the complete inventory of every sprite id the
 # game can consume (engine enums + derivations, src string literals, shipped
 # data sprite references), with a per-id status: shipped / shadowed
-# (persistent-dir override) / MISSING (draws magenta — no fallbacks), plus
+# (persistent-dir override) / MISSING (draws magenta - no fallbacks), plus
 # the shipped-but-unconsumed orphans. Built for the artist / asset duty:
 # ids are exact drop-in locations for asset shadowing (PNG; checked at every
 # launch).

@@ -1,6 +1,6 @@
 # Ziglop gradient contrast report
 
-Auto-generated from `data/color_themes.txt` through the game's own parser + loader —
+Auto-generated from `data/color_themes.txt` through the game's own parser + loader -
 regenerate with `scripts/gradient_report.sh` (the sound_report.md
 pattern). The numbers decide what is "too close", not memory.
 
@@ -17,21 +17,21 @@ tiles vs background), 1-3 (checkerboard), and 2-3 (odd tiles vs
 background). A gradient with a small 1-2 step shows the even tiles
 dissolving into the background.
 
-## The rule — what "too close" means
+## The rule - what "too close" means
 
 - **Step floor:** any two colors the renderer places adjacent (ramp
   steps 0-1 through 4-5, plus the checkerboard pair 1-3) must be at
   least ΔE 6 apart. ΔE76 is the CIE76 perceptual distance in Lab
-  space — hue and lightness both count. Calibrated on the shipped
+  space - hue and lightness both count. Calibrated on the shipped
   wheel: the broken seam sits at ΔE 5.4, seams that read fine start
   at ~6.8.
 - **Luminance guard:** the structural seams (1-2, 1-3, 2-3) must keep
-  a WCAG contrast ratio of at least 1.06 — catches same-luminance hue
+  a WCAG contrast ratio of at least 1.06 - catches same-luminance hue
   swaps, which ΔE can score high while flat patches still read as
   one surface.
 
 Not covered here: entity colors vs the tiles they stand on (team
-gradients are separate gradients from the level's world gradient —
+gradients are separate gradients from the level's world gradient -
 cross-gradient pairs, a separate calibration).
 
 ## Adjacent-step spacing (ΔE76, floor 6)
@@ -94,4 +94,4 @@ cross-gradient pairs, a separate calibration).
 
 ## Flags
 
-CLEAN — no gradient below the floors.
+CLEAN - no gradient below the floors.

@@ -1,7 +1,7 @@
 //! In-game screen surfaces: the pending-error popup (modal, scrollable
-//! message + Dismiss — see DESIGN → Error Handling), the top bar (options
+//! message + Dismiss - see DESIGN → Error Handling), the top bar (options
 //! button), and the mission-complete / mission-fail overlays (stats +
-//! clone-harvest rewards; restart/exit actions — see DESIGN → Clones).
+//! clone-harvest rewards; restart/exit actions - see DESIGN → Clones).
 
 const std = @import("std");
 const types = @import("../types.zig");
@@ -39,7 +39,7 @@ const wrapRow = ui_element.wrapRow;
 const tooltip_panel_sprite = ui_tooltip.tooltip_panel_sprite;
 const small_button_background_sprite_id = emit.small_button_background_sprite_id;
 
-// Error popup sizing — a modal centered panel for recoverable load
+// Error popup sizing - a modal centered panel for recoverable load
 // failures (see SessionState.pending_error). Reuses the tooltip wrap
 // machinery (wrapRow / measureRowWidth / lineHeight) for the message body.
 // The body scrolls when the wrapped text exceeds the max body height.
@@ -53,11 +53,11 @@ const error_dismiss_button_width: i32 = 512;
 const error_dismiss_button_font_size: i32 = 64;
 /// Max body region height before scrolling kicks in. Leaves room for the
 /// header + Dismiss button + padding within the 2160px reference height.
-/// The visible line count is derived from this via `lineHeight` — whole
+/// The visible line count is derived from this via `lineHeight` - whole
 /// lines only (the region height is the visible count × line height, so
 /// text placement is identical at every scroll offset).
 const error_popup_max_body_height: i32 = 1600;
-/// Scrollbar geometry — the shared scrollbar constants (see element.zig);
+/// Scrollbar geometry - the shared scrollbar constants (see element.zig);
 /// the error popup keeps its historical names as aliases. Drawn only when
 /// the body content overflows the visible region.
 const error_scrollbar_width: i32 = ui_element.scrollbar_width;
@@ -71,7 +71,7 @@ const error_scrollbar_gap: i32 = ui_element.scrollbar_gap;
 /// SessionState.pending_error).
 ///
 /// When the wrapped body exceeds `error_popup_max_body_height`, the body
-/// scrolls by LINES — the game-wide row-scroll convention (the inspector /
+/// scrolls by LINES - the game-wide row-scroll convention (the inspector /
 /// skills-panel / browser model): `session.error_scroll_offset` is the
 /// index of the first visible body line, the wheel scrolls one line per
 /// notch (wheel-up = earlier lines), and the arrow keys 3 lines per press
@@ -106,14 +106,14 @@ pub fn buildErrorPopup(
     );
 
     const body_line_height = lineHeight(error_body_font_size);
-    // Whole visible lines only — the region height is a multiple of the
+    // Whole visible lines only - the region height is a multiple of the
     // line height, so text placement is identical at every offset.
     const max_visible_lines: usize = @intCast(@divTrunc(error_popup_max_body_height, body_line_height));
     const visible_line_count: usize = @min(body_lines.len, max_visible_lines);
     const scrolls = body_lines.len > visible_line_count;
     const body_content_height: i32 = @intCast(body_lines.len * @as(usize, @intCast(body_line_height)));
     const visible_body_height: i32 = @intCast(visible_line_count * @as(usize, @intCast(body_line_height)));
-    // Clamp the scroll offset (authoritative — the input handler can't
+    // Clamp the scroll offset (authoritative - the input handler can't
     // know the wrapped line count). Offset is in LINES: the index of the
     // first visible body line.
     const max_scroll_lines: i32 = @intCast(body_lines.len - visible_line_count);
@@ -183,7 +183,7 @@ pub fn buildErrorPopup(
     y += error_header_gap;
 
     // Body: emit only the window's lines, drawn from the TOP of the body
-    // region (the window's first line renders at `body_top` — lines above
+    // region (the window's first line renders at `body_top` - lines above
     // the window are simply not emitted). Skipping the out-of-window
     // lines keeps the element list small and the hit-test set clean.
     const body_top = y;
@@ -206,7 +206,7 @@ pub fn buildErrorPopup(
     // Scrollbar (only when the body overflows). Track + thumb on the right
     // edge of the body region. The thumb is proportional to the visible /
     // total ratio and positioned by the scroll offset (line offset over
-    // line max — the same ratio as pixels).
+    // line max - the same ratio as pixels).
     if (scrolls) {
         const scrollbar_x = content_x + content_width - error_scrollbar_width;
         try elements.append(allocator, .{ .solid_rect = .{
@@ -232,7 +232,7 @@ pub fn buildErrorPopup(
     }
 
     // Dismiss button, centered horizontally in the panel. Positioned after
-    // the (possibly scrolled) body region — always at the bottom, reachable.
+    // the (possibly scrolled) body region - always at the bottom, reachable.
     y = body_top + visible_body_height + error_button_gap;
     const button_rect = Rectangle{
         .x = panel_pos.x + @divTrunc(panel_width - error_dismiss_button_width, 2),
@@ -253,26 +253,26 @@ pub fn buildErrorPopup(
     );
 }
 
-/// The GLOBAL TOP BAR — the always-on-top UI layer: options, undo, and
+/// The GLOBAL TOP BAR - the always-on-top UI layer: options, undo, and
 /// redo, top-left. Emitted LAST in view()'s UI assembly, so the painter's-
 /// order list draws it above everything (options menu, mission overlays,
-/// error popup) and hitTest's topmost-first scan gives it click priority —
+/// error popup) and hitTest's topmost-first scan gives it click priority -
 /// see DESIGN → UI Framework (global top bar). Undo/redo are available on
 /// every screen and across screen transitions (anytime actions); the
 /// buttons just emit the same actions the keybinds do.
 ///
 /// Availability dimming: an unavailable undo/redo (nothing left to undo /
-/// redo — `GameStateHistory.canUndo`/`canRedo`) gets the button background
+/// redo - `GameStateHistory.canUndo`/`canRedo`) gets the button background
 /// re-drawn on top at 50% alpha, the same wash the skill cooldown uses
 /// (see emit.zig's skill slot). The button stays clickable (a no-op,
-/// exactly like the keybind) — the wash is the visual truth only.
+/// exactly like the keybind) - the wash is the visual truth only.
 ///
 /// The options button is emitted on EVERY screen, the main menu included
-/// — the options menu's main-menu variant carries Settings/Credits/Exit
+/// - the options menu's main-menu variant carries Settings/Credits/Exit
 /// Game (see `buildOptionsMenu`), so the top bar is its one entry point
 /// there, same as everywhere else.
 ///
-/// No background of its own — purely a layout region, like the bottom bar.
+/// No background of its own - purely a layout region, like the bottom bar.
 /// The remaining width stays reserved for the combat log (see TODO →
 /// Combat Log).
 pub fn buildGlobalTopBar(
@@ -287,12 +287,12 @@ pub fn buildGlobalTopBar(
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
     const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
-    // The unavailable wash tint — the skill cooldown's overlay color.
+    // The unavailable wash tint - the skill cooldown's overlay color.
     const c_dim = active_theme.darkest;
 
     var row = Row.init(screen.position(), top_bar_height, ui_gap);
 
-    // Options button — flush in the top-left corner (no margin). Layered
+    // Options button - flush in the top-left corner (no margin). Layered
     // background + icon, same as the skip button. Clicking it while the
     // options menu is open toggles the menu closed (the action routes
     // through the Escape chain, which closes an open menu first).
@@ -313,7 +313,7 @@ pub fn buildGlobalTopBar(
         );
     }
 
-    // Undo button — same size, one `ui_gap` to the right of options. Same
+    // Undo button - same size, one `ui_gap` to the right of options. Same
     // layered background + icon treatment as the options button.
     const undo_cell = row.next(top_bar_slot_size);
     try emitIconButton(
@@ -331,8 +331,8 @@ pub fn buildGlobalTopBar(
     );
     if (!can_undo) try emitDimWash(elements, allocator, undo_cell, c_dim);
 
-    // Redo button — mirrors the undo button; its glyph is the undo icon
-    // flipped horizontally (Image.flip_horizontal — the render seam's
+    // Redo button - mirrors the undo button; its glyph is the undo icon
+    // flipped horizontally (Image.flip_horizontal - the render seam's
     // negative-source-width trick). Emitted inline rather than through
     // emitIconButton, which has no flip parameter (this is the only
     // flipped icon button).
@@ -363,7 +363,7 @@ pub fn buildGlobalTopBar(
 
 /// The unavailable-state wash for a global-bar button: the button
 /// background sprite re-drawn on top at 50% alpha, tinted the theme's
-/// `darkest` — the same treatment a skill on cooldown gets (see
+/// `darkest` - the same treatment a skill on cooldown gets (see
 /// emit.zig's skill slot). Non-blocking, so hover/click pass through to
 /// the button beneath (which no-ops exactly like the keybind).
 fn emitDimWash(elements: *UiElementList, allocator: std.mem.Allocator, cell: Rectangle, dim_color: Color) !void {
@@ -378,12 +378,12 @@ fn emitDimWash(elements: *UiElementList, allocator: std.mem.Allocator, cell: Rec
     } });
 }
 
-/// The validation stats screen's session-side context — view() builds this
+/// The validation stats screen's session-side context - view() builds this
 /// from SessionState when the completed "mission" was a validation run
 /// (MissionCompleteInfo.validation). The personal best + medal targets
-/// derive from the replay FILE's turns (captured at the write site — view
+/// derive from the replay FILE's turns (captured at the write site - view
 /// is file-free); the targets fall back to this run's turns when no replay
-/// landed (a failed write — the popup says so). See DESIGN → Custom
+/// landed (a failed write - the popup says so). See DESIGN → Custom
 /// Missions & Online Services → Validation replay.
 pub const ValidationCompleteContext = struct {
     personal_best_turns: ?u32,
@@ -396,16 +396,16 @@ pub const ValidationCompleteContext = struct {
 /// two-column area (left stats, right column) extending downward, and
 /// buttons at the bottom. Rendered when `GameState.last_completed_mission`
 /// is set. Two contexts share the surface:
-/// - CAMPAIGN (validation == null — the hub after the player completes the
+/// - CAMPAIGN (validation == null - the hub after the player completes the
 ///   last level of a mission): "{name} completed" header, a "New clone:
 ///   [icons]" summary line, the clone-harvest rewards column, and Continue
 ///   + Replay Mission (+ Overwrite Clone if offered) buttons. See DESIGN →
 ///   Architecture + DESIGN → Clones (clone system).
-/// - VALIDATION (validation != null — the editor's post-run stats screen;
+/// - VALIDATION (validation != null - the editor's post-run stats screen;
 ///   end_validation populated the info so the overlay renders over the
-///   editor): "{name} validated" header, a "Validated in N turns — Personal
+///   editor): "{name} validated" header, a "Validated in N turns - Personal
 ///   best: M turns" summary, the medal ladder (Author / Gold / Silver /
-///   Bronze — the author's own validated turns crowning the derived
+///   Bronze - the author's own validated turns crowning the derived
 ///   targets), and Continue
 ///   + Validate Again (+ Overwrite Replay while the personal-best guard's
 ///   slower-run stash is on offer). See DESIGN → Custom Missions & Online
@@ -446,7 +446,7 @@ pub fn buildMissionComplete(
         .blocks_input = false,
     } });
 
-    // ── Summary line, centered below the header — branch by context. ──
+    // ── Summary line, centered below the header - branch by context. ──
     const summary_y = header_box.y + header_font_size + ui_gap * 3;
     var content_y: i32 = undefined;
     if (validation) |context| {
@@ -455,7 +455,7 @@ pub fn buildMissionComplete(
         const summary_text = if (context.personal_best_turns) |best|
             try std.fmt.allocPrint(
                 allocator,
-                "Validated in {d} turns — Personal best: {d} turns",
+                "Validated in {d} turns - Personal best: {d} turns",
                 .{ info.turns_spent, best },
             )
         else
@@ -470,7 +470,7 @@ pub fn buildMissionComplete(
         } });
         content_y = summary_y + summary_font_size + ui_gap * 4;
     } else {
-        // "New clone: [horizontal icons]" — shows the just-completed run's
+        // "New clone: [horizontal icons]" - shows the just-completed run's
         // converted_materials (the clone's rate numerator). The icon row is
         // horizontal + compact (96px icons) so the whole line reads as one
         // summary.
@@ -526,12 +526,12 @@ pub fn buildMissionComplete(
         stat_y += stat_line_height;
     }
 
-    // ── Right column (flush right, top-aligned at content_y) — branch by
+    // ── Right column (flush right, top-aligned at content_y) - branch by
     //    context. ──
     const material_right = screen.x + screen.width - ui_gap * 4;
     if (validation) |context| {
         // The medal ladder, Trackmania-style: the Author row is the
-        // author's own validated turns — the SAME value the targets derive
+        // author's own validated turns - the SAME value the targets derive
         // from (the replay file's turns; this run's as the fallback when
         // no replay landed). Derived at display time, never stored. See
         // DESIGN → Custom Missions & Online Services → Turn counters +
@@ -583,16 +583,16 @@ pub fn buildMissionComplete(
         );
     }
 
-    // ── Bottom buttons — branch by context. Continue always sits in the
+    // ── Bottom buttons - branch by context. Continue always sits in the
     //    bottom-right corner; the left button + the conditional centered
     //    button differ. ──
     const buttons_row = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
     const button_y = buttons_row.y;
     const margin = ui_gap * 4;
     if (validation) |context| {
-        // Validate Again — bottom-left. The same action as the top-bar
+        // Validate Again - bottom-left. The same action as the top-bar
         // Validate button: the dispatch saves first, then starts the run
-        // (the overlay disappears on the level transition — start_validation
+        // (the overlay disappears on the level transition - start_validation
         // retires the stats info).
         try emitPanelButton(elements, allocator, font_metrics, .{
             .x = screen.x + margin,
@@ -600,14 +600,14 @@ pub fn buildMissionComplete(
             .width = menu_button_width,
             .height = panel_button_height,
         }, "Validate Again", menu_button_font_size, .validate_editor_mission, button_color, null);
-        // Continue — bottom-right.
+        // Continue - bottom-right.
         try emitPanelButton(elements, allocator, font_metrics, .{
             .x = screen.x + screen.width - margin - menu_button_width,
             .y = button_y,
             .width = menu_button_width,
             .height = panel_button_height,
         }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
-        // Overwrite Replay — centered, only while the personal-best guard
+        // Overwrite Replay - centered, only while the personal-best guard
         // kept the old file and this slower run's slice is stashed. Writes
         // the STASHED bytes (a session-side side effect, no recorded event).
         if (context.overwrite_offered) {
@@ -615,21 +615,21 @@ pub fn buildMissionComplete(
             try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Replay", menu_button_font_size, .overwrite_validation_replay, button_color, null);
         }
     } else {
-        // Replay Mission — bottom-left.
+        // Replay Mission - bottom-left.
         try emitPanelButton(elements, allocator, font_metrics, .{
             .x = screen.x + margin,
             .y = button_y,
             .width = menu_button_width,
             .height = panel_button_height,
         }, "Replay Mission", menu_button_font_size, .replay_mission, button_color, null);
-        // Continue — bottom-right.
+        // Continue - bottom-right.
         try emitPanelButton(elements, allocator, font_metrics, .{
             .x = screen.x + screen.width - margin - menu_button_width,
             .y = button_y,
             .width = menu_button_width,
             .height = panel_button_height,
         }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
-        // Overwrite Clone — centered (only when offered).
+        // Overwrite Clone - centered (only when offered).
         if (info.overwrite_offered) {
             const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
             try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color, null);
@@ -639,18 +639,18 @@ pub fn buildMissionComplete(
 
 /// Build the mission-fail overlay: a full-screen 9-slice panel with a
 /// large "Defeat" label centered above a two-button stack (Restart
-/// Mission / Exit Mission — named for the editor RUN while one is active:
+/// Mission / Exit Mission - named for the editor RUN while one is active:
 /// Restart/Exit Playtest or Validation). Rendered when the player is dead
 /// (derived from `level.entities[0].current_health == 0` in view()). The
 /// buttons reuse the existing `.restart_mission` / `.exit_mission`
-/// actions — same dispatch path as the options menu. See DESIGN →
+/// actions - same dispatch path as the options menu. See DESIGN →
 /// Architecture.
 pub fn buildMissionFail(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
-    /// The active editor run, if any (.playtest / .validate) — same role
+    /// The active editor run, if any (.playtest / .validate) - same role
     /// as in `buildOptionsMenu`.
     editor_run: ?types.EditorMode,
     button_color: Color,
@@ -745,7 +745,7 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
     try std.testing.expect(found_dismiss);
 }
 
-test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 0" {
+test "buildErrorPopup: short message - no scrollbar, scroll offset clamped to 0" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -764,7 +764,7 @@ test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 
     try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
 }
 
-test "buildErrorPopup: long message — scrollbar present, only visible lines emitted" {
+test "buildErrorPopup: long message - scrollbar present, only visible lines emitted" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -772,7 +772,7 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
 
     // Build a message long enough to overflow error_popup_max_body_height:
     // the 40-char-token shape from the scrolled-window test (exactly 60
-    // visual lines — one token per line at these metrics; a '\n' does NOT
+    // visual lines - one token per line at these metrics; a '\n' does NOT
     // break lines, wrapRow only breaks on width).
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
@@ -800,7 +800,7 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
 test "buildErrorPopup: scrolled window renders at the body top" {
     // The regression this pins: the old pixel-offset view drew the window's
     // lines at their UNSCROLLED y (blank space above, bottom lines
-    // overflowing the panel) — "scrolls but renders the wrong text, cut
+    // overflowing the panel) - "scrolls but renders the wrong text, cut
     // off weirdly". The window's first line must render AT the body
     // region's top, and be the offset'th line of the message.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -810,11 +810,11 @@ test "buildErrorPopup: scrolled window renders at the body top" {
     session.error_scroll_offset = 10; // first visible line = line 10
 
     // 60 space-separated 40-char tokens ("L" + zero-padded index). At these
-    // metrics each token is 40×28 = 1120px — it fits the 1216px wrap limit
-    // alone, but two can never share a line (1120+28+1120 > 1216) — so the
+    // metrics each token is 40×28 = 1120px - it fits the 1216px wrap limit
+    // alone, but two can never share a line (1120+28+1120 > 1216) - so the
     // message wraps to EXACTLY 60 visual lines, one span (one label) each,
     // with deterministic content per line. (A '\n' in the message does NOT
-    // break lines — wrapRow only breaks on width, at spaces and '/'.)
+    // break lines - wrapRow only breaks on width, at spaces and '/'.)
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
     for (0..60) |i| {
@@ -864,7 +864,7 @@ test "buildErrorPopup: scrolled window renders at the body top" {
         error_header_gap;
     try std.testing.expectEqual(expected_body_top, first.y);
 
-    // The offset stays 10 — well within max_scroll (60 - 23 = 37 lines of
+    // The offset stays 10 - well within max_scroll (60 - 23 = 37 lines of
     // scroll available); only out-of-range offsets clamp.
     try std.testing.expectEqual(@as(i32, 10), session.error_scroll_offset);
 }
@@ -872,11 +872,11 @@ test "buildErrorPopup: scrolled window renders at the body top" {
 test "buildErrorPopup: newline-separated warnings render as distinct lines" {
     // The startup warnings are joined with '\n' (session_setup). The
     // measurement/rendering contract: wrapRow breaks on '\n' and never
-    // emits it inside a span — because raylib's DrawTextEx ALSO breaks on
+    // emits it inside a span - because raylib's DrawTextEx ALSO breaks on
     // '\n', with its own line advance + x reset that the layout never
     // reserved space for. Before the fix, the '\n' rode inside a word
     // token: raylib drew a second line at y+fontSize+textLineSpacing that
-    // overlapped the next visual row at y+lineHeight — "lines overlap each
+    // overlapped the next visual row at y+lineHeight - "lines overlap each
     // other, layout weird".
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -925,7 +925,7 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
     var session: state.SessionState = .{};
     session.error_scroll_offset = 100_000; // way past max_scroll (lines)
 
-    // The same 60-token message (exactly 60 visual lines — one token
+    // The same 60-token message (exactly 60 visual lines - one token
     // per line at these metrics).
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
@@ -1024,7 +1024,7 @@ test "buildMissionComplete: the validation variant swaps the clone content for m
 
     const found = MissionCompleteScan.scan(elements.items);
     // The validation surface: "validated" header, the medal ladder
-    // (Author crowning the derived targets — pb 3 → gold 4 / silver 6 /
+    // (Author crowning the derived targets - pb 3 → gold 4 / silver 6 /
     // bronze 15), Validate Again / Continue / the offered Overwrite
     // Replay.
     try testing.expect(found.header_validated);

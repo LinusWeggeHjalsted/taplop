@@ -42,7 +42,7 @@ fn getValidTargets(
 }
 
 /// AI options: blink to the empty tile closest to a hostile (closing the
-/// gap) at rating 1 — the cantrip's repositioning value. With no hostiles
+/// gap) at rating 1 - the cantrip's repositioning value. With no hostiles
 /// (or no empty tiles) nothing is offered; the old pair could choose
 /// Blink and then cast it into a no-op.
 fn aiOptions(

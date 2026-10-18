@@ -1,6 +1,6 @@
 //! Full-screen menus + browsers: the options menu, main menu, the
 //! load-save browser, the editor mission browser, the credits panel, and
-//! the settings panel (toggles/choices/sliders — see DESIGN → UI
+//! the settings panel (toggles/choices/sliders - see DESIGN → UI
 //! Framework → Settings screen).
 
 const std = @import("std");
@@ -44,7 +44,7 @@ const emitPanelButton = emit.emitPanelButton;
 /// Build the options menu: a full-screen 9-slice panel background with a
 /// centered stack of `menu_button_width` buttons (same design as the main
 /// menu). Context-specific: the button list depends on the current screen.
-/// No close button anywhere — the menu closes via the `.escape` action
+/// No close button anywhere - the menu closes via the `.escape` action
 /// (the Escape keybind + the top-bar options button toggle it); that is
 /// enough of a close path, and a "Continue" button would collide with
 /// resume-game meanings on some screens.
@@ -61,14 +61,14 @@ pub fn buildOptionsMenu(
     /// The active editor run, if any (.playtest / .validate while the
     /// editor sits dormant behind the level screen). Relabels the level
     /// screen's restart/exit buttons for the run ("Restart Playtest" etc.)
-    /// and hides the campaign Export Save path — the run's player_data is
+    /// and hides the campaign Export Save path - the run's player_data is
     /// temporary, rebuilt from the editor loadout (see DESIGN → Level
     /// Editor → Playtest/validate framing).
     editor_run: ?types.EditorMode,
     button_color: Color,
     /// Where the exported save lands, for the Export Save tooltip. Native:
     /// the resolved persistent dir (tooltip: "Saves to <dir>/saves/"). Web:
-    /// null — the export IS a browser download (tooltip: "Triggers a file
+    /// null - the export IS a browser download (tooltip: "Triggers a file
     /// download"). Threaded from `SessionState.persistent_dir_path` (set
     /// once by the entry file; see its doc).
     persistent_dir_path: ?[]const u8,
@@ -87,7 +87,7 @@ pub fn buildOptionsMenu(
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in
     // progress to restart or abandon. During an editor run the buttons
-    // name the RUN, not the mission — and restart genuinely re-runs it
+    // name the RUN, not the mission - and restart genuinely re-runs it
     // (end_level's editor guard chains a fresh start on the restart
     // continuation; an exit drops back to the editor).
     if (current_screen == .level) {
@@ -111,12 +111,12 @@ pub fn buildOptionsMenu(
     // Where the exported save goes: on native, the timestamped save lands
     // in <persistent dir>/saves/ (the autosave update is a side effect); on
     // web it's offered as a browser download (no user-visible path).
-    // Hidden in the editor — the save the player expects there is the
+    // Hidden in the editor - the save the player expects there is the
     // MISSION being edited (a separate future slice), not the campaign
-    // save — and hidden during an editor run (playtest/validate): the
+    // save - and hidden during an editor run (playtest/validate): the
     // run's player_data is temporary (rebuilt from the editor loadout,
     // restored on exit), so an export mid-run would write the throwaway
-    // run data as a campaign save. Also hidden on the main menu — no
+    // run data as a campaign save. Also hidden on the main menu - no
     // game is in progress (empty/throwaway player_data); Load Save is
     // that screen's save workflow. `save_game` is button-only (no
     // keybind), so hiding the button removes the path entirely.
@@ -133,14 +133,14 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
-    // The editor's own save (the mission being edited) — replaces the
+    // The editor's own save (the mission being edited) - replaces the
     // campaign Export Save path above, which is hidden in the editor.
     // Also on ctrl+S (the binding ships in default_settings.txt).
     if (current_screen == .editor) {
         const save_body = if (persistent_dir_path) |dir|
-            try std.fmt.allocPrint(allocator, "Ctrl+S — saves to {s}/missions/", .{dir})
+            try std.fmt.allocPrint(allocator, "Ctrl+S - saves to {s}/missions/", .{dir})
         else
-            "Ctrl+S — saves to the browser's persistent storage";
+            "Ctrl+S - saves to the browser's persistent storage";
         buttons[button_count] = .{
             .label = "Save Mission",
             .action = .save_editor_mission,
@@ -165,14 +165,14 @@ pub fn buildOptionsMenu(
 
         // Open the editor browser (your saved/imported missions + the
         // official campaign ones, two tabs): a row click replaces the
-        // mission being edited (no unsaved-changes confirm — save first
+        // mission being edited (no unsaved-changes confirm - save first
         // if in doubt; ctrl+S is cheap). Also on ctrl+O (the binding
         // ships in default_settings.txt).
         buttons[button_count] = .{
             .label = "Open Mission",
             .action = .toggle_editor_browser,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Ctrl+O — browse your saved missions and the official ones",
+                "Ctrl+O - browse your saved missions and the official ones",
             ))}) },
         };
         button_count += 1;
@@ -180,18 +180,18 @@ pub fn buildOptionsMenu(
         // The fresh-mission open (also the editor browser's New Mission
         // button + ctrl+N): replaces the mission being edited with a
         // new one-level template mission (no unsaved-changes confirm,
-        // same as an open — save first if in doubt).
+        // same as an open - save first if in doubt).
         buttons[button_count] = .{
             .label = "New Mission",
             .action = .new_editor_mission,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Ctrl+N — replaces the mission being edited with a fresh one",
+                "Ctrl+N - replaces the mission being edited with a fresh one",
             ))}) },
         };
         button_count += 1;
 
         // Revalidate: re-certify the STORED validation replay against the
-        // current saved content — the author's post-edit repair for edits
+        // current saved content - the author's post-edit repair for edits
         // that don't affect the run (e.g. a decoration placed off the
         // playable area): the recorded run is replayed against the files
         // as they are now, and on success the replay is re-bound to the
@@ -207,21 +207,21 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
-    // Export Game (web only — the persistent-dir-path-null signal, the
+    // Export Game (web only - the persistent-dir-path-null signal, the
     // same web case the Export Save tooltip uses): downloads ziglop.zip,
-    // the FULL game folder (settings, saves, custom missions) — the web
+    // the FULL game folder (settings, saves, custom missions) - the web
     // build's cross-session backup path (browser storage never persists
     // sessions). Present in EVERY variant (the options menu is the only
     // menu surface reachable mid-level, so in-session backups are always
     // possible); a game in progress writes the autosave FIRST (the
     // handler), so mid-level progress is in the zip. Native has no button
-    // — the real persistent dir IS the game folder.
+    // - the real persistent dir IS the game folder.
     if (persistent_dir_path == null) {
         buttons[button_count] = .{
             .label = "Export Game",
             .action = .export_game,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Downloads ziglop.zip — your full game folder (settings, saves, custom missions)",
+                "Downloads ziglop.zip - your full game folder (settings, saves, custom missions)",
             ))}) },
         };
         button_count += 1;
@@ -233,7 +233,7 @@ pub fn buildOptionsMenu(
     button_count += 1;
 
     // The main-menu variant: no session verbs (nothing to restart/exit/
-    // export) and no Exit to Main Menu (already there) — Credits + the
+    // export) and no Exit to Main Menu (already there) - Credits + the
     // native-only Exit Game join Settings. On web, Exit Game is omitted
     // (closing the tab is the user's, not ours; the handler's comptime os
     // gate is the defensive half for a future keybind).
@@ -278,14 +278,14 @@ pub fn buildOptionsMenu(
 /// Build the main-menu button stack: fixed-size buttons centered as a group
 /// on `screen`, spaced by `ui_gap`, each with a centered text label. The
 /// Continue button is emitted only when `continue_available` (there is a game
-/// to resume — populated PlayerData). Settings + Credits live in the
+/// to resume - populated PlayerData). Settings + Credits live in the
 /// OPTIONS MENU's main-menu variant (reached via the top-bar options
-/// button / Escape — one convention from every screen); this stack holds
+/// button / Escape - one convention from every screen); this stack holds
 /// only the session-flow verbs + mode entries.
-/// The web storage disclaimer's fonts + gap (main menu, web only — see
+/// The web storage disclaimer's fonts + gap (main menu, web only - see
 /// DESIGN → File System & IO → Web storage model): a header line + a body
 /// line, centered above the title. Band heights are the font sizes (the
-/// title's convention — the labels are single-line).
+/// title's convention - the labels are single-line).
 const main_menu_disclaimer_header_font_size: i32 = 60;
 const main_menu_disclaimer_body_font_size: i32 = 44;
 const main_menu_disclaimer_gap: i32 = 24;
@@ -297,10 +297,10 @@ pub fn buildMainMenu(
     screen: Rectangle,
     continue_available: bool,
     /// The session's persistent dir path (the buildOptionsMenu convention;
-    /// threaded from `SessionState.persistent_dir_path`). Null on web — the
+    /// threaded from `SessionState.persistent_dir_path`). Null on web - the
     /// web signal both web-only surfaces derive from: the Import Game
     /// button + the web storage disclaimer (a browser upload / a download is
-    /// the cross-session path when there is no real dir). Native has a path —
+    /// the cross-session path when there is no real dir). Native has a path -
     /// no button, no disclaimer (the real dir IS the game folder).
     persistent_dir_path: ?[]const u8,
     button_color: Color,
@@ -317,12 +317,12 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
-    // Import Game (web only — the on_web signal): uploads a ziglop.zip OVER
-    // the game folder — the web build's cross-session RESTORE path (browser
+    // Import Game (web only - the on_web signal): uploads a ziglop.zip OVER
+    // the game folder - the web build's cross-session RESTORE path (browser
     // storage never persists sessions; a downloaded archive is the only
     // durable home, Export Game writes it). The overlay lands via the
     // every-frame marker poll + the session re-boots at the frame boundary
-    // — see game_zip.zig + DESIGN → File System & IO → Web storage model.
+    // - see game_zip.zig + DESIGN → File System & IO → Web storage model.
     if (on_web) {
         buttons[button_count] = .{
             .label = "Import Game",
@@ -333,14 +333,14 @@ pub fn buildMainMenu(
         };
         button_count += 1;
     }
-    // Opens the editor browser (the tabbed modal — browse + create
+    // Opens the editor browser (the tabbed modal - browse + create
     // editor content; the mission kind today). See DESIGN → Architecture
     // → Level Editor → The editor browser.
     buttons[button_count] = .{ .label = "Editor", .action = .toggle_editor_browser };
     button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
-    // The web storage disclaimer (web only, the chosen wording — DESIGN →
+    // The web storage disclaimer (web only, the chosen wording - DESIGN →
     // File System & IO → Web storage model): two centered lines above the
     // title, part of the same centered block (the disclaimer band sits on
     // top, then the title band, then the buttons).
@@ -440,7 +440,7 @@ const scrollbar_gap = ui_element.scrollbar_gap;
 
 /// One scrollbar: fixed-gray track + thumb (the shared scrollbar
 /// constants) sized PROPORTIONALLY to the visible slice of the total
-/// content and positioned by the row scroll offset — the shape every
+/// content and positioned by the row scroll offset - the shape every
 /// row list on these surfaces uses (load-save browser, editor browser,
 /// the settings keybinds columns). The track spans the full rows region;
 /// the thumb is `track_height × visible / total` (min
@@ -484,7 +484,7 @@ fn emitScrollbar(
 const load_save_button_width: i32 = 768;
 
 /// Build the load-save browser: a full-screen modal panel listing
-/// `save_files` (newest first — the slice arrives pre-sorted from
+/// `save_files` (newest first - the slice arrives pre-sorted from
 /// `FileSource.listSaveFiles`), one clickable row per save, a Back button
 /// bottom-left and (web only) an Import button bottom-right.
 /// Overflowing lists scroll: only the visible row window is emitted and a
@@ -501,7 +501,7 @@ pub fn buildLoadSavePanel(
     scroll_offset: *i32,
     button_color: Color,
 ) !void {
-    // Full-screen modal background — blocks input to the main-menu buttons
+    // Full-screen modal background - blocks input to the main-menu buttons
     // behind it.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -531,7 +531,7 @@ pub fn buildLoadSavePanel(
     const row_pitch = load_save_row_height + load_save_row_gap;
     const visible_rows: usize = @intCast(@max(0, @divTrunc(rows_height, row_pitch)));
 
-    // Clamp the scroll offset (authoritative — the input handler can't know
+    // Clamp the scroll offset (authoritative - the input handler can't know
     // max_scroll_row without the row count).
     const total_rows: usize = save_files.len;
     const max_scroll_row: i32 = @intCast(total_rows - @min(total_rows, visible_rows));
@@ -645,10 +645,10 @@ pub fn buildLoadSavePanel(
 
 // --- Editor browser (editor + main menu, full screen) ---
 
-/// The editor-browser kind tab row's spec — DERIVED at comptime from
+/// The editor-browser kind tab row's spec - DERIVED at comptime from
 /// `types.EditorKind` + `editorBrowserKindLabel` (the generated-lookup
 /// pattern: the builder's tab row and its tests both walk this list, so a
-/// new editor kind appears as a tab by adding the enum member — the
+/// new editor kind appears as a tab by adding the enum member - the
 /// exhaustive label switch is the compile error until it's named).
 const EditorBrowserKindSpec = struct {
     kind: types.EditorKind,
@@ -664,7 +664,7 @@ const editor_browser_kind_specs: [editor_kind_count]EditorBrowserKindSpec = blk:
     break :blk specs;
 };
 
-/// The kind tab's label — one per editor kind, exhaustive by construction
+/// The kind tab's label - one per editor kind, exhaustive by construction
 /// (no else-arm: a new EditorKind member is a compile error until named).
 fn editorBrowserKindLabel(kind: types.EditorKind) []const u8 {
     return switch (kind) {
@@ -672,7 +672,7 @@ fn editorBrowserKindLabel(kind: types.EditorKind) []const u8 {
     };
 }
 
-/// The New button's label, derived from the ACTIVE kind — one button, not
+/// The New button's label, derived from the ACTIVE kind - one button, not
 /// one per tab (the tab row already shows the kinds; buttons for content
 /// that isn't on screen would be dead buttons). Exhaustive like the tab
 /// label: a new editor kind names its New button here.
@@ -683,16 +683,16 @@ fn editorBrowserNewButtonLabel(kind: types.EditorKind) []const u8 {
 }
 
 /// Build the editor browser: a full-screen modal panel mirroring the
-/// load-save browser — the editor-kind tab row (Mission today; Hub /
+/// load-save browser - the editor-kind tab row (Mission today; Hub /
 /// Campaign tabs append when those editors land) with a New button
 /// derived from the active kind, and the active kind's content. The
 /// mission content mirrors the load-save browser: two tab buttons
-/// top-left (Your Missions / Official — the sprite picker's tab
+/// top-left (Your Missions / Official - the sprite picker's tab
 /// pattern), one clickable row per mission (display name; a click opens
 /// it in the editor via `open_editor`), a Back button bottom-left. The
 /// web-only Import button (zip upload) lands with the import slice.
 /// Overflowing lists scroll with the load-save browser's whole-row model;
-/// the scroll offset clamps here (authoritative — the view is the only
+/// the scroll offset clamps here (authoritative - the view is the only
 /// place that knows the max). Barebones like the load-save browser (same
 /// polish slice owns richer row visuals). See DESIGN → Architecture →
 /// Level Editor → The editor browser.
@@ -708,7 +708,7 @@ pub fn buildEditorBrowser(
     scroll_offset: *i32,
     button_color: Color,
 ) !void {
-    // Full-screen modal background — blocks input to the editor UI behind
+    // Full-screen modal background - blocks input to the editor UI behind
     // it. Reuses the load-save browser's metrics (same visual class).
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -722,8 +722,8 @@ pub fn buildEditorBrowser(
 
     // KIND TAB ROW (top-left): one tab per editor kind, derived from
     // `editor_browser_kind_specs` (Mission today; Hub / Campaign append
-    // with their editors) — the tabs ARE the window's identity. Sits BELOW
-    // the global top bar (the always-on-top layer would cover the tabs —
+    // with their editors) - the tabs ARE the window's identity. Sits BELOW
+    // the global top bar (the always-on-top layer would cover the tabs -
     // everything in the window hangs off this row's y). Same
     // emission shape as the content tabs: darkest background panels, the
     // active tab's highlight outline is the indication, no tint change
@@ -764,7 +764,7 @@ pub fn buildEditorBrowser(
         kind_tab_x += kind_tab_width + ui_gap;
     }
 
-    // Content per kind — the kind row above is kind-independent chrome.
+    // Content per kind - the kind row above is kind-independent chrome.
     // Exhaustive switch: a new EditorKind member is a compile error
     // until its content builder is routed here.
     switch (kind) {
@@ -782,7 +782,7 @@ pub fn buildEditorBrowser(
         ),
     }
 
-    // Bottom-left: Back (closes the browser — same toggle action that
+    // Bottom-left: Back (closes the browser - same toggle action that
     // opens it).
     const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
     try emitPanelButton(
@@ -802,7 +802,7 @@ pub fn buildEditorBrowser(
         null,
     );
     // Bottom-right: the New button, derived from the ACTIVE kind (one
-    // button, not one per tab — the tab row already shows the kinds),
+    // button, not one per tab - the tab row already shows the kinds),
     // mirroring the Back button's metrics. Fires the same recorded
     // open_editor{null} as ctrl+N / the options-menu New Mission button;
     // from the main menu it opens the editor directly.
@@ -822,10 +822,10 @@ pub fn buildEditorBrowser(
         button_color,
         null,
     );
-    // Import (web only — the load-save browser's Import discipline): opens
+    // Import (web only - the load-save browser's Import discipline): opens
     // a file picker for a mission .zip; the picked zip extracts into
     // missions/ and the rescanned list shows it. Centered along the
-    // bottom, between the Back and New buttons. Native has no button —
+    // bottom, between the Back and New buttons. Native has no button -
     // drop the extracted folder (or a STORE zip) into the persistent
     // missions/ dir by hand.
     if (@import("builtin").os.tag == .emscripten) {
@@ -850,7 +850,7 @@ pub fn buildEditorBrowser(
 
 /// The editor browser's MISSION-kind content: the Your Missions /
 /// Official list tabs + the mission rows + scrollbar (the pre-kind-tab
-/// browser body). One content builder per editor kind — the parent
+/// browser body). One content builder per editor kind - the parent
 /// switch routes here. `tabs_y` is the content top (below the kind row).
 fn buildMissionBrowserContent(
     elements: *UiElementList,
@@ -923,7 +923,7 @@ fn buildMissionBrowserContent(
         .official => official_missions,
     };
 
-    // Clamp the scroll offset (authoritative — the input handler can't know
+    // Clamp the scroll offset (authoritative - the input handler can't know
     // max_scroll_row without the row count).
     const total_rows: usize = missions.len;
     const max_scroll_row: i32 = @intCast(total_rows -| @min(total_rows, visible_rows));
@@ -965,7 +965,7 @@ fn buildMissionBrowserContent(
                 .height = cell.height,
             } });
             // The row identity rides in the Button payload (the save-row
-            // SlotRef pattern, via the newer Button-payload convention —
+            // SlotRef pattern, via the newer Button-payload convention -
             // rows are never drag sources, so no SlotRef).
             try elements.append(allocator, .{ .button = .{
                 .screen_position = cell.position(),
@@ -1004,10 +1004,10 @@ fn buildMissionBrowserContent(
 // --- Credits screen (main menu, full screen) ---
 
 const credits_header_font_size: i32 = 96;
-/// Name line font size — larger than the roles line so each person reads
+/// Name line font size - larger than the roles line so each person reads
 /// as a heading above their credits.
 const credits_name_font_size: i32 = 72;
-/// Roles line font size — the credit detail under each name.
+/// Roles line font size - the credit detail under each name.
 const credits_role_font_size: i32 = 48;
 /// Gap between a person's name and their roles line.
 const credits_name_to_role_gap: i32 = 16;
@@ -1023,7 +1023,7 @@ const credits_button_width: i32 = 768;
 /// "Credits" header, three person blocks (name in a larger font above their
 /// roles in a smaller font, gaps between each person), and a Back button in
 /// the bottom-left. The panel blocks input to the main-menu buttons behind
-/// it. The Back button reuses the `.open_credits` action (toggle semantics —
+/// it. The Back button reuses the `.open_credits` action (toggle semantics -
 /// same pattern as the load-save browser's Back button).
 pub fn buildCreditsPanel(
     elements: *UiElementList,
@@ -1032,7 +1032,7 @@ pub fn buildCreditsPanel(
     screen: Rectangle,
     button_color: Color,
 ) !void {
-    // Full-screen modal background — blocks input to the main-menu buttons
+    // Full-screen modal background - blocks input to the main-menu buttons
     // behind it.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -1131,7 +1131,7 @@ const settings_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save / credits Back
 /// buttons so the main-menu overlays feel consistent.
 const settings_button_width: i32 = 768;
-/// Toggle button (On/Off) width — sits in the control area of a row.
+/// Toggle button (On/Off) width - sits in the control area of a row.
 const settings_toggle_width: i32 = 400;
 /// Camera-zoom choice button width (one of 4).
 const settings_choice_button_width: i32 = 240;
@@ -1199,7 +1199,7 @@ fn settingsControlRowRect(
     };
 }
 
-/// The Settings tab's control rows (the 12 toggles/choices/sliders) —
+/// The Settings tab's control rows (the 12 toggles/choices/sliders) -
 /// called by `buildSettingsPanel` when the settings tab is active. The rows
 /// vertically center as a group between `content_top` (below the tab row)
 /// and the Back button. See DESIGN → UI Framework → Settings screen.
@@ -1217,16 +1217,16 @@ fn buildSettingsControls(
     const content_x = screen.x + settings_padding;
 
     // Control rows. Each row: label (left) + control (right, flush
-    // against the label — measured per-row so the control sits right after
+    // against the label - measured per-row so the control sits right after
     // the label text, not at a fixed column). Vertically stacked below the
     // header, centered as a group between header and Back button.
 
     // 12 rows (6 toggle/choice + 5 slider + 1 fps toggle):
-    //   0. Master Volume (slider 0–100)
-    //   1. Music Volume (slider 0–100)
-    //   2. Sound Effects Volume (slider 0–100)
-    //   3. Render FPS Cap (slider 0–256, 0 = Uncapped)
-    //   4. Animation FPS (slider 1–16)
+    //   0. Master Volume (slider 0-100)
+    //   1. Music Volume (slider 0-100)
+    //   2. Sound Effects Volume (slider 0-100)
+    //   3. Render FPS Cap (slider 0-256, 0 = Uncapped)
+    //   4. Animation FPS (slider 1-16)
     //   5. VSync (toggle)
     //   6. Camera Zoom (4-button choice)
     //   7. Render Resolution (4-button choice)
@@ -1235,10 +1235,10 @@ fn buildSettingsControls(
     //  10. Auto-target at cursor (toggle)
     //  11. Show FPS (toggle)
     // The 12 rows flow into TWO side-by-side columns of 6 (the wide
-    // reference screen makes a single left-anchored column wasted space —
+    // reference screen makes a single left-anchored column wasted space -
     // and a single 12-row column needs 1792px where the region between the
     // tab row and the Back button has ~1610: the last row would overlap the
-    // Back button. It did even before the tab row — the tab row made the
+    // Back button. It did even before the tab row - the tab row made the
     // pre-existing tightness a real collision). See
     // `settingsControlRowRect`.
     const rows_per_column: i32 = 6;
@@ -1270,7 +1270,7 @@ fn buildSettingsControls(
         }
     }.run;
 
-    // Helper: emit a slider row — label (flush left) + slider control +
+    // Helper: emit a slider row - label (flush left) + slider control +
     // value text (right of the slider). Returns nothing. The slider value
     // is read from `settings` via the setting id, so it tracks the drag live
     // (the panel is rebuilt each frame).
@@ -1311,9 +1311,9 @@ fn buildSettingsControls(
 
     var row_index: i32 = 0;
 
-    // ── Slider rows (0–4) ──
+    // ── Slider rows (0-4) ──
 
-    // Row 0: Master Volume (0–100).
+    // Row 0: Master Volume (0-100).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.master_volume}) catch @panic("failed to format slider value");
@@ -1321,7 +1321,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 1: Music Volume (0–100).
+    // Row 1: Music Volume (0-100).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.music_volume}) catch @panic("failed to format slider value");
@@ -1329,7 +1329,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 2: Sound Effects Volume (0–100).
+    // Row 2: Sound Effects Volume (0-100).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.sound_effects_volume}) catch @panic("failed to format slider value");
@@ -1337,7 +1337,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 3: Render FPS Cap (0–256, 0 = Uncapped).
+    // Row 3: Render FPS Cap (0-256, 0 = Uncapped).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label: []const u8 = if (settings.render_fps_cap == 0)
@@ -1348,7 +1348,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 4: Animation FPS (1–16).
+    // Row 4: Animation FPS (1-16).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const value_label = std.fmt.allocPrint(allocator, "{d}", .{settings.animation_fps}) catch @panic("failed to format slider value");
@@ -1356,10 +1356,10 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // ── Toggle / choice rows (5–9) ──
+    // ── Toggle / choice rows (5-9) ──
 
     // Row 5: VSync toggle. Label is platform-specific: on web the setting
-    // is a no-op — the browser's requestAnimationFrame paces rendering to
+    // is a no-op - the browser's requestAnimationFrame paces rendering to
     // the display refresh regardless (rAF IS vsync on web; no page code can
     // out-run it). On native it's a real GLFW swap-interval toggle that only
     // applies at window creation, hence the restart note.
@@ -1384,7 +1384,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 6: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
+    // Row 6: Camera Zoom - 4 buttons (25/50/75/100 hundredths → display as %).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Camera Zoom", row.x, row.y);
@@ -1411,7 +1411,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 7: Render Resolution — 4 buttons (720p/1080p/1440p/2160p). The
+    // Row 7: Render Resolution - 4 buttons (720p/1080p/1440p/2160p). The
     // choice is live-applied by `frame()`'s diff-and-apply; a failed apply
     // (GPU/texture-size limits) reverts the setting + popup, so the
     // highlighted button snaps back to what actually runs. See DESIGN →
@@ -1440,7 +1440,7 @@ fn buildSettingsControls(
     }
     row_index += 1;
 
-    // Row 8: Player Color — 6 swatches (player gradient indices 0–5).
+    // Row 8: Player Color - 6 swatches (player gradient indices 0-5).
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", row.x, row.y);
@@ -1523,7 +1523,7 @@ fn buildSettingsControls(
 }
 
 /// Build the settings screen: a full-screen modal panel with a centered
-/// "Settings" header, a column of control rows (toggle/choice — sliders
+/// "Settings" header, a column of control rows (toggle/choice - sliders
 /// land in slice 3b), a Back button in the bottom-left, and Reset to
 /// Defaults in the bottom-right (both tabs). The panel blocks input to the
 /// surface behind it (main menu or the options menu). See DESIGN → UI
@@ -1541,7 +1541,7 @@ pub fn buildSettingsPanel(
     edit_state: ?*const keybind_edit.KeybindEditState,
     picker_scroll_offset: *i32,
 ) !void {
-    // Full-screen modal background — blocks input to the surface behind it.
+    // Full-screen modal background - blocks input to the surface behind it.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = screen.position(),
@@ -1568,7 +1568,7 @@ pub fn buildSettingsPanel(
     // CONTENT TAB ROW (Settings / Keybinds), centered under the header.
     // Same emission shape as the editor-browser kind tabs: tinted panels,
     // the active tab's highlight outline is the indication. A tab switch
-    // is a view affordance (direct UiState write, off the undo timeline —
+    // is a view affordance (direct UiState write, off the undo timeline -
     // the browser-tab convention); the scroll resets at the handler.
     const settings_tab_specs = [_]struct { label: []const u8, tab: types.SettingsTab }{
         .{ .label = "Settings", .tab = .settings },
@@ -1613,7 +1613,7 @@ pub fn buildSettingsPanel(
         tab_x += tab_width + ui_gap;
     }
     const content_top = tabs_y + settings_row_height + @divTrunc(settings_header_gap, 2);
-    // Content per tab — the tab row above is tab-independent chrome.
+    // Content per tab - the tab row above is tab-independent chrome.
     // Exhaustive switch: a new SettingsTab member is a compile error until
     // its content builder is routed here.
     switch (tab) {
@@ -1660,10 +1660,10 @@ pub fn buildSettingsPanel(
         null,
     );
 
-    // Reset to Defaults, bottom-right — mirrors the Back button's metrics.
+    // Reset to Defaults, bottom-right - mirrors the Back button's metrics.
     // Direct click, no confirm (the timestamped backup is the safety net);
     // the tooltip says what it does. The command rides the `.edit_keybind`
-    // channel (`.reset_defaults` is exempt from the keybinds-tab gate — a
+    // channel (`.reset_defaults` is exempt from the keybinds-tab gate - a
     // whole-settings command on a both-tabs button).
     const reset_button_rect: Rectangle = .{
         .x = screen.x + screen.width - settings_padding - settings_button_width,
@@ -1705,9 +1705,9 @@ pub fn buildSettingsPanel(
 // labels), then the content builder. The ids/actions/context sets are the
 // file-format truth; these labels are VIEW-ONLY sugar.
 
-/// A key/button id's display label ("Ctrl", "Z", "PgUp", "LMB") — a view-only
+/// A key/button id's display label ("Ctrl", "Z", "PgUp", "LMB") - a view-only
 /// prettification of the raw id. Known idioms map to short labels; "KeyX" /
-/// "DigitN" strip their prefixes (slices INTO the id — the id outlives the
+/// "DigitN" strip their prefixes (slices INTO the id - the id outlives the
 /// frame); anything else shows verbatim (the full W3C key table means a raw
 /// id is always something recognizable).
 fn keyIdDisplayLabel(id: []const u8) []const u8 {
@@ -1732,7 +1732,7 @@ fn keyIdDisplayLabel(id: []const u8) []const u8 {
 
 /// Comptime label builder: capitalize the first character, '_' -> ' '.
 /// Built by comptime STRING CONCATENATION (each `++` produces a compiler
-/// constant) — comptime-var buffers copied into a table do NOT materialize
+/// constant) - comptime-var buffers copied into a table do NOT materialize
 /// into the binary (the labels arrive as scratch garbage); concatenated
 /// comptime strings do (the `StaticStringMap` mechanism).
 fn makePrettifiedLabel(comptime name: []const u8) []const u8 {
@@ -1749,7 +1749,7 @@ fn makePrettifiedLabel(comptime name: []const u8) []const u8 {
 }
 
 /// An action's display label ("undo" -> "Undo", "dump_event_log" -> "Dump
-/// event log") — comptime-generated from the enum field names (machine-walked:
+/// event log") - comptime-generated from the enum field names (machine-walked:
 /// a new Action's label appears with no edit here).
 fn actionDisplayLabel(action: types.Action) []const u8 {
     const labels = comptime blk: {
@@ -1764,7 +1764,7 @@ fn actionDisplayLabel(action: types.Action) []const u8 {
     return labels[@intFromEnum(action)];
 }
 
-/// A context set's display label ("Anytime", "Editor + Menu") —
+/// A context set's display label ("Anytime", "Editor + Menu") -
 /// comptime-generated for every subset of the five contexts, so any set an
 /// `actionBindingContexts` case produces has a label with no edit here.
 fn contextSetDisplayLabel(set: types.BindingContextSet) []const u8 {
@@ -1807,34 +1807,34 @@ fn makeContextSetLabel(comptime mask: u32) []const u8 {
 /// Horizontal padding inside a keybind key/action panel (label inset).
 const keybind_panel_padding: i32 = 24;
 /// Minimum panel width in the keybinds list. 9-slice panels render badly
-/// below a certain width (the corner tiles dominate the panel — see TODO →
+/// below a certain width (the corner tiles dominate the panel - see TODO →
 /// Cross-cutting polish), and single-character keys (I, U, 1) would
 /// otherwise produce stub panels; the label centers in the panel so the
 /// extra width reads as a button, not stretched text.
 const keybind_min_panel_width: i32 = 160;
 
-/// Sort display order: by action (enum declaration order — undo, redo,
+/// Sort display order: by action (enum declaration order - undo, redo,
 /// escape, ...), stable so an action's multiple combos keep their file
 /// order. The file's order is load order, not a display order.
 fn bindingActionLessThan(_: void, left: types.InputBinding, right: types.InputBinding) bool {
     return @intFromEnum(left.action) < @intFromEnum(right.action);
 }
 
-/// The Keybinds tab's list + editing UI. READ side: one row per binding —
+/// The Keybinds tab's list + editing UI. READ side: one row per binding -
 /// modifier/key panels ("+" between; prettified ids via `keyIdDisplayLabel`)
-/// and the action panel directly after the combo, labeled "Action —
+/// and the action panel directly after the combo, labeled "Action -
 /// Contexts" (the derived context set). Rows sorted by action (stable) so an
 /// action's combos sit adjacent.
 ///
 /// EDIT side (TODO → Keybind editor slice 4): every row's combo area starts a
-/// LISTENING rekey (the row swaps to a highlighted "Press a key…" panel; the
-/// capture seam lives in `translateInput` — binding translation is
+/// LISTENING rekey (the row swaps to a highlighted "Press a key..." panel; the
+/// capture seam lives in `translateInput` - binding translation is
 /// suppressed while any edit is active) and its action panel opens the
 /// right-column action PICKER (the full scrollable action list); each row
-/// carries X (remove — direct, no confirm) and + (add a combo for its
+/// carries X (remove - direct, no confirm) and + (add a combo for its
 /// action). A capture or picker pick lands in a PENDING row: the proposed
 /// combo + Confirm/Cancel buttons + the steal warning in the warn color
-/// ("… currently fires Undo (game) — confirming will remove it"); confirming
+/// ("... currently fires Undo (game) - confirming will remove it"); confirming
 /// applies (the settings mutation + debounced persistence). An add's
 /// listening/pending row renders as an extra row at the top of the list.
 /// The standalone Add button (top of the list) opens the picker to pick the
@@ -1857,11 +1857,11 @@ fn buildKeybindsContent(
     const row_stride = settings_row_height + settings_row_gap;
 
     // The picker column owns the right half of the tab (when open); the
-    // binding list ALWAYS occupies the left half — a stable layout that
+    // binding list ALWAYS occupies the left half - a stable layout that
     // doesn't reflow when the picker opens.
     const picker_x = screen.x + @divTrunc(screen.width, 2) + @divTrunc(ui_gap, 2);
 
-    // The standalone Add button (top of the list — always visible): opens
+    // The standalone Add button (top of the list - always visible): opens
     // the picker to pick the new binding's action first.
     _ = try emitKeybindCommandPanel(
         elements,
@@ -1881,8 +1881,8 @@ fn buildKeybindsContent(
     const visible_rows: usize = @intCast(@max(1, @divTrunc(region_height, row_stride)));
 
     // The ADD proposal (an add's listening or pending phase) renders as
-    // an extra row below its action's row group — where the confirmed
-    // combo will appear (the display is action-sorted) — or at the top of
+    // an extra row below its action's row group - where the confirmed
+    // combo will appear (the display is action-sorted) - or at the top of
     // the list when the action has no bindings yet (the standalone add of
     // a fresh action).
     const add_edit: ?keybind_edit.KeybindEdit = if (edit_state) |edit_source| switch (edit_source.edit) {
@@ -1894,7 +1894,7 @@ fn buildKeybindsContent(
         else => null,
     } else null;
 
-    // Display order: indices sorted by action (stable) — each row carries
+    // Display order: indices sorted by action (stable) - each row carries
     // its original binding index for edit targeting.
     const order = try allocator.alloc(usize, bindings.len);
     for (order, 0..) |*slot, index| slot.* = index;
@@ -1906,7 +1906,7 @@ fn buildKeybindsContent(
     };
 
     // The proposal's insert position: after the LAST row of its action's
-    // group in display order (0 = top — the action has no bindings yet).
+    // group in display order (0 = top - the action has no bindings yet).
     var add_insert_position: usize = 0;
     if (add_edit != null) {
         const target_action: ?types.Action = switch (add_edit.?) {
@@ -1938,7 +1938,7 @@ fn buildKeybindsContent(
         scroll_offset.* = @min(scroll_offset.*, @as(i32, @intCast(rows.items.len - visible_rows)));
         if (scroll_offset.* < 0) scroll_offset.* = 0;
 
-        // Keep the proposal row on screen — it is the user's next
+        // Keep the proposal row on screen - it is the user's next
         // interaction (the keypress capture or Confirm/Cancel): clamp the
         // scroll so the proposal index sits inside the window. A no-op
         // when already visible; snaps to the nearest window edge when
@@ -1971,14 +1971,14 @@ fn buildKeybindsContent(
         switch (row_entry) {
             .add_edit => {
                 // The add proposal row: the obvious listening panel (no
-                // button — a click ANYWHERE is a mouse capture, handled by
+                // button - a click ANYWHERE is a mouse capture, handled by
                 // the capture seam), or the pending proposal row.
                 switch (add_edit.?) {
                     // An add never opens the picker (the standalone add's
                     // picker phase converts to listening on pick).
                     .picker => {},
                     .listening => |target| {
-                        const label_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(target.add)});
+                        const label_text = try std.fmt.allocPrint(allocator, "Press a key for {s}... (Esc to cancel)", .{actionDisplayLabel(target.add)});
                         const panel_width = try emitKeybindPanel(elements, allocator, font_metrics, label_text, content_x, row_y, settings_row_height, button_color);
                         try emitListeningHighlight(elements, allocator, content_x, row_y, panel_width);
                     },
@@ -1992,10 +1992,10 @@ fn buildKeybindsContent(
 
                 if (is_listening) {
                     // The obvious listening state: highlighted panel (a
-                    // button with NO command — a click is a mouse capture
+                    // button with NO command - a click is a mouse capture
                     // through the seam; the handler no-ops a payload-less
                     // command), the action panel kept for context.
-                    const label_text = "Press a key… (Esc to cancel)";
+                    const label_text = "Press a key... (Esc to cancel)";
                     const panel_width = try emitKeybindPanel(elements, allocator, font_metrics, label_text, content_x, row_y, settings_row_height, button_color);
                     try emitListeningHighlight(elements, allocator, content_x, row_y, panel_width);
                     const action_label = try actionPanelLabel(allocator, binding.action);
@@ -2054,7 +2054,7 @@ fn buildKeybindsContent(
                 } });
                 panel_x += action_panel_width + settings_row_gap;
 
-                // X (remove — direct) + + (add a combo for this action).
+                // X (remove - direct) + + (add a combo for this action).
                 panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "X", panel_x, row_y, button_color, .{ .remove = index }, false, "Delete");
                 panel_x += settings_row_gap;
                 _ = try emitKeybindCommandPanel(elements, allocator, font_metrics, "+", panel_x, row_y, button_color, .{ .add = binding.action }, false, "Add another keybind");
@@ -2078,8 +2078,8 @@ fn buildKeybindsContent(
     }
 
     // The right-column action PICKER (the picker phase): the full
-    // scrollable action list — every Action, bound or not, labeled
-    // "Action — Contexts". Picking one either moves the target row's combo
+    // scrollable action list - every Action, bound or not, labeled
+    // "Action - Contexts". Picking one either moves the target row's combo
     // to it (reassign) or starts the standalone add's listening.
     if (edit_state) |edit_source| switch (edit_source.edit) {
         .picker => |picker_target| {
@@ -2161,16 +2161,16 @@ fn bindingIndexActionLessThan(
     return @intFromEnum(bindings[left].action) < @intFromEnum(bindings[right].action);
 }
 
-/// "Action — Contexts" (the derived context set) — the action panel + picker
+/// "Action - Contexts" (the derived context set) - the action panel + picker
 /// row label.
 fn actionPanelLabel(allocator: std.mem.Allocator, action: types.Action) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s} — {s}", .{
+    return std.fmt.allocPrint(allocator, "{s} - {s}", .{
         actionDisplayLabel(action),
         contextSetDisplayLabel(types.actionBindingContexts(action)),
     });
 }
 
-/// Panel + centered label (returns the panel width — the caller places the
+/// Panel + centered label (returns the panel width - the caller places the
 /// next panel flush after it). Never narrower than `keybind_min_panel_width`
 /// (9-slice panels render badly small).
 fn emitKeybindPanel(
@@ -2316,21 +2316,21 @@ fn emitPendingRow(
     panel_x += settings_row_gap;
 
     // Confirm / Cancel. Enter CONFIRMS through the capture seam during
-    // pending (the modal-capture-state convention — safe because capture
+    // pending (the modal-capture-state convention - safe because capture
     // happens during listening; Escape cancels the same way).
     panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Confirm", panel_x, row_y, button_color, .confirm, true, null);
     panel_x += settings_row_gap;
     panel_x += try emitKeybindCommandPanel(elements, allocator, font_metrics, "Cancel", panel_x, row_y, button_color, .cancel, false, null);
 
     // The steal warning (see findKeybindSteal): the combo currently fires
-    // another binding — confirming REMOVES it — or duplicates its own
+    // another binding - confirming REMOVES it - or duplicates its own
     // action's combo (confirming dedupes).
     if (pending.stolen_index) |stolen_index| {
         const stolen = bindings[stolen_index];
         const warning_text = if (stolen.action == pending.binding.action)
-            try std.fmt.allocPrint(allocator, "This combo is already bound to {s} — confirming removes the duplicate", .{actionDisplayLabel(stolen.action)})
+            try std.fmt.allocPrint(allocator, "This combo is already bound to {s} - confirming removes the duplicate", .{actionDisplayLabel(stolen.action)})
         else
-            try std.fmt.allocPrint(allocator, "This combo currently fires {s} ({s}) — confirming will remove it", .{
+            try std.fmt.allocPrint(allocator, "This combo currently fires {s} ({s}) - confirming will remove it", .{
                 actionDisplayLabel(stolen.action),
                 contextSetDisplayLabel(types.actionBindingContexts(stolen.action)),
             });
@@ -2446,7 +2446,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     const MissionEntry = @import("../file_source.zig").FileSource.MissionEntry;
 
     // Enough rows to overflow the visible window (the load-save browser's
-    // geometry — ~14 visible rows).
+    // geometry - ~14 visible rows).
     var missions: [20]MissionEntry = undefined;
     for (&missions, 0..) |*mission, i| {
         mission.* = .{
@@ -2620,7 +2620,7 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
     );
 
     // The kind tab row walks the same comptime spec list this test walks
-    // (derived expectations — a new editor kind can't appear as a tab
+    // (derived expectations - a new editor kind can't appear as a tab
     // without appearing here too): one tab per spec, in spec order, each
     // carrying its kind payload + the kind-switch action, the active
     // kind highlighted, and its label text emitted.
@@ -2719,8 +2719,8 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     var elements: UiElementList = .empty;
     try buildOptionsMenu(&elements, allocator, metrics, screen, .main_menu, null, button_color, null);
     // The main-menu variant: Settings + Credits + Exit Game (tests run
-    // native — the web build omits Exit Game), and none of the session
-    // verbs, the editor block, or Exit to Main Menu. No Continue — like
+    // native - the web build omits Exit Game), and none of the session
+    // verbs, the editor block, or Exit to Main Menu. No Continue - like
     // every variant, the menu has no close button (Escape + the top-bar
     // options button close it).
     for ([_]types.Action{ .open_settings, .open_credits, .exit_game }) |expected| {
@@ -2809,7 +2809,7 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
 
     // Web (the null persistent-dir-path signal): the Import Game button is
     // present (with a tooltip) + the storage disclaimer is present above
-    // the title (both lines of the chosen wording — DESIGN → Web storage
+    // the title (both lines of the chosen wording - DESIGN → Web storage
     // model).
     {
         var elements: UiElementList = .empty;
@@ -2897,7 +2897,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     }
 
     // Editor context: no Export Save button (the editor's save target is
-    // the mission being edited). Settings + Exit to Main Menu remain —
+    // the mission being edited). Settings + Exit to Main Menu remain -
     // and no close button, per the no-Continue convention.
     {
         var elements: UiElementList = .empty;
@@ -2919,7 +2919,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         // The tooltip names the keybind + the destination dir.
         const save_tooltip = save_mission_button.?.tooltip orelse @panic("Save Mission button has no tooltip");
         const save_tooltip_text = save_tooltip.body[0][0].text;
-        try std.testing.expectEqualStrings("Ctrl+S — saves to /home/tester/.ziglop/missions/", save_tooltip_text);
+        try std.testing.expectEqualStrings("Ctrl+S - saves to /home/tester/.ziglop/missions/", save_tooltip_text);
 
         // The New Mission button (ctrl+N): the fresh-mission open from
         // inside the editor, with the keybind tooltip.
@@ -2933,7 +2933,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         try std.testing.expect(new_mission_button != null);
         const new_tooltip = new_mission_button.?.tooltip orelse @panic("New Mission button has no tooltip");
         const new_tooltip_text = new_tooltip.body[0][0].text;
-        try std.testing.expectEqualStrings("Ctrl+N — replaces the mission being edited with a fresh one", new_tooltip_text);
+        try std.testing.expectEqualStrings("Ctrl+N - replaces the mission being edited with a fresh one", new_tooltip_text);
     }
 }
 
@@ -2947,7 +2947,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
     // Web (null path): present on EVERY variant with the ziglop.zip
-    // tooltip + label — the options menu is the only menu surface
+    // tooltip + label - the options menu is the only menu surface
     // reachable mid-level, so in-session backups are always possible.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
         var elements: UiElementList = .empty;
@@ -2959,7 +2959,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
         const tooltip = button.tooltip orelse @panic("Export Game button has no tooltip");
         try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
         try std.testing.expectEqualStrings(
-            "Downloads ziglop.zip — your full game folder (settings, saves, custom missions)",
+            "Downloads ziglop.zip - your full game folder (settings, saves, custom missions)",
             tooltip.body[0][0].text,
         );
         var label_seen = false;
@@ -2972,7 +2972,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
         try std.testing.expect(label_seen);
     }
 
-    // Native (a path): no button at all — the real persistent dir IS the
+    // Native (a path): no button at all - the real persistent dir IS the
     // game folder.
     for ([_]state.Screen{ .main_menu, .level, .hub, .editor }) |variant| {
         var elements: UiElementList = .empty;
@@ -2999,7 +2999,7 @@ test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no E
 
         // The options menu names the RUN on the restart/exit buttons and
         // offers NO campaign Export Save (the run's player_data is
-        // temporary — rebuilt from the editor loadout, discarded on exit).
+        // temporary - rebuilt from the editor loadout, discarded on exit).
         {
             var elements: UiElementList = .empty;
             try buildOptionsMenu(&elements, allocator, metrics, screen, .level, run_mode, button_color, "/dir");
@@ -3027,7 +3027,7 @@ fn expectMenuButtonLabel(elements: []const UiElement, action: Action, expected: 
     var found = false;
     for (elements, 0..) |element, index| switch (element) {
         // The label follows its spriteless button (the triplet's third
-        // element) — match the immediately-preceding button's action.
+        // element) - match the immediately-preceding button's action.
         .text_label => |label| {
             if (index > 0) {
                 switch (elements[index - 1]) {
@@ -3088,7 +3088,7 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     // The Settings tab keeps its control rows (a settings toggle button),
     // and the control column still FITS: the tab row shrank the rows region,
     // and the rows-centering formula can silently overflow once the region
-    // is tighter — the lowest control's bottom must clear the Back button's
+    // is tighter - the lowest control's bottom must clear the Back button's
     // top (the Back button toggles via the same .open_settings action that
     // opened the screen).
     var found_control = false;
@@ -3147,14 +3147,14 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     try std.testing.expectEqual(back_button_top, reset_button_y);
 }
 
-test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + context tags" {
+test "buildSettingsPanel: keybinds tab - rows, key panels, action labels + context tags" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
-    // Two combos on ONE action (undo: ctrl+Z and U — adjacent rows, no
+    // Two combos on ONE action (undo: ctrl+Z and U - adjacent rows, no
     // group headers), plus cross-context same-combo-style rows with their
     // derived context tags.
     const bindings = [_]types.InputBinding{
@@ -3172,7 +3172,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
 
     // NO group headers: the action name rides in every row's action panel,
     // so no exact-match action-name label exists (the "Undo" spelling only
-    // appears inside "Undo — Anytime" action labels).
+    // appears inside "Undo - Anytime" action labels).
     var undo_headers: usize = 0;
     var ctrl_labels: usize = 0;
     var z_labels: usize = 0;
@@ -3188,9 +3188,9 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
             if (std.mem.eql(u8, label.text, "Z")) z_labels += 1;
             if (std.mem.eql(u8, label.text, "U")) u_labels += 1;
             if (std.mem.eql(u8, label.text, "+")) plus_labels += 1;
-            if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_anytime += 1;
-            if (std.mem.eql(u8, label.text, "Confirm — Game")) confirm_game += 1;
-            if (std.mem.eql(u8, label.text, "Select editor tool — Editor")) select_tool_editor += 1;
+            if (std.mem.eql(u8, label.text, "Undo - Anytime")) undo_anytime += 1;
+            if (std.mem.eql(u8, label.text, "Confirm - Game")) confirm_game += 1;
+            if (std.mem.eql(u8, label.text, "Select editor tool - Editor")) select_tool_editor += 1;
         },
         else => {},
     };
@@ -3199,7 +3199,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 1), z_labels);
     try std.testing.expectEqual(@as(usize, 1), u_labels);
     // "+" appears as BOTH the combo separator (ctrl + Z) and each row's
-    // add-combo button label — at least the separator here.
+    // add-combo button label - at least the separator here.
     try std.testing.expect(plus_labels >= 1);
 
     // The editing chrome: each of the 4 rows carries a rekey button (over
@@ -3247,7 +3247,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 2), undo_anytime); // both combos
-    // The min-width contract: every keybind panel (key/modifier/action —
+    // The min-width contract: every keybind panel (key/modifier/action -
     // all settings_row_height) stays at or above `keybind_min_panel_width`
     // (9-slice panels render badly below it; single-char keys would stub).
     for (elements.items) |element| switch (element) {
@@ -3262,7 +3262,7 @@ test "buildSettingsPanel: keybinds tab — rows, key panels, action labels + con
     try std.testing.expectEqual(@as(usize, 1), select_tool_editor);
 }
 
-test "buildSettingsPanel: keybinds tab add proposal — below its action's group, kept on screen" {
+test "buildSettingsPanel: keybinds tab add proposal - below its action's group, kept on screen" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -3273,7 +3273,7 @@ test "buildSettingsPanel: keybinds tab add proposal — below its action's group
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
     // A row's `+` (an add listening on an EXISTING action): the proposal
-    // renders directly below that action's row group — one row_stride
+    // renders directly below that action's row group - one row_stride
     // under the group's last row's action label.
     {
         const bindings = [_]types.InputBinding{
@@ -3290,11 +3290,11 @@ test "buildSettingsPanel: keybinds tab add proposal — below its action's group
         var undo_label_y: i32 = -1;
         var confirm_label_y: i32 = -1;
         var proposal_y: i32 = -1;
-        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(.undo)});
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}... (Esc to cancel)", .{actionDisplayLabel(.undo)});
         for (elements.items) |element| switch (element) {
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_label_y = label.screen_position.y;
-                if (std.mem.eql(u8, label.text, "Confirm — Game")) confirm_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, "Undo - Anytime")) undo_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, "Confirm - Game")) confirm_label_y = label.screen_position.y;
                 if (std.mem.eql(u8, label.text, proposal_text)) proposal_y = label.screen_position.y;
             },
             else => {},
@@ -3324,10 +3324,10 @@ test "buildSettingsPanel: keybinds tab add proposal — below its action's group
 
         var undo_label_y: i32 = -1;
         var proposal_y: i32 = -1;
-        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(.dump_event_log)});
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}... (Esc to cancel)", .{actionDisplayLabel(.dump_event_log)});
         for (elements.items) |element| switch (element) {
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "Undo — Anytime")) undo_label_y = label.screen_position.y;
+                if (std.mem.eql(u8, label.text, "Undo - Anytime")) undo_label_y = label.screen_position.y;
                 if (std.mem.eql(u8, label.text, proposal_text)) proposal_y = label.screen_position.y;
             },
             else => {},
@@ -3340,7 +3340,7 @@ test "buildSettingsPanel: keybinds tab add proposal — below its action's group
     // Kept on screen: 60 rows overflow; scrolled to the bottom WITHOUT
     // an edit first (the view's own clamp is the oracle for the pre-bump
     // scroll value), then the same scroll WITH a row-`+` proposal on the
-    // last display action — the proposal would land beyond the window,
+    // last display action - the proposal would land beyond the window,
     // so the scroll bumps one notch and the proposal is emitted.
     {
         const action_tags = std.meta.tags(types.Action);
@@ -3365,7 +3365,7 @@ test "buildSettingsPanel: keybinds tab add proposal — below its action's group
         try buildSettingsPanel(&elements, allocator, metrics, screen, long_settings, undefined, button_color, .keybinds, &scroll, &edit_state, &picker_scroll);
         try std.testing.expectEqual(bottom_scroll + 1, scroll);
 
-        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}… (Esc to cancel)", .{actionDisplayLabel(action_tags[59])});
+        const proposal_text = try std.fmt.allocPrint(allocator, "Press a key for {s}... (Esc to cancel)", .{actionDisplayLabel(action_tags[59])});
         var proposal_seen = false;
         for (elements.items) |element| switch (element) {
             .text_label => |label| if (std.mem.eql(u8, label.text, proposal_text)) {
@@ -3385,7 +3385,7 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
-    // 60 distinct actions — enough rows (headers + combos) to overflow any
+    // 60 distinct actions - enough rows (headers + combos) to overflow any
     // plausible window. Every combo on the same key: the list is display-only
     // here (no conflict scan on the view path).
     const action_tags = std.meta.tags(types.Action);
@@ -3427,7 +3427,7 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     try std.testing.expect(emitted_rows < bindings.len);
 
     // The window is the same size at the top and the end (a full window at
-    // every offset — whole visible rows only).
+    // every offset - whole visible rows only).
     var top_scroll: i32 = 0;
     var top_picker_scroll: i32 = 0;
     var top_elements: UiElementList = .empty;
@@ -3448,7 +3448,7 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     try std.testing.expectEqual(@as(i32, 0), scroll);
 }
 
-test "buildSettingsPanel: keybinds tab scrollbars — track + thumb per overflowing column, none when content fits" {
+test "buildSettingsPanel: keybinds tab scrollbars - track + thumb per overflowing column, none when content fits" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -3456,7 +3456,7 @@ test "buildSettingsPanel: keybinds tab scrollbars — track + thumb per overflow
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
-    // 60 distinct actions — enough rows to overflow either column's window
+    // 60 distinct actions - enough rows to overflow either column's window
     // on this screen.
     const action_tags = std.meta.tags(types.Action);
     var bindings: [60]types.InputBinding = undefined;
@@ -3546,7 +3546,7 @@ test "buildSettingsPanel: keybinds tab scrollbars — track + thumb per overflow
         try std.testing.expect(max_thumb_y + max_thumb_height <= track_y + track_height);
     }
 
-    // Picker open: BOTH columns overflow — the picker's track flush to the
+    // Picker open: BOTH columns overflow - the picker's track flush to the
     // content right edge joins the list's at the midpoint (4 rects).
     {
         var edit_state: keybind_edit.KeybindEditState = .{ .edit = .{ .picker = .{ .binding = 0 } } };

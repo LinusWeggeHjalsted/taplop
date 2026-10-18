@@ -1,6 +1,6 @@
 //! Player-data mechanics: the `player_event` + `super_event` arms
-//! (`handlePlayerEvent` — learn/equip/salvage/swap verbs;
-//! `handleSuperEvent` — the entity↔PlayerData sync pair), the gear-slot
+//! (`handlePlayerEvent` - learn/equip/salvage/swap verbs;
+//! `handleSuperEvent` - the entity↔PlayerData sync pair), the gear-slot
 //! mutators + salvage helpers, and the clone-harvest math. The input
 //! orchestrators live in player_input.zig; the cross-category helpers in
 //! shared.zig.
@@ -31,7 +31,7 @@ const getPlayerEntity = shared.getPlayerEntity;
 /// The occupied inventory slot indices inside a salvage region (two
 /// opposite-corner slot indices, order-independent). Shared by the
 /// `player_salvage_inventory_region` handler (one salvage_item per slot)
-/// and the input-side no-op gate (an all-empty region never fires) — one
+/// and the input-side no-op gate (an all-empty region never fires) - one
 /// definition of the region's slots so the two can't drift.
 pub fn salvageRegionOccupiedSlots(
     player: types.Entity,
@@ -140,7 +140,7 @@ fn applyGearChangeSideEffects(
 /// Set the incoming weapon's three skill cooldowns to `@max(old, new)` so
 /// equipping a fresh weapon can't bypass a cooldown that was ticking on the
 /// displaced weapon's skills. Runs for all three skills regardless of which
-/// hand holds the weapon — the hidden skill's cd surfaces later if the player
+/// hand holds the weapon - the hidden skill's cd surfaces later if the player
 /// `swap_hands`. Both old+new cds are snapshotted before any `set` so a
 /// degenerate SkillId overlap between weapon types can't double-decrement.
 /// See DESIGN → Architecture (Cooldown inheritance on skill/weapon swap).
@@ -177,7 +177,7 @@ fn transferWeaponCooldowns(
 /// Pure harvest payout: per material, `(materials_collected * turns_spent)
 /// / turns_to_complete` summed over all clones. The multiply happens BEFORE
 /// the divide so a clone whose per-turn rate is fractional (materials <
-/// turns_to_complete) still pays out — dividing first truncates the rate to
+/// turns_to_complete) still pays out - dividing first truncates the rate to
 /// 0 and yields nothing. u64 intermediate guards the multiply against u32
 /// overflow. Skips clones with `turns_to_complete == 0`. Shared by the
 /// `harvest_clones` handler and the `end_level` completion branch (which
@@ -199,7 +199,7 @@ pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Mater
     return payout;
 }
 
-/// Whether `skill_id` is in the player's `learned_skills` list. Pure —
+/// Whether `skill_id` is in the player's `learned_skills` list. Pure -
 /// extracted from the `player_use_inventory_item` handler so the
 /// learn-vs-salvage decision for a skill tome is testable without the
 /// orchestrator wrapper (no `expectPanics` in Zig 0.16; see AGENTS →
@@ -211,7 +211,7 @@ pub fn isSkillLearned(learned_skills: []const types.SkillId, skill_id: types.Ski
     return false;
 }
 
-/// Handle a `SuperEvent` — the entity↔PlayerData sync pair
+/// Handle a `SuperEvent` - the entity↔PlayerData sync pair
 /// (build_player_from_data / build_data_from_player; see DESIGN →
 /// Architecture → PlayerData/Entity sync).
 pub fn handleSuperEvent(
@@ -288,7 +288,7 @@ pub fn handleSuperEvent(
         .harvest_clones => |harvest| {
             // Payout from all saved clones: per material,
             // `(materials * turns_spent) / turns_to_complete`
-            // (multiply before divide — see computeHarvest).
+            // (multiply before divide - see computeHarvest).
             // Gated on turns_spent > 0 at the push site, but guard
             // here too in case a hand-crafted replay seeds it at 0.
             // See DESIGN → Clones (clone system).
@@ -298,7 +298,7 @@ pub fn handleSuperEvent(
     }
 }
 
-/// Handle a `PlayerEvent` — the direct player verbs (learn/equip/salvage/
+/// Handle a `PlayerEvent` - the direct player verbs (learn/equip/salvage/
 /// swap), pushed as machinery children by the input orchestrators.
 pub fn handlePlayerEvent(
     history: *GameStateHistory,
@@ -350,7 +350,7 @@ pub fn handlePlayerEvent(
             const item = slot.* orelse return;
             // Sound after the guard: a salvage of an empty slot
             // (crafted logs; live clicks are gated to occupied
-            // slots) must not click. Item-action cue — see the
+            // slots) must not click. Item-action cue - see the
             // learn_skill arm.
             if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                 .base = .item_base,
@@ -371,8 +371,8 @@ pub fn handlePlayerEvent(
             const item = slot.* orelse return;
             if (!itemFitsGearSlot(item, equip.gear_slot)) return;
             // Sound after the guards: a no-op equip (empty slot /
-            // unfitting item — crafted logs; live drags are gated at
-            // the drop site) must not click. Item-action cue — see the
+            // unfitting item - crafted logs; live drags are gated at
+            // the drop site) must not click. Item-action cue - see the
             // learn_skill arm.
             if (!history.replaying) history.session.queueCue(history.backing_allocator, .{
                 .base = .item_base,
@@ -422,7 +422,7 @@ pub fn handlePlayerEvent(
         },
         .equip_utility_skill => |equip| {
             if (equip.slot_index >= utility_skill_count) return;
-            // Only UTILITY skills may sit on the bar — the learned
+            // Only UTILITY skills may sit on the bar - the learned
             // list can contain weapon-skill tomes, so the drag path
             // gates here too (see src/utility_skills.zig).
             if (!utility_skills.isUtilitySkill(equip.skill_id)) return;
@@ -432,7 +432,7 @@ pub fn handlePlayerEvent(
             // @max(old slot skill cd, incoming cd) so a fresh swap
             // can't bypass a cooldown that was ticking on the
             // displaced skill. The outgoing skill's cd is PRESERVED
-            // (not cleared) in skill_cooldowns — see DESIGN → Architecture.
+            // (not cleared) in skill_cooldowns - see DESIGN → Architecture.
             const old_skill = player.equipped_utility_skills[equip.slot_index];
             const incoming_cd = player.skill_cooldowns.get(equip.skill_id);
             const old_cd = if (old_skill) |s| player.skill_cooldowns.get(s) else 0;

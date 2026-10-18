@@ -1,5 +1,5 @@
 //! Pure easing functions for one-shot animations. No state, no allocators,
-//! no I/O — just `fn(f32) f32` taking a normalized progress `t` in [0, 1]
+//! no I/O - just `fn(f32) f32` taking a normalized progress `t` in [0, 1]
 //! and returning an eased progress. `view()` computes
 //! `progress = (animation_clock - start_clock) / duration`, clamps to [0, 1],
 //! and applies an easing fn before interpolating position. Replay-safe by
@@ -9,7 +9,7 @@
 const std = @import("std");
 
 /// Ease-out cubic: starts fast, decelerates to a stop. `1 - (1 - t)^3`.
-/// Fast at the start and slowing near the end — the "snappy" feel requested
+/// Fast at the start and slowing near the end - the "snappy" feel requested
 /// for damage-number float. At t=0 → 0, t=1 → 1, monotonic.
 pub fn easeOutCubic(t: f32) f32 {
     const u = 1.0 - t;

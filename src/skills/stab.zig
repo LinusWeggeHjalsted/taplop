@@ -45,7 +45,7 @@ fn getValidTargets(
 
 /// AI options: the weakest hostile (focus-fire). Rated on the PICK (value
 /// units): 2 when it is above half health (the 1.5x bonus is worth ~a hit),
-/// else 1. The old priority summarized "any healthy target in range" — it
+/// else 1. The old priority summarized "any healthy target in range" - it
 /// could rate 3 while selection attacked a wounded target the bonus doesn't
 /// pay on.
 fn aiOptions(

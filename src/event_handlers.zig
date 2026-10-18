@@ -1,4 +1,4 @@
-//! Event dispatch: `processEvent` — the single funnel through which all
+//! Event dispatch: `processEvent` - the single funnel through which all
 //! undoable gameplay state mutates. Pops one event from
 //! `GameState.event_stack`, records it into the session log when not
 //! replaying, and routes it to its category handler:
@@ -46,7 +46,7 @@ pub fn processEvent(
     current.event_stack = current.event_stack[0 .. current.event_stack.len - 1];
 
     // Record in event history. Skip during replay: replay walks events that
-    // are already recorded, applying them to rebuild a past state — it must
+    // are already recorded, applying them to rebuild a past state - it must
     // not create new events. The index still advances so replayTo's loop
     // progresses. (See recordEvent for the undo-branch handling.)
     if (!history.replaying) {
@@ -60,7 +60,7 @@ pub fn processEvent(
             // the post-transition scope (level/hub loaded, screen set). A
             // checkpoint taken before the handler would capture the PRE-
             // transition state (e.g. hub with level=null) labeled with the
-            // post-event index — replaying from it would hit in-level sub-
+            // post-event index - replaying from it would hit in-level sub-
             // events (aggro_check) with no level loaded and crash.
             const should_checkpoint = switch (meta) {
                 .start_level => |level| level.sets_checkpoint,
@@ -90,7 +90,7 @@ pub fn processEvent(
                     if (current.editor) |*editor| {
                         if (set.level_index < editor.levels.len) {
                             editor.active_level_index = set.level_index;
-                            // The selection is active-level-relative — a
+                            // The selection is active-level-relative - a
                             // tab switch takes it with it (same event, so
                             // undo restores the tab AND its selection).
                             editor.selection = &.{};
@@ -102,7 +102,7 @@ pub fn processEvent(
                     }
                 },
                 // The imports need the reconstruction cache (the
-                // default-save / max-loadout reads) — handled inline here,
+                // default-save / max-loadout reads) - handled inline here,
                 // not in editor_handlers.handleEditorEvent.
                 .editor_import_player => {
                     if (current.editor != null) editor_handlers.importEditorPlayer(history, current, allocator, .session);
@@ -111,13 +111,13 @@ pub fn processEvent(
                     if (current.editor != null) editor_handlers.importEditorPlayer(history, current, allocator, .max_player);
                 },
                 // The palette add-type events need the reconstruction cache
-                // too (the defaults read) — same inline-handling reason as
+                // too (the defaults read) - same inline-handling reason as
                 // the import above.
                 .editor_add_entity_type => editor_handlers.addEditorPaletteType(history, current, allocator, .entity),
                 .editor_add_decoration_type => editor_handlers.addEditorPaletteType(history, current, allocator, .decoration),
                 .editor_add_item_type => editor_handlers.addEditorPaletteType(history, current, allocator, .item),
                 // The add-level event needs the cache as well (the template
-                // read) — same inline-handling reason.
+                // read) - same inline-handling reason.
                 .editor_add_level => editor_handlers.addEditorLevel(history, current, allocator),
                 // The remaining editor events are handled in the dedicated
                 // editor handler block below (editor_handlers.handleEditorEvent). They are

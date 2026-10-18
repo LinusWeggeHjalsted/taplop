@@ -1,4 +1,4 @@
-//! Session-log BUNDLE — the folder artifact that makes a saved session
+//! Session-log BUNDLE - the folder artifact that makes a saved session
 //! replayable cross-session: `session_log.txt` (the ordinary session-log
 //! body plus a `ReconstructionCache` manifest section) and `content/`
 //! (exact raw byte copies of every file the session's reconstruction-read
@@ -8,7 +8,7 @@
 //! editor). See DESIGN → Logging & Replay and DESIGN → File System & IO →
 //! Reconstruction cache.
 //!
-//! Writer: FileSource/persistent-dir IO (the game's own artifacts — the
+//! Writer: FileSource/persistent-dir IO (the game's own artifacts - the
 //! ctrl+L dump, the crash dump). Loader: `std.Io.Dir` IO (the `--replay`
 //! CLI reads any path; tests read a temp dir). Content files are written
 //! FIRST, `session_log.txt` LAST, so a half-written bundle fails to load
@@ -33,7 +33,7 @@ const Section = parser.Section;
 const ReconstructionCacheEntry = state.ReconstructionCacheEntry;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
-/// Read limit for bundle files (`session_log.txt` + content copies) —
+/// Read limit for bundle files (`session_log.txt` + content copies) -
 /// matches FileSource's own limit, so a bundle can round-trip anything the
 /// game could have read in the first place.
 const bundle_read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
@@ -41,14 +41,14 @@ const bundle_read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 /// One manifest entry group in the `ReconstructionCache` section: the file
 /// bytes one reconstruction-read event applied, and where the copy lives.
 /// The section's entry groups preserve cache order (monotonic
-/// `event_index` — the replay-side binary search invariant).
+/// `event_index` - the replay-side binary search invariant).
 pub const CacheManifestEntry = struct {
     /// Index into the EventLog of the event whose handler read the file.
     event_index: u32,
     /// The path the original session read, verbatim (may contain spaces).
     /// Together with `event_index` this is the replay cache key.
     path: []const u8,
-    /// SHA-256 of the content bytes as 64 lowercase hex chars — the
+    /// SHA-256 of the content bytes as 64 lowercase hex chars - the
     /// integrity check the loader verifies against every copy.
     hash_hex: []const u8,
     /// Name of the copy under `content/` ("<first 8 hex>_<original file
@@ -58,7 +58,7 @@ pub const CacheManifestEntry = struct {
 };
 
 pub const SessionLogBundleError = error{
-    /// No `session_log.txt`, or no `ReconstructionCache` section — the
+    /// No `session_log.txt`, or no `ReconstructionCache` section - the
     /// difference between a bundle's log and a bare session log (e.g. the
     /// validation replay).
     NotSessionLogBundle,
@@ -99,7 +99,7 @@ fn baseName(path: []const u8) []const u8 {
 }
 
 /// Write a session-log bundle to `<bundle_dir>/` in the persistent dir:
-/// the content copies first (deduped by hash — identical bytes, e.g. a
+/// the content copies first (deduped by hash - identical bytes, e.g. a
 /// level file read on every re-entry, are stored once), then
 /// `session_log.txt` (the ordinary session-log body with the manifest
 /// section appended after EventLog). `created` is the "YYYYMMDD_HHMMSS"
@@ -150,7 +150,7 @@ pub fn writeSessionLogBundle(
 
 /// Derive the per-entry artifact identities: hash the bytes, name the copy
 /// "<first 8 hex>_<original file name>". Order follows `cache_entries`
-/// (cache order — monotonic by event_index).
+/// (cache order - monotonic by event_index).
 fn planCacheEntryArtifacts(
     cache_entries: []const ReconstructionCacheEntry,
     allocator: std.mem.Allocator,
@@ -209,7 +209,7 @@ fn writeCacheManifestSection(
 /// A successfully loaded bundle: the parsed session log plus cache entries
 /// ready to append into `GameStateHistory.reconstruction_cache` via
 /// `loadReconstructionCache`. All returned memory (log events, manifest
-/// strings, content bytes) is owned by the caller's allocator — pass the
+/// strings, content bytes) is owned by the caller's allocator - pass the
 /// history arena in production, so the embedded bytes survive as long as
 /// the replayed session does.
 pub const LoadedSessionLogBundle = struct {
@@ -220,7 +220,7 @@ pub const LoadedSessionLogBundle = struct {
 /// Load a session-log bundle from `<bundle_path>/session_log.txt` +
 /// `content/`, verifying every content copy against its recorded hash.
 /// The manifest section is REQUIRED (a bare session log is not a bundle).
-/// A missing or corrupt content copy is `error.ContentMismatch` — never a
+/// A missing or corrupt content copy is `error.ContentMismatch` - never a
 /// silent fallback to some other file on disk.
 pub fn loadSessionLogBundle(
     dir: std.Io.Dir,
@@ -233,7 +233,7 @@ pub fn loadSessionLogBundle(
     const log = try session_log.loadEventLog(sections, allocator);
     const manifest = try loadCacheManifest(sections, allocator);
 
-    // Read each distinct content copy once (dedup by hash — many manifest
+    // Read each distinct content copy once (dedup by hash - many manifest
     // entries can share bytes) and verify it against the recorded hash.
     const ContentBytes = struct { hash_hex: []const u8, bytes: []const u8 };
     var copies: std.ArrayList(ContentBytes) = .empty;
@@ -265,7 +265,7 @@ pub fn loadSessionLogBundle(
         }
         // The path points into the manifest entry's owned string (both
         // allocated by the caller's allocator); the bytes are shared
-        // between entries of the same hash — replay serves copies either
+        // between entries of the same hash - replay serves copies either
         // way, they are only ever read.
         try cache_entries.append(allocator, .{
             .event_index = entry.event_index,
@@ -295,7 +295,7 @@ fn readBundleFile(
 }
 
 /// Parse the `ReconstructionCache` manifest from a bundle's sections. The
-/// section is REQUIRED — its absence is what distinguishes a bundle's
+/// section is REQUIRED - its absence is what distinguishes a bundle's
 /// session_log.txt from a bare session log (the validation replay). All
 /// strings are duped into `allocator` (the manifest's parsed slices point
 /// into the caller's scratch log bytes and must outlive them).
@@ -313,7 +313,7 @@ fn loadCacheManifest(
         const event_index = parseManifestU32(pairs, "event_index") orelse
             return error.MalformedManifest;
         // Cache order is monotonic by event_index (the replay-side binary
-        // search invariant) — a hand-merged manifest would break it.
+        // search invariant) - a hand-merged manifest would break it.
         if (last_event_index) |last| {
             if (event_index < last) return error.MalformedManifest;
         }

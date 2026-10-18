@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Doc-symbol staleness checker (machine-walked truth for doc prose — see
+# Doc-symbol staleness checker (machine-walked truth for doc prose - see
 # AGENTS → Documentation). DESIGN/AGENTS/TODO name code symbols in
 # backticks (`main.dumpEventLog`, `types.producible_key_ids`) and drift
-# silently when symbols move or are renamed — every stale ref found so far
+# silently when symbols move or are renamed - every stale ref found so far
 # was found by accident during unrelated sessions. This script extracts
 # every backticked dot-path from the three living docs and flags the ones
 # the source tree can't back:
 #
 #   STALE   the member name (last segment) appears in NO .zig file under
-#           src/ (raylib seam included) + tools/ + build.zig — the symbol
+#           src/ (raylib seam included) + tools/ + build.zig - the symbol
 #           the doc names does not exist anywhere.
 #   MOVED   the member exists, but the first segment is a file stem
 #           (types., state., parser., ...) whose file does not contain
-#           the member — the doc points at the wrong file (the recorded
+#           the member - the doc points at the wrong file (the recorded
 #           drift class: symbols moving between files).
 #
-# Both tiers are advisory — read the flagged line and fix the doc (or
+# Both tiers are advisory - read the flagged line and fix the doc (or
 # discover the rename was wrong). Known limits, by design:
 # - DONE.md is NOT scanned: it records history, where dead symbols are
 #   legitimate.
@@ -23,11 +23,11 @@
 #   frame) passing via an unrelated same-named token is a false pass.
 # - Doc comments inside .zig files are stripped before tokenizing, so a
 #   symbol that exists only in a (possibly stale) code comment still
-#   flags — code is the truth, comments can drift too.
+#   flags - code is the truth, comments can drift too.
 # - Deliberate non-symbols are allowlisted below: external APIs (zig
 #   stdlib, raylib_zig, OS interfaces) and meta-placeholders (`ui.X`).
 # - TODO prose naming a NOT-YET-LANDED symbol must use the bare name
-#   (`inspect_cursor`), not the backticked dot-path form — a dot-path is
+#   (`inspect_cursor`), not the backticked dot-path form - a dot-path is
 #   the checker's signal that the symbol exists today.
 #
 # Usage: scripts/doc_symbol_check.sh [--strict]
@@ -71,7 +71,7 @@ for file in "${corpus[@]}"; do
         | grep -oE '[A-Za-z_][A-Za-z0-9_]*' \
         | sort -u >> "$tmp/all.tok"
     # Per-stem tokens for the MOVED tier. Colliding stems (src/state.zig
-    # vs src/ui/state.zig) merge — acceptable for an advisory tier.
+    # vs src/ui/state.zig) merge - acceptable for an advisory tier.
     sed 's|//.*$||' "$file" \
         | grep -oE '[A-Za-z_][A-Za-z0-9_]*' \
         | sort -u >> "$tmp/stem_$stem.tok"
@@ -108,10 +108,10 @@ for doc in "${docs[@]}"; do
         first="${segments[0]}"
 
         if ! grep -qxF "$member" "$tmp/all.tok"; then
-            stale_paths+=("$doc: \`$path\` — no .zig file contains '$member'")
+            stale_paths+=("$doc: \`$path\` - no .zig file contains '$member'")
             stale=$((stale + 1))
         elif [[ -f "$tmp/stem_$first.tok" ]] && ! grep -qxF "$member" "$tmp/stem_$first.tok"; then
-            moved_paths+=("$doc: \`$path\` — '$member' exists but not in $first.zig")
+            moved_paths+=("$doc: \`$path\` - '$member' exists but not in $first.zig")
             moved=$((moved + 1))
         else
             ok=$((ok + 1))
@@ -124,8 +124,8 @@ for doc in "${docs[@]}"; do
     )
 done
 
-echo "Doc-symbol staleness check — ${#docs[@]} docs, $((stale + moved + ok)) symbol paths"
-[[ $generated_present -eq 1 ]] || echo "  note: generated .zig files absent (build first) — std/generated refs may false-flag"
+echo "Doc-symbol staleness check - ${#docs[@]} docs, $((stale + moved + ok)) symbol paths"
+[[ $generated_present -eq 1 ]] || echo "  note: generated .zig files absent (build first) - std/generated refs may false-flag"
 echo
 if (( ${#stale_paths[@]} )); then
     echo "STALE (symbol does not exist anywhere in src/): $stale"
@@ -138,7 +138,7 @@ if (( ${#moved_paths[@]} )); then
     echo
 fi
 if (( stale == 0 && moved == 0 )); then
-    echo "CLEAN — every doc-named symbol path resolves against the source tree."
+    echo "CLEAN - every doc-named symbol path resolves against the source tree."
 fi
 
 if [[ "${1:-}" == "--strict" ]] && (( stale + moved > 0 )); then

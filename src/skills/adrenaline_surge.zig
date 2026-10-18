@@ -13,10 +13,10 @@ const Skill = skill_mod.Skill;
 const WeaponTypeDefinitions = types.WeaponTypeDefinitions;
 
 /// Adrenaline Surge: a spell. Resets the target's on-bar cooldowns (all
-/// skills of both its equipped weapons — swap-available thirds included —
+/// skills of both its equipped weapons - swap-available thirds included -
 /// plus its equipped utility skills) and attacks it once per cooldown reset
 /// this way. A well-timed finisher: the more the enemy has on cooldown, the
-/// harder it is hit — at the cost of re-arming it if it survives.
+/// harder it is hit - at the cost of re-arming it if it survives.
 pub const skill = Skill{
     .name = "Adrenaline Surge",
     .skill_type = .spell,
@@ -45,7 +45,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// The number of the entity's on-bar skills currently on cooldown —
+/// The number of the entity's on-bar skills currently on cooldown -
 /// Adrenaline Surge's reset (and attack) count. Shared enumeration with
 /// the handler (Entity.onBarSkillIds) so rating and effect cannot drift.
 fn tickingOnBarCooldownCount(
@@ -61,7 +61,7 @@ fn tickingOnBarCooldownCount(
 }
 
 /// AI options: the target with the MOST on-bar cooldowns ticking (ties by
-/// the focus-fire tail), rated = the reset count in value units — one
+/// the focus-fire tail), rated = the reset count in value units - one
 /// plain hit per reset. No option when nothing ticks (the cast would do
 /// nothing). The re-arm cost if the target survives is a balance matter,
 /// not a rating one.
@@ -115,7 +115,7 @@ fn playerPrepareSkill(
     return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
-/// Use: delegate to the adrenaline_surge machinery event — the reset
+/// Use: delegate to the adrenaline_surge machinery event - the reset
 /// enumeration (and therefore the attack count) needs the session's
 /// weapon-type definitions, which useSkill cannot reach (the
 /// reset_weapon_cooldowns precedent). The handler resets first, then

@@ -1,6 +1,6 @@
 //! AI range + threat math, shared by the enemy AI (handlers/level.zig) and
 //! the defensive skills' priority fns (Absorb, Reflect). Lives in its own
-//! file — not skill_helpers.zig — because it needs generated_lookups, which
+//! file - not skill_helpers.zig - because it needs generated_lookups, which
 //! imports every skill file; this file imports none, so there is no import
 //! cycle. See DESIGN → Architecture (AI threat model).
 
@@ -25,12 +25,12 @@ fn effectiveSkillReach(entity: Entity, skill_id: SkillId) ?u32 {
     return null;
 }
 
-/// The MINIMUM effective reach across the entity's off-cooldown skills —
+/// The MINIMUM effective reach across the entity's off-cooldown skills -
 /// the "close enough to act at all" threshold for enemy approach (an enemy
 /// stops moving once within min range of its target). Counts every usable
 /// skill, not just damaging ones: a control-only enemy should stop and
 /// cast from its range, not walk adjacent first. Min answers
-/// "when can I act"; computeMaxDamageRange answers "how far can I hurt" —
+/// "when can I act"; computeMaxDamageRange answers "how far can I hurt" -
 /// different questions, different filters. Null when nothing is usable.
 pub fn computeMinRange(
     entity: Entity,
@@ -57,7 +57,7 @@ pub fn computeMinRange(
 }
 
 /// The MAXIMUM effective reach across the entity's off-cooldown DAMAGING
-/// skills — how far away it can hurt something after closing. Non-damaging
+/// skills - how far away it can hurt something after closing. Non-damaging
 /// skills (movement, control, buffs) don't threaten. Null when no damaging
 /// skill is ready (such an entity cannot deal damage next turn).
 /// pub for the skill-tests' rating assertions (the only cross-file caller).
@@ -86,7 +86,7 @@ pub fn computeMaxDamageRange(
 /// Whether any hostile could reach and attack `caster_index` on its next
 /// turn: alive, active (unaggroed enemies don't act), unstunned (a stunned
 /// entity skips its next turn), and within `effective speed + max damaging
-/// reach` by Chebyshev. Obstacle-blind — a wall between can overestimate,
+/// reach` by Chebyshev. Obstacle-blind - a wall between can overestimate,
 /// which is the safe direction for a defensive cooldown; a pathfinding
 /// refinement is a later polish pass. Used by the defensive skills' AI
 /// priority (Absorb, Reflect). See DESIGN → Architecture (AI threat model).

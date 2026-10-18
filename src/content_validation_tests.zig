@@ -23,7 +23,7 @@ const FileSource = file_source_mod.FileSource;
 /// Classify a config file path and run its loader + key validation. Returns
 /// an error if the parse or load fails; appends key-validation warnings to
 /// `warnings` (and the caller asserts none). The classification is by path
-/// pattern — the one piece of wiring that maps paths to loaders + key maps.
+/// pattern - the one piece of wiring that maps paths to loaders + key maps.
 fn validateConfigFile(
     path: []const u8,
     bytes: []const u8,
@@ -69,7 +69,7 @@ fn validateConfigFile(
         parser.validateKeys(sections, parser.level_key_map, path, allocator, warnings);
     } else {
         // Not a recognized config file pattern (e.g. a .txt that isn't a
-        // config file). Skip — the test only validates known config types.
+        // config file). Skip - the test only validates known config types.
     }
 }
 
@@ -79,11 +79,11 @@ test "shipped content: every config .txt parses, loads, and has no unknown keys"
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    // The embedded FileSource (cwd-backed) — reads hit the embedded map for
+    // The embedded FileSource (cwd-backed) - reads hit the embedded map for
     // data/ paths since the cwd's persistent dir has no overrides in tests.
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    // One arena for the whole test — every parse/load allocates into it.
+    // One arena for the whole test - every parse/load allocates into it.
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -92,7 +92,7 @@ test "shipped content: every config .txt parses, loads, and has no unknown keys"
 
     // Iterate every file in the embedded-asset map. Validate the .txt config
     // files; skip non-config files (.png, etc.). 16 config files as of now.
-    // StaticStringMap has no iterator() — iterate the underlying keys array.
+    // StaticStringMap has no iterator() - iterate the underlying keys array.
     const keys = embedded_assets.map.kvs.keys;
     const values = embedded_assets.map.kvs.values;
     const map_len = embedded_assets.map.kvs.len;

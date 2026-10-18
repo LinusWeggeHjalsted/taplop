@@ -40,7 +40,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the NEAREST hostile (not focus-fire — swapping with the
+/// AI options: the NEAREST hostile (not focus-fire - swapping with the
 /// nearest enemy is the sensible tactical read; helpers.nearestTarget) at
 /// rating 1.
 fn aiOptions(

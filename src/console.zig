@@ -1,10 +1,10 @@
-//! Console input — stdin as a scripted input channel (TAS-shaped). The
+//! Console input - stdin as a scripted input channel (TAS-shaped). The
 //! command vocabulary + parser, the reader-thread-facing queue, the
 //! per-frame drain + PlatformInput merge, the action fold, and the dump
 //! routing (path dumps → dump_walker.zig, pure reflection; the curated
-//! ui/level projections stay here — derived facts that exist as no
+//! ui/level projections stay here - derived facts that exist as no
 //! stored state). Everything here is raylib-free; the reader thread + stdout
-//! output writer are wired only by the native driver (native.zig) — with no
+//! output writer are wired only by the native driver (native.zig) - with no
 //! reader the queue stays empty and the per-frame drain is a no-op (web, or
 //! a native launch without stdin, which is immediate EOF). Injected events
 //! ride the IDENTICAL pipeline as hardware input (translateInput, held-state
@@ -25,7 +25,7 @@ const PlatformInput = input.PlatformInput;
 const PlatformInputEvent = input.PlatformInputEvent;
 
 // ============================================================
-// Bounded text — fixed-buffer strings, no allocation
+// Bounded text - fixed-buffer strings, no allocation
 // ============================================================
 
 /// A fixed-capacity owned string, copied by value. Commands, error messages,
@@ -55,7 +55,7 @@ fn BoundedText(comptime capacity: usize) type {
     };
 }
 
-/// Every input id the console accepts (the binding vocabulary — see
+/// Every input id the console accepts (the binding vocabulary - see
 /// `types.producible_key_ids` / `producible_mouse_ids`).
 const max_id_len = 32;
 /// Longest `dump <path>` field path (see dump_walker.zig).
@@ -89,12 +89,12 @@ pub const ConsoleCommand = union(enum) {
     scroll: f32,
     /// Type text into the char queue (the text-input widget's machinery).
     type_text: TypeText,
-    /// Fire a semantic action — folded via `applyAction`, the same seam
+    /// Fire a semantic action - folded via `applyAction`, the same seam
     /// button clicks use (context-free; the consumption sites gate
     /// themselves). Payload-less actions only (the keybind vocabulary).
     action: types.Action,
     /// Hold commands until the game is idle (stack empty, no wait, no
-    /// modal error — the same condition under which the game accepts
+    /// modal error - the same condition under which the game accepts
     /// player input). The pacing primitive for scripted turn flow: enemy
     /// turns drain over real-clock waits, and a frame count is a guess;
     /// `wait idle` releases the next command on the first frame the game
@@ -105,16 +105,16 @@ pub const ConsoleCommand = union(enum) {
     /// Write a field path's reflection to stdout (see dump_walker.zig).
     /// An empty path renders the root table of contents.
     dump: PathText,
-    /// Write a CURATED report to stdout — derived facts that exist as no
+    /// Write a CURATED report to stdout - derived facts that exist as no
     /// stored state (click centers, legal-target highlights), hand-
     /// maintained by design (the state mirrors went to `dump <path>`).
     report: ReportKind,
-    /// Print the command list — the verb table, the console's single
+    /// Print the command list - the verb table, the console's single
     /// declaration of its own vocabulary (see `verb_table`). The
     /// discoverability entry point: everything printed is a
     /// tested-working line (the both-ways test parses every example).
     help: void,
-    /// Print the full input-id vocabulary — the producible-id tables the
+    /// Print the full input-id vocabulary - the producible-id tables the
     /// parser validates `press`/`release` against (and the same ids the
     /// settings bindings name). Machine-walked: the print cannot lie, and
     /// new ids appear automatically.
@@ -132,14 +132,14 @@ pub const ConsoleCommand = union(enum) {
 
 /// The result of parsing one stdin line.
 pub const ParseOutcome = union(enum) {
-    /// Empty line or `#` comment — nothing to enqueue.
+    /// Empty line or `#` comment - nothing to enqueue.
     skip: void,
     command: ConsoleCommand,
     /// The line's shape is wrong; the message names the problem (printed by
     /// the reader thread).
     err: MessageText,
 
-    /// The err arm's message text (valid only when the outcome is `.err` —
+    /// The err arm's message text (valid only when the outcome is `.err` -
     /// the reader thread's stderr report). Pointer self: the returned slice
     /// must point into the CALLER's outcome, not a by-value copy's dead
     /// frame.
@@ -149,22 +149,22 @@ pub const ParseOutcome = union(enum) {
 };
 
 // ============================================================
-// Parser — one verb table owns the vocabulary
+// Parser - one verb table owns the vocabulary
 // ============================================================
 
-/// One console verb — the single declaration of the console's command
+/// One console verb - the single declaration of the console's command
 /// vocabulary. The parser dispatches on `name`; `help` prints the entry
 /// (columns aligned at comptime from the table's own widths); the both-ways
 /// test parses every `example`, so everything `help` shows is a
 /// tested-working command line, and a new `ConsoleCommand` variant is a test
 /// failure until an example covers it. There is no second list to drift
-/// against — the parser's accepted verbs ARE this table's names.
+/// against - the parser's accepted verbs ARE this table's names.
 const VerbEntry = struct {
     name: []const u8,
     /// The argument shape, printed by `help` ("" = argument-less).
     args: []const u8,
     description: []const u8,
-    /// Real, parsing command lines — test fixtures + the printed examples.
+    /// Real, parsing command lines - test fixtures + the printed examples.
     /// The both-ways test walks them all (see the struct doc).
     examples: []const []const u8,
     /// Parse the verb's arguments into a command (or an error outcome).
@@ -262,9 +262,9 @@ const verb_table = [_]VerbEntry{
 
 /// Parse one console command line (no trailing newline). The line is
 /// space-separated: a verb, then its arguments; `type`'s argument is the rest
-/// of the line verbatim. Dispatch is the verb table above — one declaration
+/// of the line verbatim. Dispatch is the verb table above - one declaration
 /// owns the vocabulary (see `VerbEntry`). Verbs, ids, action names, and dump
-/// kinds are all exact-match (case-sensitive) — they name enum values the
+/// kinds are all exact-match (case-sensitive) - they name enum values the
 /// engine consumes.
 pub fn parseCommandLine(line: []const u8) ParseOutcome {
     const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -272,14 +272,14 @@ pub fn parseCommandLine(line: []const u8) ParseOutcome {
     if (trimmed.len == 0 or trimmed[0] == '#') return .skip;
 
     const verb, const rest = splitFirstWord(trimmed);
-    // Verbs other than `type` take single-token arguments — trim fully.
+    // Verbs other than `type` take single-token arguments - trim fully.
     // `type`'s payload is the rest of the line (its parse fn reads `rest`).
     const argument = std.mem.trim(u8, rest, " \t");
 
     inline for (verb_table) |entry| {
         if (std.mem.eql(u8, verb, entry.name)) return entry.parse(rest, argument);
     }
-    return formattedMessage("unknown console command '{s}' — type 'help' for the command list", .{verb});
+    return formattedMessage("unknown console command '{s}' - type 'help' for the command list", .{verb});
 }
 
 fn parseQuit(_: []const u8, argument: []const u8) ParseOutcome {
@@ -371,7 +371,7 @@ fn parseWait(_: []const u8, argument: []const u8) ParseOutcome {
 
 fn parseDump(_: []const u8, argument: []const u8) ParseOutcome {
     // `dump` is PURELY the path mirror (the curated projections are
-    // the `report` verb — two verbs, two semantics, no namespace
+    // the `report` verb - two verbs, two semantics, no namespace
     // overlap). Bare `dump`: the root table of contents (empty
     // path). A path naming a nonexistent field errors at dump time,
     // truthfully, against the live state.
@@ -392,7 +392,7 @@ fn parseReport(_: []const u8, argument: []const u8) ParseOutcome {
 }
 
 /// Split `text` at its first whitespace run: the word before, the remainder
-/// after (untrimmed — callers trim).
+/// after (untrimmed - callers trim).
 fn splitFirstWord(text: []const u8) struct { []const u8, []const u8 } {
     if (std.mem.indexOfAny(u8, text, " \t")) |separator_index| {
         return .{ text[0..separator_index], text[separator_index + 1 ..] };
@@ -401,7 +401,7 @@ fn splitFirstWord(text: []const u8) struct { []const u8, []const u8 } {
 }
 
 /// Classify an input id as a key or mouse id by the binding vocabulary (the
-/// producible-id lists; a gamepad id is unproducible — no gamepad table).
+/// producible-id lists; a gamepad id is unproducible - no gamepad table).
 fn classifyInputId(id: []const u8) ?ConsoleCommand.CommandInputId {
     for (types.producible_key_ids) |producible_id| {
         if (std.mem.eql(u8, id, producible_id)) return .{ .key = storedText(IdText, id) };
@@ -438,11 +438,11 @@ fn formattedMessage(comptime fmt: []const u8, args: anytype) ParseOutcome {
 
 /// The command queue shared between the reader thread (push) and the game's
 /// frame drain (take, one per frame). A single-producer single-consumer ring
-/// with atomic monotonic counters — no mutex (Zig 0.16's std locks need an Io
+/// with atomic monotonic counters - no mutex (Zig 0.16's std locks need an Io
 /// handle on BOTH threads, and the game thread has none to give inside
 /// frame()). A full queue BLOCKS the reader (yield-spin backpressure), so a
 /// piped script faster than the frame drain can never drop or reorder
-/// commands — the reader paces the game until the backlog drains.
+/// commands - the reader paces the game until the backlog drains.
 pub const ConsoleQueue = struct {
     commands: [queue_capacity]ConsoleCommand = undefined,
     /// Total commands ever pushed (reader thread). Monotonic; slot index is
@@ -461,20 +461,20 @@ pub const ConsoleQueue = struct {
     /// Set by a popped `wait idle` (game thread only): hold commands until
     /// the game is idle, then release the next command on that same frame.
     wait_until_idle: bool = false,
-    /// The console's remembered pointer position — set by `move`, persists
+    /// The console's remembered pointer position - set by `move`, persists
     /// across frames like held keys (the console's pointer is where the
     /// console left it). The native backend re-reports the hardware pointer
     /// position EVERY frame (unconditionally), which would otherwise
-    /// overwrite a scripted position before the next command lands — so
+    /// overwrite a scripted position before the next command lands - so
     /// every INPUT-command frame re-applies this position ahead of the
     /// command's own events (last writer wins within the frame; see
     /// `applyFrameCommand`). Frames between commands stay on the hardware
-    /// position — a human at the window never loses the pointer. Game
+    /// position - a human at the window never loses the pointer. Game
     /// thread only (set + read in applyFrameCommand).
     pointer_position: ?input.PointerPosition = null,
-    /// The last command TAKEN by the frame drain (any kind — input, dump,
+    /// The last command TAKEN by the frame drain (any kind - input, dump,
     /// quit, waits included), recorded for `dump console_queue.last_taken_command`
-    /// (which command consumed a given frame — TAS pacing visibility).
+    /// (which command consumed a given frame - TAS pacing visibility).
     /// A by-value copy taken at pop, before the reader thread can reuse
     /// the slot. Game thread only.
     last_taken_command: ?ConsoleCommand = null,
@@ -485,9 +485,9 @@ pub const ConsoleQueue = struct {
     /// interface copy would dangle).
     output: ?std.Io.File.Writer = null,
     output_buffer: [output_buffer_capacity]u8 = undefined,
-    /// A human is typing at the other end — set once by the native driver
+    /// A human is typing at the other end - set once by the native driver
     /// at wiring from `isTty(stdin)`. Gates ONLY the console-ready prompt
-    /// (see `promptDue`): the channel itself stays always-on by design — a
+    /// (see `promptDue`): the channel itself stays always-on by design - a
     /// piped script drives identically, just unprompted (a prompt over a
     /// pipe is a lie: it invites typing, but the reader is consuming the
     /// script), and an stdin-less launch (double-click, the mac bundle)
@@ -498,7 +498,7 @@ pub const ConsoleQueue = struct {
     const output_buffer_capacity = 4096;
 
     /// Enqueue one parsed command (reader thread). Blocks while the queue is
-    /// full — yield-spin backpressure (the exit condition is the drain, not
+    /// full - yield-spin backpressure (the exit condition is the drain, not
     /// the yield; a failed yield just re-checks).
     pub fn push(self: *ConsoleQueue, command: ConsoleCommand) void {
         const write = self.write_counter.load(.monotonic);
@@ -515,7 +515,7 @@ pub const ConsoleQueue = struct {
 
     /// Pop this frame's command (at most one per frame, game thread). A
     /// popped `wait n` arms n idle frames and yields null this frame; while
-    /// frames remain, each call decrements and yields null — so `wait n`
+    /// frames remain, each call decrements and yields null - so `wait n`
     /// spaces the surrounding commands n idle frames apart. A popped
     /// `wait idle` holds until `game_is_idle` (computed by the caller from
     /// the game state), then releases the next command on that same frame.
@@ -535,7 +535,7 @@ pub const ConsoleQueue = struct {
         if (read == self.write_counter.load(.acquire)) return null;
         const command = self.commands[read % queue_capacity];
         // The observability record: which command this frame took (a
-        // by-value copy — the slot is reader-thread memory, reusable once
+        // by-value copy - the slot is reader-thread memory, reusable once
         // the counter below publishes the pop).
         self.last_taken_command = command;
         // Release: the slot is consumed before the counter that frees it for
@@ -558,13 +558,13 @@ pub const ConsoleQueue = struct {
 // ============================================================
 
 /// Whether the console-ready prompt (`> `) is due after the frame drain
-/// took `taken` — the game thread's marker that the channel can take the
+/// took `taken` - the game thread's marker that the channel can take the
 /// next line. The GAME thread prints it (not the reader: stdout already
-/// has exactly one writer — the game thread, via the queue's output —
+/// has exactly one writer - the game thread, via the queue's output -
 /// and a reader-side prompt would race the next frame's dump output onto
-/// a stale prompt line). Conditions: a HUMAN is typing (`interactive` — a
+/// a stale prompt line). Conditions: a HUMAN is typing (`interactive` - a
 /// piped script is unprompted by design), the taken command wasn't `quit`
-/// (the process is exiting), and the queue has DRAINED — pasted
+/// (the process is exiting), and the queue has DRAINED - pasted
 /// multi-line input prompts once, after the last command, not once per
 /// line. Mid-hold frames print nothing by construction: `wait` /
 /// `wait idle` arm inside `takeFrameCommand` and never reach the caller's
@@ -578,7 +578,7 @@ fn promptDue(queue: *const ConsoleQueue, taken: ConsoleCommand) bool {
 }
 
 /// Print the console-ready prompt: `> `, no newline, best-effort (a
-/// failed write never surfaces — the console is a convenience channel,
+/// failed write never surfaces - the console is a convenience channel,
 /// not a game system). Called by `applyFrameCommand` via `promptDue` and
 /// by the boot announcement below.
 fn printPrompt(queue: *ConsoleQueue) void {
@@ -595,7 +595,7 @@ fn printPrompt(queue: *ConsoleQueue) void {
 pub fn announceConsoleInput(queue: *ConsoleQueue) void {
     if (!queue.interactive) return;
     if (queue.output) |*output| {
-        output.interface.writeAll("console input on stdin — type help for the command list\n") catch return;
+        output.interface.writeAll("console input on stdin - type help for the command list\n") catch return;
         output.interface.flush() catch return;
     }
     printPrompt(queue);
@@ -609,14 +609,14 @@ pub fn announceConsoleInput(queue: *ConsoleQueue) void {
 /// poll): drain one command and apply it. Input commands return the
 /// backend's PlatformInput with the command merged in (frame-arena-owned
 /// bytes); `quit` requests the session quit; `dump` writes its projection to
-/// the queue's output writer. With an empty queue (no reader — web, EOF, or
+/// the queue's output writer. With an empty queue (no reader - web, EOF, or
 /// between commands) the backend input returns unchanged.
 pub fn applyFrameCommand(
     queue: *ConsoleQueue,
     backend_input: PlatformInput,
     arena: std.mem.Allocator,
     history: *GameStateHistory,
-    /// The driver's root object (the FrameState) — the dump-path root,
+    /// The driver's root object (the FrameState) - the dump-path root,
     /// passed as anytype so console.zig never imports session_setup (the
     /// walker is generic over it; a test passes any struct with the
     /// fields its paths address). Read-only: the walker const-asserts it.
@@ -625,7 +625,7 @@ pub fn applyFrameCommand(
     camera: types.Camera,
     camera_zoom: f32,
 ) PlatformInput {
-    // The game is idle — the condition under which it accepts player input
+    // The game is idle - the condition under which it accepts player input
     // (empty stack, no wait, no modal error): the release condition for
     // `wait idle`.
     const game_is_idle = history.current_state.event_stack.len == 0 and
@@ -654,7 +654,7 @@ pub fn applyFrameCommand(
             break :blk backend_input;
         },
         // Popped waits never leave takeFrameCommand (they arm their own
-        // idle frames / idle hold there) — this arm only keeps the switch
+        // idle frames / idle hold there) - this arm only keeps the switch
         // exhaustive.
         .wait, .wait_idle => backend_input,
         // `move` both remembers the position and applies it this frame.
@@ -664,7 +664,7 @@ pub fn applyFrameCommand(
         },
         // Press/release/scroll/type/action: re-apply the remembered pointer
         // position ahead of the command's own events (a mouse_move event
-        // after the backend's per-frame hardware position — last writer
+        // after the backend's per-frame hardware position - last writer
         // wins), so the command acts where the console moved the pointer,
         // frames later. Without a remembered position (no `move` yet), the
         // command acts at the hardware position.
@@ -685,7 +685,7 @@ pub fn applyFrameCommand(
 
 /// Merge one input command into the frame's PlatformInput. Key/mouse ids
 /// resolve to their canonical static slices (`internedInputId`); typed text
-/// is duped into the frame arena (same-frame consumption — the text-input
+/// is duped into the frame arena (same-frame consumption - the text-input
 /// router copies it into the field buffer before the frame ends, so the
 /// arena lifetime is sufficient).
 fn mergeIntoPlatformInput(
@@ -721,7 +721,7 @@ fn mergeIntoPlatformInput(
             actions[0] = action;
             merged.actions = actions;
         },
-        // Not input commands — applyFrameCommand handles them (the waits
+        // Not input commands - applyFrameCommand handles them (the waits
         // never reach here either).
         .wait, .wait_idle, .dump, .report, .help, .inputs, .quit => {},
     }
@@ -731,7 +731,7 @@ fn mergeIntoPlatformInput(
 const EventDirection = enum { down, up };
 
 /// Build the raw event for a press/release. Takes a POINTER into the
-/// caller's command (the id's bounded bytes are read here, then discarded —
+/// caller's command (the id's bounded bytes are read here, then discarded -
 /// the event carries the INTERNED static slice, not a view into the
 /// command). The payload slice must be static-lifetime: `InputState`
 /// retains it past the frame (a held key stays in `keys_held` until its
@@ -752,12 +752,12 @@ fn inputEventFor(
     };
 }
 
-/// Resolve a console input id to its canonical STATIC-lifetime slice — the
+/// Resolve a console input id to its canonical STATIC-lifetime slice - the
 /// same string literal `types.producible_key_ids` / `producible_mouse_ids`
 /// (and the backend's key mappings) use. Console-merged events must carry
 /// static ids, not frame-arena bytes: `InputState.keys_held` and
 /// `key_repeat_state` retain the id slice PAST the frame (a held key), and
-/// the frame arena resets every frame — an arena-duped id dangles there and
+/// the frame arena resets every frame - an arena-duped id dangles there and
 /// the next held-state comparison reads dead memory (observed live as a
 /// segfault in `isHeld`). The parser already validated the id against these
 /// same tables (`classifyInputId`), so the lookup cannot miss; the panic
@@ -773,7 +773,7 @@ fn internedInputId(id: []const u8) []const u8 {
 }
 
 /// Append one event to the frame's event list. The ARRAY is frame-arena-
-/// owned (same-frame consumption — `translateInput` drains it before the
+/// owned (same-frame consumption - `translateInput` drains it before the
 /// frame ends); the event's string payload is an interned static slice
 /// (`internedInputId`), so nothing in the array aliases frame-lifetime
 /// bytes.
@@ -790,7 +790,7 @@ fn appendEvent(
 }
 
 /// Fold platform-injected actions (the console `action` command, merged into
-/// `PlatformInput.actions`) into the frame's PlayerInput — the same seam
+/// `PlatformInput.actions`) into the frame's PlayerInput - the same seam
 /// button clicks use, so console actions share the button path's semantics
 /// (context-free; the consumption sites gate themselves). Called from
 /// `frame()` right after `translateInput`.
@@ -809,7 +809,7 @@ pub fn foldInjectedActions(
 
 /// Write one `dump <path>` reflection to the console output (stdout,
 /// wired by the native driver): streamed through the walker, then
-/// flushed. Best-effort — a failed write reports on stderr and never
+/// flushed. Best-effort - a failed write reports on stderr and never
 /// surfaces as a crash (the diagnostics-write convention).
 fn writeDump(
     path: []const u8,
@@ -825,7 +825,7 @@ fn writeDump(
 }
 
 /// Write one `report <kind>` curated projection to the console output
-/// (arena-built text, then flushed — same best-effort convention).
+/// (arena-built text, then flushed - same best-effort convention).
 fn writeReport(
     kind: ConsoleCommand.ReportKind,
     queue: *ConsoleQueue,
@@ -839,8 +839,8 @@ fn writeReport(
     }
 }
 
-/// The help table's column width — the widest `name args` usage pair, at
-/// comptime — added verbs realign the printed list automatically.
+/// The help table's column width - the widest `name args` usage pair, at
+/// comptime - added verbs realign the printed list automatically.
 const help_column_width = blk: {
     var width: usize = 0;
     for (verb_table) |entry| {
@@ -851,7 +851,7 @@ const help_column_width = blk: {
     break :blk width;
 };
 
-/// Write the command list (`help`) to the console output — one line per
+/// Write the command list (`help`) to the console output - one line per
 /// verb-table entry: the usage (name + argument shape) padded to the
 /// table's own comptime column width, the description, then the entry's
 /// examples (the both-ways test parses them, so everything printed here
@@ -863,7 +863,7 @@ fn writeHelp(queue: *ConsoleQueue) void {
     }
 }
 
-/// The writer-level help step (writeHelp minus the queue plumbing) —
+/// The writer-level help step (writeHelp minus the queue plumbing) -
 /// separate so tests drive it with a fixed writer over memory.
 fn writeHelpToWriter(output: *std.Io.Writer) void {
     output.writeAll("console commands:\n") catch return;
@@ -888,7 +888,7 @@ fn writeHelpToWriter(output: *std.Io.Writer) void {
     }
 }
 
-/// Write the full input-id vocabulary (`inputs`) to the console output —
+/// Write the full input-id vocabulary (`inputs`) to the console output -
 /// straight from the producible-id tables the parser validates against
 /// (the same ids the settings bindings name). Machine-walked: the print
 /// cannot lie, and new ids appear automatically.
@@ -902,9 +902,9 @@ fn writeInputs(queue: *ConsoleQueue) void {
 /// The wrap column for the `inputs` id lists.
 const input_id_list_wrap_column = 80;
 
-/// The writer-level inputs step (writeInputs minus the queue plumbing) —
+/// The writer-level inputs step (writeInputs minus the queue plumbing) -
 /// separate so tests drive it with a fixed writer over memory. Ids print
-/// in table order wrapped at the wrap column — the tables' existing
+/// in table order wrapped at the wrap column - the tables' existing
 /// category ordering (modifiers → letters → digits → punctuation →
 /// navigation → F-keys → numpad → media) reads as grouping without any
 /// hand-maintained grouping.
@@ -933,7 +933,7 @@ fn writeIdList(output: *std.Io.Writer, ids: []const []const u8) void {
     output.writeAll("\n") catch return;
 }
 
-/// The writer-level report step (writeReport minus the queue plumbing) —
+/// The writer-level report step (writeReport minus the queue plumbing) -
 /// separate so tests drive it with a fixed writer over memory.
 fn writeReportToWriter(
     kind: ConsoleCommand.ReportKind,
@@ -961,7 +961,7 @@ fn writeReportToWriter(
 }
 
 /// Build a CURATED report projection as text (the `report ui`/`report
-/// level` kinds — derived facts, hand-maintained by design; the state
+/// level` kinds - derived facts, hand-maintained by design; the state
 /// mirrors went to the walker, `dump <path>`).
 fn reportText(
     kind: ConsoleCommand.ReportKind,
@@ -979,10 +979,10 @@ fn reportText(
 
 /// The active world (level or hub) for gameplay decisions: turn phase,
 /// entities (team / health / aggro / tile + click center), the phase's
-/// legal-target highlights (the game's own computed move/skill targeting —
+/// legal-target highlights (the game's own computed move/skill targeting -
 /// a script never reasons about legality, it clicks a highlight), the
 /// player's utility skill slots + cooldowns, and the level-end flag /
-/// mission exits (click centers — the world clickables a script drives).
+/// mission exits (click centers - the world clickables a script drives).
 /// Click centers project through the frame's LIVE camera
 /// (`view.tileClickCenter`), so the coordinates resolve back to their
 /// tiles via `screenToTile` at whatever zoom/pan is current.
@@ -1090,7 +1090,7 @@ fn dumpLevelText(
     return buffer.items;
 }
 
-/// One tile line: `<kind> (x, y) center cx cy` — the center is a click
+/// One tile line: `<kind> (x, y) center cx cy` - the center is a click
 /// point that resolves back to the tile.
 fn appendTileLine(
     buffer: *std.ArrayList(u8),
@@ -1204,7 +1204,7 @@ fn appendInventoryLines(
 }
 
 /// The player's full skill bar (entity 0 in a level): slots 1-2 = main-hand
-/// weapon skills, 3 = off-hand, 4-8 = utility — the same numbering the
+/// weapon skills, 3 = off-hand, 4-8 = utility - the same numbering the
 /// Digit1-8 bindings and the bottom bar use. Id + cooldown (ready when 0).
 fn appendSkillLines(
     buffer: *std.ArrayList(u8),
@@ -1246,7 +1246,7 @@ fn dumpUiText(
     const session = &history.session;
     const ui_state = &session.ui_state;
     // Class-1 surface state lives on GameState (see DESIGN → UI Framework
-    // → UI state classification); the classes-2–4 view state below stays on
+    // → UI state classification); the classes-2-4 view state below stays on
     // SessionState.
     const ui_surfaces = &history.current_state.ui_surfaces;
     buffer.print(allocator, "options_menu_open: {}\n", .{ui_surfaces.options_menu_open}) catch
@@ -1277,11 +1277,11 @@ fn dumpUiText(
     ) catch @panic("failed to format ui dump");
 
     // The last-rendered interactive surfaces (the same element list the
-    // press/release dispatch hit-tests against — `previous_view_state`),
+    // press/release dispatch hit-tests against - `previous_view_state`),
     // each with its rect and its CENTER, a valid click point. Reference
     // space, so a coordinate from here clicks the same surface at any
     // window size / render resolution. Buttons carry their action name (the
-    // semantic identity — the same enum `action <name>` accepts); sliders
+    // semantic identity - the same enum `action <name>` accepts); sliders
     // their setting + value; text fields their current text; ref-bearing
     // slots their drag identity.
     buffer.appendSlice(
@@ -1345,7 +1345,7 @@ fn dumpUiText(
             },
             // Only ref-bearing slots are interactive (drag sources/drop
             // targets); a bare slot is a decorative cell. The identity
-            // carries the payload (gear/boots, inventory/0) — the tag alone
+            // carries the payload (gear/boots, inventory/0) - the tag alone
             // can't distinguish slots of the same kind.
             .slot => |slot| if (slot.ref) |slot_ref| {
                 const identity: []const u8 = switch (slot_ref) {
@@ -1399,7 +1399,7 @@ fn dumpUiText(
 // ============================================================
 
 /// A root for tests that never path-dump (the walker only walks it when a
-/// `.path` command executes — these tests exercise other commands).
+/// `.path` command executes - these tests exercise other commands).
 const no_dump_root: struct {} = .{};
 
 const std_testing = std.testing;
@@ -1441,7 +1441,7 @@ test "verb table: every example parses; every command variant is covered" {
     // Both ways, so the table can never drift from the vocabulary it owns:
     // (a) every example is a real, working command line (the printed help
     // shows only tested-working lines), and (b) every ConsoleCommand
-    // variant is produced by at least one example — a new variant is a
+    // variant is produced by at least one example - a new variant is a
     // test failure until the help table covers it.
     const CommandTag = std.meta.Tag(ConsoleCommand);
     var covered: [@typeInfo(CommandTag).@"enum".fields.len]bool =
@@ -1575,7 +1575,7 @@ test "queue: wait n spaces surrounding commands n idle frames apart" {
     // Frames 3 + 4: the armed idle frames.
     try std_testing.expect(queue.takeFrameCommand(true) == null);
     try std_testing.expect(queue.takeFrameCommand(true) == null);
-    // Frame 5: the command after the wait — 3 frames after the wait itself.
+    // Frame 5: the command after the wait - 3 frames after the wait itself.
     const after = queue.takeFrameCommand(true).?;
     try std_testing.expect(after == .press);
     try std_testing.expectEqualStrings("KeyB", after.press.key.view());
@@ -1603,7 +1603,7 @@ test "promptDue: the console-ready conditions" {
     var queue: ConsoleQueue = .{};
     queue.interactive = true;
 
-    // `quit` never prompts — the process is exiting.
+    // `quit` never prompts - the process is exiting.
     try std_testing.expect(!promptDue(&queue, .quit));
 
     // A non-interactive channel (piped script, stdin-less launch) never
@@ -1619,7 +1619,7 @@ test "promptDue: the console-ready conditions" {
     try std_testing.expect(promptDue(&queue, .{ .scroll = 1 }));
 
     // An undrained queue (pasted multi-line input, mid-script backlog)
-    // stays silent — one prompt after the LAST command, not per line.
+    // stays silent - one prompt after the LAST command, not per line.
     queue.push(.{ .scroll = 1 });
     queue.push(.{ .scroll = 2 });
     try std_testing.expect(queue.takeFrameCommand(true) != null);
@@ -1628,7 +1628,7 @@ test "promptDue: the console-ready conditions" {
     try std_testing.expect(queue.takeFrameCommand(true) != null);
     try std_testing.expect(promptDue(&queue, .{ .scroll = 2 }));
 
-    // Mid-hold frames prompt nothing BY CONSTRUCTION — `wait` / `wait idle`
+    // Mid-hold frames prompt nothing BY CONSTRUCTION - `wait` / `wait idle`
     // arm inside takeFrameCommand and yield null, so no taken command ever
     // reaches the prompt check while a hold is armed (the wait-idle test
     // above pins that null). Nothing further to assert here.
@@ -1683,7 +1683,7 @@ test "mergeIntoPlatformInput: input commands append to the backend's frame" {
     }
 
     // type appends to the backend's text characters (verbatim after the
-    // verb's one separator — a doubled space types a leading space).
+    // verb's one separator - a doubled space types a leading space).
     {
         const merged = mergeIntoPlatformInput(parseCommandLine("type  there").command, backend_input, arena);
         try std_testing.expectEqualStrings("hi there", merged.text_characters);
@@ -1732,7 +1732,7 @@ test "applyFrameCommand: quit requests the session quit; empty queue passes thro
     var queue: ConsoleQueue = .{};
     const backend_input = PlatformInput{ .events = &.{}, .viewport = .{ .width = 1280, .height = 1080 } };
 
-    // Empty queue: the backend input returns unchanged (value-equal —
+    // Empty queue: the backend input returns unchanged (value-equal -
     // empty-slice pointers are not comparable).
     const passed_through = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_dump_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expectEqualDeep(backend_input, passed_through);
@@ -1810,7 +1810,7 @@ test "reportText ui: interactive surfaces list rects + ready-to-use click center
 
     const text = reportText(.ui, &history, &elements, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
 
-    // Each surface's line: rect + center (a valid click point — the exact
+    // Each surface's line: rect + center (a valid click point - the exact
     // coordinate a `move` + `press left`/`release left` pair acts at) + the
     // semantic identity (action / setting / text / ref).
     try std_testing.expect(std.mem.indexOf(
@@ -1901,7 +1901,7 @@ test "reportText level: the active world with clickable highlights + entities" {
 
     try std_testing.expect(std.mem.indexOf(u8, text, "entity 0 \"Hero\" team 0 tile (1, 1) health 20/20 aggro no center") != null);
     try std_testing.expect(std.mem.indexOf(u8, text, "entity 1 \"Wolf\" team 1 tile (3, 1) health 8/12 aggro yes center") != null);
-    // The skill bar: slots 1-3 = weapon skills (none here — no weapons),
+    // The skill bar: slots 1-3 = weapon skills (none here - no weapons),
     // 4-8 = utility (bash sits in the first utility slot → bar slot 4).
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 1: none\n") != null);
     try std_testing.expect(std.mem.indexOf(u8, text, "skill 4: bash cooldown 2\n") != null);
@@ -1922,8 +1922,8 @@ test "reportText level: the active world with clickable highlights + entities" {
     try std_testing.expect(std.mem.indexOf(u8, text, "inventory 0: skill tome bash (value 3)\n") != null);
 
     // The click-center contract: a dumped center resolves back to its tile
-    // through screenToTile — the exact resolution a console `move` + press
-    // goes through — so a coordinate straight off the dump line lands on
+    // through screenToTile - the exact resolution a console `move` + press
+    // goes through - so a coordinate straight off the dump line lands on
     // the intended tile.
     const wolf_center = view.tileClickCenter(.{ .x = 3, .y = 1 }, camera, zoom);
     const resolved_tile = input.screenToTile(
@@ -1975,7 +1975,7 @@ test "writeReportToWriter: writes the report to the output writer (parent-pointe
     test_harness.runToIdle(&history);
 
     // The Allocating writer passed by its real parent pointer (the vtable
-    // resolves the parent via fieldParentPtr — the same shape the native
+    // resolves the parent via fieldParentPtr - the same shape the native
     // wiring's File.Writer parent has).
     var allocating: std.Io.Writer.Allocating = .init(std_testing.allocator);
     defer allocating.deinit();
@@ -2009,7 +2009,7 @@ test "writeDump: path dumps route to the walker against the root" {
 
     var buffer: [2048]u8 = undefined;
 
-    // The parser produces path commands for ANY single-token argument —
+    // The parser produces path commands for ANY single-token argument -
     // including the pre-split spellings (`dump ui`), which now resolve as
     // paths and error truthfully (the redirect teaches `report ui`).
     {
@@ -2059,7 +2059,7 @@ test "takeFrameCommand records the taken command (any kind, waits included)" {
     try std_testing.expect(queue.last_taken_command != null);
     try std_testing.expect(queue.last_taken_command.? == .press);
 
-    // A wait arms its frames and returns nothing THIS frame — but it was
+    // A wait arms its frames and returns nothing THIS frame - but it was
     // TAKEN (popped), so it records (which command consumed the frame is
     // the point of the field).
     queue.push(parseCommandLine("wait 5").command);
@@ -2067,7 +2067,7 @@ test "takeFrameCommand records the taken command (any kind, waits included)" {
     try std_testing.expect(queue.last_taken_command != null);
     try std_testing.expect(queue.last_taken_command.? == .wait);
 
-    // An empty drain (wait frames remaining) keeps the last record — the
+    // An empty drain (wait frames remaining) keeps the last record - the
     // last TAKEN command is still the truthful answer.
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(queue.last_taken_command != null);

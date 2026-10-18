@@ -12,7 +12,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Head Shot: the crossbow's third (off-hand) skill. Attacks a single target
-/// within range and stuns it — Cleave's shape at range, with off-hand damage.
+/// within range and stuns it - Cleave's shape at range, with off-hand damage.
 pub const skill = Skill{
     .name = "Head Shot",
     .skill_type = .weapon_skill,
@@ -41,7 +41,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the stun pick (unstunned-preferred, then focus-fire —
+/// AI options: the stun pick (unstunned-preferred, then focus-fire -
 /// helpers.stunTarget). Rated on the PICK (value units): 2 when it is
 /// unstunned (attack 1 + stun worth ~a hit; stuns take the max, never
 /// stack), else 1 (the attack only).

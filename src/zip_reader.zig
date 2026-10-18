@@ -1,4 +1,4 @@
-//! Minimal ZIP archive READER — the sibling of zip_writer.zig (the export
+//! Minimal ZIP archive READER - the sibling of zip_writer.zig (the export
 //! path; see editor/mission_io.zig's importMissionFromZip + game_zip.zig's
 //! importGameFolder for the two import flows). Pure: archive bytes in,
 //! entries out, no IO - directly round-trip-testable against zip_writer.
@@ -75,7 +75,7 @@ const end_record_size = 22;
 /// every entry's data, fully extracted. Walks the central directory (the
 /// authoritative index), reads each entry's data via its local header, and
 /// inflates DEFLATE entries. STORE entry bytes are duped (uniform ownership
-/// with inflated bytes — the caller frees everything via `freeZipArchive`,
+/// with inflated bytes - the caller frees everything via `freeZipArchive`,
 /// or passes a throwaway arena). On error the partially built list is freed.
 pub fn readZipArchive(
     archive: []const u8,
@@ -113,7 +113,7 @@ pub fn readZipEntryHeaders(
     allocator: std.mem.Allocator,
 ) ReadError![]ZipEntryHeader {
     // Find the end-of-central-directory record: scan backwards from the
-    // archive end for its signature (the LAST occurrence wins — junk bytes
+    // archive end for its signature (the LAST occurrence wins - junk bytes
     // earlier in a comment-sized tail can't shadow the real record).
     if (archive.len < end_record_size) return ZipError.ZipNoEndRecord;
     const scan_start = archive.len - @min(archive.len, end_record_max_scan);
@@ -457,7 +457,7 @@ test "readZipArchive: rejects a missing end record, an unsupported method, and a
     try testing.expectError(ZipError.ZipNoEndRecord, readZipArchive(truncated, allocator));
 
     // Corrupt the STORED ENTRY DATA (the local header is 30 + name 11 = 41
-    // bytes; the payload sits at 41..) — the CRC no longer matches what the
+    // bytes; the payload sits at 41..) - the CRC no longer matches what the
     // central directory recorded.
     const corrupt = try arena_allocator.dupe(u8, archive);
     corrupt[46] ^= 0xFF;

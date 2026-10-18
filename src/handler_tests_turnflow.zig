@@ -1,6 +1,6 @@
-//! Tier 4 handler tests — turn-flow orchestrators. `turn_start` (cooldown
+//! Tier 4 handler tests - turn-flow orchestrators. `turn_start` (cooldown
 //! reduction, effect duration decrement, stun gating, player/enemy branch),
-//! `turn_end` (enemy ordering by distance-then-entity_index — the determinism
+//! `turn_end` (enemy ordering by distance-then-entity_index - the determinism
 //! rule; turn counters), `player_turn_move`/`player_turn_attack` (phase set +
 //! auto-skip out of combat), and the player-action orchestrators
 //! (`player_move_action`/`player_skip_move`/`player_skip_attack`/
@@ -91,7 +91,7 @@ test "turn_start: decrements effect durations and pushes end_effect for expired"
     stepOnce(&history);
     // Stone Form (duration 2 -> 1) stays; Reflect (duration 1 -> expired) is
     // removed. end_effect is pushed onto the stack but the handler hasn't run
-    // yet (we only stepped once) — the active_effects list is rebuilt by
+    // yet (we only stepped once) - the active_effects list is rebuilt by
     // turn_start BEFORE the end_effect events run, so Reflect is already gone.
     try testing.expectEqual(@as(usize, 1), levelEntity(&history, 0).active_effects.len);
     try testing.expectEqual(EffectId.stone_form, levelEntity(&history, 0).active_effects[0].effect_id);
@@ -548,7 +548,7 @@ test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(fo
 // are SuperEvents pushed by the end_level last-level branch (tested via
 // direct push here); the auto-save decision itself is turns-only (a
 // strictly-faster run auto-overwrites, ties/slower offer the manual
-// overwrite button — the same personal-best rule as the validation
+// overwrite button - the same personal-best rule as the validation
 // replay).
 
 const Materials = types.Materials;
@@ -686,7 +686,7 @@ test "harvest_clones: skips clones with zero turns_to_complete" {
 
 // ───────────────────────── mission stat accumulators ─────────────────────────
 // See DESIGN → Clones (clone system). tiles_moved increments in move_entity,
-// skills_used in use_skill — both player-only, gated on mission non-null.
+// skills_used in use_skill - both player-only, gated on mission non-null.
 
 fn pushLevel(history: *state.GameStateHistory, event: LevelEvent) void {
     event_push.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
@@ -835,7 +835,7 @@ test "player_overwrite_clone: no-op when no completed mission" {
     }});
     var history = harness.newHistory(null);
     history.current_state.player_data.clones = pre_clones;
-    // No last_completed_mission set — handler returns early.
+    // No last_completed_mission set - handler returns early.
     pushPlayerInput(&history, .player_overwrite_clone);
     runToIdle(&history);
     const clones = history.current_state.player_data.clones;
@@ -846,7 +846,7 @@ test "player_overwrite_clone: no-op when no completed mission" {
 test "turn_end: Stone Form on_end_turn heal runs BEFORE next turn_start (LIFO order)" {
     // Regression: on_end_turn events (Stone Form heal) were pushed BEFORE the
     // round-building turn_starts, so on the LIFO stack the turn_starts sat on
-    // top and ran first — the heal fired at the START of the player's next
+    // top and ran first - the heal fired at the START of the player's next
     // turn, not the END of the current one. Fix: push round events first,
     // then on_end_turn events so the heal lands on top.
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -904,7 +904,7 @@ test "player_prepare_skill: switching skills clears the previous skill's highlig
         &.{
             // Shield main hand (skill 1 = bash, range 1) + sword off hand
             // (skill 3 = flash strike, teleport range 3). The enemy sits at
-            // distance 2: OUTSIDE bash's range (bash has no valid targets —
+            // distance 2: OUTSIDE bash's range (bash has no valid targets -
             // `hostilesInRange` returns null, not empty, so bash's prepare
             // pushes NO highlight event) but inside flash strike's reach.
             .{
@@ -925,7 +925,7 @@ test "player_prepare_skill: switching skills clears the previous skill's highlig
     runToIdle(&history);
     try testing.expect(history.current_state.level.?.highlighted_tiles.len > 0);
 
-    // Click bash (shield skill 1): the observed bug — bash has no targets
+    // Click bash (shield skill 1): the observed bug - bash has no targets
     // in range so its prepare pushes no highlight event, and the
     // flash-strike landing tiles LINGERED (stale targeting UI for a skill
     // that is no longer prepared). Switching skills must reset the

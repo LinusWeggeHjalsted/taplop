@@ -1,12 +1,12 @@
-//! Minimal ZIP archive writer — STORE method only (no compression), the
+//! Minimal ZIP archive writer - STORE method only (no compression), the
 //! shape `std.zip` (the read side) accepts. Used by the editor's mission
-//! export (see editor/mission_io.zig's exportEditorMission — DESIGN → Level Editor,
-//! the export flow). Pure: bytes in, archive bytes out, no IO — directly
+//! export (see editor/mission_io.zig's exportEditorMission - DESIGN → Level Editor,
+//! the export flow). Pure: bytes in, archive bytes out, no IO - directly
 //! round-trip-testable.
 
 const std = @import("std");
 
-/// One archived file: its archive-relative name (flat names — no `/`
+/// One archived file: its archive-relative name (flat names - no `/`
 /// hierarchy; a mission zip is the mission directory's files at the root)
 /// and contents.
 pub const ZipEntry = struct {
@@ -15,14 +15,14 @@ pub const ZipEntry = struct {
 };
 
 /// The fixed modification timestamp written into every record: 1980-01-01
-/// 00:00 (the DOS epoch — the earliest representable date). The export is
+/// 00:00 (the DOS epoch - the earliest representable date). The export is
 /// a transient artifact; real mtimes are not worth threading through.
 const dos_time: u16 = 0;
 const dos_date: u16 = (1 << 5) | 1; // 1980-01-01 (year 0, month 1, day 1).
 
 /// Build a ZIP archive from `entries`. All entries are stored uncompressed
 /// (STORE): mission files are text (tiny) and custom sprites are PNGs
-/// (already compressed) — deflating buys nothing for either.
+/// (already compressed) - deflating buys nothing for either.
 pub fn writeZipArchive(
     entries: []const ZipEntry,
     allocator: std.mem.Allocator,

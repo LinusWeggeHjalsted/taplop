@@ -41,7 +41,7 @@
       // as keybindings (Ctrl+L focuses the address bar, Ctrl+Z/Y are undo/redo,
       // etc.). Without this, browser shortcuts intercept game input before
       // raylib's GLFW shim sees the keydown. We only prevent default for
-      // Ctrl+letter/digit combos — F-keys, Ctrl+R (refresh), Ctrl+Shift+I
+      // Ctrl+letter/digit combos - F-keys, Ctrl+R (refresh), Ctrl+Shift+I
       // (devtools) and other browser-essential shortcuts are left alone.
       document.addEventListener("keydown", function (e) {
         if (e.ctrlKey && !e.altKey && !e.metaKey) {

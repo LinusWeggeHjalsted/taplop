@@ -16,7 +16,7 @@ pub const utility_skill_count = 5;
 
 /// One-shot sound effects, one variant per sfx file under `assets/audio/sfx/`.
 /// The BASE sounds of layered cues (skill-type bases `*_base`, the item
-/// base, the button base pair) and the plain one-shots — see
+/// base, the button base pair) and the plain one-shots - see
 /// `skillTypeBaseSound` + DESIGN → Audio (layered cues). Pushed onto
 /// `SessionState.pending_sounds` (as cue bases) by event handlers (gated
 /// `!replaying`) and input handlers, then drained by `frame()` and played
@@ -46,7 +46,7 @@ pub const SoundId = enum {
     aggro,
 };
 
-/// Upper bound on probed music intensity layers (a pathological-dir guard —
+/// Upper bound on probed music intensity layers (a pathological-dir guard -
 /// probing stops at the first missing file long before this in practice).
 /// Shared by the backend's probe loop + the sound-report tool. See DESIGN →
 /// Audio (layered music).
@@ -64,11 +64,11 @@ pub const ItemActionSound = enum {
 /// The specific half of a layered cue (the LAYER, resolved to a file by
 /// enum key): skill layers at `assets/audio/sfx/skills/<id>_layer.ogg`,
 /// action layers at `assets/audio/sfx/buttons/<action>_layer.ogg`, item
-/// layers at `assets/audio/sfx/items/<tag>_layer.ogg` (`.wav` accepted —
-/// see FileSource.readAudioFile). A missing layer file plays NOTHING — no
+/// layers at `assets/audio/sfx/items/<tag>_layer.ogg` (`.wav` accepted -
+/// see FileSource.readAudioFile). A missing layer file plays NOTHING - no
 /// placeholder, no fallback; silence IS the "not authored yet" signal for
 /// the sound designer. Whether the base is percussive and the layer
-/// ambient (or the reverse) is a per-file authoring choice — the names are
+/// ambient (or the reverse) is a per-file authoring choice - the names are
 /// deliberately neutral. See DESIGN → Audio (layered cues).
 pub const SoundLayer = union(enum) {
     skill: SkillId,
@@ -83,7 +83,7 @@ pub const SoundLayer = union(enum) {
 /// base-only cues; skill casts, button releases, and item actions layer
 /// their specific sound over the base. Layer mix balance is baked into
 /// the asset files, not expressed here. A missing base or layer file is
-/// SILENT — no fallbacks anywhere, so silence always means "asset not
+/// SILENT - no fallbacks anywhere, so silence always means "asset not
 /// authored yet" (the report tool lists every path; see
 /// scripts/sound_report.sh). See DESIGN → Audio (layered cues).
 pub const SoundCue = struct {
@@ -98,7 +98,7 @@ pub const Vector2 = struct {
 
 /// The fixed sprite frame EVERY entity sprite shares (bodies, layers,
 /// weapons): 512x640 source pixels, normalized pivot (0.5, 0.8). One tile
-/// is 256px. Custom entity art MUST be exactly this size — the render-side
+/// is 256px. Custom entity art MUST be exactly this size - the render-side
 /// gate (`customSpriteDimsPassGate`) magentas non-conforming art (see
 /// DESIGN → Custom Missions & Online Services → Custom-asset dimensions).
 pub const entity_sprite_frame_width: i32 = 512;
@@ -115,7 +115,7 @@ pub fn decorationSpriteDimsConform(dims: Vector2) bool {
     return dims.x > 0 and dims.y > 0 and @rem(dims.x, 256) == 0 and @rem(dims.y, 256) == 0;
 }
 
-/// The mission directory's NAME (the last path segment) — the namespace
+/// The mission directory's NAME (the last path segment) - the namespace
 /// for mission-local sprite ids (`custom/<mission-dir>/<stem>`). The id
 /// convention's own helper: the scan mints the ids (mission_io), the
 /// picker + the load side read them back.
@@ -128,13 +128,13 @@ pub fn missionDirectoryName(mission_path: []const u8) []const u8 {
 
 /// The render-side custom-art gate: does this sprite id's kind accept these
 /// pixel dims? Custom (mission-bundled) art must follow the shipped asset
-/// structure — entity sprites exactly the fixed 512x640 frame, decoration
+/// structure - entity sprites exactly the fixed 512x640 frame, decoration
 /// sprites whole multiples of 256 in both axes. A false return makes the
 /// texture store treat the sprite as missing (the magenta fallback):
-/// off-grid art is never silently rendered — the load side already warned
+/// off-grid art is never silently rendered - the load side already warned
 /// + degraded the geometry (loaders.zig). Non-custom ids are never gated
 /// (shipped art is certified by the build-time metadata table; other
-/// prefixes — ui/, world/, items/ — follow their own conventions).
+/// prefixes - ui/, world/, items/ - follow their own conventions).
 pub fn customSpriteDimsPassGate(sprite_id: []const u8, dims: Vector2) bool {
     if (std.mem.startsWith(u8, sprite_id, "entities/custom/")) {
         return entitySpriteDimsConform(dims);
@@ -155,7 +155,7 @@ test "customSpriteDimsPassGate: entity art must be exactly 512x640" {
 
 test "customSpriteDimsPassGate: decoration art must be whole multiples of 256" {
     try std.testing.expect(customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 768, .y = 768 }));
-    // Huge art passes (no size cap — the >4096 warning at load is advisory).
+    // Huge art passes (no size cap - the >4096 warning at load is advisory).
     try std.testing.expect(customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 8192, .y = 256 }));
     // Non-multiples, zero/negative dims → gated.
     try std.testing.expect(!customSpriteDimsPassGate("decorations/custom/mission/tree", .{ .x = 1000, .y = 1024 }));
@@ -165,7 +165,7 @@ test "customSpriteDimsPassGate: decoration art must be whole multiples of 256" {
 
 test "customSpriteDimsPassGate: non-custom ids are never gated" {
     // Shipped world art (the tile source is not a multiple of 256), UI
-    // icons (128x128), and every other prefix pass untouched — the gate is
+    // icons (128x128), and every other prefix pass untouched - the gate is
     // scoped to custom art only.
     try std.testing.expect(customSpriteDimsPassGate("world/tile", .{ .x = 600, .y = 600 }));
     try std.testing.expect(customSpriteDimsPassGate("ui/icon_gear", .{ .x = 128, .y = 128 }));
@@ -180,7 +180,7 @@ pub const Action = enum {
     /// load-save browser, credits, world map / full combat log, or the
     /// options menu (whichever is topmost); on mission fail / mission
     /// complete it fires the overlay's primary button (exit mission /
-    /// continue); with nothing open it opens the options menu (any screen —
+    /// continue); with nothing open it opens the options menu (any screen -
     /// the main-menu variant carries its own content). Named for the key
     /// behavior, not the menu: the chain (see
     /// DESIGN → Input → Escape overlay chain) is the action's whole
@@ -216,14 +216,14 @@ pub const Action = enum {
     // tooling; see session_log.writeEventLog). Anytime, side-effecting.
     dump_event_log,
     // Dismiss a recoverable error popup (see SessionState.pending_error).
-    // Modal — when a pending error is shown, this is the only action that
+    // Modal - when a pending error is shown, this is the only action that
     // reaches the game; all other input is swallowed until the popup is
     // dismissed. Bound to Escape + Enter so either key clears it.
     dismiss_error,
     // Scroll the error popup body (arrow keys, 3 lines per press; the
-    // mouse wheel also scrolls it — one line per notch — via a redirect in
+    // mouse wheel also scrolls it - one line per notch - via a redirect in
     // the modal input gate). Only consumed while a pending error is shown.
-    // Bound to the same Up/Down keys as the tile-cursor nudge — the
+    // Bound to the same Up/Down keys as the tile-cursor nudge - the
     // binding contexts resolve the pair (error_popup context is active
     // only while the popup is up, so the cursor binding never co-fires;
     // see DESIGN → Input → Binding contexts). See DESIGN → Error Handling.
@@ -241,29 +241,29 @@ pub const Action = enum {
     // Options menu commands (context-specific: hub vs level).
     save_game,
     // Export the FULL game folder (the persistent dir) as a ziglop.zip
-    // browser download (the options menu's Export Game button — web only,
+    // browser download (the options menu's Export Game button - web only,
     // button-only). A pure side effect (the dump_event_log class): a game
     // in progress pushes the autosave write first (the `export_game`
     // orchestrator arm), then the input path zips + downloads. See
     // game_zip.zig + DESIGN → File System & IO → Web storage model.
     export_game,
     // Import a ziglop.zip OVER the persistent dir (the main menu's Import
-    // Game button — web only, button-only). A pure input-path side effect
-    // (the reset-to-defaults class — no event, nothing recorded: the
+    // Game button - web only, button-only). A pure input-path side effect
+    // (the reset-to-defaults class - no event, nothing recorded: the
     // import REPLACES the session via the frame-boundary re-boot, so
     // there is no timeline to record into). The JS file picker stages
     // the zip + the import marker; the every-frame poll (main.frame)
-    // consumes it — the overlay + the re-boot. See game_zip.zig + DESIGN →
+    // consumes it - the overlay + the re-boot. See game_zip.zig + DESIGN →
     // File System & IO → Web storage model.
     import_game,
     // Save the edited mission to the persistent dir (the editor options
     // menu's Save Mission button + the ctrl+S binding). A pure side effect
-    // — the dump_event_log class, not the save_game class: there is no
+    // - the dump_event_log class, not the save_game class: there is no
     // GameState component to record, so it pushes no event and takes no
     // undo step. See editor/mission_io.zig's saveEditorMission.
     save_editor_mission,
     // Export the edited mission as a .zip (the editor options menu's
-    // Export Mission button — button-only, no keybind). Same side-effect
+    // Export Mission button - button-only, no keybind). Same side-effect
     // class; saves first, then bundles. See
     // editor/mission_io.zig's exportEditorMission.
     export_editor_mission,
@@ -271,7 +271,7 @@ pub const Action = enum {
     exit_mission,
     exit_to_menu,
     /// Quit the application (the main-menu options menu's Exit Game button,
-    /// native-only — never emitted on web, where closing the tab is the
+    /// native-only - never emitted on web, where closing the tab is the
     /// user's). Button-only: no binding ships; the handler's screen gate is
     /// the defensive half for a future keybind.
     exit_game,
@@ -279,13 +279,13 @@ pub const Action = enum {
     continue_after_mission,
     replay_mission,
     overwrite_clone,
-    // The validation stats screen's manual Overwrite Replay button — writes
+    // The validation stats screen's manual Overwrite Replay button - writes
     // the stashed slower-run replay bytes over the personal best (a
     // session-side side effect, no recorded event). See DESIGN → Custom
     // Missions & Online Services → Validation replay.
     overwrite_validation_replay,
     // Dev tool: skip the current level (pushes end_level with the default
-    // continuation — next level or mission-end). Bound to ctrl+Enter; gated
+    // continuation - next level or mission-end). Bound to ctrl+Enter; gated
     // to dev builds via `@import("build_info").dev_mode` at the handler site,
     // so the binding in default_settings.txt is a no-op in release/web builds.
     // See DESIGN → Input + AGENTS → Dev Tools.
@@ -297,7 +297,7 @@ pub const Action = enum {
     // browser's Back button).
     toggle_load_save_menu,
     // A save row in the load-save browser. The row index rides the click
-    // payload (the `save_row` variant, set at the release-dispatch site —
+    // payload (the `save_row` variant, set at the release-dispatch site -
     // Action alone can't carry a payload).
     load_save_row,
     // Load-save browser's "Import External Save" (web only): opens a file
@@ -311,7 +311,7 @@ pub const Action = enum {
     // DESIGN → UI Framework → Settings screen.
     change_setting,
     // A keybinds-tab edit command was clicked (rekey / reassign / add /
-    // remove / pick / confirm / cancel / reset — the whole editing UI
+    // remove / pick / confirm / cancel / reset - the whole editing UI
     // rides ONE action + the `KeybindCommand` payload in
     // the click payload (the `keybind_command` variant)). See DESIGN → UI Framework →
     // Settings screen (the Keybinds tab editing flows).
@@ -330,25 +330,25 @@ pub const Action = enum {
     toggle_editor_palette_group,
     // An editor palette group's "+" cell was clicked (add a new type to
     // that group, built from the shipped defaults). The group index rides
-    // the click payload (the `editor_group` variant) — the same variant as
+    // the click payload (the `editor_group` variant) - the same variant as
     // the group-header toggle. See DESIGN → Architecture → Level Editor →
     // Editor UI layout (tool palette).
     add_editor_palette_type,
     // An editor palette tool cell's delete button (the small close-button
     // in the cell's top-right corner) was clicked: delete that palette
     // type + every placement referencing it across all levels. The
-    // EditorToolId rides the click payload (the `editor_tool` variant) — the same
+    // EditorToolId rides the click payload (the `editor_tool` variant) - the same
     // payload field as the tool cells. See DESIGN → Architecture → Level
     // Editor → Editor UI layout (tool palette).
     delete_editor_palette_type,
     // The top-bar add-level "+" (right of the level tabs) was clicked:
     // append a new level from the shipped template (data/default_level.txt)
-    // and switch to it. No payload — the template is fixed shipped content.
+    // and switch to it. No payload - the template is fixed shipped content.
     add_editor_level,
     // A level tab's × button was clicked: delete that level (gated on more
-    // than one — a mission always keeps ≥1; the button isn't offered on a
+    // than one - a mission always keeps ≥1; the button isn't offered on a
     // single-level mission). The level index rides in
-    // the click payload (the `editor_level` variant) — the same payload field as the
+    // the click payload (the `editor_level` variant) - the same payload field as the
     // tab itself.
     delete_editor_level,
     // An editor tool cell was clicked (make it the active tool). The
@@ -369,7 +369,7 @@ pub const Action = enum {
     // The editor's settings-sidebar toggle button (top-right, at the
     // inspector toggle's height, flush to the right screen edge): flip the
     // metadata sidebar open/closed. Same convention as the inspector
-    // toggle — the flag lives on the Editor via
+    // toggle - the flag lives on the Editor via
     // `player_toggle_editor_metadata_sidebar` →
     // `editor_toggle_metadata_sidebar` (undo timeline + replay).
     toggle_editor_metadata_sidebar,
@@ -383,14 +383,14 @@ pub const Action = enum {
     // The top-bar Validate button (right of Test): save the mission, then
     // start a full-mission validation run of the SAVED dir. Pushes
     // `player_start_validation{mission_path}` → `start_validation` (which
-    // reads the files — the run certifies the artifact, not the editor
+    // reads the files - the run certifies the artifact, not the editor
     // memory); completing the last level (or any restart/exit continuation)
     // ends the run back in the editor. See DESIGN → Level Editor
     // (playtest/validate framing).
     validate_editor_mission,
     // The options-menu Revalidate Mission button (editor screen only):
     // re-certify the stored validation replay against the current saved
-    // content — the recorded run is replayed in checking mode against the
+    // content - the recorded run is replayed in checking mode against the
     // files as they are now, and on success the replay is re-bound to the
     // new content hash. Pushes `player_revalidate_mission{mission_path}`
     // (the consumption site saves first, the Validate contract). See
@@ -413,13 +413,13 @@ pub const Action = enum {
     // the click payload (the `editor_gradient_role` variant).
     toggle_editor_level_gradient_auto,
     // An inspector section header (expand/collapse that section). The
-    // section id rides the click payload (the `editor_section` variant) — a
+    // section id rides the click payload (the `editor_section` variant) - a
     // direct UiState write (view affordance, off the undo timeline, like
     // the palette accordion).
     toggle_editor_inspector_section,
     // The inspector's Sprite row (enemy identity): open the centered
     // sprite picker for the base sprite. The mission-local scan happens
-    // at this site (idle input — interactive IO lives here, never in the
+    // at this site (idle input - interactive IO lives here, never in the
     // view or handlers).
     open_editor_sprite_picker,
     // A sprite picker cell: set the edited entity type's base sprite (the
@@ -427,34 +427,34 @@ pub const Action = enum {
     // picker. Same-value picks close without recording.
     select_editor_entity_sprite,
     // The decoration picker's cell: adopt the picked prefab (official tab)
-    // or custom stem (mission tab) into the edited decoration type — see
+    // or custom stem (mission tab) into the edited decoration type - see
     // `editor_set_decoration_def`. The stem rode in
     // the click payload (the `editor_sprite` variant). Same-value picks close without
     // recording.
     select_editor_decoration_sprite,
     // A sprite picker tab button (Mission / Official): switch the picker's
-    // tab. The tab rode the click payload (the `editor_sprite_tab` variant) — a
+    // tab. The tab rode the click payload (the `editor_sprite_tab` variant) - a
     // direct UiState write (view affordance).
     select_editor_sprite_tab,
     // The player inspector's Import button: copy the session's player
     // data (or, with none, the new-game default save) into the editor
-    // player loadout. No payload — the handler reads live state.
+    // player loadout. No payload - the handler reads live state.
     import_editor_player,
     // The player inspector's Max player Import button: load the shipped
     // data/max_player.txt into the editor player loadout (the author-times
     // tool for official missions). No payload.
     import_editor_max_player,
     // An inspector color swatch was clicked (set the edited entity type's
-    // color_index — the gradient index into the enemy gradient). The index
+    // color_index - the gradient index into the enemy gradient). The index
     // rides the click payload (the `editor_color` variant). Routed through
     // `options_action` like the other payload-carrying editor clicks.
     select_editor_entity_color,
     // The decoration inspector's color swatch was clicked (set the edited
-    // decoration type's color_index — the gradient index into the WORLD
+    // decoration type's color_index - the gradient index into the WORLD
     // gradient). The index rides the click payload (the `editor_color` variant).
     select_editor_decoration_color,
     // The Layers sections' controls (enemy + decoration types). The layer
-    // index rides the click payload (the `editor_layer` variant — null on
+    // index rides the click payload (the `editor_layer` variant - null on
     // the add-layer button, the picker's add mode).
     open_editor_entity_layer_picker,
     open_editor_decoration_layer_picker,
@@ -469,19 +469,19 @@ pub const Action = enum {
     select_editor_decoration_layer_color,
     // The decoration inspector's Footprint row: open the centered
     // footprint editor (the tile-grid picker over the full-size sprite).
-    // No payload — the edited type resolves from the inspector target.
+    // No payload - the edited type resolves from the inspector target.
     open_editor_footprint_picker,
     // A footprint-editor tile cell: toggle that sprite-grid tile in/out
     // of the draft footprint. The grid cell index (row-major) rode in
-    // the click payload (the `editor_footprint_tile` variant) — a direct UiState
+    // the click payload (the `editor_footprint_tile` variant) - a direct UiState
     // write (the draft is transient view state, off the undo timeline).
     toggle_editor_footprint_tile,
     // The footprint editor's Confirm button: close the picker and commit
     // the draft IF it differs (an unchanged draft closes without
-    // recording; an empty draft stays open — a footprint needs ≥1 tile).
+    // recording; an empty draft stays open - a footprint needs ≥1 tile).
     confirm_editor_footprint,
     // The inspector's displays-weapons toggle (flip the edited entity
-    // type's flag). No payload — the handler reads + flips live state.
+    // type's flag). No payload - the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,
     toggle_editor_entity_keep_original_colors,
     toggle_editor_decoration_keep_original_colors,
@@ -495,35 +495,35 @@ pub const Action = enum {
     // (one compound `editor_weapon_type_cell` variant).
     select_editor_weapon_type,
     // The inspector's gear Add button (create a default item in the empty
-    // slot — the slot rides the click payload (the `editor_gear_slot` variant)).
+    // slot - the slot rides the click payload (the `editor_gear_slot` variant)).
     add_editor_item,
-    // The inspector's item Delete button (clear the slot to null — the
+    // The inspector's item Delete button (clear the slot to null - the
     // slot rides the click payload (the `editor_gear_slot` variant)).
     delete_editor_item,
     // An inspector item-TYPE cell was clicked (the Items group's content:
     // the two type-pick rows). Any pick that differs from the current
-    // item RESETS it to a "New <Kind>" default with zeroed stats — no
+    // item RESETS it to a "New <Kind>" default with zeroed stats - no
     // retype-keeps-identity case (author decision); an identical pick
     // never fires. The kind (+ the weapon type on weapon cells) rides the
     // click payload (the `editor_item_kind_cell` variant).
     select_editor_item_type,
     // An inventory slot cell in the player inspector's Inventory section
-    // was clicked (select it — the detail rows insert below its slot row;
+    // was clicked (select it - the detail rows insert below its slot row;
     // clicking the already-selected slot deselects). The slot index rides
     // the click payload (the `editor_inventory_slot` variant).
     select_editor_inventory_slot,
     // The inspector's inventory-slot Add button (create the default
-    // sword — the slot index rides in
+    // sword - the slot index rides in
     // the click payload (the `editor_inventory_slot` variant)).
     add_editor_inventory_item,
     // The inspector's inventory-slot Delete button (clear the slot to
-    // null — the slot index rides in
+    // null - the slot index rides in
     // the click payload (the `editor_inventory_slot` variant)).
     delete_editor_inventory_item,
     // An inventory-slot item-TYPE cell was clicked (the detail block's
     // type-pick rows): same reset-everything semantics as
     // `select_editor_item_type`, targeting the SELECTED slot's item
-    // (an empty slot has no type rows — the arm gates on occupied).
+    // (an empty slot has no type rows - the arm gates on occupied).
     select_editor_inventory_item_type,
     // An inspector utility-slot button was clicked (open the centered
     // skill picker for that slot). The slot index rides in
@@ -535,52 +535,52 @@ pub const Action = enum {
     // A skill picker cell was clicked (assign to the picker's slot). The
     // skill rides the click payload (the `editor_skill` variant); the None cell
     // carries no payload (clears the slot). Only UTILITY skills are
-    // offered — see src/utility_skills.zig.
+    // offered - see src/utility_skills.zig.
     select_editor_utility_skill,
     // Delete the select tool's current selection (editor viewport, Delete
     // key). Fans out into the per-entry delete events via
     // `player_delete_editor_selection`; consumed in handleIdleInput's
-    // editor arm — a no-op on every other screen (the binding ships in
+    // editor arm - a no-op on every other screen (the binding ships in
     // default_settings.txt regardless, like `skip_level`). The '!' / '='
     // and the tiles under them are never deleted.
     delete_editor_selection,
     // Clear the select tool's current selection (editor viewport, ctrl+D).
-    // Pushes `player_clear_editor_selection` → `editor_clear_selection` —
+    // Pushes `player_clear_editor_selection` → `editor_clear_selection` -
     // a single event (a clear is one operation, not a per-entry fan-out:
     // a 100-entry marquee clearing as 100 deselect lines is log noise).
     // Consumed in handleIdleInput's editor arm, gated on a nonempty
-    // selection — a no-op on every other screen.
+    // selection - a no-op on every other screen.
     clear_editor_selection,
     // Select everything in the editor's active level (editor viewport,
     // ctrl+A). Pushes `player_select_editor_all` → a batch of granular
     // `editor_select` adds sharing one idle point (one undo step),
-    // skipping entries already selected — an all-selected level is a
+    // skipping entries already selected - an all-selected level is a
     // no-op. Consumed in handleIdleInput's editor arm, gated on the
-    // select tool active — a no-op on every other screen.
+    // select tool active - a no-op on every other screen.
     select_editor_all,
-    // Opens/closes the editor browser — the tabbed full-screen modal
+    // Opens/closes the editor browser - the tabbed full-screen modal
     // (one tab per editor kind, default Mission) that owns browsing AND
     // creating editor content. Emitters: the main-menu Editor button, the
     // browser's Back button, the editor options-menu Open Mission button,
-    // and the ctrl+O binding (editor context — the keybind path stays
+    // and the ctrl+O binding (editor context - the keybind path stays
     // editor-scoped; the button path also works from the main menu, where
     // the consumption site accepts both screens). See DESIGN →
     // Architecture → Level Editor → The editor browser.
     toggle_editor_browser,
-    // A mission-list TAB button was clicked (Your Missions / Official —
+    // A mission-list TAB button was clicked (Your Missions / Official -
     // the active kind's content tab). The tab rides in
     // the click payload (the `editor_mission_tab` variant). Routed through
     // `options_action` so it works while the browser is open over the
     // options menu.
     select_editor_mission_tab,
     // An editor-browser KIND tab was clicked (Mission today; Hub /
-    // Campaign when those editors land) — switches the browser's content
+    // Campaign when those editors land) - switches the browser's content
     // to that editor kind. The kind rides in
     // the click payload (the `editor_kind` variant). Same options_action routing as
     // the mission-list tabs.
     select_editor_kind_tab,
     // A mission-browser ROW was clicked (open that mission in the editor,
-    // replacing the one being edited — no unsaved-changes confirm by
+    // replacing the one being edited - no unsaved-changes confirm by
     // design). The row index rides the click payload (the `editor_mission_row` variant)
     // (an index into the CURRENT tab's list; the tab is read from UiState at
     // resolution). Pushes `open_editor` with the row's mission path.
@@ -590,23 +590,23 @@ pub const Action = enum {
     // side extracts it into missions/ (see
     // editor/mission_io.zig's pollMissionImportMarker). Also on ctrl+I (the binding
     // ships in default_settings.txt and no-ops on native, where the button
-    // is never emitted — the skip_level discipline).
+    // is never emitted - the skip_level discipline).
     import_editor_mission,
     // The fresh-mission open (the editor browser's New Mission button, the
     // options-menu New Mission button, and the ctrl+N binding): pushes
-    // `open_editor` with a null path — a fresh one-level template mission
+    // `open_editor` with a null path - a fresh one-level template mission
     // from the main menu or a from-inside-the-editor replacement of the
-    // mission being edited (no unsaved-changes confirm — the
+    // mission being edited (no unsaved-changes confirm - the
     // editor-browser-row discipline). The consumption site accepts the
     // editor + main-menu screens (the toggle_editor_browser discipline).
     new_editor_mission,
-    // Editor tool/palette keyboard shortcuts (Digit1–5, context editor —
-    // the first same-combo cross-context pair: Digit1–8 are the in-game
+    // Editor tool/palette keyboard shortcuts (Digit1-5, context editor -
+    // the first same-combo cross-context pair: Digit1-8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
     // bridges them onto the click paths' `options_action` + payload pairs
     // (select_editor_tool + the `editor_tool` variant /
     // toggle_editor_palette_group + the `editor_group` variant), so keybind and
-    // click share consumption sites exactly — the tool switch rides the
+    // click share consumption sites exactly - the tool switch rides the
     // undo timeline via `player_set_editor_tool` (same-value = no-op), the
     // group toggle is the accordion UiState write. No button carries these
     // (the palette cells use the payload-carrying click actions).
@@ -649,7 +649,7 @@ pub const SettingRef = struct {
 /// Press-down is always `button_click_down` regardless of action. See
 /// DESIGN → Audio.
 /// The base layer of a skill cue, by skill type. The dedicated
-/// cantrip/enchantment/curse base FILES may not have shipped yet — the
+/// cantrip/enchantment/curse base FILES may not have shipped yet - the
 /// backend's `soundFallback` chain plays `spell` in their place until they
 /// do, so this mapping always names the eventual base, never the
 /// placeholder. See DESIGN → Audio (layered cues).
@@ -702,7 +702,7 @@ pub fn actionSoundUnwired(action: Action) bool {
     };
 }
 
-/// Raw input identifier — uses human-readable strings so config files
+/// Raw input identifier - uses human-readable strings so config files
 /// are legible and editable. Key codes follow the W3C KeyboardEvent.code
 /// spec (e.g. "KeyA", "Space", "ShiftLeft"). Mouse buttons are "left",
 /// "right", "middle". Gamepad buttons follow the Gamepad API names.
@@ -713,14 +713,14 @@ pub const RawInput = union(enum) {
 };
 
 /// Every key id the platform backend's key table can produce (the W3C
-/// KeyboardEvent.code names — `src/raylib/input_poll.zig` maps every
+/// KeyboardEvent.code names - `src/raylib/input_poll.zig` maps every
 /// raylib-reported key to one of these). A comptime cross-check there
-/// keeps this list and the table in lockstep (both directions — a table id
+/// keeps this list and the table in lockstep (both directions - a table id
 /// missing here, or a list entry with no table row, is a compile error).
-/// `loadSettings` warns (advisively — the entry is kept) when a binding
+/// `loadSettings` warns (advisively - the entry is kept) when a binding
 /// names an id outside this set: nothing can ever produce it, so the
 /// binding can never fire (the dead-binding class the missing-Escape
-/// regression exposed — see DONE.md). The initial list was generated from
+/// regression exposed - see DONE.md). The initial list was generated from
 /// the table (machine-walked), not hand-copied.
 pub const producible_key_ids = [_][]const u8{
     "ControlLeft",  "ControlRight",   "ShiftLeft",      "ShiftRight",      "AltLeft",     "AltRight",
@@ -745,17 +745,17 @@ pub const producible_key_ids = [_][]const u8{
 
 /// Every mouse button id the backend's mouse table can produce. Gamepad
 /// ids appear here when a gamepad table lands (until then a gamepad binding
-/// warns as unproducible — nothing can produce it).
+/// warns as unproducible - nothing can produce it).
 pub const producible_mouse_ids = [_][]const u8{ "left", "right", "middle" };
 
 /// True if `input` names an id the backend tables can produce (the binding
-/// CAN fire). False = a dead binding (warned at load, kept — the id may be
+/// CAN fire). False = a dead binding (warned at load, kept - the id may be
 /// valid on another platform or a future table; see `producible_key_ids`).
 pub fn inputIdProducible(input: RawInput) bool {
     const ids = switch (input) {
         .key => producible_key_ids[0..],
         .mouse_button => producible_mouse_ids[0..],
-        // No gamepad table exists yet — no gamepad id is producible.
+        // No gamepad table exists yet - no gamepad id is producible.
         .gamepad_button => return false,
     };
     const id = switch (input) {
@@ -771,7 +771,7 @@ pub fn inputIdProducible(input: RawInput) bool {
 
 test "inputIdProducible: the backend tables' id sets, per input kind" {
     // Every W3C key id is producible; a typo'd id is not; mouse ids are
-    // producible as mouse only (a key binding naming "left" is dead — the
+    // producible as mouse only (a key binding naming "left" is dead - the
     // check is per-variant); no gamepad table exists yet.
     try std.testing.expect(inputIdProducible(.{ .key = "KeyZ" }));
     try std.testing.expect(inputIdProducible(.{ .key = "Escape" }));
@@ -783,7 +783,7 @@ test "inputIdProducible: the backend tables' id sets, per input kind" {
 
 /// True if two `RawInput`s name the same physical input (same variant +
 /// id string). The combo-equality half of the binding-conflict predicate
-/// (same input + same modifiers = same combo) — see `sameCombo`.
+/// (same input + same modifiers = same combo) - see `sameCombo`.
 pub fn rawInputsEqual(a: RawInput, b: RawInput) bool {
     return switch (a) {
         .key => |a_key| switch (b) {
@@ -821,18 +821,18 @@ pub const Modifiers = struct {
     alt: bool = false,
 };
 
-/// Where a keybinding is active — DERIVED from the action
+/// Where a keybinding is active - DERIVED from the action
 /// (`actionBindingContexts`), never authored per binding. Actions in
 /// different contexts may share the same key combo (Digit1 = skill 1 in
 /// game, select tool in editor); only bindings whose derived contexts are
 /// active reach `checkAction`, so same-combo cross-context pairs never
 /// co-fire. `anytime` is active on every screen except while the error
 /// popup is up; `error_popup` is active ONLY while the popup is up (the
-/// popup is modal — see DESIGN → Input → Binding contexts). Named
+/// popup is modal - see DESIGN → Input → Binding contexts). Named
 /// `error_popup`, not `error`, because `error` is a Zig keyword. `menu` is
 /// the main-menu screen. The settings file still carries a `context` line
 /// per binding (informational, written as the derived primary; ignored at
-/// load) — see DESIGN → Input → Binding contexts. See DESIGN → Input.
+/// load) - see DESIGN → Input → Binding contexts. See DESIGN → Input.
 pub const BindingContext = enum {
     anytime,
     game,
@@ -841,7 +841,7 @@ pub const BindingContext = enum {
     error_popup,
 };
 
-/// A set of active `BindingContext`s — what `translateInput` is handed each
+/// A set of active `BindingContext`s - what `translateInput` is handed each
 /// frame (computed by the caller from the screen + pending_error; see
 /// main.zig's frame). Backs the derived binding gate in `checkAction`/
 /// `isActionHeld`/`isSuppressed`: a binding is active iff
@@ -864,7 +864,7 @@ pub const BindingContextSet = struct {
         };
     }
 
-    /// True if any context is set in BOTH sets — the derived binding gate
+    /// True if any context is set in BOTH sets - the derived binding gate
     /// (see the struct doc).
     pub fn intersects(self: BindingContextSet, other: BindingContextSet) bool {
         return (self.anytime and other.anytime) or
@@ -876,12 +876,12 @@ pub const BindingContextSet = struct {
 };
 
 /// True if two binding context sets can be SIMULTANEOUSLY ACTIVE (a
-/// same-combo pair on them would co-fire — the binding-CONFLICT predicate
+/// same-combo pair on them would co-fire - the binding-CONFLICT predicate
 /// at load + in the keybind UI's steal scan). NOT plain intersection: the
 /// activation model (see DESIGN → Input → Binding contexts) has exactly
 /// one of game/editor/menu active with `anytime` riding along (everywhere
 /// except the modal error popup), so {anytime} ∩ {game} is empty YET both
-/// are active in-game — intersection would miss the conflict. Cross-screen
+/// are active in-game - intersection would miss the conflict. Cross-screen
 /// sets (game vs editor) never co-fire; `error_popup` is active ALONE
 /// (co-fires only with itself).
 pub fn bindingContextsCoFire(a: BindingContextSet, b: BindingContextSet) bool {
@@ -894,7 +894,7 @@ pub fn bindingContextsCoFire(a: BindingContextSet, b: BindingContextSet) bool {
     return (a.game and b.game) or (a.editor and b.editor) or (a.menu and b.menu);
 }
 
-/// The single `BindingContext` written to a binding's settings-file line —
+/// The single `BindingContext` written to a binding's settings-file line -
 /// informational only (contexts are derived at load; see `BindingContext`).
 /// The first set member in `BindingContext` declaration order, deterministic
 /// for the writer. An older binary reading the file still validates this
@@ -908,7 +908,7 @@ pub fn primaryBindingContext(action: Action) BindingContext {
     return .error_popup;
 }
 
-/// The switch body of `actionBindingContexts` — the single source of
+/// The switch body of `actionBindingContexts` - the single source of
 /// truth the comptime table below is derived from (kept as a separate fn
 /// so the table can call it at comptime).
 fn actionBindingContextsSwitch(action: Action) BindingContextSet {
@@ -924,7 +924,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .zoom_reset,
         => .{ .anytime = true },
 
-        // The recoverable-error popup only (modal — replaces every other
+        // The recoverable-error popup only (modal - replaces every other
         // context while up).
         .dismiss_error,
         .error_scroll_up,
@@ -962,7 +962,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .skip_level,
         => .{ .game = true },
 
-        // The editor screen (edit mode — during a playtest/validation run
+        // The editor screen (edit mode - during a playtest/validation run
         // the screen is `.level`, so these go inactive and the game set
         // above takes over).
         .save_editor_mission,
@@ -1021,7 +1021,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .clear_editor_selection,
         .select_editor_all,
         // The editor browser + its in-window controls. The browser OPENS
-        // from the main menu too (its buttons — clicks bypass the context
+        // from the main menu too (its buttons - clicks bypass the context
         // gate; the consumption sites keep their
         // `editorBrowserReachableScreen` gate for those), but the
         // keyboard shortcuts are EDITOR-ONLY: a main-menu surface has no
@@ -1046,7 +1046,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
-        // Import Game (web only, the main-menu button — the defensive
+        // Import Game (web only, the main-menu button - the defensive
         // future-keybind half, the save_game discipline).
         .import_game,
         .open_credits,
@@ -1068,7 +1068,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // or over the editor (the validation stats screen).
         .continue_after_mission,
         // Export Game: the options menu shows it on EVERY variant (web
-        // only, button-only — this is the defensive future-keybind half,
+        // only, button-only - this is the defensive future-keybind half,
         // the save_game discipline).
         .export_game,
         => .{ .menu = true, .game = true, .editor = true },
@@ -1077,7 +1077,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
 
 /// Comptime-materialized action→contexts table (the generated-lookups
 /// pattern), derived from the switch above: `actionBindingContexts` reads
-/// this instead of running the 175-way switch — the context gate runs once
+/// this instead of running the 175-way switch - the context gate runs once
 /// per binding in `translateInput`'s dispatch loop and once per competitor
 /// inside `isSuppressed`, so the switch was the most-executed line of the
 /// input path. A new Action variant still fails compilation until the
@@ -1090,12 +1090,12 @@ const action_binding_contexts_lut: [@typeInfo(Action).@"enum".fields.len]Binding
     break :blk table;
 };
 
-/// Which `BindingContext`s an action fires in — the single declaration of
+/// Which `BindingContext`s an action fires in - the single declaration of
 /// "where does this action fire" (consumption sites mirror it). DERIVED:
 /// a binding's active contexts ARE this set (there is no per-binding
 /// context). Exhaustive by construction (no else-arm): adding an Action
 /// variant is a compile error until it's classified here. Button clicks
-/// are NOT context-gated (`applyAction` sets actions directly) — buttons
+/// are NOT context-gated (`applyAction` sets actions directly) - buttons
 /// only render in their context, so this map governs keyboard/gamepad
 /// bindings only. Actions valid on multiple screens carry multiple flags
 /// (e.g. `exit_to_menu` fires from the level/hub options menu and the
@@ -1106,10 +1106,10 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
 }
 
 /// The settings screen's content tabs (the Keybinds tab is the in-game
-/// rebinding UI's list — see TODO → Keybind editor).
+/// rebinding UI's list - see TODO → Keybind editor).
 pub const SettingsTab = enum { settings, keybinds };
 
-/// One keybinds-tab edit command — the `.edit_keybind` action's payload
+/// One keybinds-tab edit command - the `.edit_keybind` action's payload
 /// (the whole editing UI rides one action + this union as the click
 /// payload's `keybind_command` variant). See DESIGN → UI Framework →
 /// Settings screen.
@@ -1125,7 +1125,7 @@ pub const KeybindCommand = union(enum) {
     /// Standalone add (the list's Add button): open the action picker to
     /// pick the action first, then listen.
     add_open,
-    /// Remove the binding at `settings.input_bindings[index]` — direct,
+    /// Remove the binding at `settings.input_bindings[index]` - direct,
     /// no confirm (Reset to defaults is the safety net).
     remove: usize,
     /// The picker's pick of an action (what the open picker targets decides
@@ -1137,24 +1137,24 @@ pub const KeybindCommand = union(enum) {
     /// Discard the edit / close the picker (the Cancel button).
     cancel,
     /// Replace ALL bindings with the shipped defaults' set (the Reset
-    /// button — the safety net for removals and bad rebinds).
+    /// button - the safety net for removals and bad rebinds).
     reset_defaults,
 };
 
 /// One frame's keybind-listening outcome, produced by the `translateInput`
 /// capture seam (the text-edit-outcome model): a key was captured (the
 /// edit moves to its pending state), Escape was pressed (cancel), Enter
-/// was pressed during pending (confirm — the modal-capture-state
+/// was pressed during pending (confirm - the modal-capture-state
 /// convention), or nothing happened. Resolved once per frame in
-/// `main.frame` — see `input_handlers.resolveKeybindCaptureOutcome`.
+/// `main.frame` - see `input_handlers.resolveKeybindCaptureOutcome`.
 pub const KeybindCaptureOutcome = enum { none, captured, canceled, confirmed };
 
-/// The identity of a clicked button BEYOND its action — what the click
+/// The identity of a clicked button BEYOND its action - what the click
 /// was on (which row, which tab, which cell), riding the frame's input
 /// (`PlayerInput.clicked_payload`) alongside the action `applyAction` folds
 /// (`AnytimeInput.options_action` / `IdleInput.menu_action`). Same-frame
 /// only: valid in the frame it was set, read by the consumption arm that
-/// fired its action, dead after. Inert data — it never fires anything by
+/// fired its action, dead after. Inert data - it never fires anything by
 /// itself, which is why it rides `PlayerInput` rather than the anytime/idle
 /// sub-structs (see DESIGN → Input → Button payloads). The variant is the
 /// clicked thing's identity kind; a button whose identity is compound
@@ -1193,7 +1193,7 @@ pub const ButtonPayload = union(enum) {
     editor_gear_slot: GearSlot,
     /// A weapon-type cell (which hand + which type).
     editor_weapon_type_cell: struct { gear_slot: GearSlot, weapon_type: WeaponType },
-    /// An item-type pick cell (the kind; weapon cells carry the type —
+    /// An item-type pick cell (the kind; weapon cells carry the type -
     /// non-weapon cells leave it null, the default).
     editor_item_kind_cell: struct { kind: ItemKind, weapon_type: ?WeaponType = null },
     /// A player-inspector inventory-slot control (slot cell / Add / Delete).
@@ -1220,18 +1220,18 @@ pub const ButtonPayload = union(enum) {
     keybind_command: KeybindCommand,
 };
 
-/// The payload variant an action's clicks carry, if any — the single
+/// The payload variant an action's clicks carry, if any - the single
 /// declaration of "which payload rides this action" (the
 /// `actionBindingContexts` pattern: exhaustive by construction, no
 /// else-arm, so adding an Action is a compile error until it is classified
 /// here). One variant per action: a button needing two identities carries
 /// one compound variant, so a second entry here would mean a compound is
 /// missing. Read at the button-release relay (main.zig) as a fail-fast
-/// check — a payload on a payload-less action, or of the wrong variant,
+/// check - a payload on a payload-less action, or of the wrong variant,
 /// panics there instead of being silently eaten by a consumption arm's
 /// `orelse return` (the exact bug class the union exists to kill). Actions
 /// fired without a payload (console `action` commands, which cannot carry
-/// one) no-op at the consumption arm by design — the payload IS the click.
+/// one) no-op at the consumption arm by design - the payload IS the click.
 pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
     return switch (action) {
         .load_save_row => .save_row,
@@ -1287,7 +1287,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .open_editor_mission_row => .editor_mission_row,
 
         // Payload-less actions: every action below carries no button
-        // identity beyond its own name. Grouped, not elided — an `else =>
+        // identity beyond its own name. Grouped, not elided - an `else =>
         // null` would silently swallow a new Action; naming them all keeps
         // adding one a compile error until its payload story is decided.
         .undo,
@@ -1375,7 +1375,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
 pub const ButtonPayloadTag = std.meta.Tag(ButtonPayload);
 
 // No-orphan check (machine-walked): every ButtonPayload variant must be
-// named by at least one action's `actionButtonPayload` entry — a variant
+// named by at least one action's `actionButtonPayload` entry - a variant
 // no action can carry is a dead union member, and this makes it a compile
 // error instead of dead scaffolding. Runs at comptime over the table
 // itself, so it can never drift from the switch above.
@@ -1391,7 +1391,7 @@ comptime {
         if (!carried[@intFromEnum(payload_tag)]) {
             @compileError(
                 "ButtonPayload variant ." ++ @tagName(payload_tag) ++
-                    " is carried by no action — dead variant, or actionButtonPayload is stale",
+                    " is carried by no action - dead variant, or actionButtonPayload is stale",
             );
         }
     }
@@ -1402,20 +1402,20 @@ pub const InputBinding = struct {
     modifiers: Modifiers = .{},
     action: Action,
     // Where this binding is active is DERIVED from the action
-    // (`actionBindingContexts`) — there is no per-binding context field.
+    // (`actionBindingContexts`) - there is no per-binding context field.
     // The settings file's informational `context` line is written from
     // `primaryBindingContext` and ignored at load. See DESIGN → Input →
     // Binding contexts.
 };
 
 pub const Settings = struct {
-    // Volumes are u32 percentages 0–100 (clamped at parse). The backend
-    // converts to f32 0.0–1.0 at the raylib seam (`applyVolumes` /
+    // Volumes are u32 percentages 0-100 (clamped at parse). The backend
+    // converts to f32 0.0-1.0 at the raylib seam (`applyVolumes` /
     // `playSounds`). See DESIGN → UI Framework → Settings screen (Volume
     // integer migration).
-    master_volume: u32 = 100, // 0–100, scales music + sfx alike
-    music_volume: u32 = 50, // 0–100, before master
-    sound_effects_volume: u32 = 50, // 0–100, before master
+    master_volume: u32 = 100, // 0-100, scales music + sfx alike
+    music_volume: u32 = 50, // 0-100, before master
+    sound_effects_volume: u32 = 50, // 0-100, before master
     vsync: bool = true,
     // Frames-per-second cap for rendering. 0 = no explicit cap. Ignored when
     // vsync is on (vsync paces renders to the monitor refresh rate). When
@@ -1425,11 +1425,11 @@ pub const Settings = struct {
     /// Animation frame rate for ALL sprite animations (currently the flag
     /// banner). One global rate so pacing is uniform; frame
     /// duration = 1_000_000 / animation_fps microseconds. Read by `view()`
-    /// only (never by event handlers — see DESIGN → Animation). Default 8.
+    /// only (never by event handlers - see DESIGN → Animation). Default 8.
     animation_fps: u32 = 8,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
-    /// Render an FPS counter in the top-left corner. Diagnostic overlay —
+    /// Render an FPS counter in the top-left corner. Diagnostic overlay -
     /// off the undoable GameState (read live by `view()`), so replay-safe
     /// by construction. Default off.
     show_fps: bool = false,
@@ -1437,7 +1437,7 @@ pub const Settings = struct {
     /// render time to tint the player entity + UI. Default 0 (lightest).
     player_color_index: u32 = 0,
     input_bindings: []const InputBinding,
-    /// Camera zoom, in hundredths (0–100). Only the values 25/50/75/100
+    /// Camera zoom, in hundredths (0-100). Only the values 25/50/75/100
     /// are valid (a 4-choice, not a continuous slider): 100 = 1.0× (zoomed
     /// in), 25 = 0.25× (max zoom out), default 50. The f32 lives at the
     /// render/input seam only (`@as(f32, @floatFromInt(zoom)) / 100.0`).
@@ -1462,7 +1462,7 @@ pub const Color = struct {
 /// The ONE outline width constant: the outline family (the clickable-tile
 /// highlight, cursor/range/radius/aggro region outlines, the UI icon halo
 /// masks, the spriteless button hover rects) draws at THIS width in
-/// reference pixels, CONSTANT — independent of world zoom and of the size
+/// reference pixels, CONSTANT - independent of world zoom and of the size
 /// of the outlined thing. Mask generation (the silhouette-hugging halos)
 /// compensates for the drawn scale: the band in source pixels is
 /// ceil(outline_thickness / drawn_scale), cached per (sprite, band).
@@ -1494,7 +1494,7 @@ pub const ActiveColorTheme = struct {
 pub const DecorationLayer = struct {
     sprite: []const u8,
     color_index: u32,
-    /// Draws BEHIND the base sprite (before it) instead of over it — the
+    /// Draws BEHIND the base sprite (before it) instead of over it - the
     /// `behind` config key (e.g. the trees' grass_back layer). Default false:
     /// a layer is an overlay unless authored otherwise.
     behind: bool = false,
@@ -1510,7 +1510,7 @@ pub const Decoration = struct {
     /// implicit. See DESIGN → Decorations & Footprint.
     position: Vector2,
     /// Footprint tile coordinates in the SPRITE's own tile-grid (top-left of
-    /// the sprite bbox = (0,0)). Not anchor-relative — the list is authored
+    /// the sprite bbox = (0,0)). Not anchor-relative - the list is authored
     /// by marking the solid tiles of the sprite. The anchor is DERIVED from
     /// this list (bottom-most-then-left-most).
     footprint: []const Vector2,
@@ -1524,7 +1524,7 @@ pub const Decoration = struct {
     /// (lightest world color). Tiles use 1/3, background uses 2; decorations
     /// should use 0/4/5 for distinction.
     color_index: u32 = 0,
-    /// Render the base sprite + overlay layers UNTINTED — the art keeps
+    /// Render the base sprite + overlay layers UNTINTED - the art keeps
     /// its own colors (custom mission-bundled art is authored pre-colored).
     /// Default-off: shipped art is authored grayscale for gradient
     /// tinting. See DESIGN → Entity & UI Coloring (keep_original_colors).
@@ -1558,7 +1558,7 @@ pub const WeaponTypeDefinition = struct {
 };
 
 /// The session's weapon-type → skills mapping (session config, owned by
-/// SessionSetup / GameStateHistory — see DESIGN → Architecture). Alias so
+/// SessionSetup / GameStateHistory - see DESIGN → Architecture). Alias so
 /// the many fns that receive it (skillInSlot, the AI range/threat math,
 /// every skill priority fn) don't spell out the array-pointer type.
 pub const WeaponTypeDefinitions = *const [weapon_type_count]WeaponTypeDefinition;
@@ -1574,7 +1574,7 @@ pub const ItemType = union(enum) {
 };
 
 /// The authorable item KINDS (everything `Item` carries except skill
-/// tomes — a tome is not level-authorable, so the level file's Items
+/// tomes - a tome is not level-authorable, so the level file's Items
 /// section and the editor's item palette both exclude it). The kind tag
 /// of the flattened `editor_set_item_def` event + the item-type pick
 /// payload.
@@ -1602,7 +1602,7 @@ pub fn itemKindLabel(kind: ItemKind) []const u8 {
 }
 
 /// The kind an item belongs to, or null for a skill tome (not expressible
-/// as an `ItemKind` — the editor authoring surface excludes tomes; the
+/// as an `ItemKind` - the editor authoring surface excludes tomes; the
 /// null is the defensive seam for crafted state).
 pub fn itemKindOf(item: Item) ?ItemKind {
     return switch (item) {
@@ -1672,7 +1672,7 @@ pub fn gearSlotItemKind(slot: GearSlot) ItemKind {
 }
 
 /// The weapon type's display name (tooltips + the "New X" default weapon
-/// names — capitalized, unlike @tagName).
+/// names - capitalized, unlike @tagName).
 pub fn weaponTypeLabel(weapon_type: WeaponType) []const u8 {
     return switch (weapon_type) {
         .sword => "Sword",
@@ -1737,7 +1737,7 @@ pub const Item = union(enum) {
 // ── Gear-stat balance bounds (the single source) ──
 //
 // Shared by the parser's `boundedU32` clamp (loaders.zig) and the editor
-// inspector's commit-time clamp — a bound can't exist in one place only
+// inspector's commit-time clamp - a bound can't exist in one place only
 // (the coupling contract, DESIGN → Level Editor → Inspector fields).
 // Entity base stats are deliberately NOT bounded here (enemies may be as
 // unbalanced as the author wants); these bound the ITEM stats because the
@@ -1752,7 +1752,7 @@ pub const max_pickup_radius: u32 = 5;
 pub const max_boots_speed: u32 = 2;
 
 /// One of the entity's unbounded base stats (the inspector's numeric
-/// fields — see DESIGN → Level Editor → Inspector fields).
+/// fields - see DESIGN → Level Editor → Inspector fields).
 pub const EntityStatField = enum {
     max_health,
     defense,
@@ -1760,13 +1760,13 @@ pub const EntityStatField = enum {
     aggro_range,
     /// Team rides the stat-field machinery but is identity, not a stat:
     /// 0 = the player's team (helpers the player doesn't control), 1+ =
-    /// mutually hostile enemy teams. Enemy-authorable only — the commit
+    /// mutually hostile enemy teams. Enemy-authorable only - the commit
     /// path rejects the player_def target.
     team,
 };
 
 /// One numeric stat an equipped item can carry. Not every item kind has
-/// every stat — `itemStatValue` returns null for the non-applicable ones
+/// every stat - `itemStatValue` returns null for the non-applicable ones
 /// (the inspector only offers the applicable set).
 pub const ItemStatField = enum {
     weapon_damage,
@@ -1802,7 +1802,7 @@ pub fn itemWithName(item: Item, name: []const u8) Item {
         .gloves => |*gloves| gloves.name = name,
         .pants => |*pants| pants.name = name,
         .boots => |*boots| boots.name = name,
-        // A skill tome carries no name (it IS its skill) — unchanged.
+        // A skill tome carries no name (it IS its skill) - unchanged.
         .skill_tome => {},
     }
     return modified;
@@ -1844,7 +1844,7 @@ pub fn itemStatValue(item: Item, stat: ItemStatField) ?u32 {
     };
 }
 
-/// A copy of `item` with `stat` set to `value` (assumes the stat applies —
+/// A copy of `item` with `stat` set to `value` (assumes the stat applies -
 /// callers gate on `itemStatValue != null`).
 pub fn itemWithStat(item: Item, stat: ItemStatField, value: u32) Item {
     var modified = item;
@@ -1883,7 +1883,7 @@ pub fn itemWithStat(item: Item, stat: ItemStatField, value: u32) Item {
 }
 
 /// The balance bound for an item stat (the same constant the parser clamps
-/// with — the single source, see the max_* block above).
+/// with - the single source, see the max_* block above).
 pub fn itemStatMax(stat: ItemStatField) u32 {
     return switch (stat) {
         .weapon_damage => max_weapon_damage,
@@ -1897,7 +1897,7 @@ pub fn itemStatMax(stat: ItemStatField) u32 {
 }
 
 /// The stats an item kind carries, in display order (the inspector's
-/// item content offers exactly these — a stat the kind doesn't carry
+/// item content offers exactly these - a stat the kind doesn't carry
 /// commits nothing by construction). A skill tome carries none.
 pub fn itemStatSet(item: Item) []const ItemStatField {
     return switch (item) {
@@ -1912,9 +1912,9 @@ pub fn itemStatSet(item: Item) []const ItemStatField {
 }
 
 /// A palette item type's field value as the text-input widget shows it
-/// (the item content's single value source — display text, focus seeding,
+/// (the item content's single value source - display text, focus seeding,
 /// and the commit path's would-change gate; mirrors `Entity.textFieldValue`).
-/// A skill tome shows empty for every field (tomes are not authorable —
+/// A skill tome shows empty for every field (tomes are not authorable -
 /// the editor item surface never offers them); ids that don't resolve
 /// against an item return empty too.
 pub fn itemTextFieldValue(
@@ -1996,7 +1996,7 @@ pub const Entity = struct {
     /// enemies like wolves set `displays_weapons false` to suppress weapon
     /// overlays. Parsed from the level file's enemy definition.
     displays_weapons: bool = true,
-    /// Render the base sprite + overlay layers UNTINTED — the art keeps
+    /// Render the base sprite + overlay layers UNTINTED - the art keeps
     /// its own colors (custom mission-bundled art is authored
     /// pre-colored). Weapons stay gradient-tinted (our art); health bars
     /// + effect overlays unaffected. Default-off: shipped art is
@@ -2027,7 +2027,7 @@ pub const Entity = struct {
     active_effects: []const Effect = &.{},
 
     /// The item equipped in `slot`, as the generic union (null when the
-    /// slot is empty). The single slot→item mapping — the gear panel (via
+    /// slot is empty). The single slot→item mapping - the gear panel (via
     /// ui.gearSlotItem's delegate) and the editor inspector both read it.
     pub fn gearSlotItem(self: Entity, slot: GearSlot) ?Item {
         return switch (slot) {
@@ -2042,10 +2042,10 @@ pub const Entity = struct {
     }
 
     /// The field's current value as the text-input widget shows it (strings
-    /// verbatim, numbers decimal-formatted) — the single source shared by
+    /// verbatim, numbers decimal-formatted) - the single source shared by
     /// the inspector builder (display text), focus seeding, and the commit
     /// path's would-change gate. An item field on an empty slot (or a stat
-    /// the item kind doesn't carry) shows empty — its commit no-ops.
+    /// the item kind doesn't carry) shows empty - its commit no-ops.
     pub fn textFieldValue(
         self: Entity,
         allocator: std.mem.Allocator,
@@ -2186,7 +2186,7 @@ pub const Entity = struct {
     /// Effective max health = base `max_health` + the `health_bonus` from
     /// every equipped gear piece that carries one (coat/gloves/pants/boots).
     /// No effect modifier field exists for max health, so gear-only. Derived
-    /// on every read — gear changes clamp `current_health` to this (see
+    /// on every read - gear changes clamp `current_health` to this (see
     /// `applyGearChangeSideEffects`), so the invariant
     /// `current_health ≤ getEffectiveMaxHealth()` holds.
     pub fn getEffectiveMaxHealth(self: Entity) u32 {
@@ -2231,7 +2231,7 @@ pub const Entity = struct {
     /// exposes them) plus the equipped utility skills. Slot order: main
     /// weapon 1-3, off weapon 1-3 (deduped when both hands carry the same
     /// type), then utility slots. Distinct from collectSkillSlots (the 8
-    /// EXPOSED slots) — this is the full equippable set; used by Adrenaline
+    /// EXPOSED slots) - this is the full equippable set; used by Adrenaline
     /// Surge's reset + rating (both sides share it so they cannot drift).
     pub fn onBarSkillIds(
         self: Entity,
@@ -2353,7 +2353,7 @@ pub const Inventory = struct {
 };
 
 pub const Clone = struct {
-    /// The mission this clone records (the key — see DESIGN → Custom Missions
+    /// The mission this clone records (the key - see DESIGN → Custom Missions
     /// & Online Services → Content identity). Replaces the old name-keying.
     mission_uuid: []const u8 = &.{},
     /// Display label (denormalized from the mission at save time so a
@@ -2392,7 +2392,7 @@ pub const PlayerData = struct {
 // Entity (reuses the type + deepCopy); runtime fields (current_health,
 // is_active, momentum, stun, cooldowns, active_effects, inventory) are
 // meaningless on the template and reset by instantiateEditorLevel. Editing
-// the template updates every placement referencing this type — no
+// the template updates every placement referencing this type - no
 // propagation sweep.
 pub const EntityTypeDef = struct {
     id: []const u8 = &.{}, // user-facing name, e.g. "Skeleton Warrior"
@@ -2406,14 +2406,14 @@ pub const DecorationTypeDef = struct {
     footprint: []const Vector2 = &.{},
     pixel_dims: Vector2 = .{ .x = 0, .y = 0 },
     color_index: u32 = 0,
-    /// Untinted rendering (base + layers keep the art's colors) — see
+    /// Untinted rendering (base + layers keep the art's colors) - see
     /// Decoration.keep_original_colors.
     keep_original_colors: bool = false,
     layers: []const DecorationLayer = &.{},
 };
 
 /// A palette entry for a loose ground item (loot not tied to an enemy).
-/// The `item` carries the full Item union (the authorable kinds — never
+/// The `item` carries the full Item union (the authorable kinds - never
 /// a skill tome in practice); the inspector commits it via the FLATTENED
 /// `editor_set_item_def` event (whole item, one undo step) +
 /// `editor_set_item_name` for renames. See DESIGN → Architecture →
@@ -2425,7 +2425,7 @@ pub const ItemTypeDef = struct {
 
 /// Which entity-type-like target an entity-edit event applies to. The
 /// player loadout (`Editor.player_def`) is an EntityTypeDef too, just not
-/// in the `entity_types` array — this union lets the entity-edit events
+/// in the `entity_types` array - this union lets the entity-edit events
 /// cover both without a parallel `editor_set_player_*` event set. See
 /// DESIGN → Architecture → Level Editor → Editor UI layout.
 pub const EntityEditTarget = union(enum) {
@@ -2437,7 +2437,7 @@ pub const EntityEditTarget = union(enum) {
 /// DESIGN → UI Framework → Text input widget). The id tells the commit
 /// path (input_handlers) how to parse the buffer and which wrapper event
 /// to push; `target` names the entity being edited. Ids land incrementally
-/// with the inspector slices. UiState-only — never serialized into events
+/// with the inspector slices. UiState-only - never serialized into events
 /// (the events carry values).
 pub const TextFieldId = union(enum) {
     entity_name,
@@ -2447,7 +2447,7 @@ pub const TextFieldId = union(enum) {
     /// One numeric stat of the equipped item in `slot` (a stat the item
     /// kind doesn't carry commits nothing).
     item_stat: struct { slot: GearSlot, stat: ItemStatField },
-    /// A palette item TYPE's name (the Items group's inspector content —
+    /// A palette item TYPE's name (the Items group's inspector content -
     /// a skill tome commits nothing, tomes aren't authorable). Target:
     /// `.item_type` carries the palette index.
     item_def_name: void,
@@ -2455,7 +2455,7 @@ pub const TextFieldId = union(enum) {
     /// as `item_def_name`; clamped to `itemStatMax` at commit).
     item_def_stat: ItemStatField,
     /// An INVENTORY slot item's name (the player inspector's Inventory
-    /// section detail rows — a tome commits nothing, tomes aren't
+    /// section detail rows - a tome commits nothing, tomes aren't
     /// authorable). Target: `.inventory_slot` carries the slot index.
     inventory_item_name: void,
     /// One numeric stat of an inventory slot item (same target + tome
@@ -2470,7 +2470,7 @@ pub const TextFieldId = union(enum) {
 };
 
 /// What a focused text field edits: an entity template (inspector), the
-/// mission's name, or a level's name (metadata sidebar — the level index
+/// mission's name, or a level's name (metadata sidebar - the level index
 /// rides the target so a mid-edit tab switch can't retarget the commit).
 pub const TextEditTarget = union(enum) {
     entity: EntityEditTarget,
@@ -2493,7 +2493,7 @@ pub const TextFieldRef = struct {
 };
 
 /// A focused text field's per-frame keyboard outcome (Enter commits,
-/// Escape discards — see DESIGN → UI Framework → Text input widget).
+/// Escape discards - see DESIGN → UI Framework → Text input widget).
 pub const TextEditOutcome = enum { none, commit, cancel };
 
 // A reference-based level: placements point into the editor's palette instead
@@ -2507,7 +2507,7 @@ pub const EditorLevel = struct {
     color_wheel_index: u32 = 0,
     /// Optional per-role gradient override. Null (the default) = derived
     /// from `color_wheel_index` (enemy = world + N/3, player = world +
-    /// 2·N/3, N = gradients in the theme — the `deriveActiveColorTheme`
+    /// 2·N/3, N = gradients in the theme - the `deriveActiveColorTheme`
     /// rule). See DESIGN → Architecture → Level Editor → Level theme.
     enemy_gradient_index: ?u32 = null,
     player_gradient_index: ?u32 = null,
@@ -2519,7 +2519,7 @@ pub const EditorLevel = struct {
     /// Loose floor items placed via the Items palette (loot not tied
     /// to an enemy). Mirrors Level.ground_items but reference-based: each
     /// placement points into Editor.item_types. See DESIGN → Architecture →
-    /// Level Editor → Editor UI layout (Ground items — the Items palette).
+    /// Level Editor → Editor UI layout (Ground items - the Items palette).
     item_placements: []const ItemPlacement = &.{},
 };
 
@@ -2544,14 +2544,14 @@ pub const EditorMode = enum {
     validate, // UI/input = gameplay, forced full-mission; editor dormant
 };
 
-/// The active editor tool (the palette selection) — what a viewport click
+/// The active editor tool (the palette selection) - what a viewport click
 /// does (see DESIGN → Architecture → Level Editor → Active-tool model).
 /// Lives on the Editor (GameState, undo timeline): any event whose effect
 /// depends on it (the click orchestrators) must read it from reconstructable
 /// state, and undo/redo of a tool switch restores what the author had
 /// active. Indices are into the corresponding Editor palette arrays.
 /// Which tab the editor's centered sprite picker is showing (see
-/// DESIGN → Architecture → Level Editor → Editor UI layout — the centered
+/// DESIGN → Architecture → Level Editor → Editor UI layout - the centered
 /// sprite picker). Mission-local first: custom assets take priority over
 /// shipped ones.
 pub const EditorSpritePickerTab = enum {
@@ -2559,7 +2559,7 @@ pub const EditorSpritePickerTab = enum {
     official,
 };
 
-/// Which editor kind the editor browser shows — one tab per kind (the
+/// Which editor kind the editor browser shows - one tab per kind (the
 /// tab row derives from this enum). Mission is the only editor kind
 /// today; hub + campaign append when those editors land (the
 /// editor-browser label switch is exhaustive, so a new member is a
@@ -2580,11 +2580,11 @@ pub const EditorMissionBrowserTab = enum {
 
 /// One collapsible section of the editor's side panels. The ids key BOTH
 /// the inspector's content (enemy or player) and the METADATA sidebar's
-/// Mission / Current-level sections — one shared expansion-state array
+/// Mission / Current-level sections - one shared expansion-state array
 /// (`UiState.editor_inspector_section_expanded`), one toggle action. The
 /// id is the section's IDENTITY across contents (Weapons expanded while
 /// editing an enemy stays expanded on the player) and the key into that
-/// array — collapse is a VIEW affordance (off the undo timeline, like the
+/// array - collapse is a VIEW affordance (off the undo timeline, like the
 /// palette accordion), not GameState. Labels via
 /// `ui.editorInspectorSectionLabel`.
 pub const EditorInspectorSectionId = enum {
@@ -2632,11 +2632,11 @@ pub const LevelGradientRole = enum {
 /// One selectable thing in the editor viewport (the select tool's click
 /// target; see DESIGN → Architecture → Level Editor → Selection model).
 /// Placement entries address the ACTIVE level's placement lists by index
-/// — kept consistent by the delete arms (the deleted entry is pruned and
+/// - kept consistent by the delete arms (the deleted entry is pruned and
 /// the indices above it are remapped; the render's bounds-check is
 /// defensive only). The selection set lives on the Editor (GameState, on
 /// the undo timeline) and is mutated only via the `editor_select` /
-/// `editor_deselect` events — so undo/redo restores the selection of that
+/// `editor_deselect` events - so undo/redo restores the selection of that
 /// time, and selection-dependent operations (group move) replay safely.
 pub const Selectable = union(enum) {
     /// A floor tile at `position` (a paint/erase target).
@@ -2644,19 +2644,19 @@ pub const Selectable = union(enum) {
     entity_placement: u32,
     decoration_placement: u32,
     ground_item_placement: u32,
-    /// The '!' — singleton, movable never deletable.
+    /// The '!' - singleton, movable never deletable.
     player_start: void,
-    /// The '=' — singleton, movable never deletable.
+    /// The '=' - singleton, movable never deletable.
     level_end: void,
 };
 
-/// One backed-up thing in a selection MOVE (the commit event's worklist —
+/// One backed-up thing in a selection MOVE (the commit event's worklist -
 /// see `player_move_editor_selection` / `editor_commit_selection_move`).
 /// The backup is concrete (kind + type_id + TARGET position) because the
-/// delete phase destroys the placements the selection addressed — the
+/// delete phase destroys the placements the selection addressed - the
 /// type ids must survive in the payload. Placed sequentially by the
 /// chained commit event, each against the live post-delete state via the
-/// placement planners (the current placement rules — see DESIGN →
+/// placement planners (the current placement rules - see DESIGN →
 /// Architecture → Level Editor → Selection model).
 pub const EditorSelectionMoveEntry = union(enum) {
     entity: struct {
@@ -2680,7 +2680,7 @@ pub const EditorSelectionMoveEntry = union(enum) {
 };
 
 /// Inclusive tile-coordinate bounding box (min corner tile .. max
-/// corner tile, both inclusive) of a set of tiles. Zoom-independent —
+/// corner tile, both inclusive) of a set of tiles. Zoom-independent -
 /// the camera clamp converts to world pixels per frame.
 pub const TileBounds = struct {
     min_x: i32,
@@ -2690,7 +2690,7 @@ pub const TileBounds = struct {
 };
 
 /// The in-game middle-panel ids (the middle band between the world and
-/// the bottom bar). Ordered by open time inside `UiSurfaceState` — slot
+/// the bottom bar). Ordered by open time inside `UiSurfaceState` - slot
 /// order IS display order.
 pub const MiddlePanelId = enum {
     inventory,
@@ -2709,7 +2709,7 @@ pub const FullScreenOverlayId = enum {
 pub const max_middle_panels: usize = 4;
 pub const max_full_screen_overlays: usize = 2;
 
-/// One semantic UI surface the player can open/close — the event
+/// One semantic UI surface the player can open/close - the event
 /// vocabulary for `toggle_ui_surface`. The enum names the surface;
 /// `UiSurfaceState` owns the grouped representation (display order,
 /// stacking) behind these ids.
@@ -2729,12 +2729,12 @@ pub const UiSurfaceId = enum {
 
 /// Class-1 semantic surface state: WHAT UI is open. Lives on GameState
 /// (`ui_surfaces`) so it rides the undo timeline, replays, and is
-/// reconstructable from the event log — which is what lets
+/// reconstructable from the event log - which is what lets
 /// `validatePlayerAction` gate gameplay orchestrators on the surface
 /// that supplies their trigger. All mutation flows through the surface
 /// events (`toggle_ui_surface` / `inspect_entity`); the handlers call
 /// these methods. View affordances (tabs, scrolls, gesture lifecycles)
-/// stay on `SessionState.ui_state` — see DESIGN → UI Framework → UI
+/// stay on `SessionState.ui_state` - see DESIGN → UI Framework → UI
 /// state classification.
 pub const UiSurfaceState = struct {
     /// Middle section panels, ordered by open time (first opened =
@@ -2749,10 +2749,10 @@ pub const UiSurfaceState = struct {
     open_full_screen_overlays: [max_full_screen_overlays]?FullScreenOverlayId =
         .{null} ** max_full_screen_overlays,
 
-    /// Options menu — always-on-top modal, locks input + pauses the world.
+    /// Options menu - always-on-top modal, locks input + pauses the world.
     options_menu_open: bool = false,
 
-    /// Settings screen — modal overlay; opens on top of the options menu
+    /// Settings screen - modal overlay; opens on top of the options menu
     /// (in-game) or over the main menu.
     settings_open: bool = false,
 
@@ -2766,11 +2766,11 @@ pub const UiSurfaceState = struct {
     editor_browser_open: bool = false,
 
     /// The entity-inspect panel's target (null = no target). Bounds-
-    /// checked at every read — a stale index (the entity died and the
+    /// checked at every read - a stale index (the entity died and the
     /// array shrank) renders nothing, never crashes.
     inspected_entity_index: ?u32 = null,
 
-    /// Flip one surface — the verb behind `toggle_ui_surface` (the
+    /// Flip one surface - the verb behind `toggle_ui_surface` (the
     /// keyboard / menu-button semantics). The entity-inspect toggle also
     /// drops the panel's target (opens untargeted, like the keybind
     /// always did).
@@ -2812,7 +2812,7 @@ pub const UiSurfaceState = struct {
     /// The right-click inspect verb: a non-null index OPENS (or retargets)
     /// the entity-inspect panel, null CLOSES it. The gesture resolves
     /// same/different/none against current state and pushes the resolved
-    /// intent — the event itself is unconditional.
+    /// intent - the event itself is unconditional.
     pub fn inspectEntity(self: *UiSurfaceState, entity_index: ?u32) void {
         if (entity_index) |index| {
             self.openMiddlePanel(.entity_inspect);
@@ -2823,9 +2823,9 @@ pub const UiSurfaceState = struct {
         }
     }
 
-    /// Close every surface. The screen-transition / world-install reset —
+    /// Close every surface. The screen-transition / world-install reset -
     /// HANDLER-side (`transitionScreen` / the start_* world installs) so
-    /// replay reproduces it; the classes-2–4 wholesale reset stays in the
+    /// replay reproduces it; the classes-2-4 wholesale reset stays in the
     /// live loop. See DESIGN → UI Framework → UI state classification.
     pub fn closeAll(self: *UiSurfaceState) void {
         self.open_middle_panels = .{null} ** max_middle_panels;
@@ -2951,7 +2951,7 @@ test "UiSurfaceState.toggleMiddlePanel: open order is display order; reopen land
         surfaces.open_middle_panels,
     );
 
-    // Reopening appends rightmost — it does not recall its pre-close slot.
+    // Reopening appends rightmost - it does not recall its pre-close slot.
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
         Panels{ .skills, .inventory, null, null },
@@ -2977,7 +2977,7 @@ test "UiSurfaceState.toggleMiddlePanel: a full panel strip ignores a new open" {
     for ([_]MiddlePanelId{ .inventory, .gear, .skills, .entity_inspect }) |panel_id| {
         surfaces.toggleMiddlePanel(panel_id);
     }
-    // All four are open — a fifth panel id cannot be stored, so this
+    // All four are open - a fifth panel id cannot be stored, so this
     // close-then-reopen pair must not clobber anything.
     surfaces.toggleMiddlePanel(.inventory);
     try std.testing.expectEqual(
@@ -3083,12 +3083,12 @@ test "UiSurfaceState.closeAll clears every surface" {
 }
 
 /// Which field the editor's centered picker is assigning (see
-/// DESIGN → Architecture → Level Editor → Editor UI layout — the
+/// DESIGN → Architecture → Level Editor → Editor UI layout - the
 /// centered sprite picker section; the skill picker is the first
 /// consumer). The OPEN/CLOSE of the picker itself is class-1 surface
 /// state: it lives on `Editor.picker` (GameState), mutated only via the
 /// `editor_open_picker` / `editor_close_picker` events, so it rides the
-/// undo timeline and replays — see DESIGN → UI Framework → UI state
+/// undo timeline and replays - see DESIGN → UI Framework → UI state
 /// classification. The transient side state (the footprint draft,
 /// the sprite tab) stays on `UiState`.
 pub const EditorPickerTarget = union(enum) {
@@ -3096,27 +3096,27 @@ pub const EditorPickerTarget = union(enum) {
     /// The edited entity type's base sprite (the inspector's Sprite row).
     entity_sprite: void,
     /// The edited decoration type's base sprite (the decoration
-    /// inspector's Sprite row — official tab adopts a registry prefab,
+    /// inspector's Sprite row - official tab adopts a registry prefab,
     /// mission tab picks a custom stem).
     decoration_sprite: void,
     /// An ENTITY layer sprite (the enemy content's Layers section): the
     /// layer index being edited, null = add-new (the skill picker's slot
     /// pattern).
     entity_layer: ?u32,
-    /// A DECORATION layer sprite — same shape; the official tab filters
+    /// A DECORATION layer sprite - same shape; the official tab filters
     /// to the base type's dims (the load-time layer invariant).
     decoration_layer: ?u32,
     /// The decoration type's FOOTPRINT editor (the Footprint row): the
     /// full-size sprite with toggleable 256×256 grid cells; the draft
     /// rides `UiState.editor_footprint_draft`. Carries the TYPE ID it was
-    /// opened on — the editor stays self-contained while tools switch
+    /// opened on - the editor stays self-contained while tools switch
     /// mid-edit (the dropdown convention), and toggles/confirm can never
     /// silently apply to a different type.
     decoration_footprint: u32,
     /// The metadata sidebar's THEME PICKER (a gradient row's swatch):
     /// every gradient as a full-width strip, one pick per row. Carries
     /// the LEVEL INDEX it was opened on + the ROLE being picked (the
-    /// world index, or an enemy/player override) — a mid-edit tab switch
+    /// world index, or an enemy/player override) - a mid-edit tab switch
     /// can't retarget the pick.
     level_gradient: struct { level_index: u32, role: LevelGradientRole },
 };
@@ -3126,13 +3126,13 @@ pub const Editor = struct {
     levels: []const EditorLevel = &.{}, // all levels, reference-based
     // Palette (editor-global). Derived by dedup on open_editor from the
     // levels' inline definitions; not persisted to disk (unused types are
-    // lost on editor close — accepted as cleaner). See DESIGN → Architecture
+    // lost on editor close - accepted as cleaner). See DESIGN → Architecture
     // → Level Editor.
     entity_types: []const EntityTypeDef = &.{},
     decoration_types: []const DecorationTypeDef = &.{},
     /// Palette of loose ground-item types (loot not tied to an enemy). See
     /// DESIGN → Architecture → Level Editor → Editor UI layout (Ground
-    /// items — the Items palette).
+    /// items - the Items palette).
     item_types: []const ItemTypeDef = &.{},
     // The editor-global player start loadout. Persistent as player.txt in the
     // mission directory (so a recorded validation replay is reproducible and
@@ -3142,10 +3142,10 @@ pub const Editor = struct {
     /// Snapshot of the ACTIVE level's tile bbox, refreshed only when the
     /// active level switches (open_editor / editor_set_active_level /
     /// editor_add_level / editor_delete_level clamping onto new content
-    /// — see `refreshEditorClampBounds`). The camera clamp reads THIS, not
+    /// - see `refreshEditorClampBounds`). The camera clamp reads THIS, not
     /// the live tiles, so mid-edit tile changes never reframe the camera;
     /// undo/redo + replay reproduce it because the refresh rides the same
-    /// events. Null = no tiles at snapshot time (the level was empty) —
+    /// events. Null = no tiles at snapshot time (the level was empty) -
     /// the unclamped editor camera. See DESIGN → Platform Seam → Camera
     /// clamping.
     clamp_bounds: ?TileBounds = null,
@@ -3163,7 +3163,7 @@ pub const Editor = struct {
     /// The session's real PlayerData, backed up while a playtest/validate
     /// run is active. The run BUILDS its own player_data (from
     /// `player_def`, all utility skills learned) because in-level events
-    /// (use_skill_tome, salvage) mutate player_data directly — without the
+    /// (use_skill_tome, salvage) mutate player_data directly - without the
     /// backup a playtest would corrupt campaign progress. Null while in
     /// edit mode (set on enter from .edit, restored + cleared by
     /// end_playtest / end_validation). On the undo timeline with the rest
@@ -3171,23 +3171,23 @@ pub const Editor = struct {
     /// Playtest/validate framing.
     pre_playtest_player_data: ?PlayerData = null,
     /// The inspector sidebar's open state (the top-left toggle button;
-    /// open by default). Lives on the Editor — not UiState — so the settled
+    /// open by default). Lives on the Editor - not UiState - so the settled
     /// auto-open-on-new-type behavior can mutate it from the
     /// `editor_add_*_type` handlers, and replay reproduces it. Mutated only
     /// via `editor_toggle_inspector`.
     inspector_open: bool = true,
     /// The metadata sidebar's open state (the top-right toggle button;
-    /// CLOSED on editor open — the metadata is a reference panel, not
+    /// CLOSED on editor open - the metadata is a reference panel, not
     /// the first thing an author needs, unlike the inspector). Same
     /// convention as the inspector flag: on the Editor, mutated only via
     /// `editor_toggle_metadata_sidebar`, so the toggle rides the undo
     /// timeline and replay reproduces it.
     metadata_sidebar_open: bool = false,
-    /// The centered picker's target, if open — which field the picker is
+    /// The centered picker's target, if open - which field the picker is
     /// assigning (see `EditorPickerTarget`). Same convention as the
     /// inspector flag: on the Editor, mutated only via `editor_open_picker`
     /// / `editor_close_picker` (the picker-commit handlers push the close
-    /// as a child of the commit — one undo step for pick+close), so it
+    /// as a child of the commit - one undo step for pick+close), so it
     /// rides the undo timeline and replay reproduces it. See DESIGN → UI
     /// Framework → UI state classification.
     picker: ?EditorPickerTarget = null,
@@ -3203,11 +3203,11 @@ pub const Campaign = struct {
 
 /// Info carried through the end_level → end_mission → start_hub cascade for
 /// the mission-complete overlay (mission name + path). Lives on GameState
-/// (on the undo timeline) so undo/redo handles the overlay naturally — undo
+/// (on the undo timeline) so undo/redo handles the overlay naturally - undo
 /// to before completion clears it, redo re-shows it. See DESIGN → Architecture.
 /// Info carried through the end_level → end_mission → start_hub cascade for
 /// the mission-complete overlay. Lives on GameState (on the undo timeline) so
-/// undo/redo handles the overlay naturally — undo to before completion clears
+/// undo/redo handles the overlay naturally - undo to before completion clears
 /// it, redo re-shows it. The `uuid` is the clone key (see DESIGN → Custom
 /// Missions & Online Services → Content identity); `turns_spent` +
 /// `converted_materials` snapshot the run so the hub-side overlay + the
@@ -3230,12 +3230,12 @@ pub const MissionCompleteInfo = struct {
     damage_taken: u32 = 0,
     skills_used: u32 = 0,
     /// True when a clone for this mission already exists AND the just-completed
-    /// run was not strictly faster (turns — the personal-best rule). The
+    /// run was not strictly faster (turns - the personal-best rule). The
     /// overlay offers a manual "Overwrite Clone" button. False on a first
     /// completion (auto-saved) or a strictly-faster run (auto-overwrote). See
     /// DESIGN → Clones (clone system).
     overwrite_offered: bool = false,
-    /// True when this "completion" was a VALIDATION RUN — end_validation
+    /// True when this "completion" was a VALIDATION RUN - end_validation
     /// populated the info so the mission-complete overlay renders over the
     /// editor as the validation stats screen (the session-side personal
     /// best / medal context rides SessionState; view() builds it). False
@@ -3256,7 +3256,7 @@ pub const Mission = struct {
     /// Runtime working-copy flag: this mission is a VALIDATION RUN (loaded
     /// from the saved dir by start_validation). The live editor ALSO keys
     /// run behavior on editor.mode == .validate, but a cross-session replay
-    /// of a validation replay has no Editor — this flag is what end_level's
+    /// of a validation replay has no Editor - this flag is what end_level's
     /// guard reads for the no-editor case. It rides the working copy so
     /// replay reproduces it and the end_validation transition discards it
     /// with the mission. Campaign missions never set it. See DESIGN →
@@ -3297,11 +3297,11 @@ pub const Level = struct {
     prepared_skill: ?SkillId = null,
     turn_phase: ?TurnPhase = null,
 
-    /// Does the level still hold active enemies — anything alive,
+    /// Does the level still hold active enemies - anything alive,
     /// active, and on a team other than the player's (entity 0)? The one
     /// completability rule: shared by the win condition
     /// (`check_level_end`), the attack-step auto-skip, and the flag
-    /// banner rendering (the banner waves only while this is false —
+    /// banner rendering (the banner waves only while this is false -
     /// see DESIGN → Animation).
     pub fn hasActiveEnemies(self: *const Level) bool {
         if (self.entities.len == 0) return false;
@@ -3337,7 +3337,7 @@ pub const NPC = struct {
 
 test "Level.hasActiveEnemies: alive + active + hostile; dead / inactive / same-team are not" {
     // The one completability rule: an enemy counts only when ALL THREE
-    // hold — alive, active, hostile team. The win condition
+    // hold - alive, active, hostile team. The win condition
     // (`check_level_end`), the attack-step auto-skip, and the flag banner
     // gate on it (see the method's doc).
     const enemy = Entity{ .team = 1, .is_active = true };
@@ -3368,7 +3368,7 @@ test "Level.hasActiveEnemies: alive + active + hostile; dead / inactive / same-t
         const entities = [_]Entity{ .{}, helper };
         try std.testing.expect(!(Level{ .entities = &entities }).hasActiveEnemies());
     }
-    // Only the player → false; no entities at all → false (defensive —
+    // Only the player → false; no entities at all → false (defensive -
     // levels always carry the player first, but the method must not read
     // entities[0] on an empty slice).
     {
@@ -3379,7 +3379,7 @@ test "Level.hasActiveEnemies: alive + active + hostile; dead / inactive / same-t
 }
 
 // ============================================================
-// View state — output of view(), input to renderer
+// View state - output of view(), input to renderer
 // ============================================================
 
 /// Fixed reference (design) resolution. The view function + all UI layout
@@ -3390,10 +3390,10 @@ pub const reference_width: i32 = 3840;
 pub const reference_height: i32 = 2160;
 
 /// Offscreen render target resolution (the `render_resolution` setting, a
-/// runtime 4-choice — see `RenderResolution` below). The backend creates its
+/// runtime 4-choice - see `RenderResolution` below). The backend creates its
 /// `RenderTexture` at this size and scales 4K design-space content into it
 /// via `beginMode2D`. Lower than reference → less fill rate. All presets
-/// share the reference aspect ratio (16:9, comptime-checked below) — the
+/// share the reference aspect ratio (16:9, comptime-checked below) - the
 /// camera zoom is uniform, so a mismatched aspect would squish content.
 pub const RenderResolution = enum {
     p720,
@@ -3403,7 +3403,7 @@ pub const RenderResolution = enum {
 
     /// The value as written in settings files and shown on the settings
     /// screen. The single mapping source for parse (loader), write
-    /// (writer), and display (settings screen) — one spelling everywhere.
+    /// (writer), and display (settings screen) - one spelling everywhere.
     pub fn label(resolution: RenderResolution) []const u8 {
         return switch (resolution) {
             .p720 => "720p",
@@ -3460,7 +3460,7 @@ pub const Align = enum { start, center, end };
 /// shrink a panel to its content area with `inset`, slide a group with
 /// `translate`, and drop a fixed-size child into a region with the
 /// `place*` family (a 3\u00d73 grid of named anchors). Every method is pure
-/// — it returns a new value and never mutates the receiver.
+/// - it returns a new value and never mutates the receiver.
 pub const Rectangle = struct {
     x: i32,
     y: i32,
@@ -3561,8 +3561,8 @@ pub const TileOverlayType = enum {
     /// decoration footprint preview): the drawable's 1-tile square is a
     /// region tile and `edge` says which of its sides to stroke. The
     /// producer emits one segment per boundary edge (a side whose
-    /// neighbor is outside the region), so any region shape — L-shapes,
-    /// disjoint regions — renders as a continuous outline.
+    /// neighbor is outside the region), so any region shape - L-shapes,
+    /// disjoint regions - renders as a continuous outline.
     region_edge,
 };
 
@@ -3652,14 +3652,14 @@ pub const LevelEndDrawable = struct {
     screen_position: ScreenPosition,
     color: Color,
     /// Tint for the animated banner overlay (drawn over the pole). The pole
-    /// and banner are colored independently — pole = world gradient index 5,
+    /// and banner are colored independently - pole = world gradient index 5,
     /// banner = index 0 (see DESIGN → Decorations & Footprint / flag pole).
     banner_color: Color = .{ .r = 255, .g = 255, .b = 255 },
     /// Source rectangle for the animated banner overlay (`world/flag`), or
     /// null when there is no banner (keeps the drawable backward-compatible).
     /// The banner is drawn over the pole at the same screen position + pivot;
     /// each frame is 256x512, advanced at `settings.animation_fps`. Computed
-    /// in view() from `session.animation_clock` (looping anim — no per-instance
+    /// in view() from `session.animation_clock` (looping anim - no per-instance
     /// state). See DESIGN → Animation.
     banner_source_rectangle: ?Rectangle = null,
 };
@@ -3705,7 +3705,7 @@ pub const AnimKind = union(enum) {
     /// Float a damage number away from the defender's sprite, in the
     /// normalized attacker→defender direction (one of 8), starting from the
     /// bbox edge/corner nearest that direction and traveling 1 tile with
-    /// ease-out. `value` is the incoming damage dealt (may be 0 — a
+    /// ease-out. `value` is the incoming damage dealt (may be 0 - a
     /// fully-absorbed hit still renders a "0" so the connection is
     /// observable; only the hit flash is gated on > 0). Triggered by
     /// `attack`/`collision`. Per-entity staggered (0.125s gap) so
@@ -3740,7 +3740,7 @@ pub const PendingAnim = struct {
 };
 
 /// An active one-shot anim. `view()` shows it when `event_index <
-/// current_event_index` (the triggering event is in the projected history —
+/// current_event_index` (the triggering event is in the projected history -
 /// same exclusive bound the combat log uses, so undo hides it) AND
 /// `animation_clock < end_clock` (not yet elapsed) AND `animation_clock >=
 /// start_clock` (a staggered number anim hasn't started yet → invisible).
@@ -3775,7 +3775,7 @@ pub const FloatingIconDrawable = struct {
 /// the unoccluded portion merges into the art's own black outline; the
 /// One sprite layer in a composited silhouette stack (see
 /// `OcclusionInsetDrawable`). The renderer ORs each layer's alpha into a
-/// frame-sized opaque mask, then dilates the union — so a weapon overlapping
+/// frame-sized opaque mask, then dilates the union - so a weapon overlapping
 /// the body doesn't produce a spurious internal outline edge. `sprite_id` is
 /// the full asset-relative path (`entities/skeleton_1`, `weapons/sword`,
 /// `world/flag`). `source_rectangle` selects a sub-region (null = whole
@@ -3842,7 +3842,7 @@ pub const ViewState = struct {
     /// The outline stripe shader's cycle phase, 0..1 (fraction of one
     /// light-dark cycle; see DESIGN → Platform Seam → Outline stripe
     /// shader). View-side only, stepped at animation_fps from the animation
-    /// clock — freezes on pause like every looping anim; never game state,
+    /// clock - freezes on pause like every looping anim; never game state,
     /// so there is no replay impact.
     outline_stripe_phase: f32,
     tiles: []const TileDrawable,
@@ -3859,7 +3859,7 @@ pub const ViewState = struct {
     ui_elements: []const @import("ui.zig").UiElement,
     /// The font metrics the ui_elements were laid out with this frame. The
     /// NEXT frame's input resolution reads it off `previous_view_state`
-    /// (e.g. mapping a text-field click x to a caret index) — the one
+    /// (e.g. mapping a text-field click x to a caret index) - the one
     /// backend-derived value the input side needs.
     font_metrics: @import("ui.zig").FontMetrics,
     /// Chronological combat-log projection of the current level's events up to

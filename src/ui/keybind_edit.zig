@@ -1,8 +1,8 @@
 //! The keybinds tab's edit state machine (TODO → Keybind editor slice 4):
 //! listening → pending (confirm/cancel) and the picker, plus the
-//! `translateInput` capture seam (`routeKeybindCapture` — the text-input
+//! `translateInput` capture seam (`routeKeybindCapture` - the text-input
 //! model: while an edit is active, ALL binding translation is suppressed and
-//! raw key/mouse presses route into the capture instead). Pure UiState —
+//! raw key/mouse presses route into the capture instead). Pure UiState -
 //! the whole machine is view + input-layer state off the undo timeline; the
 //! settings mutation happens only at CONFIRM (the camera_zoom discipline).
 //! See DESIGN → UI Framework → Settings screen (the Keybinds tab).
@@ -11,14 +11,14 @@ const std = @import("std");
 const types = @import("../types.zig");
 
 /// The active keybind edit. While `UiState.keybind_edit` is set, binding
-/// translation is suppressed (see the module doc) — Escape cancels at every
+/// translation is suppressed (see the module doc) - Escape cancels at every
 /// phase.
 pub const KeybindEdit = union(enum) {
     /// Listening for a key press (a row's combo area or `+` was clicked).
     /// The first non-modifier key press (with the held modifiers becoming
     /// the combo's requirements) or mouse press captures → pending. A
     /// mouse press ANYWHERE captures (clicking is binding the clicked
-    /// button) — Escape is the only non-capturing escape.
+    /// button) - Escape is the only non-capturing escape.
     listening: KeybindTarget,
     /// The right-column action picker is open (a row's action panel was
     /// clicked, or the standalone Add button): the full scrollable action
@@ -28,7 +28,7 @@ pub const KeybindEdit = union(enum) {
     picker: KeybindTarget,
     /// A complete proposal awaiting Confirm / Cancel: the row shows the
     /// captured combo + Confirm/Cancel buttons + the steal warning (if the
-    /// combo currently fires another binding, confirming REMOVES it — see
+    /// combo currently fires another binding, confirming REMOVES it - see
     /// DESIGN → Input → Hybrid precedence + binding conflicts).
     pending: PendingKeybind,
 };
@@ -55,13 +55,13 @@ pub const PendingKeybind = struct {
     replace_index: ?usize,
     /// The entry confirming will REMOVE (the steal): same combo, contexts
     /// intersect, different index than `replace_index`. The first listed
-    /// wins (the loader's rule) — the target row keeps its combo, the
+    /// wins (the loader's rule) - the target row keeps its combo, the
     /// other one goes. Same action + same combo = a redundant duplicate
     /// (confirming dedupes). Null = no steal, clean apply.
     stolen_index: ?usize,
 };
 
-/// The captured combo during a LISTENING edit. Owned, fixed buffers — no
+/// The captured combo during a LISTENING edit. Owned, fixed buffers - no
 /// allocation, no lifetime (the pending state persists across frames; the
 /// raw event ids it captures from only live one frame).
 pub const KeybindCapture = struct {
@@ -102,7 +102,7 @@ pub const KeybindCapture = struct {
     }
 
     /// The captured combo as a binding input (borrowing this capture's
-    /// buffer — the pending state owns it; the confirm applier dupes).
+    /// buffer - the pending state owns it; the confirm applier dupes).
     pub fn rawInput(self: *const KeybindCapture) types.RawInput {
         const id = self.capturedId() orelse "";
         return switch (self.kind) {
@@ -119,7 +119,7 @@ pub const KeybindEditState = struct {
     capture: KeybindCapture = .{},
 };
 
-/// True for the modifier ids (held-state tracking only — they never capture;
+/// True for the modifier ids (held-state tracking only - they never capture;
 /// a combo needs a base key, and the held modifiers BECOME the combo's
 /// requirements).
 fn isModifierInputId(id: []const u8) bool {
@@ -136,18 +136,18 @@ fn isModifierInputId(id: []const u8) bool {
 /// `translateInput` seam, the text-input model): Escape cancels at every
 /// phase; during LISTENING the first non-modifier key press or mouse press
 /// captures; during PENDING Enter confirms (the modal-capture-state
-/// convention — Escape cancels, Enter triggers the primary action; safe
+/// convention - Escape cancels, Enter triggers the primary action; safe
 /// despite Enter often being the captured key itself: capture happens
 /// during LISTENING, so by pending an Enter press can only mean confirm).
 /// Called only while an edit is active (binding translation is suppressed
-/// upstream). Pure UiState writes — no settings touch until confirm.
+/// upstream). Pure UiState writes - no settings touch until confirm.
 pub fn routeKeybindCapture(
     edit_state: *KeybindEditState,
     pressed_keys: []const ?[]const u8,
     mouse_pressed: []const ?[]const u8,
     modifiers: types.Modifiers,
 ) types.KeybindCaptureOutcome {
-    // Escape cancels at every phase (it is never capturable — rebinding the
+    // Escape cancels at every phase (it is never capturable - rebinding the
     // escape key away mid-edit would be self-defeating; a binding for
     // `.escape` can still be created by rebinding another row's combo).
     for (pressed_keys) |slot| {
@@ -155,7 +155,7 @@ pub fn routeKeybindCapture(
         if (std.mem.eql(u8, id, "Escape")) return .canceled;
     }
 
-    // Enter confirms during pending (the modal-capture-state convention —
+    // Enter confirms during pending (the modal-capture-state convention -
     // see the fn doc for why the captured-Enter case is not ambiguous).
     if (edit_state.edit == .pending) {
         for (pressed_keys) |slot| {
@@ -175,7 +175,7 @@ pub fn routeKeybindCapture(
         return .captured;
     }
     // Mouse buttons capture too (a click while listening binds the clicked
-    // button — standard capture behavior; the click that STARTED the
+    // button - standard capture behavior; the click that STARTED the
     // listening was consumed by its own button before the edit began).
     for (mouse_pressed) |slot| {
         const id = slot orelse continue;
@@ -203,13 +203,13 @@ test "routeKeybindCapture: keys capture with held modifiers; Escape cancels; mod
     try std.testing.expectEqual(types.KeybindCaptureOutcome.none, routeKeybindCapture(&edit_state, &modifier_press, &empty, .{}));
     try std.testing.expect(edit_state.capture.capturedId() == null);
 
-    // Escape cancels (never captures) — at every phase.
+    // Escape cancels (never captures) - at every phase.
     edit_state = .{ .edit = .{ .listening = .{ .binding = 0 } } };
     const escape_press = [_]?[]const u8{"Escape"};
     try std.testing.expectEqual(types.KeybindCaptureOutcome.canceled, routeKeybindCapture(&edit_state, &escape_press, &empty, .{}));
 
     // Outside listening (pending), a normal press does nothing; Escape
-    // still cancels; Enter CONFIRMS (the modal-capture-state convention —
+    // still cancels; Enter CONFIRMS (the modal-capture-state convention -
     // capture is over by pending, so an Enter press can only mean confirm).
     edit_state = .{ .edit = .{ .pending = .{
         .binding = .{ .input = .{ .key = "Enter" }, .action = .undo },

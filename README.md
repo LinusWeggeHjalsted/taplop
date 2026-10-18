@@ -15,7 +15,7 @@ this game is multi-licensed:
 requires [Zig 0.16.0](https://ziglang.org/download/)
 
 ```sh
-zig build run                    # debug build + run (includes dev tools — see below)
+zig build run                    # debug build + run (includes dev tools - see below)
 zig build run --release=fast     # release build for general play (no dev tools)
 zig build                        # compile the native exe
 scripts/test.sh                  # run the test suite (headless, PASS/FAIL summary)
@@ -27,7 +27,7 @@ debug builds (`zig build run`, or any build with `optimize == .Debug`)
 ship with dev-only keybinds gated by the `-Ddev-mode` build option. today
 the only one is:
 
-- **ctrl+Enter** — skip the current level (pushes the normal end-level
+- **ctrl+Enter** - skip the current level (pushes the normal end-level
   cascade; replay-safe).
 
 dev mode follows the optimize level: debug builds (the `zig build` default,
@@ -39,7 +39,7 @@ zig build run --release=fast -Ddev-mode=true
 ```
 
 the gate is at the handler site, so the binding still parses in any build
-but is a no-op when dev mode is off — the general client never has these
+but is a no-op when dev mode is off - the general client never has these
 tools compiled into their logic path.
 
 ### Scratch data dir

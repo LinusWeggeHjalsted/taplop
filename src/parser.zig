@@ -5,7 +5,7 @@
 //! `findValue`, and the shared `file_format_version` constants. The
 //! game-content loaders live in `loaders.zig`, the save/settings writers in
 //! `writers.zig`, and the session-log serializer/deserializer in
-//! `session_log.zig` — they all build on this file. See AGENTS → Config File
+//! `session_log.zig` - they all build on this file. See AGENTS → Config File
 //! Format / DESIGN → File System & IO.
 
 const std = @import("std");
@@ -18,7 +18,7 @@ const FileSource = file_source_mod.FileSource;
 /// Monotonic schema versions for each config-file type. Bump on any breaking
 /// change to that file's layout. The loader validates the file's
 /// `file_format_version` (in its Metadata/Info section) against the expected
-/// constant and returns `error.UnsupportedFileFormatVersion` on mismatch — a
+/// constant and returns `error.UnsupportedFileFormatVersion` on mismatch - a
 /// HARD gate. The version is validate-and-discard (not stored on the parsed
 /// type): it's a parse-time compatibility check, not runtime state. The save
 /// writer emits the current constant. See DESIGN → Versioning.
@@ -137,7 +137,7 @@ pub fn parseConfigFile(
 
         if (in_layout) {
             if (line.len == 0) {
-                // Blank lines in Layout are empty rows — store as raw content
+                // Blank lines in Layout are empty rows - store as raw content
                 try current_raw_lines.append(allocator, line);
                 continue;
             }
@@ -205,7 +205,7 @@ pub fn parseConfigFile(
             }
             current_header = line;
         } else if (is_key_value) {
-            // Key-value pair — split on first space
+            // Key-value pair - split on first space
             if (std.mem.indexOfScalar(u8, line, ' ')) |space_index| {
                 try current_pairs.append(allocator, .{
                     .key = line[0..space_index],
@@ -245,7 +245,7 @@ pub fn parseConfigFile(
     // into a section (pairs/groups before any header, or a group pending at
     // EOF with no header open). Everything attached to a section was
     // toOwnedSlice'd above, so these are either empty or hold only the
-    // orphaned remainders — leaking them is invisible in the arena-wrapped
+    // orphaned remainders - leaking them is invisible in the arena-wrapped
     // parses but flagged under `testing.allocator`.
     current_pairs.deinit(allocator);
     current_entry_groups.deinit(allocator);
@@ -300,7 +300,7 @@ pub fn validateSections(
 /// Validate `file_format_version` from a parsed Metadata/Info section's first
 /// entry group. Required (hard gate): a file without it returns
 /// `error.UnsupportedFileFormatVersion`. Mismatch returns the same error.
-/// Validate-and-discard — the version is not stored on the parsed type.
+/// Validate-and-discard - the version is not stored on the parsed type.
 pub fn validateFileFormatVersion(
     sections: []const Section,
     section_header: []const u8,
@@ -322,7 +322,7 @@ pub fn asU32(value: []const u8) ?u32 {
 
 /// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
 /// append a warning to `warnings` (when non-null) naming the field, value,
-/// file, and max — then return `max` so the game stays playable. Returns 0 on
+/// file, and max - then return `max` so the game stays playable. Returns 0 on
 pub fn asI32(value: []const u8) ?i32 {
     return std.fmt.parseInt(i32, value, 10) catch null;
 }
@@ -413,9 +413,9 @@ pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations
 
 /// Section whitelist for the editor palette defaults (data/editor_defaults.txt):
 /// Metadata + one entry each in the level-file Entities / Decorations / Items
-/// formats (no Layout — nothing is placed; no character_code — the code is a
+/// formats (no Layout - nothing is placed; no character_code - the code is a
 /// level-Layout concern, the decoration-registry precedent). Key validation
-/// reuses `level_key_map` — the sections use the level key sets verbatim.
+/// reuses `level_key_map` - the sections use the level key sets verbatim.
 /// See loaders.loadEditorDefaults.
 pub const editor_defaults_sections = [_][]const u8{ "Metadata", "Entities", "Decorations", "Items" };
 
@@ -427,7 +427,7 @@ pub const player_save_sections = [_][]const u8{
 
 /// A mission player.txt: the LOADOUT sections of a player save (weapons,
 /// gear, inventory, utility skills). No Info / stats / hubs / clones /
-/// UnlockedSkills — base stats aren't authorable (the template keeps the
+/// UnlockedSkills - base stats aren't authorable (the template keeps the
 /// Entity defaults) and learned is implied for the editor player. See
 /// DESIGN → Architecture → Level Editor → Selection model (playtest
 /// player_data).
@@ -437,7 +437,7 @@ pub const player_loadout_sections = [_][]const u8{
 };
 
 // ============================================================
-// Key validation (approach A — see DESIGN → Error Handling)
+// Key validation (approach A - see DESIGN → Error Handling)
 // ============================================================
 //
 // Per-section key whitelists, analogous to the section whitelists above.
@@ -519,7 +519,7 @@ const level_decorations_keys = [_][]const u8{
     "behind",
 };
 
-/// Same as level_decorations_keys but without `character_code` — registry
+/// Same as level_decorations_keys but without `character_code` - registry
 /// entries are prefabs identified by sprite stem, not placed by layout char.
 const decoration_registry_decorations_keys = [_][]const u8{
     "sprite",
@@ -736,7 +736,7 @@ pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComp
 
 // --- Player loadout (player.txt) key whitelists ---
 //
-// The file is SAVE-SHAPED (the loadout sections of a player save) — the
+// The file is SAVE-SHAPED (the loadout sections of a player save) - the
 // same per-section keys the save carries.
 
 pub const player_loadout_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
@@ -877,7 +877,7 @@ test "parseConfigFileFromPath reads a file from disk without error" {
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
-    // Just verify we got sections — don't check specific content
+    // Just verify we got sections - don't check specific content
     try std.testing.expect(parsed.sections.len > 0);
     for (parsed.sections) |section| {
         try std.testing.expect(section.header.len > 0);

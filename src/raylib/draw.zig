@@ -1,6 +1,6 @@
 //! World + UI element drawing for the raylib backend: the tile/overlay/
 //! ground-drawable/world-overlay passes and the flat UI element list, as
-//! free functions over the backend (the handlers/ pattern — the backend
+//! free functions over the backend (the handlers/ pattern - the backend
 //! driver in backend.zig calls these from `render`). Texture lookups go
 //! through the backend's texture store, text through its text renderer;
 //! see DESIGN → Platform Seam (rendering model).
@@ -21,7 +21,7 @@ const toRaylibColor = conversions.toRaylibColor;
 const toPremultipliedColor = conversions.toPremultipliedColor;
 const referenceRectangle = conversions.referenceRectangle;
 
-/// Text-field caret bar thickness (reference px) — matches the unified
+/// Text-field caret bar thickness (reference px) - matches the unified
 /// outline width constant (types.outline_thickness) so the caret reads at
 /// the same visual weight as the outlines.
 const caret_width: i32 = types.outline_thickness;
@@ -31,7 +31,7 @@ const caret_width: i32 = types.outline_thickness;
 /// Draw a tile overlay as an outline-class primitive (no overlay art):
 /// the clickable-tile highlight (an inset square outline), the cursor /
 /// range / radius / aggro square outlines, and the region-edge bars. The
-/// outline width is CONSTANT — `types.outline_thickness` (8 reference
+/// outline width is CONSTANT - `types.outline_thickness` (8 reference
 /// px) at every zoom: the outlined thing scales with the camera, the
 /// stroke does not. Range/radius/aggro outlines may span multiple tiles
 /// via `extent` (side in tiles, default 1).
@@ -47,7 +47,7 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
     const line_width: f32 = @floatFromInt(types.outline_thickness);
     switch (overlay.overlay_type) {
         .highlight => {
-            // The clickable-tile highlight: an inset square outline — the
+            // The clickable-tile highlight: an inset square outline - the
             // same outline class as the cursor/range outlines (shared
             // thickness + marching stripe treatment), inset 1/16 of the
             // tile: the retired `world/tile_highlight` marching-ants
@@ -65,10 +65,10 @@ pub fn drawTileOverlay(backend: *RaylibBackend, overlay: types.TileOverlayDrawab
             backend.endOutlineStripeScope(world_scale * backend.renderScale());
         },
         // The square outlines (the hovered tile + the range/radius/aggro
-        // region outlines — one primitive) all draw through the outline
+        // region outlines - one primitive) all draw through the outline
         // stripe shader: the marching flip between the outline tint and
         // the theme's darkest (see DESIGN → Platform Seam → Outline stripe
-        // shader). The scope wraps exactly this draw — endShaderMode
+        // shader). The scope wraps exactly this draw - endShaderMode
         // restores the DEFAULT shader, not the sprite pass (see
         // beginSpritePass).
         .cursor, .range_outline, .radius_outline, .aggro_outline => {
@@ -264,7 +264,7 @@ pub fn drawWorldOverlay(
             rl.drawTexturePro(texture, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(icon.color, 255));
         },
         .floating_text => |ftext| {
-            // Outlined via the SDF pipeline (shadow-ring fallback) — see
+            // Outlined via the SDF pipeline (shadow-ring fallback) - see
             // `drawOutlinedText`. Avoids `rl.imageTextEx` (degenerate for
             // our TTF font's CPU-side per-glyph images) and GPU
             // render-texture readback (which perturbs the main render
@@ -286,7 +286,7 @@ pub fn drawWorldOverlay(
 
 /// Draw the entity health bar: depleted background (full, darkest),
 /// fill (cropped to `fill_fraction` from the left, team gradient index 1),
-/// then the outline frame on top — all at the same rect (the bar +
+/// then the outline frame on top - all at the same rect (the bar +
 /// outline share a 155x31 canvas). `size` fields are native reference
 /// pixels; `world_scale` (camera zoom) scales them at draw time. See
 /// DESIGN → Entity & UI Coloring.
@@ -303,7 +303,7 @@ fn drawHealthBar(
     };
     // Depleted background (drawn full).
     drawSprite(backend, "world/entity_health_bar_background", destination, null, bar.depleted_color, 255, false);
-    // Fill (cropped to fraction from the left — `.right` keeps the left
+    // Fill (cropped to fraction from the left - `.right` keeps the left
     // portion, matching a health bar that depletes from the right).
     const fill_texture = backend.textures.getTexture("world/entity_health_bar_background") orelse return;
     const fraction = std.math.clamp(bar.fill_fraction, 0, 1);
@@ -330,7 +330,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         .button => |button| {
             // Spriteless buttons are pure action/hit-test targets over a
             // separate background (e.g. a 9-slice panel behind them); the
-            // renderer draws nothing for them — UNLESS highlighted, in
+            // renderer draws nothing for them - UNLESS highlighted, in
             // which case a lightest stroked rect marks them (the active
             // settings choice, or a hovered clickable).
             if (button.sprite_id) |sprite_id| {
@@ -343,7 +343,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 // instead of overlapping its edge (drawRectangleLinesEx
                 // centers the stroke on the rect boundary). Spriteless
                 // buttons sit on 9-slice panel cells (the editor tool
-                // palette) — this stroked rect is their lightest hover
+                // palette) - this stroked rect is their lightest hover
                 // outline, so it gets the same stripe treatment as the
                 // sprite-backed outlines above.
                 const t: i32 = types.outline_thickness;
@@ -363,7 +363,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         .text_field => |field| {
             // Frame (9-slice, builder-tinted), selection highlight
             // UNDER the text, text, caret bar OVER it. The builder
-            // computed every coordinate — the backend just draws (see
+            // computed every coordinate - the backend just draws (see
             // TextFieldUi).
             drawNineSlice(backend, .{
                 .sprite_id = "ui/panel",
@@ -412,7 +412,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 // Stroked solid_rect IS the outline class by construction
                 // (the element doc: same drawRectangleLinesEx primitive as
                 // the world range/radius outlines; today's user is the
-                // inventory multi-salvage drag region) — same stripe
+                // inventory multi-salvage drag region) - same stripe
                 // treatment. The close restores the enclosing per-item
                 // sprite pass (the endShaderMode trap).
                 backend.beginOutlineStripeScope();
@@ -453,12 +453,12 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// the sprite or its mask is unavailable (e.g. a placeholder magenta
 /// box) so the hover highlight still reads. Both paths draw through the
 /// outline stripe shader (the marching flip between the highlight tint
-/// and the theme's darkest — see DESIGN → Platform Seam → Outline stripe
+/// and the theme's darkest - see DESIGN → Platform Seam → Outline stripe
 /// shader).
 fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {
-    // The scope covers BOTH paths (mask + rectangle fallback) — the whole
+    // The scope covers BOTH paths (mask + rectangle fallback) - the whole
     // function is one outlined draw. The close restores the enclosing
-    // per-item sprite pass (the endShaderMode trap — see
+    // per-item sprite pass (the endShaderMode trap - see
     // endOutlineStripeScope).
     backend.beginOutlineStripeScope();
     defer backend.endOutlineStripeScope(backend.renderScale());
@@ -494,7 +494,7 @@ fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destinat
 /// over a decoration that draws in front of it. Drawn over the FULL
 /// sprite rect (no scissor): the unoccluded portion merges into the art's
 /// own black outline (self-subtle), the occluded portion darkens the
-/// decoration — see DESIGN → Decorations & Footprint → Occlusion inset.
+/// decoration - see DESIGN → Decorations & Footprint → Occlusion inset.
 /// No-op if the sprite or its mask is unavailable.
 pub fn drawOcclusionInset(
     backend: *RaylibBackend,
@@ -519,7 +519,7 @@ pub fn drawOcclusionInset(
 
 /// Draw a sprite into `destination`. `source` selects a sub-region of the
 /// texture (null = whole texture). `tint` multiplies the (grayscale) sprite
-/// — this is the grayscale×color theming path. Missing textures draw a
+/// - this is the grayscale×color theming path. Missing textures draw a
 /// magenta box so absent art is obvious without crashing.
 fn drawSprite(
     backend: *RaylibBackend,
@@ -551,14 +551,14 @@ fn drawSprite(
 }
 
 /// 9-slice: every corner is drawn square (aspect-true 1:1) and the edges
-/// + center stretch to fill — the rect math lives in the pure, tested
+/// + center stretch to fill - the rect math lives in the pure, tested
 /// `ui.nineSlicePiecesAtScale` (corners shrink proportionally on panels
 /// smaller than two slices instead of being squashed; edge/center source
 /// rects additionally cropped on their run axis to the destination's
 /// target-pixel span, fed the renderScale):
 /// a narrow panel's edge pieces otherwise minify 3-6x along the run axis,
 /// dragging the LOD into deep mips where the border stroke is
-/// box-averaged thin — the trilinear ghost-blend smeared small panels'
+/// box-averaged thin - the trilinear ghost-blend smeared small panels'
 /// top/bottom borders (the tooltip bug; probe history in DONE.md).
 fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkest: types.Color) void {
     const texture = backend.textures.getTexture(panel.sprite_id) orelse {
@@ -568,11 +568,11 @@ fn drawNineSlice(backend: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkes
     // didn't pick an explicit color inherits the active theme's `darkest`
     // (mirrors the text-label convention in `drawTextLabel`). An explicit
     // `.color` overrides it.
-    // Select the SOURCE color first, then convert once — an if/else
+    // Select the SOURCE color first, then convert once - an if/else
     // EXPRESSION returning the extern rl.Color by value miscompiles on
     // aarch64-macos optimized builds (both branch stores vanish; the
-    // draw tints with uninitialized stack — see DONE.md, "mac 9-slice
-    // panels — ROOT CAUSE FOUND").
+    // draw tints with uninitialized stack - see DONE.md, "mac 9-slice
+    // panels - ROOT CAUSE FOUND").
     const source_color = if (std.meta.eql(panel.color, ui.default_tint))
         theme_darkest
     else

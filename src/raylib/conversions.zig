@@ -15,7 +15,7 @@ pub fn toRaylibColor(color: types.Color, alpha: u8) rl.Color {
 /// alpha tint the RGB contribution wouldn't be scaled by the alpha and the
 /// draw would render too bright). For textures the premultiplied texel RGB
 /// is additionally scaled by the tint RGB, so the total contribution is
-/// texelRGB*texelA*tintA — exactly "the sprite at opacity tintA". Used for
+/// texelRGB*texelA*tintA - exactly "the sprite at opacity tintA". Used for
 /// translucent rectangle fills (tile highlights) and partial-alpha sprite
 /// draws (`UiElement.image.alpha`). Opaque (255) tints are identity.
 /// See DESIGN → Platform Seam → Render target resolution (premultiplied

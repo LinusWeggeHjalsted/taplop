@@ -1,8 +1,8 @@
 //! The editor's centered pickers: the utility-skill picker, the sprite
 //! picker (Mission/Official tabs, entity + decoration + layer modes), the
-//! level-theme gradient picker, and the footprint tile-grid editor — all
+//! level-theme gradient picker, and the footprint tile-grid editor - all
 //! rendered in the one fixed overlay rect between the sidebars (see
-//! DESIGN → Level Editor → Editor UI layout — the picker overlay). The
+//! DESIGN → Level Editor → Editor UI layout - the picker overlay). The
 //! official sprite tables (comptime from the sprite metadata) live here.
 
 const std = @import("std");
@@ -69,7 +69,7 @@ const editor_group_header_font_size = shell.editor_group_header_font_size;
 const close_button_sprite_id = ui_element.close_button_sprite_id;
 
 /// The OFFICIAL enemy sprites (shipped `assets/entities/*.png`) as bare
-/// stems — the sprite picker's Official tab. The player body is EXCLUDED
+/// stems - the sprite picker's Official tab. The player body is EXCLUDED
 /// (the player sprite isn't an enemy base-sprite option). Comptime from
 /// the sprite-metadata table; sorted for a stable picker order.
 const official_entity_sprite_stems: []const []const u8 = build: {
@@ -79,7 +79,7 @@ const official_entity_sprite_stems: []const []const u8 = build: {
         if (!std.mem.startsWith(u8, key, "entities/")) continue;
         if (std.mem.eql(u8, key, "entities/player")) continue;
         const stem = key["entities/".len..];
-        // Insert in sorted position (comptime slices have const elements —
+        // Insert in sorted position (comptime slices have const elements -
         // no in-place sort).
         var insert_index: usize = 0;
         while (insert_index < stems.len and std.mem.lessThan(u8, stems[insert_index], stem)) : (insert_index += 1) {}
@@ -97,7 +97,7 @@ const OfficialDecorationSprite = struct {
 };
 
 /// The OFFICIAL decoration sprites (shipped `assets/decorations/*.png`) as
-/// stems + pixel dims — the sprite picker's LAYER-mode Official tab (the
+/// stems + pixel dims - the sprite picker's LAYER-mode Official tab (the
 /// base-sprite mode lists the registry prefabs instead). Comptime from
 /// the sprite-metadata table; a malformed dims string is a build bug.
 const official_decoration_sprites: []const OfficialDecorationSprite = build: {
@@ -122,9 +122,9 @@ const official_decoration_sprites: []const OfficialDecorationSprite = build: {
 };
 
 /// The centered utility-skill picker (the picker framework's first
-/// consumer — see DESIGN → Architecture → Level Editor → Editor UI
+/// consumer - see DESIGN → Architecture → Level Editor → Editor UI
 /// layout). A modal panel: the None option + one cell per
-/// utility-eligible skill (the flat list from src/utility_skills.zig —
+/// utility-eligible skill (the flat list from src/utility_skills.zig -
 /// weapon skills are never offered), 4-wide skill-button cells with the
 /// icon + name; the currently-assigned skill is highlighted; a close
 /// button top-right (the middle-panel convention). `target` names the
@@ -151,7 +151,7 @@ pub fn buildEditorSkillPicker(
             else
                 null,
             .player => editor.player_def.template.equipped_utility_skills[slot_index],
-            // No utility-skill row in the decoration or item content —
+            // No utility-skill row in the decoration or item content -
             // nothing to show as current (defensive; the picker never
             // opens on either).
             .decoration_type, .item_type => null,
@@ -161,7 +161,7 @@ pub fn buildEditorSkillPicker(
     // The FIXED picker overlay (the band between the sidebars) + a
     // FIXED-SIZE grid: 6 columns of `slot_size` cells, centered in the
     // area below the header (top-aligned if it ever outgrows it). The
-    // overlay never resizes with its content — see
+    // overlay never resizes with its content - see
     // `editorPickerOverlayRect`.
     const options: i32 = @intCast(1 + utility_skills.utility_skill_ids.len); // None + skills
     const columns: i32 = 6;
@@ -180,7 +180,7 @@ pub fn buildEditorSkillPicker(
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
 
     // The entity-inspect panel's skill coloring convention: frame at the
-    // team gradient's index 3, icon at index 1 — resolved by the
+    // team gradient's index 3, icon at index 1 - resolved by the
     // inspector target's team (a team-0 helper and the player target tint
     // with the player gradient; enemy teams with the enemy gradient).
     const team_gradient: [types.gradient_color_count]types.Color = switch (editorInspectorTarget(editor)) {
@@ -200,7 +200,7 @@ pub fn buildEditorSkillPicker(
         .y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2)),
     };
 
-    // Cell 0: the None option (clears the slot) — no editor_skill payload;
+    // Cell 0: the None option (clears the slot) - no editor_skill payload;
     // the one cell that carries a text label.
     try emitPickerSkillCell(
         elements,
@@ -216,7 +216,7 @@ pub fn buildEditorSkillPicker(
         active_theme.lightest,
     );
     // One cell per utility skill, in enum order (index + 1: cell 0 is
-    // None). Icon-only — the icon is the identity at full cell size; the
+    // None). Icon-only - the icon is the identity at full cell size; the
     // tooltip carries the name.
     for (utility_skills.utility_skill_ids, 0..) |skill_id, index| {
         const definition = lookups.getSkillDefinition(skill_id) orelse continue;
@@ -245,13 +245,13 @@ pub fn buildEditorSkillPicker(
 }
 
 /// The centered SPRITE picker (the picker framework's second consumer):
-/// pick the edited entity type's base sprite. Two tabs top-left — Mission
+/// pick the edited entity type's base sprite. Two tabs top-left - Mission
 /// (the .pngs scanned from the mission directory, stored as namespaced
 /// `custom/<mission-dir>/<stem>` ids) and Official (the shipped entity
 /// sprites, minus the player body); close top-right. One 256×256 cell per
 /// option (the palette tool-cell look). Dropdown semantics like the skill
 /// picker: blocks only where it sits, stays open until a pick or close.
-/// No scrolling — 6 fixed columns, all rows (overflow is a follow-up if
+/// No scrolling - 6 fixed columns, all rows (overflow is a follow-up if
 /// real content needs it).
 pub fn buildEditorSpritePicker(
     elements: *UiElementList,
@@ -265,7 +265,7 @@ pub fn buildEditorSpritePicker(
     tab: types.EditorSpritePickerTab,
 ) !void {
     // What the picker is picking: a BASE sprite (entity / decoration) or
-    // a LAYER sprite (entity / decoration — the layer index rides the
+    // a LAYER sprite (entity / decoration - the layer index rides the
     // picker target, null = add-new; the skill picker's slot pattern).
     // The base modes resolve through the inspector target; a skill-slot
     // target is the skill picker's own builder (the view dispatches).
@@ -284,14 +284,14 @@ pub fn buildEditorSpritePicker(
         else => null,
     };
 
-    // The edited definition (highlight target + tint source) — the target
+    // The edited definition (highlight target + tint source) - the target
     // resolution's single seam, same as the skill picker. Entity content
     // tints with the TEAM gradient (a team-0 type is a player-team
     // helper); decoration content with the WORLD
     // gradient (the in-game decoration tinting). The player target keeps
     // the entity shape (the player has no sprite/layer rows, so the
-    // picker only opens on it via a stale open — picks commit nothing).
-    // The item target has no sprite either — nothing to pick (defensive;
+    // picker only opens on it via a stale open - picks commit nothing).
+    // The item target has no sprite either - nothing to pick (defensive;
     // the picker never opens on it).
     const target = editorInspectorTarget(editor);
     if (target == .item_type) return;
@@ -327,9 +327,9 @@ pub fn buildEditorSpritePicker(
         entity_context.?.template.color_index;
     // In layer-EDIT mode the edited layer is the highlight target + tint
     // source; ADD mode highlights nothing and tints with the base. A
-    // stale state — the layer index out of range, or the picker kind
+    // stale state - the layer index out of range, or the picker kind
     // mismatched with the target (the tool switched mid-open; the
-    // dropdown stays open by design) — also falls back to the base
+    // dropdown stays open by design) - also falls back to the base
     // values, and every pick no-ops at the commit gate.
     const edited_layer_sprite: ?[]const u8 = blk: {
         const index = layer_index orelse break :blk null;
@@ -373,11 +373,11 @@ pub fn buildEditorSpritePicker(
     // the cell label, the renderable graphic (null = a text-only cell,
     // the degenerate-dims fallback), and the graphic's aspect-fit
     // frame. The Official tab's list differs per kind: the shipped entity
-    // sprites (base + layer — a layer may be any entity art, the fixed
-    // 512×640 frame), the registry prefabs (decoration base — each pick
+    // sprites (base + layer - a layer may be any entity art, the fixed
+    // 512×640 frame), the registry prefabs (decoration base - each pick
     // adopts the whole prefab), or the shipped decoration sprites
     // FILTERED to the base type's dims (decoration layers must match
-    // their base — the load-time invariant; mismatched art is never
+    // their base - the load-time invariant; mismatched art is never
     // offered). Mission-local art is the same list for every kind (dims
     // are checked at the pick commit).
     const PickerCell = struct {
@@ -387,13 +387,13 @@ pub fn buildEditorSpritePicker(
         frame_width: i32,
         frame_height: i32,
         /// Registry-prefab decoration cells render the prefab's authored
-        /// composition — base tinted at the prefab's own color_index, its
-        /// layers at theirs — previewing exactly what an official pick
+        /// composition - base tinted at the prefab's own color_index, its
+        /// layers at theirs - previewing exactly what an official pick
         /// adopts (the whole prefab, colors included). Other cells keep
         /// the shared edited-target tint and no layers.
         base_color_index: ?u32 = null,
         layers: []const types.DecorationLayer = &.{},
-        /// Untinted rendering — custom mission-bundled art keeps its own
+        /// Untinted rendering - custom mission-bundled art keeps its own
         /// colors (the settle `keep_original_colors` semantics' pick-side
         /// counterpart: the picker shows each option in its natural
         /// appearance, and custom art is authored pre-colored).
@@ -401,7 +401,7 @@ pub fn buildEditorSpritePicker(
     };
     var cells: std.ArrayList(PickerCell) = .empty;
     // Custom mission-bundled art renders under the kind's folder prefix
-    // (the same id view() builds — the texture store resolves
+    // (the same id view() builds - the texture store resolves
     // `custom/<mission-dir>/<stem>` ids to the mission directory; see
     // assetPathFor in src/raylib/textures.zig).
     const mission_kind_prefix: []const u8 = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
@@ -409,11 +409,11 @@ pub fn buildEditorSpritePicker(
     else
         "entities/";
     // Spec-conforming mission-local files only: the same gate the render
-    // side applies (`customSpriteDimsPassGate` on the cell's graphic id —
+    // side applies (`customSpriteDimsPassGate` on the cell's graphic id -
     // entity art exactly 512x640, decoration art whole 256px tiles); a
     // decoration LAYER pick must also match the edited base's dims (the
     // load-time invariant, same as the Official tab's layer filter).
-    // Hidden files are counted and named in a note under the grid — never
+    // Hidden files are counted and named in a note under the grid - never
     // silently vanished (an author whose PNG doesn't show needs the reason).
     var hidden_sprite_count: usize = 0;
     switch (tab) {
@@ -421,14 +421,14 @@ pub fn buildEditorSpritePicker(
             for (mission_sprites) |mission_sprite| {
                 const file_name = mission_sprite.file_name;
                 const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-                // The scan minted the namespaced id (session-owned —
+                // The scan minted the namespaced id (session-owned -
                 // MissionSprite.stored_id); the cell REFERENCES it. This
                 // slice is what rides the pick payload
                 // (`clicked_payload`'s editor_sprite variant), so it must
-                // outlive the frame —
+                // outlive the frame -
                 // the per-frame allocPrint it replaced died at the render
                 // reset. The kind-prefixed graphic_id below is
-                // render-scoped (view-internal, dies with the frame) —
+                // render-scoped (view-internal, dies with the frame) -
                 // kind-dependent, so it cannot be pre-minted at the scan.
                 const stored_id = mission_sprite.stored_id;
                 const graphic_id = try std.fmt.allocPrint(
@@ -497,7 +497,7 @@ pub fn buildEditorSpritePicker(
             },
             .decoration_layer => {
                 // A stale open on a non-decoration target: no base dims to
-                // match against — no cells ("No sprites"), picks no-op.
+                // match against - no cells ("No sprites"), picks no-op.
                 if (decoration_context) |context| {
                     const base_dims = context.type_definition.pixel_dims;
                     for (official_decoration_sprites) |sprite| {
@@ -521,7 +521,7 @@ pub fn buildEditorSpritePicker(
     // The FIXED picker overlay (the band between the sidebars) + a
     // FIXED-SIZE grid: 6 columns of `slot_size` cells, centered in the
     // area below the header (top-aligned if it ever outgrows it). The
-    // overlay never resizes with its content — see
+    // overlay never resizes with its content - see
     // `editorPickerOverlayRect`.
     const columns: i32 = 6;
     const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.items.len)) + columns - 1, columns), 1);
@@ -536,7 +536,7 @@ pub fn buildEditorSpritePicker(
         .color = active_theme.darkest,
     } });
 
-    // The header: tab buttons top-left, close top-right (no title — the
+    // The header: tab buttons top-left, close top-right (no title - the
     // tabs ARE the header). Tab state is UiState (a view affordance).
     const origin = bounds.position();
     const tab_specs = [_]struct { tab: types.EditorSpritePickerTab, label: []const u8 }{
@@ -554,7 +554,7 @@ pub fn buildEditorSpritePicker(
                 .screen_position = .{ .x = tab_x, .y = origin.y },
                 .width = tab_width,
                 .height = middle_panel_header_height,
-                // Darkest always (the background-panel class) — the active
+                // Darkest always (the background-panel class) - the active
                 // tab's highlight outline is the indication, no tint change.
                 .color = active_theme.darkest,
             },
@@ -597,7 +597,7 @@ pub fn buildEditorSpritePicker(
     };
 
     // The hidden-files note (mission tab only): names WHY files don't show
-    // — the filter's silent alternative reads as a broken scan to an author
+    // - the filter's silent alternative reads as a broken scan to an author
     // whose PNG just vanished.
     if (tab == .mission_local and hidden_sprite_count > 0) {
         const spec_note: []const u8 = switch (picker_kind) {
@@ -607,7 +607,7 @@ pub fn buildEditorSpritePicker(
         };
         const note = try std.fmt.allocPrint(
             allocator,
-            "{d} sprites hidden — {s}",
+            "{d} sprites hidden - {s}",
             .{ hidden_sprite_count, spec_note },
         );
         const note_width = font_metrics.measureSpanWidth(text(note), editor_group_header_font_size);
@@ -625,7 +625,7 @@ pub fn buildEditorSpritePicker(
 
     // The edited template's colors were resolved above (the target's
     // single seam); a registry-prefab cell overrides the base tint with
-    // the prefab's own — the only per-cell color derivation.
+    // the prefab's own - the only per-cell color derivation.
     // The grid is centered
     // horizontally (fixed 6-column width), top-anchored below the header
     // with the vertical centering clamp.
@@ -689,21 +689,21 @@ pub fn buildEditorSpritePicker(
 }
 
 /// The decoration FOOTPRINT editor (the `.decoration_footprint` picker):
-/// a centered panel showing the type's sprite FULL-SIZE (1:1 — 256 screen
+/// a centered panel showing the type's sprite FULL-SIZE (1:1 - 256 screen
 /// px per sprite-grid tile) with one toggleable cell per tile, a
 /// continuous WHITE outline around the draft-selected region (the
-/// placement preview's region-edge style — 8px bars centered on the
+/// placement preview's region-edge style - 8px bars centered on the
 /// boundary, seamless at corners), a close button top-right (discard),
 /// and a Confirm button bottom-center. The draft rides
 /// `UiState.editor_footprint_draft`; the type id rides the picker target
-/// (see the union). Custom-stem art renders too — its ids resolve to the
+/// (see the union). Custom-stem art renders too - its ids resolve to the
 /// mission dir at the texture store (see assetPathFor).
 /// Swatch block size in the theme picker's gradient strips (one block per
-/// gradient color) — 128px blocks keep the 24-gradient wheel listy rather
+/// gradient color) - 128px blocks keep the 24-gradient wheel listy rather
 /// than hero-sized.
 const theme_picker_swatch_size: i32 = 128;
 
-/// Rows the theme picker can show at once in its fixed overlay — the same
+/// Rows the theme picker can show at once in its fixed overlay - the same
 /// geometry the builder windows by (single source, so the open arm's
 /// scroll-to-current and the builder's window can't drift).
 pub fn editorThemePickerVisibleRowLimit() usize {
@@ -716,17 +716,17 @@ pub fn editorThemePickerVisibleRowLimit() usize {
 
 /// The metadata sidebar's THEME PICKER (the `.level_gradient` target):
 /// a centered panel listing every gradient in `color_themes.txt` as a
-/// swatch strip — one row per gradient (6 × 128px blocks + the gradient's
-/// 0-based index number in a left column; no names — the colors ARE the
+/// swatch strip - one row per gradient (6 × 128px blocks + the gradient's
+/// 0-based index number in a left column; no names - the colors ARE the
 /// content), a close button top-right. The
 /// list WINDOWS to the panel (the wheel outgrew it): only visible rows
 /// emit, the wheel scrolls one row per notch, and a scrollbar (the error
 /// popup's track + thumb convention) shows the window's position. The
-/// row for the level's CURRENT index (the world pick, or the override —
+/// row for the level's CURRENT index (the world pick, or the override -
 /// the DERIVED index while a role is on auto) carries a lightest frame
 /// (the unified 8px outline convention). A pick commits through the
 /// slice-1 player wrappers (same-value picks close without recording;
-/// an auto-role pick flips it to manual — see the input arm). Dropdown
+/// an auto-role pick flips it to manual - see the input arm). Dropdown
 /// semantics like every editor picker: blocks only where it sits.
 pub fn buildEditorThemePicker(
     elements: *UiElementList,
@@ -740,9 +740,9 @@ pub fn buildEditorThemePicker(
 ) !void {
     const gradients = color_theme_definitions.gradients;
     // FIXED-SIZE rows: full-gradient strips at 6 × 128px blocks, centered
-    // (with the scrollbar) in the FIXED picker overlay — the overlay never
+    // (with the scrollbar) in the FIXED picker overlay - the overlay never
     // resizes with the wheel's gradient count. The list windows to the
-    // visible rows; the scroll offset is clamped HERE (authoritative — the
+    // visible rows; the scroll offset is clamped HERE (authoritative - the
     // input arm's lower clamp is the coarse half). See
     // `editorPickerOverlayRect`.
     const row_height = theme_picker_swatch_size;
@@ -775,7 +775,7 @@ pub fn buildEditorThemePicker(
     // The index column (left of each strip): as wide as the WIDEST row
     // number (the last gradient's index) at the row-label font size, so
     // every number right-aligns against the same edge and the digits'
-    // columns line up. 0-based — matches the `gradient_index` line in
+    // columns line up. 0-based - matches the `gradient_index` line in
     // color_themes.txt and the level's stored keys.
     const widest_index_text = try std.fmt.allocPrint(
         allocator,
@@ -787,7 +787,7 @@ pub fn buildEditorThemePicker(
         editor_group_header_font_size,
     );
 
-    // Top-aligned (a scrolling list — no centering) with the index column
+    // Top-aligned (a scrolling list - no centering) with the index column
     // + strip + scrollbar cluster centered as a unit.
     const rows_origin_y = content.y + ui_gap;
     const cluster_width = index_column_width + ui_gap + strip_width +
@@ -796,7 +796,7 @@ pub fn buildEditorThemePicker(
     const strip_x = index_column_x + index_column_width + ui_gap;
 
     // The level's current index for the role (the DERIVED one while an
-    // enemy/player role is on auto — it's what's in effect). A stale
+    // enemy/player role is on auto - it's what's in effect). A stale
     // level index (defensive; picks gate at the input layer) highlights
     // nothing.
     var current_index: ?u32 = null;
@@ -856,7 +856,7 @@ pub fn buildEditorThemePicker(
             .blocks_input = false,
         } });
 
-        // A VISIBLE current marker (Button.highlighted doesn't render —
+        // A VISIBLE current marker (Button.highlighted doesn't render -
         // see TODO): a lightest frame around the current row, the unified
         // 8px outline convention.
         if (current_index != null and current_index.? == index) {
@@ -888,7 +888,7 @@ pub fn buildEditorThemePicker(
         }
     }
 
-    // The scrollbar (only when the list overflows the window) — the error
+    // The scrollbar (only when the list overflows the window) - the error
     // popup's convention: a fixed-gray track + thumb beside the content,
     // the thumb proportional to the visible/total ratio and positioned by
     // the scroll offset.
@@ -927,7 +927,7 @@ pub fn buildEditorFootprintEditor(
     type_id: u32,
     ui_state: *const UiState,
 ) !void {
-    // The type deleted mid-edit (or a stale open): nothing to edit —
+    // The type deleted mid-edit (or a stale open): nothing to edit -
     // the panel vanishes; the close button is unreachable, so the input
     // arms' own guards are the real defense (the toggle no-ops on an
     // out-of-range type).
@@ -941,7 +941,7 @@ pub fn buildEditorFootprintEditor(
 
     // The FIXED picker overlay (the band between the sidebars). The grid
     // SCALES DOWN to fit the area between the header and the Confirm
-    // button (never upscaled — 1:1 is the design size; an 8×8 custom
+    // button (never upscaled - 1:1 is the design size; an 8×8 custom
     // sprite is the case that shrinks). See `editorPickerOverlayRect`.
     const tile: i32 = 256;
     const header_height = middle_panel_header_height;
@@ -993,7 +993,7 @@ pub fn buildEditorFootprintEditor(
 
     // The sprite grid: the art SCALED, centered in the area between the
     // header and the Confirm button (custom mission-bundled stems
-    // included — their ids resolve to the mission dir at the texture
+    // included - their ids resolve to the mission dir at the texture
     // store, see assetPathFor).
     const grid_origin: ScreenPosition = .{
         .x = origin.x + @divFloor(bounds.width - grid_width_pixels, 2),
@@ -1019,7 +1019,7 @@ pub fn buildEditorFootprintEditor(
     }
 
     // One invisible toggle button per grid cell (the draft flips at the
-    // input site — a direct UiState write, off the undo timeline).
+    // input site - a direct UiState write, off the undo timeline).
     for (0..cell_count) |cell_index| {
         const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
         const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
@@ -1037,7 +1037,7 @@ pub fn buildEditorFootprintEditor(
 
     // The draft-selected region's outline: one bar per boundary side (the
     // neighbor across it unselected or off-grid), centered on the boundary
-    // — the editor's region-edge outline, in white, so corners join
+    // - the editor's region-edge outline, in white, so corners join
     // seamlessly for any shape. Constant width: the shared outline
     // thickness (types.outline_thickness).
     const half_thickness: i32 = @divFloor(types.outline_thickness, 2);
@@ -1095,7 +1095,7 @@ pub fn buildEditorFootprintEditor(
     }
 
     // The Confirm button (bottom-center of the overlay, the layer-button
-    // visual class) — a FIXED position now (the grid scales above it).
+    // visual class) - a FIXED position now (the grid scales above it).
     const confirm_rect: Rectangle = .{
         .x = origin.x + @divFloor(bounds.width - @divFloor(bounds.width, 2), 2),
         .y = origin.y + bounds.height - confirm_height - ui_gap,
@@ -1116,8 +1116,8 @@ pub fn buildEditorFootprintEditor(
 }
 
 /// One sprite-picker cell: the button background (carrying the pick + the
-/// stored-id payload) + the option's graphic — the shipped/prefab/mission
-/// art aspect-fit at the cell's frame (custom mission art UNTINTED —
+/// stored-id payload) + the option's graphic - the shipped/prefab/mission
+/// art aspect-fit at the cell's frame (custom mission art UNTINTED -
 /// see `PickerCell.untinted`).
 fn emitPickerSpriteCell(
     elements: *UiElementList,
@@ -1152,7 +1152,7 @@ fn emitPickerSpriteCell(
         const fitted = scaleToFit(cell_rect, frame_width, frame_height);
         // Registry-prefab layers: same fitted rect (layer dims are
         // validated equal to the base's at load), each tinted at its own
-        // index — the scene's decoration composition, in its draw order:
+        // index - the scene's decoration composition, in its draw order:
         // back layers (`behind`) before the base, overlay layers after
         // (see draw.zig).
         for (layers) |layer| {
@@ -1185,7 +1185,7 @@ fn emitPickerSpriteCell(
     }
 }
 
-/// One registry-prefab layer image in a sprite-picker cell — the fitted
+/// One registry-prefab layer image in a sprite-picker cell - the fitted
 /// rect shared with the base (layer dims are validated equal to the base's
 /// at load), tinted at the layer's own color_index into the world gradient.
 fn emitPickerDecorationLayerImage(
@@ -1247,7 +1247,7 @@ fn emitPickerSkillCell(
         .tooltip = tooltip,
     } });
     if (skill_id) |some_id| {
-        // Full cell size — the icon is the identity.
+        // Full cell size - the icon is the identity.
         try elements.append(allocator, .{ .image = .{
             .sprite_id = skillIconSpriteId(some_id),
             .screen_position = cell_rect.position(),
@@ -1285,7 +1285,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
-    // Slot 1 (Slot 5) already carries blink — its cell is highlighted,
+    // Slot 1 (Slot 5) already carries blink - its cell is highlighted,
     // the None cell is not.
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{
         .equipped_utility_skills = .{ null, .blink, null, null, null },
@@ -1298,7 +1298,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     var elements: UiElementList = .empty;
     try buildEditorSkillPicker(&elements, arena.allocator(), metrics, editor, .{ .utility_skill_slot = 1 }, theme);
 
-    // The panel is the FIXED picker overlay — the band between the
+    // The panel is the FIXED picker overlay - the band between the
     // sidebars (full sidebar-panel height, a ui_gap in from each).
     const panel = elements.items[0].nine_slice_panel;
     try std.testing.expectEqual(
@@ -1313,10 +1313,10 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     try std.testing.expectEqual(@as(i32, 1760), editorPickerOverlayRect().width);
     try std.testing.expectEqual(@as(i32, 1456), editorPickerOverlayRect().height);
 
-    // Structural count, derived from the same list the picker iterates —
+    // Structural count, derived from the same list the picker iterates -
     // self-updates as skills land, while still catching double-emitted or
     // dropped cells: panel + header label + close + None (button + label)
-    // + N × (button + full-size icon) — real skills are icon-only.
+    // + N × (button + full-size icon) - real skills are icon-only.
     try std.testing.expectEqual(@as(usize, 5 + 2 * utility_skills.utility_skill_ids.len), elements.items.len);
 
     var picker_buttons: usize = 0;
@@ -1445,7 +1445,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     }
 
     // Mission tab: the scanned files become namespaced
-    // `custom/<mission-dir>/<stem>` payloads with RENDERABLE graphics —
+    // `custom/<mission-dir>/<stem>` payloads with RENDERABLE graphics -
     // the kind's folder-prefixed id (`entities/custom/...`, resolved to
     // the mission dir at the texture store) UNTINTED (custom art keeps
     // its own colors) at the 512x640 entity-frame convention.
@@ -1488,7 +1488,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
         try std.testing.expectEqual(@as(usize, 2), pick_buttons);
         try std.testing.expectEqualStrings("custom/artists_den/boss", payloads[0]);
         try std.testing.expectEqualStrings("custom/artists_den/minion", payloads[1]);
-        // The payload IS the session-owned scan string (pointer identity —
+        // The payload IS the session-owned scan string (pointer identity -
         // no per-frame re-mint): the pick payload rides PlayerInput as a
         // borrow, so its bytes must outlive the frame (the scan mint is
         // the lifetime guarantee; the allocPrint it replaced died at the
@@ -1500,7 +1500,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     }
 }
 
-test "buildEditorSpritePicker: decoration target — registry official cells, namespaced mission cells" {
+test "buildEditorSpritePicker: decoration target - registry official cells, namespaced mission cells" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -1540,7 +1540,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         .sprite = "stone_2",
         .footprint = &stone_footprint,
         .pixel_dims = .{ .x = 512, .y = 256 },
-        // Deliberately different from the tree prefab's index — the
+        // Deliberately different from the tree prefab's index - the
         // official cells must show the PREFABS' colors, not the edited
         // type's.
         .color_index = 3,
@@ -1551,7 +1551,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         .mission = .{ .path = "missions/artists_den" },
     };
 
-    // Official tab: one cell per registry prefab — the decoration pick
+    // Official tab: one cell per registry prefab - the decoration pick
     // action, the current sprite (stone_2) highlighted, and the prefab's
     // authored composition: the tree's base at its own color_index 4
     // (world_four, NOT the edited type's index 3) with its canopy layer
@@ -1645,7 +1645,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
     }
 }
 
-test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decoration stems" {
+test "buildEditorSpritePicker: layer modes - entity stems, dims-filtered decoration stems" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -1700,9 +1700,9 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
         try std.testing.expectEqualStrings("bear", highlighted.?);
     }
 
-    // DECORATION layer mode (add — null index): the Official tab lists
+    // DECORATION layer mode (add - null index): the Official tab lists
     // ONLY the shipped decoration sprites whose dims match the base
-    // type's (512x256 here) — the load-time layer invariant — with the
+    // type's (512x256 here) - the load-time layer invariant - with the
     // decoration-layer pick action; nothing highlights in add mode.
     {
         const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
@@ -1738,7 +1738,7 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
             },
             .image => |image| {
                 // The cells' graphics all aspect-fit at 512x256 (the
-                // entity-frame convention is 512x640 — a mismatched
+                // entity-frame convention is 512x640 - a mismatched
                 // filter leak would show up as a taller fit).
                 if (image.height > @divFloor(slot_size * 256, 512)) saw_mismatched_dims = true;
             },
@@ -1817,7 +1817,7 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
         try std.testing.expectEqual(@as(usize, 1), pick_buttons);
         try std.testing.expect(saw_hero);
         try std.testing.expectEqualStrings(
-            "2 sprites hidden — entity art must be exactly 512x640",
+            "2 sprites hidden - entity art must be exactly 512x640",
             hiddenNote(elements.items).?,
         );
     }
@@ -1862,13 +1862,13 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
         };
         try std.testing.expectEqual(@as(usize, 1), pick_buttons);
         try std.testing.expectEqualStrings(
-            "1 sprites hidden — decoration art must be whole multiples of 256",
+            "1 sprites hidden - decoration art must be whole multiples of 256",
             hiddenNote(elements.items).?,
         );
     }
 
     // DECORATION layer add (base 512x256): a grid-conforming sprite with
-    // the WRONG dims (768x768) is still hidden — the layer must match
+    // the WRONG dims (768x768) is still hidden - the layer must match
     // the base, same rule as the Official tab.
     {
         const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
@@ -1908,12 +1908,12 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
         };
         try std.testing.expectEqual(@as(usize, 1), pick_buttons);
         try std.testing.expectEqualStrings(
-            "1 sprites hidden — layer art must match the base sprite's dims",
+            "1 sprites hidden - layer art must match the base sprite's dims",
             hiddenNote(elements.items).?,
         );
     }
 
-    // The Official tab never hides anything (shipped art) — no note even
+    // The Official tab never hides anything (shipped art) - no note even
     // when the mission scan carries non-conforming files.
     {
         const entity_types = [_]types.EntityTypeDef{.{
@@ -1972,7 +1972,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
 
     // The editor panel with the draft selecting ONLY cell (0,0): two
     // toggle cells, the shipped-sprite graphic, a 4-bar white outline
-    // around the lone selected cell (every side is a boundary — the
+    // around the lone selected cell (every side is a boundary - the
     // neighbor (1,0) is unselected, the others off-grid), and the
     // Confirm button.
     {
@@ -2011,7 +2011,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
     }
 
     // A custom-stem type: the art renders (the id resolves to the
-    // mission dir at the texture store) — the image branch, same as
+    // mission dir at the texture store) - the image branch, same as
     // shipped stems; no dark fills.
     {
         const custom_types = [_]types.DecorationTypeDef{.{
@@ -2046,7 +2046,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         try std.testing.expect(saw_image);
         try std.testing.expectEqual(@as(usize, 0), dark_fills);
         // Both cells selected: the region's boundary is the 2x1 block's
-        // outer rectangle — 6 bars (2 top + 2 bottom + 1 left + 1 right).
+        // outer rectangle - 6 bars (2 top + 2 bottom + 1 left + 1 right).
         try std.testing.expectEqual(@as(usize, 6), white_bars);
     }
 
@@ -2068,7 +2068,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
     }
 
     // An oversized sprite SCALES DOWN to fit the fixed overlay: a
-    // 4096×256 (16×1-grid) sprite scales to 1728/4096 of 1:1 — the
+    // 4096×256 (16×1-grid) sprite scales to 1728/4096 of 1:1 - the
     // toggle cells shrink to 108px, the fixed overlay unchanged.
     {
         const wide_types = [_]types.DecorationTypeDef{.{
@@ -2135,8 +2135,8 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
     const levels = [_]types.EditorLevel{.{ .color_wheel_index = 2 }};
     const editor: types.Editor = .{ .levels = &levels };
 
-    // World role: the current index is the wheel index (2) — row 2 framed.
-    // 3 gradients fit the window — no scrollbar, the plain strip layout.
+    // World role: the current index is the wheel index (2) - row 2 framed.
+    // 3 gradients fit the window - no scrollbar, the plain strip layout.
     {
         var elements: UiElementList = .empty;
         var scroll: i32 = 0;
@@ -2171,7 +2171,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             elements.items.len,
         );
         // The strips are FIXED-SIZE (6 × 128px swatch blocks, 128px tall),
-        // not stretched to the overlay — the row's button spans the whole
+        // not stretched to the overlay - the row's button spans the whole
         // strip (the 6 blocks beneath it are 128px each).
         try std.testing.expectEqual(@as(u32, 0), elements.items[9].button.payload.?.editor_gradient);
         try std.testing.expectEqual(6 * theme_picker_swatch_size, elements.items[9].button.width);
@@ -2275,7 +2275,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
         .player_gradient = gradients[2],
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
-    // The current gradient is the LAST one — only a scrolled-to-bottom
+    // The current gradient is the LAST one - only a scrolled-to-bottom
     // window shows it.
     const levels = [_]types.EditorLevel{.{ .color_wheel_index = gradient_count - 1 }};
     const editor: types.Editor = .{ .levels = &levels };
@@ -2284,7 +2284,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
     try std.testing.expect(gradient_count > visible); // the overflow precondition
 
     // An offset beyond the end: the builder clamps it (upper clamp
-    // authoritative) to the max — the last window.
+    // authoritative) to the max - the last window.
     var elements: UiElementList = .empty;
     var scroll: i32 = 999;
     try buildEditorThemePicker(
@@ -2302,7 +2302,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
 
     // Only the visible window emits: one pick button per visible row, the
     // current (last) gradient is the last VISIBLE row, and the scrollbar's
-    // track + thumb are present (12px-wide solid rects — no other element
+    // track + thumb are present (12px-wide solid rects - no other element
     // is 12px wide: swatch blocks are 128, frame edges 8).
     var pick_buttons: usize = 0;
     var current_button: ?Button = null;
@@ -2322,7 +2322,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
     try std.testing.expectEqual(@as(u32, gradient_count - 1), current_button.?.payload.?.editor_gradient);
     try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
 
-    // An offset below 0: clamps to the top — the first row is the first
+    // An offset below 0: clamps to the top - the first row is the first
     // emitted pick, and no row highlights (the current one is offscreen).
     var top_elements: UiElementList = .empty;
     scroll = -5;

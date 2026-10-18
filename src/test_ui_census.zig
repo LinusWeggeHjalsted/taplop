@@ -1,4 +1,4 @@
-//! Shared census helpers for ui builder tests — the exhaustiveness shape
+//! Shared census helpers for ui builder tests - the exhaustiveness shape
 //! of DESIGN → Testing → Assertion patterns: the panel under test is built
 //! at EVERY scroll offset 0..clamped max, so geometry is the INPUT to the
 //! test, never the expectation. A pinned window ("at scroll 14 exactly
@@ -8,7 +8,7 @@
 //! Panels duck-type one method:
 //!   fn buildAt(self, scroll: i32, elements: *UiElementList) anyerror!i32
 //! building the panel at a scroll offset and returning the CLAMPED offset
-//! (the builder's own clamp — a probe with maxInt yields the max).
+//! (the builder's own clamp - a probe with maxInt yields the max).
 
 const std = @import("std");
 const element_mod = @import("ui/element.zig");
@@ -17,9 +17,9 @@ const UiElementList = element_mod.UiElementList;
 
 /// The exhaustive label census: over every scroll offset, (1) each
 /// window's labels must be an ordered subset of `expected_content` (the
-/// panel's full semantic content list, duplicates included — the contract
+/// panel's full semantic content list, duplicates included - the contract
 /// the builder must emit, NOT a window snapshot), and (2) the union of all
-/// windows must cover the list completely — no never-emitted row, no
+/// windows must cover the list completely - no never-emitted row, no
 /// unreachable row. Mismatches print found-vs-expected.
 pub fn expectContentReachable(
     allocator: std.mem.Allocator,
@@ -41,7 +41,7 @@ pub fn expectContentReachable(
             .text_label => |label| {
                 const index = orderedIndexOf(expected_content, label.text, next) orelse {
                     std.debug.print(
-                        "census: unexpected label '{s}' at scroll {d} — not in the expected content list, or out of order\n",
+                        "census: unexpected label '{s}' at scroll {d} - not in the expected content list, or out of order\n",
                         .{ label.text, scroll },
                     );
                     printContentList(expected_content);

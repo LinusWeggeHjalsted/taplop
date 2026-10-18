@@ -1,4 +1,4 @@
-//! Diagnostics probe sites for the raylib backend — the GL-touching half
+//! Diagnostics probe sites for the raylib backend - the GL-touching half
 //! of the diagnostics subsystem. The raylib-free `src/diagnostics.zig`
 //! owns the buffer + section policy + flush scheduling; these functions
 //! gather raw values at the backend's probe sites (GL context identity,
@@ -6,7 +6,7 @@
 //! data, so all `rl.*` stays in this directory and the type compiles in
 //! the headless test build. Activation is a RUNTIME flag on the type
 //! (`Diagnostics.enabled`: the `--diagnostics` CLI flag, defaulting to
-//! `default_enabled` below — dev-mode native builds); the code ships in
+//! `default_enabled` below - dev-mode native builds); the code ships in
 //! every native build. Settled design: DESIGN → Platform Seam →
 //! Diagnostics.
 
@@ -172,7 +172,7 @@ pub fn recordTargetReadback(
 }
 
 /// Sample three pixels along the horizontal center line of a probed
-/// destination (25/50/75% — inside the 9-slice corner band at both ends
+/// destination (25/50/75% - inside the 9-slice corner band at both ends
 /// for a typical panel, center in the stretched middle) into `out`;
 /// returns how many landed in bounds. Bounds are target space; the stored
 /// row is flipped back (RenderTextures are y-up).

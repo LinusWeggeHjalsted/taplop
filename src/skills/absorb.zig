@@ -13,7 +13,7 @@ const Skill = skill_mod.Skill;
 const WeaponTypeDefinitions = types.WeaponTypeDefinitions;
 
 /// Absorb: the idol's second (main-hand) skill. Grants the Absorb effect on
-/// the caster for one round — incoming attack damage is converted to
+/// the caster for one round - incoming attack damage is converted to
 /// healing. Self-cast, no targeting; turn-ending (a weapon skill).
 pub const skill = Skill{
     .name = "Absorb",
@@ -33,15 +33,15 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-cast — offered only when a hostile can reach and
+/// AI options: one self-cast - offered only when a hostile can reach and
 /// attack the caster next turn (the threat model, ai_threat.zig).
 /// Rated 2 when threatened, 4 when threatened AND below half health
-/// For Absorb the 4 must outrank Heal's 3 on the idol bar — prevention +
+/// For Absorb the 4 must outrank Heal's 3 on the idol bar - prevention +
 /// conversion beats a flat 20% when the hit is coming..
 fn aiOptions(
     caster_index: u32,
@@ -58,14 +58,14 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = rating });
 }
 
-/// Self-cast — no meaningful target.
-/// Self-cast — fires immediately.
+/// Self-cast - no meaningful target.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }
 
 /// Use: apply the Absorb effect to the caster for skill_duration turns
-/// (duration decrements at the caster's next turn_start — one full trip
+/// (duration decrements at the caster's next turn_start - one full trip
 /// through the round, exactly the window the threat model measures).
 fn useSkill(
     caster_index: u32,

@@ -41,7 +41,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 1 — a plain
+/// AI options: the weakest hostile (focus-fire) at rating 1 - a plain
 /// 1x hit (the target's -1 momentum is a minor rider).
 fn aiOptions(
     caster_index: u32,

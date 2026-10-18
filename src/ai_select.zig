@@ -1,14 +1,14 @@
-//! AI cast selection — the ONE selection algorithm shared by
+//! AI cast selection - the ONE selection algorithm shared by
 //! `enemy_turn_attack` (which cast fires next) and the enhancement
 //! enchantments' ratings (which anchor themselves to the cast they would
-//! enhance — see DESIGN → Architecture, AI rating scale). Extracted from
+//! enhance - see DESIGN → Architecture, AI rating scale). Extracted from
 //! the handler so a prediction can never drift from the real selection.
 //!
 //! All option evaluations go THROUGH the pass-scoped EvalFrame
 //! (`optionsFor`): memoized once per pass (state is frozen within a pass),
 //! recursion cut by the in-progress guard (a skill under evaluation
 //! answers nothing to nested questions about it). Any skill may consult
-//! any set of skills — a cycle terminates at the guard, so no structural
+//! any set of skills - a cycle terminates at the guard, so no structural
 //! restrictions (pool separation, beneficiary-type filters) are needed.
 
 const std = @import("std");
@@ -32,7 +32,7 @@ pub const CastPlan = struct {
 
 /// The best cast in each pool for one caster this re-evaluation.
 pub const BestCasts = struct {
-    /// The planned TURN-ENDING cast (weapon skills + spells) — the cast
+    /// The planned TURN-ENDING cast (weapon skills + spells) - the cast
     /// that ends the caster's attack phase once the non-ending chain
     /// empties. Null when no ending skill offers a positive cast.
     ending: ?CastPlan,
@@ -45,10 +45,10 @@ pub const BestCasts = struct {
 
 /// A skill's current option set, computed through the frame: memoized
 /// once per pass, cycle-cut by the in-progress guard (a skill whose
-/// aiOptions is transitively being computed returns empty options — the
+/// aiOptions is transitively being computed returns empty options - the
 /// correct semantics for a consultation, e.g. an enhancer scanning
 /// beneficiaries must not count itself). THE entry point for every
-/// option evaluation — never call a skill's aiOptions directly.
+/// option evaluation - never call a skill's aiOptions directly.
 pub fn optionsFor(
     frame: *EvalFrame,
     skill_id: types.SkillId,
@@ -74,7 +74,7 @@ pub fn optionsFor(
     return options;
 }
 
-/// True when the two best-cast plans differ in any way — different skill,
+/// True when the two best-cast plans differ in any way - different skill,
 /// different target, different rating, or one exists and the other
 /// doesn't. The virtual-effect differential's improvement signal (see
 /// helpers.bestCastsWithVirtualEffect): a difference means the simulated
@@ -93,10 +93,10 @@ pub fn plansDiffer(a: ?CastPlan, b: ?CastPlan) bool {
 /// Evaluate all the caster's off-cooldown skill slots and pick the best
 /// cast per pool: partition by skill_type (weapon skill + spell =
 /// turn-ending), skip 0-rated options, keep the strictly-best rating with
-/// SLOT ORDER as the tiebreak (the first — leftmost — slot wins ties).
+/// SLOT ORDER as the tiebreak (the first - leftmost - slot wins ties).
 /// This is the exact selection `enemy_turn_attack` applies; enhancement
 /// enchantments read the same result to rate themselves (best live
-/// beneficiary + 1). Pass the frame the caller is being evaluated in —
+/// beneficiary + 1). Pass the frame the caller is being evaluated in -
 /// consultations from inside an aiOptions share the frame, so the
 /// caller's own options are cycle-cut and everything else is memoized.
 pub fn bestCasts(

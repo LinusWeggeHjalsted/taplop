@@ -1,4 +1,4 @@
-//! Tier 2 handler tests — combat primitives + gear side effects. Each test
+//! Tier 2 handler tests - combat primitives + gear side effects. Each test
 //! builds a level fixture (tiles + entities) via `test_harness.levelStateWith-
 //! Entities`, pushes one event, runs to idle, and asserts on `current_state`.
 //! See TODO → Tech debt (handler coverage).
@@ -24,7 +24,7 @@ const LevelEvent = events.LevelEvent;
 const SkillId = types.SkillId;
 const EffectId = types.EffectId;
 
-/// A 3x3 tile grid (0,0)..(2,2) — enough room for combat without crowding.
+/// A 3x3 tile grid (0,0)..(2,2) - enough room for combat without crowding.
 const three_by_three = [_]Vector2{
     .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
     .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 },
@@ -251,7 +251,7 @@ test "attack: absorb converts incoming damage into healing (interceptor)" {
     // pre-defense amount: 10 + 5 = 15, no damage taken.
     try testing.expectEqual(@as(u32, 15), levelEntity(&history, 1).current_health);
 
-    // A lethal hit cannot kill through absorb either — the heal clamps
+    // A lethal hit cannot kill through absorb either - the heal clamps
     // to max instead.
     pushAndRunSub(&history, .{ .attack = .{
         .attacker_index = 0,
@@ -453,7 +453,7 @@ test "pickup_items: non-player pickup does not accumulate" {
     ));
     history.current_state.level.?.ground_items = ground;
     history.current_state.mission = .{ .uuid = "test-uuid" };
-    // Entity 1 (enemy) picks up — no accumulation.
+    // Entity 1 (enemy) picks up - no accumulation.
     pushAndRunSub(&history, .{ .pickup_items = .{ .entity_index = 1, .position = .{ .x = 0, .y = 0 } } });
     const got = history.current_state.mission.?.converted_materials_collected;
     try testing.expectEqual(@as(u32, 0), got.wood);
@@ -576,7 +576,7 @@ test "knockback: moves the defender away from the attacker" {
         .distance = 2,
         .knockback_damage = 0,
     } });
-    // Pushed from (1,0) to (3,0) — but (3,0) isn't a tile, so stops at (2,0).
+    // Pushed from (1,0) to (3,0) - but (3,0) isn't a tile, so stops at (2,0).
     try testing.expectEqual(@as(i32, 2), levelEntity(&history, 1).position.x);
     try testing.expectEqual(@as(i32, 0), levelEntity(&history, 1).position.y);
 }
@@ -931,7 +931,7 @@ test "adrenaline_surge: resets on-bar cooldowns then attacks once per reset" {
         &.{
             // Attacker: amulet-driven spell damage 4.
             .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 4 } },
-            // Defender: main-hand sword (slice / spinblade / flash_strike —
+            // Defender: main-hand sword (slice / spinblade / flash_strike -
             // flash_strike is the SWAP-AVAILABLE third, not on the exposed
             // bar) + blink in utility slot 1.
             .{
@@ -949,7 +949,7 @@ test "adrenaline_surge: resets on-bar cooldowns then attacks once per reset" {
     levelEntity(&history, 1).skill_cooldowns.set(.slice, 2);
     levelEntity(&history, 1).skill_cooldowns.set(.flash_strike, 3);
     levelEntity(&history, 1).skill_cooldowns.set(.blink, 1);
-    // An OFF-BAR preserved cooldown (swap-inheritance ticking) — must NOT
+    // An OFF-BAR preserved cooldown (swap-inheritance ticking) - must NOT
     // count or reset.
     levelEntity(&history, 1).skill_cooldowns.set(.skewer, 4);
 
@@ -988,7 +988,7 @@ test "adrenaline_surge: resets land even when the attacks kill" {
 
     pushAndRunSub(&history, .{ .adrenaline_surge = .{ .attacker_index = 0, .defender_index = 1 } });
 
-    // Two 9-damage attacks kill (10 -> 0) — but the resets drained FIRST,
+    // Two 9-damage attacks kill (10 -> 0) - but the resets drained FIRST,
     // so the cooldowns are zeroed regardless.
     try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).current_health);
     try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).skill_cooldowns.get(.slice));
@@ -1026,7 +1026,7 @@ test "accelerating waits: one shared counter per skill use, reset on use_skill" 
     ));
 
     // Spinblade hits both adjacent hostiles: attack → wait → damage → wait →
-    // attack → wait → damage — ONE shared acceleration sequence (the
+    // attack → wait → damage - ONE shared acceleration sequence (the
     // inter-event gaps and the hit-landing gaps are the same wait kind,
     // sharing the counter). 3 waits elapsed.
     pushAndRunLevel(&history, .{ .use_skill = .{
@@ -1037,7 +1037,7 @@ test "accelerating waits: one shared counter per skill use, reset on use_skill" 
     try testing.expectEqual(@as(u32, 3), history.current_state.wait_acceleration);
 
     // A follow-up single-hit skill RESETS the chain: exactly one wait
-    // (without the reset it would inherit the decayed position — 4).
+    // (without the reset it would inherit the decayed position - 4).
     pushAndRunLevel(&history, .{ .use_skill = .{
         .caster_index = 0,
         .skill_id = .slice,

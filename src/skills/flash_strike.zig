@@ -42,12 +42,12 @@ fn getValidTargets(
     return helpers.emptyTilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the BEST landing tile — max hostiles within radius over
+/// AI options: the BEST landing tile - max hostiles within radius over
 /// the empty tiles in range (strict > keeps the first in scan order, the
 /// (y, x) convention), rated in value units: base 2 (the teleport is a
 /// hit's worth of gap-closing) + 1 per target hit.
 /// The cast lands exactly where the rating was earned; the old
-/// selectTarget picked the tile nearest a hostile instead — that
+/// selectTarget picked the tile nearest a hostile instead - that
 /// rating/landing seam is gone.
 fn aiOptions(
     caster_index: u32,

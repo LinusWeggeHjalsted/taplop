@@ -13,7 +13,7 @@ const std = @import("std");
 /// - Scalars, enums, bools, ints, floats pass through unchanged
 ///
 /// Because this uses comptime reflection, it automatically handles new fields
-/// added to any struct — no manual updating needed.
+/// added to any struct - no manual updating needed.
 pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
     const info = @typeInfo(T);
 
@@ -227,7 +227,7 @@ test "deepEqual: union tag mismatch" {
     const x = Node{ .name = "p", .pos = .{ .x = 1, .y = 2 }, .tag = .{ .a = 5 }, .opt = null };
     const y = Node{ .name = "p", .pos = .{ .x = 1, .y = 2 }, .tag = .{ .b = .{ .x = 1, .y = 2 } }, .opt = null };
     try std.testing.expect(!deepEqual(Node, x, y));
-    // On a struct, the first differing field is named — here `tag`.
+    // On a struct, the first differing field is named - here `tag`.
     try std.testing.expectEqualStrings("tag", firstDiffField(Node, x, y).?);
     // On the union directly, a tag mismatch yields null (names already differ).
     try std.testing.expectEqual(@as(?[:0]const u8, null), firstDiffField(Leaf, x.tag, y.tag));

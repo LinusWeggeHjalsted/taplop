@@ -11,7 +11,7 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Howl: a cantrip. Aggros (activates) every entity within radius —
+/// Howl: a cantrip. Aggros (activates) every entity within radius -
 /// same-team (rallying the pack) and opposing. Self-centered,
 /// non-turn-ending.
 pub const skill = Skill{
@@ -33,13 +33,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no targeting.
+/// Self-centered - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-centered cast in value units — 1 per inactive
-/// entity rallied (any team — aggro_in_radius rallies same-team entities
+/// AI options: one self-centered cast in value units - 1 per inactive
+/// entity rallied (any team - aggro_in_radius rallies same-team entities
 /// too; helpers.aoePriority, base 1).
 fn aiOptions(
     caster_index: u32,
@@ -63,7 +63,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 1) });
 }
 
-/// Self-centered — fires immediately.
+/// Self-centered - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

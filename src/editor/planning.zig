@@ -2,7 +2,7 @@
 //! planners (one per tool), the selection algebra (value equality,
 //! contains, with-entry / without-entry / without-tile), and
 //! `activeEditorLevel`. Everything here is a pure function of the Editor
-//! state — a planner computes the sub-event list its click would push;
+//! state - a planner computes the sub-event list its click would push;
 //! the editor event handlers push the plan, and the input layer fires
 //! the player action only when the plan is nonempty, so a click that
 //! would change nothing never reaches the event log (no undo/replay
@@ -39,7 +39,7 @@ pub fn selectionContains(items: []const types.Selectable, entry: types.Selectabl
     return false;
 }
 
-/// The selection with `entry` appended (a fresh slice — `Editor.selection`
+/// The selection with `entry` appended (a fresh slice - `Editor.selection`
 /// is replaced wholesale, never mutated in place, so deepCopy snapshots
 /// stay sound).
 pub fn selectionWithEntry(
@@ -55,7 +55,7 @@ pub fn selectionWithEntry(
 }
 
 /// The selection without its first entry equal to `entry` (the original
-/// slice when absent — a deselect of a non-selected entry is an
+/// slice when absent - a deselect of a non-selected entry is an
 /// idempotent no-op).
 pub fn selectionWithoutEntry(
     selection: []const types.Selectable,
@@ -75,7 +75,7 @@ pub fn selectionWithoutEntry(
 }
 
 /// The selection without its tile entry at `position` (a tile entry is
-/// position-keyed, not index-keyed — nothing to remap; other kinds pass
+/// position-keyed, not index-keyed - nothing to remap; other kinds pass
 /// through). Returns the original slice when no such entry exists.
 pub fn selectionWithoutTile(
     selection: []const types.Selectable,
@@ -109,7 +109,7 @@ pub fn selectionWithoutTile(
 }
 
 /// The active level, or null when the editor has no levels or the active
-/// index is out of range — the click planners no-op on null (defensive:
+/// index is out of range - the click planners no-op on null (defensive:
 /// live input can't produce it, crafted session logs can).
 pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel {
     if (editor.levels.len == 0) return null;
@@ -121,7 +121,7 @@ pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel 
 /// placement tools, the right-click delete). Each computes the sub-event list
 /// its click would push from the live editor state: the handler pushes the
 /// plan, and the input layer fires the player action only when the plan is
-/// nonempty — a click that would change nothing never reaches the event log,
+/// nonempty - a click that would change nothing never reaches the event log,
 /// so it can't create an undo or replay step (see DESIGN → Level Editor →
 /// Active-tool model). One planner per tool is the single source of truth for
 /// both sides (no duplicated no-op conditions to drift); the handlers keep
@@ -130,14 +130,14 @@ pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel 
 /// bool-helper convention).
 ///
 /// Tile-paint click (tile tool active): one click = one tile. The effect is
-/// computed from state — no-op (empty plan) when a tile is already there
+/// computed from state - no-op (empty plan) when a tile is already there
 /// (entities / items / the '!' / '=' sit ON tiles, so they never block a
 /// paint); every decoration whose footprint covers the position is deleted
-/// first (replace, not block — see DESIGN → Decorations & Footprint →
+/// first (replace, not block - see DESIGN → Decorations & Footprint →
 /// Placement invariant). The array is ordered for LIFO draining (set_tile
 /// first, deletes in ascending placement order → the deletes process in
-/// DESCENDING order — required for index-stable removal, since deleting a
-/// lower index first would shift the pending higher ones — and the tile
+/// DESCENDING order - required for index-stable removal, since deleting a
+/// lower index first would shift the pending higher ones - and the tile
 /// lands last). All sub-events land between two idle points, so one undo
 /// reverts the whole click.
 pub fn planEditorTilePaintActions(
@@ -172,14 +172,14 @@ pub fn planEditorTilePaintActions(
 /// Editor → Active-tool model, placement tools): player start / level end →
 /// no-op (never overwritten); covering decorations → deleted; missing tile
 /// → placed; co-located ground item → deleted; existing enemy → RETYPED in
-/// place (`editor_set_entity_placement_type`, not delete + re-place — stable
+/// place (`editor_set_entity_placement_type`, not delete + re-place - stable
 /// identity); same type already there → nothing to do (the plan is empty
 /// only when the tile is also present and nothing needs clearing). The
 /// array is ordered for LIFO draining (the REVERSE of processing order; the
-/// per-kind delete lists ascend so they process descending — index-stable
-/// removal). All sub-events share one idle point — one undo reverts the
+/// per-kind delete lists ascend so they process descending - index-stable
+/// removal). All sub-events share one idle point - one undo reverts the
 /// whole click. The one-thing-per-tile invariant is enforced at
-/// `editor_place_entity` (panic on an occupied tile) — the deletes above run
+/// `editor_place_entity` (panic on an occupied tile) - the deletes above run
 /// first, so the place lands on a cleared tile.
 pub fn planEditorEntityPlacementActions(
     editor: *const types.Editor,
@@ -190,14 +190,14 @@ pub fn planEditorEntityPlacementActions(
     if (type_id >= editor.entity_types.len) return &.{};
     const level = activeEditorLevel(editor) orelse return &.{};
 
-    // The '!' and '=' are singletons, movable never deletable — an enemy
+    // The '!' and '=' are singletons, movable never deletable - an enemy
     // never overwrites them.
     if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
     if (level.level_end) |level_end_position| {
         if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
     }
 
-    // Is a tile already there (the enemy stands ON a tile — a missing one
+    // Is a tile already there (the enemy stands ON a tile - a missing one
     // is placed as part of the click)?
     var tile_present = false;
     for (level.level_tiles) |tile| {
@@ -207,7 +207,7 @@ pub fn planEditorEntityPlacementActions(
         }
     }
 
-    // Co-located entity placement, if any (invariant: at most one — the
+    // Co-located entity placement, if any (invariant: at most one - the
     // loop degrades gracefully if that's ever violated).
     var occupant_index: ?usize = null;
     for (level.entity_placements, 0..) |placement, placement_index| {
@@ -227,7 +227,7 @@ pub fn planEditorEntityPlacementActions(
             .position = position,
         } } }) catch @panic("failed to allocate editor place plan");
     } else if (level.entity_placements[occupant_index.?].type_id != type_id) {
-        // Same type already there — no branch taken (nothing to do).
+        // Same type already there - no branch taken (nothing to do).
         pushes.append(allocator, .{ .editor_event = .{ .editor_set_entity_placement_type = .{
             .level_index = @intCast(editor.active_level_index),
             .placement_index = @intCast(occupant_index.?),
@@ -266,19 +266,19 @@ pub fn planEditorEntityPlacementActions(
 /// Decoration-tool click: place the palette decoration with its ANCHOR tile
 /// (bottom-most-then-left-most footprint tile) at the clicked position,
 /// replacing whatever occupies the footprint's world tiles. The INVERSE of
-/// the tile/enemy placements — a decoration's footprint tiles are TILE-FREE,
+/// the tile/enemy placements - a decoration's footprint tiles are TILE-FREE,
 /// so covered tiles are ERASED rather than placed: the '!' / '=' under ANY
 /// footprint tile → no-op (never overwritten); an EXACT DUPLICATE (same type
 /// at the same anchor → identical footprint) already satisfies the
-/// placement — the plan skips the place and the duplicate's own delete, so
+/// placement - the plan skips the place and the duplicate's own delete, so
 /// no duplicate ever stacks (other overlapping decorations still get
 /// deleted); tiles under footprint tiles → erased, along with the entities /
 /// ground items standing on them; other decorations whose footprints overlap
 /// ANY footprint tile → deleted; then the placement lands
 /// (`editor_place_decoration` enforces footprint-tile exclusivity). The
 /// array is ordered for LIFO draining (the REVERSE of processing order; each
-/// delete list ascends so it processes descending — index-stable). All
-/// sub-events share one idle point — one undo reverts the whole click.
+/// delete list ascends so it processes descending - index-stable). All
+/// sub-events share one idle point - one undo reverts the whole click.
 pub fn planEditorDecorationPlacementActions(
     editor: *const types.Editor,
     type_id: u32,
@@ -304,7 +304,7 @@ pub fn planEditorDecorationPlacementActions(
     }
 
     // An exact duplicate (same type at the same anchor) already satisfies
-    // the placement — skip the place and the duplicate's own delete; the
+    // the placement - skip the place and the duplicate's own delete; the
     // other arms below still fire (overlap cleanup, tile erasure).
     var duplicate_present = false;
     for (level.decoration_placements) |placement| {
@@ -336,7 +336,7 @@ pub fn planEditorDecorationPlacementActions(
         }
     }
     // Entities + items standing on covered tiles (they sit ON tiles, so
-    // this fires for covered tiles that had one — looping all footprint
+    // this fires for covered tiles that had one - looping all footprint
     // tiles is robust either way).
     for (level.entity_placements, 0..) |placement, placement_index| {
         if (functions.tileListContains(footprint_tiles, placement.position)) {
@@ -355,7 +355,7 @@ pub fn planEditorDecorationPlacementActions(
         }
     }
     // Overlapping other decorations: an existing footprint covering any of
-    // the new footprint's world tiles (set intersection — checking this
+    // the new footprint's world tiles (set intersection - checking this
     // direction is complete). The exact duplicate is skipped (it IS the
     // placement being satisfied).
     for (level.decoration_placements, 0..) |placement, placement_index| {
@@ -382,14 +382,14 @@ pub fn planEditorDecorationPlacementActions(
 }
 
 /// Ground-item-tool click: place the palette item type at the clicked tile
-/// — the same occupant replacement as the entity tool, with the roles swapped
+/// - the same occupant replacement as the entity tool, with the roles swapped
 /// for the two placement kinds: an existing ground item is RETYPED in place
 /// (`editor_set_item_placement_type`) and an enemy on the tile is DELETED
 /// (the item can't coexist with it). The '!' / '=' → no-op; covering
 /// decorations → deleted; a missing tile → placed (the item sits ON a
 /// tile). The array is ordered for LIFO draining (the REVERSE of processing
-/// order; each delete list ascends so it processes descending — index-
-/// stable). All sub-events share one idle point — one undo reverts the
+/// order; each delete list ascends so it processes descending - index-
+/// stable). All sub-events share one idle point - one undo reverts the
 /// whole click.
 pub fn planEditorItemPlacementActions(
     editor: *const types.Editor,
@@ -400,7 +400,7 @@ pub fn planEditorItemPlacementActions(
     if (type_id >= editor.item_types.len) return &.{};
     const level = activeEditorLevel(editor) orelse return &.{};
 
-    // The '!' and '=' are singletons, movable never deletable — a ground
+    // The '!' and '=' are singletons, movable never deletable - a ground
     // item never overwrites them.
     if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
     if (level.level_end) |level_end_position| {
@@ -415,7 +415,7 @@ pub fn planEditorItemPlacementActions(
         }
     }
 
-    // Co-located item placement, if any (invariant: at most one — the loop
+    // Co-located item placement, if any (invariant: at most one - the loop
     // degrades gracefully if that's ever violated).
     var occupant_index: ?usize = null;
     for (level.item_placements, 0..) |placement, placement_index| {
@@ -435,7 +435,7 @@ pub fn planEditorItemPlacementActions(
             .position = position,
         } } }) catch @panic("failed to allocate editor place plan");
     } else if (level.item_placements[occupant_index.?].type_id != type_id) {
-        // Same type already there — no branch taken (nothing to do).
+        // Same type already there - no branch taken (nothing to do).
         pushes.append(allocator, .{ .editor_event = .{ .editor_set_item_placement_type = .{
             .level_index = @intCast(editor.active_level_index),
             .placement_index = @intCast(occupant_index.?),
@@ -449,7 +449,7 @@ pub fn planEditorItemPlacementActions(
             .is_floor = true,
         } } }) catch @panic("failed to allocate editor place plan");
     }
-    // An enemy on the tile is deleted (an item can't coexist with it — one
+    // An enemy on the tile is deleted (an item can't coexist with it - one
     // thing per placed tile).
     for (level.entity_placements, 0..) |placement, placement_index| {
         if (placement.position.x == position.x and
@@ -482,12 +482,12 @@ fn singleEditorDeletePlan(
         @panic("failed to allocate editor delete plan");
 }
 
-/// Editor right-click: the tool-independent delete — ONE thing per click,
+/// Editor right-click: the tool-independent delete - ONE thing per click,
 /// priority: enemy / ground-item occupant (at most one by the one-thing-per-
 /// tile invariant; an entity wins if both are somehow present), then
-/// covering decoration(s) (all of them — consistent with every other editor
+/// covering decoration(s) (all of them - consistent with every other editor
 /// flow; overlapping footprints are a degenerate hand-authored case), then
-/// the bare tile. The '!' / '=' are never deleted (checked first — they sit
+/// the bare tile. The '!' / '=' are never deleted (checked first - they sit
 /// ON tiles, so the bare-tile erase must not fire under them), and empty
 /// ground is a no-op (empty plan). One delete = one undo step by
 /// construction.
@@ -498,7 +498,7 @@ pub fn planEditorDeleteActions(
 ) []const Event {
     const level = activeEditorLevel(editor) orelse return &.{};
 
-    // The '!' / '=' are singletons, movable never deletable — and their
+    // The '!' / '=' are singletons, movable never deletable - and their
     // tiles survive too.
     if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
     if (level.level_end) |level_end_position| {
@@ -548,30 +548,30 @@ pub fn planEditorDeleteActions(
             .is_floor = false,
         } }, allocator);
     }
-    // Nothing there — no-op.
+    // Nothing there - no-op.
     return &.{};
 }
 
 /// Select-tool click planner: toggle the clicked thing's GROUP in the
 /// selection. A click's group is everything that toggles together: the
-/// '!' / '=' singletons; a covering decoration (the FIRST — exactly what
+/// '!' / '=' singletons; a covering decoration (the FIRST - exactly what
 /// the hover preview outlines); or the tile INCLUDING anything standing
 /// on it (entity / ground-item placements). Anything from the group
 /// already selected → the plan deselects every PRESENT entry (clicking a
 /// selected tile deselects the tile AND its occupant); nothing selected →
 /// the plan selects the whole group. Empty ground selects nothing (empty
-/// plan — no player action fires). One event per entry (granular by
-/// design — see DESIGN → Architecture → Level Editor → Selection model);
+/// plan - no player action fires). One event per entry (granular by
+/// design - see DESIGN → Architecture → Level Editor → Selection model);
 /// they share the click's idle point, so one undo step reverts the whole
 /// click.
 /// The select tool's click GROUP at `position`: everything that acts as
-/// one unit — the '!' / '=' singletons; a covering decoration (the FIRST —
+/// one unit - the '!' / '=' singletons; a covering decoration (the FIRST -
 /// exactly what the hover preview outlines); or the tile INCLUDING
 /// anything standing on it (entity / ground-item placements). Empty ground
 /// → an empty group. Shared by the toggle (shift+click) and replace (plain
 /// click) planners; the group order is tile, entity, item. Also the
 /// would-be POST-REPLACE selection the move-drag gate evaluates an
-/// unselected-claim drag against (see `editorSelectionMoveVetoed`) — pub
+/// unselected-claim drag against (see `editorSelectionMoveVetoed`) - pub
 /// for that import.
 pub fn editorClickGroup(
     editor: *const types.Editor,
@@ -593,7 +593,7 @@ pub fn editorClickGroup(
         }
     }
     if (group_length == 0) {
-        // A covering decoration (the first — matching the hover preview).
+        // A covering decoration (the first - matching the hover preview).
         for (level.decoration_placements, 0..) |placement, placement_index| {
             const type_definition = editor.decoration_types[placement.type_id];
             if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
@@ -633,12 +633,12 @@ pub fn editorClickGroup(
     return entries;
 }
 
-/// Would a select-tool click at `position` grab anything — i.e. is the
+/// Would a select-tool click at `position` grab anything - i.e. is the
 /// click group there nonempty (a tile, an entity / item placement, a
 /// covering decoration, or a '!' / '=' singleton; empty ground is not)?
 /// Thin wrapper over the group resolution so the claim condition and the
 /// click semantics share one source of truth. Used by the move-drag
-/// gesture (`handleEditorMoveDrag`) — pub for that import only.
+/// gesture (`handleEditorMoveDrag`) - pub for that import only.
 pub fn editorClickGroupNonempty(
     editor: *const types.Editor,
     position: Vector2,
@@ -664,7 +664,7 @@ pub fn planEditorSelectionActions(
             break;
         }
     }
-    // The event stack is LIFO — push the group REVERSED so the entries
+    // The event stack is LIFO - push the group REVERSED so the entries
     // process (and land in the recorded log) in group order: tile, then
     // entity, then item.
     var plan: std.ArrayList(Event) = .empty;
@@ -682,10 +682,10 @@ pub fn planEditorSelectionActions(
 }
 
 /// Plain-click (no Shift) planner: REPLACE the selection with the clicked
-/// group — the whole selection is cleared, then the group is selected.
+/// group - the whole selection is cleared, then the group is selected.
 /// Empty ground → the clear alone (the clicky deselect-all). A click that
 /// would change nothing (the selection IS exactly the group, or empty
-/// ground with an already-empty selection) plans empty — no player action
+/// ground with an already-empty selection) plans empty - no player action
 /// fires. Built forward in processing order (clear first, then the
 /// group's selects in group order) and reversed for the LIFO push, so the
 /// clear processes first and the final selection reads in group order.
@@ -725,12 +725,12 @@ pub fn planEditorReplaceSelectionActions(
 /// Select-tool marquee planner: ADD every selectable thing inside the
 /// inclusive rectangle spanned by the two corner tiles (order-
 /// independent), skipping entries already in the selection (an add,
-/// never a remove — the plain click toggles). Region membership: level
+/// never a remove - the plain click toggles). Region membership: level
 /// tiles / entity / item placements by position; a decoration when ANY
-/// of its footprint tiles is inside (matching the click hit-testing — if
+/// of its footprint tiles is inside (matching the click hit-testing - if
 /// you can click it, you can marquee it); the '!' / '=' singletons by
-/// their tile. Deterministic order — tiles, entities, items, decorations,
-/// singletons, each in stored order — and the list is REVERSED before
+/// their tile. Deterministic order - tiles, entities, items, decorations,
+/// singletons, each in stored order - and the list is REVERSED before
 /// returning (the event stack is LIFO) so the entries process + land in
 /// the log in plan order. An empty plan (nothing in the region, or
 /// everything already selected) means no player action fires.
@@ -738,31 +738,31 @@ pub fn planEditorReplaceSelectionActions(
 /// delete events (the same machinery the right-click delete composes). The
 /// '!' / '=' entries are NEVER deletable (skipped) and the tiles under them
 /// survive too (a marker needs its ground). A selected tile takes its
-/// OCCUPANT with it — an entity/item placement standing on it is deleted
-/// even when unselected (unreachable via today's UI — clicks and marquees
-/// always grab tile + occupants together — but craftable in a log and
+/// OCCUPANT with it - an entity/item placement standing on it is deleted
+/// even when unselected (unreachable via today's UI - clicks and marquees
+/// always grab tile + occupants together - but craftable in a log and
 /// reachable once deselect features land; an occupant can't stand on
 /// nothing).
 ///
 /// Index stability: the delete set is computed from the ORIGINAL state
 /// (selected placements + swept occupants, deduped per kind), and the
-/// processing order — the reversed LIFO push — runs each placement kind
+/// processing order - the reversed LIFO push - runs each placement kind
 /// HIGH-BEFORE-LOW, so a removal never shifts an index a later event still
 /// addresses (same reasoning as the covering-decoration deletes in
 /// `planEditorDeleteActions`). Tile erases are position-keyed (safe any
 /// time) and process last. The selection reconcile runs inside each delete
 /// arm, keeping the selection consistent mid-batch; stale entries (out-of-
 /// range indices, absent tiles) are skipped defensively. Everything shares
-/// the player action's idle point — one undo step reverts the whole
+/// the player action's idle point - one undo step reverts the whole
 /// deletion.
-/// Which selection-deletion policy a plan runs — see
+/// Which selection-deletion policy a plan runs - see
 /// `planEditorSelectionDeleteActions` / `planEditorSelectionMoveDeleteActions`.
 const SelectionDeleteMode = enum {
     /// The Delete key: a selected tile's OCCUPANT is swept with it (an
     /// occupant can't stand on nothing).
     delete_key,
     /// A selection move's clear phase: an UNSELECTED occupant PINS its
-    /// tile — the tile stays underneath it and the moved tile lands at
+    /// tile - the tile stays underneath it and the moved tile lands at
     /// the target instead (only selected things are backed up + moved;
     /// a selected occupant is deleted via its own entry, so the erase
     /// proceeds normally under it).
@@ -780,7 +780,7 @@ pub fn planEditorSelectionDeleteActions(
 /// same shape as the Delete key's plan, but a selected tile with an
 /// UNSELECTED occupant is not erased at all (the occupant pins its
 /// ground) and no occupants are swept.
-/// Does the select tool's selection cover `position` — i.e. would a plain
+/// Does the select tool's selection cover `position` - i.e. would a plain
 /// press there start a MOVE drag? Mirrors the click group resolution: a
 /// selected tile / entity / item at the position, a selected decoration
 /// whose footprint covers it, or a selected '!' / '=' at it. Used by the
@@ -838,13 +838,13 @@ fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
 
 /// Would a selection move by `delta` land a marker on the other marker?
 /// '!' and '=' take one cell each in the layout format, so a
-/// `player_start == level_end` level has no file representation — the
+/// `player_start == level_end` level has no file representation - the
 /// move is vetoed whole. The veto is on the FINAL positions (translated
 /// when selected, current when not): moving both markers together
-/// preserves their offset (never vetoed — and a pre-existing overlap can
+/// preserves their offset (never vetoed - and a pre-existing overlap can
 /// only ever be resolved by moving one marker alone, never created),
 /// while moving one onto the stationary other vetoes. `selection` is the
-/// selection the move will actually plan against — the current one, or
+/// selection the move will actually plan against - the current one, or
 /// the click group an unselected-claim drag's replace will have installed
 /// by the time the move runs (the move-drag gate's two call sites).
 pub fn editorSelectionMoveVetoed(
@@ -866,14 +866,14 @@ pub fn editorSelectionMoveVetoed(
         final_player_start.y == final_level_end.y;
 }
 
-/// The selection-move plan — the move orchestrator's whole push list: the
+/// The selection-move plan - the move orchestrator's whole push list: the
 /// translated selection as the commit-chain worklist
 /// (`editor_commit_selection_move`), then the clear phase
 /// (`planEditorSelectionMoveDeleteActions`). Shared by the
 /// `player_move_editor_selection` handler (the entries build lives here,
-/// not inline in the handler — the other tools' shape) and the input-side
+/// not inline in the handler - the other tools' shape) and the input-side
 /// no-op gate (via `editorSelectionMoveVetoed`). EMPTY when the move is
-/// vetoed — the drag never fires (no dead undo step), not a partial move
+/// vetoed - the drag never fires (no dead undo step), not a partial move
 /// (the flag silently staying behind while the rest moves would be easy
 /// to miss).
 pub fn planEditorSelectionMoveActions(
@@ -970,7 +970,7 @@ fn planSelectionDelete(
             .ground_item_placement => |index| appendIndexIfNew(&item_indices, index, allocator),
             .decoration_placement => |index| appendIndexIfNew(&decoration_indices, index, allocator),
             .player_start, .level_end => {
-                // The Delete key never touches markers — and their tiles
+                // The Delete key never touches markers - and their tiles
                 // stay (the marker isn't going anywhere; see the tile arm's
                 // protection below). A MOVE takes the selected marker's
                 // ground with it: nothing hosts the marker at the old
@@ -996,7 +996,7 @@ fn planSelectionDelete(
                     if (level.player_start.x == marker_position.x and level.player_start.y == marker_position.y and
                         !selectionContains(editor.selection, .player_start)) continue;
                 }
-                // An unselected occupant pins its ground (defensive — the
+                // An unselected occupant pins its ground (defensive - the
                 // placement rules never put anything on a marker tile).
                 if (selectionMoveOccupantPinsTile(level, editor.selection, marker_position)) continue;
                 tile_positions.append(allocator, marker_position) catch
@@ -1012,11 +1012,11 @@ fn planSelectionDelete(
                 if (!functions.tileListContains(level.level_tiles, position)) continue;
                 // A move keeps the ground under an UNSELECTED occupant
                 // (the occupant stays, the moved tile lands at its target
-                // instead — nothing is swept).
+                // instead - nothing is swept).
                 if (mode == .selection_move and selectionMoveOccupantPinsTile(level, editor.selection, position)) continue;
                 tile_positions.append(allocator, position) catch
                     @panic("failed to allocate editor selection delete plan");
-                // Delete-key mode sweeps the occupant (at most one — one
+                // Delete-key mode sweeps the occupant (at most one - one
                 // thing per placed tile; deduped against the selected
                 // entries).
                 if (mode == .delete_key) {
@@ -1058,7 +1058,7 @@ fn planSelectionDelete(
 }
 
 /// In a selection move, an UNSELECTED occupant standing on `position`
-/// PINS its ground — the tile stays underneath it and the moved thing
+/// PINS its ground - the tile stays underneath it and the moved thing
 /// lands at its target instead (only selected things are backed up +
 /// moved). The tools never place anything on a marker tile, so the marker
 /// arm's use is defensive for crafted states.
@@ -1093,7 +1093,7 @@ fn appendIndexIfNew(
         @panic("failed to allocate editor selection delete plan");
 }
 
-/// Emit one placement-kind's deletes in DESCENDING index order — the
+/// Emit one placement-kind's deletes in DESCENDING index order - the
 /// processing order (the caller reverses the whole plan for the LIFO
 /// push, which flips it back to ascending in the slice). Out-of-range
 /// (stale) indices are skipped defensively.
@@ -1205,7 +1205,7 @@ pub fn planEditorRegionSelectActions(
 
 /// Plan the ctrl+A select-all: one `editor_select` per selectable thing
 /// in the ACTIVE level (every tile, entity / item / decoration placement,
-/// the '!' / '='), skipping entries already in the selection — the
+/// the '!' / '='), skipping entries already in the selection - the
 /// marquee's membership rule with no region bound. The adds share the
 /// action's idle point, so one undo step reverts the whole batch.
 pub fn planEditorSelectAllActions(
@@ -1252,7 +1252,7 @@ pub fn planEditorSelectAllActions(
 }
 
 /// Append `entry`'s select event unless it is already in the selection
-/// (shared by the marquee region and the ctrl+A select-all — an add,
+/// (shared by the marquee region and the ctrl+A select-all - an add,
 /// never a remove, never a duplicate).
 fn appendSelectEntryIfNew(
     plan: *std.ArrayList(Event),

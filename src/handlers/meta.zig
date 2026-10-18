@@ -1,5 +1,5 @@
 //! Session-flow events: `handleMetaEvent`, the `.meta_event` arm of
-//! processEvent — screen transitions, save/load, campaign/hub/mission
+//! processEvent - screen transitions, save/load, campaign/hub/mission
 //! flow, level lifecycle, the editor framing (open/close + playtest/
 //! validate enter/exit), and the autosave/export side effects. The
 //! checkpoint policy for start_level/start_hub lives in the dispatch
@@ -33,7 +33,7 @@ const validateConfigKeys = shared.validateConfigKeys;
 const loadCampaignAndPushHub = shared.loadCampaignAndPushHub;
 const pushGameplayStartEvents = shared.pushGameplayStartEvents;
 
-/// Handle a `MetaEvent` — session-flow transitions (menus, saves, campaign/
+/// Handle a `MetaEvent` - session-flow transitions (menus, saves, campaign/
 /// hub/mission/level lifecycle, editor framing, waits). Called from
 /// processEvent's `.meta_event` arm, which owns the start_level/start_hub
 /// checkpoint policy.
@@ -54,7 +54,7 @@ pub fn handleMetaEvent(
                     // Missing/unreadable save (e.g. a deleted
                     // autosave after the menu offered Continue) is
                     // recoverable per DESIGN → Error Handling →
-                    // context 2 — popup + revert, not a crash. If it
+                    // context 2 - popup + revert, not a crash. If it
                     // was the autosave, hide Continue so the user
                     // doesn't retry into the same error.
                     if (std.mem.eql(u8, load.save_path, writers.autosave_path)) {
@@ -103,7 +103,7 @@ pub fn handleMetaEvent(
                 );
                 return;
             };
-            // On web, the timestamped save (not the autosave — that's
+            // On web, the timestamped save (not the autosave - that's
             // the in-session resume path in the in-memory persistent dir)
             // is also offered to the player as a browser download, so a
             // save file on disk doesn't require digging through browser
@@ -119,7 +119,7 @@ pub fn handleMetaEvent(
             // No autosave present → nothing to back up.
             if (!history.file_source.fileExists(writers.autosave_path)) return;
             // Pure file copy: read the autosave bytes, write them at
-            // a timestamped backup path. Best-effort — a failure
+            // a timestamped backup path. Best-effort - a failure
             // surfaces the popup but does NOT abort the new game
             // (the backup is preservation, not a prerequisite).
             const autosave_bytes = history.file_source.readFile(
@@ -229,7 +229,7 @@ pub fn handleMetaEvent(
             current.level = loaders.instantiateEditorLevel(editor.*, start.level_index, allocator);
             current.mission = deepCopy(types.Mission, editor.mission, allocator);
             current.mission.?.current_level_index = start.level_index + 1; // 1-based for gameplay handlers
-            // Dormancy (only when ENTERING from edit mode — a
+            // Dormancy (only when ENTERING from edit mode - a
             // validation run chains later levels via start_playtest
             // in .validate mode, and re-backing-up would capture the
             // run's own data): back up the session's real player
@@ -253,13 +253,13 @@ pub fn handleMetaEvent(
         },
         .start_validation => |start| {
             // A new run retires the previous validation's manual-overwrite
-            // offer (side-effect state — gated so replay scrubbing can't
+            // offer (side-effect state - gated so replay scrubbing can't
             // eat a pending offer).
             if (!history.replaying) {
                 editor_mission_io.clearPendingValidationReplay(history);
             }
             // File-based validation: run the SAVED artifact, not the editor
-            // memory — the run certifies the files a player receives (the
+            // memory - the run certifies the files a player receives (the
             // save's bounding-box translation + palette dedup make file ≠
             // memory, so this doubles as a round-trip test of the writer).
             // Reads mission.txt + player.txt from the saved dir through the
@@ -291,7 +291,7 @@ pub fn handleMetaEvent(
             current.mission.?.path = start.mission_path;
             current.mission.?.current_level_index = 1;
             // The no-editor validation marker (end_level's guard reads it
-            // when no Editor exists — cross-session replay of a validation
+            // when no Editor exists - cross-session replay of a validation
             // replay). Rides the working copy: replay reproduces it, and
             // the end_validation transition discards it with the mission.
             current.mission.?.validation_run = true;
@@ -300,7 +300,7 @@ pub fn handleMetaEvent(
 
             // The run's player data: the SAVED player.txt loadout with
             // every utility skill learned (the playtest path builds from
-            // the in-memory player_def instead — quick iteration on the
+            // the in-memory player_def instead - quick iteration on the
             // draft). playerLoadoutEntity maps the same field set
             // build_player_from_data maps, so the chained start_level's
             // player sync round-trips the loadout identically.
@@ -329,7 +329,7 @@ pub fn handleMetaEvent(
                 failReconstructionRead(history, "failed to parse player file");
                 return;
             };
-            // Dormancy — the playtest shape, but only when an Editor
+            // Dormancy - the playtest shape, but only when an Editor
             // exists: a cross-session replay of a validation replay starts
             // with no editor, and there is nothing to back up or restore
             // (the run data is rebuilt below either way).
@@ -339,7 +339,7 @@ pub fn handleMetaEvent(
             }
             current.player_data = editor_handlers.buildPlaytestPlayerData(allocator, player_template);
             // start_level owns the transition, the level read, and the
-            // player sync (the campaign path — its world_generation bump
+            // player sync (the campaign path - its world_generation bump
             // is the editor→level UI reset signal).
             pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                 .mission_path = start.mission_path,
@@ -348,7 +348,7 @@ pub fn handleMetaEvent(
         },
         .end_validation => |end| {
             // A successful run writes its replay (the personal-best guard
-            // decides auto-write vs stash+offer) — a save_game-class side
+            // decides auto-write vs stash+offer) - a save_game-class side
             // effect: the recorded event owns it, replay never re-fires.
             // See DESIGN → Custom Missions & Online Services →
             // Validation replay.
@@ -358,11 +358,11 @@ pub fn handleMetaEvent(
             if (end.success) {
                 // The stats screen: populate the mission-complete info so
                 // the overlay renders over the editor (view() draws it
-                // whenever last_completed_mission is set — no hub gating).
-                // A pure GameState write — reproduced on replay (the
+                // whenever last_completed_mission is set - no hub gating).
+                // A pure GameState write - reproduced on replay (the
                 // overlay itself is view-side; the session-side personal
                 // best / medal context is captured at the write site).
-                // The clone fields are zeroed — validation is
+                // The clone fields are zeroed - validation is
                 // discard-semantics, no clone harvest.
                 if (current.mission) |*mission| {
                     current.last_completed_mission = .{
@@ -384,7 +384,7 @@ pub fn handleMetaEvent(
             // restored, the run's mission + level discarded by the
             // transition (validation_run dies with the mission). In
             // cross-session replay of a validation replay there is no
-            // editor — nothing to restore, land on the main menu (this is
+            // editor - nothing to restore, land on the main menu (this is
             // the slice's last event; the post-run state is irrelevant to
             // what the replay certifies).
             if (current.editor) |*editor| {
@@ -425,7 +425,7 @@ pub fn handleMetaEvent(
             current.mission.?.path = start.mission_path;
             current.mission.?.current_level_index = 1;
 
-            // Clear the mission-complete overlay info — entering a
+            // Clear the mission-complete overlay info - entering a
             // mission (new game or replay) retires any prior
             // completion. On the undo timeline via GameState. See
             // DESIGN → Architecture.
@@ -458,7 +458,7 @@ pub fn handleMetaEvent(
             // should never be reached (end_level's guard redirects to
             // end_validation / end_playtest), but suppress the
             // start_hub continuation defensively if it ever is. Same for
-            // a no-editor validation run (cross-session replay — the
+            // a no-editor validation run (cross-session replay - the
             // mission working copy carries the marker).
             if (current.editor != null) return;
             if (current.mission != null and current.mission.?.validation_run) return;
@@ -491,7 +491,7 @@ pub fn handleMetaEvent(
                 };
             };
 
-            // Key validation: warn on unknown keys (advisory — the
+            // Key validation: warn on unknown keys (advisory - the
             // file still loads). Catches typo'd keys that the
             // permissive parser would silently drop. See DESIGN →
             // Error Handling.
@@ -521,7 +521,7 @@ pub fn handleMetaEvent(
         .end_level => |end| {
             // Validation-run exit guard: a validation run owns its exit
             // continuation whether an Editor is present (live) or not
-            // (cross-session replay of a validation replay — the marker
+            // (cross-session replay of a validation replay - the marker
             // rides the mission working copy, so replay reproduces it).
             // The continuation mirrors the campaign's own next-
             // start_level chaining, with validation ends instead of
@@ -537,7 +537,7 @@ pub fn handleMetaEvent(
                 if (end.continuation == .restart_mission) {
                     // Re-run the whole mission from level 1: inline
                     // teardown (an editor's real player data + edit
-                    // mode — a transitionScreen would CLEAR the event
+                    // mode - a transitionScreen would CLEAR the event
                     // stack, eating the queued re-entry), then re-entry
                     // via the ORCHESTRATOR so every attempt in the
                     // linear stream begins with a seedable top-level
@@ -566,7 +566,7 @@ pub fn handleMetaEvent(
                         pushEvents(current, &.{.{ .meta_event = .open_main_menu }}, allocator);
                     }
                 } else if (end.continuation != .default) {
-                    // Exit Mission: abort the run — only successful
+                    // Exit Mission: abort the run - only successful
                     // runs write a replay.
                     pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
                         .success = false,
@@ -590,7 +590,7 @@ pub fn handleMetaEvent(
             }
             // Editor PLAYTEST exit guard (the validation case is owned
             // above): when an editor session is active, it owns the exit
-            // continuation — the gameplay default (next start_level /
+            // continuation - the gameplay default (next start_level /
             // end_mission → start_hub) is suppressed/redirected.
             // build_data_from_player is also skipped (playtest is
             // discard-semantics; the player's real PlayerData is
@@ -610,20 +610,20 @@ pub fn handleMetaEvent(
                         // Exit-to-menu also tears down inline (the
                         // backup lives ON the Editor, which
                         // close_editor's scope swap discards) and
-                        // chains close_editor — the button means the
-                        // MAIN MENU, not the editor. Any OTHER exit —
-                        // natural level completion or Exit Mission —
+                        // chains close_editor - the button means the
+                        // MAIN MENU, not the editor. Any OTHER exit -
+                        // natural level completion or Exit Mission -
                         // drops back to the editor (the run is
                         // bracketed).
                         if (end.continuation == .restart_mission) {
-                            current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                            current.editor.?.mode = .edit; // the capture is by value - mutate through the optional
                             editor_handlers.restorePrePlaytestPlayerData(current);
                             const restart_level_index = current.mission.?.current_level_index - 1; // 1-based gameplay -> 0-based
                             pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
                                 .level_index = restart_level_index,
                             } } }}, allocator);
                         } else if (end.continuation == .exit_to_menu) {
-                            current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                            current.editor.?.mode = .edit; // the capture is by value - mutate through the optional
                             editor_handlers.restorePrePlaytestPlayerData(current);
                             pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
                         } else {
@@ -631,7 +631,7 @@ pub fn handleMetaEvent(
                         }
                     },
                     .edit => {}, // shouldn't happen (no level loaded in edit mode)
-                    .validate => {}, // unreachable — the validation_run block above owns the validate continuation
+                    .validate => {}, // unreachable - the validation_run block above owns the validate continuation
                 }
                 return;
             }
@@ -651,7 +651,7 @@ pub fn handleMetaEvent(
                 .default => {
                     if (current.mission) |mission| {
                         if (mission.current_level_index < mission.level_count) {
-                            // More levels — push the next one. The
+                            // More levels - push the next one. The
                             // level-complete sting (distinct from the
                             // final level's mission_completion below).
                             if (!history.replaying) {
@@ -663,7 +663,7 @@ pub fn handleMetaEvent(
                                 .level_index = next_index,
                             } } }}, allocator);
                         } else {
-                            // Last level done — end the mission.
+                            // Last level done - end the mission.
                             // Play the completion sound (live play
                             // only) + carry the mission info through
                             // the cascade for the mission-complete
@@ -675,7 +675,7 @@ pub fn handleMetaEvent(
                             // Clone decision: harvest from all old
                             // clones, then auto-save a clone for this
                             // mission on first completion or a
-                            // strictly-FASTER run — turns only, the
+                            // strictly-FASTER run - turns only, the
                             // same personal-best rule as the validation
                             // replay (replayOverwriteDecision):
                             // strictly fewer turns wins, ties and slower
@@ -774,14 +774,14 @@ pub fn handleMetaEvent(
             // reads the synced PlayerData. All level-exit paths must
             // route through here. The editor early-returns above before
             // this push, so playtest/validate never autosave (discard
-            // semantics — the real PlayerData is unchanged). See DESIGN
+            // semantics - the real PlayerData is unchanged). See DESIGN
             // → File System & IO (autosave).
             //
             // On a last-level completion (.default branch above), the
             // clone system also injects `harvest_clones` (payout from
             // all old clones) and `save_clone_info` (auto-save /
             // auto-overwrite the clone for this mission) between the
-            // sync and the write — LIFO array order is [write_save,
+            // sync and the write - LIFO array order is [write_save,
             // save_clone_info?, harvest_clones?, build_data_from_player]
             // so execution is sync → harvest → save → write. See
             // DESIGN → Clones (clone system).
@@ -807,7 +807,7 @@ pub fn handleMetaEvent(
             } } }) catch @panic("failed to append build_data_from_player");
             pushEvents(current, exit_events.items, allocator);
         },
-        // UI surface toggles — the class-1 surface state on GameState
+        // UI surface toggles - the class-1 surface state on GameState
         // (`ui_surfaces`); the methods own the grouped representation
         // (middle-panel order, overlay stacking). See DESIGN → UI
         // Framework → UI state classification.
@@ -832,12 +832,12 @@ pub fn handleMetaEvent(
         },
         .accelerating_wait => {
             // The intra-effect pacing wait (the accelerating counterpart of
-            // `wait` — see DESIGN → Architecture → Skill pacing). Duration is
+            // `wait` - see DESIGN → Architecture → Skill pacing). Duration is
             // COMPUTED from `wait_acceleration` (how many accelerating waits
             // have elapsed since `use_skill` reset the chain): 125ms decayed
             // by 3/4 per prior gap, so a multi-hit skill winds up. The counter
             // increment is event-driven GameState, recomputed identically on
-            // replay/undo — the derived durations stay deterministic.
+            // replay/undo - the derived durations stay deterministic.
             const duration_milliseconds = skill_helpers.acceleratedEffectStepWaitMilliseconds(
                 current.wait_acceleration,
             );

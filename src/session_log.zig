@@ -1,4 +1,4 @@
-//! Session-log serialization/deserialization — the comptime-generic
+//! Session-log serialization/deserialization - the comptime-generic
 //! writer + reader over the `Event` union (see DESIGN → Logging & Replay).
 //! Separate from the config-file format layer (parser.zig): a session log is
 //! `event_history` linearized to config sections, one entry group per event.
@@ -25,9 +25,9 @@ const asU32 = parser.asU32;
 /// v2: the session-log BUNDLE adds its `ReconstructionCache` manifest
 /// section + `content/` byte copies (session_log_bundle.zig). Bare v2
 /// logs without the manifest section are legal (the validation replay is
-/// one — the manifest is bundle-required, not format-required).
+/// one - the manifest is bundle-required, not format-required).
 /// v3: the UI-surface toggle events (`toggle_ui_surface` / `inspect_entity`)
-/// — class-1 surface state moved onto GameState (see DESIGN → UI Framework
+/// - class-1 surface state moved onto GameState (see DESIGN → UI Framework
 /// → UI state classification). Old logs re-record rather than migrate
 /// (pre-release policy).
 const session_log_file_format_version: u32 = 3;
@@ -56,7 +56,7 @@ const session_log_file_format_version: u32 = 3;
 //   ...
 //
 // Each event is one blank-line-separated entry group: a decorative
-// `event_index <N>` header line (purely for human readability — the reader
+// `event_index <N>` header line (purely for human readability - the reader
 // ignores it, and hand-edited/externally-authored logs may omit it), then the
 // `event` pair as the discriminator (outer union tag = category, inner tag =
 // variant). Payload fields follow, one per line. Optionals omit their line
@@ -73,7 +73,7 @@ pub const MetadataPair = struct {
     value: []const u8,
 };
 
-/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" — the
+/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" - the
 /// `created` stamp for session-log-shaped artifacts (the ctrl+L dump, the
 /// autosave backup file name, the validation replay). A side-effect-adjacent
 /// util (reads the clock): called only from live paths, never replay.
@@ -111,7 +111,7 @@ pub fn writeEventLog(
 }
 
 /// writeEventLog with extra Metadata pairs appended after the standard
-/// keys (same file format — the reader is permissive on unknown Metadata
+/// keys (same file format - the reader is permissive on unknown Metadata
 /// keys). See MetadataPair.
 pub fn writeEventLogWithMetadata(
     event_history: []const Event,
@@ -132,7 +132,7 @@ pub fn writeEventLogWithMetadata(
     try buffer.appendSlice(allocator, "\nEventLog\n");
     for (event_history, 0..) |event, index| {
         try buffer.appendSlice(allocator, "\n");
-        // Decorative index header — purely for human readability when scanning
+        // Decorative index header - purely for human readability when scanning
         // a log. The reader ignores it (not required to parse), so hand-edited
         // or externally-authored logs can omit it entirely.
         try buffer.print(allocator, "event_index {d}\n", .{index});
@@ -189,7 +189,7 @@ fn writeEventField(
         else => {
             // A slice of structs carrying strings (e.g. the decoration
             // def's `layers`): the token stream can't regroup strings with
-            // spaces, so each element goes to its OWN indexed lines —
+            // spaces, so each element goes to its OWN indexed lines -
             // see `isStringBearingStructSlice`. The comptime if/else keeps
             // the generic path from instantiating for those slices (its
             // appendEventScalar guard would reject them).
@@ -207,10 +207,10 @@ fn writeEventField(
 
 /// Is T a slice of structs that carry a `[]const u8` field (at any depth
 /// through nested structs)? Such a slice can't serialize as one
-/// space-separated line — a string's spaces would break the reader's
+/// space-separated line - a string's spaces would break the reader's
 /// positional regrouping (e.g. a layer sprite `custom/My Mission/canopy`).
 /// Those fields take the indexed multi-line encoding instead; single
-/// nested values flatten to top level (the event-shape convention — see
+/// nested values flatten to top level (the event-shape convention - see
 /// the editor_set_entity_gear / editor_set_item_def comments).
 fn isStringBearingStructSlice(comptime T: type) bool {
     const info = @typeInfo(T);
@@ -237,10 +237,10 @@ fn typeContainsString(comptime T: type) bool {
 
 /// Write a string-bearing struct slice as INDEXED lines:
 /// `<name>_count N`, then per element one line per field,
-/// `<name>_<i>_<field> <value>` — every string on its own line, so
+/// `<name>_<i>_<field> <value>` - every string on its own line, so
 /// spaces round-trip (the reader mirrors this in
 /// `parseIndexedSliceField`). Element fields must be one-line values
-/// (scalars, enums, strings, structs of scalars like Vector2) — a
+/// (scalars, enums, strings, structs of scalars like Vector2) - a
 /// string-bearing struct/slice NESTED inside an element has no encoding
 /// and is a compile error.
 fn writeIndexedSliceField(
@@ -267,8 +267,8 @@ fn writeIndexedSliceField(
 
 /// May an indexed-slice element field serialize as one line? Strings are
 /// fine (their line is their own); anything that would need ANOTHER level
-/// of regrouping — a string-bearing struct or a non-u8 slice inside the
-/// element — is not.
+/// of regrouping - a string-bearing struct or a non-u8 slice inside the
+/// element - is not.
 fn isIndexedSliceFieldLineValue(comptime T: type) bool {
     const info = @typeInfo(T);
     if (info == .pointer) {
@@ -299,14 +299,14 @@ fn appendEventScalar(
                 @compileError("unsupported event field pointer type: " ++ @typeName(T));
             }
             if (pointer.child == u8) {
-                // `[]const u8` — a string, verbatim.
+                // `[]const u8` - a string, verbatim.
                 try buffer.appendSlice(allocator, value);
             } else {
                 // A slice of scalars/structs (e.g. `[]const Vector2`) flattened
                 // as space-separated element reprs. Elements have fixed arity
                 // (Vector2 = 2 ints), so decoding regroups; an empty slice
                 // writes nothing (an empty value). Structs carrying STRINGS
-                // can't take this path (spaces break the regrouping) —
+                // can't take this path (spaces break the regrouping) -
                 // `writeEventField` routes them to the indexed encoding, and
                 // this guard keeps any future direct caller honest.
                 if (comptime typeContainsString(pointer.child)) {
@@ -336,10 +336,10 @@ fn appendEventScalar(
                         // `tag` is a comptime-known enum value, so indexing
                         // union_info.fields (a comptime tuple) works. A void
                         // payload (e.g. EntityEditTarget.player_def) writes
-                        // just the tag — no payload fields appended. An
+                        // just the tag - no payload fields appended. An
                         // OPTIONAL payload (e.g. EditorPickerTarget
                         // .entity_layer, null = add-new) writes just the tag
-                        // when null — absence encodes null, the same
+                        // when null - absence encodes null, the same
                         // convention writeEventField uses for struct fields.
                         const field_info = union_info.fields[@intFromEnum(tag)];
                         if (field_info.type == void) {
@@ -443,7 +443,7 @@ fn parseEvent(
     allocator: std.mem.Allocator,
 ) SessionLogError!Event {
     // The event unions have outgrown the default 1000-branch comptime
-    // budget — the inline category/variant/payload-field walks evaluate
+    // budget - the inline category/variant/payload-field walks evaluate
     // per Payload type.
     @setEvalBranchQuota(10000);
     const discriminator = findValue(pairs, "event") orelse return error.MalformedSessionLog;
@@ -463,7 +463,7 @@ fn parseEvent(
                         var payload: Payload = undefined;
                         inline for (@typeInfo(Payload).@"struct".fields) |payload_field| {
                             // A string-bearing struct slice reads back its
-                            // indexed lines (the writer's mirror — see
+                            // indexed lines (the writer's mirror - see
                             // writeIndexedSliceField).
                             @field(payload, payload_field.name) =
                                 if (comptime isStringBearingStructSlice(payload_field.type))
@@ -575,7 +575,7 @@ fn parseEventScalar(
 
 /// Parse one value from a token stream: ints/bools/enums consume one token,
 /// structs (Vector2, Materials) consume one token per (recursively flattened)
-/// field — mirroring appendEventScalar's flattening.
+/// field - mirroring appendEventScalar's flattening.
 fn parseScalarTokens(
     comptime T: type,
     tokens: anytype,
@@ -598,7 +598,7 @@ fn parseScalarTokens(
         },
         .pointer => |pointer| {
             // A string field inside a struct/union payload (e.g. Weapon.name,
-            // EntityLayer.sprite). Slices of non-u8 aren't handled here —
+            // EntityLayer.sprite). Slices of non-u8 aren't handled here -
             // they go through parseEventScalar's token-stream loop at the top
             // level. The string is duped into the caller's allocator so it
             // outlives the input buffer (mirrors parseEventScalar's []const u8).
@@ -606,7 +606,7 @@ fn parseScalarTokens(
                 @compileError("unsupported event field pointer type: " ++ @typeName(T));
             }
             if (pointer.child != u8) {
-                @compileError("parseScalarTokens: slice of non-u8 not supported inside a struct/union — use a top-level field");
+                @compileError("parseScalarTokens: slice of non-u8 not supported inside a struct/union - use a top-level field");
             }
             const token = tokens.next() orelse return error.MalformedSessionLog;
             return try allocator.dupe(u8, token);
@@ -631,7 +631,7 @@ fn parseScalarTokens(
                         } else if (comptime @typeInfo(field.type) == .optional) {
                             // OPTIONAL payload (e.g. EditorPickerTarget
                             // .entity_layer, null = add-new): the tag alone
-                            // (no remaining token) is null — absence encodes
+                            // (no remaining token) is null - absence encodes
                             // null, mirroring appendEventScalar's union branch
                             // + writeEventField's struct-field convention.
                             if (tokens.peek() == null) {
@@ -670,7 +670,7 @@ test "writeEventLog serializes representative event shapes" {
     const history = [_]Event{
         // void payload
         .{ .meta_event = .open_main_menu },
-        // empty struct payload (zero fields — the accelerating pacing wait;
+        // empty struct payload (zero fields - the accelerating pacing wait;
         // the group serializes as just the `event` discriminator line)
         .{ .meta_event = .{ .accelerating_wait = .{} } },
         // struct with a Vector2
@@ -743,9 +743,9 @@ test "writeEventLog serializes representative event shapes" {
             .{ .tile = .{ .x = 6, .y = 6 } },
             .{ .player_start = .{ .x = 7, .y = 7 } },
         }, .next_index = 1 } } },
-        // Item-def commits: FLATTENED top-level fields — the name is a
+        // Item-def commits: FLATTENED top-level fields - the name is a
         // top-level string, so multi-word names ("New Sword") round-trip
-        // (a nested Item payload's name would break the token regrouping —
+        // (a nested Item payload's name would break the token regrouping -
         // see the editor_set_item_def comment in events.zig).
         .{ .player_input_event = .{ .player_set_editor_item_def = .{
             .type_id = 1,
@@ -759,8 +759,8 @@ test "writeEventLog serializes representative event shapes" {
             .value = "Iron Sword of Doom",
         } } },
         // The unified equipped-slot commit (FLATTENED): a multi-word weapon
-        // name — the exact payload that used to break log reload when the
-        // event carried a nested `?Weapon` — plus the clear case
+        // name - the exact payload that used to break log reload when the
+        // event carried a nested `?Weapon` - plus the clear case
         // (`equipped false`).
         .{ .player_input_event = .{ .player_set_editor_entity_gear = .{
             .target = .{ .entity_type = 0 },
@@ -776,7 +776,7 @@ test "writeEventLog serializes representative event shapes" {
             .equipped = false,
         } } },
         // Layer events + the def's layers slice: sprite strings with
-        // SPACES (a mission dir named "My Mission") round-trip — the
+        // SPACES (a mission dir named "My Mission") round-trip - the
         // layer events carry flat top-level sprite fields, and the
         // string-bearing struct slice takes the indexed multi-line
         // encoding (layers_count + layers_0_sprite ... lines).
@@ -835,7 +835,7 @@ test "writeEventLog serializes representative event shapes" {
 
     // Null optional omits its line: only the PRESENT use_skill's group
     // carries a target line (the null one's `skill_id` line is directly
-    // followed by the next event's discriminator). Adjacency proves it —
+    // followed by the next event's discriminator). Adjacency proves it -
     // a bare "\ntarget " count can't (many events carry target lines).
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "skill_id slice\ntarget 2 5\n"));
 
@@ -850,23 +850,23 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_move_editor_selection\ndelta 2 -1\n") != null);
     // The worklist slice: each entry flattens as `<tag> <payload fields...>`.
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_commit_selection_move\nentries entity 0 5 5 tile 6 6 player_start 7 7\nnext_index 1\n") != null);
-    // The item-def commit: every field a top-level line — the multi-word
+    // The item-def commit: every field a top-level line - the multi-word
     // name rides one `name` line verbatim (the flattening's whole point).
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_def\ntype_id 1\nitem_kind weapon\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_name\ntype_id 1\nvalue Iron Sword of Doom\n") != null);
-    // The gear-slot commit: every field a top-level line — the multi-word
+    // The gear-slot commit: every field a top-level line - the multi-word
     // weapon name rides one `name` line verbatim (the bug this shape
     // fixes: a nested `?Weapon` payload's name broke the token regrouping).
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_gear\ntarget entity_type 0\nslot main_hand\nequipped true\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
     // The clear: `equipped false`, the defaulted fields riding along.
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_entity_gear\ntarget player_def\nslot amulet\nequipped false\nweapon_type sword\nname \nweapon_damage 0\n") != null);
-    // The layer events: flat top-level sprite fields — spaces ride the
+    // The layer events: flat top-level sprite fields - spaces ride the
     // sprite's own line verbatim.
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_layer\ntarget entity_type 0\nlayer_index 1\nsprite custom/My Mission/canopy\ncolor_index 2\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_add_decoration_layer\ntype_id 0\nsprite custom/My Mission/moss\ncolor_index 1\nbehind false\npixel_dims 512 256\n") != null);
-    // The def's layers slice: the INDEXED encoding — one line per element
+    // The def's layers slice: the INDEXED encoding - one line per element
     // field, each string on its own line (the footprint slice stays a
-    // single flattened line — no strings inside).
+    // single flattened line - no strings inside).
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nkeep_original_colors false\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_behind false\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_behind true\nlayers_1_pixel_dims 512 768\n") != null);
 
     // The output round-trips through the generic config parser structurally:
@@ -879,7 +879,7 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expectEqual(history.len, sections[1].entry_groups.len);
     // Each event group begins with the decorative `event_index` header, then
     // the `event` discriminator (event_index is purely for human readability
-    // — the reader ignores it).
+    // - the reader ignores it).
     try std.testing.expectEqualStrings("event_index", sections[1].entry_groups[0].pairs[0].key);
     try std.testing.expectEqualStrings("0", sections[1].entry_groups[0].pairs[0].value);
     try std.testing.expectEqualStrings("event", sections[1].entry_groups[0].pairs[1].key);
@@ -887,7 +887,7 @@ test "writeEventLog serializes representative event shapes" {
 
     // The union-payload events round-trip through loadEventLog with their
     // tags + payloads intact (write → parse → load → expectEqualDeep). The
-    // loaded log lives in an arena (no per-event free helper exists —
+    // loaded log lives in an arena (no per-event free helper exists -
     // callers are arena-backed; leak-checked loading is the pending
     // exhaustive round-trip TODO's job).
     {

@@ -1,6 +1,6 @@
-//! Tier 1 handler tests — gear & skill mechanics. Each test is a scripted
+//! Tier 1 handler tests - gear & skill mechanics. Each test is a scripted
 //! mini-session against a hub-context player (no level needed: the gear
-//! handlers' side effects — `refreshMoveHighlights`/`cancelPreparedSkill` —
+//! handlers' side effects - `refreshMoveHighlights`/`cancelPreparedSkill` -
 //! early-return without a level, so the mechanics are tested in isolation
 //! here; the side-effect branches land with the Tier 2 combat tests). See
 //! TODO → Tech debt (handler coverage) and DESIGN → Architecture (gear
@@ -305,7 +305,7 @@ test "player_salvage_inventory_region: salves occupied slots in the box, skips e
     player(&history).inventory.slots[9] = .{ .weapon = weapon_b };
     player(&history).inventory.slots[17] = .{ .weapon = weapon_c };
     const before = history.current_state.player_data.materials;
-    // Box from slot 0 to slot 17 covers rows 0–2, cols 0–1 (6 slots), 3
+    // Box from slot 0 to slot 17 covers rows 0-2, cols 0-1 (6 slots), 3
     // occupied. Corners given in reverse order to confirm order-independence.
     pushInputAndRun(&history, .{ .player_salvage_inventory_region = .{
         .start_slot = 17,
@@ -450,7 +450,7 @@ test "equip_utility_skill: into empty slot preserves incoming cd" {
 }
 
 test "equip_utility_skill: outgoing skill cd is preserved (not cleared)" {
-    // Rotating a used skill off the bar must not reset it — otherwise the
+    // Rotating a used skill off the bar must not reset it - otherwise the
     // player could cycle use→swap-out→swap-back-in to bypass cooldowns.
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
@@ -582,7 +582,7 @@ test "player_assign_utility_skill: drop onto the slot that already holds the ski
         .skill_id = .replenish,
         .slot_index = 2,
     } });
-    // Unchanged — no self-swap, no duplicate.
+    // Unchanged - no self-swap, no duplicate.
     try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[2]);
     try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
 }
@@ -673,7 +673,7 @@ test "handleDrag: drag a bar skill onto an inventory ref (cross-domain) clears t
 
     input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
     input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
-    // Release over the inventory slot — cross-domain, dragToOrchestrator
+    // Release over the inventory slot - cross-domain, dragToOrchestrator
     // returns null, not a self-drop → off-bar → clear.
     input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
@@ -724,7 +724,7 @@ test "handleDrag: drag a bar skill onto another bar slot swaps (not clear)" {
 
 // ───────────────────────── drag no-op gate ─────────────────────────
 // A drop that would change nothing (unfitting item→gear or gear→occupied
-// pair, re-assigning the skill already in the slot) never fires — no dead
+// pair, re-assigning the skill already in the slot) never fires - no dead
 // undo step. The pure predicate is covered in input_gestures.zig; these
 // pin the wiring through handleDrag.
 
@@ -767,7 +767,7 @@ test "handleDrag: unfitting equip drop never fires" {
     input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
     input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
-    // A weapon doesn't fit the boots slot — nothing fired, nothing moved.
+    // A weapon doesn't fit the boots slot - nothing fired, nothing moved.
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expect(inventoryWeaponDamage(player(&history).inventory.slots[0]) != null);
     try testing.expect(player(&history).boots == null);

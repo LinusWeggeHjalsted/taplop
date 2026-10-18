@@ -13,7 +13,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Bull Form: an enchantment. Grants the Bull Form
-/// effect on the caster — knockback/retreat distance +10 for the duration.
+/// effect on the caster - knockback/retreat distance +10 for the duration.
 /// Non-turn-ending (the enchantment pool's ratings only order the
 /// non-ending skills).
 pub const skill = Skill{
@@ -34,18 +34,18 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: rated against the LIVE beneficiaries of the +10 push
-/// distance — the casts that will actually fire this turn and carry a
+/// distance - the casts that will actually fire this turn and carry a
 /// `distance` (knockback/retreat pushes travel farther, and the extra
 /// distance can flip a collision: the base-value rule counts the planned
 /// ending cast when it has the field, plus positive-rated non-ending
 /// skills with it), MAX'd with the SIM DIFFERENTIAL (the bar re-evaluated
-/// with the effect virtually applied — a push that would now collide
+/// with the effect virtually applied - a push that would now collide
 /// rates one higher; see helpers.simDifferentialGain). Rating = best + 1
 /// (fires first in the chain). No live beneficiary and no differential →
 /// NO cast, no fallback (pure modifiers). See DESIGN → Architecture, AI
@@ -63,7 +63,7 @@ fn aiOptions(
 
     var best_beneficiary: u32 = 0;
 
-    // The real bar (this frame — bull form itself is cut by the in-progress
+    // The real bar (this frame - bull form itself is cut by the in-progress
     // guard).
     const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
 
@@ -111,7 +111,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

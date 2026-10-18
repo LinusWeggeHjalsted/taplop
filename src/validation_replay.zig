@@ -1,4 +1,4 @@
-//! The validation replay artifact — pure machinery over the session-log
+//! The validation replay artifact - pure machinery over the session-log
 //! format: the structural loader (bracket checks + mission metadata keys),
 //! turn derivation, medal targets, and the personal-best overwrite
 //! decision. The write site (the end_validation success handler) and the
@@ -22,14 +22,14 @@ const Event = events_mod.Event;
 /// binding). All memory is `allocator`-owned (the loadEventLog pattern).
 pub const ValidationReplay = struct {
     /// Advisory: the build that produced the replay (the standard
-    /// game-version caveat — warn on mismatch, not a hard gate).
+    /// game-version caveat - warn on mismatch, not a hard gate).
     game_version: []const u8,
     /// "YYYYMMDD_HHMMSS" verbatim from the file.
     created: []const u8,
     /// The mission's uuid (mission.txt identity), binding the replay to
     /// the mission it validated.
     mission_uuid: []const u8,
-    /// SHA-256 over the mission's config files (content_hash.zig) — the
+    /// SHA-256 over the mission's config files (content_hash.zig) - the
     /// replay certifies THIS content version; a mismatch with the
     /// mission's current hash means "unvalidated".
     content_hash: []const u8,
@@ -47,8 +47,8 @@ pub const ValidationReplayError = session_log.SessionLogError || error{
 
 /// Load + structurally check a validation replay from config sections (the
 /// loadEventLog shape: the caller parses the file and owns the sections).
-/// The bracket checks encode the file's contract — first event the
-/// seedable orchestrator, last event the successful bracket close — so a
+/// The bracket checks encode the file's contract - first event the
+/// seedable orchestrator, last event the successful bracket close - so a
 /// file that fails here is not a validation replay, whatever its Metadata
 /// claims.
 pub fn loadValidationReplay(
@@ -93,10 +93,10 @@ pub fn loadValidationReplay(
 
 /// The author time: count the player's `turn_start` events (entity_index 0)
 /// in the slice. Mirrors the `turn_start` handler's `mission.turns_spent`
-/// increment exactly (any mode, while a mission is active) — the two must
+/// increment exactly (any mode, while a mission is active) - the two must
 /// agree, asserted by the validation crown test against the reconstructed
-/// state. Counting turn STARTS (not ends) means the final turn — spent
-/// walking onto the level exit, never reaching turn_end — counts. Derived,
+/// state. Counting turn STARTS (not ends) means the final turn - spent
+/// walking onto the level exit, never reaching turn_end - counts. Derived,
 /// never stored, so it can't drift from the truth of the replay. See
 /// DESIGN → Custom Missions & Online Services → Turn counters
 /// + author medals.
@@ -117,8 +117,8 @@ pub fn deriveValidationTurns(events: []const Event) u32 {
 }
 
 /// The verdict of `revalidateMission`: the stored run either still plays
-/// out identically against the current content (valid — the caller
-/// rewrites the replay with the new hash), or it doesn't (invalid — the
+/// out identically against the current content (valid - the caller
+/// rewrites the replay with the new hash), or it doesn't (invalid - the
 /// user-facing reason says where it diverged). Pure decision data; the
 /// caller owns the file rewrite.
 pub const RevalidationResult = union(enum) {
@@ -126,7 +126,7 @@ pub const RevalidationResult = union(enum) {
         /// The CURRENT content's hash (hex) to stamp into the rewritten
         /// replay.
         content_hash_hex: [64]u8,
-        /// The run's derived turn count — unchanged by revalidation (the
+        /// The run's derived turn count - unchanged by revalidation (the
         /// events are the same run).
         turns: u32,
     },
@@ -138,10 +138,10 @@ pub const RevalidationResult = union(enum) {
 };
 
 /// Re-certify a stored validation replay against the CURRENT content of
-/// its mission dir (the Revalidate Mission button — see DESIGN → Custom
+/// its mission dir (the Revalidate Mission button - see DESIGN → Custom
 /// Missions & Online Services → Validation replay). Pure computation +
 /// file READS only: the caller loads the replay, calls this, and owns the
-/// rewrite. The validity criterion is STRICT replay verification — the
+/// rewrite. The validity criterion is STRICT replay verification - the
 /// recorded run is reconstructed in checking mode
 /// (`GameStateHistory.reconstructFromEventLogChecking`) against the
 /// mission files as they are now; a content edit the run never touches
@@ -149,10 +149,10 @@ pub const RevalidationResult = union(enum) {
 /// and passes, while anything that changes what the handlers would push
 /// (a moved tile on the route, a retuned enemy) diverges and rejects.
 /// This is the in-process miniature of the future server-side upload
-/// validation — same error-returning path, no fail-fast wrapper.
+/// validation - same error-returning path, no fail-fast wrapper.
 ///
 /// `history` is the TEMPLATE for the scratch history (settings, weapon/
-/// theme/salvage definitions, file_source, io — everything the handlers
+/// theme/salvage definitions, file_source, io - everything the handlers
 /// need); `apply_event` is the dispatch fn (event_handlers.processEvent
 /// at the call site, keeping this file import-cycle-free).
 pub fn revalidateMission(
@@ -197,7 +197,7 @@ pub fn revalidateMission(
     }
 
     // The checking replay: the recorded run against the current files.
-    // Empty stack — the slice starts at the seedable
+    // Empty stack - the slice starts at the seedable
     // player_start_validation orchestrator (the cross-session shape; see
     // the validation crown test), so the boot open_main_menu is
     // deliberately NOT seeded.
@@ -253,9 +253,9 @@ pub fn revalidateMission(
 
 /// Trackmania-style medal targets, derived from the author's turn count:
 /// gold = ceil(turns × 1.2), silver = turns × 2, bronze = turns × 5
-/// (integer forms — gameplay logic uses no floats). Ceil keeps a target
+/// (integer forms - gameplay logic uses no floats). Ceil keeps a target
 /// at least 1 turn above the faster tier except at very low author times,
-/// where tiers can collide (author_turns = 1 gives gold == silver == 2 —
+/// where tiers can collide (author_turns = 1 gives gold == silver == 2 -
 /// accepted edge case). See DESIGN → Custom Missions & Online Services →
 /// Turn counters + author medals.
 pub const MedalTargets = struct {
@@ -304,7 +304,7 @@ pub fn replayOverwriteDecision(
 ) ReplayOverwriteDecision {
     const old = existing orelse return .write;
     // An old replay whose hash no longer matches certifies an earlier
-    // mission version — meaningless for the current content.
+    // mission version - meaningless for the current content.
     if (!std.mem.eql(u8, old.content_hash, new_content_hash)) return .write;
     // Strictly faster = a new personal best. Ties keep the old file
     // (first-validated wins).
@@ -382,7 +382,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
         .{ .name = "content_hash", .value = "hash" },
     };
 
-    // Too short — a bracket needs at least the entry orchestrator + the
+    // Too short - a bracket needs at least the entry orchestrator + the
     // closing event.
     {
         const body = try session_log.writeEventLogWithMetadata(
@@ -447,7 +447,7 @@ test "loadValidationReplay requires the mission metadata keys" {
         .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
         .{ .meta_event = .{ .end_validation = .{ .success = true } } },
     };
-    // writeEventLog (no extra pairs) — a plain session log is not a
+    // writeEventLog (no extra pairs) - a plain session log is not a
     // validation replay even with a well-formed bracket.
     const body = try session_log.writeEventLog(events[0..], "20260101_000000", allocator);
     try expectReplayError(
@@ -462,7 +462,7 @@ test "replayOverwriteDecision personal-best guard" {
     const new_hash = "aaaaaaaa";
     const other_hash = "bbbbbbbb";
 
-    // No old file (or an unreadable one — the call site maps load failure
+    // No old file (or an unreadable one - the call site maps load failure
     // to null): always write.
     try std.testing.expectEqual(
         ReplayOverwriteDecision.write,
@@ -470,13 +470,13 @@ test "replayOverwriteDecision personal-best guard" {
     );
 
     // Old replay from an earlier mission version (hash mismatch): the old
-    // file certifies different content — overwrite regardless of turns.
+    // file certifies different content - overwrite regardless of turns.
     try std.testing.expectEqual(
         ReplayOverwriteDecision.write,
         replayOverwriteDecision(.{ .turns = 5, .content_hash = old_hash }, 100, other_hash),
     );
 
-    // Strictly faster: new personal best — write.
+    // Strictly faster: new personal best - write.
     try std.testing.expectEqual(
         ReplayOverwriteDecision.write,
         replayOverwriteDecision(.{ .turns = 10, .content_hash = old_hash }, 9, new_hash),
@@ -488,7 +488,7 @@ test "replayOverwriteDecision personal-best guard" {
         replayOverwriteDecision(.{ .turns = 10, .content_hash = old_hash }, 11, new_hash),
     );
 
-    // Tie: first-validated wins — keep the old file.
+    // Tie: first-validated wins - keep the old file.
     try std.testing.expectEqual(
         ReplayOverwriteDecision.keep_offer_overwrite,
         replayOverwriteDecision(.{ .turns = 10, .content_hash = old_hash }, 10, new_hash),

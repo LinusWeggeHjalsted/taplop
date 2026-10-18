@@ -2,7 +2,7 @@ Metadata
 file_format_version 1
 
 # The editor's new-level template (the add-level "+"): the minimal valid
-# layout — the '!' player start at (0,0) and the '=' level end at (1,0),
+# layout - the '!' player start at (0,0) and the '=' level end at (1,0),
 # no floor tiles, no enemies / decorations / items. Unnamed on purpose: a
 # new level's tab reads "Level N" until the author names it (the metadata
 # sidebar). Parsed by loaders.loadEditorDefaultLevel.

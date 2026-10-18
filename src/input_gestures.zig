@@ -32,7 +32,7 @@ const markSettingsDirty = @import("state.zig").markSettingsDirty;
 /// element whose ref is `.learned_skill`). Used to route the mouse wheel to
 /// skills-browser scroll instead of camera zoom. The skills panel's slots
 /// are only emitted when the panel is open, so a hit here implies the panel
-/// is open — no separate open-state check needed. See `handleAnytimeInput`.
+/// is open - no separate open-state check needed. See `handleAnytimeInput`.
 pub fn skillsSlotUnderPointer(
     ui_elements: []const ui.UiElement,
     position: types.ScreenPosition,
@@ -47,12 +47,12 @@ pub fn skillsSlotUnderPointer(
 /// Map a drag (source slot ref → target slot ref) to the orchestrator
 /// `PlayerInputEvent` that the handler will resolve, or null for a
 /// nonsensical / unsupported drop. Replaces the old `dragToEvent` which
-/// returned machinery events directly — input now only pushes
+/// returned machinery events directly - input now only pushes
 /// PlayerInputEvents (orchestrator convention; see DESIGN → Determinism &
 /// Tiebreaking → Replay PLAYER-ACTION LEGALITY). The handler pushes the
 /// machinery event as a child.
 fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
-    // A drop back on the source slot is a no-op for every domain — don't
+    // A drop back on the source slot is a no-op for every domain - don't
     // push a no-op swap/equip into the event log.
     if (ui.SlotRef.eql(from, to)) return null;
     return switch (from) {
@@ -95,7 +95,7 @@ fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent
     };
 }
 
-/// Whether a resolved drag orchestrator would actually change state — the
+/// Whether a resolved drag orchestrator would actually change state - the
 /// no-op gate at the drag drop site (a drop that would change nothing never
 /// fires, so it can't become a recorded no-op undo step). Mirrors the
 /// machinery handlers' early-return guards: equip_item's item-fit check,
@@ -104,7 +104,7 @@ fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent
 /// same-skill pair, unequip_utility_skill's empty slot. `skill_prepared`
 /// (a level skill preparation is active) keeps the utility-skill cases
 /// honest: those handlers also cancel a preparation, which IS a change.
-/// Pure over the player entity — testable without input.
+/// Pure over the player entity - testable without input.
 pub fn dragActionWouldChange(
     player: types.Entity,
     skill_prepared: bool,
@@ -151,7 +151,7 @@ pub fn dragActionWouldChange(
 /// is camera pan on the world; panels block it, so a right-press on a slot is
 /// a click). Hit-tests against the previous frame's UI.
 ///
-/// Item clicks are ANYTIME (not gated on the event stack) — salvaging /
+/// Item clicks are ANYTIME (not gated on the event stack) - salvaging /
 /// equipping / learning during enemy turns is allowed. The pushed
 /// orchestrator is processed mid-drain like `swap_hands` (see the wait/drain
 /// loop in `update`). See DESIGN → UI Framework.
@@ -169,9 +169,9 @@ pub fn handleDrag(
         if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |ref| {
             // Two press paths share `pending_slot_press`:
             //   • Shift+left on an INVENTORY slot (occupied or empty) tracks
-            //     a salvage-region selection — empty slots are valid region
+            //     a salvage-region selection - empty slots are valid region
             //     corners so the player can drag across mixed occupancy.
-            //   • Otherwise, only OCCUPIED slots track an item drag/click —
+            //   • Otherwise, only OCCUPIED slots track an item drag/click -
             //     `slotContentIcon` is null for an empty slot, gating drags
             //     to slots that actually hold something.
             if (pointer.modifiers.shift and ref == .inventory) {
@@ -228,7 +228,7 @@ pub fn handleDrag(
     // While a salvage-region selection is in progress, update the end slot to
     // the inventory slot currently under the pointer. Runs every call (not
     // just on events) so the outline tracks the cursor live. When the pointer
-    // is off-grid (null / non-inventory ref) the previous end slot is kept —
+    // is off-grid (null / non-inventory ref) the previous end slot is kept -
     // the release then salves the last valid region.
     if (ui_state.salvage_region) |region| {
         if (ui.refAt(ui_elements, pointer.position.toScreenPosition())) |ref| switch (ref) {
@@ -246,7 +246,7 @@ pub fn handleDrag(
             // Shift-drag release: salvage the bounding box if Shift is still
             // held, else cancel. Either way the selection clears. No-op
             // gate: an all-empty region (empty slots are valid region
-            // corners) never fires — no dead undo step.
+            // corners) never fires - no dead undo step.
             if (pointer.modifiers.shift) {
                 const player = ui.playerEntity(current) orelse types.Entity{};
                 if (player_handlers.salvageRegionOccupiedSlots(
@@ -293,7 +293,7 @@ pub fn handleDrag(
             if (resolved) |orchestrator| {
                 // No-op gate: a drop that would change nothing (unfitting
                 // item→gear or gear→occupied-slot pair, re-assigning the
-                // skill already in the slot) never fires — see
+                // skill already in the slot) never fires - see
                 // dragActionWouldChange. The empty-entity fallback makes a
                 // mid-drag screen transition (no player anymore) a safe
                 // no-op drop instead of a panic.
@@ -364,7 +364,7 @@ const ItemIntent = enum { equip_main, equip_off, salvage, none };
 
 /// Resolve a click (button + modifiers + double-click state) to an intent.
 /// Precedence: shift > ctrl > alt > plain-double; combos (2+ modifiers) are
-/// a no-op. Pure — testable without input/state.
+/// a no-op. Pure - testable without input/state.
 ///   shift+left → salvage; shift+right → none
 ///   ctrl+left → equip_main; ctrl+right → equip_off
 ///   alt+left → equip_off; alt+right → equip_main
@@ -382,7 +382,7 @@ fn resolveItemClick(button: ui.ClickButton, modifiers: types.Modifiers, is_doubl
 /// Resolve an inventory-slot click into an orchestrator action, with double-
 /// click detection. Only inventory slots are clickable this slice (gear /
 /// skills panels have no builders yet); non-inventory sources are ignored.
-/// Anytime — not gated on the event stack (salvaging/equipping/learning
+/// Anytime - not gated on the event stack (salvaging/equipping/learning
 /// during enemy turns is allowed). See `handleDrag`.
 fn resolveInventoryClick(
     history: *GameStateHistory,
@@ -441,7 +441,7 @@ fn resolveInventoryClick(
 /// it so it stays under the cursor. Runs anytime (not gated on the event
 /// stack) so the player can look around mid-wait / mid-turn. Levels/hubs/
 /// editor only. The pan offset lives on SessionState (transient view state, replay-
-/// safe by construction — see DESIGN → Replay & Side Effects). `camera` must already include the
+/// safe by construction - see DESIGN → Replay & Side Effects). `camera` must already include the
 /// current pan offset (so screenToTile / floatWorldPoint map the cursor
 /// against the camera the player is actually seeing).
 ///
@@ -449,11 +449,11 @@ fn resolveInventoryClick(
 /// `ui.drag_threshold_pixels` from the right-press: the press records the
 /// anchor (the world point under it) but a sub-threshold wiggle pans nothing,
 /// so a clean right-click stays clean (the pending-right-click gestures
-/// cancel at this same threshold). Once engaged the pan latches — a wiggle
+/// cancel at this same threshold). Once engaged the pan latches - a wiggle
 /// back near the press point keeps panning.
 ///
 /// Pan-start is suppressed when the pointer is over a blocking UI element
-/// (same occlusion check as the tile cursor) — right-clicking a panel pans
+/// (same occlusion check as the tile cursor) - right-clicking a panel pans
 /// nothing. On player move (detected in frame()) the pan is cleared so the
 /// camera recenters; on screen transition frame() also clears it. Here we
 /// only own the drag itself.
@@ -478,7 +478,7 @@ pub fn handleCameraPan(
         return;
     }
 
-    // Right-button press begins a pan — unless the cursor is over blocking UI.
+    // Right-button press begins a pan - unless the cursor is over blocking UI.
     if (pointer.right_pressed) {
         if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
             session.camera_pan_anchor = null;
@@ -491,7 +491,7 @@ pub fn handleCameraPan(
         return;
     }
 
-    // No active drag — nothing to do on held/moved/released.
+    // No active drag - nothing to do on held/moved/released.
     if (session.camera_pan_anchor == null) {
         if (pointer.right_released) {
             session.camera_pan_anchor = null;
@@ -513,12 +513,12 @@ pub fn handleCameraPan(
     if (pointer.right_held) {
         // Threshold gate: until the pointer moves beyond the drag threshold
         // there is no pan (a sub-threshold wiggle pans nothing, so a clean
-        // right-click stays clean — the pending-right-click gestures cancel
+        // right-click stays clean - the pending-right-click gestures cancel
         // at this same threshold). Crossing it drops the press record,
         // latching the pan engaged: a later wiggle back near the press point
         // keeps panning. Strict `>` matches the other drag gestures.
         if (session.camera_pan_press) |press| {
-            // Full-precision pointer math (press + cursor both f32) — the
+            // Full-precision pointer math (press + cursor both f32) - the
             // threshold compare runs in float against the i32 threshold.
             const dx = pointer.position.x - press.x;
             const dy = pointer.position.y - press.y;
@@ -534,7 +534,7 @@ pub fn handleCameraPan(
         const target_camera_y = anchor.world_y * tile_pixels - (cursor_y - viewport.height / 2.0);
 
         // Unclamped (view_region null): the solve's pan is relative to the
-        // recentered camera, and the clamp applies downstream — so the
+        // recentered camera, and the clamp applies downstream - so the
         // grabbed point stays exactly under the cursor in the level
         // interior, with resistance only at the level edges.
         const player_centered = view_mod.computeCamera(current, camera_zoom, null, null);
@@ -557,7 +557,7 @@ pub fn handleCameraPan(
 /// entity → close, different → switch, none open → open). Suppressed over
 /// blocking UI (same occlusion check as the tile cursor + camera pan) so a
 /// right-click on a panel never inspects the world behind it. Hubs are
-/// excluded — inspection is level-only by design.
+/// excluded - inspection is level-only by design.
 ///
 /// Runs anytime alongside `handleCameraPan` / `handleDrag`. The two right-
 /// click consumers coexist without conflict: a no-movement right-press sets
@@ -582,7 +582,7 @@ fn sliderValueFromPointer(slider: ui.Slider, pointer_x: i32) u32 {
 /// Apply a slider value to `history.settings` based on the slider's
 /// `setting_id`. Mutates settings directly (off the undo timeline) + marks
 /// dirty for debounced persistence. Called on every drag step (the debounce
-/// coalesces — the write fires 1s after the last scrub).
+/// coalesces - the write fires 1s after the last scrub).
 fn applySliderValue(history: *GameStateHistory, slider: ui.Slider, pointer_x: i32) void {
     const value = sliderValueFromPointer(slider, pointer_x);
     const settings = &history.settings;
@@ -646,7 +646,7 @@ pub fn handleRightClickInspect(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Levels only. Not our screen — drop only OUR kind of pending (the
+    // Levels only. Not our screen - drop only OUR kind of pending (the
     // editor screen's delete gesture owns the field there; see
     // PendingRightClick).
     if (current.screen != .level) {
@@ -677,7 +677,7 @@ pub fn handleRightClickInspect(
         // (death removes nothing from the entities array) and living
         // entities can stand on one (dead entities don't block movement),
         // so a lower-index corpse must not shadow the living entity on its
-        // tile — skip the dead, keep scanning.
+        // tile - skip the dead, keep scanning.
         for (level.entities, 0..) |entity, index| {
             if (entity.current_health == 0) continue;
             if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
@@ -695,7 +695,7 @@ pub fn handleRightClickInspect(
     // Movement beyond the threshold cancels the pending right-click (it
     // became a camera pan). Checked on every call while the right button is
     // held. Uses `>` (strict) so a zero-threshold config still tolerates a
-    // no-movement press+release — `0 > 0` is false, so a clean click survives.
+    // no-movement press+release - `0 > 0` is false, so a clean click survives.
     // Same convention as the inventory drag promotion in `handleDrag`.
     if (ui_state.pending_right_click) |press| {
         switch (press) {
@@ -719,7 +719,7 @@ pub fn handleRightClickInspect(
             switch (press) {
                 .inspect => |pending| {
                     // Resolve the gesture's intent against the current
-                    // surface state (GameState — the entity-inspect surface
+                    // surface state (GameState - the entity-inspect surface
                     // rides the undo timeline): same target → close,
                     // different → retarget, none → open. One orchestrator
                     // carries the RESOLVED intent; the update() stack branch
@@ -747,7 +747,7 @@ pub fn handleRightClickInspect(
     }
 }
 
-/// Drop the pending right-click if it is of `kind` (a no-op otherwise —
+/// Drop the pending right-click if it is of `kind` (a no-op otherwise -
 /// each right-click handler owns only its own kind; see PendingRightClick).
 fn clearPendingRightClick(
     ui_state: *ui.UiState,
@@ -759,10 +759,10 @@ fn clearPendingRightClick(
 }
 
 /// Editor-screen right-click: the TOOL-INDEPENDENT delete. One clean
-/// click deletes ONE thing at the pressed tile — priority: enemy / ground
+/// click deletes ONE thing at the pressed tile - priority: enemy / ground
 /// item occupant, then covering decoration, then the bare tile; the '!' /
 /// '=' and empty ground are no-ops. All of that policy lives in the shared
-/// planner (`planEditorDeleteActions` — the pushed handler consumes the
+/// planner (`planEditorDeleteActions` - the pushed handler consumes the
 /// same plan); this handler owns the gesture + the no-op gate (a click
 /// whose plan is empty never fires, so it can't become an undo/replay
 /// step). Same movement-threshold lifecycle as the inspect right-click: a
@@ -782,7 +782,7 @@ pub fn handleRightClickEditorDelete(
     const ui_state = &history.session.ui_state;
 
     // Editor edit mode only (playtest/validate are the .level screen,
-    // where the inspect handler owns right-clicks). Not our screen — drop
+    // where the inspect handler owns right-clicks). Not our screen - drop
     // only OUR kind of pending.
     if (current.screen != .editor or current.editor == null) {
         clearPendingRightClick(ui_state, .editor_delete);
@@ -851,12 +851,12 @@ pub fn handleRightClickEditorDelete(
 /// Shift held over the viewport records the press tile; moving beyond the
 /// drag threshold promotes the gesture (the rectangle renders, the end
 /// corner tracks the pointer live); release with Shift STILL held adds
-/// everything inside the region (`player_select_editor_region` — skipping
+/// everything inside the region (`player_select_editor_region` - skipping
 /// already-selected entries; the marquee never removes). Shift released
 /// mid-drag cancels. An UNPROMOTED release (no drag) IS the shift+click
 /// TOGGLE path: the toggle fires at the press tile (the select arm in
 /// `handleIdleInput` defers to this gesture while Shift is held; a plain
-/// click there would REPLACE) — fired here with the same no-op gate. Mirrors the
+/// click there would REPLACE) - fired here with the same no-op gate. Mirrors the
 /// inventory salvage-region gesture (`handleDrag`) + the right-click
 /// clean-click disambiguation (`handleRightClickEditorDelete`).
 pub fn handleEditorMarquee(
@@ -870,7 +870,7 @@ pub fn handleEditorMarquee(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the select tool only. Not our context — clear any
+    // Editor edit mode + the select tool only. Not our context - clear any
     // in-progress marquee (a stale gesture must not fire later).
     if (current.screen != .editor or current.editor == null or
         current.editor.?.active_tool != .select)
@@ -902,7 +902,7 @@ pub fn handleEditorMarquee(
     }
 
     if (ui_state.editor_marquee) |*marquee| {
-        // Promotion: movement beyond the threshold (strict `>` — a
+        // Promotion: movement beyond the threshold (strict `>` - a
         // zero-threshold config still tolerates a no-movement press+
         // release as a click; same convention as the inventory drag +
         // right-click cancel).
@@ -914,7 +914,7 @@ pub fn handleEditorMarquee(
             }
         }
         // The end corner tracks the pointer live, but only over the
-        // viewport (not blocking UI) — a release over a panel fires the
+        // viewport (not blocking UI) - a release over a panel fires the
         // LAST VALID region (inventory salvage-region behavior: the region
         // keeps the last valid corner).
         if (pointer.held and marquee.promoted and
@@ -933,7 +933,7 @@ pub fn handleEditorMarquee(
         if (ui_state.editor_marquee) |marquee| {
             if (marquee.promoted) {
                 // Shift still held at release → add the region (no-op gate:
-                // an empty or all-already-selected region never fires — no
+                // an empty or all-already-selected region never fires - no
                 // dead undo step); Shift released mid-drag → cancel.
                 if (pointer.modifiers.shift) {
                     if (current.editor) |*editor| {
@@ -952,7 +952,7 @@ pub fn handleEditorMarquee(
                     }
                 }
             } else {
-                // No drag: the shift+click TOGGLE — fire it at the press
+                // No drag: the shift+click TOGGLE - fire it at the press
                 // tile (the same no-op gate: empty ground never fires).
                 if (current.editor) |*editor| {
                     const arena = history.current_arena.allocator();
@@ -976,23 +976,23 @@ pub fn handleEditorMarquee(
 /// selected thing OR on an unselected-but-selectable thing). Press claims
 /// the gesture when the press tile hits the selection (a selected tile /
 /// entity / item, a selected decoration's footprint, or a selected '!' /
-/// '=' — see `editorSelectionContainsPosition`) or has a nonempty click
+/// '=' - see `editorSelectionContainsPosition`) or has a nonempty click
 /// group (`editorClickGroupNonempty`; empty ground never claims, so the
 /// click-to-deselect and a drag from empty ground are unchanged); the
 /// drag threshold promotes it (the view translates the OUTLINES by the
-/// live delta — the selection for a `selected_at_press` claim, the
-/// grabbed group for an unselected one — the world stays put). Release
+/// live delta - the selection for a `selected_at_press` claim, the
+/// grabbed group for an unselected one - the world stays put). Release
 /// commits the move when the delta is nonzero
-/// (`player_move_editor_selection` — see its doc for the clear +
+/// (`player_move_editor_selection` - see its doc for the clear +
 /// chained-place semantics) and CLEARS the selection (a move deselects).
 /// An unselected-claim release fires the replace + move CHAIN: the
 /// replace is pushed SECOND (on top) so the LIFO drain selects the group
 /// FIRST and the move orchestrator plans against the replaced selection;
 /// both actions are pushed in the same frame, so the pair drains in one
-/// drain and shares one idle point — a single undo step reverts the
+/// drain and shares one idle point - a single undo step reverts the
 /// whole drag. A zero delta drops just the replace (the
 /// grab-and-drop-in-place = selected, like a click). An UNPROMOTED
-/// release (no movement) acts as a plain click — the REPLACE fires at the
+/// release (no movement) acts as a plain click - the REPLACE fires at the
 /// press tile (the select arm in `handleIdleInput` defers while a move
 /// drag is in progress; usually a no-op for a selected-at-press claim,
 /// since the pressed thing is selected). Shift+press never claims (the
@@ -1008,7 +1008,7 @@ pub fn handleEditorMoveDrag(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the select tool only. Not our context — clear any
+    // Editor edit mode + the select tool only. Not our context - clear any
     // in-progress drag (a stale gesture must not fire later).
     if (current.screen != .editor or current.editor == null or
         current.editor.?.active_tool != .select)
@@ -1036,7 +1036,7 @@ pub fn handleEditorMoveDrag(
         );
         // A press on an UNSELECTED thing claims too when it is
         // selectable (a nonempty click group). Empty ground claims
-        // nothing — its click-to-deselect stays the plain release path.
+        // nothing - its click-to-deselect stays the plain release path.
         const claims = selected_at_press or planning.editorClickGroupNonempty(
             &current.editor.?,
             press_tile,
@@ -1056,7 +1056,7 @@ pub fn handleEditorMoveDrag(
 
     if (ui_state.editor_move_drag) |*move_drag| {
         // Promotion: movement beyond the threshold (strict `>`, the house
-        // convention — a no-movement press+release stays a click).
+        // convention - a no-movement press+release stays a click).
         if (pointer.held) {
             const dx = pointer.position.toScreenPosition().x - move_drag.press_position.x;
             const dy = pointer.position.toScreenPosition().y - move_drag.press_position.y;
@@ -1065,7 +1065,7 @@ pub fn handleEditorMoveDrag(
             }
         }
         // The live delta tracks the pointer, but only over the viewport
-        // (not blocking UI) — a release over a panel commits the LAST
+        // (not blocking UI) - a release over a panel commits the LAST
         // VALID delta (the marquee's end-corner behavior).
         if (pointer.held and move_drag.promoted and
             ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) == null)
@@ -1089,8 +1089,8 @@ pub fn handleEditorMoveDrag(
                 };
                 const nonzero_delta = delta.x != 0 or delta.y != 0;
                 // The move's no-op gate (the planners-shared-with-the-input
-                // convention): a VETOED move — the drag would land a marker
-                // on the other marker — never fires (no dead undo step). The
+                // convention): a VETOED move - the drag would land a marker
+                // on the other marker - never fires (no dead undo step). The
                 // unselected-claim path evaluates against the click group at
                 // the press tile (the replace drains first, so THAT is the
                 // selection the move will plan against); the selected path
@@ -1110,11 +1110,11 @@ pub fn handleEditorMoveDrag(
                     // the move) so the LIFO drain runs it first and the
                     // move orchestrator then plans against the replaced
                     // selection. Both actions push in this one frame, so
-                    // they drain together and share one idle point — a
+                    // they drain together and share one idle point - a
                     // single undo step reverts the whole drag. Zero delta
                     // is the grab-and-drop-in-place: just the replace (the
                     // thing ends up selected, like a click). An empty
-                    // replace plan (the selection already IS the group —
+                    // replace plan (the selection already IS the group -
                     // reachable only via a mid-drag selection change)
                     // skips the replace; the move still runs.
                     const replace_plan_nonempty =
@@ -1145,7 +1145,7 @@ pub fn handleEditorMoveDrag(
                     );
                 }
             } else {
-                // No drag: a plain click — fire the REPLACE at the press
+                // No drag: a plain click - fire the REPLACE at the press
                 // tile (the same path + no-op gate as the select arm; a
                 // plain click on the whole current selection changes
                 // nothing and never fires).
@@ -1167,7 +1167,7 @@ pub fn handleEditorMoveDrag(
 }
 
 /// Editor tile-tool PAINT drag (tile tool active, plain left press over
-/// the viewport). The press claims the gesture — and the tile directly
+/// the viewport). The press claims the gesture - and the tile directly
 /// under the cursor paints immediately, so a clean click is the same paint
 /// the idle-input arm always fired (same planner, same no-op gate; the arm
 /// defers while the drag is active so a claimed press can't double-fire).
@@ -1181,9 +1181,9 @@ pub fn handleEditorMoveDrag(
 /// placement indices those events are about to shift (the decoration-
 /// delete hazard; the chained selection-move planner exists for the same
 /// reason), and a paint drains within a frame anyway. Over blocking UI the
-/// drag PAUSES (no paint, no visited marks — the marquee's last-valid-
+/// drag PAUSES (no paint, no visited marks - the marquee's last-valid-
 /// corner rule); painting resumes on re-entry at whatever tile is under
-/// the pointer. Release (or context loss — tool switch away from tile,
+/// the pointer. Release (or context loss - tool switch away from tile,
 /// tab/screen change) ends the drag. Mirrors the marquee + move-drag
 /// gestures (input_gestures.zig); undo granularity is per tile by design
 /// (see `editor_set_tile` in events.zig).
@@ -1198,7 +1198,7 @@ pub fn handleEditorTileDrag(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the tile tool only. Not our context — clear any
+    // Editor edit mode + the tile tool only. Not our context - clear any
     // in-progress drag (a stale gesture must not fire later).
     if (current.screen != .editor or current.editor == null or
         current.editor.?.active_tool != .tile)
@@ -1208,7 +1208,7 @@ pub fn handleEditorTileDrag(
     }
 
     if (pointer.pressed) {
-        // A press over blocking UI belongs to the panel — the drag never
+        // A press over blocking UI belongs to the panel - the drag never
         // starts there, and dragging out of a panel onto the world paints
         // nothing (the press wasn't a world press).
         if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) return;
@@ -1223,7 +1223,7 @@ pub fn handleEditorTileDrag(
     }
     // `held` is true on the press tick too (the input state marks the
     // button held at the press edge), so the press tile paints in this
-    // same call — "as soon as the drag begins".
+    // same call - "as soon as the drag begins".
     if (!pointer.held or current.event_stack.len != 0 or
         ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null)
     {
@@ -1348,7 +1348,7 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
     const harness_module = @import("test_harness.zig");
     var harness = harness_module.Harness.init(backing.allocator());
 
-    // A corpse and a living entity SHARE tile (1,1) — the corpse has the
+    // A corpse and a living entity SHARE tile (1,1) - the corpse has the
     // LOWER index, so a first-match loop would shadow the living one. A
     // lone corpse sits at (2,2). Entity 0 is a living player elsewhere.
     var player: types.Entity = .{};
@@ -1401,7 +1401,7 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
     try std.testing.expect(shared_pending == .inspect);
     try std.testing.expectEqual(@as(u32, 2), shared_pending.inspect.entity_index);
 
-    // Right-press on the lone corpse's tile: nothing to inspect — the
+    // Right-press on the lone corpse's tile: nothing to inspect - the
     // stale pending from the press above is cleared.
     handleRightClickInspect(
         &history,
@@ -1414,7 +1414,7 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
     try std.testing.expect(history.session.ui_state.pending_right_click == null);
 
     // Release resolution: a clean release on the living entity's tile
-    // pushes `player_inspect_entity` (the resolved intent) — drained, it
+    // pushes `player_inspect_entity` (the resolved intent) - drained, it
     // opens the entity-inspect surface on that entity. A second
     // press+release on the SAME entity resolves to CLOSE. See DESIGN →
     // UI Framework → UI state classification.
@@ -1454,7 +1454,7 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
         history.current_state.ui_surfaces.inspected_entity_index,
     );
 
-    // Same entity again — the resolved intent is CLOSE.
+    // Same entity again - the resolved intent is CLOSE.
     press_release(&history, at(living_tile));
     while (history.current_state.event_stack.len > 0) {
         event_handlers_mod.processEvent(&history);

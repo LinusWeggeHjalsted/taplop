@@ -1,10 +1,10 @@
-//! View — builds a `ViewState` each frame from the current game state.
+//! View - builds a `ViewState` each frame from the current game state.
 //!
 //! `view()` is pure over `GameState` + `SessionState` + the per-frame arena;
 //! everything the ViewState points at lives until the next frame. The world
 //! layers (tiles, overlays, ground drawables, occlusion insets) and the flat
 //! `ui_elements` slice are assembled here. Camera math (`computeCamera`,
-//! `tileToScreen`) lives here too — `gameLoop` computes the camera once per
+//! `tileToScreen`) lives here too - `gameLoop` computes the camera once per
 //! frame and feeds it to both `view()` and input translation so input/render
 //! never drift.
 
@@ -38,7 +38,7 @@ const WeaponType = types.WeaponType;
 
 /// Per-frame render context: the camera, timing, event log view, and
 /// frame arena that change every frame. Bundled so `view()` doesn't take a
-/// long flat parameter list — the remaining params are session/game-state
+/// long flat parameter list - the remaining params are session/game-state
 /// that live across frames.
 pub const RenderContext = struct {
     camera: types.Camera,
@@ -63,7 +63,7 @@ pub const RenderContext = struct {
     /// frame edges. Frame-arena-backed (no deinit). See AGENTS Animation.
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     /// Whether undo / redo is available right now (`GameStateHistory.
-    /// canUndo`/`canRedo`, computed by `frame()` where the history lives) —
+    /// canUndo`/`canRedo`, computed by `frame()` where the history lives) -
     /// the dim state of the global top bar's undo/redo buttons.
     can_undo: bool,
     can_redo: bool,
@@ -157,7 +157,7 @@ pub fn view(
         }
     } else if (current_state.editor) |*editor| {
         // Edit mode: project the active EditorLevel into the same drawable
-        // kinds the in-game view builds — no concrete Level exists. (During
+        // kinds the in-game view builds - no concrete Level exists. (During
         // playtest/validate the live `current.level` takes precedence above.)
         // See DESIGN → Architecture → Level Editor → Editor viewport
         // rendering.
@@ -174,7 +174,7 @@ pub fn view(
             session.animation_clock,
             settings.animation_fps,
         );
-        // Tile-cursor overlay: outline at the cursor (unconditional —
+        // Tile-cursor overlay: outline at the cursor (unconditional -
         // paints/placements target empty space too); the decoration tool
         // shows its footprint region outline, the select tool previews what
         // a click would select. The select tool's selection set renders as
@@ -195,7 +195,7 @@ pub fn view(
             editor,
             // While a selection move drag is promoted on a
             // selected-at-press claim, the outlines preview the
-            // translation (null otherwise — an unselected claim previews
+            // translation (null otherwise - an unselected claim previews
             // via buildEditorMoveDragOverlay below, and its old selection
             // must NOT slide around: it is still the real selection).
             if (session.ui_state.editor_move_drag) |move_drag| blk: {
@@ -222,7 +222,7 @@ pub fn view(
             camera_zoom,
         );
         // The in-progress marquee rectangle (shift+left-drag, promoted):
-        // a lightest region outline around the dragged region — the same
+        // a lightest region outline around the dragged region - the same
         // color as the selection it will add to. View-side transient state
         // (UiState.editor_marquee); the RESULT goes through events.
         buildEditorMarqueeOverlay(
@@ -305,7 +305,7 @@ pub fn view(
         // Range/radius outline: when the pointer hovers a skill button,
         // preview the skill's reach as a single square outline (Chebyshev
         // ≤ range, else ≤ radius) centered on the player. Pure, off
-        // SessionState — replay-safe like the cursor/tooltip. See AGENTS
+        // SessionState - replay-safe like the cursor/tooltip. See AGENTS
         // → Input (hover-driven previews).
         buildSkillRangeOutline(
             &tile_overlays,
@@ -372,8 +372,8 @@ pub fn view(
                 editor.active_tool,
             ) catch @panic("failed to build editor bottom bar");
             // The centered picker draws LAST, above every editor surface
-            // (modal — see handleAnytimeInput's gate). The picker's open
-            // state rides GameState (Editor.picker — see DESIGN → UI
+            // (modal - see handleAnytimeInput's gate). The picker's open
+            // state rides GameState (Editor.picker - see DESIGN → UI
             // Framework → UI state classification); the view-side tab +
             // draft state stays on UiState.
             if (editor.picker) |picker_target| {
@@ -387,7 +387,7 @@ pub fn view(
                         active_theme,
                     ) catch @panic("failed to build editor skill picker"),
                     // The entity + decoration sprite pickers (base +
-                    // layer modes): the SAME panel — the builder resolves
+                    // layer modes): the SAME panel - the builder resolves
                     // the picker kind from the target + the inspector
                     // target from the editor state.
                     .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => ui.buildEditorSpritePicker(
@@ -401,7 +401,7 @@ pub fn view(
                         picker_target,
                         session.ui_state.editor_picker_sprite_tab,
                     ) catch @panic("failed to build editor sprite picker"),
-                    // The decoration footprint editor: its own panel —
+                    // The decoration footprint editor: its own panel -
                     // the full-size sprite + the toggleable tile grid
                     // (the type id rides the picker target).
                     .decoration_footprint => |type_id| ui.buildEditorFootprintEditor(
@@ -415,7 +415,7 @@ pub fn view(
                     ) catch @panic("failed to build editor footprint editor"),
                     // The metadata sidebar's theme picker: every gradient
                     // as a strip (the level index + role ride the picker
-                    // target; the list scrolls — see UiState).
+                    // target; the list scrolls - see UiState).
                     .level_gradient => |gradient_target| ui.buildEditorThemePicker(
                         &ui_elements,
                         frame_allocator,
@@ -432,7 +432,7 @@ pub fn view(
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either
         // PlayerData is already populated (mid-session exit to menu) OR an
-        // autosave exists from a prior session (fresh launch — detected once
+        // autosave exists from a prior session (fresh launch - detected once
         // at startup into session.autosave_available). See DESIGN → File
         // System & IO (autosave).
         const continue_available =
@@ -534,9 +534,9 @@ pub fn view(
     // Main-menu overlays (load-save browser, credits): both open ON TOP of
     // the options menu (the credits button lives in its main-menu variant;
     // the browser is reachable while the menu is closed), so they emit
-    // AFTER it — painter order is draw order, and a full-screen panel
+    // AFTER it - painter order is draw order, and a full-screen panel
     // emitted earlier would be covered entirely. The list for the browser
-    // lives on SessionState (scanned from the input path — view stays
+    // lives on SessionState (scanned from the input path - view stays
     // file-free; see SessionState.save_files).
     if (current_state.screen == .main_menu) {
         if (current_state.ui_surfaces.load_save_menu_open) {
@@ -551,7 +551,7 @@ pub fn view(
             ) catch @panic("failed to build load save panel");
         }
 
-        // Modal like the load-save browser — the panel blocks input to the
+        // Modal like the load-save browser - the panel blocks input to the
         // buttons behind it.
         if (current_state.ui_surfaces.credits_open) {
             ui.buildCreditsPanel(
@@ -581,14 +581,14 @@ pub fn view(
     }
 
     // Mission-complete overlay: full-screen modal shown after the player
-    // completes the last level of a mission — in the HUB for campaign
+    // completes the last level of a mission - in the HUB for campaign
     // missions, or OVER THE EDITOR as the validation stats screen (the
     // info's validation flag; end_validation populated it). Derived from
     // GameState.last_completed_mission (on the undo timeline) so undo/redo
-    // handles it naturally — undo to before completion clears it, redo re-
+    // handles it naturally - undo to before completion clears it, redo re-
     // shows it, dismiss_mission_complete (Continue) clears it on the timeline.
     // The validation context (personal best + medal targets + the overwrite
-    // offer) is session-side — built here; view is file-free, so the write
+    // offer) is session-side - built here; view is file-free, so the write
     // site captured the best. Drawn on top of the mission_fail overlay
     // (mutually exclusive) but under the error popup. See DESIGN →
     // Architecture + DESIGN → Custom Missions & Online Services →
@@ -638,9 +638,9 @@ pub fn view(
 
     // Editor browser: full-screen modal over the editor or the main
     // menu, on top of the options menu it opened from (the settings
-    // screen's stacking — drawn under the error popup, which stays the
+    // screen's stacking - drawn under the error popup, which stays the
     // most-modal surface). The lists live on SessionState (scanned from
-    // the input path when the browser opens — view stays file-free; see
+    // the input path when the browser opens - view stays file-free; see
     // SessionState.editor_local_missions).
     if (current_state.ui_surfaces.editor_browser_open) {
         ui.buildEditorBrowser(
@@ -666,11 +666,11 @@ pub fn view(
     }
 
     // GLOBAL TOP BAR (options / undo / redo): emitted last so the painter's-
-    // order list draws it above every other element — options menu, mission
-    // overlays, error popup — and hitTest's topmost-first scan gives it
+    // order list draws it above every other element - options menu, mission
+    // overlays, error popup - and hitTest's topmost-first scan gives it
     // click priority. Undo/redo stay reachable from any screen, including
     // over the mission-complete overlay (undoing the completing move
-    // dismisses it — it's on the timeline). The editor's level tabs are NOT
+    // dismisses it - it's on the timeline). The editor's level tabs are NOT
     // part of this layer (they sit under overlays by design). See DESIGN →
     // UI Framework (global top bar).
     ui.buildGlobalTopBar(
@@ -684,7 +684,7 @@ pub fn view(
 
     // Hover tooltip: the topmost element under the pointer that carries
     // tooltip content spawns a tooltip, appended here so it draws on top of
-    // all gameplay + overlay UI — bars, panels, options menu, mission
+    // all gameplay + overlay UI - bars, panels, options menu, mission
     // overlays, and the global top bar itself (which is why this pass runs
     // AFTER the top bar is emitted: its buttons must be in the list for a
     // hover to resolve to them). Modal 9-slice panels shield tooltip-bearing
@@ -732,10 +732,10 @@ pub fn view(
         &.{};
 
     // FPS diagnostic overlay: drawn on top of all UI in the top-left corner
-    // when `settings.show_fps` is on — BELOW the global top bar, which owns
+    // when `settings.show_fps` is on - BELOW the global top bar, which owns
     // the corner now. Non-blocking so it can't steal clicks; outlined for
     // readability over any background. Reads the EMA maintained in
-    // `frame()`'s render gate — pure over SessionState, so replay-safe.
+    // `frame()`'s render gate - pure over SessionState, so replay-safe.
     if (settings.show_fps) {
         const fps_rounded: i32 = @intFromFloat(@round(session.fps_smoothed));
         const fps_text = std.fmt.allocPrint(frame_allocator, "FPS {d}", .{fps_rounded}) catch
@@ -813,7 +813,7 @@ fn middlePanelWidth(
         .gear => ui.gearPanelWidth(font_metrics),
         .skills => ui.skills_panel_width,
         // A dead target renders no panel: death is derivable from health
-        // == 0 (the mission-fail-overlay precedent — no flag or event
+        // == 0 (the mission-fail-overlay precedent - no flag or event
         // needed), and undo (target alive again) reopens it for free. The
         // press site gates NEW inspects on alive; this only hides a target
         // that died while inspected.
@@ -829,7 +829,7 @@ fn middlePanelWidth(
 
 /// Total reference-space width the open middle panels occupy (the right
 /// edge of the left-flush stack, `ui_gap` between consecutive rendered
-/// panels) — the x extent the camera clamp region excludes. 0 when nothing
+/// panels) - the x extent the camera clamp region excludes. 0 when nothing
 /// renders.
 fn middlePanelsOccupiedWidth(
     current_state: *const GameState,
@@ -851,7 +851,7 @@ fn middlePanelsOccupiedWidth(
 /// right flush against the left edge of the screen. Each panel is TOP-
 /// ANCHORED in the middle section (`middle_panel_height` is the content
 /// exact-fit, not the section height) so the strip between the panels'
-/// bottom edge and the bottom bar stays clear — the bottom-bar indicator
+/// bottom edge and the bottom bar stays clear - the bottom-bar indicator
 /// row (momentum / effects / turn steps) lives there, and must not sit
 /// behind open panels. A panel that renders nothing this frame (the
 /// inspect panel's target dying) reserves no space. The x cursor advances
@@ -950,7 +950,7 @@ fn buildMiddlePanels(
                     entity,
                     current_state.player_data.learned_skills,
                     // Compare the inspected entity's gear against the
-                    // player's — unless the inspected entity IS the player
+                    // player's - unless the inspected entity IS the player
                     // (entity 0 in a level; inspect only opens in levels).
                     if (entity_index == 0) null else if (ui.playerEntity(current_state)) |player| ui.equippedGearFromEntity(player) else null,
                     active_theme,
@@ -996,12 +996,12 @@ fn playerPosition(current_state: *const GameState) types.Vector2 {
 /// extents (min tile origin .. max tile far edge). Levels and hubs scan
 /// their LIVE tile lists (levels are non-rectangular (`level_tiles` is a
 /// flat position list), so the bbox is the natural "level rectangle"). The
-/// editor arm reads the ACTIVE level's `clamp_bounds` SNAPSHOT instead —
+/// editor arm reads the ACTIVE level's `clamp_bounds` SNAPSHOT instead -
 /// taken at level-switch time, so mid-edit tile changes never reframe the
 /// camera (see DESIGN → Platform Seam → Camera clamping). Null when the
 /// screen has no live world or no tiles (a level that was empty at
 /// snapshot stays unclamped). The live level takes precedence over the
-/// editor arm — during playtest/validate the editor state persists on a
+/// editor arm - during playtest/validate the editor state persists on a
 /// `.level` screen and the INSTANTIATED level bounds apply.
 const WorldPixelBounds = struct {
     min_x: f32,
@@ -1064,12 +1064,12 @@ fn tileListWorldBounds(
 ///   region edge) applies only to the automatic camera and only when the
 ///   level overflows the region: it caps how far the flush clamp may push
 ///   the camera away from the player-centered position. Sequential
-///   clamping gives the spec'd behavior — shift toward the flush bound as
+///   clamping gives the spec'd behavior - shift toward the flush bound as
 ///   far as possible WITHOUT pushing the player past the margin.
 /// - A deliberate pan (pan_slack > 0, `camera_pan_void_tiles` scaled to
 ///   world pixels) skips the margin band and widens the bounds by the
 ///   slack: the pan may push that many tiles of void past an edge (or past
-///   the centered position on a fitting axis) before stopping — wiggle
+///   the centered position on a fitting axis) before stopping - wiggle
 ///   room, so the edge clamp doesn't feel like a hard wall.
 fn clampCameraAxis(
     camera_center: f32,
@@ -1089,7 +1089,7 @@ fn clampCameraAxis(
     const automatic = pan_slack == 0.0;
     if (flush_min > flush_max) {
         // The level fits inside the region on this axis: center it as a
-        // whole. The margin band is skipped — centering wins (the whole
+        // whole. The margin band is skipped - centering wins (the whole
         // level is already visible; nothing better exists). A pan wiggles
         // around the centered position by the slack.
         const centered = (world_lo + world_hi) / 2.0 - (a + b) / 2.0;
@@ -1107,8 +1107,8 @@ fn clampCameraAxis(
 
 /// Camera centered on the player (plus an optional right-drag pan offset):
 /// places the player tile's center at the screen center, then adds `pan`,
-/// then — when `view_region` is non-null (levels/hubs/editor viewport; see
-/// cameraViewRegion) — clamps the result: level-flush bounds (a deliberate
+/// then - when `view_region` is non-null (levels/hubs/editor viewport; see
+/// cameraViewRegion) - clamps the result: level-flush bounds (a deliberate
 /// pan gets `camera_pan_void_tiles` of wiggle past them), the
 /// `camera_edge_margin_tiles` margin for the automatic (unpanned) camera.
 /// EXCEPT in the editor viewport, where a pan is completely free (no
@@ -1184,7 +1184,7 @@ pub fn computeCamera(
 
 /// The camera-recenter key: what a frame's pan-clear check compares
 /// before/after `update()` (main.zig). The player's tile, plus the editor's
-/// active level index — a level-tab switch recenters even when two levels
+/// active level index - a level-tab switch recenters even when two levels
 /// share a player_start (fresh levels all come from the same template, so
 /// identical spawns across tabs are the common case, not a freak accident).
 pub fn cameraRecenterKey(current_state: *const GameState) struct { position: types.Vector2, editor_level_index: ?usize } {
@@ -1208,7 +1208,7 @@ const camera_pan_void_tiles: i32 = 4;
 /// rectangle the camera keeps level content inside (and the player inside
 /// with `camera_edge_margin_tiles` clearance, when not panning). The top
 /// and bottom bars bound it vertically; open middle panels bound it from
-/// the left. The EDITOR viewport uses the same band at full width — the
+/// the left. The EDITOR viewport uses the same band at full width - the
 /// sidebars and pickers are deliberately ignored (they never reframe the
 /// camera). Null outside levels/hubs/the editor. See DESIGN → Platform
 /// Seam → Camera clamping.
@@ -1228,7 +1228,7 @@ pub fn cameraViewRegion(
 
 /// Pure core of `cameraViewRegion`. The panels' occupied width is dropped
 /// ("act as if no panels open") when the remaining width can't fit the
-/// player-margin band on both sides — the fully-covered-screen case, and
+/// player-margin band on both sides - the fully-covered-screen case, and
 /// any sliver too narrow to guarantee the margin.
 fn cameraViewRegionFor(occupied_width: i32, zoom: f32) Rectangle {
     const margin_band: f32 = @as(f32, @floatFromInt(2 * camera_edge_margin_tiles)) * input.tile_size_pixels * zoom;
@@ -1256,7 +1256,7 @@ fn tileToScreen(tile: types.Vector2, camera: types.Camera, zoom: f32) types.Scre
     return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
 }
 
-/// The tile's center point in reference space — a click point that
+/// The tile's center point in reference space - a click point that
 /// `input.screenToTile` resolves back to this tile (the camera transform at
 /// its half-tile offset). The console level dump prints these so a script
 /// can click a tile straight off the dump line.
@@ -1266,7 +1266,7 @@ pub fn tileClickCenter(tile: types.Vector2, camera: types.Camera, zoom: f32) typ
     return .{ .x = top_left.x + half_tile, .y = top_left.y + half_tile };
 }
 
-/// Pure white — the "no tint" color for `keep_original_colors` rendering
+/// Pure white - the "no tint" color for `keep_original_colors` rendering
 /// (the multiply identity: the art keeps its own colors). See DESIGN →
 /// Entity & UI Coloring.
 const no_tint_color: types.Color = .{ .r = 255, .g = 255, .b = 255 };
@@ -1285,8 +1285,8 @@ const entity_pivot_y: f32 = 0.8;
 /// One-shot skill-icon anim: square edge in native reference pixels (the
 /// renderer multiplies by `world_scale`, matching tiles/entities), and the
 /// gap above the entity's actual art top (found at runtime from the sprite's
-/// topmost non-transparent pixel — see `RenderContext.sprite_bounds`). Tunable
-/// — eyeball in `zig build run`. See DESIGN → Animation.
+/// topmost non-transparent pixel - see `RenderContext.sprite_bounds`). Tunable
+/// - eyeball in `zig build run`. See DESIGN → Animation.
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
 /// Native (unscaled) pixel size of the aggro indicator icon drawn above an
@@ -1315,8 +1315,8 @@ const effect_overlay_size_native: i32 = 90;
 /// entity's sprite bbox edge/corner, eased with `tween.easeOutCubic` (fast
 /// then slow). 500ms duration (queued by handlers; the constant lives here
 /// for the `view()`-side travel distance + font size). Font size is
-/// independent of the tooltip body — damage numbers read best large.
-/// Tunable — eyeball in `zig build run`. See DESIGN → Animation.
+/// independent of the tooltip body - damage numbers read best large.
+/// Tunable - eyeball in `zig build run`. See DESIGN → Animation.
 const number_anim_duration_microseconds: u32 = 500_000;
 const number_travel_tiles: f32 = 0.5;
 const number_font_size: i32 = 112;
@@ -1325,7 +1325,7 @@ const number_font_size: i32 = 112;
 /// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
 /// art). Drawn above the entity's actual art top (same `sprite_bounds` scan
 /// as the skill icon). The skill icon sits above the health bar, so it's
-/// offset by the bar's height + this gap. Tunable — eyeball in `zig build
+/// offset by the bar's height + this gap. Tunable - eyeball in `zig build
 /// run`. See DESIGN → Entity & UI Coloring.
 const health_bar_native_width: i32 = 155;
 const health_bar_native_height: i32 = 31;
@@ -1362,18 +1362,18 @@ const flag_banner_frame_count: u32 = 8;
 const flag_banner_frame_width: i32 = 256;
 const flag_banner_frame_height: i32 = 512;
 
-/// Steps per full outline-stripe cycle (one light + one dark band) — the
+/// Steps per full outline-stripe cycle (one light + one dark band) - the
 /// crawl speed of the outline stripe shader (see DESIGN → Platform Seam →
 /// Outline stripe shader): one full cycle per `outline_stripe_steps`
-/// frames at `animation_fps` — the shared animation rate (one animation
+/// frames at `animation_fps` - the shared animation rate (one animation
 /// system), stepped from the UNGATED session clock so stripes march even
 /// while the world is paused.
 const outline_stripe_steps: u32 = 8;
 
 /// The outline stripe phase (0..1) for the UNGATED `session_clock`
-/// (outlines are UI + decorative — they animate during pause; see DESIGN
+/// (outlines are UI + decorative - they animate during pause; see DESIGN
 /// → Animation), stepped at `animation_fps`. The clock wraps mod the cycle
-/// IN u64 BEFORE the f32 conversion — f32 mantissa holds only ~16.8s of
+/// IN u64 BEFORE the f32 conversion - f32 mantissa holds only ~16.8s of
 /// microseconds, so an unwrapped clock loses phase precision after
 /// minutes.
 fn outlineStripePhase(session_clock_microseconds: u64, animation_fps: u32) f32 {
@@ -1413,10 +1413,10 @@ fn levelEndDrawable(
         },
         .color = worldGradientColor(active_theme, 5),
         .banner_color = worldGradientColor(active_theme, 0),
-        // The banner waves only while the level is completable — on the
+        // The banner waves only while the level is completable - on the
         // level screen `!level.hasActiveEnemies()`, the SAME rule the win
         // condition checks (`Level.hasActiveEnemies`); hub mission-start
-        // and editor markers always wave (not levels — no enemies).
+        // and editor markers always wave (not levels - no enemies).
         // See DESIGN → Animation.
         .banner_source_rectangle = if (banner_visible) .{
             .x = @as(i32, @intCast(frame_index)) * flag_banner_frame_width,
@@ -1473,7 +1473,7 @@ fn entityFrameTopLeft(entity: *const Entity, camera: types.Camera, zoom: f32) ty
 
 /// Build the world-overlay list from `session.active_anims`. An anim shows
 /// when its triggering event is in the projected history (`event_index <
-/// current_event_index` — same exclusive bound the combat log uses, so undo
+/// current_event_index` - same exclusive bound the combat log uses, so undo
 /// hides it) AND it hasn't elapsed (`animation_clock < end_clock`). Skill
 /// icons track the entity (resolved from the CURRENT level each frame) and
 /// skip dead entities; a screen/world transition clears the list, so an anim
@@ -1526,7 +1526,7 @@ fn buildWorldOverlays(
                 const sprite_id = std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(info.skill_id)}) catch
                     @panic("failed to build skill-icon sprite id");
                 // Tinted with the caster's team gradient index 1 (player →
-                // player gradient, enemy → enemy gradient — same convention
+                // player gradient, enemy → enemy gradient - same convention
                 // as weapon colors). See DESIGN → Entity & UI Coloring.
                 const icon_color = if (entity.team == 0)
                     playerColor(active_theme, 1)
@@ -1642,7 +1642,7 @@ fn buildWorldOverlays(
                         .text = text,
                         .screen_position = pos,
                         .font_size = number_font_size,
-                        // Damage reads red regardless of magnitude — including 0.
+                        // Damage reads red regardless of magnitude - including 0.
                         .color = ui.negative_color,
                     },
                 }) catch @panic("failed to append world overlay");
@@ -1670,7 +1670,7 @@ fn buildWorldOverlays(
                         .text = text,
                         .screen_position = pos,
                         .font_size = number_font_size,
-                        // Heals read green regardless of magnitude — including 0.
+                        // Heals read green regardless of magnitude - including 0.
                         .color = ui.positive_color,
                     },
                 }) catch @panic("failed to append world overlay");
@@ -1679,13 +1679,13 @@ fn buildWorldOverlays(
     }
 
     // Stun overlay: a persistent icon drawn above the health bar of any
-    // entity with `stun_duration > 0`. Not an anim — no clock, no duration,
-    // no `active_anims` entry — just a direct GameState read, so it's
+    // entity with `stun_duration > 0`. Not an anim - no clock, no duration,
+    // no `active_anims` entry - just a direct GameState read, so it's
     // replay-safe by construction (stun_duration is on the snapshot
     // timeline). Shares the skill-icon's placement (above the health bar,
     // which sits above the art top). A stunned entity skips its turn (no
     // skill use) so the stun icon and a skill-icon pop never co-occur on
-    // the same entity — same position is safe. See DESIGN → Animation.
+    // the same entity - same position is safe. See DESIGN → Animation.
     for (level.entities) |*entity| {
         if (entity.stun_duration == 0) continue;
         if (entity.current_health == 0) continue;
@@ -1834,10 +1834,10 @@ fn entityDrawable(
         @panic("failed to build entity sprite id");
 
     // Body color: the gradient by team (player team → player gradient,
-    // enemy teams → enemy gradient); the INDEX — the player entity uses
+    // enemy teams → enemy gradient); the INDEX - the player entity uses
     // the settings-driven player_color_index, every other entity (enemy-
     // authored team-0 helpers included) its own color_index. Untinted
-    // (pure white) instead when keep_original_colors is set — the art
+    // (pure white) instead when keep_original_colors is set - the art
     // keeps its own colors (weapons + health bar stay themed; see DESIGN
     // → Entity & UI Coloring).
     const body_color = if (entity.keep_original_colors)
@@ -1893,7 +1893,7 @@ fn entityDrawable(
     // declares an `effect_sprite`, centered on the entity's opaque-art bbox
     // (horizontal = frame center; vertical = midpoint of the bbox top/bottom,
     // falling back to the frame's vertical center on a miss/transparent
-    // sprite — same resolution as the hit-flash one-shot). Tinted with the
+    // sprite - same resolution as the hit-flash one-shot). Tinted with the
     // active theme's lightest color. See DESIGN → Entity & UI Coloring.
     var front_effect_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
     if (entity.active_effects.len > 0) {
@@ -2059,10 +2059,10 @@ fn collectEntityEntries(
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     show_health_bar: bool,
 ) void {
-    // Dead entities (current_health == 0) are not rendered — their sprite
+    // Dead entities (current_health == 0) are not rendered - their sprite
     // vanishes on death.
     // The player entity is the FIRST pointer in every caller's slice
-    // (level entities[0], hub player, editor player template — the
+    // (level entities[0], hub player, editor player template - the
     // entity-index-0 invariant); only it renders with the settings-driven
     // player_color_index.
     for (entities, 0..) |entity, index| {
@@ -2077,7 +2077,7 @@ fn collectEntityEntries(
 }
 
 /// Tile size in pixels (decorations are authored at 256px/tile). Matches
-/// input.tile_size_pixels — duplicated here to avoid a cross-module constant
+/// input.tile_size_pixels - duplicated here to avoid a cross-module constant
 /// for a value that's part of the rendering contract.
 const tile_size_pixels: i32 = 256;
 
@@ -2172,7 +2172,7 @@ fn singleStack(allocator: std.mem.Allocator, sprite_id: []const u8) []const type
 
 fn entityInsetTarget(entity: types.EntityDrawable, allocator: std.mem.Allocator) InsetTarget {
     // base + layers + weapons (non-null). Gear and effect sprites are
-    // excluded — gear is a separate concern and effects are transient
+    // excluded - gear is a separate concern and effects are transient
     // (including them would make the outline flicker and balloon the cache).
     var stack: std.ArrayList(types.StackSprite) = .empty;
     stack.append(allocator, .{ .sprite_id = entity.base_sprite.sprite_id }) catch
@@ -2226,7 +2226,7 @@ fn flagInsetTarget(marker: types.LevelEndDrawable, allocator: std.mem.Allocator)
 /// Run the occlusion test over the sorted ground entries. For each non-
 /// decoration entry, emit one `OcclusionInsetDrawable` if any decoration
 /// piece at a higher sort index (drawn after it) has an overlapping screen
-/// rect. O(entries × decoration_pieces) per frame — fine at current caps.
+/// rect. O(entries × decoration_pieces) per frame - fine at current caps.
 /// Pure, view-side → off GameState → replay-safe. See DESIGN → Decorations &
 /// Footprint → Occlusion inset.
 fn buildOcclusionInsets(
@@ -2291,7 +2291,7 @@ fn buildDecorationPieces(
     const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, tile_size_pixels);
     const anchor = decorationAnchor(decoration.footprint) orelse
         @panic("decoration has no anchor in view");
-    // Untinted (pure white) when keep_original_colors is set — the art
+    // Untinted (pure white) when keep_original_colors is set - the art
     // keeps its own colors, base + layers together (see DESIGN → Entity
     // & UI Coloring).
     const base_color = if (decoration.keep_original_colors)
@@ -2337,7 +2337,7 @@ fn buildDecorationPieces(
 
             // Build layer chunks for this bbox tile (same source rect +
             // screen position, different sprite + color), split into back
-            // layers (drawn before the base — the `behind` config key) and
+            // layers (drawn before the base - the `behind` config key) and
             // overlay layers (drawn after it); config order preserved
             // within each slice.
             var back_layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
@@ -2381,7 +2381,7 @@ fn buildDecorationPieces(
 
 /// Find the nearest footprint tile to a sprite-grid coord by Chebyshev
 /// distance, tie-breaking by footprint scan order (bottom-most-then-left-most
-/// — the anchor convention, which is how `decorationAnchor` orders). Used to
+/// - the anchor convention, which is how `decorationAnchor` orders). Used to
 /// assign overhang bbox tiles to a footprint tile for render sorting.
 fn nearestFootprint(grid_tile: types.Vector2, footprint: []const types.Vector2) types.Vector2 {
     std.debug.assert(footprint.len > 0);
@@ -2396,7 +2396,7 @@ fn nearestFootprint(grid_tile: types.Vector2, footprint: []const types.Vector2) 
         // Tie: keep the first found (footprint scan order). Since the
         // footprint list is authored in sprite-grid order and the anchor is
         // bottom-most-then-left-most, the scan order is deterministic. We
-        // don't re-sort the footprint here — the caller's authoring order is
+        // don't re-sort the footprint here - the caller's authoring order is
         // the tiebreak, matching `decorationAnchor`'s convention.
     }
     return best;
@@ -2410,7 +2410,7 @@ fn chebyshev(a: types.Vector2, b: types.Vector2) i32 {
 
 /// Build the sprite id (`decorations/<name>`) for a decoration. The
 /// decoration's `name` field carries the sprite stem (e.g. `tree_1` or
-/// `decorations/tree_1` — the parser stores the `sprite` value as-is).
+/// `decorations/tree_1` - the parser stores the `sprite` value as-is).
 fn decorationSpriteId(decoration: types.Decoration, allocator: std.mem.Allocator) []const u8 {
     return decorationSpriteIdFromName(decoration.name, allocator);
 }
@@ -2432,7 +2432,7 @@ fn decorationSpriteIdFromName(name: []const u8, allocator: std.mem.Allocator) []
 
 /// Resolve a world-gradient color by index. Clamps to the valid range
 /// (0..gradient_color_count-1) so a bad index draws something sane rather
-/// than crashing — the config is authored, so an out-of-range value is a
+/// than crashing - the config is authored, so an out-of-range value is a
 /// content bug, but view() stays robust.
 fn worldGradientColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Color {
     const idx = @min(color_index, types.gradient_color_count - 1);
@@ -2452,7 +2452,7 @@ fn enemyColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Colo
 }
 
 /// Derive the anchor (bottom-most-then-left-most) from a sprite-grid
-/// footprint. Mirrors `loaders.decorationAnchor` — duplicated in view to keep
+/// footprint. Mirrors `loaders.decorationAnchor` - duplicated in view to keep
 /// view.zig dependency-free from parser.zig (the parser's version operates on
 /// the same coordinate convention). Returns null if the footprint is empty.
 fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
@@ -2468,8 +2468,8 @@ fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
 
 /// Clickable-tile highlights: one overlay per targetable tile, drawn as an
 /// inset square outline in the outline class (shared thickness + marching
-/// stripe treatment as the cursor/range outlines; inset —
-/// `ui.tile_highlight_inset_divisor` — matching the prototype
+/// stripe treatment as the cursor/range outlines; inset -
+/// `ui.tile_highlight_inset_divisor` - matching the prototype
 /// `world/tile_highlight` sheet's band position). See DESIGN → Platform
 /// Seam → Outline stripe shader.
 fn buildHighlightOverlays(
@@ -2492,7 +2492,7 @@ fn buildHighlightOverlays(
 /// Hover cursor: an outline on the tile under the logical cursor
 /// (session.tile_cursor), when it is a real tile. The cursor is resolved in
 /// the input/update path (mouse-move + arrow keys + UI occlusion) and stored
-/// on SessionState; view() just renders it — no GameState mutation, so it is
+/// on SessionState; view() just renders it - no GameState mutation, so it is
 /// replay-safe like the tooltip/drag-ghost.
 fn buildCursorOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
@@ -2518,7 +2518,7 @@ fn buildCursorOverlay(
 
 /// Editor tile-cursor overlay, per tool: the tile / enemy / item tools
 /// draw the single-tile outline at the cursor position, UNCONDITIONALLY
-/// (no tile-membership check) — any tile position is a legal
+/// (no tile-membership check) - any tile position is a legal
 /// paint/place target, so the outline over empty space is the affordance
 /// that a click can act there (unlike levels/hubs, which only cursor over
 /// real tiles). The decoration tool draws a CONTINUOUS outline around the
@@ -2528,12 +2528,12 @@ fn buildCursorOverlay(
 /// Same replay-safe shape as `buildCursorOverlay` (pure over
 /// SessionState).
 /// The select tool's click-group outline at `position`: what a click there
-/// would grab — the FIRST covering decoration's footprint region, else
+/// would grab - the FIRST covering decoration's footprint region, else
 /// the single tile (the hover preview ≡ click; the group resolution is
 /// `editorClickGroup`'s, kept in step by sharing the same
 /// first-covering-decoration rule). Rendered translated by `delta` (zero
 /// for the hover preview; the live drag delta for the unselected-claim
-/// move preview — the grabbed group follows the pointer before the
+/// move preview - the grabbed group follows the pointer before the
 /// release's replace + move events select it). Shared by
 /// buildEditorCursorOverlay (select arm, at the cursor) and
 /// buildEditorMoveDragOverlay (at the press tile).
@@ -2618,11 +2618,11 @@ fn buildEditorCursorOverlay(
 }
 
 /// The select tool's selection set, outlined in the theme's lightest (the
-/// same color as every other world outline — cursor, range, region
+/// same color as every other world outline - cursor, range, region
 /// previews): a single-tile outline per tile / singleton / placement
 /// position, and a continuous region outline per decoration placement.
 /// Pure over the editor (replay-safe). Stale placement
-/// entries (a selected placement later deleted — indices shift/go out of
+/// entries (a selected placement later deleted - indices shift/go out of
 /// range) are skipped.
 fn buildEditorSelectionOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
@@ -2644,7 +2644,7 @@ fn buildEditorSelectionOverlay(
     }.call;
 
     // While a selection MOVE drag is promoted, every outline translates by
-    // the live delta (the world stays put — only the outlines preview the
+    // the live delta (the world stays put - only the outlines preview the
     // move; see `handleEditorMoveDrag`).
     for (editor.selection) |selected| switch (selected) {
         .tile => |position| appendSingleTileOutline(list, allocator, translated(position, delta), outline_color, camera, zoom),
@@ -2681,7 +2681,7 @@ fn buildEditorSelectionOverlay(
 
 /// The in-progress marquee rectangle (see `UiState.editor_marquee`): the
 /// inclusive tile region between the two corners, outlined in the theme's
-/// lightest via the shared region-outline builder — the same color as the
+/// lightest via the shared region-outline builder - the same color as the
 /// selection it will add to. Nothing renders before the drag threshold
 /// promotes the press (an unpromoted release is a plain click, not a
 /// region).
@@ -2715,10 +2715,10 @@ fn buildEditorMarqueeOverlay(
 /// The unselected-claim selection MOVE drag preview (see
 /// `handleEditorMoveDrag`): while the drag is promoted on a press that
 /// claimed an UNSELECTED thing, the grabbed click group's outline renders
-/// translated by the live delta — the world stays put, the thing follows
+/// translated by the live delta - the world stays put, the thing follows
 /// the pointer before the release's replace + move events select it.
 /// Mirrors the selected-claim preview (buildEditorSelectionOverlay's
-/// translated outlines — the same shape the group renders as once
+/// translated outlines - the same shape the group renders as once
 /// selected). Nothing renders before promotion (an unpromoted release is
 /// a plain click) or on a selected-at-press claim.
 fn buildEditorMoveDragOverlay(
@@ -2737,7 +2737,7 @@ fn buildEditorMoveDragOverlay(
         allocator,
         editor,
         drag.press_position_tile,
-        // The delta anchors the grabbed group's ANCHOR at the pointer —
+        // The delta anchors the grabbed group's ANCHOR at the pointer -
         // `current_position_tile` keeps the last valid tile over blocking
         // UI, so the preview pauses there like the marquee's corner.
         Vector2{
@@ -2750,7 +2750,7 @@ fn buildEditorMoveDragOverlay(
     );
 }
 
-/// The active editor level (clamped), or null when there are no levels —
+/// The active editor level (clamped), or null when there are no levels -
 /// the select tool's click + rendering resolution target.
 fn selectEditorLevel(editor: *const Editor) ?*const types.EditorLevel {
     if (editor.levels.len == 0) return null;
@@ -2773,7 +2773,7 @@ fn appendSingleTileOutline(
 }
 
 /// One `region_edge` segment per boundary edge of `region_tiles` (a side
-/// whose neighbor is outside the region) — any region shape renders as a
+/// whose neighbor is outside the region) - any region shape renders as a
 /// continuous closed outline. Shared by the decoration-tool preview, the
 /// select-tool hover preview, the selection overlay, and the move-drag
 /// preview.
@@ -2825,7 +2825,7 @@ fn appendRegionEdge(
 /// centered on the player. The square's half-side is the skill's `range`
 /// (preferred) or `radius` (fallback); a skill with neither draws nothing.
 /// Drawn in full (may extend past level edges / over gaps) at Chebyshev
-/// ≤ N — a geometric preview, not pathfinding reachability. Tinted with
+/// ≤ N - a geometric preview, not pathfinding reachability. Tinted with
 /// `active_theme.lightest`, same as the cursor. Suppressed while dragging
 /// (the pointer is dragging, not hovering). Works in levels and hubs
 /// (skill slots appear on the bottom bar in both). Pure over SessionState
@@ -2869,7 +2869,7 @@ fn buildSkillRangeOutline(
 /// range, then attack within radius of the landing). The valid-target
 /// highlights show where the player can land; this previews the AoE that
 /// will hit around the cursor's current tile as the player aims. Drawn in
-/// full (may extend past level edges / over gaps) at Chebyshev ≤ radius —
+/// full (may extend past level edges / over gaps) at Chebyshev ≤ radius -
 /// a geometric preview. Tinted with `active_theme.lightest`. Levels only
 /// (`prepared_skill` is null in a hub). Pure over SessionState (off the
 /// undoable GameState) → replay-safe by construction.
@@ -2900,12 +2900,12 @@ fn buildPreparedSkillRadiusOutline(
 
 /// Aggro-range outline: while the entity-inspect panel is open, preview the
 /// inspected entity's detection range as a single square outline (Chebyshev
-/// ≤ aggro_range) centered on the entity — the world-space companion of the
+/// ≤ aggro_range) centered on the entity - the world-space companion of the
 /// panel's "Aggro Range" stat row. Same shape as the skill-range outline
 /// (drawn in full, may extend past level edges / over gaps; theme lightest,
 /// unified 8px thickness). Levels only (inspect only opens in levels), any
 /// inspected entity including the player, while ALIVE (the panel's
-/// dead-target gate — a dead target shows neither panel nor outline). Pure
+/// dead-target gate - a dead target shows neither panel nor outline). Pure
 /// over SessionState + GameState reads → replay-safe by construction.
 fn buildInspectedAggroOutline(
     list: *std.ArrayList(types.TileOverlayDrawable),
@@ -2940,7 +2940,7 @@ fn buildInspectedAggroOutline(
 /// entries via the existing drawable builders. The player template stands at
 /// `player_start` (the '!' marker); entity/decoration/item placements resolve
 /// through their palette types to sprites + gradients; the level-end flag is
-/// the '=' marker. Health bars are hidden — runtime state, not definition
+/// the '=' marker. Health bars are hidden - runtime state, not definition
 /// state (max health shows in the inspector instead). Ground-item bags group
 /// co-located placements into one drawable with the placement count.
 fn buildEditorScene(
@@ -2971,7 +2971,7 @@ fn buildEditorScene(
 
     // Entities: the player template plus one per placement, resolved through
     // the entity palette. Shallow struct copies with the placement position
-    // (borrowed strings — rendering only, frame-arena lifetime).
+    // (borrowed strings - rendering only, frame-arena lifetime).
     {
         const entity_count = 1 + editor_level.entity_placements.len;
         const entities = allocator.alloc(Entity, entity_count) catch
@@ -3005,7 +3005,7 @@ fn buildEditorScene(
     }
 
     // Ground items: one bag per position; the count is the number of
-    // co-located placements (one item each — level files author single-item
+    // co-located placements (one item each - level files author single-item
     // stacks; the editor UI can stack placements on one tile).
     for (editor_level.item_placements, 0..) |placement, index| {
         var first_at_position = true;
@@ -3091,7 +3091,7 @@ test "flag banner: frame advances with the animation clock and wraps" {
     try std.testing.expectEqual(@as(i32, 4 * 256), d_zero.banner_source_rectangle.?.x);
 
     // banner_visible = false → NO banner (pole only): the level-screen
-    // flag while active enemies remain — see the level-end flag test for
+    // flag while active enemies remain - see the level-end flag test for
     // the view() gating.
     const d_hidden = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 8, false);
     try std.testing.expect(d_hidden.banner_source_rectangle == null);
@@ -3100,9 +3100,9 @@ test "flag banner: frame advances with the animation clock and wraps" {
 test "level-end flag: the banner waves only while no active enemies remain" {
     // The banner is the completability signal (DESIGN → Animation): on the
     // level screen it renders only while `Level.hasActiveEnemies` is false
-    // — the SAME rule the win condition checks, so the flag can never lie
+    // - the SAME rule the win condition checks, so the flag can never lie
     // about completability. The pole always renders; hub mission-start
-    // markers always wave (not levels — no enemies).
+    // markers always wave (not levels - no enemies).
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const arena = backing.allocator();
@@ -3184,7 +3184,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
         try std.testing.expect(marker != null);
         try std.testing.expect(marker.?.banner_source_rectangle != null);
     }
-    // Hub mission-start markers always wave (not levels — no enemies).
+    // Hub mission-start markers always wave (not levels - no enemies).
     {
         const exits = [_]types.MissionExit{.{ .mission_id = "m1", .position = .{ .x = 1, .y = 1 } }};
         const state_ = GameState{
@@ -3312,7 +3312,7 @@ test "skill range outline: range/radius/none/drag" {
 
 test "prepared skill radius outline: follows cursor while targeting" {
     // While a targeting skill with a radius is prepared (e.g. Flash Strike),
-    // a radius outline follows the tile cursor — previewing the AoE around
+    // a radius outline follows the tile cursor - previewing the AoE around
     // the landing tile the player is aiming at. Extent = 2*radius + 1,
     // .radius_outline, theme lightest. Levels only (prepared_skill is null
     // in a hub); no overlay when no skill is prepared, the skill has no
@@ -3450,7 +3450,7 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
 test "editor scene: viewport projects tiles, placements, and markers" {
     // The editor world branch (edit mode): no concrete Level exists, so the
     // active EditorLevel is projected into the same drawables the in-game
-    // view builds — tiles, the player template at player_start (the '!'),
+    // view builds - tiles, the player template at player_start (the '!'),
     // palette-resolved entity/decoration/item placements, the level-end flag
     // ('='), and no health bars. Ground-item bags group co-located
     // placements (count = placements at the position).
@@ -3536,7 +3536,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
     var session = state.SessionState{};
 
     // The camera centers on the active level's player_start (the editor's
-    // "player position" analog) — the plain player-center projection.
+    // "player position" analog) - the plain player-center projection.
     const camera = computeCamera(&state_, 1.0, null, null);
     try std.testing.expectEqual(playerCenter(.{ .x = 0, .y = 0 }), camera.position);
 
@@ -3579,7 +3579,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
 }
 
 test "editor cursor overlay: every tool outlines the cursor tile" {
-    // The tile-tool cursor draws at the cursor position UNCONDITIONALLY —
+    // The tile-tool cursor draws at the cursor position UNCONDITIONALLY -
     // over empty space too (the affordance that a tile can be placed
     // there), unlike the level/hub cursor which only draws on real tiles.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3588,7 +3588,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     var harness = test_harness.Harness.init(arena);
 
     const levels = [_]types.EditorLevel{.{
-        .level_tiles = &.{}, // no tiles — the outline must still draw
+        .level_tiles = &.{}, // no tiles - the outline must still draw
         .player_start = .{ .x = 0, .y = 0 },
     }};
     var state_ = GameState{
@@ -3637,8 +3637,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     );
 
     // The select tool draws the single-tile outline too (its hover
-    // preview — a covering decoration's footprint region, else the tile);
-    // an entity tool does (same overlay — its click target is a tile
+    // preview - a covering decoration's footprint region, else the tile);
+    // an entity tool does (same overlay - its click target is a tile
     // position too).
     state_.editor.?.active_tool = .select;
     const view_state_select = view(
@@ -3714,8 +3714,8 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
 test "editor cursor overlay: decoration tool outlines the footprint region continuously" {
     // The decoration tool's preview: a continuous outline around the
     // type's footprint region, anchored so the ANCHOR tile sits at the
-    // cursor. A 2-wide footprint emits 6 boundary edges — top + bottom per
-    // tile, one left, one right — and NO edge between the two region tiles
+    // cursor. A 2-wide footprint emits 6 boundary edges - top + bottom per
+    // tile, one left, one right - and NO edge between the two region tiles
     // (that side is interior).
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -3785,7 +3785,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
         }
     }
     // 2 tiles × (top + bottom) + 1 left + 1 right = 6; the shared side
-    // between the two region tiles is interior — no edge there.
+    // between the two region tiles is interior - no edge there.
     try std.testing.expectEqual(@as(usize, 2), top_count);
     try std.testing.expectEqual(@as(usize, 2), bottom_count);
     try std.testing.expectEqual(@as(usize, 1), left_count);
@@ -3929,7 +3929,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     };
     var session = state.SessionState{};
     // A tile (with its enemy), the player start, the level end, and the
-    // 2-wide decoration — the union of everything selectable. Cursor null
+    // 2-wide decoration - the union of everything selectable. Cursor null
     // so only the selection overlays emit.
     state_.editor.?.active_tool = .select;
     const seeded_selection = [_]types.Selectable{
@@ -3942,7 +3942,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     state_.editor.?.selection = &seeded_selection;
 
     const camera = computeCamera(&state_, 1.0, null, null);
-    // The selection outlines use the active theme's lightest — the same
+    // The selection outlines use the active theme's lightest - the same
     // color as every other world outline (a fix: the first cut used
     // "pure white" {1,1,1}, but types.Color channels are u8 0-255, so that
     // rendered near-BLACK).
@@ -3977,7 +3977,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
             else => {},
         }
     }
-    // Single-tile outlines: the tile (1,1), the enemy on it (same rect —
+    // Single-tile outlines: the tile (1,1), the enemy on it (same rect -
     // opaque redraw, invisible), the '!' (0,0), the '=' (9,0) = 4.
     try std.testing.expectEqual(@as(usize, 4), tile_outlines);
     // The 2-wide decoration's region = 6 boundary edges.
@@ -3988,7 +3988,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
     // A promoted move drag previews its move: a selected-at-press claim
     // translates the SELECTION outlines (the pre-existing path); an
     // unselected claim renders the grabbed click group translated instead
-    // — the selection is not in state yet, and the OLD selection must NOT
+    // - the selection is not in state yet, and the OLD selection must NOT
     // slide around (it is still the real selection). Nothing previews
     // before promotion (an unpromoted release is a plain click). See
     // `handleEditorMoveDrag` / `buildEditorMoveDragOverlay`.
@@ -4028,7 +4028,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
     };
     var session = state.SessionState{};
     state_.editor.?.active_tool = .select;
-    // The OLD selection (a tile elsewhere) — an unselected-claim drag
+    // The OLD selection (a tile elsewhere) - an unselected-claim drag
     // must not slide it around. Cursor null so only the selection + drag
     // overlays emit.
     const old_selection = [_]types.Selectable{.{ .tile = .{ .x = 5, .y = 5 } }};
@@ -4066,7 +4066,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
         }
     }.call;
 
-    // --- Before promotion nothing previews — the old selection renders
+    // --- Before promotion nothing previews - the old selection renders
     // where it is. ---
     session.ui_state.editor_move_drag = .{
         .press_position_tile = .{ .x = 1, .y = 1 },
@@ -4122,7 +4122,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
         }
     }
     // The 2-wide region's 6 boundary edges, ALL on the translated
-    // anchor — none at the original.
+    // anchor - none at the original.
     try std.testing.expectEqual(@as(usize, 6), region_edges);
     try std.testing.expectEqual(@as(usize, 6), at_translated_anchor);
     try std.testing.expectEqual(@as(usize, 0), at_original_anchor);
@@ -4158,7 +4158,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
     }
 
     // --- Promoted SELECTED-at-press claim (press the selected (5,5)
-    // tile, drag to (6,5)): the selection outline translates — today's
+    // tile, drag to (6,5)): the selection outline translates - today's
     // path, no group preview on top. ---
     session.ui_state.editor_move_drag = .{
         .press_position_tile = .{ .x = 5, .y = 5 },
@@ -4178,8 +4178,8 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
 test "entity body color: gradient by team, index by player-vs-helper" {
     // The coloring rule (DESIGN → Entity & UI Coloring): team 0 → player
     // gradient, else enemy gradient; the player ENTITY (index 0) uses the
-    // settings player_color_index, every other entity — enemy-authored
-    // team-0 helpers included — its own color_index.
+    // settings player_color_index, every other entity - enemy-authored
+    // team-0 helpers included - its own color_index.
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -4194,7 +4194,7 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     player_gradient[4] = player_four;
     var enemy_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
     enemy_gradient[4] = enemy_four;
-    // The weapon color (gradient index 1) — needed by the
+    // The weapon color (gradient index 1) - needed by the
     // keep_original_colors block below; set BEFORE the theme copy.
     enemy_gradient[1] = enemy_one;
     const theme: types.ActiveColorTheme = .{
@@ -4207,7 +4207,7 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds) = .{};
 
-    // All three entities carry color_index 4 — the resolution differs only
+    // All three entities carry color_index 4 - the resolution differs only
     // by team + player-ness.
     const player_entity = types.Entity{ .team = 0, .color_index = 4 };
     const helper_entity = types.Entity{ .team = 0, .color_index = 4 };
@@ -4226,7 +4226,7 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     try std.testing.expect(std.meta.eql(enemy_four, enemy_drawable.base_sprite.color));
 
     // keep_original_colors: base + layers UNTINTED (pure white); the
-    // WEAPONS stay themed (enemy gradient index 1 — our art, not the
+    // WEAPONS stay themed (enemy gradient index 1 - our art, not the
     // asset's).
     {
         const layers = [_]types.EntityLayer{.{ .sprite = "bear", .color_index = 4 }};
@@ -4314,7 +4314,7 @@ test "decoration pieces: behind layers split into back_layers, config order kept
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
     // Config order: canopy (front), grass_back (behind), grass (front),
-    // moss (behind) — interleaved, so order WITHIN each side is what's
+    // moss (behind) - interleaved, so order WITHIN each side is what's
     // under test, not just the split.
     const layers = [_]types.DecorationLayer{
         .{ .sprite = "tree_1_canopy", .color_index = 2, .pixel_dims = .{ .x = 256, .y = 256 } },
@@ -4494,7 +4494,7 @@ test "camera view region: fully covered screen acts as if no panels open" {
     // zoom).
     const tile_px: i32 = @intFromFloat(input.tile_size_pixels);
     const margin_band_100 = 2 * camera_edge_margin_tiles * tile_px;
-    // Exactly enough: panels honored — the region starts at the occupied
+    // Exactly enough: panels honored - the region starts at the occupied
     // width.
     try std.testing.expectEqual(
         types.reference_width - margin_band_100,
@@ -4513,7 +4513,7 @@ test "camera view region: fully covered screen acts as if no panels open" {
         types.reference_width - margin_band_050,
         cameraViewRegionFor(types.reference_width - margin_band_050, 0.5).x,
     );
-    // Degenerate: occupied beyond the screen width — fallback.
+    // Degenerate: occupied beyond the screen width - fallback.
     try std.testing.expectEqual(
         @as(i32, 0),
         cameraViewRegionFor(types.reference_width, 1.0).x,
@@ -4553,7 +4553,7 @@ test "camera view region: null outside levels, hubs, and the editor" {
     );
 
     // The editor viewport gets the same band as the game (top row + tool
-    // palette bound it vertically), at full width — sidebars and pickers
+    // palette bound it vertically), at full width - sidebars and pickers
     // are deliberately not accounted for.
     try std.testing.expectEqual(
         types.Rectangle{
@@ -4647,11 +4647,11 @@ fn fullBandRegion() Rectangle {
 
 // Camera-clamp test helpers: the clamp's semantic contracts expressed
 // over the same constants `computeCamera` uses (DESIGN → Platform Seam →
-// Camera clamping) — no hand-computed pixel literals, so band/geometry
+// Camera clamping) - no hand-computed pixel literals, so band/geometry
 // changes can't stale them (the 128px top-bar pass updated every literal
 // here by hand and left the comments lying).
 
-/// The player's world-pixel center: (tile + 0.5) × tile pixels — the
+/// The player's world-pixel center: (tile + 0.5) × tile pixels - the
 /// position `computeCamera` centers on.
 fn playerCenter(tile: types.Vector2) types.Vector2 {
     const tile_px: i32 = @intFromFloat(input.tile_size_pixels);
@@ -4673,7 +4673,7 @@ fn gridCenterPx(width_tiles: i32, height_tiles: i32) types.Vector2 {
 /// The camera the margin band pins while the player sits against the
 /// region's LEFT/TOP edge: the player lands exactly
 /// `camera_edge_margin_tiles` inside the region's low edges (the
-/// reference-centered projection — the region's own screen offset is
+/// reference-centered projection - the region's own screen offset is
 /// subtracted).
 fn marginCameraLow(player_center: types.Vector2, region: Rectangle) types.Vector2 {
     const tile_px: i32 = @intFromFloat(input.tile_size_pixels);
@@ -4696,7 +4696,7 @@ fn marginCameraHigh(player_center: types.Vector2, region: Rectangle) types.Vecto
 }
 
 /// The camera for a level that FITS the region: centered on the level's
-/// center as a whole (centering wins over the margin band — the whole
+/// center as a whole (centering wins over the margin band - the whole
 /// level is visible).
 fn wholeLevelCenteredCamera(level_center: types.Vector2, region: Rectangle) types.Vector2 {
     return .{
@@ -4706,7 +4706,7 @@ fn wholeLevelCenteredCamera(level_center: types.Vector2, region: Rectangle) type
 }
 
 test "camera clamp: near-edge player keeps the 2-tile margin, void shed" {
-    // 30x17 level — overflows the region on both axes at zoom 1.0.
+    // 30x17 level - overflows the region on both axes at zoom 1.0.
     const tiles = tileGrid(30, 17);
     const region = fullBandRegion();
 
@@ -4717,7 +4717,7 @@ test "camera clamp: near-edge player keeps the 2-tile margin, void shed" {
     var camera = computeCamera(&state_, 1.0, null, region);
     try std.testing.expectEqual(marginCameraLow(playerCenter(.{ .x = 0, .y = 0 }), region), camera.position);
 
-    // Bottom-right corner: symmetric — the margin inside the region's
+    // Bottom-right corner: symmetric - the margin inside the region's
     // right/bottom edges.
     state_ = levelStateWithPlayer(&tiles, .{ .x = 29, .y = 16 });
     camera = computeCamera(&state_, 1.0, null, region);
@@ -4735,7 +4735,7 @@ test "camera clamp: mid-level player stays exactly player-centered" {
 }
 
 test "camera clamp: a level that fits is centered as a whole" {
-    // 4x3 level — fits inside the region on both axes, so it is centered
+    // 4x3 level - fits inside the region on both axes, so it is centered
     // in the band regardless of the player's position.
     const tiles = tileGrid(4, 3);
     const region = fullBandRegion();
@@ -4744,7 +4744,7 @@ test "camera clamp: a level that fits is centered as a whole" {
     var camera = computeCamera(&state_, 1.0, null, region);
     try std.testing.expectEqual(centered, camera.position);
 
-    // Even with the player at a corner — centering wins over the margin.
+    // Even with the player at a corner - centering wins over the margin.
     state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
     camera = computeCamera(&state_, 1.0, null, region);
     try std.testing.expectEqual(centered, camera.position);
@@ -4765,12 +4765,12 @@ test "camera clamp: one axis fits, the other clamps" {
     const region = fullBandRegion();
     const state_ = levelStateWithPlayer(&tiles, .{ .x = 1, .y = 39 });
     const camera = computeCamera(&state_, 1.0, null, region);
-    // x: the level fits — centered as a whole.
+    // x: the level fits - centered as a whole.
     try std.testing.expectEqual(
         wholeLevelCenteredCamera(gridCenterPx(4, 40), region).x,
         camera.position.x,
     );
-    // y: the player one tile from the bottom — the margin band pins them
+    // y: the player one tile from the bottom - the margin band pins them
     // camera_edge_margin_tiles inside the region's bottom edge.
     try std.testing.expectEqual(
         marginCameraHigh(playerCenter(.{ .x = 1, .y = 39 }), region).y,
@@ -4781,7 +4781,7 @@ test "camera clamp: one axis fits, the other clamps" {
 test "camera clamp: pan gets 4 tiles of wiggle past the level edges" {
     // A deliberate pan skips the player margin (the point of panning is to
     // look away from the player) and may show up to camera_pan_void_tiles
-    // of void past an edge before the clamp stops it — so the edge clamp
+    // of void past an edge before the clamp stops it - so the edge clamp
     // doesn't feel like a hard wall.
     const tiles = tileGrid(30, 17);
     const region = fullBandRegion();
@@ -4859,7 +4859,7 @@ test "camera clamp: hub screens clamp against the hub tile grid" {
 }
 
 test "camera clamp: null region is the unclamped behavior" {
-    // The pan-solve reference contract: no region, no clamp — the camera is
+    // The pan-solve reference contract: no region, no clamp - the camera is
     // the plain player-centered position plus pan, even at a level edge.
     const tiles = tileGrid(30, 17);
     const state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
@@ -4875,9 +4875,9 @@ test "camera clamp: null region is the unclamped behavior" {
 test "editor viewport: clamps the active level around its player_start" {
     // The editor's "player position" is the active level's player_start
     // (the '!' marker): the same clamp rules as gameplay apply around it.
-    // The clamp bounds come from `Editor.clamp_bounds` — the SNAPSHOT the
+    // The clamp bounds come from `Editor.clamp_bounds` - the SNAPSHOT the
     // level-switch handlers take (set here as refreshEditorClampBounds
-    // would) — so the bounds follow the ACTIVE level's tab.
+    // would) - so the bounds follow the ACTIVE level's tab.
     const big_tiles = tileGrid(30, 17);
     const small_tiles = tileGrid(4, 3);
     // Two levels sharing a player_start (fresh levels come from one
@@ -4900,7 +4900,7 @@ test "editor viewport: clamps the active level around its player_start" {
     };
 
     // Big level, player_start at the corner: same framing as the level
-    // test — the margin band pins the player_start camera_edge_margin_tiles
+    // test - the margin band pins the player_start camera_edge_margin_tiles
     // inside the region's low edges.
     state_.editor.?.active_level_index = 0;
     state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 29, .max_y = 16 };
@@ -4910,7 +4910,7 @@ test "editor viewport: clamps the active level around its player_start" {
         camera.position,
     );
 
-    // Tab to the small level: centered as a whole — the tab switch
+    // Tab to the small level: centered as a whole - the tab switch
     // re-clamps on the new layout (the snapshot refresh).
     state_.editor.?.active_level_index = 1;
     state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 3, .max_y = 2 };
@@ -4939,7 +4939,7 @@ test "editor viewport: mid-edit tile changes never reframe the camera" {
         .camera = null,
         .editor = .{
             .levels = &levels,
-            // The snapshot from switch time (the full 30x17 grid) — the
+            // The snapshot from switch time (the full 30x17 grid) - the
             // live tiles have since been edited down to 4x3.
             .clamp_bounds = tileBoundsOf(&snapshot_tiles),
         },
@@ -4951,7 +4951,7 @@ test "editor viewport: mid-edit tile changes never reframe the camera" {
     };
 
     // The clamp is against the SNAPSHOT bounds: the player_start-corner
-    // framing of the big grid — the margin band over the snapshot — not
+    // framing of the big grid - the margin band over the snapshot - not
     // the small live grid (which would center as a whole).
     const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(
@@ -4995,7 +4995,7 @@ test "editor viewport: pan is completely free" {
 
     // No flush bounds, no wiggle budget, no margin: a panned editor
     // camera is the plain player_start-centered position plus the raw
-    // offset — roam anywhere. The pan clears on the next tab switch or
+    // offset - roam anywhere. The pan clears on the next tab switch or
     // screen transition (cameraRecenterKey), restoring the clamped frame.
     const camera = computeCamera(&state_, 1.0, .{ .x = 100_000, .y = -100_000 }, fullBandRegion());
     try std.testing.expectEqual(playerCenter(.{ .x = 0, .y = 0 }).x + 100_000, camera.position.x);
@@ -5023,7 +5023,7 @@ test "editor viewport: an empty level stays unclamped" {
 
 test "camera recenter key: editor level tabs change it even with identical player starts" {
     // Two levels with the SAME player_start: the position alone wouldn't
-    // detect the tab switch — the active level index rides the key.
+    // detect the tab switch - the active level index rides the key.
     const levels = [_]types.EditorLevel{
         .{ .player_start = .{ .x = 5, .y = 5 } },
         .{ .player_start = .{ .x = 5, .y = 5 } },
@@ -5060,7 +5060,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
     // top bar is emitted (the top bar is the LAST element block appended, so
     // its buttons are invisible to a pass that runs earlier). Before the
     // fix the pass ran before the emission and no tooltip could ever spawn
-    // for the top bar — its buttons resolved to nothing under the pointer.
+    // for the top bar - its buttons resolved to nothing under the pointer.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const arena = backing.allocator();
@@ -5121,7 +5121,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
         try std.testing.expect(found);
     }
 
-    // Negative control: the gap between buttons resolves to nothing — none
+    // Negative control: the gap between buttons resolves to nothing - none
     // of the three headers may spawn there. (Scoped to the header texts, not
     // the font size alone: other UI legitimately uses size-64 labels.)
     session.input_state.mouse_screen_position = .{
@@ -5163,7 +5163,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
 
 test "main menu: credits draws ON TOP of the options menu (painter order)" {
     // Regression: the credits panel used to be emitted in the main-menu
-    // branch, BEFORE the screen-independent options menu block — two
+    // branch, BEFORE the screen-independent options menu block - two
     // full-screen panels, so the options menu covered it entirely (the
     // credits flag was logically open; Escape correctly closed credits
     // first, but nothing rendered). The contract: with both up, the
@@ -5211,7 +5211,7 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
 
     // Both overlays emit exactly one full-screen panel each. The options
     // menu's panel comes first, then its buttons (Exit Game identifies the
-    // block), then the credits panel — drawn on top.
+    // block), then the credits panel - drawn on top.
     var full_screen_panel_indices: [2]usize = undefined;
     var panel_count: usize = 0;
     var exit_game_index: ?usize = null;
@@ -5246,7 +5246,7 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
 // forced frames, every reachable overlay flag set at once, asserting the
 // surfaces' marker elements emit in the canonical ladder order (painter
 // order = draw order). The Escape chain mirrors this ladder topmost-first;
-// this census is what keeps the two from drifting apart again — both a
+// this census is what keeps the two from drifting apart again - both a
 // silent view() reorder and a chain-arm reorder without the emission
 // following fail here.
 test "z-order census: forced frames emit every overlay surface in the canonical ladder order" {
@@ -5257,7 +5257,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
 
     // Marker finders: index of the first/last button carrying `action`
-    // (LAST for surfaces whose action also appears in a lower surface —
+    // (LAST for surfaces whose action also appears in a lower surface -
     // the lower one emitted first), the tooltip header label, and the FPS
     // diagnostic label (the ladder's topmost rung).
     const firstButton = struct {
@@ -5308,7 +5308,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         .y = @divTrunc(ui.top_bar_height, 2),
     };
 
-    // ── Frame 1: the main menu — every main-menu-reachable surface up.
+    // ── Frame 1: the main menu - every main-menu-reachable surface up.
     // Ladder: base < options menu < load-save browser < credits <
     // settings screen < editor browser < error popup < top bar < tooltip
     // < FPS label.
@@ -5375,7 +5375,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         try std.testing.expect(tooltip < fps);
     }
 
-    // ── Frame 2: a level, player dead — every level-reachable surface up.
+    // ── Frame 2: a level, player dead - every level-reachable surface up.
     // Ladder: bottom bar < options menu < mission-fail < mission-complete
     // < settings screen < editor browser < error popup < top bar < FPS
     // label. (complete above fail is the pinned never-co-rendered order;

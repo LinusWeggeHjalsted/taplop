@@ -1,32 +1,32 @@
-//! Field-path reflection over the game's live objects — the console
+//! Field-path reflection over the game's live objects - the console
 //! `dump <path>` verb (see DESIGN → Input → Console input → dump paths).
 //! A path is a Zig member-access expression evaluated read-only against
 //! the root object the driver holds (the FrameState): field names, union
 //! tag names, and `[n]` indexes, e.g. `history.current_state.hub.player.position`.
-//! Names mirror the types exactly — renaming a field renames its dump
+//! Names mirror the types exactly - renaming a field renames its dump
 //! path, and a dead path errors truthfully instead of going stale.
 //!
 //! Safety invariants (a dump must never be able to mutate or execute):
 //! - The root is `*const`; const propagates through every read, so any
 //!   mutation in this file is a compile error.
-//! - Raw pointers are NEVER followed (rendered `<pointer>`) — no vtable,
+//! - Raw pointers are NEVER followed (rendered `<pointer>`) - no vtable,
 //!   allocator, or function pointer is ever dereferenced, and pointer
 //!   cycles are unreachable by construction.
-//! - No method is ever called on a walked value — only field memory
+//! - No method is ever called on a walked value - only field memory
 //!   reads and `@typeInfo`. A Zig method is arbitrary code; the walker's
 //!   contract is that walking executes none.
 //! - Union descent is active-tag-checked (reading an inactive union
-//!   payload is undefined behavior — the mismatch is a truthful error
+//!   payload is undefined behavior - the mismatch is a truthful error
 //!   line instead).
 //! - Indexes are bounds-checked; slice rendering is capped.
 //!
-//! Rendering (type-determined — how a value prints depends only on its
+//! Rendering (type-determined - how a value prints depends only on its
 //! type, never on where the path ends): detail propagates through
 //! optionals, unions, and slices; struct fields cut to one-line
 //! summaries (compact form when the value fits one line, else a summary
 //! token naming its type). Leaf conventions are the session-log writer's
 //! (ints decimal, bools true/false, enums → tagName, strings verbatim).
-//! Writes are best-effort — a failed write silently truncates the dump
+//! Writes are best-effort - a failed write silently truncates the dump
 //! (the diagnostics-write convention: never surfaces as a crash).
 
 const std = @import("std");
@@ -79,7 +79,7 @@ fn parsePath(path: []const u8, steps: *[max_steps]Step) ParseResult {
             index += 1;
             const digits_start = index;
             while (index < path.len and std.ascii.isDigit(path[index])) index += 1;
-            if (index == digits_start) return .{ .err = "empty '[]' — expected a number" };
+            if (index == digits_start) return .{ .err = "empty '[]' - expected a number" };
             if (index >= path.len or path[index] != ']')
                 return .{ .err = "expected ']' after the index" };
             const parsed = std.fmt.parseInt(usize, path[digits_start..index], 10) catch
@@ -91,9 +91,9 @@ fn parsePath(path: []const u8, steps: *[max_steps]Step) ParseResult {
         }
         if (index >= path.len) break;
         if (path[index] != '.')
-            return .{ .err = "unexpected character in path — only letters, digits, '_', '.', '[' and ']'" };
+            return .{ .err = "unexpected character in path - only letters, digits, '_', '.', '[' and ']'" };
         index += 1;
-        if (index >= path.len) return .{ .err = "path ends with '.' — expected a name after it" };
+        if (index >= path.len) return .{ .err = "path ends with '.' - expected a name after it" };
     }
     return .{ .ok = count };
 }
@@ -112,12 +112,12 @@ fn isIdentifierChar(char: u8) bool {
 
 /// Resolve `path` against `root` and write the dump to `output`. An
 /// empty path renders the root's table of contents (one level of field
-/// names — the discovery entry point). Resolution failures write a
+/// names - the discovery entry point). Resolution failures write a
 /// `dump error: ...` line naming what is actually there (fields, active
-/// tag, element count) — the error teaches the next path.
+/// tag, element count) - the error teaches the next path.
 pub fn writeDump(output: *std.Io.Writer, root: anytype, path: []const u8) void {
     // Const-assert the root: whatever pointer the caller holds is read
-    // as const from here down — the no-mutation invariant is compiler-
+    // as const from here down - the no-mutation invariant is compiler-
     // enforced, not conventional.
     const const_root: *const @TypeOf(root.*) = root;
     var steps: [max_steps]Step = undefined;
@@ -147,12 +147,12 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                 return;
             }
             switch (steps[0]) {
-                .index => dumpError(output, "{s} is a struct — address a field by name, not an index", .{@typeName(T)}),
+                .index => dumpError(output, "{s} is a struct - address a field by name, not an index", .{@typeName(T)}),
                 .field => |name| {
                     inline for (@typeInfo(T).@"struct".fields) |field| {
                         if (std.mem.eql(u8, name, field.name)) {
                             if (comptime isEmptyUnion(field.type)) {
-                                dumpError(output, "{s} is a union with no variants — nothing to address", .{@typeName(field.type)});
+                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field.type)});
                                 return;
                             }
                             walk(output, indent, @field(value, field.name), steps[1..]);
@@ -169,28 +169,28 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                 return;
             }
             switch (steps[0]) {
-                .index => dumpError(output, "{s} is a union — address a tag by name, not an index", .{@typeName(T)}),
+                .index => dumpError(output, "{s} is a union - address a tag by name, not an index", .{@typeName(T)}),
                 .field => |name| {
                     inline for (@typeInfo(T).@"union".fields) |field| {
                         if (std.mem.eql(u8, name, field.name)) {
                             if (comptime isEmptyUnion(field.type)) {
-                                dumpError(output, "{s} is a union with no variants — nothing to address", .{@typeName(field.type)});
+                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field.type)});
                                 return;
                             }
                             // The active-tag check MUST precede the payload
                             // read: accessing an inactive union field is
                             // undefined behavior (the compiler's own safety
-                            // check would panic — the dump errors instead).
+                            // check would panic - the dump errors instead).
                             if (!std.mem.eql(u8, @tagName(value), field.name)) {
                                 dumpError(
                                     output,
-                                    "{s} is .{s}, not .{s} — address the active tag",
+                                    "{s} is .{s}, not .{s} - address the active tag",
                                     .{ @typeName(T), @tagName(value), name },
                                 );
                                 return;
                             }
                             if (comptime field.type == void) {
-                                // A void variant: the tag IS the value —
+                                // A void variant: the tag IS the value -
                                 // addressing it echoes the tag.
                                 writeIndentation(output, indent);
                                 output.print(".{s}\n", .{name}) catch return;
@@ -210,16 +210,16 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             } else if (steps.len == 0) {
                 output.writeAll("null\n") catch return;
             } else {
-                dumpError(output, "{s} is null — nothing beneath", .{@typeName(T)});
+                dumpError(output, "{s} is null - nothing beneath", .{@typeName(T)});
             }
         },
         .pointer => |pointer| switch (pointer.size) {
             .slice => {
                 if (pointer.child == u8) {
-                    // A byte slice is a string (leaf) — printed verbatim,
+                    // A byte slice is a string (leaf) - printed verbatim,
                     // not element-wise.
                     if (steps.len > 0) {
-                        dumpError(output, "a string is a leaf — no '{s}' beneath it", .{steps[0].field});
+                        dumpError(output, "a string is a leaf - no '{s}' beneath it", .{steps[0].field});
                     } else {
                         output.print("{s}\n", .{value}) catch return;
                     }
@@ -234,7 +234,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                         if (index >= value.len) {
                             dumpError(
                                 output,
-                                "index {d} out of bounds — {d} elements",
+                                "index {d} out of bounds - {d} elements",
                                 .{ index, value.len },
                             );
                             return;
@@ -243,7 +243,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                     },
                     .field => dumpError(
                         output,
-                        "a slice of {s} — index it ([n]), don't name it",
+                        "a slice of {s} - index it ([n]), don't name it",
                         .{@typeName(pointer.child)},
                     ),
                 }
@@ -251,7 +251,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             // The safety boundary: raw pointers are never followed.
             else => {
                 if (steps.len > 0) {
-                    dumpError(output, "{s} is a pointer — pointers are never followed", .{@typeName(T)});
+                    dumpError(output, "{s} is a pointer - pointers are never followed", .{@typeName(T)});
                 } else {
                     output.writeAll("<pointer>\n") catch return;
                 }
@@ -265,14 +265,14 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             switch (steps[0]) {
                 .index => |index| {
                     if (index >= array.len) {
-                        dumpError(output, "index {d} out of bounds — {d} elements", .{ index, array.len });
+                        dumpError(output, "index {d} out of bounds - {d} elements", .{ index, array.len });
                         return;
                     }
                     walk(output, indent, value[index], steps[1..]);
                 },
                 .field => dumpError(
                     output,
-                    "an array of {s} — index it ([n]), don't name it",
+                    "an array of {s} - index it ([n]), don't name it",
                     .{@typeName(array.child)},
                 ),
             }
@@ -281,7 +281,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             if (steps.len > 0) {
                 dumpError(
                     output,
-                    "{s} is a leaf — no '{s}' beneath it",
+                    "{s} is a leaf - no '{s}' beneath it",
                     .{ @typeName(T), switch (steps[0]) {
                         .field => |name| name,
                         .index => "[n]",
@@ -293,7 +293,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                 output.writeAll("\n") catch return;
             }
         },
-        // Anything exotic (function values, opaque types, ...) — opaque.
+        // Anything exotic (function values, opaque types, ...) - opaque.
         else => {
             if (steps.len > 0) {
                 dumpError(output, "{s} is not introspectable", .{@typeName(T)});
@@ -308,9 +308,9 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
 // Rendering
 // ============================================================
 
-/// An uninhabited union — declared with no variants (a "none yet"
+/// An uninhabited union - declared with no variants (a "none yet"
 /// placeholder, e.g. ReplayViewerEvent). No value of this type can exist,
-/// and `@field` on an access to such a field cannot even LOWER — every
+/// and `@field` on an access to such a field cannot even LOWER - every
 /// recursion site guards with this before touching the value.
 fn isEmptyUnion(comptime T: type) bool {
     const info = @typeInfo(T);
@@ -331,7 +331,7 @@ fn writeAddressed(output: *std.Io.Writer, indent: usize, value: anytype) void {
     switch (@typeInfo(T)) {
         .@"struct" => {
             // One level: each field as `name: <one-line summary>`. Nested
-            // non-compact values appear as their type name — descend by
+            // non-compact values appear as their type name - descend by
             // path for their contents.
             inline for (@typeInfo(T).@"struct".fields) |field| {
                 writeIndentation(output, indent);
@@ -346,14 +346,14 @@ fn writeAddressed(output: *std.Io.Writer, indent: usize, value: anytype) void {
         },
         .@"union" => {
             // The active tag is the headline; the payload is addressed
-            // (unions always show through — a tag without its payload
+            // (unions always show through - a tag without its payload
             // says nothing).
             writeIndentation(output, indent);
             output.print(".{s}\n", .{@tagName(value)}) catch return;
             switch (value) {
                 inline else => |payload| {
                     if (comptime isEmptyUnion(@TypeOf(payload))) {
-                        // No payload exists — the tag line above said it all.
+                        // No payload exists - the tag line above said it all.
                     } else {
                         writeAddressed(output, indent + 1, payload);
                     }
@@ -397,14 +397,14 @@ fn writeSliceElements(output: *std.Io.Writer, indent: usize, slice: anytype) voi
     }
     if (slice.len > limit) {
         writeIndentation(output, indent);
-        output.print("(+{d} more — address by index)\n", .{slice.len - limit}) catch return;
+        output.print("(+{d} more - address by index)\n", .{slice.len - limit}) catch return;
     }
 }
 
-/// Write a value as a single line, no indent, no newline — the form used
+/// Write a value as a single line, no indent, no newline - the form used
 /// for struct fields and slice elements. Compact values render fully;
 /// non-compact values render a summary token (structs as their type
-/// name; unions keep their tag chain — the most interesting fact about
+/// name; unions keep their tag chain - the most interesting fact about
 /// a union is which variant it is).
 fn writeSummaryInline(output: *std.Io.Writer, value: anytype) void {
     const T = @TypeOf(value);
@@ -441,7 +441,7 @@ fn writeSummaryInline(output: *std.Io.Writer, value: anytype) void {
     }
 }
 
-/// Write a value in its compact (single-line) form — only called when
+/// Write a value in its compact (single-line) form - only called when
 /// `valueIsCompact` said it fits.
 fn writeCompactForm(output: *std.Io.Writer, value: anytype) void {
     const T = @TypeOf(value);
@@ -553,7 +553,7 @@ fn valueIsCompact(value: anytype) bool {
 }
 
 // ============================================================
-// Errors (truthful — they name what is actually there)
+// Errors (truthful - they name what is actually there)
 // ============================================================
 
 fn dumpError(output: *std.Io.Writer, comptime format: []const u8, args: anytype) void {
@@ -561,7 +561,7 @@ fn dumpError(output: *std.Io.Writer, comptime format: []const u8, args: anytype)
 }
 
 fn dumpErrorNoField(output: *std.Io.Writer, comptime T: type, wanted: []const u8) void {
-    output.print("dump error: no field '{s}' on {s} — fields: ", .{ wanted, @typeName(T) }) catch return;
+    output.print("dump error: no field '{s}' on {s} - fields: ", .{ wanted, @typeName(T) }) catch return;
     inline for (@typeInfo(T).@"struct".fields, 0..) |field, field_index| {
         if (field_index > 0) output.writeAll(", ") catch return;
         output.print("{s}", .{field.name}) catch return;
@@ -570,7 +570,7 @@ fn dumpErrorNoField(output: *std.Io.Writer, comptime T: type, wanted: []const u8
 }
 
 fn dumpErrorNoTag(output: *std.Io.Writer, comptime T: type, wanted: []const u8) void {
-    output.print("dump error: no tag '{s}' on {s} — tags: ", .{ wanted, @typeName(T) }) catch return;
+    output.print("dump error: no tag '{s}' on {s} - tags: ", .{ wanted, @typeName(T) }) catch return;
     inline for (@typeInfo(T).@"union".fields, 0..) |field, field_index| {
         if (field_index > 0) output.writeAll(", ") catch return;
         output.print("{s}", .{field.name}) catch return;
@@ -605,7 +605,7 @@ const TestRoot = struct {
     child: TestChild,
     ptr: ?*const TestLeaf,
     few: []const TestLeaf,
-    /// Long enough that the root is NON-compact — the ToC (field-per-line)
+    /// Long enough that the root is NON-compact - the ToC (field-per-line)
     /// shape, like the real FrameState root.
     many: []const TestLeaf,
     tagged: TestUnion,
@@ -649,7 +649,7 @@ test "dump walker: leaves, compact forms, and the root table of contents" {
     var buffer: [2048]u8 = undefined;
     const root = testRoot();
 
-    // Empty path: the root ToC — one level, field names present.
+    // Empty path: the root ToC - one level, field names present.
     const toc = dumpToText(&buffer, root, "");
     try expectContains(toc, "title: hello world\n");
     try expectContains(toc, "mode: on\n");
@@ -688,21 +688,21 @@ test "dump walker: struct fields address by name; errors are truthful" {
 
     // Indexing a struct errors; naming a slice errors toward indexing.
     const index_on_struct = dumpToText(&buffer, root, "child[0]");
-    try expectContains(index_on_struct, "is a struct — address a field by name");
+    try expectContains(index_on_struct, "is a struct - address a field by name");
     const name_on_slice = dumpToText(&buffer, root, "few.first");
     try expectContains(name_on_slice, "index it ([n]), don't name it");
 
     // Leaf with a deeper path errors.
     const through_leaf = dumpToText(&buffer, root, "leaf.x.deeper");
-    try expectContains(through_leaf, "is a leaf — no 'deeper' beneath it");
+    try expectContains(through_leaf, "is a leaf - no 'deeper' beneath it");
 
     // Optional null: nothing beneath.
     const into_null = dumpToText(&buffer, root, "opt_null.x");
-    try expectContains(into_null, "is null — nothing beneath");
+    try expectContains(into_null, "is null - nothing beneath");
 
     // Index bounds are checked.
     const out_of_bounds = dumpToText(&buffer, root, "few[2]");
-    try expectContains(out_of_bounds, "index 2 out of bounds — 2 elements");
+    try expectContains(out_of_bounds, "index 2 out of bounds - 2 elements");
 }
 
 test "dump walker: unions descend by active tag; wrong tags error, not panic" {
@@ -716,9 +716,9 @@ test "dump walker: unions descend by active tag; wrong tags error, not panic" {
     try testing.expectEqualStrings("1\n", one_x);
 
     // Wrong tag: the error names the ACTIVE tag (this is the guarded UB
-    // path — a blind @field would panic).
+    // path - a blind @field would panic).
     const wrong_tag = dumpToText(&buffer, root, "tagged.label");
-    try expectContains(wrong_tag, "is .one, not .label — address the active tag");
+    try expectContains(wrong_tag, "is .one, not .label - address the active tag");
 
     // Unknown tag: the error lists the tags.
     const no_tag = dumpToText(&buffer, root, "tagged.bogus");
@@ -742,7 +742,7 @@ test "dump walker: slices render element-per-line with the cap + note" {
     const addressed = dumpToText(&buffer, root, "many");
     try expectContains(addressed, "[0]: { x: 0, y: 0 }\n");
     try expectContains(addressed, "[99]: { x: 0, y: 0 }\n");
-    try expectContains(addressed, "(+50 more — address by index)\n");
+    try expectContains(addressed, "(+50 more - address by index)\n");
     try testing.expect(!std.mem.startsWith(u8, addressed, "[100]"));
 
     // An indexed element still resolves beneath the cap.
@@ -760,7 +760,7 @@ test "dump walker: slices render element-per-line with the cap + note" {
     try expectContains(summary, "items: (150 of dump_walker.TestLeaf)\n");
 }
 
-test "dump walker: pointers are opaque — rendered, never followed" {
+test "dump walker: pointers are opaque - rendered, never followed" {
     var buffer: [2048]u8 = undefined;
     var pointee = TestLeaf{ .x = 1, .y = 2 };
     const PointerRoot = struct { ptr: *const TestLeaf };
@@ -770,9 +770,9 @@ test "dump walker: pointers are opaque — rendered, never followed" {
     const rendered = dumpToText(&buffer, root, "ptr");
     try testing.expectEqualStrings("<pointer>\n", rendered);
 
-    // A path THROUGH a pointer errors — the walker never dereferences.
+    // A path THROUGH a pointer errors - the walker never dereferences.
     const through = dumpToText(&buffer, root, "ptr.x");
-    try expectContains(through, "is a pointer — pointers are never followed");
+    try expectContains(through, "is a pointer - pointers are never followed");
 }
 
 test "dump walker: parse errors name the syntax problem" {

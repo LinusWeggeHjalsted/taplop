@@ -12,7 +12,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Blitz: an off-hand AoE skill. Attacks and stuns every hostile within radius
-/// of the caster. Self-centered — not targeted.
+/// of the caster. Self-centered - not targeted.
 pub const skill = Skill{
     .name = "Blitz",
     .skill_type = .weapon_skill,
@@ -32,12 +32,12 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no target selection.
+/// Self-centered - no target selection.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-centered cast in value units — 1 per target hit
+/// AI options: one self-centered cast in value units - 1 per target hit
 /// + 1 per target the stun actually pays on (unstunned; stuns take the
 /// max, never stack): rating = count + unstunned count.
 fn aiOptions(
@@ -66,7 +66,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = target_count + unstunned_count });
 }
 
-/// Self-centered — fires immediately, no highlight step.
+/// Self-centered - fires immediately, no highlight step.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

@@ -19,7 +19,7 @@ const types = @import("../types.zig");
 const OutlineSide = enum { outer, inner };
 
 /// The outline-cache key string for (sprite_id, band): `"{sprite_id}|{band}""
-/// — a flat composite (std's auto hash refuses slice-containing struct
+/// - a flat composite (std's auto hash refuses slice-containing struct
 /// keys). One entry per (sprite, distinct drawn scale): the band is
 /// scale-compensated, so one sprite drawn at two sizes gets two masks
 /// (see `getOutlineTexture`). A STORED key owns its string (duped at
@@ -36,15 +36,15 @@ const DiskOffset = struct { dx: i32, dy: i32 };
 /// Asset-path scratch: "assets/" + sprite id + ".png". Sprite ids are
 /// bounded well below this (filesystem per-component limits cap custom
 /// mission stems; 512 leaves generous margin). An overflow is a fail-fast
-/// panic — the same class as the arena OOM it replaces.
+/// panic - the same class as the arena OOM it replaces.
 const path_buffer_size = 512;
 
 /// The file-source path for a sprite id. Shipped ids read
-/// `assets/{id}.png`; custom mission-bundled ids —
+/// `assets/{id}.png`; custom mission-bundled ids -
 /// `entities/custom/<mission-dir>/<file-stem>` /
-/// `decorations/custom/<mission-dir>/<file-stem>` — resolve to the
+/// `decorations/custom/<mission-dir>/<file-stem>` - resolve to the
 /// mission directory in the persistent dir (the stem EMBEDS the mission
-/// dir name, so the path is derivable from the id alone — see DESIGN →
+/// dir name, so the path is derivable from the id alone - see DESIGN →
 /// Custom Missions & Online Services → the sprite id convention). The
 /// returned slice borrows `path_buffer`.
 fn assetPathFor(sprite_id: []const u8, path_buffer: []u8) []const u8 {
@@ -66,7 +66,7 @@ pub const TextureStore = struct {
     allocator: std.mem.Allocator,
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// Textures load via loadImageFromMemory from this instead of touching
-    /// the filesystem directly — see DESIGN → File System & IO.
+    /// the filesystem directly - see DESIGN → File System & IO.
     file_source: *const @import("../file_source.zig").FileSource,
 
     /// sprite_id -> loaded texture. A cached `null` means "known missing" so a
@@ -79,7 +79,7 @@ pub const TextureStore = struct {
     /// `getOutlineTexture` request, so only sprites that actually get
     /// outlined pay the cost (highlighted UI icons). A cached `null` means
     /// the sprite is missing (or the mask failed) -> callers skip the
-    /// outline. One entry per (sprite, distinct drawn scale) — see
+    /// outline. One entry per (sprite, distinct drawn scale) - see
     /// `outlineCacheKey`. Keys own their duped strings (freed in deinit).
     outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// stack-key -> precomputed INNER outline mask texture for a COMPOSITED
@@ -88,7 +88,7 @@ pub const TextureStore = struct {
     /// stack's sprite ids + flips + source rects + frame size, so two
     /// entities with the same loadout share one mask. Generated lazily by
     /// `ensureCompositeInsetLoaded` on the first `getCompositeInsetTexture`
-    /// request. Used by the occlusion inset pass — see DESIGN → Decorations &
+    /// request. Used by the occlusion inset pass - see DESIGN → Decorations &
     /// Footprint → Occlusion inset.
     composite_inset_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// sprite_id -> opaque-pixel bounding box (top/bottom/left/right, in
@@ -103,7 +103,7 @@ pub const TextureStore = struct {
     /// Unload every cached texture + free the cache maps. No outline or
     /// inset masks outlive the textures they derive from.
     pub fn deinit(self: *TextureStore) void {
-        // Every cache dupes its keys at insert (see the ensure* loaders) —
+        // Every cache dupes its keys at insert (see the ensure* loaders) -
         // free them alongside the values, then the maps themselves.
         var textures = self.texture_cache.iterator();
         while (textures.next()) |entry| {
@@ -134,7 +134,7 @@ pub const TextureStore = struct {
     /// Reads bytes through the FileSource (embedded map / persistent-dir
     /// override) and decodes via loadImageFromMemory, so the store never
     /// touches the filesystem directly. Returns null (and caches the miss) if
-    /// the asset can't be loaded. The outline mask is NOT built here — it is
+    /// the asset can't be loaded. The outline mask is NOT built here - it is
     /// generated lazily by `ensureOutlineLoaded` only for sprites that
     /// actually get outlined, so loading a level pays no outline cost.
     pub fn getTexture(self: *TextureStore, sprite_id: []const u8) ?rl.Texture2D {
@@ -144,8 +144,8 @@ pub const TextureStore = struct {
 
     /// The precomputed edge-outline mask for `sprite_id` drawn at
     /// `drawn_scale` (destination/source width): a white opaque halo just
-    /// outside the silhouette, generated with a scale-compensated band —
-    /// `ceil(types.outline_thickness / drawn_scale)` source pixels — so the
+    /// outside the silhouette, generated with a scale-compensated band -
+    /// `ceil(types.outline_thickness / drawn_scale)` source pixels - so the
     /// DRAWN band is the constant outline width (reference px) at every
     /// element size; see `types.outline_thickness`. Lazily generated via
     /// `ensureOutlineLoaded` (one mask per (sprite, band)). null if the
@@ -166,7 +166,7 @@ pub const TextureStore = struct {
     /// `ensureCompositeInsetLoaded`; cached by a key built from the stack so
     /// identical stacks share one mask. null if the mask could not be built
     /// (e.g. every sprite in the stack is missing). Used by the occlusion
-    /// inset — see DESIGN → Decorations & Footprint → Occlusion inset.
+    /// inset - see DESIGN → Decorations & Footprint → Occlusion inset.
     pub fn getCompositeInsetTexture(
         self: *TextureStore,
         stack: []const types.StackSprite,
@@ -189,7 +189,7 @@ pub const TextureStore = struct {
     /// body would otherwise leave a spurious internal edge (dilation doesn't
     /// distribute over intersection for the inner dual). Caches into
     /// `composite_inset_cache` under `key` (already built by the caller and
-    /// freed there — `ensureCompositeInsetLoaded` dupes its own copy).
+    /// freed there - `ensureCompositeInsetLoaded` dupes its own copy).
     fn ensureCompositeInsetLoaded(
         self: *TextureStore,
         key: []const u8,
@@ -281,7 +281,7 @@ pub const TextureStore = struct {
         defer rl.unloadImage(image);
         // Same custom-art dims gate as the main texture path: a gated
         // sprite contributes no alpha to the composite mask (the inset
-        // trace matches what's actually drawn — the magenta fallback).
+        // trace matches what's actually drawn - the magenta fallback).
         if (!types.customSpriteDimsPassGate(sprite.sprite_id, .{ .x = image.width, .y = image.height })) {
             return error.MissingSprite;
         }
@@ -335,7 +335,7 @@ pub const TextureStore = struct {
             var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
             // Custom-art dims gate: non-conforming mission-bundled art is
-            // treated as missing (the magenta fallback) — off-grid art is
+            // treated as missing (the magenta fallback) - off-grid art is
             // never silently rendered. The load side already warned +
             // degraded the geometry (loaders.zig); shipped art and other
             // prefixes are never gated (`customSpriteDimsPassGate`).
@@ -348,7 +348,7 @@ pub const TextureStore = struct {
             // `BLEND_ALPHA_PREMULTIPLY` blend mode, bilinear downsampling
             // (the 4K design space → smaller render target) blends in
             // premultiplied space, so transparent-edge pixels (RGB=0 after
-            // premultiply) contribute zero color — no dark halo. Straight-
+            // premultiply) contribute zero color - no dark halo. Straight-
             // alpha textures under a premultiplied blend render too dark, so
             // EVERY composited texture must be premultiplied. See DESIGN →
             // Platform Seam → Render target resolution (premultiplied alpha).
@@ -366,7 +366,7 @@ pub const TextureStore = struct {
 
     /// Build and cache the OUTER edge-outline mask for `sprite_id` at
     /// `band_source_pixels` (the scale-compensated band). Re-reads the
-    /// asset bytes and decodes — outlines are requested for few sprites (a
+    /// asset bytes and decodes - outlines are requested for few sprites (a
     /// handful of UI icons), so a second read per outlined sprite is far
     /// cheaper than holding decoded images for every sprite. Caches null on
     /// miss/failure. Idempotent via `outline_cache` presence. The stored
@@ -480,13 +480,13 @@ pub const TextureStore = struct {
 
     /// Build a white-opaque edge-outline mask. OUTER: transparent pixels
     /// within `thickness` (Euclidean) of an opaque pixel become white; opaque
-    /// pixels stay transparent — a halo just OUTSIDE the silhouette, so the
-    /// sprite's own art is never overpainted. INNER: the morphological dual —
+    /// pixels stay transparent - a halo just OUTSIDE the silhouette, so the
+    /// sprite's own art is never overpainted. INNER: the morphological dual -
     /// opaque pixels within `thickness` of a transparent pixel become white;
-    /// transparent pixels stay transparent — a rim just INSIDE the silhouette,
+    /// transparent pixels stay transparent - a rim just INSIDE the silhouette,
     /// used by the occlusion inset to trace an occluded entity's edge over a
     /// decoration. Dilation uses a DISK structuring element (offsets with
-    /// dx²+dy² ≤ t²), which is not separable — a single 2D pass,
+    /// dx²+dy² ≤ t²), which is not separable - a single 2D pass,
     /// O(|band pixels| × |disk|), instead of the square (Chebyshev) SE's
     /// O(w·h·2t) separable path. The mask is cached per sprite (built once),
     /// so the higher cost is amortized; the payoff is smoother 45° corners
@@ -540,7 +540,7 @@ pub const TextureStore = struct {
 
         // Disk structuring element: the set of (dx, dy) offsets within
         // Euclidean radius `thickness` (dx²+dy² ≤ t²). Built once per call;
-        // |disk| ≈ π·t² (~217 offsets at t=8). The (0,0) offset is skipped —
+        // |disk| ≈ π·t² (~217 offsets at t=8). The (0,0) offset is skipped -
         // a band-eligible pixel matches `band_val`, so it can never itself be
         // a `dilate_val` source hit.
         const t = thickness;
@@ -609,7 +609,7 @@ pub const TextureStore = struct {
     }
 };
 
-/// Generate a texture's mip chain and switch it to trilinear filtering —
+/// Generate a texture's mip chain and switch it to trilinear filtering -
 /// the fix for harsh sprite edges at zooms below 1:1. Bilinear-only
 /// minification reads just the 2x2 texels nearest each sample point:
 /// correct at an aligned 2:1 (it degrades into a box filter), but past
@@ -623,10 +623,10 @@ pub const TextureStore = struct {
 /// built GPU-side once at load; magnified/1:1 draws still sample the base
 /// level, so nothing sharp gets blurred. Apply to EVERY sprite-side
 /// texture (the TextureStore load sites cover shipped, shadowed, and
-/// custom-mission art uniformly) — NOT to the SDF font atlas (a distance
+/// custom-mission art uniformly) - NOT to the SDF font atlas (a distance
 /// field box-filtered between levels would move glyph edges; it stays
 /// bilinear) or the render-target blit texture (a <=2:1 downscale per
-/// frame; per-frame mip generation would cost for no visible gain — it
+/// frame; per-frame mip generation would cost for no visible gain - it
 /// stays bilinear). See DESIGN → Platform Seam → Sprite-mipmap smoothing.
 fn enableTrilinearMipmaps(texture: *rl.Texture2D) void {
     rl.genTextureMipmaps(texture);
@@ -636,7 +636,7 @@ fn enableTrilinearMipmaps(texture: *rl.Texture2D) void {
 /// Premultiply RGB by alpha in-place (for `BLEND_ALPHA_PREMULTIPLY`).
 /// For each pixel: r = r*a/255, g = g*a/255, b = b*a/255 (alpha
 /// unchanged). With premultiplied textures, bilinear downsampling blends
-/// in premultiplied space — transparent-edge pixels (RGB=0) contribute
+/// in premultiplied space - transparent-edge pixels (RGB=0) contribute
 /// zero color, killing the dark halo straight-alpha textures show when
 /// downscaled. The image MUST be `.uncompressed_r8g8b8a8` (convert first).
 /// See DESIGN → Platform Seam → Render target resolution (premultiplied

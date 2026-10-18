@@ -1,7 +1,7 @@
 //! Event-stack push utilities. `pushEvents` appends machinery events to
-//! `GameState.event_stack` (LIFO — the last pushed processes first);
+//! `GameState.event_stack` (LIFO - the last pushed processes first);
 //! `pushPlayerAction` is the compile-time gate input handlers go through
-//! (they may only push `PlayerInputEvent`s — the orchestrator convention,
+//! (they may only push `PlayerInputEvent`s - the orchestrator convention,
 //! see events.zig); `pushPlayerSkillUse` pushes the one player_use_skill
 //! orchestrator. Kept apart from the handlers so input_handlers, main.zig,
 //! the skill helpers, and the handler tests can push without importing the
@@ -61,7 +61,7 @@ pub fn pushEvents(
     current.event_stack = combined;
 }
 
-/// Push a player-input event (the ONLY kind input handlers may push — see
+/// Push a player-input event (the ONLY kind input handlers may push - see
 /// `PlayerInputEvent` in events.zig). This wrapper is the compile-time gate:
 /// input handlers call this instead of `pushEvents`, so they can't push
 /// machinery events. The handler for a `PlayerInputEvent` may push machinery

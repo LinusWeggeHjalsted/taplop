@@ -1,6 +1,6 @@
 //! The in-game middle panels: inventory (grid + material sidebar +
 //! salvage region), gear (equipped slots + stat sidebar), skills (the
-//! learned-skills grid), and the read-only entity inspect — plus the
+//! learned-skills grid), and the read-only entity inspect - plus the
 //! shared slot-content support (slotContentSize/slotContentIcon/
 //! gearSlotItem) and the player-entity accessor used by the view.
 
@@ -85,7 +85,7 @@ pub fn slotContentSize(ref: SlotRef) i32 {
 
 /// The content icon for a slot ref, resolved against the live player entity
 /// (inventory/gear/skill-bar contents) or the skill-id tag (learned-skill
-/// pool). Returns null for an empty slot — the caller must not start a drag
+/// pool). Returns null for an empty slot - the caller must not start a drag
 /// from an empty slot. This is the "what is actually being dragged" lookup,
 /// distinct from a slot element's `icon_sprite_id` (which is the frame
 /// background, always present).
@@ -129,7 +129,7 @@ pub fn buildInventoryPanel(
     inventory: types.Inventory,
     materials: types.Materials,
     learned_skills: []const types.SkillId,
-    /// The player's equipped gear — baseline for item-tooltip stat
+    /// The player's equipped gear - baseline for item-tooltip stat
     /// comparisons. Null suppresses them.
     equipped: ?EquippedGear,
     active_theme: types.ActiveColorTheme,
@@ -137,7 +137,7 @@ pub fn buildInventoryPanel(
     /// suppressed on the source slot so the item reads as "in flight"
     /// (shown only as the drag ghost following the pointer). The frame +
     /// tooltip still emit (the tooltip is globally suppressed while a drag
-    /// is active — see view.zig — so it's moot here, but the frame keeps
+    /// is active - see view.zig - so it's moot here, but the frame keeps
     /// the slot's hit-test identity intact).
     drag_source: ?SlotRef,
     /// Held keyboard modifiers this frame. Drives the salvage-tool indicator
@@ -147,7 +147,7 @@ pub fn buildInventoryPanel(
     /// outline around the bounding box of the two corner slots.
     salvage_region: ?SalvageRegion,
 ) !void {
-    // Solid panel background — blocks input through the panel area.
+    // Solid panel background - blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
@@ -176,7 +176,7 @@ pub fn buildInventoryPanel(
         // can resolve which slot was acted on (drag/drop + click intents).
         // When the slot holds an item, the tooltip rides on the frame: the
         // item Image on top is non-blocking, so `tooltipAt` falls through to
-        // the Slot beneath (the blocking surface) — one tooltip target per
+        // the Slot beneath (the blocking surface) - one tooltip target per
         // slot.
         const occupied_slot = inventory.slots[@intCast(index)];
         const slot_tooltip: ?Tooltip = if (occupied_slot) |item|
@@ -210,7 +210,7 @@ pub fn buildInventoryPanel(
                     .blocks_input = false,
                 } });
                 // The item's stat numbers, colored by the equipped
-                // comparison (plus the unlearned-tome "!" marker) — the
+                // comparison (plus the unlearned-tome "!" marker) - the
                 // at-a-glance version of the slot tooltip's stat rows
                 // (see emitItemStatLabels).
                 try emitItemStatLabels(
@@ -230,7 +230,7 @@ pub fn buildInventoryPanel(
 
     // Material sidebar: a 128-wide column to the right of the grid
     // (`ui_gap` between them). The five material icons stack bottom-aligned
-    // — the stack's bottom edge aligns with the grid's bottom edge. Order
+    // - the stack's bottom edge aligns with the grid's bottom edge. Order
     // top-to-bottom: wood, metal, leather, cloth, knowledge, each tinted
     // with its fixed player-gradient index. Each icon carries an outlined
     // count label in its bottom-right corner.
@@ -252,7 +252,7 @@ pub fn buildInventoryPanel(
 
     // Salvage-tool indicator: top of the material sidebar column (the
     // materials are bottom-aligned, so the top of that column is empty).
-    // Display-only (no action) — it signals that Shift+drag multi-salvages.
+    // Display-only (no action) - it signals that Shift+drag multi-salvages.
     // Outlined via the programmatic sprite-silhouette highlight while Shift
     // is held so the player sees the mode is active.
     const lightest = active_theme.lightest;
@@ -358,7 +358,7 @@ pub fn buildGearPanel(
     active_theme: types.ActiveColorTheme,
     drag_source: ?SlotRef,
 ) !void {
-    // Solid panel background — blocks input through the panel area.
+    // Solid panel background - blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
@@ -418,7 +418,7 @@ pub fn buildGearPanel(
                         .color = i_color,
                         .blocks_input = false,
                     } });
-                    // The equipped item's stat numbers — plain LIGHTEST (no
+                    // The equipped item's stat numbers - plain LIGHTEST (no
                     // baseline: this gear IS the baseline, the same
                     // convention as the suppressed tooltip comparisons).
                     try emitItemStatLabels(
@@ -489,19 +489,19 @@ pub fn buildGearPanel(
 /// mirror of the player's skill bar + active effects + gear panel, tinted
 /// with the inspected entity's TEAM gradient (player gradient for team 0,
 /// enemy gradient otherwise). No slots carry a `SlotRef` and no buttons
-/// carry an `Action` — nothing is draggable or clickable; tooltips still
+/// carry an `Action` - nothing is draggable or clickable; tooltips still
 /// work on hover. Opened by right-clicking a tile with an entity (see
 /// `handleRightClickInspect` in input_handlers). See DESIGN → UI Framework
 /// → Entity inspect.
 ///
 /// Layout (top to bottom inside the panel):
-///   1. Skill bar — 4×2 grid of `slot_size` (256) slots, slots 1-4 top row,
+///   1. Skill bar - 4×2 grid of `slot_size` (256) slots, slots 1-4 top row,
 ///      5-8 bottom. Empty slots show the diamond marker; cooldowns show
 ///      the translucent wash + remaining-turns number.
-///   2. Active effects — `small_icon_size` (128) icons flowing left→right
+///   2. Active effects - `small_icon_size` (128) icons flowing left→right
 ///      then wrapping down, max 8 columns. Omitted entirely when the entity
 ///      has no active effects.
-///   3. Gear mirror — weapons (main/off hand) top-left, amulet→coat→gloves→
+///   3. Gear mirror - weapons (main/off hand) top-left, amulet→coat→gloves→
 ///      pants→boots stacked below the main-hand, combat-stat column flush
 ///      against the gear stack's right edge (under the off-hand). All 128×128 (`inventory_slot_size`).
 pub fn buildEntityInspectPanel(
@@ -511,7 +511,7 @@ pub fn buildEntityInspectPanel(
     bounds: Rectangle,
     entity: Entity,
     learned_skills: []const types.SkillId,
-    /// The PLAYER's equipped gear — baseline for the inspected entity's
+    /// The PLAYER's equipped gear - baseline for the inspected entity's
     /// gear-tooltip comparisons (dropped enemy gear is directly usable,
     /// so the comparison is actionable). Null (inspecting the player
     /// itself, or no player) suppresses comparisons.
@@ -519,7 +519,7 @@ pub fn buildEntityInspectPanel(
     active_theme: types.ActiveColorTheme,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
 ) !void {
-    // Solid panel background — blocks input through the panel area.
+    // Solid panel background - blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
@@ -557,7 +557,7 @@ pub fn buildEntityInspectPanel(
         const cell = skill_grid.cell(@intCast(index));
         if (maybe_skill) |skill_id| {
             const definition = lookups.getSkillDefinition(skill_id) orelse {
-                // Unknown skill id — render the empty marker rather than crash.
+                // Unknown skill id - render the empty marker rather than crash.
                 try elements.append(allocator, .{ .image = .{
                     .sprite_id = "ui/skill_slot_empty",
                     .screen_position = cell.position(),
@@ -597,7 +597,7 @@ pub fn buildEntityInspectPanel(
                 try emitCenteredNumber(elements, allocator, font_metrics, cell, cooldown, cooldown_font_size);
             }
         } else {
-            // Empty slot — diamond marker, same as the skill bar.
+            // Empty slot - diamond marker, same as the skill bar.
             try elements.append(allocator, .{ .image = .{
                 .sprite_id = "ui/skill_slot_empty",
                 .screen_position = cell.position(),
@@ -695,7 +695,7 @@ pub fn buildEntityInspectPanel(
                 // tooltip's comparisons: the PLAYER's equipped gear when
                 // inspecting an enemy (dropped enemy gear is directly
                 // usable), plain lightest when inspecting the player (no
-                // baseline — its own gear).
+                // baseline - its own gear).
                 try emitItemStatLabels(
                     elems,
                     alloc,
@@ -728,7 +728,7 @@ pub fn buildEntityInspectPanel(
     const stat_line_height: i32 = gear_stat_font_size + 16;
     // The inspect stat column leads with the entity's team, then its
     // live combat state (current health, momentum, aggro range), then
-    // the effective gear stats — the player gear panel shares only the
+    // the effective gear stats - the player gear panel shares only the
     // gear-stat tail.
     const entity_stat_labels = [_][]const u8{ "Team", "Current Health", "Momentum", "Aggro Range" } ++ gear_stat_labels;
     const main_damage = if (entity.main_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
@@ -761,11 +761,11 @@ pub fn buildEntityInspectPanel(
 
 /// Skills browser panel: a 9-slice background, then a 4-wide grid of
 /// `slot_size` (256) skill slots filling downward from the top-left, one
-/// per learned skill in `learned_skills` order (parsed order — no
+/// per learned skill in `learned_skills` order (parsed order - no
 /// sorting/grouping/search yet). Each slot is a `ui/skill_button` frame
 /// tinted with player-gradient index 3 carrying `ref = .{ .learned_skill =
 /// ... }` (drag source/drop target) + a non-blocking `skills/<tag>` icon
-/// overlay tinted with index 1, mirroring the skill bar. No `action` —
+/// overlay tinted with index 1, mirroring the skill bar. No `action` -
 /// clicking a browser entry doesn't fire a skill (it's not on the bar);
 /// drag-to-bar is not wired (see TODO → UI Framework). The drag source's
 /// icon is suppressed ("in flight"), matching inventory/gear.
@@ -774,7 +774,7 @@ pub fn buildEntityInspectPanel(
 /// whole rows within the visible height are emitted. A scrollbar (track +
 /// proportional thumb) sits in the right `ui_gap` margin when the skill
 /// count exceeds the visible rows. `scroll_offset` (in rows) is clamped to
-/// `[0, max_scroll_row]` here — the authoritative clamp, since only the
+/// `[0, max_scroll_row]` here - the authoritative clamp, since only the
 /// view knows `max_scroll_row`.
 pub fn buildSkillsPanel(
     elements: *UiElementList,
@@ -791,7 +791,7 @@ pub fn buildSkillsPanel(
     /// drop target.
     drag_source: ?SlotRef,
 ) !void {
-    // Solid panel background — blocks input through the panel area.
+    // Solid panel background - blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
@@ -827,7 +827,7 @@ pub fn buildSkillsPanel(
     };
 
     // Emit only the fully-visible rows, drawn at the TOP of the grid region
-    // (view-relative positions — the scrollbar thumb conveys the scroll
+    // (view-relative positions - the scrollbar thumb conveys the scroll
     // position, same pattern as `buildErrorPopup`'s body window). A row that
     // wouldn't fully fit is not emitted (no half-skills).
     const visible_row_count = @min(visible_rows, @max(@as(i32, 0), total_rows - first_row));
@@ -845,7 +845,7 @@ pub fn buildSkillsPanel(
             // as "in flight" (shown only as the drag ghost following the
             // pointer). The frame keeps its ref so the slot stays a drop
             // target for a same-slot drop (a no-op). Mirrors `emitSkillButton`'s
-            // drag-source / empty handling. No tooltip — globally suppressed
+            // drag-source / empty handling. No tooltip - globally suppressed
             // while a drag is active anyway (see view.zig).
             if (is_drag_source) {
                 try elements.append(allocator, .{ .slot = .{
@@ -918,13 +918,13 @@ pub fn buildSkillsPanel(
 
 test "buildInventoryPanel: item stat numbers in the icon corners, colored by the equipped comparison" {
     // The stat numbers ride the item icons (see emitItemStatLabels): the
-    // stat VALUE (not the signed difference — the tooltip carries that),
+    // stat VALUE (not the signed difference - the tooltip carries that),
     // material-count label recipe (font size + inset + outlined,
     // non-blocking so the slot keeps its tooltip). An unlearned skill
     // tome wears a green outlined "!" (a learned one shows nothing).
     // Colors: green while
     // better than equipped, red while worse, lightest while equal; a
-    // weapon compares INCLUSIVELY against both hands — green while ≥ each
+    // weapon compares INCLUSIVELY against both hands - green while ≥ each
     // hand and strictly better than at least one, red while ≤ each hand
     // and strictly worse than at least one, lightest when equal to BOTH
     // hands (a pure sidegrade) or strictly between them. Expected
@@ -963,22 +963,22 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // Slot 0: weapon 7 beats both hands → green.
     inventory.slots[0] = .{ .weapon = .{ .weapon_damage = 7 } };
     // Slot 1: weapon 5 EQUALS the main hand, beats the off hand → green
-    // (the inclusive rule: ≥ each hand — a weapon matching your best
+    // (the inclusive rule: ≥ each hand - a weapon matching your best
     // hand is still green, it upgrades the other).
     inventory.slots[1] = .{ .weapon = .{ .weapon_damage = 5 } };
     // Slot 2: weapon 4 beats the off hand (3), strictly loses to the main
     // (5) → lightest (strictly between the two hands: no clear upgrade).
     inventory.slots[2] = .{ .weapon = .{ .weapon_damage = 4 } };
-    // Slot 3: boots — health 4 equal → lightest (bottom-left), speed 2 > 1 →
+    // Slot 3: boots - health 4 equal → lightest (bottom-left), speed 2 > 1 →
     // green (bottom-right).
     inventory.slots[3] = .{ .boots = .{ .health_bonus = 4, .speed_bonus = 2 } };
     // Slot 4: amulet 3 vs nothing equipped (0) → green.
     inventory.slots[4] = .{ .amulet = .{ .spell_damage = 3 } };
     // Slot 5: skill tome (default skill .slice, NOT in the empty learned
-    // set) — a green outlined "!" bottom-left, no stat numbers.
+    // set) - a green outlined "!" bottom-left, no stat numbers.
     inventory.slots[5] = .{ .skill_tome = .{} };
     // Slot 6: weapon 3 EQUALS the off hand, strictly loses to the main →
-    // red (the inclusive red: ≤ each hand — no hand is an upgrade).
+    // red (the inclusive red: ≤ each hand - no hand is an upgrade).
     inventory.slots[6] = .{ .weapon = .{ .weapon_damage = 3 } };
     // Slot 7: weapon 2 strictly loses to both → red.
     inventory.slots[7] = .{ .weapon = .{ .weapon_damage = 2 } };
@@ -1016,7 +1016,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         }
     }.call;
     // Expected label positions for the two corners (the emitter's own
-    // formula — the bottom-right one measures the label's width through
+    // formula - the bottom-right one measures the label's width through
     // the same metrics).
     const bottomLeft = struct {
         fn call(cell: ScreenPosition) ScreenPosition {
@@ -1086,7 +1086,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     // The amulet vs nothing equipped (baseline 0) → green.
     try assertLabel(elements.items, "3", bottomLeft(slotCell(elements.items, 4)), positive_color);
     // The UNLEARNED skill tome: a green outlined "!" bottom-left (the
-    // learned set is empty — see the tie pass for the learned case).
+    // learned set is empty - see the tie pass for the learned case).
     try assertLabel(elements.items, "!", bottomLeft(slotCell(elements.items, 5)), positive_color);
 
     // Census: the stat numbers over the item GRID are exactly the nine
@@ -1110,7 +1110,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     }
 
     // The FULL-TIE case (weapon 5 vs hands 5/5): swapping changes
-    // nothing — lightest, not green (the inclusive ≥ rule needs strictly
+    // nothing - lightest, not green (the inclusive ≥ rule needs strictly
     // better than at least one hand).
     {
         var elements_tie: UiElementList = .empty;
@@ -1135,7 +1135,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
         try assertLabel(elements_tie.items, "5", bottomLeft(slotCell(elements_tie.items, 1)), lightest);
         // And strictly-below-both stays red under the inclusive operators.
         try assertLabel(elements_tie.items, "4", bottomLeft(slotCell(elements_tie.items, 2)), negative_color);
-        // A LEARNED skill tome (slice ∈ learned) shows NO marker —
+        // A LEARNED skill tome (slice ∈ learned) shows NO marker -
         // nothing in the grid reads "!".
         for (elements_tie.items) |element| switch (element) {
             .text_label => |label| try std.testing.expect(!std.mem.eql(u8, label.text, "!")),
@@ -1144,8 +1144,8 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     }
 
     // Drag-source suppression: the dragged slot's item reads as in
-    // flight — icon + stat numbers + the tome marker all suppressed
-    // (two fewer: the boots' health + speed — 9 → 7).
+    // flight - icon + stat numbers + the tome marker all suppressed
+    // (two fewer: the boots' health + speed - 9 → 7).
     {
         var elements_dragged: UiElementList = .empty;
         try buildInventoryPanel(
@@ -1181,7 +1181,7 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
 
 test "buildGearPanel: equipped items wear plain-lightest stat numbers, suppressed on the drag source" {
     // The gear panel's own items have NO comparison baseline (this gear IS
-    // the baseline — the same convention as its suppressed tooltip
+    // the baseline - the same convention as its suppressed tooltip
     // comparisons), so every stat number renders plain lightest. Same
     // recipe as the inventory numbers (corners, font size, outline,
     // non-blocking), suppressed on the drag source with the icon.
@@ -1275,7 +1275,7 @@ test "buildGearPanel: equipped items wear plain-lightest stat numbers, suppresse
         }
     }.call;
 
-    // Plain lightest — no baseline, this gear IS the baseline.
+    // Plain lightest - no baseline, this gear IS the baseline.
     try assertLabel(elements.items, "5", bottomLeft(gearCell(elements.items, .main_hand)), lightest);
     try assertLabel(elements.items, "4", bottomLeft(gearCell(elements.items, .coat)), lightest);
     try assertLabel(
@@ -1345,7 +1345,7 @@ test "buildEntityInspectPanel: item stat numbers colored against the player's eq
     enemy.main_hand_weapon = .{ .weapon_damage = 6 };
     enemy.coat = .{ .health_bonus = 2, .defense_bonus = 3 };
 
-    // The player's equipped gear — the baseline: main hand 5, off hand 3,
+    // The player's equipped gear - the baseline: main hand 5, off hand 3,
     // coat (health 4, defense 1).
     const player_equipped = EquippedGear{
         .main_hand_weapon = .{ .weapon_damage = 5 },
@@ -1481,7 +1481,7 @@ test "buildEntityInspectPanel: item stat numbers colored against the player's eq
     }
 }
 
-test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {
+test "buildSkillsPanel: few skills - one row, slots + icons, no scrollbar" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -1516,7 +1516,7 @@ test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {
     };
 }
 
-test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitted, no half-skills" {
+test "buildSkillsPanel: overflow - scrollbar present, only visible rows emitted, no half-skills" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -1552,7 +1552,7 @@ test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitte
     try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
 
     // The over-scroll clamped somewhere in range (not 100), and the
-    // LAST row is visible at the max — the last learned skill's slot
+    // LAST row is visible at the max - the last learned skill's slot
     // renders (max scroll reaches the end).
     try std.testing.expect(scroll_offset >= 0 and scroll_offset < 100);
     var last_skill_slot_seen = false;
@@ -1682,7 +1682,7 @@ test "buildEntityInspectPanel: player entity emits skill + gear slots, read-only
     var elements: UiElementList = .empty;
     try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
-    // No .slot elements and no gameplay-clickable .button — everything is
+    // No .slot elements and no gameplay-clickable .button - everything is
     // read-only .image, except the panel-header close button (a .button
     // carrying the toggle_entity_inspect action).
     for (elements.items) |element| switch (element) {
@@ -1837,7 +1837,7 @@ test "buildEntityInspectPanel: cooldown overlay + number when skill on cooldown"
     try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // A cooldown overlay is a translucent (alpha 128) skill_button image on
-    // top of the filled slot. Count them — exactly one skill is on cooldown.
+    // top of the filled slot. Count them - exactly one skill is on cooldown.
     var overlay_count: usize = 0;
     for (elements.items) |element| switch (element) {
         .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button") and img.alpha == 128) {

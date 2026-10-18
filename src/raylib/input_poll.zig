@@ -1,6 +1,6 @@
 //! Input polling for the raylib backend: the key/mouse mapping tables and
 //! the once-per-frame edge/position/char-queue read. The poll ORDER
-//! invariant (read edges first, pump the OS queue last) lives here — see
+//! invariant (read edges first, pump the OS queue last) lives here - see
 //! DESIGN → Platform Seam (raylib). The letterbox transform is passed in by
 //! the backend (window math stays with the window owner in backend.zig);
 //! the scratch buffers are backend fields so their lifetime stays visible
@@ -22,14 +22,14 @@ const KeyMapping = struct {
 };
 
 const shared_key_mappings = [_]KeyMapping{
-    // The FULL W3C KeyboardEvent.code id set raylib can report — the whole
+    // The FULL W3C KeyboardEvent.code id set raylib can report - the whole
     // raylib KeyboardKey enum except the super keys (mac-only, mapped to
-    // the Control ids in mac_key_mappings — see its comment). The ids match
+    // the Control ids in mac_key_mappings - see its comment). The ids match
     // the W3C code names (KeyZ, Digit1, BracketLeft, NumpadEnter, ...) so a
     // binding in data/default_settings.txt or a captured rebind can name
     // ANY physical key without a backend edit. Unbound-but-mapped keys
     // reach translateInput and match nothing (checkAction only matches
-    // bound inputs) — they're inert. Poll cost: one isKeyPressed per table
+    // bound inputs) - they're inert. Poll cost: one isKeyPressed per table
     // entry per frame (~110 entries).
     //
     // Modifiers first (tracked as held keys so getModifiers can read them).
@@ -152,7 +152,7 @@ const shared_key_mappings = [_]KeyMapping{
 
 // Uniqueness guard: a duplicated key or id in the table would silently
 // shadow one binding id with another's events (each entry is polled
-// independently). Comptime — the whole table is checked at compile time;
+// independently). Comptime - the whole table is checked at compile time;
 // the mac overlay is excluded (it intentionally reuses Control ids).
 comptime {
     @setEvalBranchQuota(20_000);
@@ -171,7 +171,7 @@ comptime {
 // A table id missing from the list = `loadSettings` would warn a REAL
 // binding as dead (the missing-Escape regression's failure mode); a list
 // entry with no table row = a binding the loader accepts but nothing can
-// ever produce (the silent dead-binding class). Comptime — checked in
+// ever produce (the silent dead-binding class). Comptime - checked in
 // every native build.
 comptime {
     @setEvalBranchQuota(200_000);
@@ -211,12 +211,12 @@ comptime {
 
 /// raylib keys mapped to the game's binding ids on macOS only. Mac
 /// convention is Command for app shortcuts, so the super keys report as the
-/// Control ids — every `ControlLeft` binding (undo, save, select-all, …)
+/// Control ids - every `ControlLeft` binding (undo, save, select-all, ...)
 /// fires on Cmd, and the physical ctrl keys keep working too. The ids
 /// flowing into translateInput stay platform-agnostic (settings files ship
 /// one binding set for all platforms); the convention lives HERE, at the
 /// backend key table. Held-key tracking is per-id, so holding Cmd + left
-/// ctrl and releasing one drops the modifier early — an irrelevant corner.
+/// ctrl and releasing one drops the modifier early - an irrelevant corner.
 const mac_key_mappings = [_]KeyMapping{
     .{ .key = .left_super, .id = "ControlLeft" },
     .{ .key = .right_super, .id = "ControlRight" },
@@ -240,13 +240,13 @@ const mouse_mappings = [_]MouseMapping{
 };
 
 /// Upper bound on events emitted in a single frame. Each mapped key/button
-/// contributes at most ONE event per frame (down or up — never both, the
+/// contributes at most ONE event per frame (down or up - never both, the
 /// poll loop uses `else if`), so `key_mappings.len + mouse_mappings.len`
 /// bounds the edge events. The non-edge events (always-one mouse-move, the
 /// mouse-scroll wheel delta) add `non_edge_events_per_frame`. Adding a new
 /// mapping array (gamepad, touch) only needs to be added to the sum below;
 /// adding a new non-edge event source bumps `non_edge_events_per_frame`.
-/// No manual bumping on per-source changes — the formula tracks the counts.
+/// No manual bumping on per-source changes - the formula tracks the counts.
 const non_edge_events_per_frame: usize = 2; // mouse-move + mouse-scroll
 pub const max_events_per_frame = key_mappings.len + mouse_mappings.len + non_edge_events_per_frame;
 
@@ -271,7 +271,7 @@ pub fn poll(
     // (advancing the "previous" snapshot). IsMouseButtonPressed /
     // IsKeyPressed check current vs previous. On native, PollInputEvents
     // copies THEN calls glfwPollEvents() (which fires callbacks that update
-    // current) — so pumping-then-reading works (the copy sees the old
+    // current) - so pumping-then-reading works (the copy sees the old
     // state, game code sees the new state). But on web, events arrive
     // asynchronously via JS callbacks BETWEEN frames (current is already
     // set when we arrive). Pumping first would copy previous = current,
@@ -315,8 +315,8 @@ pub fn poll(
     }
 
     // Mouse wheel: accumulated scroll delta since last frame (positive =
-    // scroll up = zoom in). Not an edge — raylib accumulates it internally
-    // and resets on pollInputEvents — so reading before the pump is fine
+    // scroll up = zoom in). Not an edge - raylib accumulates it internally
+    // and resets on pollInputEvents - so reading before the pump is fine
     // (same as the mouse position read above).
     const wheel = rl.getMouseWheelMove();
     if (wheel != 0) {
@@ -325,7 +325,7 @@ pub fn poll(
     }
 
     // Text characters: drain the platform char queue (the text-input /
-    // IME path — distinct from key edges) into UTF-8. Drained
+    // IME path - distinct from key edges) into UTF-8. Drained
     // unconditionally so the queue can't back up between frames;
     // consumers only read it while a text field is focused. Read before
     // the pump like the wheel (the queue accumulates between polls).
@@ -334,7 +334,7 @@ pub fn poll(
         const codepoint = rl.getCharPressed();
         if (codepoint <= 0) break;
         // Out-of-range values (control junk from the platform) are
-        // skipped, not fatal — `@intCast` to u21 would panic otherwise.
+        // skipped, not fatal - `@intCast` to u21 would panic otherwise.
         if (codepoint > 0x10FFFF) continue;
         var encoded: [4]u8 = undefined;
         const length = std.unicode.utf8Encode(@intCast(codepoint), &encoded) catch continue;

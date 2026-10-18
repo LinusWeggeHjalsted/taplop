@@ -1,7 +1,7 @@
 //! Build-time SDF font-atlas generator. Runs as a HOST tool during `zig
 //! build` (wired in build.zig): reads the embedded game TTF, bakes the SDF
 //! glyph atlas via raylib's own `loadFontData(.sdf)` + `genImageFontAtlas`
-//! (the exact code path the runtime used previously — metrics can't drift),
+//! (the exact code path the runtime used previously - metrics can't drift),
 //! and serializes atlas pixels + per-glyph metrics into a binary blob that
 //! `src/raylib/text.zig` parses at init (`initSdfTextOutline`). The SDF
 //! encoding range (padding 22 / dist scale 6.0) comes from the
@@ -15,11 +15,11 @@ const std = @import("std");
 const rl = @import("raylib");
 const font_codepoints = @import("font_codepoints");
 
-/// Must match `font_base_size` in src/raylib/text.zig — the atlas is baked at
+/// Must match `font_base_size` in src/raylib/text.zig - the atlas is baked at
 /// this size and the runtime scales from it. Validated at blob-parse time.
 const font_base_size: i32 = 128;
 
-/// Blob format version — bump on any format change (the runtime hard-gates
+/// Blob format version - bump on any format change (the runtime hard-gates
 /// on this + the magic).
 const blob_format_version: u32 = 1;
 
@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     defer allocator.free(ttf_bytes);
 
     // Bake SDF glyphs for EXACTLY the codepoints the font's cmap maps (see
-    // src/font_codepoints.zig) — the full-coverage set, not raylib's default
+    // src/font_codepoints.zig) - the full-coverage set, not raylib's default
     // 95-ASCII bake. A set over the shared atlas bound is a build-time
     // failure (a deliberate font swap must revisit the bound, not silently
     // bake an enormous atlas).
@@ -76,7 +76,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     const recs = packed_atlas[1];
 
     // GenImageFontAtlas returns GRAY_ALPHA (gray=255, alpha=SDF distance);
-    // serialize just the alpha channel — the runtime reconstructs a
+    // serialize just the alpha channel - the runtime reconstructs a
     // grayscale image from it (halves blob size + VRAM texture).
     if (atlas_image.format != .uncompressed_gray_alpha) @panic("sdf_atlas_generator: unexpected atlas format");
     const gray_alpha: []const u8 = @as([*]const u8, @ptrCast(atlas_image.data))[0 .. @as(usize, @intCast(atlas_image.width * atlas_image.height)) * 2];

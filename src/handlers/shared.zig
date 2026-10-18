@@ -3,7 +3,7 @@
 //! handlers (editor/handlers.zig): entity accessors, the recoverable
 //! reconstruction-read failure (popup + revert flag), config-key
 //! validation + warning surfacing, the campaign load, and the gameplay
-//! start batch. A policy layer over state.zig's history machinery —
+//! start batch. A policy layer over state.zig's history machinery -
 //! imports nothing back from the handlers.
 
 const std = @import("std");
@@ -26,7 +26,7 @@ const pushEvents = event_push.pushEvents;
 /// fails during LIVE play. Sets the user-facing pending_error (the
 /// descriptive `message`, duped into history_arena so it survives the
 /// revert) + the `load_error` flag (the drain loop checks it and reverts).
-/// During replay, panics instead (fail-fast — a reconstruction-read
+/// During replay, panics instead (fail-fast - a reconstruction-read
 /// failure during replay is unexpected; in-session replay has cached bytes,
 /// and cross-session bundle replay serves the embedded copies).
 /// See DESIGN → Error Handling → three contexts.
@@ -56,7 +56,7 @@ pub fn surfaceWarnings(
 }
 
 /// Run key validation on `sections` and, if any unknown keys are found,
-/// surface them as a pending_error popup. Advisory — the load continues
+/// surface them as a pending_error popup. Advisory - the load continues
 /// regardless (unknown keys are dropped, not fatal). Gated on !replaying
 /// so undo/redo doesn't re-surface warnings from the recording. See AGENTS
 /// → Error Handling → key validation.
@@ -142,11 +142,11 @@ pub fn loadCampaignAndPushHub(
 /// Push the gameplay start batch for a freshly-loaded level: player sync
 /// (build_player_from_data, runs first) + per-entity aggro checks + the
 /// player's turn_start (runs last). Shared by start_level (normal gameplay
-/// AND validation runs — sync_player=true — the level's bare player entity
+/// AND validation runs - sync_player=true - the level's bare player entity
 /// gets its loadout from PlayerData; a validation run's player_data was
 /// built from the saved player.txt at start_validation, and
 /// playerLoadoutEntity maps the same field set, so the sync round-trips
-/// the loadout identically) and start_playtest (editor, sync_player=false —
+/// the loadout identically) and start_playtest (editor, sync_player=false -
 /// the player is already fully instantiated from editor.player_def, so
 /// build_player_from_data would clobber it with the campaign's PlayerData).
 pub fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sync_player: bool) void {
@@ -156,11 +156,11 @@ pub fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator
         .entity_index = 0,
     } } }) catch @panic("failed to append turn_start");
     // Aggro check: one event scans every inactive entity against its own
-    // aggro_range. No `check_level_end` at level start — the player spawn
+    // aggro_range. No `check_level_end` at level start - the player spawn
     // (`!`) and the level end (`=`) are always different tiles.
     start_events.append(allocator, .{ .sub_level_event = .{ .aggro_check = .{} } }) catch
         @panic("failed to append aggro_check event");
-    // Player sync on top (processed first) — only for normal gameplay.
+    // Player sync on top (processed first) - only for normal gameplay.
     if (sync_player) {
         start_events.append(allocator, .{ .super_event = .{ .build_player_from_data = .{
             .entity_index = 0,

@@ -2,7 +2,7 @@
 //! (populated vs empty PlayerData branches) and the autosave push on
 //! `end_level` / `end_hub` (the write fires after the player-entity →
 //! PlayerData sync, before the continuation). The disk-write itself
-//! (`write_save` side effect) is `!replaying`-gated and not exercised here —
+//! (`write_save` side effect) is `!replaying`-gated and not exercised here -
 //! these tests inspect the event stack the orchestrators push, not the file
 //! write, so they don't touch disk. See DESIGN → File System & IO (autosave).
 
@@ -28,7 +28,7 @@ const three_by_three = [_]Vector2{
 };
 
 // `player_continue` with populated PlayerData resumes directly from in-memory
-// data — no file read. loadCampaignAndPushHub pushes start_hub, so after
+// data - no file read. loadCampaignAndPushHub pushes start_hub, so after
 // runToIdle the screen is the hub.
 test "player_continue: populated PlayerData resumes at current_hub" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -80,7 +80,7 @@ test "player_continue: empty PlayerData pushes load_save on the autosave" {
 }
 
 // `player_continue` (empty branch) when the autosave is MISSING must be
-// recoverable — popup + revert, not a crash. The harness FileSource uses cwd
+// recoverable - popup + revert, not a crash. The harness FileSource uses cwd
 // as the persistent dir, and there is no `saves/autosave.txt` in the project
 // root, so readReconstructionFile returns FileNotFound (now propagated as an
 // error instead of panicking). load_save catches it → failReconstructionRead
@@ -102,7 +102,7 @@ test "player_continue: missing autosave is recoverable (popup + hide Continue)" 
     );
     // Drain the orchestrator + the pushed load_save. load_save's read fails →
     // failReconstructionRead sets load_error and returns. Stop on load_error
-    // (runToIdle would panic — it asserts no load_error for valid test content).
+    // (runToIdle would panic - it asserts no load_error for valid test content).
     while (history.current_state.event_stack.len > 0) {
         event_handlers.processEvent(&history);
         if (history.load_error) break;
@@ -158,7 +158,7 @@ test "end_hub: pushes build_data_from_player then write_save on the autosave" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // A hub context: screen = hub with a minimal hub loaded is overkill here —
+    // A hub context: screen = hub with a minimal hub loaded is overkill here -
     // end_hub doesn't read hub fields, it only pushes the sync + autosave. Use
     // a main-menu start state and push end_hub directly.
     var history = harness.newHistory(null);
@@ -217,9 +217,9 @@ test "save_game: pushes timestamped write + autosave write after sync" {
     try testing.expectEqualStrings(writers.autosave_path, autosave.meta_event.write_save.save_path);
 }
 
-// `export_game` (the autosave half — the zip + download are an input-path
+// `export_game` (the autosave half - the zip + download are an input-path
 // side effect, not an event): with a level live, the orchestrator pushes
-// the autosave write after the sync — mid-level progress rides in the
+// the autosave write after the sync - mid-level progress rides in the
 // exported zip. No timestamped write (Export Save's spam-free sibling).
 test "export_game: a live level pushes the autosave write after sync" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -240,7 +240,7 @@ test "export_game: a live level pushes the autosave write after sync" {
     event_handlers.processEvent(&history);
 
     // Stack after the player action was popped: [autosave, sync] (LIFO pops
-    // sync first → run order is sync, autosave write — the save_game
+    // sync first → run order is sync, autosave write - the save_game
     // ordering, minus the timestamped write).
     try testing.expectEqual(@as(usize, 2), history.current_state.event_stack.len);
     const sync = history.current_state.event_stack[1];
@@ -251,7 +251,7 @@ test "export_game: a live level pushes the autosave write after sync" {
 }
 
 // `export_game` with NO game in progress (the main-menu/options-menu
-// context): no pushes at all — the folder zip alone (the input-path side
+// context): no pushes at all - the folder zip alone (the input-path side
 // effect) is the whole export; the event stack stays empty.
 test "export_game: no game in progress pushes nothing" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -273,7 +273,7 @@ test "export_game: no game in progress pushes nothing" {
 // ───────────── backup_autosave (disk-touching, temp-dir isolated) ─────────────
 // See DESIGN → File System & IO (Autosave). These tests write real files,
 // so they use a temp-dir-backed FileSource (reassigned on the harness after
-// init) instead of the cwd-backed default — no files leak into the project
+// init) instead of the cwd-backed default - no files leak into the project
 // root. `newHistory` reads `&self.file_source` at call time, and the config
 // arrays are already loaded from embedded data, so reassigning the field
 // before `newHistory` gives the history a temp-dir source with real config.
@@ -332,7 +332,7 @@ test "backup_autosave: copies existing autosave to a timestamped backup" {
     try testing.expect(found);
 }
 
-// `backup_autosave`: when no autosave exists, the handler is a no-op — no
+// `backup_autosave`: when no autosave exists, the handler is a no-op - no
 // backup file is written. Uses the same temp-dir isolation.
 test "backup_autosave: no autosave present is a no-op" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -351,7 +351,7 @@ test "backup_autosave: no autosave present is a no-op" {
 
     // No autosave seeded. The backup handler should detect this via
     // fileExists and skip. We need a saves/ dir to exist (so openDir doesn't
-    // error in the scan) — create it by writing a dummy file then removing it.
+    // error in the scan) - create it by writing a dummy file then removing it.
     temp_dir.createDirPath(io, "saves") catch @panic("create saves dir");
 
     var history = harness.newHistory(null);
@@ -379,7 +379,7 @@ test "backup_autosave: no autosave present is a no-op" {
 // `start_new_game` must push `backup_autosave` so it runs BEFORE
 // `start_hub`'s `transitionScreen(.hub)` clears the event stack. This test
 // runs the full orchestrator to idle against a temp-dir FileSource seeded
-// with a fake autosave, then verifies a backup file appeared — the
+// with a fake autosave, then verifies a backup file appeared - the
 // regression test for the transitionScreen stack-clear bug (pushing
 // backup_autosave before loadCampaignAndPushHub left it below start_hub on
 // the stack; start_hub ran first and cleared the stack, wiping the backup).

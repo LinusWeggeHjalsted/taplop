@@ -42,7 +42,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 3 — two
+/// AI options: the weakest hostile (focus-fire) at rating 3 - two
 /// significant bonuses (2x damage + doubled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,
@@ -70,7 +70,7 @@ fn playerPrepareSkill(
 
 /// Use: attack for 2x the fully-modified off-hand damage, with the doubled
 /// converted momentum bonus folded in BEFORE the multiplier (multipliers
-/// apply last — see DESIGN → Architecture → Damage multiplier ordering;
+/// apply last - see DESIGN → Architecture → Damage multiplier ordering;
 /// see Impale for why one extra getConvertedMomentum doubles it).
 fn useSkill(
     caster_index: u32,

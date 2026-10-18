@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Unused-pub report — machine-walked truth for the minimize-pub discipline
+# Unused-pub report - machine-walked truth for the minimize-pub discipline
 # (AGENTS → Code Style). The compiler errors on unused file-private symbols,
-# but NOTHING flags an unused `pub` — dead pub scaffolding survives
+# but NOTHING flags an unused `pub` - dead pub scaffolding survives
 # redesigns (`walkingDistance`, the `ui.tile_highlight_frame_size` re-export).
-# This script walks every `pub fn/const/var` declaration under src/ — the
+# This script walks every `pub fn/const/var` declaration under src/ - the
 # src/raylib/ seam excluded (its surface is a backend interface, not the
-# game's API discipline) — and reports, per declaring file:
+# game's API discipline) - and reports, per declaring file:
 #
 #   DEAD       not referenced from ANY file, not even their own (the
 #              declaration line is the symbol's only occurrence): deletion
-#              candidates — the walkingDistance class.
+#              candidates - the walkingDistance class.
 #   UNUSED     zero references outside their own file but used internally:
 #              de-pub candidates (file-private preserves the compiler's
 #              dead-code check).
@@ -23,25 +23,25 @@
 # (types, aliases) are deliberately NOT walked: types are consumed
 # without ever being named cross-file (as field types, via enum literals,
 # through namespace re-exports), so a never-named type is not a dead type
-# and word-matching cannot judge it — the dead-type class is code review's
+# and word-matching cannot judge it - the dead-type class is code review's
 # job. `src/crash_dump.zig`'s struct-member pub fns are skipped too: they
 # are zig's panic-namespace contract, installed wholesale as
 # `pub const panic = crash_dump.panic` and called by compiler-generated
 # code that never names them.
 #
 # The ui.zig facade is NOT a consumer: a src/ui/*.zig symbol's re-export
-# line in ui.zig is plumbing, not a use — and a facade decl counts as used
+# line in ui.zig is plumbing, not a use - and a facade decl counts as used
 # only when a file OUTSIDE src/ui/ names the symbol (src/ui files import
 # each other directly, never through the facade).
 #
 # Known blind spots (advisory tool, not a gate):
-# - word-match: generic names (skill, effect, damage) false-pass — the name
+# - word-match: generic names (skill, effect, damage) false-pass - the name
 #   appearing as an enum variant / field / method anywhere counts as a use.
 # - references inside string literals count; comment references do not
-#   (comments are stripped before tokenizing — a symbol only a comment
+#   (comments are stripped before tokenizing - a symbol only a comment
 #   names is reported, because comments can be stale too).
 #
-# `pub fn main` is skipped outright: zig's entry-point convention — called
+# `pub fn main` is skipped outright: zig's entry-point convention - called
 # by startup code, never referenced by imports.
 #
 # Usage: scripts/unused_pub_report.sh [--strict]
@@ -50,7 +50,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Known-legit zero-ref pub symbols, "file<TAB>symbol" — none today; the
+# Known-legit zero-ref pub symbols, "file<TAB>symbol" - none today; the
 # natural entries are externally-called entry points (emscripten callbacks).
 allowlist=""
 
@@ -62,7 +62,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 # -- corpus: every .zig in the tree as a REFERENCE source (the raylib seam
-# included — src/raylib/draw.zig consumes ui symbols; native/web entry
+# included - src/raylib/draw.zig consumes ui symbols; native/web entry
 # files consume the game API). Generated files are gitignored and only
 # exist after a build; note their absence so a fresh-clone run can't
 # silently false-flag. --
@@ -117,7 +117,7 @@ for file_index in "${!corpus[@]}"; do
                 -or '$2' "$file" || true
         fi
         # typed value consts (`pub const name: T = ...`); `=`-form consts
-        # (types/aliases) are deliberately not walked — see header
+        # (types/aliases) are deliberately not walked - see header
         rg -N --no-filename '^[[:space:]]*pub const +([A-Za-z_][A-Za-z0-9_]*):' \
             -or '$1' "$file" || true
     )
@@ -135,7 +135,7 @@ LC_ALL=C join -t$'\t' -a 1 "$tmp/decls.sorted" "$tmp/refs.sorted" \
                 path[parts[1]] = parts[2];
             }
             # per-file token occurrence counts: a symbol whose defining-file
-            # count is 1 occurs ONLY on its declaration line — DEAD.
+            # count is 1 occurs ONLY on its declaration line - DEAD.
             while ((getline line < counts) > 0) {
                 split(line, parts, "\t");
                 occurrences[parts[1] SUBSEP parts[3]] = parts[2];
@@ -180,8 +180,8 @@ unused_count=$(awk -F'\t' '$3 == "UNUSED"' "$tmp/findings.tsv" | wc -l)
 testonly_count=$(awk -F'\t' '$3 == "TEST-ONLY"' "$tmp/findings.tsv" | wc -l)
 total_decls=$(wc -l < "$tmp/decls.tsv")
 
-echo "Unused-pub report — $total_decls pub declarations walked (src/ minus the raylib seam)"
-[[ $generated_present -eq 1 ]] || echo "  note: generated .zig files absent (build first) — a reference living only in them may false-flag"
+echo "Unused-pub report - $total_decls pub declarations walked (src/ minus the raylib seam)"
+[[ $generated_present -eq 1 ]] || echo "  note: generated .zig files absent (build first) - a reference living only in them may false-flag"
 echo
 if (( dead_count > 0 )); then
     echo "DEAD (not referenced anywhere, not even their own file): $dead_count"
@@ -199,7 +199,7 @@ if (( testonly_count > 0 )); then
     echo
 fi
 if (( dead_count == 0 && unused_count == 0 && testonly_count == 0 )); then
-    echo "CLEAN — every pub symbol is referenced from at least one non-test file."
+    echo "CLEAN - every pub symbol is referenced from at least one non-test file."
 fi
 
 if [[ "${1:-}" == "--strict" ]] && (( dead_count + unused_count > 0 )); then

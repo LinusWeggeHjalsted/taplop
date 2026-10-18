@@ -37,22 +37,22 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting needed.
+/// Self-cast - no targeting needed.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: rated against the casts the +1 outgoing-duration modifier
-/// would enhance — the LIVE beneficiaries (casts that will actually fire
+/// would enhance - the LIVE beneficiaries (casts that will actually fire
 /// this turn and apply a duration): the planned ending cast if it carries
 /// a `skill_duration`, plus any off-cooldown NON-ending skill with a
 /// `skill_duration` offering a positive cast (all positive
 /// cantrips/enchantments fire this turn; a future duration cantrip or
 /// curse slots in automatically). Everything evaluates through the shared
-/// frame (ai_select.optionsFor — lingers itself is cut by the
+/// frame (ai_select.optionsFor - lingers itself is cut by the
 /// in-progress guard, mechanically excluded from its own scan). Rating =
 /// best such cast + 1, so lingers fires BEFORE them in the chain (the +1
-/// ordering rule — see DESIGN → Architecture, AI rating scale). No live
+/// ordering rule - see DESIGN → Architecture, AI rating scale). No live
 /// beneficiary → NO cast, no fallback: lingers extends nothing on its
 /// own (its own recast is outside its 2-turn window, cd 5 > duration 2).
 fn aiOptions(
@@ -68,7 +68,7 @@ fn aiOptions(
 
     var best_beneficiary: u32 = 0;
 
-    // The planned turn-ending cast — the only ending skill that fires
+    // The planned turn-ending cast - the only ending skill that fires
     // this turn. Counted only if it applies a duration the +1 lengthens.
     const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
     if (casts.ending) |plan| {
@@ -81,7 +81,7 @@ fn aiOptions(
 
     // Non-ending beneficiaries (cantrips + enchantments): every
     // positive-rated one fires this turn, so each one's best option
-    // counts. Ending skills are excluded — at most one fires, already
+    // counts. Ending skills are excluded - at most one fires, already
     // counted above via the plan.
     const slots = caster.collectSkillSlots(weapon_type_definitions);
     for (&slots) |maybe_skill_id| {
@@ -100,8 +100,8 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = caster.position, .priority = best_beneficiary + 1 });
 }
 
-/// Self-cast — target is the caster's own position.
-/// Self-cast enchantment — no tile highlighting, just push the effect creation.
+/// Self-cast - target is the caster's own position.
+/// Self-cast enchantment - no tile highlighting, just push the effect creation.
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

@@ -26,7 +26,7 @@ const text_field_capacity: usize = 128;
 /// struct, unit-tested without raylib; the input-routing layer (which
 /// knows the field kind, e.g. digits-only filtering) calls these, and
 /// `view()` renders the caret/selection from the indices. Caret and
-/// anchor always sit on CODEPOINT boundaries — never mid-multibyte.
+/// anchor always sit on CODEPOINT boundaries - never mid-multibyte.
 const TextField = struct {
     buffer: [text_field_capacity]u8 = @splat(0),
     length: usize = 0,
@@ -54,7 +54,7 @@ const TextField = struct {
 
     /// Seed the buffer with a starting value (focus loads the field's
     /// current value so editing starts from it). Truncates to capacity.
-    /// Caret at the end, no selection — the common edit-from-value start.
+    /// Caret at the end, no selection - the common edit-from-value start.
     fn loadValue(self: *TextField, value: []const u8) void {
         const accepted = @min(value.len, text_field_capacity);
         @memcpy(self.buffer[0..accepted], value[0..accepted]);
@@ -74,7 +74,7 @@ const TextField = struct {
         const accepted = @min(new_text.len, available);
         // Shift the tail to its post-insert position, then fill the gap.
         // copyBackwards: the tail moves RIGHT when accepted > removed (the
-        // regions overlap — a forward copy would read already-overwritten
+        // regions overlap - a forward copy would read already-overwritten
         // bytes); backwards is safe in both directions.
         const tail_start = start + removed;
         const tail_length = self.length - tail_start;
@@ -157,7 +157,7 @@ const TextField = struct {
     /// Byte index of the codepoint boundary the click x lands on: the
     /// first codepoint whose measured END exceeds `x` (clicking inside a
     /// glyph positions before it), or `length` when x is past the end.
-    /// Pure — the routing layer calls it with the field's measured text
+    /// Pure - the routing layer calls it with the field's measured text
     /// x-origin subtracted.
     fn caretIndexAtX(
         field_text: []const u8,
@@ -208,7 +208,7 @@ pub const TextEditState = struct {
 
 /// Begin editing a field (its UI element was clicked): seed the buffer
 /// with the field's current value so editing starts from it. Pure UiState
-/// write — the commit (not the focus) is what touches GameState.
+/// write - the commit (not the focus) is what touches GameState.
 pub fn beginTextEdit(
     ui_state: *UiState,
     field: types.TextFieldRef,
@@ -223,7 +223,7 @@ pub fn beginTextEdit(
 /// from `translateInput` (the seam that owns raw key edges + synthetic
 /// repeats) while a field is focused; returns the keyboard outcome for the
 /// caller to resolve once per frame (the field-kind commit switch lives in
-/// input_handlers — the framework stays field-agnostic). Digits-only
+/// input_handlers - the framework stays field-agnostic). Digits-only
 /// filtering for numeric fields happens HERE (the routing layer knows the
 /// field kind; the core buffer stays generic). See DESIGN → UI Framework →
 /// Text input widget.
@@ -251,7 +251,7 @@ pub fn routeTextInput(
 
     // Edit keys: real edges first, then synthetic repeats (hold-backspace).
     // Repeats never resolve (a held Enter committed on the real edge; the
-    // field is gone by the next frame's synthetic edge) — their outcomes are
+    // field is gone by the next frame's synthetic edge) - their outcomes are
     // discarded, only the buffer edits apply.
     var outcome: types.TextEditOutcome = .none;
     for (pressed_keys) |slot| {
@@ -266,7 +266,7 @@ pub fn routeTextInput(
 }
 
 /// Apply one edit key to the buffer; a non-null return is a resolution key
-/// (Enter commits, Escape discards). Any other key is ignored here — its
+/// (Enter commits, Escape discards). Any other key is ignored here - its
 /// binding was suppressed at the translateInput level.
 fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?types.TextEditOutcome {
     const buffer = &text_edit.buffer;
@@ -286,7 +286,7 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
     return null;
 }
 
-/// Whether a field id takes digits only (the stat fields — parsing and
+/// Whether a field id takes digits only (the stat fields - parsing and
 /// clamping happen at commit; this filter keeps garbage out of the buffer
 /// as it's typed). Numeric ids join here with their slices.
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
@@ -299,7 +299,7 @@ fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
 }
 
 /// Click inside the FOCUSED field: map the click x to a caret index
-/// (measured via the metrics) and move the caret there — a plain move,
+/// (measured via the metrics) and move the caret there - a plain move,
 /// clearing the selection. Callers gate on the clicked element being the
 /// focused field. Drag-select within a field is a later refinement.
 pub fn placeCaretFromClick(
@@ -447,7 +447,7 @@ test "TextField: insert replaces the selection (both anchor directions)" {
     try std.testing.expectEqualStrings("Skeleton Knight", field.currentText());
     try std.testing.expectEqual(@as(usize, 15), field.caret);
 
-    // Select backward (anchor at 15, caret at 8) — same replaced range.
+    // Select backward (anchor at 15, caret at 8) - same replaced range.
     field.moveCaretTo(15, false);
     field.moveCaretTo(8, true);
     try std.testing.expectEqual(@as(usize, 8), field.selectionRange().?.start);
@@ -508,7 +508,7 @@ test "TextField: caretIndexAtX maps a click x to a boundary" {
     // Past the end = the end.
     try std.testing.expectEqual(@as(usize, 4), TextField.caretIndexAtX(field_text, metrics, 100, 500));
 
-    // Multibyte: the fallback width (0.5em + spacing = 55 at size 100 —
+    // Multibyte: the fallback width (0.5em + spacing = 55 at size 100 -
     // same as an ASCII glyph here) keeps boundaries whole.
     try std.testing.expectEqual(@as(usize, 0), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 50));
     try std.testing.expectEqual(@as(usize, 2), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 56));
@@ -544,11 +544,11 @@ test "routeTextInput: chars insert, edit keys apply, Enter/Escape resolve, repea
     try std.testing.expectEqualStrings("Skeleton Warrio", ui_state.text_edit.?.buffer.currentText());
 
     // A synthetic repeat edge (hold-backspace) deletes another; its
-    // outcome — if the key were a resolver — is discarded.
+    // outcome - if the key were a resolver - is discarded.
     _ = routeTextInput(&ui_state.text_edit.?, "", &no_keys, &backspace_repeated, false);
     try std.testing.expectEqualStrings("Skeleton Warri", ui_state.text_edit.?.buffer.currentText());
 
-    // Shift+ArrowLeft selects (the anchor plants at the old caret —
+    // Shift+ArrowLeft selects (the anchor plants at the old caret -
     // caret 14 on the 14-char buffer, one codepoint back to 13).
     _ = routeTextInput(&ui_state.text_edit.?, "", &arrow_pressed, &no_keys, true);
     const selection = ui_state.text_edit.?.buffer.selectionRange().?;

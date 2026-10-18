@@ -11,7 +11,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Charged Bolt: a spell. Attacks a single target within range for 1x
-/// effective spell damage with a TRIPLED converted momentum bonus —
+/// effective spell damage with a TRIPLED converted momentum bonus -
 /// getEffectiveSpellDamage already folds the momentum conversion in once
 /// (see Entity.getEffectiveSpellDamage); "tripled" adds it two more
 /// times (the impale/skewer precedent, one step further).
@@ -43,7 +43,7 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 2 — one
+/// AI options: the weakest hostile (focus-fire) at rating 2 - one
 /// significant bonus (tripled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,

@@ -44,7 +44,7 @@ fn getValidTargets(
 }
 
 /// AI options: the weakest hostile (focus-fire). Rated 2 when the pick is
-/// wounded (below half — the 1.5x bonus is worth ~a hit), else 1 (value units).
+/// wounded (below half - the 1.5x bonus is worth ~a hit), else 1 (value units).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,

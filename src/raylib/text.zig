@@ -1,7 +1,7 @@
 //! Text subsystem of the raylib backend: ALL text draws through the SDF
-//! pipeline (plain fill = the same shader with a zero outline width — see
+//! pipeline (plain fill = the same shader with a zero outline width - see
 //! `drawSdfText`), built at init from the build-time blob. When the
-//! pipeline fails to init (broken blob / texture upload / shader compile —
+//! pipeline fails to init (broken blob / texture upload / shader compile -
 //! see DESIGN → Platform Seam → SDF text outline for why that is
 //! near-unreachable), text falls back to raylib's default bitmap font:
 //! legible ASCII, no outline band, no deinit ownership. The backend keeps
@@ -37,11 +37,11 @@ pub const text_outline_thickness: i32 = 8;
 /// sdf_pixel_dist_scale * distance_px` (clamped 0..255), distance in ATLAS
 /// pixels from the glyph edge (positive inside). MUST match the
 /// `-DFONT_SDF_PIXEL_DIST_SCALE` define on the generator's raylib dependency
-/// in build.zig — the fragment shader decodes the field assuming this value,
+/// in build.zig - the fragment shader decodes the field assuming this value,
 /// and `initSdfTextOutline` validates the blob's baked params against it
 /// (mismatch → warning + shadow-ring fallback). 128/6 ≈ ±21 atlas px of
-/// range. The range is NOT sufficient for every requested outline — see
-/// `sdf_max_outline_atlas_pixels` (drawSdfText clamps) — it covers an 8px
+/// range. The range is NOT sufficient for every requested outline - see
+/// `sdf_max_outline_atlas_pixels` (drawSdfText clamps) - it covers an 8px
 /// outline at 56px+ (8*128/56 ≈ 18 atlas px, clear of the clamp floor).
 const sdf_pixel_dist_scale: f32 = 6.0;
 
@@ -49,26 +49,26 @@ const sdf_pixel_dist_scale: f32 = 6.0;
 /// match `-DFONT_SDF_CHAR_PADDING` on the generator's raylib dependency
 /// in build.zig (baked into the blob, validated at parse). Must be ≥ the
 /// encoding range (±21 px) so the distance field isn't cropped at the glyph
-/// rect edge — the outline band would clamp there otherwise.
+/// rect edge - the outline band would clamp there otherwise.
 const sdf_char_padding: i32 = 22;
 
 /// Maximum outline width the atlas can actually encode, in atlas px.
 /// `drawSdfText` clamps the requested width to this. WHY: the field clamps
 /// at −(128/scale) ≈ −21.3, and the shader fades the band over the window
-/// [−W−aa, −W+aa] — a request whose window dips to the clamp floor makes
+/// [−W−aa, −W+aa] - a request whose window dips to the clamp floor makes
 /// every clamped texel evaluate band ≈ 0.5. Clamped texels are exactly the
 /// rect-CORNER diagonals (true distance to the ink runs ~30px there while
 /// the rect is only 22px padded per axis), so the result is ghost squares
-/// at each glyph quad's corners — seen on the 48px material-count labels
+/// at each glyph quad's corners - seen on the 48px material-count labels
 /// (8*128/48 ≈ 21.3, right AT the floor). The −2 margin covers the fwidth
 /// window at the smallest outlined size on the smallest render target
 /// (~1.1 d-units at 48px on a 720p target); clamped requests draw a
-/// marginally thinner outline (7.2px instead of 8 at 48px) — never squares.
+/// marginally thinner outline (7.2px instead of 8 at 48px) - never squares.
 const sdf_max_outline_atlas_pixels: f32 = 128.0 / sdf_pixel_dist_scale - 2.0;
 
 comptime {
     if (sdf_pixel_dist_scale != 6.0 or sdf_char_padding != 22) {
-        @compileError("SDF constants changed — update the matching -DFONT_SDF_* defines in build.zig (generator raylib dep), tools/sdf_atlas_generator.zig's baked_* constants, and the /6.0 decode in the sdf_outline_fs_* shaders");
+        @compileError("SDF constants changed - update the matching -DFONT_SDF_* defines in build.zig (generator raylib dep), tools/sdf_atlas_generator.zig's baked_* constants, and the /6.0 decode in the sdf_outline_fs_* shaders");
     }
 }
 
@@ -78,7 +78,7 @@ comptime {
 /// band (within `outlineWidth` atlas px outside the edge), composites the
 /// outline under the fill (source-over), and outputs PREMULTIPLIED alpha
 /// for the render pass's `BLEND_ALPHA_PREMULTIPLY` blend (the RGB is already
-/// scaled by outA — no straight-alpha division). `fwidth` sizes the
+/// scaled by outA - no straight-alpha division). `fwidth` sizes the
 /// antialias band to ~1 screen pixel. The `/6.0` decode matches
 /// `sdf_pixel_dist_scale`.
 const sdf_outline_fs_glsl330 =
@@ -103,12 +103,12 @@ const sdf_outline_fs_glsl330 =
     \\}
 ;
 
-/// WebGL variant (GLSL ES 3.00 — the web context is WebGL 2, requested via
+/// WebGL variant (GLSL ES 3.00 - the web context is WebGL 2, requested via
 /// `opengl_version = .gles_3` on the web raylib dependency in build.zig;
 /// see DESIGN → Platform Seam → WebGL 2). Same math as the desktop variant,
 /// including `fwidth`-sized antialiasing (GLSL ES 3.00 has derivatives).
 /// Highp floats: the decoded field spans ±21 and the AA band is a small
-/// `fwidth` delta — mediump's 10-bit mantissa would visibly band it.
+/// `fwidth` delta - mediump's 10-bit mantissa would visibly band it.
 const sdf_outline_fs_glsl300es =
     \\#version 300 es
     \\precision highp float;
@@ -141,7 +141,7 @@ else
 
 /// The SDF text pipeline (see `drawSdfText`): a glyph atlas whose texels
 /// encode signed distance-to-glyph-edge (instead of coverage) plus the
-/// fragment shader that thresholds the field into fill + outline band —
+/// fragment shader that thresholds the field into fill + outline band -
 /// the ONE font every text draw uses (plain fill included, at outline
 /// width 0). Built once at init from the build-time blob (see
 /// `initSdfTextOutline`); null means unavailable (blob invalid, texture
@@ -152,7 +152,7 @@ else
 /// useless.
 ///
 /// Ownership: `recs`/`glyphs` are Zig-allocator slices that the assembled
-/// `font`'s C pointers alias — deinit frees them directly and must NOT call
+/// `font`'s C pointers alias - deinit frees them directly and must NOT call
 /// `rl.unloadFont` (raylib would free() Zig-allocated memory).
 const SdfTextOutline = struct {
     font: rl.Font,
@@ -167,7 +167,7 @@ const SdfTextOutline = struct {
 };
 
 /// Parses the build-time SDF font blob (written by tools/
-/// sdf_atlas_generator.zig, embedded via the `generated_sdf_font` module —
+/// sdf_atlas_generator.zig, embedded via the `generated_sdf_font` module -
 /// see build.zig) and assembles the SDF text-outline pipeline: one texture
 /// upload + one shader compile. The expensive part (SDF glyph generation,
 /// ~1.4s in a release build when it ran at runtime) is baked at build time,
@@ -180,7 +180,7 @@ const SdfTextOutline = struct {
 ///   atlas:   atlasWidth*atlasHeight grayscale bytes
 /// Every failure logs a warning and returns null (text falls back to
 /// raylib's default bitmap font; outlined text to its shadow ring). No
-/// TTF is read at runtime — the blob is baked from the shipped font at
+/// TTF is read at runtime - the blob is baked from the shipped font at
 /// build time.
 fn initSdfTextOutline(allocator: std.mem.Allocator) ?SdfTextOutline {
     const blob = @import("generated_sdf_font").bytes;
@@ -198,7 +198,7 @@ fn initSdfTextOutline(allocator: std.mem.Allocator) ?SdfTextOutline {
     const baked_scale: f32 = @bitCast(std.mem.readInt(u32, blob[28..32], .little));
     if (base_size != font_base_size) return invalidSdfBlob("base size mismatch");
     if (baked_padding != sdf_char_padding or baked_scale != sdf_pixel_dist_scale)
-        return invalidSdfBlob("encoding mismatch — regenerate the blob (build.zig generator) with matching constants");
+        return invalidSdfBlob("encoding mismatch - regenerate the blob (build.zig generator) with matching constants");
     if (glyph_count == 0 or glyph_count > font_codepoints.max_atlas_codepoints)
         return invalidSdfBlob("glyph count out of range");
     if (atlas_width <= 0 or atlas_height <= 0) return invalidSdfBlob("atlas dimensions out of range");
@@ -296,7 +296,7 @@ fn invalidSdfBlob(why: []const u8) ?SdfTextOutline {
 
 /// Collect the active font's non-ASCII glyph advances for the measurement
 /// seam (see `fontMetrics`), sorted ascending by codepoint. ASCII glyphs
-/// are skipped — they ride the fixed `advances` array; codepoints past
+/// are skipped - they ride the fixed `advances` array; codepoints past
 /// Unicode's range are skipped defensively (a malformed font can't crash
 /// the init path).
 fn collectNonAsciiAdvances(
@@ -329,11 +329,11 @@ fn readLe(comptime T: type, bytes: []const u8) T {
 pub const TextRenderer = struct {
     /// raylib's DEFAULT bitmap font, set ONLY when the SDF pipeline failed
     /// to init (see `sdf`): legible ASCII, no outline band, straight-alpha
-    /// (slightly bright under the premult blend — acceptable for this
+    /// (slightly bright under the premult blend - acceptable for this
     /// near-unreachable path). Raylib-owned memory: deinit must NOT unload
     /// it. null in the normal path.
     font: ?rl.Font = null,
-    /// The SDF text pipeline — the font EVERY text draw uses when available
+    /// The SDF text pipeline - the font EVERY text draw uses when available
     /// (plain fill included; see `drawSdfText`). null → raylib's default
     /// bitmap font above (outlined text additionally degrades to the
     /// 8-direction offset-shadow ring), decided once at init and fixed for
@@ -344,16 +344,16 @@ pub const TextRenderer = struct {
     /// deinit, which takes no arguments, can free it).
     allocator: std.mem.Allocator,
     /// Non-ASCII glyph advances for `fontMetrics`, extracted ONCE at init
-    /// from the active font's glyphs (sorted by codepoint) — the session's
+    /// from the active font's glyphs (sorted by codepoint) - the session's
     /// font is fixed at init, so the per-frame `fontMetrics()` borrows this
     /// instead of allocating. Empty in the default-font fallback (ASCII
-    /// only — multibyte text measures via the 0.5em approximation). Freed
+    /// only - multibyte text measures via the 0.5em approximation). Freed
     /// in deinit.
     non_ascii_advances: []ui.NonAsciiAdvance = &.{},
 
     /// Assemble the SDF pipeline; ONLY on failure fall back to raylib's
     /// default bitmap font (borrowed, nothing to build or own). No TTF is
-    /// read at runtime — the atlas is baked from the shipped font at build
+    /// read at runtime - the atlas is baked from the shipped font at build
     /// time, so a persistent-dir font shadow can never affect text.
     pub fn init(allocator: std.mem.Allocator) TextRenderer {
         const sdf = initSdfTextOutline(allocator);
@@ -372,7 +372,7 @@ pub const TextRenderer = struct {
 
     pub fn deinit(self: *TextRenderer) void {
         if (self.sdf) |sdf| {
-            // Manual teardown — NOT rl.unloadFont: the font's recs/glyphs are
+            // Manual teardown - NOT rl.unloadFont: the font's recs/glyphs are
             // Zig-allocator slices (raylib's free() would corrupt the heap).
             rl.unloadShader(sdf.shader);
             rl.unloadTexture(sdf.font.texture);
@@ -386,7 +386,7 @@ pub const TextRenderer = struct {
     /// The font every draw actually uses: the SDF font when the pipeline is
     /// available, else raylib's default bitmap font. `fontMetrics` reads from
     /// it so layout always measures with the advances the renderer draws
-    /// with — whichever path is active.
+    /// with - whichever path is active.
     fn activeFont(self: *const TextRenderer) rl.Font {
         if (self.sdf) |sdf| return sdf.font;
         return self.font.?;
@@ -397,7 +397,7 @@ pub const TextRenderer = struct {
     /// seam (`view()` + UI builders) measures text with the same advances
     /// the renderer draws with. ASCII codepoints 32..126 index `advances`;
     /// non-ASCII codepoints ride the session-lifetime `non_ascii_advances`
-    /// (filled once at init — the font is fixed for the session; empty in
+    /// (filled once at init - the font is fixed for the session; empty in
     /// the default-font fallback), so layout matches whichever font is
     /// active.
     pub fn fontMetrics(self: *TextRenderer) ui.FontMetrics {
@@ -421,7 +421,7 @@ pub const TextRenderer = struct {
 
     /// Draw one string through the SDF pipeline: set the outline uniforms,
     /// then draw under the SDF shader. `outline_width` is in the drawn text's
-    /// own pixel space; 0 is the PLAIN-TEXT path — the outline band
+    /// own pixel space; 0 is the PLAIN-TEXT path - the outline band
     /// collapses to nothing (with the transparent outline color the band
     /// contributes zero alpha), leaving the `fwidth`-antialiased fill, so
     /// every string in the game is resolution-independent. Never draw the
@@ -438,7 +438,7 @@ pub const TextRenderer = struct {
     ) void {
         // The field's distances are in BASE-atlas pixels; convert the
         // drawn-pixel width (font_size/baseSize = atlas→screen scale),
-        // CLAMPED to the encodable range — see `sdf_max_outline_atlas_pixels`
+        // CLAMPED to the encodable range - see `sdf_max_outline_atlas_pixels`
         // (a request past the clamp floor renders ghost squares at the glyph
         // quad corners; a clamped request just draws a thinner outline).
         const requested_width_in_atlas_pixels = outline_width * @as(f32, @floatFromInt(sdf.font.baseSize)) / font_size;
@@ -447,7 +447,7 @@ pub const TextRenderer = struct {
         // A zero width MUST pair with a transparent outline color: the band
         // collapses exactly onto the fill edge (band == fill), and an opaque
         // one would source-over-composite black into the antialiased fringe
-        // (outA = 2fa - fa² — a dark, over-bright edge on every glyph).
+        // (outA = 2fa - fa² - a dark, over-bright edge on every glyph).
         const outline_color = if (outline_width == 0)
             [4]f32{ 0, 0, 0, 0 }
         else
@@ -459,7 +459,7 @@ pub const TextRenderer = struct {
     }
 
     /// Draw text with a black edge-outline of `outline_width` px (in the drawn
-    /// text's own pixel space) — the SDF pipeline's fill + outline band in
+    /// text's own pixel space) - the SDF pipeline's fill + outline band in
     /// ONE shader-driven draw. The 8-direction offset-shadow ring (9 draws,
     /// on raylib's default bitmap font) remains the fallback for the
     /// near-unreachable case where the SDF pipeline failed to init.
@@ -504,14 +504,14 @@ pub const TextRenderer = struct {
         // or span that didn't pick an explicit color inherits the active
         // theme's `lightest` (the artist's offwhite). Explicitly colored
         // spans pass a non-`default_tint` color and are unaffected. Sprite
-        // tints (Button/Slot/Image) keep `default_tint` meaning "no tint" —
+        // tints (Button/Slot/Image) keep `default_tint` meaning "no tint" -
         // this substitution is text-only.
         const text = scratch.dupeZ(u8, label.text) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
         const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
         const color = if (std.meta.eql(label.color, ui.default_tint)) theme_lightest else label.color;
         const pos = rl.Vector2{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) };
-        // Plain = the SAME SDF shader with a zero outline width — one text
+        // Plain = the SAME SDF shader with a zero outline width - one text
         // path for everything (see `drawSdfText`); outlined = width 8 (UI is
         // drawn 1:1 at reference resolution into the render target, so the
         // width needs no world_scale). Fallback (SDF init failed): raylib's

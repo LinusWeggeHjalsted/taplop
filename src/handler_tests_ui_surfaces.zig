@@ -1,10 +1,10 @@
-//! Handler-drain tests for the UI-surface events — the class-1 semantic
+//! Handler-drain tests for the UI-surface events - the class-1 semantic
 //! surface state on GameState (`ui_surfaces`), behind the
 //! `toggle_ui_surface` / `inspect_entity` machinery events + their
 //! `player_*` orchestrators. See DESIGN → UI Framework → UI state
 //! classification. Tier B (the harness): push the orchestrator, run to
 //! idle, assert on `current_state.ui_surfaces` (undo/redo restoration
-//! included — the state rides the timeline).
+//! included - the state rides the timeline).
 
 const std = @import("std");
 const testing = std.testing;
@@ -23,7 +23,7 @@ test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // The options menu exists on every screen — the default main-menu
+    // The options menu exists on every screen - the default main-menu
     // state needs no setup.
     var history = harness.newHistory(null);
     runToIdle(&history);
@@ -39,7 +39,7 @@ test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
     try testing.expect(history.current_state.ui_surfaces.options_menu_open);
 
     // The toggle rides the undo timeline (the surface state is captured by
-    // snapshots) — undo re-closes, redo re-opens.
+    // snapshots) - undo re-closes, redo re-opens.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
     try testing.expect(history.redo(event_handlers.processEvent));
@@ -53,7 +53,7 @@ test "surface-gated orchestrators: a recorded panel open makes the action replay
 
     // The legality mirror of the live pointer gate (see DESIGN →
     // Determinism → Replay PLAYER-ACTION LEGALITY): a salvage whose
-    // inventory panel was never OPENED is an illegal log — so the panel
+    // inventory panel was never OPENED is an illegal log - so the panel
     // open must be a RECORDED action for the replay to pass validation.
     var history = harness.newHistory(.{
         .screen = .hub,
@@ -72,7 +72,7 @@ test "surface-gated orchestrators: a recorded panel open makes the action replay
     history.current_state.hub.?.player.inventory.slots[0] = .{ .weapon = weapon };
 
     // Open the inventory panel through the recorded surface event, then
-    // salvage — the replay (undo below) re-runs the recorded open + the
+    // salvage - the replay (undo below) re-runs the recorded open + the
     // salvage and the legality gate passes.
     test_harness.openMiddlePanel(&history, .inventory);
     event_push.pushEvents(

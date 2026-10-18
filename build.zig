@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
     // @embedFile bytes, keyed by project-root-relative path. Exposed as the
     // named module "generated_assets" so its package root is the project
     // root (letting @embedFile reach data/ and assets/, which sit outside
-    // src/). This is the single-file-exe content source — see DESIGN → File
+    // src/). This is the single-file-exe content source - see DESIGN → File
     // System & IO. Re-runs every build so new/edited content is picked up
     // (content edits to existing files require a recompile, which `zig build
     // run` does anyway).
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
 
     // `.config` flags are injected into the raylib C library compile. The
     // FONT_SDF_* defines widen the SDF glyph encoding for the build-time SDF
-    // font-atlas generator (tools/sdf_atlas_generator.zig — the atlas is
+    // font-atlas generator (tools/sdf_atlas_generator.zig - the atlas is
     // embedded and NO SDF code runs at game runtime, so these defines only
     // matter to the generator's raylib dependency below). The values MUST
     // match the `sdf_pixel_dist_scale` / `sdf_char_padding` constants in
@@ -49,10 +49,10 @@ pub fn build(b: *std.Build) void {
 
     // === Generated SDF font atlas ===
     // A build-time HOST tool (tools/sdf_atlas_generator.zig) links raylib as
-    // a library (no window — glyph SDF generation is pure CPU) and bakes the
+    // a library (no window - glyph SDF generation is pure CPU) and bakes the
     // SDF glyph atlas + per-glyph metrics into a binary blob via the SAME
     // raylib code path (loadFontData(.sdf) + genImageFontAtlas) the runtime
-    // used previously — zero metric drift by construction. The blob is
+    // used previously - zero metric drift by construction. The blob is
     // embedded through the `generated_sdf_font` module (same shape as
     // `generated_sprite_metadata`); the backend in src/raylib parses it and
     // assembles the rl.Font at init, so NO SDF computation runs at game
@@ -77,7 +77,7 @@ pub fn build(b: *std.Build) void {
     sdf_generator_exe.root_module.addImport("raylib", raylib_generator_dep.module("raylib"));
     sdf_generator_exe.root_module.linkLibrary(raylib_generator_dep.artifact("raylib"));
     // The cmap reader (src/font_codepoints.zig) the generator derives the
-    // baked codepoint set from — a separate module because the tool's root
+    // baked codepoint set from - a separate module because the tool's root
     // sits in tools/ and can't relatively import out of it. Raylib-free, so
     // it adds nothing to the tool's dependency graph beyond std.
     sdf_generator_exe.root_module.addAnonymousImport("font_codepoints", .{
@@ -104,7 +104,7 @@ pub fn build(b: *std.Build) void {
     // Computes the game_version string at configure time (YYYY.MM.<commits
     // this month>[-dirty], derived from the build date + git) and exposes it
     // to code via @import("build_info").game_version. This is the runtime
-    // "which build" stamp — advisory for replay validity — and is deliberately
+    // "which build" stamp - advisory for replay validity - and is deliberately
     // NOT the build.zig.zon .version (which stays a static package-identity
     // number). See computeGameVersion.
     const build_info = b.addOptions();
@@ -121,7 +121,7 @@ pub fn build(b: *std.Build) void {
     // maps) for browser-devtools work. Off by default for faster web links.
     const web_debug_runtime = b.option(bool, "web-debug-runtime", "Enable emscripten ASSERTIONS/SAFE_HEAP/source maps") orelse false;
     // Render target resolution is a RUNTIME setting (`render_resolution` in
-    // settings.txt, the settings-screen 4-choice) — the backend recreates
+    // settings.txt, the settings-screen 4-choice) - the backend recreates
     // its RenderTexture live. See DESIGN → Platform Seam → Render target
     // resolution.
     const build_info_module = build_info.createModule();
@@ -138,7 +138,7 @@ pub fn build(b: *std.Build) void {
         // Take over frame control ourselves: EndDrawing() then only flushes the
         // render batch (no SwapScreenBuffer, no PollInputEvents, no frame-rate
         // WaitTime). We call swapScreenBuffer() in render() and pollInputEvents()
-        // in pollInput() so the uncapped logic loop owns event polling — without
+        // in pollInput() so the uncapped logic loop owns event polling - without
         // this, EndDrawing()'s built-in PollInputEvents eats input events that
         // accumulate during the vsync block (lost clicks).
         .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL",
@@ -163,7 +163,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkLibrary(raylib_artifact);
 
     // macOS: the exe's LINK step needs the framework search paths (the
-    // .tbd stubs) on its own module — raylib's linkMacOS adds them to the
+    // .tbd stubs) on its own module - raylib's linkMacOS adds them to the
     // raylib library's module and the -F paths don't propagate to a
     // consumer's link line (only the -framework flags do). Same package
     // raylib declares (deduped by hash); lazy, so a Linux/Windows build
@@ -176,7 +176,7 @@ pub fn build(b: *std.Build) void {
             // glGetString directly (raylib resolves GL through its glad
             // loader, so nothing else links OpenGL). The unresolved mac
             // 9-slice panel bug needs it too if a fix lands that touches GL
-            // — see TODO → macOS native port + DONE.md, "mac 9-slice
+            // - see TODO → macOS native port + DONE.md, "mac 9-slice
             // panels" entries.
             exe.root_module.linkFramework("OpenGL", .{});
         } else {
@@ -197,7 +197,7 @@ pub fn build(b: *std.Build) void {
     // bitcode"), and Zig's build runner treats LLD's stderr as a build
     // failure. The exe already links the system libs directly (-lGL -lX11
     // etc. propagated from the raylib module), so the .so copies in the
-    // archive are redundant — safe to remove.
+    // archive are redundant - safe to remove.
     //
     // We use zig's own ar (LLVM ar, which handles the full-path member names;
     // GNU ar silently fails on them) via a shell one-liner that dynamically
@@ -210,8 +210,8 @@ pub fn build(b: *std.Build) void {
             "sh", "-c",
             "ar t \"$1\" | grep '\\.so$' | while read f; do \"$0\" ar d \"$1\" \"$f\"; done",
         });
-        strip_so.addArg(b.graph.zig_exe); // $0 — zig executable (for `zig ar d`)
-        strip_so.addFileArg(raylib_artifact.getEmittedBin()); // $1 — libraylib.a path
+        strip_so.addArg(b.graph.zig_exe); // $0 - zig executable (for `zig ar d`)
+        strip_so.addFileArg(raylib_artifact.getEmittedBin()); // $1 - libraylib.a path
         strip_so.step.dependOn(&raylib_artifact.step);
         exe.step.dependOn(&strip_so.step);
     }
@@ -222,7 +222,7 @@ pub fn build(b: *std.Build) void {
     // the bare zig-out/bin/ziglop, a double-clickable zig-out/ziglop.app/
     // with the exe at Contents/MacOS/ziglop and a minimal Info.plist. No icon
     // yet (no suitable art; macOS falls back to the generic app icon) and no
-    // codesigning — that needs a mac host; an unsigned bundle runs locally,
+    // codesigning - that needs a mac host; an unsigned bundle runs locally,
     // a browser-downloaded copy needs `xattr -cr ziglop.app` once.
     if (target.result.os.tag == .macos) {
         const app_contents = b.addWriteFiles();
@@ -261,7 +261,7 @@ pub fn build(b: *std.Build) void {
         .target = web_target,
         .optimize = optimize,
         // WebGL 2 (GL ES 3.0), NOT the auto-default WebGL 1: WebGL1 forbids
-        // mipmaps on non-power-of-two textures (most of our art is NPOT —
+        // mipmaps on non-power-of-two textures (most of our art is NPOT -
         // 512x640 entities, arbitrary custom-mission assets) and has no
         // `fwidth` for shader antialiasing. Our custom shaders are GLSL 330
         // on desktop / 300 es on web. Browser floor: Safari/iOS 15 (2021);
@@ -272,16 +272,16 @@ pub fn build(b: *std.Build) void {
         // render batch; we drive swapScreenBuffer + pollInputEvents ourselves
         // from the emscripten main-loop callback (no asyncify).
         .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL " ++
-        // Web audio onset latency (the measured diagnosis — see DESIGN →
+        // Web audio onset latency (the measured diagnosis - see DESIGN →
         // Platform Seam → Web audio onset latency): raylib's default device
         // period (0) is overridden by miniaudio's webaudio backend to 33ms ->
         // a 2048-frame (~43ms @ 48kHz) ScriptProcessorNode buffer, doubling
         // the node's inherent ~1-2-buffer fill-ahead lead on every sound's
         // onset. 1024 frames (~21ms) halves that inherent lead and was
-        // measured serviceable at 60fps (AudioContext clock ratio 1.000 —
+        // measured serviceable at 60fps (AudioContext clock ratio 1.000 -
         // the main thread services a fill every ~21ms against ~16.7ms frame
         // gaps; 512/~10.7ms would chronically starve). The DOMINANT web
-        // onset delay — the queue BANKED by long main-thread blocks — is
+        // onset delay - the queue BANKED by long main-thread blocks - is
         // handled by web.zig's queue watchdog, not by this knob. Native
         // keeps raylib's default (a real audio thread, 10ms period, instant
         // by the same measurement).
@@ -329,8 +329,8 @@ pub fn build(b: *std.Build) void {
         emcc_settings.put("USE_OFFSET_CONVERTER", "0") catch @panic("emcc settings OOM");
     }
     // The game uses the emscripten filesystem: an in-memory (MEMFS) mount at
-    // /ziglop for the persistent dir (web.zig — the session-scoped storage
-    // model; NO IDBFS, browser storage is never touched — see DESIGN → File
+    // /ziglop for the persistent dir (web.zig - the session-scoped storage
+    // model; NO IDBFS, browser storage is never touched - see DESIGN → File
     // System & IO → Web storage model), and embedded assets fall back through
     // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the
     // FS API (the JS download/upload seams use it).
@@ -339,11 +339,11 @@ pub fn build(b: *std.Build) void {
     emcc_settings.put("FORCE_FILESYSTEM", "1") catch @panic("emcc settings OOM");
     emcc_settings.put("ALLOW_MEMORY_GROWTH", "1") catch @panic("emcc settings OOM");
     emcc_settings.put("USE_GLFW", "3") catch @panic("emcc settings OOM");
-    // WebGL 2 context settings — MUST stay in lockstep with the web raylib
+    // WebGL 2 context settings - MUST stay in lockstep with the web raylib
     // dependency's `opengl_version = .gles_3` above: with it, raylib compiles
     // for GL ES 3 and submits its built-in shaders as `#version 300 es`, but
     // emcc's GL glue defaults to a WebGL 1 context (MIN/MAX_WEBGL_VERSION=1)
-    // — the mismatch makes every shader fail with "unsupported shader
+    // - the mismatch makes every shader fail with "unsupported shader
     // version 300" and the page renders black. Raylib pairs the two the same
     // way (its examples Makefile's BUILD_WEB_WEBGL2 adds these settings).
     emcc_settings.put("MIN_WEBGL_VERSION", "2") catch @panic("emcc settings OOM");
@@ -371,7 +371,7 @@ pub fn build(b: *std.Build) void {
     const web_step = b.step("web", "Build the web (emscripten) client");
     web_step.dependOn(emcc_step);
 
-    // `zig build emrun` — serve the web build locally and open it in a browser.
+    // `zig build emrun` - serve the web build locally and open it in a browser.
     const emrun_step = zemscripten.emrunStep(
         b,
         b.getInstallPath(web_install_dir, "ziglop.html"),
@@ -383,7 +383,7 @@ pub fn build(b: *std.Build) void {
 
     // === Tests ===
     // Generate a test root that imports every src/*.zig so tests are discovered
-    // automatically — no manual aggregator to keep in sync.
+    // automatically - no manual aggregator to keep in sync.
     generateTestRootFile(b);
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -400,7 +400,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(tests).step);
 
     // === Sound asset overview (scripts/sound_report.sh) ===
-    // A host tool that walks the engine's enums and writes sound_report.md —
+    // A host tool that walks the engine's enums and writes sound_report.md -
     // the sound designer's complete inventory of wired paths (status per
     // asset: shipped / shadowed / MISSING-silent). Root lives in src/ so it
     // can import types.zig; the same `generated` + `build_info` modules the
@@ -412,7 +412,7 @@ pub fn build(b: *std.Build) void {
             .target = b.resolveTargetQuery(.{}), // always the build host
             .optimize = .Debug,
             // libc for std.c.getenv (the native.zig resolvePersistentPath
-            // discipline — the tool mirrors it without raylib).
+            // discipline - the tool mirrors it without raylib).
             .link_libc = true,
         }),
     });
@@ -430,7 +430,7 @@ pub fn build(b: *std.Build) void {
     // === Art asset overview (scripts/art_report.sh) ===
     // A host tool that enumerates every consumable sprite id (engine enums +
     // derivations, src string literals, shipped data sprite references) and
-    // writes art_report.md — the artist's self-updating inventory + shopping
+    // writes art_report.md - the artist's self-updating inventory + shopping
     // list (status per id: shipped / shadowed / MISSING-draws-magenta, plus
     // shipped-but-unconsumed orphans). Root lives in src/ so it can import
     // types.zig + the ui facade; the `generated` + `build_info` modules cover
@@ -454,7 +454,7 @@ pub fn build(b: *std.Build) void {
 
     // === Gradient contrast report (scripts/gradient_report.sh) ===
     // A host tool that reads data/color_themes.txt through the game's own
-    // parser + loader and writes gradient_report.md — the artist's
+    // parser + loader and writes gradient_report.md - the artist's
     // perceptual-spacing reference: ΔE76 per ramp step, WCAG contrast on
     // the renderer's structural seams, flags + suggested repairs for
     // "too close" colors. Same module needs as the game's loader chain.
@@ -594,7 +594,7 @@ fn generateLookupFile(b: *std.Build) void {
     var content: std.ArrayListUnmanaged(u8) = .empty;
 
     appendStr(b, &content,
-        \\// AUTO-GENERATED by build.zig — do not edit manually.
+        \\// AUTO-GENERATED by build.zig - do not edit manually.
         \\// Provides lookup functions mapping EffectId/SkillId to their definitions.
         \\
         \\const effect_mod = @import("effect.zig");
@@ -659,7 +659,7 @@ fn generateTestRootFile(b: *std.Build) void {
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
     appendStr(b, &content,
-        "// AUTO-GENERATED by build.zig — do not edit manually.\n" ++
+        "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
         "// Imports every src/*.zig so their tests are discovered automatically.\n" ++
         "test {\n",
     );
@@ -700,7 +700,7 @@ fn collectZigFiles(
 
         switch (entry.kind) {
             // The whole raylib/ directory compiles against raylib and is
-            // excluded from the headless scan wholesale — the platform seam
+            // excluded from the headless scan wholesale - the platform seam
             // is "raylib may only be imported from src/raylib/" (asserted by
             // scripts/test.sh). See DESIGN → Platform Seam.
             .directory => {
@@ -733,7 +733,7 @@ fn collectZigFiles(
 /// are embedded so every distributed copy carries the licenses for the content
 /// it bundles (OFL 1.1 condition 2 names "machine-readable metadata fields
 /// within text or binary files" as a valid carrier; CC-BY-SA likewise requires
-/// the license text to accompany distributions) — a bare single-file exe has
+/// the license text to accompany distributions) - a bare single-file exe has
 /// no "stand-alone text file alongside" option, the text must ride inside.
 /// @embedFile needs comptime-known path literals, so the
 /// entries must be enumerated in a generated source file rather than
@@ -762,7 +762,7 @@ fn generateAssetsFile(b: *std.Build) *std.Build.Module {
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
     appendStr(b, &content,
-        "// AUTO-GENERATED by build.zig — do not edit manually.\n" ++
+        "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
         "// Embeds every file under data/ and assets/ (plus the root\n" ++
         "// LICENSE-*.txt files) as @embedFile bytes, keyed by\n" ++
         "// project-root-relative path. See DESIGN → File System & IO.\n" ++
@@ -796,7 +796,7 @@ fn generateAssetsFile(b: *std.Build) *std.Build.Module {
 /// This is the build-time source of sprite dimensions for shipped art: the
 /// parser looks up a shipped sprite's dims here (zero I/O) and bakes them into
 /// `Decoration.pixel_dims`. Custom (runtime-imported) sprites can't be in this
-/// table — their dims are parsed from the PNG bytes at acquisition time and
+/// table - their dims are parsed from the PNG bytes at acquisition time and
 /// stored on the decoration/type-def the same way (see AGENTS → Decorations &
 /// Footprint). Re-runs every build so new/edited art is picked up.
 fn generateSpriteMetadataFile(b: *std.Build) *std.Build.Module {
@@ -821,7 +821,7 @@ fn generateSpriteMetadataFile(b: *std.Build) *std.Build.Module {
         defer b.allocator.free(bytes);
         if (bytes.len < 24) @panic("PNG too small for IHDR");
         // PNG signature is 8 bytes, then IHDR chunk: 4 length, 4 type, 4 width,
-        // 4 height — width/height are big-endian at byte offset 16 and 20.
+        // 4 height - width/height are big-endian at byte offset 16 and 20.
         const width: u32 = std.mem.readInt(u32, bytes[16..20], .big);
         const height: u32 = std.mem.readInt(u32, bytes[20..24], .big);
         const dims_str = b.fmt("{d} {d}", .{ width, height });
@@ -839,7 +839,7 @@ fn generateSpriteMetadataFile(b: *std.Build) *std.Build.Module {
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
     appendStr(b, &content,
-        "// AUTO-GENERATED by build.zig — do not edit manually.\n" ++
+        "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
         "// Pixel dimensions (from each PNG's IHDR) for every assets/**/*.png,\n" ++
         "// keyed by sprite id (asset path minus `assets/` prefix and `.png`\n" ++
         "// suffix). Values are `\"w h\"` strings. See DESIGN → Decorations &\n" ++
@@ -894,7 +894,7 @@ fn collectContentFiles(
 }
 
 /// Adds every root-level LICENSE-*.txt to the embed entries (scanned, not
-/// hardcoded — a new root license file lands embedded automatically without
+/// hardcoded - a new root license file lands embedded automatically without
 /// touching build.zig). Keys are the bare file names (project-root-relative
 /// paths, same as collectContentFiles). See generateAssetsFile's doc comment
 /// for why the license texts are embedded.
@@ -913,7 +913,7 @@ fn collectLicenseFiles(
         if (entry.kind != .file) continue;
         if (!std.mem.startsWith(u8, entry.name, "LICENSE-")) continue;
         if (!std.mem.endsWith(u8, entry.name, ".txt")) continue;
-        // `entry.name` dies at the next iter.next() — copy it into the build
+        // `entry.name` dies at the next iter.next() - copy it into the build
         // allocator (collectContentFiles' b.fmt does the same implicitly).
         const name = b.dupe(entry.name);
         entries.append(b.allocator, .{ name, name }) catch @panic("append failed");

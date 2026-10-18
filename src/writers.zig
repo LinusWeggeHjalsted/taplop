@@ -1,4 +1,4 @@
-//! Save/settings writers — the inverse of the loaders (loaders.zig). Converts
+//! Save/settings writers - the inverse of the loaders (loaders.zig). Converts
 //! typed game objects (`PlayerData`, `Settings`) back into the config-file
 //! text format. See DESIGN → File System & IO / AGENTS → Config File Format.
 
@@ -32,7 +32,7 @@ const freeSettings = loaders.freeSettings;
 // ============================================================
 
 /// Format a PlayerData struct into the .txt save file format.
-/// Returns an owned slice — caller must free with the same allocator.
+/// Returns an owned slice - caller must free with the same allocator.
 /// This is the core function used by both web (download) and standalone (file write).
 fn writePlayerSave(
     player_data: PlayerData,
@@ -76,7 +76,7 @@ fn writePlayerSave(
     }
 
     // MainHandWeapon .. UtilitySkills: the shared loadout sections (also
-    // the editor mission's player.txt — see writePlayerLoadout).
+    // the editor mission's player.txt - see writePlayerLoadout).
     try writeLoadoutSections(player_data, &buffer, allocator);
 
     // CloneData
@@ -99,7 +99,7 @@ fn writePlayerSave(
 }
 
 /// The loadout sections shared by the player SAVE and the editor mission's
-/// player.txt (the PlayerLoadout format — `parsePlayerLoadoutFields` is the
+/// player.txt (the PlayerLoadout format - `parsePlayerLoadoutFields` is the
 /// shared reader; see DESIGN → Level Editor → Player loadout). The save
 /// embeds these between UnlockedSkills and CloneData; the mission player.txt
 /// is exactly these sections under its own Metadata.
@@ -247,7 +247,7 @@ fn writeInventoryItem(
 
 /// Serialize a `Settings` struct to the config-file format (same shape as
 /// `data/default_settings.txt`). Used to persist user preferences to
-/// `~/.ziglop/settings.txt` — see DESIGN → Input. The full settings are
+/// `~/.ziglop/settings.txt` - see DESIGN → Input. The full settings are
 /// written (audio + display + gameplay + InputBindings) so the user file is
 /// the same format as the defaults. The loader overlays this onto the shipped
 /// defaults at startup (per-field scalars, binding replace).
@@ -263,7 +263,7 @@ pub fn writeSettings(
 
     // Audio
     try buffer.appendSlice(allocator, "\nAudio\n");
-    // Audio — u32 percentages 0–100. See DESIGN → UI Framework → Settings
+    // Audio - u32 percentages 0-100. See DESIGN → UI Framework → Settings
     // screen (Volume integer migration).
     try buffer.print(allocator, "master_volume {d}\n", .{settings.master_volume});
     try buffer.print(allocator, "music_volume {d}\n", .{settings.music_volume});
@@ -284,7 +284,7 @@ pub fn writeSettings(
     try buffer.print(allocator, "show_fps {}\n", .{settings.show_fps});
     try buffer.print(allocator, "player_color_index {d}\n", .{settings.player_color_index});
 
-    // InputBindings — one entry group per binding, blank-line-separated.
+    // InputBindings - one entry group per binding, blank-line-separated.
     try buffer.appendSlice(allocator, "\nInputBindings\n");
     for (settings.input_bindings, 0..) |binding, index| {
         if (index > 0) try buffer.appendSlice(allocator, "\n");
@@ -304,7 +304,7 @@ pub fn writeSettings(
         if (binding.modifiers.shift) try buffer.appendSlice(allocator, "shift true\n");
         if (binding.modifiers.alt) try buffer.appendSlice(allocator, "alt true\n");
         try buffer.print(allocator, "action {s}\n", .{@tagName(binding.action)});
-        // Informational only — a binding's active contexts are DERIVED
+        // Informational only - a binding's active contexts are DERIVED
         // from the action at load (`actionBindingContexts`); the line is
         // written so the file stays the same shape an older binary (or a
         // human) expects. See DESIGN → Input → Binding contexts.
@@ -330,7 +330,7 @@ pub fn writePlayerSaveToFile(
 // Editor mission writer
 // ============================================================
 //
-// The pure projection of an `Editor` into mission-directory file contents —
+// The pure projection of an `Editor` into mission-directory file contents -
 // the inverse of loadLevel/loadMission/loadPlayerLoadout + buildEditorMission.
 // The SAVE HANDLER owns the uuid resolution + the IO; this writer is
 // deterministic + side-effect free (directly round-trip-testable).
@@ -340,14 +340,14 @@ pub fn writePlayerSaveToFile(
 pub const WrittenEditorMission = struct {
     mission_txt: []const u8,
     player_txt: []const u8,
-    /// One per editor level, in tab order — the handler writes them as
+    /// One per editor level, in tab order - the handler writes them as
     /// level_1.txt .. level_N.txt.
     level_txts: []const []const u8,
 };
 
 /// Layout char-code assignment order: digits, lowercase, uppercase, then
 /// the remaining printable ASCII. The reserved layout chars (' ', '.',
-/// '!', '=') are never assigned — 91 codes available per level.
+/// '!', '=') are never assigned - 91 codes available per level.
 const layout_code_order: [91]u8 = blk: {
     var codes: [91]u8 = undefined;
     var length: usize = 0;
@@ -369,7 +369,7 @@ const layout_code_order: [91]u8 = blk: {
         length += 1;
     }
     // Then the remaining printable ASCII (reserved layout chars ' ', '.',
-    // '!', '=' are never assignable — ' ' isn't in this range to begin
+    // '!', '=' are never assignable - ' ' isn't in this range to begin
     // with).
     code = 0x21;
     while (code <= 0x7e) : (code += 1) {
@@ -384,7 +384,7 @@ const layout_code_order: [91]u8 = blk: {
 
 /// One per-level char-code assignment: a tool the level places → its
 /// layout char. Codes are assigned PER LEVEL (a level file only defines
-/// the tools it uses), in palette order — entities, then decorations,
+/// the tools it uses), in palette order - entities, then decorations,
 /// then items.
 const LayoutCodeAssignment = struct {
     type_id: u32,
@@ -392,7 +392,7 @@ const LayoutCodeAssignment = struct {
 };
 
 /// Write the whole mission: mission.txt, player.txt, and one level file
-/// per level. `mission_uuid` is passed in — the write-only mint lives at
+/// per level. `mission_uuid` is passed in - the write-only mint lives at
 /// the save site (a fresh mission's uuid is minted at first save and
 /// never held in GameState; see DESIGN → Level Editor → Mission
 /// identity). Fails with error.TooManyLayoutCodes when a single level
@@ -431,8 +431,8 @@ pub fn writeEditorMission(
     };
 }
 
-/// Write the mission's player.txt — the PlayerLoadout format (the loadout
-/// sections of a player save; no Info/stats/hubs — base stats aren't
+/// Write the mission's player.txt - the PlayerLoadout format (the loadout
+/// sections of a player save; no Info/stats/hubs - base stats aren't
 /// authorable and the NAME is not part of the format, so a reloaded
 /// loadout reads back as "Player" regardless of the template's name).
 fn writePlayerLoadout(
@@ -478,7 +478,7 @@ fn codeForType(assignments: []const LayoutCodeAssignment, type_id: u32) ?u8 {
 
 /// Assign per-level layout codes to the tools `level` places, in palette
 /// order (entities → decorations → items). Only used tools get codes +
-/// definitions — a level file never carries a tool it doesn't place.
+/// definitions - a level file never carries a tool it doesn't place.
 fn assignLayoutCodes(
     level: types.EditorLevel,
     entity_types: []const types.EntityTypeDef,
@@ -531,7 +531,7 @@ fn assignLayoutCodes(
 }
 
 /// Set one cell of the translated layout grid. `origin` is the bbox min;
-/// out-of-range cells (a footprint tile outside the bbox — impossible by
+/// out-of-range cells (a footprint tile outside the bbox - impossible by
 /// construction, the bbox includes every footprint) trap in debug builds.
 fn setGridCell(
     grid: []u8,
@@ -549,12 +549,12 @@ fn setGridCell(
 
 /// Rewrite a custom sprite stem's namespace to the save target:
 /// `custom/<anything>/<file-stem>` → `custom/<mission_dir_name>/<file-stem>`.
-/// The namespace component is IDENTITY ONLY, never a read path — custom
+/// The namespace component is IDENTITY ONLY, never a read path - custom
 /// art resolves from the mission's own directory (see DESIGN → Custom
 /// Missions & Online Services → the sprite id convention + the save flow's
-/// art copy) — so the save is where a stale namespace (a mission renamed
+/// art copy) - so the save is where a stale namespace (a mission renamed
 /// after authoring keeps stems naming the old dir) is healed. Non-custom
-/// stems and degenerate stems (no dir segment — the picker never writes
+/// stems and degenerate stems (no dir segment - the picker never writes
 /// them) pass through unchanged.
 fn normalizedCustomStem(
     sprite: []const u8,
@@ -584,7 +584,7 @@ fn writeEditorLevel(
 ) ![]const u8 {
     const codes = try assignLayoutCodes(level, entity_types, decoration_types, item_types, allocator);
 
-    // The bbox over everything placed — the player start is always present
+    // The bbox over everything placed - the player start is always present
     // (the '!' can't be deleted), so the bbox is never empty.
     var min_x = level.player_start.x;
     var min_y = level.player_start.y;
@@ -624,7 +624,7 @@ fn writeEditorLevel(
     const grid = try allocator.alloc(u8, @intCast(grid_width * grid_height));
     defer allocator.free(grid);
     @memset(grid, ' ');
-    // Tiles first — the marker + code chars below overwrite their own
+    // Tiles first - the marker + code chars below overwrite their own
     // tiles (each implies it on reload).
     for (level.level_tiles) |tile| setGridCell(grid, grid_width, origin, tile, '.');
     setGridCell(grid, grid_width, origin, level.player_start, '!');
@@ -657,7 +657,7 @@ fn writeEditorLevel(
         try buffer.print(allocator, "player_gradient_index {d}\n", .{gradient_index});
     }
 
-    // Layout — each row trimmed to its own last used column (no trailing
+    // Layout - each row trimmed to its own last used column (no trailing
     // spaces; interior all-space rows stay as empty lines, which the
     // parser stores as empty raw rows).
     try buffer.appendSlice(allocator, "\nLayout\n");
@@ -671,7 +671,7 @@ fn writeEditorLevel(
         try buffer.appendSlice(allocator, "\n");
     }
 
-    // Entities — used entity types, palette order, the full definition in
+    // Entities - used entity types, palette order, the full definition in
     // the parser's exact key vocabulary (the coupling contract).
     if (codes.entity.len > 0) {
         try buffer.appendSlice(allocator, "\nEntities\n");
@@ -681,7 +681,7 @@ fn writeEditorLevel(
         }
     }
 
-    // Decorations — used decoration types (sprite + footprint + layers).
+    // Decorations - used decoration types (sprite + footprint + layers).
     if (codes.decoration.len > 0) {
         try buffer.appendSlice(allocator, "\nDecorations\n");
         for (codes.decoration, 0..) |assignment, index| {
@@ -707,9 +707,9 @@ fn writeEditorLevel(
         }
     }
 
-    // Items — used item types. Skill tomes are not level-authorable (the
+    // Items - used item types. Skill tomes are not level-authorable (the
     // editor's item paths never create them); a tome here is a crafted
-    // state the editor's own invariants forbid — fail fast.
+    // state the editor's own invariants forbid - fail fast.
     if (codes.item.len > 0) {
         try buffer.appendSlice(allocator, "\nItems\n");
         for (codes.item, 0..) |assignment, index| {
@@ -721,7 +721,7 @@ fn writeEditorLevel(
     return try buffer.toOwnedSlice(allocator);
 }
 
-/// One Entities entry — every key `parseEntityDefinition` reads, in its
+/// One Entities entry - every key `parseEntityDefinition` reads, in its
 /// vocabulary (weapons / gear / utility skills / layers only when
 /// present, so absent-on-reload equals absent-on-write).
 fn writeEntityDefinition(
@@ -792,7 +792,7 @@ fn writeEntityDefinition(
     }
 }
 
-/// One Items entry — the keys `parseItemEntry` reads for the item's kind.
+/// One Items entry - the keys `parseItemEntry` reads for the item's kind.
 fn writeItemDefinition(
     buffer: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
@@ -896,7 +896,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
         .learned_skills = &.{ .slice, .replenish, .swap },
         // Gap in the middle: slots 5 and 7-8 empty, to verify the save writer
         // and loader preserve slot positions instead of compacting. Only
-        // utility skills on the bar (slice is a weapon skill — the parser
+        // utility skills on the bar (slice is a weapon skill - the parser
         // drops it from slots; learned_skills may still carry it).
         .equipped_utility_skills = .{ .replenish, null, .swap, null, null },
         .clones = &.{.{
@@ -983,7 +983,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     try std.testing.expectEqual(null, loaded.equipped_utility_skills[3]);
     try std.testing.expectEqual(null, loaded.equipped_utility_skills[4]);
 
-    // Inventory — items at slots 0, 1, 2
+    // Inventory - items at slots 0, 1, 2
     try std.testing.expect(loaded.inventory.slots[0] != null);
     try std.testing.expect(loaded.inventory.slots[1] != null);
     try std.testing.expect(loaded.inventory.slots[2] != null);
@@ -1091,7 +1091,7 @@ test "loadPlayerSave utility gates: weapon skills dropped from slots and out of 
 // ============================================================
 
 /// The round-trip fixture: a two-level mission exercising every written
-/// feature — translated layouts (everything offset from the origin), a rich
+/// feature - translated layouts (everything offset from the origin), a rich
 /// enemy (weapon + gear + utility skill + layer), per-level tool filtering
 /// (Brute only in level 2, an unused item type in NO file), a decoration,
 /// and a loaded-out player. File-scope comptime: the Editor's palette +
@@ -1177,7 +1177,7 @@ const editor_write_fixture: types.Editor = .{
             .weapon_type = .sword,
             .weapon_damage = 2,
         } } },
-        // Never placed anywhere — must appear in NO written file.
+        // Never placed anywhere - must appear in NO written file.
         .{ .id = "Nice Coat", .item = .{ .coat = .{
             .name = "Nice Coat",
             .defense_bonus = 1,
@@ -1255,7 +1255,7 @@ test "writeEditorMission round-trips through the load path" {
     }
 
     // player.txt: the loadout round-trips (the NAME is not part of the
-    // format — a reloaded loadout reads back as "Player").
+    // format - a reloaded loadout reads back as "Player").
     {
         const sections = try parseConfigFile(written.player_txt, arena);
         const loaded = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
@@ -1272,7 +1272,7 @@ test "writeEditorMission round-trips through the load path" {
     }
 
     // The levels: the real reload path (buildEditorMission over the written
-    // files), then a SEMANTIC compare — the reload dedups placements into a
+    // files), then a SEMANTIC compare - the reload dedups placements into a
     // fresh palette in layout-encounter order, so palette order/type ids can
     // differ from the original; positions compare TRANSLATED (the written
     // layout is normalized to the bbox origin).
@@ -1292,7 +1292,7 @@ test "writeEditorMission round-trips through the load path" {
 
     try std.testing.expectEqual(@as(usize, 2), reloaded.levels.len);
 
-    // Level 1: translated by (4,2) — '!' (0,0), '=' (1,0), Archer '1' at
+    // Level 1: translated by (4,2) - '!' (0,0), '=' (1,0), Archer '1' at
     // (0,1) over its tile, the stone '2' at (2,0) (its footprint tile stays
     // tile-free), the sword '3' at (2,2).
     {
@@ -1354,7 +1354,7 @@ test "writeEditorMission round-trips through the load path" {
     }
 
     // Team emission: the team-1 Archer omits the key (absent-on-reload
-    // equals absent-on-write — 1 is the load default); the team-2 Brute
+    // equals absent-on-write - 1 is the load default); the team-2 Brute
     // carries `team 2` and reloads with it.
     {
         try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "team ") == null);
@@ -1368,7 +1368,7 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    // Stale-namespace stems (authored under an old dir — the mission was
+    // Stale-namespace stems (authored under an old dir - the mission was
     // renamed since) on every channel that writes a sprite (entity base +
     // layer, decoration base + layer), plus shipped stems that must pass
     // through untouched.
@@ -1401,7 +1401,7 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
                 .team = 1,
                 .layers = &entity_layers,
             } },
-            // Never placed — written to NO file (per-level tool filtering).
+            // Never placed - written to NO file (per-level tool filtering).
             .{ .id = "Ghost", .template = .{
                 .name = "Ghost",
                 .sprite = "custom/old_dir/ghost",
@@ -1417,7 +1417,7 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
 
     // Every PLACED custom stem is rewritten to the save target's
     // namespace; the stale namespace appears nowhere (the never-placed
-    // Ghost type included — unused types are not written). The trailing
+    // Ghost type included - unused types are not written). The trailing
     // newline keeps hero from matching hero_hat.
     const level_txt = written.level_txts[0];
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/hero\n") != null);
@@ -1426,12 +1426,12 @@ test "writeEditorMission normalizes custom sprite stems to the save target's nam
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "custom/u_New Name/tree_top") != null);
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "old_dir") == null);
     // The behind layer's flag rides the sub-group (sprite, color_index,
-    // then `behind true` — emitted only when set, so exactly once for
+    // then `behind true` - emitted only when set, so exactly once for
     // the one behind layer).
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "sprite custom/u_New Name/tree_base\ncolor_index 5\nbehind true\n") != null);
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, level_txt, "behind true\n"));
     // Shipped stems pass through (the load defaults + the decoration's
-    // defaulted keys are part of the same contract — normalization only
+    // defaulted keys are part of the same contract - normalization only
     // ever touches custom stems).
     try std.testing.expect(std.mem.indexOf(u8, level_txt, "name Hero") != null);
 }
@@ -1448,7 +1448,7 @@ test "writeEditorLevel layout is translated + row-trimmed" {
     const written = try writeEditorMission(editor, "u", "u_My Mission", arena);
 
     // Level 1 (offset by (4,2)): the grid is the bbox, each row trimmed to
-    // its own last used column — interior alignment spaces stay, trailing
+    // its own last used column - interior alignment spaces stay, trailing
     // spaces never.
     const level_0_layout = parser.findSection(
         try parseConfigFile(written.level_txts[0], arena),
@@ -1473,7 +1473,7 @@ test "writeEditorMission fails when a level needs more codes than the ASCII set"
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    // 92 distinct used entity types in ONE level — one more than the 91
+    // 92 distinct used entity types in ONE level - one more than the 91
     // available layout chars.
     const type_count = 92;
     var entity_types: []types.EntityTypeDef = try arena.alloc(types.EntityTypeDef, type_count);

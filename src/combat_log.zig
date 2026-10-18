@@ -1,4 +1,4 @@
-//! Combat-log projection of `event_history`. Pure and on-demand — `view()`
+//! Combat-log projection of `event_history`. Pure and on-demand - `view()`
 //! calls `projectCombatLog` per frame into the frame arena (no `SessionState`
 //! cache). The tier split (`combatLogTier`) drives both the top-bar recent-icon
 //! view and the full-screen detailed log from one whitelist. See DESIGN →
@@ -21,11 +21,11 @@ pub const CombatLogTier = enum {
 /// Classify a single event into a combat-log tier. Pure, O(1), no state.
 ///
 /// Coarse (top bar, last N): the actions a player takes and the outcomes that
-/// matter at a glance — a voluntary move, a skill use, a death.
+/// matter at a glance - a voluntary move, a skill use, a death.
 /// Fine (detailed log, interleaved with coarse): the consequences of an action
-/// — damage dealt, stun/knockback/retreat, healing, effects gained/lost,
+/// - damage dealt, stun/knockback/retreat, healing, effects gained/lost,
 /// collisions, pickups, and forced moves (knockback/retreat-induced).
-/// None: everything else — mechanic noise (highlights, clear, turn-phase,
+/// None: everything else - mechanic noise (highlights, clear, turn-phase,
 /// aggro checks), gear toggles (swap_hands is player-only and spammable), and
 /// anything not relevant to a combat readout.
 fn combatLogTier(event: Event) CombatLogTier {
@@ -108,7 +108,7 @@ test "combatLogTier classifies the whitelist" {
         .sub_level_event = .{ .death = .{ .entity_index = 1 } },
     }));
 
-    // Forced move is fine (not coarse) — the knockback/retreat entry covers it.
+    // Forced move is fine (not coarse) - the knockback/retreat entry covers it.
     try std.testing.expectEqual(CombatLogTier.fine, combatLogTier(.{
         .level_event = .{ .move_entity = .{ .entity_index = 1, .destination = .{ .x = 2, .y = 0 }, .is_forced = true } },
     }));
@@ -142,7 +142,7 @@ test "combatLogTier classifies the whitelist" {
         .sub_level_event = .{ .pickup_items = .{ .entity_index = 0, .position = .{ .x = 1, .y = 0 } } },
     }));
 
-    // None tier — mechanic noise and out-of-scope events.
+    // None tier - mechanic noise and out-of-scope events.
     try std.testing.expectEqual(CombatLogTier.none, combatLogTier(.{
         .level_event = .{ .clear_highlights = {} },
     }));
@@ -209,7 +209,7 @@ test "projectCombatLog empty span yields empty log" {
         .{ .meta_event = .{ .start_level = .{ .mission_path = "m", .level_index = 0 } } },
     };
     const log = projectCombatLog(&stream, 1, 1, arena);
-    // Empty slice — still must be freed.
+    // Empty slice - still must be freed.
     defer arena.free(log);
     try std.testing.expectEqual(@as(usize, 0), log.len);
 }

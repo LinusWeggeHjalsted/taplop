@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates gradient_report.md — the perceptual-spacing + seam-contrast
+# Regenerates gradient_report.md - the perceptual-spacing + seam-contrast
 # report over data/color_themes.txt (read through the game's own parser +
 # loader): ΔE76 per adjacent ramp step, WCAG contrast on the seams the
 # renderer actually places adjacent (tile-vs-background, checkerboard),

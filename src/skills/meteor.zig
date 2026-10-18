@@ -12,7 +12,7 @@ const Skill = skill_mod.Skill;
 
 /// Meteor: a main-hand staff skill. Attacks every hostile within radius of
 /// the target tile for main-hand damage. The target is the strike's CENTER,
-/// not a destination — every existing tile within range is legal, including
+/// not a destination - every existing tile within range is legal, including
 /// occupied tiles and the caster's own tile (a point-blank cast).
 pub const skill = Skill{
     .name = "Meteor",
@@ -32,7 +32,7 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Valid targets: every existing tile within range — the strike center, so
+/// Valid targets: every existing tile within range - the strike center, so
 /// occupancy doesn't matter (contrast Flash Strike's empty-tile constraint,
 /// which exists because it teleports).
 fn getValidTargets(
@@ -58,11 +58,11 @@ fn getValidTargets(
     return positions.items;
 }
 
-/// AI options: the tile with the MOST hostiles within radius — the best
+/// AI options: the tile with the MOST hostiles within radius - the best
 /// strike center over every tile in range, occupied tiles included (a
 /// hostile ON the tile is a direct hit at distance 0). Strict > keeps the
 /// first tile in (y, x) scan order, the tiebreak convention. Rated in value
-/// units (helpers.aoePriority): 1 per target hit — a single-target cast ties
+/// units (helpers.aoePriority): 1 per target hit - a single-target cast ties
 /// the plain attack and loses to slot order, so the staff saves it for
 /// clusters (the Worldfire posture at a third of the cooldown).
 fn aiOptions(
@@ -128,7 +128,7 @@ fn useSkill(
     const damage = caster.getEffectiveOutgoingDamage(main_hand_damage);
 
     var skill_events: std.ArrayList(Event) = .empty;
-    // Meteor is the one AoE that ALSO strikes the center tile — the direct
+    // Meteor is the one AoE that ALSO strikes the center tile - the direct
     // hit lands FIRST, then the splash spirals outward (see the spiral
     // order on hostileIndicesInRadius).
     if (helpers.hostileEntityAt(caster_index, center, game_state)) |defender_index| {

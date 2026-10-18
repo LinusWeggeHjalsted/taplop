@@ -30,12 +30,12 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-cast at 2 — offered only below half health (a
+/// AI options: one self-cast at 2 - offered only below half health (a
 /// FULL heal, one value unit above idol heal's 20% heal at 1; the
 /// wounded-threshold gate matches the lifesteal convention).
 fn aiOptions(
@@ -52,8 +52,8 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
 }
 
-/// Self-cast — no meaningful target.
-/// Self-cast — fires immediately.
+/// Self-cast - no meaningful target.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

@@ -1,9 +1,9 @@
 Metadata
 file_format_version 1
 
-# The editor palette "+" defaults — one entry per kind, in the level-file
+# The editor palette "+" defaults - one entry per kind, in the level-file
 # section formats (Enemies / Decorations / Items entries, no
-# character_code — the code is a level-Layout concern; see
+# character_code - the code is a level-Layout concern; see
 # data/decorations.txt for the same precedent). Parsed by
 # loaders.loadEditorDefaults; see DESIGN → Architecture → Level Editor →
 # Editor UI layout (tool palette).

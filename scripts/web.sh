@@ -9,7 +9,7 @@
 # final WEB OK / WEB FAIL line (trust the exit code).
 #
 # The web build needs a one-line-patched stdlib (Zig 0.16.0's std/os/emscripten.zig
-# STOPSIG bug — see AGENTS → Build & Test). The patched copy lives at
+# STOPSIG bug - see AGENTS → Build & Test). The patched copy lives at
 # ~/.local/zig-patched-lib; native + tests use the normal zig (no env var).
 #
 # Usage:

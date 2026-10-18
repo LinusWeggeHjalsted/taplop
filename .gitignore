@@ -13,12 +13,12 @@ src/generated_lookups.zig
 src/generated_test_root.zig
 # test build the test FileSource uses cwd as its persistent dir, so a test
 .zig-cache/
-# (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
+# (~/.ziglop/logs/), not the working directory - no longer gitignore-relevant
 zig-out/
 zig-pkg/
 sound_report.md
 scratch/
-# Dev scratch data dir (--data-dir ./scratch, README) — untracked by design
+# Dev scratch data dir (--data-dir ./scratch, README) - untracked by design
 
 zig-cache/
 # Test scratch namespace (test_harnesss

@@ -13,7 +13,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// That Which Reaches: an enchantment. Grants the That Which Reaches
-/// effect on the caster — range and radius +1 for the duration.
+/// effect on the caster - range and radius +1 for the duration.
 /// Non-turn-ending (the enchantment pool's ratings only order the
 /// non-ending skills).
 pub const skill = Skill{
@@ -34,18 +34,18 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: rated against the LIVE beneficiaries of the +1 range/radius
-/// — the casts that will actually fire this turn and carry a range or
+/// - the casts that will actually fire this turn and carry a range or
 /// radius (the base-value rule: the planned ending cast when it has the
-/// field, plus positive-rated non-ending skills with it — the +1 applies
+/// field, plus positive-rated non-ending skills with it - the +1 applies
 /// to whatever they cast), MAX'd with the SIM DIFFERENTIAL: the bar
 /// re-evaluated with the effect virtually applied
-/// (helpers.bestCastsWithVirtualEffect) — any plan difference (an
+/// (helpers.bestCastsWithVirtualEffect) - any plan difference (an
 /// enabled out-of-range cast, a better cast, a different target) is the
 /// +1's doing, and the would-be cast's rating counts as a beneficiary.
 /// Rating = best + 1 (fires first in the chain). No live beneficiary and
@@ -64,7 +64,7 @@ fn aiOptions(
 
     var best_beneficiary: u32 = 0;
 
-    // The real bar (this frame — reaches itself is cut by the in-progress
+    // The real bar (this frame - reaches itself is cut by the in-progress
     // guard).
     const casts = ai_select.bestCasts(caster_index, game_state, weapon_type_definitions, allocator, frame);
 
@@ -96,7 +96,7 @@ fn aiOptions(
     }
 
     // Sim differential: the bar WITH the effect virtually applied. Any
-    // plan difference is the +1's doing — the would-be cast (enabled,
+    // plan difference is the +1's doing - the would-be cast (enabled,
     // upgraded, or re-targeted) is a live beneficiary at its rating.
     const sim_gain = helpers.simDifferentialGain(
         frame,
@@ -114,7 +114,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

@@ -8,7 +8,7 @@
 //! The test owns the backing arena (typically `std.heap.ArenaAllocator.init(
 //! std.testing.allocator)`) and passes its allocator into `Harness.init`; the
 //! harness loads config into that arena, and every history the harness creates
-//! allocates from it too — so freeing the arena at test end reclaims everything
+//! allocates from it too - so freeing the arena at test end reclaims everything
 //! with no per-history deinit (mirrors the existing main.zig tests). The
 //! harness must outlive every history it creates (a stack-local harness in the
 //! test satisfies this).
@@ -51,7 +51,7 @@ pub const Harness = struct {
     /// The persistent layer is a fresh scratch dir (NOT cwd): tests that drain
     /// `end_level`/`write_save` to idle push REAL autosave writes (not
     /// replay-gated), which must not plant `saves/autosave.txt` in the project
-    /// root — a planted autosave then breaks the "missing autosave is
+    /// root - a planted autosave then breaks the "missing autosave is
     /// recoverable" test on every subsequent run. Reads fall through to the
     /// embedded map either way, so config loads are unaffected.
     pub fn init(arena: std.mem.Allocator) Harness {
@@ -63,7 +63,7 @@ pub const Harness = struct {
         const persistent_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
             .open_options = .{ .access_sub_paths = true, .iterate = true },
         }) catch @panic("failed to create test-harness scratch dir");
-        // Leaks the dir handle + io for the process lifetime of the test run —
+        // Leaks the dir handle + io for the process lifetime of the test run -
         // the harness's FileSource borrows both and there is no harness-wide
         // teardown hook to close them in. Test binaries are short-lived.
         const file_source = FileSource.init(io, persistent_dir);
@@ -117,7 +117,7 @@ pub fn defaultStartingState() GameState {
 
 /// A level-context GameState for combat/AI handler tests. `entities` is
 /// allocated in `arena` (the harness's backing arena) as a `[]Entity` and
-/// handed to the level as `[]const Entity` — handlers mutate entities via
+/// handed to the level as `[]const Entity` - handlers mutate entities via
 /// `@constCast` (see `getLevelEntity`), so this matches the live mutation
 /// path. `tiles` is the walkable tile set; `turn_phase` defaults to null
 /// (tests that need a phase set it directly on `history.current_state.level`).
@@ -147,7 +147,7 @@ pub fn levelStateWithEntities(
 }
 
 /// Mutable pointer to a level entity (mirrors `shared.getLevelEntity`).
-/// Panics if there's no level — handler tests that call this implicitly assert
+/// Panics if there's no level - handler tests that call this implicitly assert
 /// they set one up.
 pub fn levelEntity(history: *GameStateHistory, entity_index: usize) *types.Entity {
     return &@constCast(history.current_state.level.?.entities)[entity_index];
@@ -157,11 +157,11 @@ pub fn levelEntity(history: *GameStateHistory, entity_index: usize) *types.Entit
 /// loop, so waits are cleared rather than timed). Mirrors the live gameLoop's
 /// idle bookkeeping: on stack-empty, an idle point is recorded (snapshot +
 /// compact), so a forward-played session accumulates the same idle points
-/// the live loop would — which reconstruction then derives from virtual
+/// the live loop would - which reconstruction then derives from virtual
 /// depth. DEDUPED via maybeRecordIdlePoint: some commit paths drain +
 /// record internally (resolveTextEditOutcome's pushPlayerActionAndDrain),
 /// and an unconditional recordIdlePoint would append the same event
-/// index twice — duplicate idle points make undo restore to the CURRENT
+/// index twice - duplicate idle points make undo restore to the CURRENT
 /// state (a no-op undo step) instead of the previous one.
 pub fn runToIdle(history: *GameStateHistory) void {
     while (history.current_state.event_stack.len > 0) {
@@ -175,7 +175,7 @@ pub fn runToIdle(history: *GameStateHistory) void {
 /// Open a middle panel through the real event path (the recorded
 /// `player_toggle_ui_surface`), so a fixture's later
 /// inventory/gear/skills orchestrators pass the panel-open legality gate
-/// on replay/undo (the check mirrors the live gate — see DESIGN →
+/// on replay/undo (the check mirrors the live gate - see DESIGN →
 /// Determinism → Replay PLAYER-ACTION LEGALITY).
 pub fn openMiddlePanel(history: *GameStateHistory, panel_id: types.MiddlePanelId) void {
     event_push.pushEvents(
@@ -204,7 +204,7 @@ test "harness: newHistory reaches the main menu and idles" {
     try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     // No key-validation warnings from shipped startup config (settings,
-    // color themes, weapon types, salvage) — the shipped files should have
+    // color themes, weapon types, salvage) - the shipped files should have
     // no unknown keys. pending_error is null.
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
 }

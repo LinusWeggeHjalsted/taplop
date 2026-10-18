@@ -1,9 +1,9 @@
-//! Sound asset overview generator — a build tool, never part of the game.
+//! Sound asset overview generator - a build tool, never part of the game.
 //! `zig build sound-report` (wrapped by scripts/sound_report.sh) walks the
 //! engine's own enums (SoundId / SkillId / Action / ItemActionSound) and
 //! writes `sound_report.md` at the project root: EVERY wired sound path, its
 //! status against the shipped assets + the persistent-dir shadows, and what
-//! triggers it. Enum-keyed so new skills/actions/bases appear automatically —
+//! triggers it. Enum-keyed so new skills/actions/bases appear automatically -
 //! no hand-maintained list to drift. See DESIGN → Audio (layered cues).
 
 const std = @import("std");
@@ -11,7 +11,7 @@ const types = @import("types.zig");
 const file_source = @import("file_source.zig");
 const lookups = @import("generated_lookups.zig");
 
-/// One reported sound asset: the project-relative path (extension-less —
+/// One reported sound asset: the project-relative path (extension-less -
 /// `.wav`/`.ogg` both resolve, `.wav` tried first) + the human description.
 const SoundAsset = struct {
     path: []const u8,
@@ -28,13 +28,13 @@ const ReportCounts = struct {
 /// Where an asset's files were found: which extension resolved in the
 /// shipped `assets/` tree and which in the persistent dir (`.wav`/`.ogg`;
 /// null = no file there). A persistent-dir copy wins over a shipped one at
-/// runtime — see DESIGN → File System & IO → Modding by shadowing.
+/// runtime - see DESIGN → File System & IO → Modding by shadowing.
 const AssetStatus = struct {
     shipped_ext: ?[]const u8 = null,
     shadowed_ext: ?[]const u8 = null,
 };
 
-/// The audio extensions in runtime lookup order — shared with the
+/// The audio extensions in runtime lookup order - shared with the
 /// FileSource (the single source of the `.wav`-first policy).
 const audio_extensions = file_source.FileSource.audio_file_extensions;
 
@@ -59,12 +59,12 @@ pub fn main() !void {
     try report.print(allocator,
         \\# Ziglop sound asset overview
         \\
-        \\Auto-generated from the engine's enums — every wired sound is listed,
+        \\Auto-generated from the engine's enums - every wired sound is listed,
         \\and new skills/actions appear here automatically. Regenerate with
         \\`scripts/sound_report.sh`.
         \\
         \\**How to add or replace a sound:** place a file at
-        \\`{s}/<path>` — the persistent directory overrides the shipped copy
+        \\`{s}/<path>` - the persistent directory overrides the shipped copy
         \\(asset shadowing). Both `.wav` and `.ogg` are accepted (`.wav` is
         \\looked up first). A layer file dropped mid-session plays on the next
         \\cast/click without relaunching; bases and music load at launch.
@@ -75,11 +75,11 @@ pub fn main() !void {
         \\
         \\Every layered trigger plays TWO files at once: a category `_base`
         \\plus a specific `_layer`. Which half is percussive vs ambient is a
-        \\per-family authoring choice — the names don't presume it.
+        \\per-family authoring choice - the names don't presume it.
         \\
         \\## Music (looping streams)
         \\
-        \\One layer fades in per aggro'd enemy (~1s crossfade), in order —
+        \\One layer fades in per aggro'd enemy (~1s crossfade), in order -
         \\write as many as you like, up to {d}. ALL stems (base included)
         \\must be identical-length, sample-aligned loops (one DAW session).
         \\
@@ -97,7 +97,7 @@ pub fn main() !void {
         );
         const description = try std.fmt.allocPrint(
             allocator,
-            "intensity layer {d} — on while {d}+ enemies are aggro'd",
+            "intensity layer {d} - on while {d}+ enemies are aggro'd",
             .{ layer_index, layer_index },
         );
         try reportAsset(allocator, &report, cwd, persistent_dir, io, .{
@@ -142,7 +142,7 @@ pub fn main() !void {
             @tagName(types.skillTypeBaseSound(definition.skill_type))
         else
             "<unknown base>";
-        const description = try std.fmt.allocPrint(allocator, "the {s} skill — plays over {s}", .{ @tagName(skill_id), base_name });
+        const description = try std.fmt.allocPrint(allocator, "the {s} skill - plays over {s}", .{ @tagName(skill_id), base_name });
         try reportAsset(allocator, &report, cwd, persistent_dir, io, .{
             .path = try std.fmt.allocPrint(allocator, "assets/audio/sfx/skills/{s}_layer", .{@tagName(skill_id)}),
             .description = description,
@@ -154,10 +154,10 @@ pub fn main() !void {
         \\## Button layers (played over button_base_up when the action fires)
         \\
         \\Keyboard-triggered actions play the layer alone (no click sounds).
-        \\Skill-slot actions fire their layer on prepare/unprepare only — the
+        \\Skill-slot actions fire their layer on prepare/unprepare only - the
         \\auto-fire cast plays the full skill cue instead.
         \\
-        \\NOT listed (deliberately unwired — a dropped layer file would not
+        \\NOT listed (deliberately unwired - a dropped layer file would not
         \\play): the zoom keys + cursor keys (the wheel/mouse paths carry no
         \\sound; keys shouldn't be noisier), error-scroll ticks,
         \\`dump_event_log` + `skip_level` (dev tools), `confirm` (the
@@ -167,10 +167,10 @@ pub fn main() !void {
     for (std.meta.tags(types.Action)) |action| {
         if (types.actionSoundUnwired(action)) continue;
         const note: []const u8 = if (types.actionIsSkillSlot(action))
-            "skill slot — prepare/unprepare feedback (the cast itself plays the skill cue)"
+            "skill slot - prepare/unprepare feedback (the cast itself plays the skill cue)"
         else
             "fires on the button release + the keybind, when the action does something";
-        const description = try std.fmt.allocPrint(allocator, "`{s}` — {s}", .{ @tagName(action), note });
+        const description = try std.fmt.allocPrint(allocator, "`{s}` - {s}", .{ @tagName(action), note });
         try reportAsset(allocator, &report, cwd, persistent_dir, io, .{
             .path = try std.fmt.allocPrint(allocator, "assets/audio/sfx/buttons/{s}_layer", .{@tagName(action)}),
             .description = description,
@@ -214,7 +214,7 @@ fn reportAsset(
     if (status.shadowed_ext != null) counts.shadowed += 1;
     if (status.shipped_ext == null and status.shadowed_ext == null) counts.missing += 1;
     const status_text = try statusString(allocator, status);
-    try report.print(allocator, "- `{s}` — {s} **[{s}]**\n", .{
+    try report.print(allocator, "- `{s}` - {s} **[{s}]**\n", .{
         asset.path,
         asset.description,
         status_text,
@@ -222,7 +222,7 @@ fn reportAsset(
 }
 
 /// The report row's status text: `shipped (.ogg)`, `shadowed (.wav)`,
-/// both (shadow wins), or `MISSING (silent)` — the extensions show WHICH
+/// both (shadow wins), or `MISSING (silent)` - the extensions show WHICH
 /// file resolves, since `.wav` and `.ogg` are both accepted.
 fn statusString(allocator: std.mem.Allocator, status: AssetStatus) ![]const u8 {
     if (status.shipped_ext == null and status.shadowed_ext == null)
@@ -231,7 +231,7 @@ fn statusString(allocator: std.mem.Allocator, status: AssetStatus) ![]const u8 {
         if (status.shadowed_ext) |shadowed_ext| {
             return std.fmt.allocPrint(
                 allocator,
-                "shipped ({s}) + shadowed ({s}) — shadow wins",
+                "shipped ({s}) + shadowed ({s}) - shadow wins",
                 .{ shipped_ext, shadowed_ext },
             );
         }
@@ -266,7 +266,7 @@ fn assetStatus(
 
 /// The first accepted extension of `path_without_extension` that exists in
 /// `dir`, or null. Any stat error counts as "not there" (the report
-/// degrades, never crashes — the `fileExists` discipline).
+/// degrades, never crashes - the `fileExists` discipline).
 fn foundExtension(
     io: std.Io,
     dir: std.Io.Dir,
@@ -285,9 +285,9 @@ fn foundExtension(
 }
 
 /// The per-OS persistent data directory (mirrors native.zig's
-/// `resolvePersistentPath`, minus the CLI flag — the tool reads `$ZIGLOP_DATA`
+/// `resolvePersistentPath`, minus the CLI flag - the tool reads `$ZIGLOP_DATA`
 /// or the platform default). libc is linked (see build.zig), so
-/// `std.c.getenv` is available — the native.zig discipline.
+/// `std.c.getenv` is available - the native.zig discipline.
 fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
     if (std.c.getenv("ZIGLOP_DATA")) |override| {
         return allocator.dupe(u8, std.mem.sliceTo(override, 0));
@@ -304,7 +304,7 @@ fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
     };
 }
 
-/// Whether a `SoundId` is a layered-cue BASE (vs a plain one-shot) — splits
+/// Whether a `SoundId` is a layered-cue BASE (vs a plain one-shot) - splits
 /// the report's SoundId walk into the two sections.
 fn isBase(sound: types.SoundId) bool {
     return switch (sound) {

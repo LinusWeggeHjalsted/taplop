@@ -18,7 +18,7 @@ const Event = events.Event;
 const AiOption = skill_mod.AiOption;
 
 /// Positions of all living hostile entities within `range` (Chebyshev) of the
-/// caster. Returns null if there are none — matching `Skill.getValidTargets`.
+/// caster. Returns null if there are none - matching `Skill.getValidTargets`.
 /// `range` is the caster's already-effective range.
 pub fn hostilesInRange(
     caster_index: u32,
@@ -44,7 +44,7 @@ pub fn hostilesInRange(
 }
 
 /// AI target selection: the position nearest the caster from `valid_targets`.
-/// Null if the list is null or empty — matching `Skill.selectTarget`.
+/// Null if the list is null or empty - matching `Skill.selectTarget`.
 pub fn nearestTarget(
     caster_index: u32,
     valid_targets: ?[]const Vector2,
@@ -57,7 +57,7 @@ pub fn nearestTarget(
     const caster = level.entities[caster_index];
 
     // Strict < keeps the first target at the minimum distance, so ties resolve
-    // by the order of `targets` (its builder's scan order) — deterministic (see
+    // by the order of `targets` (its builder's scan order) - deterministic (see
     // DESIGN → Determinism & Tiebreaking).
     var best: ?Vector2 = null;
     var best_distance: i32 = std.math.maxInt(i32);
@@ -102,10 +102,10 @@ pub fn hostileEntityAt(
 /// For radius/AoE skills that hit every hostile around a point. Empty slice if
 /// none.
 ///
-/// EXECUTION ORDER — the AoE spiral (see DESIGN → Determinism & Tiebreaking):
-/// targets enumerate by TILE, walking `spiralTilesInRadius` — the innermost
+/// EXECUTION ORDER - the AoE spiral (see DESIGN → Determinism & Tiebreaking):
+/// targets enumerate by TILE, walking `spiralTilesInRadius` - the innermost
 /// ring first from its top-left tile clockwise, then each next ring the same
-/// way. The center tile is NOT included (meteor is the one exception — it
+/// way. The center tile is NOT included (meteor is the one exception - it
 /// strikes the center first, then the spiral).
 pub fn hostileIndicesInRadius(
     caster_index: u32,
@@ -117,7 +117,7 @@ pub fn hostileIndicesInRadius(
     var indices: std.ArrayList(u32) = .empty;
     const tiles = spiralTilesInRadius(allocator, center, radius);
     for (tiles) |tile| {
-        // Same filter as always (living, hostile, not the caster) — the
+        // Same filter as always (living, hostile, not the caster) - the
         // per-tile lookup IS the filter, and one entity per tile makes the
         // mapping unique.
         if (hostileEntityAt(caster_index, tile, game_state)) |entity_index| {
@@ -132,7 +132,7 @@ pub fn hostileIndicesInRadius(
 /// `(center.x - 1, center.y - 1)` and walking CLOCKWISE (screen coords, +y
 /// is down: top edge left→right, right edge top→bottom, bottom edge
 /// right→left, left edge bottom→top), then ring 2 the same way, and so on
-/// outward. Ring n has exactly 8n tiles. The shared AoE execution order —
+/// outward. Ring n has exactly 8n tiles. The shared AoE execution order -
 /// see DESIGN → Determinism & Tiebreaking (AoE execution order).
 fn spiralTilesInRadius(
     allocator: std.mem.Allocator,
@@ -186,7 +186,7 @@ const TargetCandidate = struct {
 
 /// The focus-fire tail order shared by EVERY selection helper: lowest
 /// current health, then Chebyshev distance to the caster, then entity
-/// index (unique — total order). Convention: DESIGN → Determinism &
+/// index (unique - total order). Convention: DESIGN → Determinism &
 /// Tiebreaking.
 fn focusFireTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
     if (a.health != b.health) return a.health < b.health;
@@ -194,7 +194,7 @@ fn focusFireTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
     return a.entity_index < b.entity_index;
 }
 
-/// Preferred candidates first, then the focus-fire tail — the ordering for
+/// Preferred candidates first, then the focus-fire tail - the ordering for
 /// the keyed selection helpers (knockbackTarget, stunTarget).
 fn preferredThenTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
     if (a.preferred != b.preferred) return a.preferred;
@@ -202,7 +202,7 @@ fn preferredThenTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
 }
 
 /// AI target selection for attack skills: the hostile with the LOWEST
-/// current health from `valid_targets` — focus-fire concentrates damage
+/// current health from `valid_targets` - focus-fire concentrates damage
 /// on nearly-dead enemies so they die sooner (more effective than nearest-
 /// first when several enemies are engaged). Ties break by Chebyshev distance
 /// to the caster, then by entity index (unique, so the order is total).
@@ -244,7 +244,7 @@ fn sign(value: i32) i32 {
 }
 
 /// Whether knocking `defender_index` back from `caster_index` by `distance`
-/// steps would COLLIDE — a missing tile (level edge) or a living occupant
+/// steps would COLLIDE - a missing tile (level edge) or a living occupant
 /// along the push path. Mirrors the knockback handler exactly: direction =
 /// each axis of defender − caster normalized to −1/0/+1; the defender itself
 /// is not an obstacle (it moves with the push); dead entities are not
@@ -279,7 +279,7 @@ pub fn knockbackWouldCollide(
 }
 
 /// AI target selection for knockback skills: prefer a target the push will
-/// COLLIDE (the collision adds damage), then the focus-fire tail — lowest
+/// COLLIDE (the collision adds damage), then the focus-fire tail - lowest
 /// current health, then Chebyshev distance to the caster, then entity index
 /// (total order). `distance` is the caster's EFFECTIVE push distance. The
 /// tail keys match `weakestTarget`; this adds the collide key in front.
@@ -313,7 +313,7 @@ pub fn knockbackTarget(
 }
 
 /// AI target selection for stun skills: prefer a target that is NOT already
-/// stunned (stuns take the max of current vs incoming, never stack — a stun
+/// stunned (stuns take the max of current vs incoming, never stack - a stun
 /// on a stunned target only pays if the new duration is longer), then the
 /// focus-fire tail (lowest health, distance, entity index). See DESIGN →
 /// Architecture (the stun rule).
@@ -347,7 +347,7 @@ pub fn stunTarget(
 }
 
 /// Number of living hostile entities within `radius` (Chebyshev) of
-/// `center` — the AoE hit-count around an arbitrary point (the caster's
+/// `center` - the AoE hit-count around an arbitrary point (the caster's
 /// own position for self-centered skills, a candidate landing tile for
 /// Flash Strike). Allocation-free so priority fns can call it.
 pub fn hostileCountWithinRadius(
@@ -379,7 +379,7 @@ pub fn aoePriority(target_count: u32, base_priority: u32) u32 {
     return base_priority + target_count - 1;
 }
 
-/// Build a one-option AI list — the common case where a skill has a single
+/// Build a one-option AI list - the common case where a skill has a single
 /// best cast (the focus-fire pick, a self-cast buff, the best strike
 /// center). Skills with genuinely competing casts build their own slice.
 pub fn singleOption(allocator: std.mem.Allocator, option: AiOption) []const AiOption {
@@ -387,7 +387,7 @@ pub fn singleOption(allocator: std.mem.Allocator, option: AiOption) []const AiOp
 }
 
 /// Number of hostiles within `radius` (Chebyshev) of `center` whose knockback
-/// push from the caster (by `push_distance`) would COLLIDE — the
+/// push from the caster (by `push_distance`) would COLLIDE - the
 /// AoE-knockback collision count. Allocation-free; reuses
 /// knockbackWouldCollide so the prediction cannot drift from the handler.
 pub fn collidingTargetCount(
@@ -412,13 +412,13 @@ pub fn collidingTargetCount(
 }
 
 /// The value-unit rating for AoE knockback skills: one hit's worth per
-/// target (`base` for the first — 1 for a plain per-target hit), +1 per
+/// target (`base` for the first - 1 for a plain per-target hit), +1 per
 /// target whose push would collide (the collision adds ~a hit of damage
-/// to that target). "Per colliding target" is honest for an AoE — the
+/// to that target). "Per colliding target" is honest for an AoE - the
 /// cast has no target choice (contrast the single-target skills, whose
 /// collision bump rides their pick). 0 when nothing would be hit.
 /// 1.5x damage, integer math (base + base/2). Damage multipliers apply
-/// LAST — to the fully-modified damage (gear + effects + momentum + any
+/// LAST - to the fully-modified damage (gear + effects + momentum + any
 /// skill-specific additive bonus), never to the raw weapon/spell number.
 /// See DESIGN → Architecture → Damage multiplier ordering.
 pub fn damageTimesOneAndAHalf(base_damage: u32) u32 {
@@ -430,7 +430,7 @@ pub fn aoeKnockbackPriority(target_count: u32, colliding_count: u32, base_priori
     return base_priority + target_count - 1 + colliding_count;
 }
 
-/// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
+/// Empty walkable tiles within `range` (Chebyshev) of the caster - valid
 /// teleport destinations (Blink, FlashStrike). Null if there are none.
 pub fn emptyTilesInRange(
     caster_index: u32,
@@ -486,11 +486,11 @@ pub fn isOccupied(game_state: GameState, position: Vector2, exclude_index: ?u32)
 /// runs first. Reversing here lets skill authors list events in the order they
 /// should happen (e.g. attack, then stun).
 ///
-/// PACING (the generic rule — see DESIGN → Architecture → Skill pacing): a
+/// PACING (the generic rule - see DESIGN → Architecture → Skill pacing): a
 /// skill that pushes more than one event gets an `effect_step_wait_milliseconds`
 /// wait between each consecutive pair, interleaved in natural execution order
 /// before the reversal. Lists of 0 or 1 events pass through unchanged. Skills
-/// never insert waits themselves — the pacing derives from the list length.
+/// never insert waits themselves - the pacing derives from the list length.
 ///
 /// The result lives in `allocator` (not a caller-frame temporary): pushEvents
 /// consumes it synchronously but it must be valid at that point.
@@ -514,7 +514,7 @@ pub fn ownedEvents(
 }
 
 /// Intra-effect pacing gap between the individual effects of one skill
-/// (and between a hit's resolution and its damage — the attack/collision
+/// (and between a hit's resolution and its damage - the attack/collision
 /// arms push it too). Distinct from turn-flow pacing (500ms between turn
 /// steps). Shared here because both skills and the handlers construct it.
 /// See DESIGN → Architecture → Damage apply split + TODO → Effect pacing.
@@ -522,7 +522,7 @@ const effect_step_wait_milliseconds: u32 = 125;
 
 /// Duration of the `gap_count`-th accelerating wait in an effect chain:
 /// `effect_step_wait_milliseconds` multiplied by 3/4 per prior gap (integer
-/// math), floored at 1ms — the tail of a long chain converges to
+/// math), floored at 1ms - the tail of a long chain converges to
 /// near-simultaneous without producing zero-duration no-op events. The
 /// accelerating-wait arm computes this from `GameState.wait_acceleration`;
 /// the sequence for the first gaps is 125, 93, 69, 51, 38, 28, 21, 15, 11,
@@ -536,7 +536,7 @@ pub fn acceleratedEffectStepWaitMilliseconds(gap_count: u32) u32 {
     return @max(duration, 1);
 }
 
-/// An `accelerating_wait` event — the pacing wait `ownedEvents` interleaves
+/// An `accelerating_wait` event - the pacing wait `ownedEvents` interleaves
 /// between a skill's consecutive events. File-private: skills never construct
 /// waits themselves (the generic rule derives pacing from the list length),
 /// and the duration is computed by the wait arm from GameState, not carried.
@@ -545,19 +545,19 @@ fn effectStepWait() Event {
 }
 
 /// The caster's would-be best casts with one extra active effect virtually
-/// applied — an enhancement enchantment's DIFFERENTIAL evaluation: what
+/// applied - an enhancement enchantment's DIFFERENTIAL evaluation: what
 /// would the bar cast if I were already active? (That Which Reaches: +1
 /// range can enable an out-of-range attack or upgrade the target choice;
 /// Bull Form: +10 distance can flip a knockback's collision rating. See
 /// DESIGN → Architecture, AI rating scale.)
 ///
 /// Shallow-clones the entities slice (only the caster's effects array is
-/// replaced — the denormalized `additive_effect_modifiers` the modifier
+/// replaced - the denormalized `additive_effect_modifiers` the modifier
 /// pipeline reads are copied from the effect definition, mirroring
 /// create_effect), then runs `ai_select.bestCasts` against the simulated
 /// state with a FRESH frame: the caller frame's option memos are for the
 /// real state and must not be poisoned with virtual-modifier results. The
-/// sim frame INHERITS the caller's in-progress set plus `skill_id` — the
+/// sim frame INHERITS the caller's in-progress set plus `skill_id` - the
 /// whole "currently being decided" stack is excluded from the
 /// hypothetical (without the inheritance, two sim-based enhancers
 /// equipped together would alternate through each other's sims forever).
@@ -598,11 +598,11 @@ fn bestCastsWithVirtualEffect(
 /// The virtual-effect sim differential's GAIN for an enhancement
 /// enchantment: the whole bar re-evaluated with the effect virtually
 /// applied (bestCastsWithVirtualEffect), and the best plan rating that
-/// DIFFERS from the real bar's plans (any difference — an enabled cast, a
-/// better cast, a different target — counts; see ai_select.plansDiffer).
+/// DIFFERS from the real bar's plans (any difference - an enabled cast, a
+/// better cast, a different target - counts; see ai_select.plansDiffer).
 /// Both pools. 0 when the modifier changes nothing the bar would cast.
 /// `real` is the caller's own bestCasts result (already computed for the
-/// base-value rule) — the comparison needs it, so pass it rather than
+/// base-value rule) - the comparison needs it, so pass it rather than
 /// re-deriving. See DESIGN → Architecture, AI rating scale.
 pub fn simDifferentialGain(
     frame: *skill_mod.EvalFrame,
@@ -616,7 +616,7 @@ pub fn simDifferentialGain(
 ) u32 {
     const sim = bestCastsWithVirtualEffect(frame, skill_id, effect_id, caster_index, game_state, weapon_type_definitions, allocator);
     var gain: u32 = 0;
-    // The gain is the SIM's plan when it differs — unwrap the sim side
+    // The gain is the SIM's plan when it differs - unwrap the sim side
     // only (plansDiffer is also true when the real plan exists and the
     // sim's doesn't; there is no would-be cast to gain from there).
     if (sim.ending) |sim_plan| {
@@ -734,7 +734,7 @@ test "acceleratedEffectStepWaitMilliseconds: decays by 3/4 per gap, floored at 1
     for (expected, 0..) |want, gap_count| {
         try std.testing.expectEqual(want, acceleratedEffectStepWaitMilliseconds(@intCast(gap_count)));
     }
-    // The floor holds indefinitely — no zero-duration waits.
+    // The floor holds indefinitely - no zero-duration waits.
     try std.testing.expectEqual(@as(u32, 1), acceleratedEffectStepWaitMilliseconds(50));
     try std.testing.expectEqual(@as(u32, 1), acceleratedEffectStepWaitMilliseconds(1000));
 }

@@ -10,7 +10,7 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Promise of Death: an enchantment. Grants the Promise of Death effect —
+/// Promise of Death: an enchantment. Grants the Promise of Death effect -
 /// if an enemy dies while it holds, the caster resets every cooldown and
 /// heals to full. Lasts one round.
 pub const skill = Skill{
@@ -31,7 +31,7 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
@@ -60,7 +60,7 @@ fn aiOptions(
     return &.{};
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

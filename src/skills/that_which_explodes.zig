@@ -13,7 +13,7 @@ const Skill = skill_mod.Skill;
 const WeaponTypeDefinitions = types.WeaponTypeDefinitions;
 
 /// That Which Explodes: an enchantment. Grants the That Which Explodes
-/// effect — when the holder is dealt attack damage, it attacks every
+/// effect - when the holder is dealt attack damage, it attacks every
 /// hostile within radius for 1x effective spell damage. The skill itself
 /// deals no damage (the effect's attacks are reactive); deals_damage is
 /// false because the threat model measures proactive reach.
@@ -35,13 +35,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-cast, offered only when a hostile can reach and
-/// attack the caster next turn (the threat model — exploding with nobody
+/// attack the caster next turn (the threat model - exploding with nobody
 /// able to hit you wastes the cooldown), rated 2 (prevention + retaliation
 /// ≈ two hits of swing).
 fn aiOptions(
@@ -58,7 +58,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
 }
 
-/// Self-cast — fires immediately.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

@@ -43,7 +43,7 @@ fn getValidTargets(
 
 /// AI options: the weakest hostile (focus-fire). Rated 2 when the caster
 /// is below half health (the lifesteal then pays ~a hit's worth of value),
-/// else 1 — a plain hit with a rider (value units).
+/// else 1 - a plain hit with a rider (value units).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,

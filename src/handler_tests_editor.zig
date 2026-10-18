@@ -1,4 +1,4 @@
-//! Editor handler tests. Covers the editor input path — level-tab clicks
+//! Editor handler tests. Covers the editor input path - level-tab clicks
 //! (`player_set_editor_level` → `editor_set_active_level`), which ride the
 //! undo timeline like every GameState mutation, plus the pure click
 //! planners and the input-side no-op gate. The framing-event round trip
@@ -32,7 +32,7 @@ const GameStateHistory = state.GameStateHistory;
 
 /// One recorded-event kind for `expectLastEvents`: the outer category +
 /// the inner variant tag pair. Asserting WHAT recorded (the close pair,
-/// the open-then-close surface toggles) instead of COUNT deltas — the
+/// the open-then-close surface toggles) instead of COUNT deltas - the
 /// derived-expectations discipline (a count breaks by hand whenever a
 /// commit chain grows a step; the kinds stay stable).
 const RecordedEventKind = struct {
@@ -77,7 +77,7 @@ fn editorStartingState(levels: []const types.EditorLevel) state.GameState {
 }
 
 /// An editor-screen starting state carrying a full `Editor` (palette +
-/// levels) — the placement-click tests need palette + placements.
+/// levels) - the placement-click tests need palette + placements.
 fn editorStateWith(editor: types.Editor) state.GameState {
     return .{
         .screen = .editor,
@@ -121,7 +121,7 @@ test "player_set_editor_level: switches the active level, undo reverts" {
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.active_level_index);
 
     // The switch rides the undo timeline (the Editor is part of GameState,
-    // captured by snapshots) — undo walks back to level 0.
+    // captured by snapshots) - undo walks back to level 0.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.active_level_index);
 }
@@ -148,7 +148,7 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
 }
 
 test "editor clamp snapshot: refreshed on level switch, held across tile edits, reverted by undo" {
-    // The camera clamp reads `Editor.clamp_bounds` (the snapshot — see
+    // The camera clamp reads `Editor.clamp_bounds` (the snapshot - see
     // DESIGN → Platform Seam → Camera clamping): a level switch refreshes
     // it from the new active level's live tiles; a tile edit mid-level
     // must NOT touch it (mid-edit reframing is the bug this snapshot
@@ -201,7 +201,7 @@ test "editor clamp snapshot: refreshed on level switch, held across tile edits, 
     );
 
     // Undo the tile edit (still held), then undo the switch: the snapshot
-    // reverts with the tab — back to the crafted starting state, which has
+    // reverts with the tab - back to the crafted starting state, which has
     // NO snapshot (it never went through open_editor; real flows always
     // do). The point: undo restores the pre-switch snapshot verbatim, it
     // doesn't re-derive one.
@@ -232,7 +232,7 @@ test "level-tab click on the active tab fires nothing (no dead undo step)" {
     }));
     runToIdle(&history);
 
-    // Re-clicking the active tab: no event, no undo step — and the
+    // Re-clicking the active tab: no event, no undo step - and the
     // selection survives (a same-value event would have cleared it as a
     // side effect).
     input_handlers.handleAnytimeInput(&history, .{
@@ -258,7 +258,7 @@ test "player_toggle_editor_inspector: flips the open state, undo/redo restores" 
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // Open by default (an empty type isn't useful until populated — the
+    // Open by default (an empty type isn't useful until populated - the
     // inspector is the first thing an author sees).
     try testing.expect(history.current_state.editor.?.inspector_open);
 
@@ -272,7 +272,7 @@ test "player_toggle_editor_inspector: flips the open state, undo/redo restores" 
     try testing.expect(!history.current_state.editor.?.inspector_open);
 
     // The toggle rides the undo timeline (the flag lives on the Editor,
-    // captured by snapshots) — undo re-opens, redo re-closes.
+    // captured by snapshots) - undo re-opens, redo re-closes.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(history.current_state.editor.?.inspector_open);
     try testing.expect(history.redo(event_handlers.processEvent));
@@ -309,7 +309,7 @@ test "player_add_editor_entity_type: default creation, tool + inspector, undo re
     try testing.expectEqual(@as(u32, 3), editor.entity_types[0].template.aggro_range);
     try testing.expect(editor.entity_types[0].template.main_hand_weapon == null);
 
-    // The new type becomes the active tool + the inspector auto-opens —
+    // The new type becomes the active tool + the inspector auto-opens -
     // one undo step reverts the whole creation.
     try testing.expect(std.meta.eql(
         types.EditorToolId{ .entity_type = 0 },
@@ -340,7 +340,7 @@ test "player_add_editor_decoration_type: stone_1 default, undo reverts" {
     );
     runToIdle(&history);
 
-    // The shipped default: the stone_1 prefab duplicated — footprint (0,0),
+    // The shipped default: the stone_1 prefab duplicated - footprint (0,0),
     // color 5, 256x256 dims, no layers; the palette id tracks the sprite.
     const editor = history.current_state.editor.?;
     try testing.expectEqual(@as(usize, 1), editor.decoration_types.len);
@@ -452,7 +452,7 @@ test "editor_delete_type (entity): removes the type + placements across levels, 
         .levels = &levels,
         .entity_types = &entity_types,
         .active_level_index = 0,
-        .active_tool = .{ .entity_type = 2 }, // Cadaver — above the deleted index
+        .active_tool = .{ .entity_type = 2 }, // Cadaver - above the deleted index
     }));
     runToIdle(&history);
 
@@ -525,7 +525,7 @@ test "editor_delete_type: deleting the active tool resets to select; the selecti
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
-        .active_tool = .{ .entity_type = 1 }, // Brute — the deleted tool
+        .active_tool = .{ .entity_type = 1 }, // Brute - the deleted tool
         .selection = &selection,
     }));
     runToIdle(&history);
@@ -941,7 +941,7 @@ test "editor_delete_decoration_placement: removes the placement, order preserved
 }
 
 /// Two palette entity types (a Skeleton and a Wolf) for the placement
-/// tests — retyping needs a second type to switch to.
+/// tests - retyping needs a second type to switch to.
 fn placementTestEditor(
     levels: []const types.EditorLevel,
 ) types.Editor {
@@ -976,7 +976,7 @@ test "player_place_editor_entity: empty tile → enemy placed on it" {
     try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
     try testing.expectEqual(@as(u32, 1), level.entity_placements[0].type_id);
     try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.entity_placements[0].position);
-    // The tile was already there — untouched.
+    // The tile was already there - untouched.
     try testing.expectEqual(@as(usize, 1), level.level_tiles.len);
 }
 
@@ -1365,8 +1365,8 @@ test "player_place_editor_decoration: overlapping other decorations are deleted"
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // Existing single-tile decorations at (7,7) — overlaps the new wide
-    // footprint's anchor tile — and (0,9), clear of it.
+    // Existing single-tile decorations at (7,7) - overlaps the new wide
+    // footprint's anchor tile - and (0,9), clear of it.
     const existing_placements = [_]types.DecorationPlacement{
         .{ .type_id = 1, .position = .{ .x = 7, .y = 7 } },
         .{ .type_id = 1, .position = .{ .x = 0, .y = 9 } },
@@ -1435,7 +1435,7 @@ test "player_set_editor_decoration_color_index: sets the type's color, out-of-ra
 /// parameter because the prune tests need shapes whose world tiles differ
 /// from the type's current two-wide footprint. Payload slices are duped
 /// into the current arena before pushing (the real commit site's ordering
-/// rule — the payload must not point into a shorter-lived frame).
+/// rule - the payload must not point into a shorter-lived frame).
 fn pushDecorationDef(
     history: *state.GameStateHistory,
     type_id: u32,
@@ -1502,9 +1502,9 @@ test "player_set_editor_decoration_def: placements covered by a level tile under
 
     // The type starts two-wide (placement P covers P and P+1x). The new
     // footprint {(0,0),(0,1)} is two-TALL: anchor (0,1), so a placement at
-    // P covers (P.x, P.y-1) and P — the tile at (5,4) sits under the NEW
+    // P covers (P.x, P.y-1) and P - the tile at (5,4) sits under the NEW
     // footprint only, so the (5,5) placement is pruned while the (0,0)
-    // one (new tiles (0,-1),(0,0) — clear ground) survives. The same
+    // one (new tiles (0,-1),(0,0) - clear ground) survives. The same
     // invalid placement exists on level 1: the prune runs across every
     // level.
     const tiles = [_]types.Vector2{.{ .x = 5, .y = 4 }};
@@ -1529,7 +1529,7 @@ test "player_set_editor_decoration_def: placements covered by a level tile under
     try testing.expectEqual(@as(usize, 1), first_level.decoration_placements.len);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, first_level.decoration_placements[0].position);
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.levels[1].decoration_placements.len);
-    // The things under the new footprint are never touched — the tile
+    // The things under the new footprint are never touched - the tile
     // that invalidated the placement stays.
     try testing.expect(hasTile(first_level, .{ .x = 5, .y = 4 }));
 }
@@ -1608,7 +1608,7 @@ test "player_set_editor_decoration_def: empty footprint or out-of-range type rec
 
     // Crafted-log defense: an empty footprint can't come from a pick
     // (prefabs are authored nonempty, custom stems get the bottom-left
-    // default) — ignored, nothing changes.
+    // default) - ignored, nothing changes.
     pushDecorationDef(&history, 0, &.{});
     runToIdle(&history);
     try testing.expectEqualStrings("ruin_1", history.current_state.editor.?.decoration_types[0].sprite);
@@ -1716,7 +1716,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // The "wide" type: pixel dims 512x256 — a matching layer carries the
+    // The "wide" type: pixel dims 512x256 - a matching layer carries the
     // same dims, a mismatched one doesn't.
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
@@ -1734,7 +1734,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     };
 
     // Add: a matching layer appends; a MISMATCHED one is ignored (the
-    // load-time invariant — the level parser panics on a dims mismatch,
+    // load-time invariant - the level parser panics on a dims mismatch,
     // so the editor never holds one).
     event_push.pushEvents(
         &history.current_state,
@@ -1862,7 +1862,7 @@ test "editor_delete_entity_placement: removes the placement, order preserved" {
     try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.entity_placements[1].position);
 }
 
-/// Two palette item types for the ground-item placement tests — retyping
+/// Two palette item types for the ground-item placement tests - retyping
 /// needs a second type to switch to.
 fn itemTestEditor(levels: []const types.EditorLevel) types.Editor {
     const item_types = [_]types.ItemTypeDef{
@@ -2191,7 +2191,7 @@ test "player_delete_editor_at: player start / level end / decoration cases" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // '!' and '=' sit on tiles — a right-click on them must not delete the
+    // '!' and '=' sit on tiles - a right-click on them must not delete the
     // tile underneath. A covering decoration is deleted instead of the
     // (nonexistent) tile.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } };
@@ -2223,7 +2223,7 @@ test "player_delete_editor_at: player start / level end / decoration cases" {
         }
     }.call;
 
-    // '!' / '=': no-op — their tiles survive.
+    // '!' / '=': no-op - their tiles survive.
     pushDelete(&history, .{ .x = 0, .y = 0 });
     runToIdle(&history);
     pushDelete(&history, .{ .x = 4, .y = 0 });
@@ -2371,7 +2371,7 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
     var harness = Harness.init(backing.allocator());
 
     // A selected tile under the wide decoration's footprint gets erased by
-    // the placement — the selection entry must go with it.
+    // the placement - the selection entry must go with it.
     const tiles = [_]types.Vector2{ .{ .x = 5, .y = 5 }, .{ .x = 9, .y = 9 } };
     const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
@@ -2402,7 +2402,7 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
 // --- Editor click planners (pure, directly tested) -------------------------
 // The planners are the single source of truth for a click's effect: the
 // handler pushes the plan, the input layer fires only nonempty plans (a
-// no-op click never reaches the event log — no undo/replay step). These
+// no-op click never reaches the event log - no undo/replay step). These
 // tests pin the no-op conditions at the plan level; the handler tests above
 // cover the pushed-plan behavior end to end.
 
@@ -2465,7 +2465,7 @@ test "planEditorEntityPlacementActions: same-type occupant on a missing tile sti
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
 
-    // Same-type enemy but NO tile under it — the click is not a no-op (the
+    // Same-type enemy but NO tile under it - the click is not a no-op (the
     // tile is placed as part of it).
     const placements = [_]types.EntityPlacement{.{
         .type_id = 1,
@@ -2509,7 +2509,7 @@ test "planEditorDecorationPlacementActions: exact duplicate is an empty plan" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
 
-    // The same wide decoration at the same anchor — the placement is
+    // The same wide decoration at the same anchor - the placement is
     // already satisfied, nothing else to change.
     const existing = [_]types.DecorationPlacement{.{
         .type_id = 0,
@@ -2552,7 +2552,7 @@ test "player_place_editor_decoration: exact duplicate click is a no-op" {
     );
     runToIdle(&history);
 
-    // No duplicate stacked — the one placement is the original.
+    // No duplicate stacked - the one placement is the original.
     const level = history.current_state.editor.?.levels[0];
     try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
     try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.decoration_placements[0].position);
@@ -2620,7 +2620,7 @@ test "planEditorDeleteActions: '!' / '=' / empty ground are empty plans" {
 }
 
 // --- Input-side no-op gate --------------------------------------------------
-// A click whose plan is empty must never fire the player action — a fired
+// A click whose plan is empty must never fire the player action - a fired
 // no-op lands in the event log and becomes an undo/replay step that
 // changes nothing (the pollution this gate exists to prevent).
 
@@ -2695,7 +2695,7 @@ test "editor right-click delete with an empty plan fires no event" {
 // --- Tile-tool paint drag (handleEditorTileDrag) ---------------------------
 
 /// Screen position of tile (x,y)'s center for the paint-drag tests:
-/// camera at the origin, zoom 1, the 1280x720 viewport — screenToTile's
+/// camera at the origin, zoom 1, the 1280x720 viewport - screenToTile's
 /// reference mapping (center 640,360 = tile origin).
 fn tileCenter(x: i32, y: i32) input.PointerPosition {
     return .{
@@ -2745,7 +2745,7 @@ test "tile-tool paint drag: press paints, held paints entered tiles, visited til
     runToIdle(&history);
     try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 6, .y = 5 }));
 
-    // Wiggling back over visited tiles fires nothing (the visited set —
+    // Wiggling back over visited tiles fires nothing (the visited set -
     // and the re-paint would be a no-op anyway).
     input_gestures.handleEditorTileDrag(
         &history,
@@ -2765,7 +2765,7 @@ test "tile-tool paint drag: press paints, held paints entered tiles, visited til
     );
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // Release ends the drag. A fresh press re-arms the visited set — and
+    // Release ends the drag. A fresh press re-arms the visited set - and
     // on the already-painted tile it plans empty, so no event (the no-op
     // gate).
     input_gestures.handleEditorTileDrag(
@@ -2802,7 +2802,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
     const viewport = input.ViewportSize{ .width = 1280, .height = 720 };
 
-    // A press over blocking UI never claims — dragging out of the panel
+    // A press over blocking UI never claims - dragging out of the panel
     // onto the world paints nothing (the press wasn't a world press).
     const panel = ui.UiElement{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -2830,7 +2830,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     );
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // A world press paints — but the paint is still on the stack when the
+    // A world press paints - but the paint is still on the stack when the
     // pointer crosses into (6,5): the drag defers (no plan computed against
     // state with pending events). Once the stack drains, the same held
     // pointer fires.
@@ -2867,7 +2867,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 6, .y = 5 }));
 
     // Mid-drag, over a panel covering the pointer's tile: the drag pauses
-    // (no paint, no visited mark — the marquee's last-valid-corner rule);
+    // (no paint, no visited mark - the marquee's last-valid-corner rule);
     // back over the world at the same unvisited tile it resumes.
     const panel_away = ui.UiElement{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -2895,7 +2895,7 @@ test "tile-tool paint drag: defers while events drain, pauses over blocking UI, 
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     runToIdle(&history);
 
-    // A tool switch away from tile (crafted directly — the event path does
+    // A tool switch away from tile (crafted directly - the event path does
     // the same) ends the drag on the gesture's next call: no paint, and
     // the idle arm owns presses again.
     history.current_state.editor.?.active_tool = .select;
@@ -2924,13 +2924,13 @@ test "tile-tool idle arm defers while a paint drag owns the press" {
     history.current_state.editor.?.active_tool = .tile;
 
     // While the paint drag is active, a tile_clicked (the press the gesture
-    // already claimed, or a keyboard confirm) fires nothing — the gesture
+    // already claimed, or a keyboard confirm) fires nothing - the gesture
     // owns the pointer press.
     history.session.ui_state.editor_tile_drag = true;
     input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // No drag: the same click fires (the keyboard confirm-at-cursor path —
+    // No drag: the same click fires (the keyboard confirm-at-cursor path -
     // the arm still works when no drag is in progress).
     history.session.ui_state.editor_tile_drag = false;
     input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
@@ -2943,7 +2943,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     var harness = Harness.init(backing.allocator());
 
     // Start from an editor state with a distinguishable mission (crafted
-    // — the consumption site doesn't care how the editor was reached).
+    // - the consumption site doesn't care how the editor was reached).
     const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
     const levels = [_]types.EditorLevel{.{ .name = "Old", .level_tiles = &tiles }};
     var history = harness.newHistory(editorStateWith(.{
@@ -2953,12 +2953,12 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     runToIdle(&history);
 
     // ctrl+N (the options-menu New Mission button dispatches through the
-    // same AnytimeInput flag): open_editor with a null path — the fresh-
+    // same AnytimeInput flag): open_editor with a null path - the fresh-
     // mission shape (one template level, the open_editor-null identity
     // with no uuid).
     input_handlers.handleAnytimeInput(&history, .{ .new_editor_mission = true }, null, .{ .x = 0, .y = 0 }, &.{});
     // The consumption drains inline (pushPlayerActionAndDrain); the idle
-    // point for the undo step is the LIVE loop's post-update record — the
+    // point for the undo step is the LIVE loop's post-update record - the
     // test's runToIdle mirrors it (stack already empty; the call records).
     runToIdle(&history);
     {
@@ -2976,7 +2976,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     try testing.expectEqualStrings("Old", history.current_state.editor.?.mission.name);
 
     // Reachable screens: from the MAIN MENU the flag opens the editor
-    // directly (the editor browser's New Mission button — the same
+    // directly (the editor browser's New Mission button - the same
     // recorded player action, no editor to replace).
     var menu_history = harness.newHistory(null);
     runToIdle(&menu_history);
@@ -2985,7 +2985,7 @@ test "new_editor_mission: the fresh-mission open replaces the editor state, undo
     try testing.expect(menu_history.current_state.screen == .editor);
     try testing.expect(menu_history.current_state.editor != null);
 
-    // Every other screen no-ops (no event, no undo step — the
+    // Every other screen no-ops (no event, no undo step - the
     // save_editor_mission discipline).
     menu_history.current_state.screen = .hub;
     menu_history.current_state.editor = null;
@@ -3001,7 +3001,7 @@ const tall_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 1 
 
 fn marqueeTestEditor(levels: []const types.EditorLevel) types.Editor {
     // Decoration 0: single tile at its placement (in-region). Decoration 1:
-    // a 1-wide 2-tall column — its anchor (bottom tile) sits OUTSIDE the
+    // a 1-wide 2-tall column - its anchor (bottom tile) sits OUTSIDE the
     // test region while the tile above it pokes in (the footprint-
     // intersection membership rule).
     const decoration_types = [_]types.DecorationTypeDef{
@@ -3040,7 +3040,7 @@ test "planEditorRegionSelectActions: region adds everything inside, skips presen
     var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
     runToIdle(&history);
 
-    // The (1,1) tile is already selected — the marquee must SKIP it.
+    // The (1,1) tile is already selected - the marquee must SKIP it.
     const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
     history.current_state.editor.?.selection = &seeded_selection;
 
@@ -3053,10 +3053,10 @@ test "planEditorRegionSelectActions: region adds everything inside, skips presen
         arena,
     );
 
-    // The returned slice is REVERSED (LIFO convention — see the planner
+    // The returned slice is REVERSED (LIFO convention - see the planner
     // doc): pushEvents pushes slice order, the stack pops from the end, so
     // PROCESSING + log order is the reverse of this slice: tiles, entity,
-    // item, decorations, player_start, level_end — with the already-
+    // item, decorations, player_start, level_end - with the already-
     // selected (1,1) tile skipped and the tall decoration included via its
     // NON-anchor footprint tile (5,9).
     try testing.expectEqual(@as(usize, 8), plan.len);
@@ -3113,7 +3113,7 @@ test "player_select_editor_region: adds the region in one undoable step" {
     }
 
     // The whole marquee is ONE undo step (all its editor_selects share the
-    // player action's idle point) — undo reverts the batch together.
+    // player action's idle point) - undo reverts the batch together.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
     // Redo walks it back in.
@@ -3142,7 +3142,7 @@ test "player_delete_editor_selection: deletes everything selected except the mar
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // Entities 0 (selected) + 1 (the occupant of selected tile (5,5) —
+    // Entities 0 (selected) + 1 (the occupant of selected tile (5,5) -
     // unselected, swept with its tile). Item 0: the occupant of selected
     // tile (6,6), also swept. Decoration 0 (single tile at (7,7)):
     // selected. Marker tiles (0,0) + (9,9): selected but protected.
@@ -3187,7 +3187,7 @@ test "player_delete_editor_selection: deletes everything selected except the mar
 
     // The plan (returned slice = REVERSE processing order per the LIFO
     // convention): processing runs the entity deletes high-before-low
-    // (1 then 0 — index stability), then the item, then the decoration,
+    // (1 then 0 - index stability), then the item, then the decoration,
     // then the tile erases. The markers + their tiles plan NOTHING.
     {
         const plan = planning.planEditorSelectionDeleteActions(
@@ -3367,7 +3367,7 @@ test "player_select_editor_all: ctrl+A selects everything, skips present, one un
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    // ctrl+A adds the other 7, skipping the present two — one player
+    // ctrl+A adds the other 7, skipping the present two - one player
     // action, one undo step.
     input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
@@ -3441,7 +3441,7 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
         "Skeleton",
         history.current_state.editor.?.entity_types[0].template.name,
     );
-    // And redo re-applies it — the regression check: the commit used to
+    // And redo re-applies it - the regression check: the commit used to
     // record no undo stop, so undo stepped PAST the edit (discarding it
     // from the future timeline) and redo had nothing to restore.
     try testing.expect(history.redo(event_handlers.processEvent));
@@ -3456,7 +3456,7 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     );
 
     // No-op gate: a commit whose buffer equals the current value records
-    // nothing (no dead undo step) — but still drops focus.
+    // nothing (no dead undo step) - but still drops focus.
     ui.beginTextEdit(&history.session.ui_state, field, "Skeleton");
     input_handlers.resolveTextEditOutcome(&history, .commit);
     try testing.expectEqualStrings(
@@ -3466,7 +3466,7 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     try testing.expect(history.session.ui_state.text_edit == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // Cancel: Escape discards the buffer — nothing recorded, name intact.
+    // Cancel: Escape discards the buffer - nothing recorded, name intact.
     ui.beginTextEdit(&history.session.ui_state, field, "Skeleton");
     const cancel_outcome = ui.routeTextInput(
         &history.session.ui_state.text_edit.?,
@@ -3492,7 +3492,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
 
     // A png + a non-png in the harness's persistent scratch dir (the scan
     // filters by extension). The png is a REAL minimal IHDR fixture at the
-    // entity spec (512x640) — the pick-commit backstop resolves the dims,
+    // entity spec (512x640) - the pick-commit backstop resolves the dims,
     // so garbage bytes would no-op the pick.
     const boss_png = loaders.minimalPngHeader(testing.allocator, 512, 640);
     defer testing.allocator.free(boss_png);
@@ -3522,7 +3522,7 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
     try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0].file_name);
-    // The scan MINTS the namespaced id (session-owned — the pick payload
+    // The scan MINTS the namespaced id (session-owned - the pick payload
     // + the commit id reference these bytes; see MissionSprite.stored_id).
     try testing.expectEqualStrings("custom/artists_den/boss", history.session.editor_mission_sprites[0].stored_id);
 
@@ -3594,9 +3594,9 @@ test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // The pick-commit backstop (the picker filter's defense-in-depth — a
+    // The pick-commit backstop (the picker filter's defense-in-depth - a
     // stale scan or crafted input): a custom entity sprite that isn't the
-    // fixed 512x640 frame no-ops — nothing recorded, no undo step minted.
+    // fixed 512x640 frame no-ops - nothing recorded, no undo step minted.
     // The load + render sides would degrade the same art anyway; committing
     // it would only author a guaranteed-magenta type.
     const boss_png = loaders.minimalPngHeader(testing.allocator, 256, 256);
@@ -3674,7 +3674,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.session.ui_state.editor_picker_sprite_tab,
     );
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
-    // The add expanded the Entities group (accordion) — and a 1-type
+    // The add expanded the Entities group (accordion) - and a 1-type
     // group's window sits at the top.
     try testing.expectEqual([3]bool{ false, true, true }, history.session.ui_state.editor_palette_collapsed);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_palette_scroll[0]);
@@ -3696,7 +3696,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     );
     try testing.expectEqual([3]bool{ true, false, true }, history.session.ui_state.editor_palette_collapsed);
 
-    // Items "+": the New Sword default, NO picker (nothing to pick) — and
+    // Items "+": the New Sword default, NO picker (nothing to pick) - and
     // the decoration picker from the previous click closes.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
@@ -3751,7 +3751,7 @@ test "palette + click: the group's window scrolls to the newly added tool" {
     try testing.expectEqual(@as(usize, 10), history.current_state.editor.?.entity_types.len);
     // Accordion: the group expands, the others collapse.
     try testing.expectEqual([3]bool{ false, true, true }, history.session.ui_state.editor_palette_collapsed);
-    // 10 types in an 8-cell window: offset 10 -| 8 = 2 — the new cell is
+    // 10 types in an 8-cell window: offset 10 -| 8 = 2 - the new cell is
     // the window's last visible one (the minimal scroll that shows it).
     try testing.expectEqual(@as(i32, 2), history.session.ui_state.editor_palette_scroll[0]);
 }
@@ -3796,7 +3796,7 @@ test "palette tool delete button: input arm deletes the type + placements; fixed
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.entity_types.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels[0].entity_placements.len);
 
-    // The fixed tools have no delete button — a crafted select/tile-
+    // The fixed tools have no delete button - a crafted select/tile-
     // targeted click does nothing.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_palette_type,
@@ -3827,7 +3827,7 @@ test "player_add_editor_level: appends the template level, switches to it, undo 
     runToIdle(&history);
 
     // The shipped template (data/default_level.txt): the minimal `!=`
-    // layout — '!' at (0,0), '=' at (1,0). The markers carry their own
+    // layout - '!' at (0,0), '=' at (1,0). The markers carry their own
     // ground (the layout walk tiles under '!' and '='), so exactly those
     // two tiles and nothing else; no entries, unnamed (the tab reads
     // "Level N"). The new level becomes the active tab and level_count
@@ -3975,7 +3975,7 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
 
     // ...and the single-level gate holds: a crafted × click does nothing
-    // (no event, no undo step — the handler's ≥1-level invariant is never
+    // (no event, no undo step - the handler's ≥1-level invariant is never
     // reached).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .delete_editor_level,
@@ -4005,7 +4005,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
     }));
     runToIdle(&history);
 
-    // The ctrl+S / Save Mission path — an anytime action, no recorded event
+    // The ctrl+S / Save Mission path - an anytime action, no recorded event
     // (the dump_event_log class; no undo step).
     input_handlers.handleAnytimeInput(&history, .{
         .save_editor_mission = true,
@@ -4050,9 +4050,9 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
         _ = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
     }
 
-    // A second save REUSES the uuid + dir (the memo — no identity churn).
+    // A second save REUSES the uuid + dir (the memo - no identity churn).
     // Own the first save's strings before the second save replaces the
-    // memo (it frees + re-stores them — only the session field may hold
+    // memo (it frees + re-stores them - only the session field may hold
     // the borrowed slices).
     const first_uuid = try arena.dupe(u8, first_save.uuid);
     const first_dir_path = try arena.dupe(u8, first_save.dir_path);
@@ -4134,7 +4134,7 @@ test "editor save: a renamed mission carries its custom art + heals stale stem n
         try testing.expectEqualSlices(u8, hero_png, copied);
     }
 
-    // The written level file carries the healed namespace — the old
+    // The written level file carries the healed namespace - the old
     // namespace appears nowhere.
     {
         const level_txt = try harness.file_source.readFile(
@@ -4155,7 +4155,7 @@ test "editor export: saves first, bundles configs + custom sprites into the zip"
     const arena = backing.allocator();
 
     // A fresh-mission editor + a custom sprite dropped into the placeholder
-    // mission dir (pre-save — the export must bundle it from there).
+    // mission dir (pre-save - the export must bundle it from there).
     try harness.file_source.writeFile("missions/New Mission/boss.png", "pretend png bytes");
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const levels = [_]types.EditorLevel{.{
@@ -4186,7 +4186,7 @@ test "editor export: saves first, bundles configs + custom sprites into the zip"
     );
     const zip_bytes = try harness.file_source.readFile(arena, zip_path);
 
-    // STORE entries keep names + contents verbatim in the archive — the
+    // STORE entries keep names + contents verbatim in the archive - the
     // configs, the custom sprite, and the mission text are all present.
     try testing.expect(std.mem.indexOf(u8, zip_bytes, "mission.txt") != null);
     try testing.expect(std.mem.indexOf(u8, zip_bytes, "player.txt") != null);
@@ -4242,8 +4242,8 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
         history.current_state.editor.?.picker.?,
     );
 
-    // Official pick: the WHOLE prefab adopts — sprite, footprint, dims,
-    // color, layers — and the palette label tracks the sprite.
+    // Official pick: the WHOLE prefab adopts - sprite, footprint, dims,
+    // color, layers - and the palette label tracks the sprite.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_decoration_sprite,
     }, .{ .editor_sprite = "tree_1" }, .{ .x = 0, .y = 0 }, &.{});
@@ -4263,9 +4263,9 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     try testing.expectEqualStrings("stone_2", history.current_state.editor.?.decoration_types[0].sprite);
 
     // Re-adopt (the post-undo state differs from the prefab), then a
-    // SAME-DEFINITION re-pick closes WITHOUT COMMITTING — the close is
+    // SAME-DEFINITION re-pick closes WITHOUT COMMITTING - the close is
     // the recorded change now (the picker surface event; one open + one
-    // close, no commit) — reopen first (the pick closed the picker).
+    // close, no commit) - reopen first (the pick closed the picker).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_sprite_picker,
     }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -4288,7 +4288,7 @@ test "decoration sprite picker: open routing, official prefab adopt, same-def no
     try expectLastEvents(&history, &open_then_close_picker_pairs);
 
     // Gate: the decoration action with the ENTITY picker open is a no-op
-    // (a crafted click — the cells never emit it). Direct state write — a
+    // (a crafted click - the cells never emit it). Direct state write - a
     // scripted precondition, not an action under test.
     history.current_state.editor.?.picker = .{ .entity_sprite = {} };
     input_handlers.handleAnytimeInput(&history, .{
@@ -4594,7 +4594,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
         );
     }
 
-    // Weapon DAMAGE: bounded — an out-of-range buffer clamps to
+    // Weapon DAMAGE: bounded - an out-of-range buffer clamps to
     // max_weapon_damage (the parser's own bound, single-sourced).
     {
         const field: types.TextFieldRef = .{
@@ -4611,7 +4611,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
     }
 
     // A stat the item kind doesn't carry commits nothing (a coat has no
-    // weapon_damage) — nothing recorded, focus dropped.
+    // weapon_damage) - nothing recorded, focus dropped.
     {
         const field: types.TextFieldRef = .{
             .id = .{ .item_stat = .{ .slot = .coat, .stat = .weapon_damage } },
@@ -4672,7 +4672,7 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     try testing.expect(history.current_state.editor.?.entity_types[0].template.off_hand_weapon == null);
 
     // Type pick on the EQUIPPED main hand with a DIFFERENT type: retypes
-    // in place — name + damage stay.
+    // in place - name + damage stay.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_weapon_type,
     }, .{ .editor_weapon_type_cell = .{ .gear_slot = .main_hand, .weapon_type = .spear } }, .{ .x = 0, .y = 0 }, &.{});
@@ -4718,7 +4718,7 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Weapon slots don't take gear Add (their creation path is the type
-    // row) — the gate holds for crafted input.
+    // row) - the gate holds for crafted input.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_item,
     }, .{ .editor_gear_slot = .main_hand }, .{ .x = 0, .y = 0 }, &.{});
@@ -4746,7 +4746,7 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
     }));
     runToIdle(&history);
 
-    // A DIFFERENT weapon type RESETS everything (author decision — no
+    // A DIFFERENT weapon type RESETS everything (author decision - no
     // retype-keeps-identity case, unlike the entity weapon slots):
     // "New Axe", damage 0; the palette label tracks the display name.
     input_handlers.handleAnytimeInput(&history, .{
@@ -4778,7 +4778,7 @@ test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
     }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .sword } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // A KIND switch resets too — "New Amulet", zero stats.
+    // A KIND switch resets too - "New Amulet", zero stats.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_item_type,
     }, .{ .editor_item_kind_cell = .{ .kind = .amulet } }, .{ .x = 0, .y = 0 }, &.{});
@@ -4846,7 +4846,7 @@ test "item-type commits: name + stat fields end-to-end, no-op gates, bounds" {
         try testing.expect(history.session.ui_state.text_edit == null);
     }
 
-    // A STAT: bounded — an out-of-range buffer clamps to the parser's own
+    // A STAT: bounded - an out-of-range buffer clamps to the parser's own
     // max (single-sourced `itemStatMax`).
     {
         const field: types.TextFieldRef = .{
@@ -4950,7 +4950,7 @@ test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy 
     }));
     runToIdle(&history);
 
-    // Team 2 — a second, mutually hostile enemy team.
+    // Team 2 - a second, mutually hostile enemy team.
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_entity_team = .{
@@ -4966,7 +4966,7 @@ test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy 
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.entity_types[0].template.team);
 
-    // Team 0 — a player-team helper (enemy-authorable, player-uncontrolled).
+    // Team 0 - a player-team helper (enemy-authorable, player-uncontrolled).
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_entity_team = .{
@@ -4979,7 +4979,7 @@ test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy 
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
 
     // A crafted out-of-range type id records nothing (the shared handler
-    // guard — editorEntityTemplate returns null and the arm returns).
+    // guard - editorEntityTemplate returns null and the arm returns).
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_entity_team = .{
@@ -5020,7 +5020,7 @@ test "inspector team commits: numeric parse, would-change gate, empty no-op" {
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.editor.?.entity_types[0].template.team);
 
-    // Team 0 — the helper case — commits the same way.
+    // Team 0 - the helper case - commits the same way.
     ui.beginTextEdit(&history.session.ui_state, field, "2");
     _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
     _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "0", &no_keys, &no_keys, false);
@@ -5068,7 +5068,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
 
     // Outside the panel (top-right, over no UI): the wheel belongs to the
-    // camera-zoom branch — the inspector offset is untouched.
+    // camera-zoom branch - the inspector offset is untouched.
     input_handlers.handleAnytimeInput(
         &history,
         .{ .scroll_delta = -1 },
@@ -5084,7 +5084,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
 }
 
-test "player_select_editor_all: tool-agnostic — switches to select, one undo restores tool + selection" {
+test "player_select_editor_all: tool-agnostic - switches to select, one undo restores tool + selection" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -5171,7 +5171,7 @@ test "player_move_editor_selection: moves the whole selection, deselects after, 
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // No tile under the decoration at (5,5) — a legal state (decoration
+    // No tile under the decoration at (5,5) - a legal state (decoration
     // footprint tiles are tile-free by the placement invariant; a selected
     // decoration never has a selected tile beneath it).
     const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 } };
@@ -5208,7 +5208,7 @@ test "player_move_editor_selection: moves the whole selection, deselects after, 
     runToIdle(&history);
 
     // Move everything down 3 rows. The moved player start lands on empty
-    // ground (0,3) — a tile is ensured under it.
+    // ground (0,3) - a tile is ensured under it.
     event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 0, .y = 3 } } },
@@ -5239,7 +5239,7 @@ test "player_move_editor_selection: moves the whole selection, deselects after, 
         try testing.expect(hasTile(level, .{ .x = 0, .y = 3 }));
         try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, level.level_end.?);
 
-        // A move deselects — nothing is reselected.
+        // A move deselects - nothing is reselected.
         try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
     }
 
@@ -5265,7 +5265,7 @@ test "player_move_editor_selection: an unselected occupant pins its tile (no swe
     var harness = Harness.init(backing.allocator());
 
     // A selected tile whose occupant is NOT selected: the occupant pins its
-    // ground — the tile stays underneath it and the moved tile lands at the
+    // ground - the tile stays underneath it and the moved tile lands at the
     // target instead (nothing is swept).
     const tiles = [_]types.Vector2{.{ .x = 5, .y = 5 }};
     const entity_placements = [_]types.EntityPlacement{.{
@@ -5304,7 +5304,7 @@ test "player_move_editor_selection: a target on a marker drops the thing entirel
 
     // Moving an entity (+ its tile) ONTO the '!' at (0,0): the entity plans
     // empty (markers are never overwritten) and the tile paints over an
-    // existing tile (also empty) — both are deleted fully.
+    // existing tile (also empty) - both are deleted fully.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 } };
     const entity_placements = [_]types.EntityPlacement{.{
         .type_id = 0,
@@ -5344,8 +5344,8 @@ test "player_move_editor_selection: a marker onto the other marker vetoes the wh
     var harness = Harness.init(backing.allocator());
 
     // '!' at (0,0), '=' at (3,0). Moving '=' left onto (0,0) would leave
-    // both markers on one tile — no file representation ('!' and '=' take
-    // one cell each in the layout format) — so the whole move is VETOED:
+    // both markers on one tile - no file representation ('!' and '=' take
+    // one cell each in the layout format) - so the whole move is VETOED:
     // nothing moves, nothing is cleared, the selection survives.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } };
     const levels = [_]types.EditorLevel{.{
@@ -5400,7 +5400,7 @@ test "player_move_editor_selection: both markers moving together is legal (a cro
     var harness = Harness.init(backing.allocator());
 
     // Both markers selected: the veto is on the FINAL positions, so moving
-    // both together never vetoes (their offset is preserved) — including
+    // both together never vetoes (their offset is preserved) - including
     // the CROSSING, where '!' lands on '=''s OLD cell while '=' has not
     // moved yet. The commit chain's marker arm must not mistake the
     // crossing for an overlap: '=' moves later in the same worklist, so
@@ -5440,9 +5440,9 @@ test "player_move_editor_selection: a pre-existing marker overlap is never moved
     var harness = Harness.init(backing.allocator());
 
     // A crafted/broken level with both markers already on one tile
-    // (unreachable from files — one cell, one symbol — but constructible
+    // (unreachable from files - one cell, one symbol - but constructible
     // in memory). Moving BOTH together is vetoed (their final positions
-    // still coincide — a same-delta translation can't separate them
+    // still coincide - a same-delta translation can't separate them
     // anyway); moving ONE alone is legal and RESOLVES the overlap.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 } };
     const levels = [_]types.EditorLevel{.{
@@ -5468,7 +5468,7 @@ test "player_move_editor_selection: a pre-existing marker overlap is never moved
         try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
     }
 
-    // One marker alone moves OFF the shared cell — legal, and the level
+    // One marker alone moves OFF the shared cell - legal, and the level
     // is well-defined again.
     const one_marker = [_]types.Selectable{.level_end};
     history.current_state.editor.?.selection = &one_marker;
@@ -5492,9 +5492,9 @@ test "editor_commit_selection_move: a crafted marker entry onto the staying othe
     var harness = Harness.init(backing.allocator());
 
     // The live plan is vetoed upstream (planning.planEditorSelectionMoveActions)
-    // — a crafted worklist is the only way here. A marker entry targeting
+    // - a crafted worklist is the only way here. A marker entry targeting
     // the STAYING other marker's cell plans empty: the marker simply
-    // doesn't place — it stays where it stands (markers are never
+    // doesn't place - it stays where it stands (markers are never
     // deletable; no tile is painted at the blocked target).
     const tiles = [_]types.Vector2{.{ .x = 2, .y = 0 }};
     const levels = [_]types.EditorLevel{.{
@@ -5531,7 +5531,7 @@ test "player_move_editor_selection: chained placement handles targets sharing a 
 
     // THE chain-motivating case: a wide decoration covers both move
     // targets. Up-front planning would plan its deletion TWICE (stale
-    // index → panic); the chain plans each entry against the live state —
+    // index → panic); the chain plans each entry against the live state -
     // the first entry's placement removes the decoration, the second
     // places cleanly.
     const wide_decoration_placements = [_]types.DecorationPlacement{.{
@@ -5555,7 +5555,7 @@ test "player_move_editor_selection: chained placement handles targets sharing a 
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    // Targets (4,4) + (5,4) — both under the wide footprint (the
+    // Targets (4,4) + (5,4) - both under the wide footprint (the
     // decoration erased the tiles there when it was placed).
     event_push.pushPlayerAction(
         &history.current_state,
@@ -5580,10 +5580,10 @@ test "player_move_editor_selection: a moved marker takes its ground with it" {
     var harness = Harness.init(backing.allocator());
 
     // The user-report repro: the '!' stands on a real tile at (0,0); a
-    // plain click selects just the singleton (no tile entry — the click
+    // plain click selects just the singleton (no tile entry - the click
     // group for a marker is the marker alone). Moving it must erase the
     // old tile (nothing hosts the marker there anymore) and ensure a tile
-    // at the new position — NOT leave the old tile behind.
+    // at the new position - NOT leave the old tile behind.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 5, .y = 5 } };
     const levels = [_]types.EditorLevel{.{
         .level_tiles = &tiles,
@@ -5623,7 +5623,7 @@ test "player_move_editor_selection: a moved marker takes its ground with it" {
         try testing.expect(!hasTile(level, .{ .x = 2, .y = 1 }));
     }
 
-    // The marquee shape (tile + marker BOTH selected) moves the same way —
+    // The marquee shape (tile + marker BOTH selected) moves the same way -
     // the tile entry is protected by the marker-tile rule, and the marker
     // entry drives the erase exactly once.
     history.current_state.editor.?.selection = &seeded_selection;
@@ -5676,7 +5676,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
         history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
     );
 
-    // A weapon skill no-ops (the handler's defensive gate — the picker
+    // A weapon skill no-ops (the handler's defensive gate - the picker
     // never offers one and validation rejects crafted logs).
     event_push.pushEvents(
         &history.current_state,
@@ -5750,7 +5750,7 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
         types.SkillId.blink,
         history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
     );
-    // runToIdle records the undo stop (driven directly here — the LIVE
+    // runToIdle records the undo stop (driven directly here - the LIVE
     // path commits inside update(), whose events_processed recording
     // covers it; not the frame-level text-commit case).
     runToIdle(&history);
@@ -5842,13 +5842,13 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
     try testing.expectEqualStrings("Spare Dagger", template.inventory.slots[0].?.weapon.name);
 
-    // The import rides the undo timeline — undo restores the default
+    // The import rides the undo timeline - undo restores the default
     // loadout.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqualStrings("", history.current_state.editor.?.player_def.template.name);
     try testing.expect(history.current_state.editor.?.player_def.template.main_hand_weapon == null);
 
-    // A playtest instantiates entity 0 from the template — the inventory
+    // A playtest instantiates entity 0 from the template - the inventory
     // (loadout data, not a runtime field) carries into the level.
     try testing.expect(history.redo(event_handlers.processEvent));
     event_push.pushEvents(
@@ -5870,7 +5870,7 @@ test "player_import_editor_player: no session data imports the new-game default 
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // Fresh session: player_data empty (no name) — the import falls back
+    // Fresh session: player_data empty (no name) - the import falls back
     // to data/new_player.txt.
     try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
 
@@ -5885,7 +5885,7 @@ test "player_import_editor_player: no session data imports the new-game default 
     try testing.expectEqualStrings("New Player", template.name);
     try testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
     try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
-    // The session's (empty) player data is untouched — the default save is
+    // The session's (empty) player data is untouched - the default save is
     // a READ source, not a session load.
     try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
 }
@@ -5939,7 +5939,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     );
 
     // In-level events mutate player_data directly (use_skill_tome,
-    // salvage) — simulate one, then end the playtest.
+    // salvage) - simulate one, then end the playtest.
     history.current_state.player_data.player_name = "Mutated In Playtest";
     event_push.pushEvents(
         &history.current_state,
@@ -5955,7 +5955,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
 /// The mission dir the file-based validation tests run against (the
 /// harness's scratch persistent dir): a small two-level mission whose
 /// files deliberately differ from the in-memory editor state the tests
-/// also set up — asserts can then prove the run read the FILES, not the
+/// also set up - asserts can then prove the run read the FILES, not the
 /// editor memory. Level 1's player starts at x=0 ('!='), level 2's at
 /// x=2 ('..!='), so a test can tell which level file instantiated the
 /// current level; the player.txt loadout carries a distinctive
@@ -6056,7 +6056,7 @@ test "start_validation runs the SAVED mission files, not the editor memory" {
     );
 
     // The editor is untouched (dormant): its three in-memory levels + the
-    // editor player_def survive — the run never read them.
+    // editor player_def survive - the run never read them.
     try testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
     try testing.expectEqualStrings(
         "Editor Player",
@@ -6157,7 +6157,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
 
     // End the begun turn on level 1 (the turn_end machinery, as the skip
-    // orchestrators would push it — no enemies, so the round is empty);
+    // orchestrators would push it - no enemies, so the round is empty);
     // the round builder queues the next turn_start, so a SECOND turn has
     // begun by idle.
     event_push.pushEvents(
@@ -6168,7 +6168,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
 
-    // A mid-run mutation (an in-level event) — the chained level start
+    // A mid-run mutation (an in-level event) - the chained level start
     // must neither rebuild the run data nor re-capture the backup.
     history.current_state.player_data.player_name = "Mutated In Run";
 
@@ -6198,7 +6198,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
         history.current_state.editor.?.pre_playtest_player_data.?.player_name,
     );
 
-    // Spend a turn + complete the LAST level: the run ends — editor, edit
+    // Spend a turn + complete the LAST level: the run ends - editor, edit
     // mode, real data restored, run state discarded, backup cleared.
     event_push.pushEvents(
         &history.current_state,
@@ -6244,7 +6244,7 @@ test "a validation run's exit continuation aborts to the editor (success=false)"
     runToIdle(&history);
 
     // Death-exit shape: the mission-fail overlay / options menu routes
-    // through end_level with a non-default continuation. The run aborts —
+    // through end_level with a non-default continuation. The run aborts -
     // no next-level chain, back to the editor, real player data restored.
     event_push.pushEvents(
         &history.current_state,
@@ -6294,7 +6294,7 @@ test "a playtest restart continuation re-runs the same level fresh" {
     try testing.expect(history.current_state.screen == .level);
     try testing.expect(history.current_state.editor.?.mode == .playtest);
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
-    // The run data was REBUILT from the loadout (fresh run) — and the
+    // The run data was REBUILT from the loadout (fresh run) - and the
     // session's real data is still what's backed up.
     try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
     try testing.expectEqualStrings(
@@ -6343,7 +6343,7 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
     try testing.expectEqual(@as(u32, 3), history.current_state.mission.?.turns_spent);
 
     // Mid-run mutation, then the restart: back to level 1 with fresh run
-    // data (NOT the mutated carry-over, NOT a next-level advance) — the
+    // data (NOT the mutated carry-over, NOT a next-level advance) - the
     // re-entry rides the player_start_validation ORCHESTRATOR (the
     // seedable-top-level rule for the validation-replay slice), which
     // re-reads the files fresh: mission counter reset (then the
@@ -6401,7 +6401,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         try testing.expect(history.current_state.screen == .level);
 
         // Mid-run mutation, then the options menu's Exit to Main Menu:
-        // the run ends (data restored) AND the editor session is gone —
+        // the run ends (data restored) AND the editor session is gone -
         // the button means the main menu, not the editor.
         history.current_state.player_data.player_name = "Mutated In Run";
         event_push.pushEvents(
@@ -6418,13 +6418,13 @@ test "exit to main menu during an editor run ends the run and closes the editor"
     }
 }
 
-test "a validation run's slice reconstructs from a fresh state (no editor — the cross-session shape)" {
+test "a validation run's slice reconstructs from a fresh state (no editor - the cross-session shape)" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     try writeValidationFixtureMission(&harness);
 
-    // No editor at all — the cross-session shape a validation replay is
+    // No editor at all - the cross-session shape a validation replay is
     // reconstructed in (the future server-side check; the mission files
     // ship alongside the replay). Drive the run exactly as a player
     // session would: every top-level event is a whitelisted orchestrator,
@@ -6464,9 +6464,9 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
 
     // Level 2: end the turn first (skip → turn_end → the round builder
-    // begins turn 4), then step onto the level end ('=' at raw x=3 —
+    // begins turn 4), then step onto the level end ('=' at raw x=3 -
     // x=1 spawn-relative) DURING
-    // that begun turn — end_level's transition clears the stack before
+    // that begun turn - end_level's transition clears the stack before
     // turn_end, but the turn still counts: turns_spent counts BEGUN
     // turns (the final exit turn included).
     event_push.pushEvents(
@@ -6489,7 +6489,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expect(history.current_state.editor == null);
     try testing.expect(history.current_state.mission == null);
 
-    // The slice: from the LAST player_start_validation through the end —
+    // The slice: from the LAST player_start_validation through the end -
     // here the whole run (the only earlier event is the boot
     // open_main_menu). Restarts would make "last" matter; this run has
     // none.
@@ -6506,13 +6506,13 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
 
     // Serialize + reconstruct the slice in a SECOND fresh history: the
     // server-side validation primitive, client-side. Reconstruct to just
-    // BEFORE the final end_validation so the mission is still live — the
+    // BEFORE the final end_validation so the mission is still live - the
     // replay-reproduced turn counter must equal the derived count.
     const body = try session_log.writeEventLog(slice, "20260101_000000", backing.allocator());
     const sections = try parser.parseConfigFile(body, backing.allocator());
     const log = try session_log.loadEventLog(sections, backing.allocator());
     // The reconstruction base: the post-boot state (main menu, nothing
-    // queued) — the slice starts at the run's entry orchestrator, so the
+    // queued) - the slice starts at the run's entry orchestrator, so the
     // fresh history's stack must be EMPTY (newHistory(null) queues the
     // boot open_main_menu, which the slice deliberately excludes).
     var reconstruction_start = test_harness.defaultStartingState();
@@ -6535,7 +6535,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
 // ──────────── checking-mode replay (the revalidate machinery) ────────────
 // reconstructFromEventLogChecking replays a stored log against CURRENT
 // content, aborting + reporting at the first verification failure instead
-// of panicking — the validity check behind the revalidate button.
+// of panicking - the validity check behind the revalidate button.
 
 test "reconstructFromEventLogChecking: a clean log replays with no rejection" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -6625,7 +6625,7 @@ test "reconstructFromEventLogChecking: an illegal recorded action rejects at the
     try playFixtureRunToCompletion(&history, false);
 
     // Remove level 1's exit tile entirely: the recorded exit step to (1,0)
-    // is now an unreachable tile — the seed-time legality check (the
+    // is now an unreachable tile - the seed-time legality check (the
     // validatePlayerAction layer) rejects before any handler runs.
     try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
@@ -6684,7 +6684,7 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
 
     const before = try readFixtureReplay(&harness, arena);
 
-    // A benign edit: rename level 1 (metadata only — no event the run
+    // A benign edit: rename level 1 (metadata only - no event the run
     // touches changes, so the checking replay passes; the content hash
     // changes, which is what revalidation re-binds).
     try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
@@ -6700,7 +6700,7 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
     pushRevalidateFixture(&history);
     try testing.expect(history.session.pending_error != null);
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Revalidation passed") != null);
-    // No custom art in the fixture mission — the success message carries
+    // No custom art in the fixture mission - the success message carries
     // no spec report.
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Custom art spec warnings") == null);
 
@@ -6737,7 +6737,7 @@ test "revalidate: non-conforming custom art rides the success message" {
     // type whose custom art is 1000x1200 (not whole tiles) and a player
     // def with a MISSING custom sprite. The run + revalidation itself are
     // unaffected (the report is a publish-checkpoint scan of the palette,
-    // not part of the replay check) — the success message carries the list.
+    // not part of the replay check) - the success message carries the list.
     const banner_png = loaders.minimalPngHeader(testing.allocator, 1000, 1200);
     defer testing.allocator.free(banner_png);
     try harness.file_source.writeFile(validation_fixture_path ++ "/banner.png", banner_png);
@@ -6812,7 +6812,7 @@ test "revalidate: a divergent edit rejects and keeps the stored replay unchanged
     try testing.expect(history.session.pending_error != null);
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no longer matches") != null);
 
-    // The stored replay is KEPT — it still certifies the content it was
+    // The stored replay is KEPT - it still certifies the content it was
     // recorded against.
     const after = try readFixtureReplay(&harness, arena);
     try testing.expectEqualStrings(before.replay.content_hash, after.replay.content_hash);
@@ -6839,7 +6839,7 @@ test "revalidate: no stored replay / a different mission's uuid both reject" {
     }
 
     // A recorded run, then the mission's identity changes underneath it
-    // (a rewritten mission.txt uuid — the replay now belongs to a
+    // (a rewritten mission.txt uuid - the replay now belongs to a
     // different mission).
     {
         const levels = [_]types.EditorLevel{ .{}, .{} };
@@ -6869,7 +6869,7 @@ test "the options-menu Revalidate button saves first, then revalidates the saved
     var harness = Harness.init(backing.allocator());
 
     // The Validate-button test's shape: an editor whose mission saves to
-    // a fresh dir. The dir has no validation replay yet — the click
+    // a fresh dir. The dir has no validation replay yet - the click
     // surfaces that, proving the save-first + orchestrator wiring.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const levels = [_]types.EditorLevel{
@@ -6889,7 +6889,7 @@ test "the options-menu Revalidate button saves first, then revalidates the saved
     runToIdle(&history);
 
     // The save landed (the memo) and the orchestrator ran against the
-    // fresh dir — no replay there yet, so the popup says so.
+    // fresh dir - no replay there yet, so the popup says so.
     try testing.expect(history.session.editor_saved_mission != null);
     try testing.expect(history.session.pending_error != null);
     try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no validation replay") != null);
@@ -6904,11 +6904,11 @@ test "the options-menu Revalidate button saves first, then revalidates the saved
 
 /// Script one full validation run through the fixture mission: push
 /// start_validation, then per level either a full turn (skip + step onto
-/// the level end — 2 begun turns per level: the skip turn + the exit
+/// the level end - 2 begun turns per level: the skip turn + the exit
 /// turn) or a beeline (straight onto the end during the level's first
-/// turn — 1 begun turn per level). The run completes back in the editor.
+/// turn - 1 begun turn per level). The run completes back in the editor.
 fn playFixtureRunToCompletion(history: *state.GameStateHistory, beeline: bool) !void {
-    // The ORCHESTRATOR (the button path — also the shape the replay slice
+    // The ORCHESTRATOR (the button path - also the shape the replay slice
     // keys on: every attempt begins with player_start_validation).
     event_push.pushEvents(
         &history.current_state,
@@ -6966,7 +6966,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     const arena = backing.allocator();
 
     // The editor-save test's shape, with TWO levels (each the minimal
-    // '!=' layout — the save's translation is identity at the bbox).
+    // '!=' layout - the save's translation is identity at the bbox).
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const levels = [_]types.EditorLevel{
         .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 }, .level_end = .{ .x = 1, .y = 0 } },
@@ -7026,7 +7026,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     // Derived turns == the live run's begun-turn counter (two per level:
     // the skip turn + the exit turn).
     try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(replay.events));
-    // First validation (no prior file): auto-write — nothing stashed, no
+    // First validation (no prior file): auto-write - nothing stashed, no
     // manual-overwrite offer.
     try testing.expect(history.session.pending_validation_replay == null);
     try testing.expect(!history.session.validation_replay_overwrite_offered);
@@ -7058,7 +7058,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     }));
     runToIdle(&history);
 
-    // Run A (4 turns): the FIRST validation — no prior file → auto-write.
+    // Run A (4 turns): the FIRST validation - no prior file → auto-write.
     try playFixtureRunToCompletion(&history, false);
     {
         const result = try readFixtureReplay(&harness, arena);
@@ -7067,7 +7067,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     try testing.expect(history.session.pending_validation_replay == null);
     try testing.expect(!history.session.validation_replay_overwrite_offered);
 
-    // Run B (the beeline — 2 turns): strictly faster (4 → 2) → auto-overwrite.
+    // Run B (the beeline - 2 turns): strictly faster (4 → 2) → auto-overwrite.
     try playFixtureRunToCompletion(&history, true);
     {
         const result = try readFixtureReplay(&harness, arena);
@@ -7086,7 +7086,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     try testing.expect(history.session.pending_validation_replay != null);
     try testing.expect(history.session.validation_replay_overwrite_offered);
     {
-        // The stash holds the slower run's slice (4 turns) — what the
+        // The stash holds the slower run's slice (4 turns) - what the
         // Overwrite Replay button would write.
         const sections = try parser.parseConfigFile(history.session.pending_validation_replay.?, arena);
         const stashed = try validation_replay.loadValidationReplay(sections, arena);
@@ -7095,7 +7095,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
 
     // Run D after EDITING the mission: the old replay's hash no longer
     // matches (it certifies an earlier version) → auto-overwrite
-    // regardless of turns — even though this run (4 turns) is slower than
+    // regardless of turns - even though this run (4 turns) is slower than
     // the 2-turn file.
     try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
@@ -7109,7 +7109,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     try playFixtureRunToCompletion(&history, false);
     {
         const result = try readFixtureReplay(&harness, arena);
-        try testing.expectEqual(@as(u32, 4), result.turns); // the new run's — overwritten despite being slower
+        try testing.expectEqual(@as(u32, 4), result.turns); // the new run's - overwritten despite being slower
     }
     // The auto-write cleared the stash + the offer.
     try testing.expect(history.session.pending_validation_replay == null);
@@ -7194,7 +7194,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     }));
     runToIdle(&history);
 
-    // DEFAULT: every section collapsed — the panel shows only headers.
+    // DEFAULT: every section collapsed - the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
         [_]bool{false} ** @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len,
@@ -7280,7 +7280,7 @@ test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op,
     try testing.expectEqualStrings("wolf", template.layers[0].sprite);
     try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
 
-    // Same-sprite re-pick closes WITHOUT COMMITTING — the close is the
+    // Same-sprite re-pick closes WITHOUT COMMITTING - the close is the
     // recorded change now (the picker surface event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_entity_layer_picker,
@@ -7352,7 +7352,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     runToIdle(&history);
 
     // ADD via an official stem that is a registry prefab's authored layer:
-    // the color adopts the authored value (2) — and so does `behind`
+    // the color adopts the authored value (2) - and so does `behind`
     // (grass_back is authored behind the base); dims match the base.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_decoration_layer_picker,
@@ -7422,7 +7422,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         .options_action = .select_editor_decoration_layer_color,
     }, .{ .editor_layer_color = .{ .layer_index = 0, .color_index = 5 } }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
-    // The color swatch commit kept the whole layer — behind included.
+    // The color swatch commit kept the whole layer - behind included.
     try testing.expect(history.current_state.editor.?.decoration_types[0].layers[0].behind);
     // The draw-side toggle (the Back/Front button): flips behind,
     // committing the whole layer (sprite + color kept).
@@ -7448,9 +7448,9 @@ test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-boun
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
-    // A 512x512 type (a 2x2 sprite grid) starting WIDE ({(0,0),(1,0)} —
+    // A 512x512 type (a 2x2 sprite grid) starting WIDE ({(0,0),(1,0)} -
     // a placement at P covers P and P+1x). The NEW tall footprint
-    // ({(0,0),(0,1)}, anchor (0,1)) covers (P.x, P.y-1) and P — the tile
+    // ({(0,0),(0,1)}, anchor (0,1)) covers (P.x, P.y-1) and P - the tile
     // at (5,4) sits under the NEW footprint only → the (5,5) placement is
     // pruned, the (0,0) one survives, the tile stays.
     const wide_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
@@ -7573,7 +7573,7 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     }, .{ .editor_footprint_tile = 99 }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
 
-    // Confirm an UNCHANGED draft: closes WITHOUT COMMITTING — the close
+    // Confirm an UNCHANGED draft: closes WITHOUT COMMITTING - the close
     // is the recorded change now (the picker surface event).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .confirm_editor_footprint,
@@ -7599,7 +7599,7 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker != null);
     // Nothing beyond the close + reopen surface events (the close pair
-    // + the open pair) — the empty-draft confirm records nothing (a
+    // + the open pair) - the empty-draft confirm records nothing (a
     // footprint needs >= 1 tile).
     try expectLastEvents(&history, &close_then_open_picker_pairs);
 
@@ -7704,7 +7704,7 @@ test "player_toggle_editor_metadata_sidebar: flips the open state, undo restores
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // CLOSED on editor open (unlike the inspector — the metadata is a
+    // CLOSED on editor open (unlike the inspector - the metadata is a
     // reference panel, not the first thing an author needs).
     try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
 
@@ -7757,7 +7757,7 @@ test "metadata sidebar name fields: mission + level commits, no-op gates" {
     try testing.expectEqualStrings("Old Mission Revised", history.current_state.editor.?.mission.name);
     try testing.expect(history.session.ui_state.text_edit == null);
 
-    // Level name: the active tab is 1 — the ref target carries the index.
+    // Level name: the active tab is 1 - the ref target carries the index.
     const level_field: types.TextFieldRef = .{ .id = .level_name, .target = .{ .level = 1 } };
     ui.beginTextEdit(&history.session.ui_state, level_field, "Level Two");
     _ = ui.routeTextInput(
@@ -7821,7 +7821,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
 
     // Open on the ENEMY row: the picker target snapshots the active tab
     // (level 1) + the role. (handleAnytimeInput's committing arms drain
-    // + record their own idle points — no runToIdle needed after.)
+    // + record their own idle points - no runToIdle needed after.)
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .open_editor_level_gradient_picker,
     }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
@@ -7833,7 +7833,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // The open scrolled the CURRENT gradient into view (enemy on auto,
     // wheel 2 with 24 gradients → derived enemy 10; the smallest offset
     // whose window still contains it), and the wheel scrolls the list
-    // while the picker owns the screen — one notch = one row, wheel-up
+    // while the picker owns the screen - one notch = one row, wheel-up
     // clamps at 0 (the builder owns the upper clamp).
     const visible_rows: i32 = @intCast(ui.editorThemePickerVisibleRowLimit());
     const gradient_count: i32 = @intCast(history.color_theme_definitions.gradients.len);
@@ -7861,10 +7861,10 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     // Level 0 untouched (the index rode the target).
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[0].enemy_gradient_index);
 
-    // Same-value pick while MANUAL: closes WITHOUT COMMITTING — the
+    // Same-value pick while MANUAL: closes WITHOUT COMMITTING - the
     // recorded delta is exactly the surface toggles (the reopen open
     // pair + the close-only pick close pair; the event history is the
-    // precise no-op proof — runToIdle's idle points don't dedupe, so
+    // precise no-op proof - runToIdle's idle points don't dedupe, so
     // undo-step counting can't distinguish a dead step from a duplicate
     // point at an unchanged state).
     input_handlers.handleAnytimeInput(&history, .{
@@ -7892,7 +7892,7 @@ test "theme picker: open targets the active level, picks commit per role, auto f
 
     // The Auto button while ALREADY auto flips to manual by FREEZING the
     // derived index (wheel 2, 24 gradients → derived enemy = 2 + 8 = 10)
-    // — a real commit, one undo back to auto.
+    // - a real commit, one undo back to auto.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_level_gradient_auto,
     }, .{ .editor_gradient_role = .enemy }, .{ .x = 0, .y = 0 }, &.{});
@@ -7939,7 +7939,7 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // The panel is CLOSED on editor open — open it for the routing check.
+    // The panel is CLOSED on editor open - open it for the routing check.
     history.current_state.editor.?.metadata_sidebar_open = true;
 
     // Inside the open panel: one wheel-down notch = one row down;
@@ -7954,7 +7954,7 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
 
     // Outside the panel (over the viewport): the wheel belongs to the
-    // camera-zoom branch — the metadata offset is untouched.
+    // camera-zoom branch - the metadata offset is untouched.
     input_handlers.handleAnytimeInput(
         &history,
         .{ .scroll_delta = -1 },
@@ -7983,7 +7983,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
 
     // The toggle opens the browser: fresh view state (scroll 0, local tab)
     // + both lists scanned (the official one parsed from the embedded
-    // mission files — the shipped campaign is always there).
+    // mission files - the shipped campaign is always there).
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -7994,7 +7994,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     try testing.expect(history.session.editor_official_missions_scanned);
 
     // The browser opens ON TOP of the options menu (the settings-screen
-    // stacking): Escape steps back one layer — only the browser closes.
+    // stacking): Escape steps back one layer - only the browser closes.
     history.current_state.ui_surfaces.options_menu_open = true;
     input_handlers.handleAnytimeInput(&history, .{
         .escape = true,
@@ -8017,7 +8017,7 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     try testing.expect(!history.current_state.ui_surfaces.editor_browser_open);
 
     // Reachable screens: the toggle ALSO opens from the main menu (the
-    // Editor button's entry path — same scan + reset-on-open).
+    // Editor button's entry path - same scan + reset-on-open).
     history.current_state.screen = .main_menu;
     history.current_state.editor = null;
     input_handlers.handleAnytimeInput(&history, .{
@@ -8051,7 +8051,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     harness.file_source.writeFile("missions/test_mission/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Test Mission\n") catch @panic("w1");
     harness.file_source.writeFile("missions/test_mission/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!=\n") catch @panic("w2");
 
-    // Open the browser (scans) — the local list now carries the mission.
+    // Open the browser (scans) - the local list now carries the mission.
     input_handlers.handleAnytimeInput(&history, .{
         .toggle_editor_browser = true,
     }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -8059,7 +8059,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     try testing.expectEqualStrings("missions/test_mission", history.session.editor_local_missions[0].path);
 
     // While the browser is open the wheel scrolls its rows (whole rows,
-    // lower-clamped at 0 — wheel-up past the top stays; the upper clamp is
+    // lower-clamped at 0 - wheel-up past the top stays; the upper clamp is
     // the builder's).
     history.session.ui_state.editor_mission_scroll_offset = 0;
     input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, null, .{ .x = 0, .y = 0 }, &.{});
@@ -8076,7 +8076,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
 
     // A kind tab switch is the same shape: direct UiState write + scroll
     // reset (the other kind's content has its own extent). No-op without
-    // the browser open (the scroll stays — the gate returned early).
+    // the browser open (the scroll stays - the gate returned early).
     history.session.ui_state.editor_mission_scroll_offset = 5;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_kind_tab,
@@ -8091,9 +8091,9 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     try testing.expectEqual(@as(i32, 5), history.session.ui_state.editor_mission_scroll_offset);
     history.current_state.ui_surfaces.editor_browser_open = true;
 
-    // The row click: pushes open_editor with the row's path and drains —
+    // The row click: pushes open_editor with the row's path and drains -
     // the editor swaps to the opened mission, world_generation bumps (the
-    // driver's UI reset signal — the browser itself clears there), and the
+    // driver's UI reset signal - the browser itself clears there), and the
     // event is on the recorded timeline (undo restores the previous
     // mission).
     const generation_before = history.current_state.world_generation;
@@ -8106,7 +8106,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     try testing.expectEqual(generation_before + 1, history.current_state.world_generation);
 
     // Undo across the swap: the previous (fresh) editor mission returns
-    // (editorStartingState's default — empty name, the fresh-mission shape).
+    // (editorStartingState's default - empty name, the fresh-mission shape).
     _ = history.undo(event_handlers.processEvent);
     try testing.expectEqualStrings("", history.current_state.editor.?.mission.name);
 }
@@ -8207,7 +8207,7 @@ test "mission import: an OS-made zip with a single root folder strips it" {
     try testing.expect(history.session.pending_error == null);
 }
 
-test "mission import: an unsafe entry name fails whole — popup, nothing written" {
+test "mission import: an unsafe entry name fails whole - popup, nothing written" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -8230,7 +8230,7 @@ test "mission import: an unsafe entry name fails whole — popup, nothing writte
     }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
 
-    // The popup explains, the list stays empty, and NOTHING was written —
+    // The popup explains, the list stays empty, and NOTHING was written -
     // names are validated before the first write (never half-imported).
     try testing.expect(history.session.pending_error != null);
     try testing.expectEqual(@as(usize, 0), history.session.editor_local_missions.len);
@@ -8277,7 +8277,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    // Add: the default sword (the editor_defaults.txt Items entry — the
+    // Add: the default sword (the editor_defaults.txt Items entry - the
     // palette "+" default).
     event_push.pushPlayerAction(
         &history.current_state,
@@ -8301,7 +8301,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
         try testing.expectEqualStrings("New Sword", slot.?.weapon.name);
     }
 
-    // Def commit (a type pick — reset-everything semantics): replace the
+    // Def commit (a type pick - reset-everything semantics): replace the
     // sword with a coat; the crafted-log clamp applies to stats over max.
     event_push.pushPlayerAction(
         &history.current_state,
@@ -8433,7 +8433,7 @@ test "inventory slot clicks: select/deselect toggle, Add default sword, Delete" 
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    // Selection is a pure UiState write — no events ever record.
+    // Selection is a pure UiState write - no events ever record.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_slot,
     }, .{ .editor_inventory_slot = 4 }, .{ .x = 0, .y = 0 }, &.{});
@@ -8536,7 +8536,7 @@ test "inventory item-type clicks: reset-on-change on the selected slot, same-pic
     }, .{ .editor_item_kind_cell = .{ .kind = .weapon, .weapon_type = .sword } }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
-    // A KIND switch resets too — "New Amulet", zero stats.
+    // A KIND switch resets too - "New Amulet", zero stats.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_inventory_item_type,
     }, .{ .editor_item_kind_cell = .{ .kind = .amulet } }, .{ .x = 0, .y = 0 }, &.{});
@@ -8604,7 +8604,7 @@ test "inventory item text fields: name + stat commits end-to-end, no-op gates, b
         try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     }
 
-    // A STAT: bounded — an out-of-range buffer clamps to the parser's own
+    // A STAT: bounded - an out-of-range buffer clamps to the parser's own
     // max (single-sourced `itemStatMax`); leading zeros are numeric-equal
     // no-ops.
     {
@@ -8664,7 +8664,7 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    // The session's data is POPULATED — the max import ignores it (unlike
+    // The session's data is POPULATED - the max import ignores it (unlike
     // the Player data import, the source is the file, not the session).
     var player_data: types.PlayerData = .{ .player_name = "Tester" };
     player_data.main_hand_weapon = .{
@@ -8696,11 +8696,11 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
             template.inventory.slots[0].?.weapon.name,
         );
         try testing.expectEqual(types.WeaponType.staff, template.inventory.slots[11].?.weapon.weapon_type);
-        // The session's data is untouched — the file is a READ source.
+        // The session's data is untouched - the file is a READ source.
         try testing.expectEqualStrings("Test Sword", history.current_state.player_data.main_hand_weapon.?.name);
     }
 
-    // The import rides the undo timeline — undo restores the default
+    // The import rides the undo timeline - undo restores the default
     // (empty) loadout.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(history.current_state.editor.?.player_def.template.amulet == null);
@@ -8720,7 +8720,7 @@ test "the validation stats screen: info populated, personal best captured, manua
     }));
     runToIdle(&history);
 
-    // Run A (the beeline — 2 begun turns): auto-writes (no prior file).
+    // Run A (the beeline - 2 begun turns): auto-writes (no prior file).
     try playFixtureRunToCompletion(&history, true);
 
     // The stats info: populated + validation-flagged, carrying the run's
@@ -8735,9 +8735,9 @@ test "the validation stats screen: info populated, personal best captured, manua
         try testing.expect(!info.overwrite_offered);
     }
     // The personal-best line was captured at the write site (the file's
-    // turns — this run's).
+    // turns - this run's).
     try testing.expectEqual(@as(u32, 2), history.session.validation_personal_best_turns.?);
-    // Not offered — no slower run is stashed; a stale overwrite click
+    // Not offered - no slower run is stashed; a stale overwrite click
     // no-ops.
     try testing.expect(!history.session.validation_replay_overwrite_offered);
     input_handlers.handleAnytimeInput(&history, .{

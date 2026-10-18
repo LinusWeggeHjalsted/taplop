@@ -11,7 +11,7 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Spinblade: a main-hand AoE skill. Attacks every hostile within radius of the
-/// caster. Self-centered — not targeted.
+/// caster. Self-centered - not targeted.
 pub const skill = Skill{
     .name = "Spinblade",
     .skill_type = .weapon_skill,
@@ -31,13 +31,13 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-centered — no target selection.
+/// Self-centered - no target selection.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
 /// AI options: one self-centered cast in value units (helpers.aoePriority
-/// over the hostile count in radius) — 1 per target hit.
+/// over the hostile count in radius) - 1 per target hit.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -54,7 +54,7 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 1) });
 }
 
-/// Self-centered — fires immediately, no highlight step.
+/// Self-centered - fires immediately, no highlight step.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }

@@ -11,9 +11,9 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Reflect: an off-hand skill. Grants the Reflect effect on the caster — while
+/// Reflect: an off-hand skill. Grants the Reflect effect on the caster - while
 /// active, incoming attack damage is prevented and dealt back to the attacker.
-/// Collision damage from knockback is NOT reflected — it's the counterplay
+/// Collision damage from knockback is NOT reflected - it's the counterplay
 /// around the shield. Turn-ending (weapon skill).
 pub const skill = Skill{
     .name = "Reflect",
@@ -33,12 +33,12 @@ pub const skill = Skill{
     .use_skill_fn = &useSkill,
 };
 
-/// Self-cast — no targeting.
+/// Self-cast - no targeting.
 fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 {
     return null;
 }
 
-/// AI options: one self-cast — offered only when a hostile can reach and
+/// AI options: one self-cast - offered only when a hostile can reach and
 /// attack the caster next turn (the threat model, ai_threat.zig).
 /// Rated 2 when threatened, 4 when threatened AND below half health.
 fn aiOptions(
@@ -56,8 +56,8 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = rating });
 }
 
-/// Self-cast — no meaningful target.
-/// Self-cast — fires immediately.
+/// Self-cast - no meaningful target.
+/// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }
