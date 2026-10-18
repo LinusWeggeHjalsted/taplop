@@ -388,6 +388,17 @@ survived many sessions this way).
   NOT in any 0.16.x release. History: DONE → "mac 9-slice panels -
   ROOT CAUSE FOUND"; repro + report kit:
   `../ziglop-mac-bisect/repro/` (UPSTREAM_REPORT.md).
+- **`std.Io.Threaded.init(allocator, .{})` spawns children with an EMPTY
+  environment** - the options' `environ` field defaults to `.empty`, so a
+  child process (e.g. `xdg-open`) gets no PATH/DISPLAY/DBUS and fails
+  with a baffling exit code while the spawn itself "succeeds". When
+  spawning, pass the process environ explicitly (see
+  `src/browser_url.zig`'s `processEnviron` - the C `environ` global,
+  reachable only in libc builds; start.zig wires no environ source
+  otherwise). Related trap: `std.process.run` NEVER errors on a nonzero
+  child exit - check `result.term` or "success" is a false positive.
+  Found as the repo-link bug: xdg-open exit 3 ("no method available")
+  from the game, exit 0 from any shell (history in DONE.md).
 - `std.heap.page_allocator` is UNUSABLE on wasm32-emscripten: on wasm it is
   BrkAllocator, which grows memory via the raw `@wasmMemoryGrow` intrinsic
   behind emscripten's back - the JS heap views detach and SAFE_HEAP bounds

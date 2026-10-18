@@ -17633,10 +17633,18 @@ upstream repo's page in the player's browser.
   skips), the derived URL on this checkout
   (https://git.sr.ht/~narkokran/ziglop), and the console-channel
   end-to-end run (`action open_repo_link` piped into the native binary -
-  the same applyAction fold a click goes through, opening the tab). That
-  run caught a real bug the compiler could not: the first version capped
-  the child's stdout/stderr with Io.Limit.limited(0), which trips
-  error.StreamTooLong IMMEDIATELY (a zero limit rejects even an empty
-  stream) - compiles fine, fails at the only moment it runs. The fix is
-  .unlimited + explicit free (the opener writes nothing on success).
-  Compiles-=-runs, one more instance for the pile.
+  the same applyAction fold a click goes through).
+- The NATIVE side needed a real debug session (the user reported no tab on
+  click; web worked). Two stacked silent-failure bugs, both invisible to
+  the compiler and to my first "verification": (1) `std.Io.Threaded.init`
+  defaults its `environ` option to EMPTY - the spawned xdg-open got NO
+  environment (no PATH/DISPLAY/DBUS) and exited 3 ("no method available")
+  - from any shell it exits 0, so only game-spawned calls failed, and the
+  user's "a few tabs" were exactly the direct shell probes. (2)
+  `std.process.run` never errors on a nonzero child exit, so "no warning"
+  read as success while the child failed. The fixes: pass the process
+  environ (the C `environ` global, libc builds only - `processEnviron` in
+  browser_url.zig) + check `result.term` and warn on nonzero. The lesson
+  is now an AGENTS → Zig 0.16 Gotchas entry. The intermediate
+  `Io.Limit.limited(0)` StreamTooLong bug (a zero limit rejects even an
+  empty stream) was found on the way.
