@@ -282,16 +282,31 @@ pub fn buildOptionsMenu(
 /// OPTIONS MENU's main-menu variant (reached via the top-bar options
 /// button / Escape - one convention from every screen); this stack holds
 /// only the session-flow verbs + mode entries.
-/// The web storage disclaimer's fonts + gap (main menu, web only - see
-/// DESIGN → File System & IO → Web storage model): a header line + TWO
-/// body lines (the wording's own two halves, split at its dash), centered
-/// above the title. Band heights are the font sizes (the title's
-/// convention - the labels are single-line). The disclaimer lines and the
-/// title all draw OUTLINED (the standard text outline): the disclaimer
-/// sits over the menu background and read poorly without it.
-const main_menu_disclaimer_header_font_size: i32 = 60;
-const main_menu_disclaimer_body_font_size: i32 = 44;
+/// The web storage disclaimer's font + line gap (main menu, web only - see
+/// DESIGN → File System & IO → Web storage model): centered lines above
+/// the title, ONE font size for all of them. 60px is the smallest size
+/// that keeps the standard 8px outline inside the SDF atlas's encodable
+/// range (at 44px the outline clamps and the text reads noisy - see
+/// DESIGN → Platform Seam → SDF text outline). Band heights are the font
+/// sizes (the title's convention - the labels are single-line). The
+/// disclaimer lines and the title all draw OUTLINED (the standard text
+/// outline): the disclaimer sits over the menu background and read
+/// poorly without it.
+const main_menu_disclaimer_font_size: i32 = 60;
 const main_menu_disclaimer_gap: i32 = 24;
+/// The disclaimer wording (the chosen wording - DESIGN → File System & IO
+/// → Web storage model), one line per entry, emitted in order. File scope
+/// so the web-only test walks the SAME list (no duplicated strings to
+/// drift). The long import/export sentence breaks at its phrase boundary
+/// so no line spans wider than ~1600px of the 3840px reference (measured
+/// against the font's advances - unbroken it would span 2956px, 77% of
+/// the screen).
+const disclaimer_lines = [_][]const u8{
+    "WEB DISCLAIMER:",
+    "Your saved data does not persist between sessions on web",
+    "Use the Import Game and Export Game functionality",
+    "to load and save data for cross-session usage",
+};
 
 pub fn buildMainMenu(
     elements: *UiElementList,
@@ -343,14 +358,14 @@ pub fn buildMainMenu(
     button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
-    // The web storage disclaimer (web only, the chosen wording - DESIGN →
-    // File System & IO → Web storage model): three centered lines above
-    // the title, part of the same centered block (the disclaimer band sits
-    // on top, then the title band, then the buttons).
+    // The web storage disclaimer (web only, the chosen wording - the
+    // `disclaimer_lines` array above): centered lines above the title,
+    // part of the same centered block (the disclaimer band sits on top,
+    // then the title band, then the buttons).
     const disclaimer_band_height: i32 = if (on_web)
-        main_menu_disclaimer_header_font_size + main_menu_disclaimer_gap +
-            main_menu_disclaimer_body_font_size + main_menu_disclaimer_gap +
-            main_menu_disclaimer_body_font_size + main_menu_title_gap
+        disclaimer_lines.len * main_menu_disclaimer_font_size +
+            (disclaimer_lines.len - 1) * main_menu_disclaimer_gap +
+            main_menu_title_gap
     else
         0;
     // The title + disclaimer + button stack center together as one block:
@@ -364,58 +379,23 @@ pub fn buildMainMenu(
         .position();
 
     if (on_web) {
-        const disclaimer_header = "WEB DISCLAIMER:";
-        const disclaimer_header_width = font_metrics.measureSpanWidth(
-            text(disclaimer_header),
-            main_menu_disclaimer_header_font_size,
-        );
-        try elements.append(allocator, .{ .text_label = .{
-            .text = disclaimer_header,
-            .screen_position = .{
-                .x = origin.x + @divTrunc(menu_button_width - disclaimer_header_width, 2),
-                .y = origin.y,
-            },
-            .font_size = main_menu_disclaimer_header_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
-        // The body's two halves, one label each (a '\n' inside a single
-        // label would render right but measure as one line - the wrapRow
-        // hard-break lesson; plain labels get no newline handling).
-        const disclaimer_body_first = "Your saved data does not persist between sessions on web";
-        const disclaimer_body_first_y = origin.y +
-            main_menu_disclaimer_header_font_size + main_menu_disclaimer_gap;
-        const disclaimer_body_first_width = font_metrics.measureSpanWidth(
-            text(disclaimer_body_first),
-            main_menu_disclaimer_body_font_size,
-        );
-        try elements.append(allocator, .{ .text_label = .{
-            .text = disclaimer_body_first,
-            .screen_position = .{
-                .x = origin.x + @divTrunc(menu_button_width - disclaimer_body_first_width, 2),
-                .y = disclaimer_body_first_y,
-            },
-            .font_size = main_menu_disclaimer_body_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
-        const disclaimer_body_second = "use the Import Game and Export Game functionality to load and save data for cross-session usage";
-        const disclaimer_body_second_y = disclaimer_body_first_y +
-            main_menu_disclaimer_body_font_size + main_menu_disclaimer_gap;
-        const disclaimer_body_second_width = font_metrics.measureSpanWidth(
-            text(disclaimer_body_second),
-            main_menu_disclaimer_body_font_size,
-        );
-        try elements.append(allocator, .{ .text_label = .{
-            .text = disclaimer_body_second,
-            .screen_position = .{
-                .x = origin.x + @divTrunc(menu_button_width - disclaimer_body_second_width, 2),
-                .y = disclaimer_body_second_y,
-            },
-            .font_size = main_menu_disclaimer_body_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
+        // One label per line (a '\n' inside a single label would render
+        // right but measure as one line - the wrapRow hard-break lesson;
+        // plain labels get no newline handling).
+        for (disclaimer_lines, 0..) |line, line_index| {
+            const line_width = font_metrics.measureSpanWidth(text(line), main_menu_disclaimer_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = line,
+                .screen_position = .{
+                    .x = origin.x + @divTrunc(menu_button_width - line_width, 2),
+                    .y = origin.y + @as(i32, @intCast(line_index)) *
+                        (main_menu_disclaimer_font_size + main_menu_disclaimer_gap),
+                },
+                .font_size = main_menu_disclaimer_font_size,
+                .outlined = true,
+                .blocks_input = false,
+            } });
+        }
     }
 
     try elements.append(allocator, .{ .text_label = .{
@@ -2838,33 +2818,25 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
 
     // Web (the null persistent-dir-path signal): the Import Game button is
     // present (with a tooltip) + the storage disclaimer is present above
-    // the title (all three lines of the chosen wording - DESIGN → Web
-    // storage model) with the standard outline, and the title is outlined
-    // too (the readability pass).
+    // the title (every line of the chosen wording - DESIGN → Web storage
+    // model) with the standard outline, and the title is outlined too
+    // (the readability pass).
     {
         var elements: UiElementList = .empty;
         try buildMainMenu(&elements, allocator, metrics, screen, true, null, button_color);
         var import_button: ?Button = null;
-        var found_disclaimer_header = false;
-        var found_disclaimer_body_first = false;
-        var found_disclaimer_body_second = false;
         var found_outlined_title = false;
+        var found_disclaimer_lines = [_]bool{false} ** disclaimer_lines.len;
         for (elements.items) |element| switch (element) {
             .button => |b| {
                 if (b.action == .import_game) import_button = b;
             },
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "WEB DISCLAIMER:")) {
-                    found_disclaimer_header = true;
-                    try std.testing.expect(label.outlined);
-                }
-                if (std.mem.eql(u8, label.text, "Your saved data does not persist between sessions on web")) {
-                    found_disclaimer_body_first = true;
-                    try std.testing.expect(label.outlined);
-                }
-                if (std.mem.eql(u8, label.text, "use the Import Game and Export Game functionality to load and save data for cross-session usage")) {
-                    found_disclaimer_body_second = true;
-                    try std.testing.expect(label.outlined);
+                for (disclaimer_lines, 0..) |expected, index| {
+                    if (std.mem.eql(u8, label.text, expected)) {
+                        found_disclaimer_lines[index] = true;
+                        try std.testing.expect(label.outlined);
+                    }
                 }
                 if (std.mem.eql(u8, label.text, "taplop")) {
                     found_outlined_title = true;
@@ -2875,9 +2847,7 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
         };
         const found = import_button orelse @panic("no Import Game button on web");
         try std.testing.expect(found.tooltip != null);
-        try std.testing.expect(found_disclaimer_header);
-        try std.testing.expect(found_disclaimer_body_first);
-        try std.testing.expect(found_disclaimer_body_second);
+        for (found_disclaimer_lines) |found_line| try std.testing.expect(found_line);
         try std.testing.expect(found_outlined_title);
     }
 
