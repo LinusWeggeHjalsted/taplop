@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const types = @import("../types.zig");
+const build_info = @import("build_info");
 const ui_element = @import("element.zig");
 const keybind_edit = @import("keybind_edit.zig");
 const emit = @import("emit.zig");
@@ -307,6 +308,10 @@ const disclaimer_lines = [_][]const u8{
     "Use the Import Game and Export Game functionality",
     "to load and save data for cross-session usage.",
 };
+/// The build-version stamp's font size (bottom-left of the main menu).
+/// 48px is the smallest size that keeps the standard 8px outline clear of
+/// the SDF clamp floor (see DESIGN → Platform Seam → SDF text outline).
+const main_menu_version_font_size: i32 = 48;
 
 pub fn buildMainMenu(
     elements: *UiElementList,
@@ -429,6 +434,22 @@ pub fn buildMainMenu(
             menu_button.tooltip,
         );
     }
+
+    // The build-version stamp (bottom-left corner): the game_version
+    // string (YYYY.MM.<commits this month>[-dirty], computed at build
+    // time from git - see build.zig computeGameVersion; the same string
+    // the session log records). Outlined like the title + disclaimer
+    // (same background, same readability pass); non-interactive.
+    try elements.append(allocator, .{ .text_label = .{
+        .text = build_info.game_version,
+        .screen_position = .{
+            .x = screen.x + ui_gap,
+            .y = screen.y + screen.height - main_menu_version_font_size - ui_gap,
+        },
+        .font_size = main_menu_version_font_size,
+        .outlined = true,
+        .blocks_input = false,
+    } });
 }
 
 // --- Load-save browser (main menu, full screen) ---
@@ -2798,6 +2819,23 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
             else => {},
         };
         try std.testing.expect(found);
+    }
+    // The build-version stamp: outlined, pinned near the bottom-left
+    // corner.
+    {
+        var found_version_stamp = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, build_info.game_version)) {
+                    found_version_stamp = true;
+                    try std.testing.expect(label.outlined);
+                    try std.testing.expect(label.screen_position.x <= screen.x + 100);
+                    try std.testing.expect(label.screen_position.y >= screen.y + screen.height - 100);
+                }
+            },
+            else => {},
+        };
+        try std.testing.expect(found_version_stamp);
     }
     for ([_]types.Action{ .open_settings, .open_credits }) |moved| {
         for (elements.items) |element| switch (element) {
