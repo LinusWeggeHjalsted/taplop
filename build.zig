@@ -76,6 +76,13 @@ pub fn build(b: *std.Build) void {
     });
     sdf_generator_exe.root_module.addImport("raylib", raylib_generator_dep.module("raylib"));
     sdf_generator_exe.root_module.linkLibrary(raylib_generator_dep.artifact("raylib"));
+    // The cmap reader (src/font_codepoints.zig) the generator derives the
+    // baked codepoint set from — a separate module because the tool's root
+    // sits in tools/ and can't relatively import out of it. Raylib-free, so
+    // it adds nothing to the tool's dependency graph beyond std.
+    sdf_generator_exe.root_module.addAnonymousImport("font_codepoints", .{
+        .root_source_file = b.path("src/font_codepoints.zig"),
+    });
     const sdf_generator_run = b.addRunArtifact(sdf_generator_exe);
     // Input file (dependency-tracked: editing the font regenerates the atlas)
     // then output blob path.

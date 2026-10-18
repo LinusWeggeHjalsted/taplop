@@ -640,9 +640,8 @@ fn enableTrilinearMipmaps(texture: *rl.Texture2D) void {
 /// zero color, killing the dark halo straight-alpha textures show when
 /// downscaled. The image MUST be `.uncompressed_r8g8b8a8` (convert first).
 /// See DESIGN → Platform Seam → Render target resolution (premultiplied
-/// alpha). Shared by the sprite loader (here) and the font atlas loader
-/// (backend).
-pub fn premultiplyAlpha(image: *rl.Image) void {
+/// alpha).
+fn premultiplyAlpha(image: *rl.Image) void {
     if (image.format != .uncompressed_r8g8b8a8) return;
     const w: usize = @intCast(image.width);
     const h: usize = @intCast(image.height);

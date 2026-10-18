@@ -292,11 +292,12 @@ into fill + outline band. Plain text is the SAME shader with a zero
 outline width (the band collapses; a transparent outline color makes it
 contribute nothing), so every string is resolution-independent — the
 pre-unification plain path (runtime coverage atlas, bilinear-sampled from
-a fixed 128px base, undersampled 2.5–5:1 at a 1080p target) is gone from
-the normal path. One shader-driven `drawTextEx` per string — no per-string
-CPU raster, no dilation pass, no texture cache (the pre-SDF approach was
-an 8-direction drop-shadow ring: 9 draws, fuzzy at non-integer offsets,
-no antialiased outer edge; kept as the fallback).
+a fixed 128px base, undersampled 2.5–5:1 at a 1080p target) is gone
+entirely (see the fallback policy below). One shader-driven `drawTextEx`
+per string — no per-string CPU raster, no dilation pass, no texture cache
+(the pre-SDF approach was an 8-direction drop-shadow ring: 9 draws, fuzzy
+at non-integer offsets, no antialiased outer edge; it remains the outlined-
+text degradation on the default-font fallback).
 
 Key pieces (`src/raylib/text.zig`):
 
@@ -344,19 +345,43 @@ Key pieces (`src/raylib/text.zig`):
   `(r,r,r,g)` on desktop GL — a grayscale texture samples `.a` as constant
   1.0 and renders solid boxes (this bit us once; the blob stores only the
   alpha channel and the runtime interleaves).
-- **Fallback policy**: init tries the SDF pipeline FIRST; the coverage-
-  atlas font (the pre-unification plain path: runtime TTF raster at
-  `font_base_size`, premultiplied, bilinear) is built ONLY when SDF init
-  fails (blob invalid, texture upload, shader compile) — decided ONCE at
-  init, fixed for the session; the normal path never builds it. On that
-  fallback, plain text draws plain `drawTextEx` and outlined text the
-  8-direction shadow ring (a broken TTF below that falls to raylib's
-  default font). `fontMetrics` reads from the ACTIVE font so layout always
-  measures with the advances the renderer draws with. An SDF font must
-  never be drawn without its shader (texels are distances, not coverage).
-  A persistent-dir font shadow does NOT affect SDF text (the blob is
-  baked from the shipped TTF at build time — accepted; shadowing is a
-  side-effect seam, not a designed feature).
+- **Codepoint set (full font coverage)**: the atlas bakes EXACTLY the
+  codepoints the shipped font's cmap maps — no hand-maintained codepoint
+  list anywhere. `src/font_codepoints.zig` (raylib-free TTF cmap parser:
+  format 4 + 12, standard best-subtable preference, notdef and NUL
+  excluded; unit-tested against hand-built fixture TTFs) feeds the
+  generator at build time; `src/font_codepoints_tests.zig` pins the
+  shipped font's contract (full ASCII + the punctuation set) against the
+  embedded bytes. `max_atlas_codepoints` (1024) is the shared bound: the
+  blob parser's sanity guard + the generator's build-time gate. The
+  measurement seam follows: `ui.FontMetrics` carries the font's non-ASCII
+  advances (filled once at init, sorted, binary-searched by
+  `measureSpanWidth`; ASCII rides the fixed 95-entry array; a codepoint
+  the font lacks measures a 0.5em approximation). Size budget: 95 → 407
+  glyphs = blob 2.1 → 8.4 MB, atlas 2048×1024 → 4096×2048 (release exe
+  +6.6 MB, wasm +6.4 MB). The 4096-wide atlas exceeds WebGL2's GUARANTEED
+  minimum MAX_TEXTURE_SIZE (2048): on such a device the upload fails and
+  text degrades to the default-font fallback below.
+- **Fallback policy**: SDF init failure falls back to raylib's DEFAULT
+  bitmap font — borrowed (raylib-owned, never unloaded), decided ONCE at
+  init, fixed for the session: legible ASCII, no outline band (outlined
+  text degrades to the 8-direction shadow ring), straight-alpha so
+  slightly bright under the premult blend. `fontMetrics` reads from the
+  ACTIVE font so layout always measures with the advances the renderer
+  draws with. An SDF font must never be drawn without its shader (texels
+  are distances, not coverage). The failure sites are: blob invalid
+  (near-unreachable — a build-time artifact, guarded by the comptime
+  constants check + blob validation), shader compile (pre-GL-3.3 desktop
+  only; WebGL2 guarantees GLSL 300 es), texture upload (a GPU with
+  MAX_TEXTURE_SIZE < 4096 — see the codepoint-set budget above). The
+  former intermediate fallback (a runtime coverage atlas rasterized from
+  the embedded TTF) was REMOVED: it was unverifiable (raylib-only code,
+  no way to force the failure short of broken hardware, excluded from
+  the headless suite) and dragged its own machinery (CPU premultiply
+  subtleties, the persistent-dir font shadow seam, deinit ownership) —
+  complexity maintained for a promise that could never be tested. No TTF
+  is read at runtime; the font file on disk feeds only the generator and
+  the contract test.
 
 ### Outline stripe shader (marching outlines)
 

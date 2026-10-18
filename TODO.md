@@ -1142,14 +1142,12 @@ Done items in DONE.md. Open:
   Style): replace every em-dash (U+2014) and en-dash (U+2013) with `-`, every
   ellipsis (U+2026) with `...`, across src/ + the .md docs (NOT zig-pkg/ -
   vendored; NOT .zig-cache/). Pre-rule counts: ~3900 em-dashes in code, ~4800
-  in docs, 97 en-dashes, 19 ellipses. Includes the RENDERED-string sites
-  (the visible bug: tooltips/popups showing `?` where a dash should be -
-  the menus tooltips, the keybind action-panel separator format, the
-  listening panels' ellipsis, the steal warnings, the editor pickers'
-  "sprites hidden" note, the validation summary, three player_input popups)
-  + their test assertions in lockstep. Sweep discipline: dry-run ONE file +
-  inspect the full diff before the tree; write after each file. Deferred
-  until the web storage model refactor lands.
+  in docs, 97 en-dashes, 19 ellipses. The pre-rule RENDERED-string sites
+  render correctly now (the full-coverage atlas - see DONE.md, "font: full
+  cmap coverage"), so this is uniformity, not bug-fixing - but the sweep
+  still covers them + their test assertions in lockstep. Sweep discipline:
+  dry-run ONE file + inspect the full diff before the tree; write after each
+  file. UNBLOCKED (was deferred on the web storage model refactor - DONE).
 - **doc_symbol_check's JS-API blind spot** - backticked JS names read as
   Zig dot-paths and false-positive (hit twice in the web storage session:
   navigator.storage.persist, indexedDB.deleteDatabase). Current

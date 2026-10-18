@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const rl = @import("raylib");
+const font_codepoints = @import("font_codepoints");
 
 /// Must match `font_base_size` in src/raylib/text.zig — the atlas is baked at
 /// this size and the runtime scales from it. Validated at blob-parse time.
@@ -48,9 +49,21 @@ pub fn main(init: std.process.Init.Minimal) void {
         @panic("sdf_atlas_generator: failed to read font file");
     defer allocator.free(ttf_bytes);
 
-    // Bake SDF glyphs (95 ASCII codepoints 0x20..0x7E, same default set the
-    // runtime's regular font path uses).
-    const glyphs = rl.loadFontData(ttf_bytes, font_base_size, null, .sdf) catch
+    // Bake SDF glyphs for EXACTLY the codepoints the font's cmap maps (see
+    // src/font_codepoints.zig) — the full-coverage set, not raylib's default
+    // 95-ASCII bake. A set over the shared atlas bound is a build-time
+    // failure (a deliberate font swap must revisit the bound, not silently
+    // bake an enormous atlas).
+    const codepoints = font_codepoints.fontCodepoints(allocator, ttf_bytes) catch
+        @panic("sdf_atlas_generator: failed to parse the font's cmap");
+    defer allocator.free(codepoints);
+    if (codepoints.len > font_codepoints.max_atlas_codepoints)
+        @panic("sdf_atlas_generator: font maps too many codepoints for the atlas bound");
+    const codepoints_i32 = allocator.alloc(i32, codepoints.len) catch @panic("OOM");
+    defer allocator.free(codepoints_i32);
+    for (codepoints, codepoints_i32) |codepoint, *target| target.* = codepoint;
+
+    const glyphs = rl.loadFontData(ttf_bytes, font_base_size, codepoints_i32, .sdf) catch
         @panic("sdf_atlas_generator: SDF glyph generation failed");
     defer rl.unloadFontData(glyphs);
 

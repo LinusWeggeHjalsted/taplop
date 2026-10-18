@@ -545,8 +545,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   edge/position/char-queue read) + `src/raylib/audio.zig` (the layered-cue
   sound caches + the ambient-music intensity stack) +
   `src/raylib/textures.zig` (the lazy sprite caches + outline/inset mask
-  generation + opaque-bounds scans) + `src/raylib/text.zig` (the TTF font +
-  the SDF text-outline pipeline + text drawing) +
+  generation + opaque-bounds scans) + `src/raylib/text.zig` (the SDF
+  text-outline pipeline + text drawing; the codepoint source is
+  `src/font_codepoints.zig`, the cmap reader both the build-time atlas
+  generator and the contract tests use) +
   `src/raylib/conversions.zig` (shared Color/rect raylib conversions) +
   `src/raylib/diagnostics.zig` (the GL-gathering probe sites for the
   diagnostics log — see Dev Tools; the type is raylib-free

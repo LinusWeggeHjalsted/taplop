@@ -1,30 +1,28 @@
 //! Text subsystem of the raylib backend: ALL text draws through the SDF
 //! pipeline (plain fill = the same shader with a zero outline width — see
-//! `drawSdfText`), with the runtime coverage-atlas font (the pre-SDF text
-//! path) kept ONLY as the fallback when the SDF pipeline fails to init, and
-//! the SDF text-outline blob+shader (build-time blob; shadow-ring fallback
-//! on the fallback font). The backend keeps `fontMetrics` as a thin wrapper
-//! (main.zig's RenderContext seam) and passes its frame arena as the
-//! per-frame scratch to the draw fns. See DESIGN → Platform Seam → SDF text
-//! outline.
+//! `drawSdfText`), built at init from the build-time blob. When the
+//! pipeline fails to init (broken blob / texture upload / shader compile —
+//! see DESIGN → Platform Seam → SDF text outline for why that is
+//! near-unreachable), text falls back to raylib's default bitmap font:
+//! legible ASCII, no outline band, no deinit ownership. The backend keeps
+//! `fontMetrics` as a thin wrapper (main.zig's RenderContext seam) and
+//! passes its frame arena as the per-frame scratch to the draw fns.
 
 const std = @import("std");
 const rl = @import("raylib");
 const types = @import("../types.zig");
 const ui = @import("../ui.zig");
-const transient_allocator = @import("../transient_allocator.zig");
+const font_codepoints = @import("../font_codepoints.zig");
 const conversions = @import("conversions.zig");
-const textures_mod = @import("textures.zig");
 
 const toRaylibColor = conversions.toRaylibColor;
 
-/// Base rasterization size for the TTF font. Both the build-time SDF blob
-/// and the runtime coverage-atlas fallback bake glyphs at this size;
-/// `drawTextEx` scales from it. Sized to cover the largest `font_size` in
-/// use (96, menu buttons); the fallback atlas is bilinear-filtered so its
-/// downscaled draws stay smooth (the SDF pipeline needs no such raster —
-/// its AA is analytic). This is a runtime GPU/texture memory cost, not
-/// binary size (only the raw ~12 KB TTF bytes are embedded).
+/// Base rasterization size the build-time SDF atlas is baked at (see
+/// tools/sdf_atlas_generator.zig); `drawTextEx` scales from it. Sized to
+/// cover the largest `font_size` in use (96, menu buttons); the SDF
+/// pipeline's AA is analytic, so no runtime raster is involved. The atlas
+/// is one GPU texture (see DESIGN → Platform Seam → SDF text outline for
+/// the size budget).
 const font_base_size: i32 = 128;
 
 /// Outline thickness for floating TEXT overlays (damage/heal numbers) and
@@ -141,112 +139,14 @@ const sdf_outline_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.ar
 else
     sdf_outline_fs_glsl330;
 
-/// Load the FALLBACK font — only called when the SDF pipeline failed to
-/// init (see `TextRenderer.init`); the normal path never builds this
-/// atlas. Reads the embedded TTF (`assets/fonts/cause-semibold.ttf` — Cause
-/// SemiBold, SIL OFL 1.1; see LICENSE-FONT.txt) through the FileSource and
-/// rasterizes a glyph atlas at `font_base_size`.
-/// The atlas is built ENTIRELY ON THE CPU (`loadFontData` →
-/// `genImageFontAtlas`) so it can be PREMULTIPLIED before upload — text
-/// composites correctly under the render pass's `BLEND_ALPHA_PREMULTIPLY`
-/// blend. A GPU-readback premultiply (`loadImageFromTexture` →
-/// `updateTexture`) is NOT portable: raylib's GL readback always returns
-/// RGBA (`glReadPixels` with GL_RGBA) regardless of the texture's
-/// GRAY_ALPHA format, and re-uploading 4bpp data to the 2bpp texture
-/// garbles the atlas (observed on web — blank/garbled glyphs in panels).
-/// Mirrors raylib's `LoadFontFromMemory` (95 default ASCII glyphs, padding
-/// 4 = FONT_TTF_DEFAULT_CHARS_PADDING, pack method 0) minus the per-glyph
-/// sub-image refresh (only needed for ImageDrawText, which we never use).
-/// The assembled Font's glyphs/recs are C-allocated by the raylib calls, so
-/// `rl.unloadFont` frees them correctly (see deinit).
-///
-/// On any failure (missing file, decode error) falls back to raylib's
-/// default bitmap font so the game stays playable — the recoverable-error
-/// policy applies because a persistent-dir shadow
-/// (`~/.ziglop/assets/fonts/...`) can break the read at runtime. The
-/// default font is left straight-alpha (rendering too bright under premult
-/// blend) — acceptable for this near-unreachable fallback; its atlas is
-/// raylib-owned and can't be rebuilt on the CPU. Returns the font + whether
-/// it is the default (so deinit can skip unloading raylib-owned the
-/// default).
-fn loadFont(file_source: *const @import("../file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
-    const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/cause-semibold.ttf") catch |err| {
-        std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
-        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
-        return .{ .font = fallback, .is_default = true };
-    };
-    defer transient_allocator.allocator.free(bytes);
-
-    // Decode glyph rasterizations (95 default ASCII glyphs — the same set
-    // LoadFontFromMemory's null-codepoints path uses). C-owned; freed by
-    // `unloadFontData` (via unloadFont on success, or explicitly on error).
-    const glyphs = rl.loadFontData(bytes, font_base_size, null, .default) catch {
-        std.debug.print("warning: failed to decode font; falling back to default\n", .{});
-        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
-        return .{ .font = fallback, .is_default = true };
-    };
-
-    // Build the atlas on the CPU. GenImageFontAtlas produces a GRAY_ALPHA
-    // image (gray = color, alpha = coverage); premultiply in that native
-    // format (gray = gray*alpha/255). C-owned recs; freed by unloadFont.
-    const glyph_padding: i32 = 4; // FONT_TTF_DEFAULT_CHARS_PADDING
-    const built = rl.genImageFontAtlas(glyphs, font_base_size, glyph_padding, 0) catch {
-        rl.unloadFontData(glyphs);
-        std.debug.print("warning: failed to build font atlas; falling back to default\n", .{});
-        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
-        return .{ .font = fallback, .is_default = true };
-    };
-    var atlas_image = built[0];
-    const recs = built[1];
-    defer rl.unloadImage(atlas_image);
-
-    switch (atlas_image.format) {
-        .uncompressed_gray_alpha => {
-            const w: usize = @intCast(atlas_image.width);
-            const h: usize = @intCast(atlas_image.height);
-            if (w > 0 and h > 0) {
-                const px: [*]u8 = @ptrCast(atlas_image.data);
-                for (0..w * h) |i| {
-                    const a: u16 = px[i * 2 + 1];
-                    px[i * 2] = @intCast((@as(u16, px[i * 2]) * a + 127) / 255);
-                }
-            }
-        },
-        .uncompressed_r8g8b8a8 => textures_mod.premultiplyAlpha(&atlas_image),
-        else => std.debug.print("warning: font atlas has unexpected format {}; text may render slightly dark\n", .{atlas_image.format}),
-    }
-
-    const texture = rl.loadTextureFromImage(atlas_image) catch {
-        // recs is C-allocated with no zig-facing free fn — it leaks on this
-        // rare once-per-process failure path. Glyphs are freed explicitly.
-        rl.unloadFontData(glyphs);
-        std.debug.print("warning: failed to upload font atlas; falling back to default\n", .{});
-        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
-        return .{ .font = fallback, .is_default = true };
-    };
-    // Bilinear so downscaling from the base size to smaller `font_size`s is
-    // smooth (matches the reference->window blit). Upcasting would blur, but
-    // no size in use exceeds `font_base_size`.
-    rl.setTextureFilter(texture, .bilinear);
-
-    return .{ .font = .{
-        .baseSize = font_base_size,
-        .glyphCount = @intCast(glyphs.len),
-        .glyphPadding = glyph_padding,
-        .texture = texture,
-        .recs = recs.ptr,
-        .glyphs = glyphs.ptr,
-    }, .is_default = false };
-}
-
 /// The SDF text pipeline (see `drawSdfText`): a glyph atlas whose texels
 /// encode signed distance-to-glyph-edge (instead of coverage) plus the
 /// fragment shader that thresholds the field into fill + outline band —
 /// the ONE font every text draw uses (plain fill included, at outline
 /// width 0). Built once at init from the build-time blob (see
 /// `initSdfTextOutline`); null means unavailable (blob invalid, texture
-/// upload, or shader compile failed) and ALL text falls back to the
-/// coverage-atlas font (outlined text additionally to the offset-shadow
+/// upload, or shader compile failed) and ALL text falls back to raylib's
+/// default bitmap font (outlined text additionally to the offset-shadow
 /// ring). All-or-nothing by construction: an SDF atlas drawn without the
 /// shader renders raw distances (garbage), a shader without the atlas is
 /// useless.
@@ -278,9 +178,10 @@ const SdfTextOutline = struct {
 ///   glyphs:  glyphCount × { value, offsetX, offsetY, advanceX,
 ///            rec.x, rec.y, rec.w, rec.h } (i32 / f32-bits, 32 bytes each)
 ///   atlas:   atlasWidth*atlasHeight grayscale bytes
-/// Every failure logs a warning and returns null (the ring fallback keeps
-/// outlined text working). A persistent-dir font shadow does NOT affect
-/// outlined text (the blob is baked from the shipped TTF at build time).
+/// Every failure logs a warning and returns null (text falls back to
+/// raylib's default bitmap font; outlined text to its shadow ring). No
+/// TTF is read at runtime — the blob is baked from the shipped font at
+/// build time.
 fn initSdfTextOutline(allocator: std.mem.Allocator) ?SdfTextOutline {
     const blob = @import("generated_sdf_font").bytes;
 
@@ -298,7 +199,8 @@ fn initSdfTextOutline(allocator: std.mem.Allocator) ?SdfTextOutline {
     if (base_size != font_base_size) return invalidSdfBlob("base size mismatch");
     if (baked_padding != sdf_char_padding or baked_scale != sdf_pixel_dist_scale)
         return invalidSdfBlob("encoding mismatch — regenerate the blob (build.zig generator) with matching constants");
-    if (glyph_count == 0 or glyph_count > 1024) return invalidSdfBlob("glyph count out of range");
+    if (glyph_count == 0 or glyph_count > font_codepoints.max_atlas_codepoints)
+        return invalidSdfBlob("glyph count out of range");
     if (atlas_width <= 0 or atlas_height <= 0) return invalidSdfBlob("atlas dimensions out of range");
     const atlas_len: usize = @intCast(atlas_width * atlas_height);
     if (blob.len != header_len + glyph_count * glyph_record_len + atlas_len)
@@ -392,50 +294,80 @@ fn invalidSdfBlob(why: []const u8) ?SdfTextOutline {
     return null;
 }
 
+/// Collect the active font's non-ASCII glyph advances for the measurement
+/// seam (see `fontMetrics`), sorted ascending by codepoint. ASCII glyphs
+/// are skipped — they ride the fixed `advances` array; codepoints past
+/// Unicode's range are skipped defensively (a malformed font can't crash
+/// the init path).
+fn collectNonAsciiAdvances(
+    allocator: std.mem.Allocator,
+    font: rl.Font,
+) std.mem.Allocator.Error![]ui.NonAsciiAdvance {
+    const count: usize = @intCast(font.glyphCount);
+    var pairs: std.ArrayListUnmanaged(ui.NonAsciiAdvance) = .empty;
+    errdefer pairs.deinit(allocator);
+    for (font.glyphs[0..count]) |glyph| {
+        const value: i32 = @intCast(glyph.value);
+        if (value <= 126 or value > 0x10FFFF) continue;
+        try pairs.append(allocator, .{
+            .codepoint = @intCast(value),
+            .advance = @intCast(glyph.advanceX),
+        });
+    }
+    std.mem.sort(ui.NonAsciiAdvance, pairs.items, {}, struct {
+        fn lessThan(_: void, a: ui.NonAsciiAdvance, b: ui.NonAsciiAdvance) bool {
+            return a.codepoint < b.codepoint;
+        }
+    }.lessThan);
+    return pairs.toOwnedSlice(allocator);
+}
+
 fn readLe(comptime T: type, bytes: []const u8) T {
     return std.mem.readInt(T, bytes[0..@sizeOf(T)], .little);
 }
 
 pub const TextRenderer = struct {
-    /// FALLBACK font, built ONLY when the SDF pipeline failed to init (see
-    /// `sdf`): the embedded TTF as a runtime coverage atlas — the pre-SDF
-    /// text path, kept for the failure case (broken blob / texture upload /
-    /// shader compile). null in the normal path, which never pays its build
-    /// or VRAM. Normally the embedded TTF; falls back to raylib's default
-    /// bitmap font if the TTF is missing or fails to load (e.g. a broken
-    /// persistent-dir shadow). `font_is_default` tracks that fallback so
-    /// deinit skips unloading raylib-owned memory.
+    /// raylib's DEFAULT bitmap font, set ONLY when the SDF pipeline failed
+    /// to init (see `sdf`): legible ASCII, no outline band, straight-alpha
+    /// (slightly bright under the premult blend — acceptable for this
+    /// near-unreachable path). Raylib-owned memory: deinit must NOT unload
+    /// it. null in the normal path.
     font: ?rl.Font = null,
-    font_is_default: bool = false,
     /// The SDF text pipeline — the font EVERY text draw uses when available
-    /// (plain fill included; see `drawSdfText`). null → the coverage-atlas
-    /// fallback font above (outlined text additionally degrades to the
+    /// (plain fill included; see `drawSdfText`). null → raylib's default
+    /// bitmap font above (outlined text additionally degrades to the
     /// 8-direction offset-shadow ring), decided once at init and fixed for
     /// the session.
     sdf: ?SdfTextOutline = null,
 
-    /// Assemble the SDF pipeline first; the coverage-atlas fallback font is
-    /// built ONLY when that fails. Neither failure is hard: a broken SDF
-    /// pipeline falls back to the coverage font (plus the shadow ring for
-    /// outlined text), a broken TTF below that falls back to raylib's
-    /// default — the game stays playable.
-    pub fn init(
-        allocator: std.mem.Allocator,
-        file_source: *const @import("../file_source.zig").FileSource,
-    ) TextRenderer {
+    /// The allocator `non_ascii_advances` below was created with (kept so
+    /// deinit, which takes no arguments, can free it).
+    allocator: std.mem.Allocator,
+    /// Non-ASCII glyph advances for `fontMetrics`, extracted ONCE at init
+    /// from the active font's glyphs (sorted by codepoint) — the session's
+    /// font is fixed at init, so the per-frame `fontMetrics()` borrows this
+    /// instead of allocating. Empty in the default-font fallback (ASCII
+    /// only — multibyte text measures via the 0.5em approximation). Freed
+    /// in deinit.
+    non_ascii_advances: []ui.NonAsciiAdvance = &.{},
+
+    /// Assemble the SDF pipeline; ONLY on failure fall back to raylib's
+    /// default bitmap font (borrowed, nothing to build or own). No TTF is
+    /// read at runtime — the atlas is baked from the shipped font at build
+    /// time, so a persistent-dir font shadow can never affect text.
+    pub fn init(allocator: std.mem.Allocator) TextRenderer {
         const sdf = initSdfTextOutline(allocator);
-        var font: ?rl.Font = null;
-        var font_is_default = false;
-        if (sdf == null) {
-            const loaded = loadFont(file_source);
-            font = loaded.font;
-            font_is_default = loaded.is_default;
-        }
-        return .{
+        const font: ?rl.Font = if (sdf == null)
+            rl.getFontDefault() catch @panic("failed to load default font")
+        else
+            null;
+        var self = TextRenderer{
+            .allocator = allocator,
             .font = font,
-            .font_is_default = font_is_default,
             .sdf = sdf,
         };
+        self.non_ascii_advances = collectNonAsciiAdvances(allocator, self.activeFont()) catch &.{};
+        return self;
     }
 
     pub fn deinit(self: *TextRenderer) void {
@@ -444,14 +376,15 @@ pub const TextRenderer = struct {
             // Zig-allocator slices (raylib's free() would corrupt the heap).
             rl.unloadShader(sdf.shader);
             rl.unloadTexture(sdf.font.texture);
+            self.allocator.free(sdf.recs);
+            self.allocator.free(sdf.glyphs);
         }
-        if (self.font) |font| {
-            if (!self.font_is_default) rl.unloadFont(font);
-        }
+        if (self.non_ascii_advances.len > 0) self.allocator.free(self.non_ascii_advances);
+        // self.font (the default bitmap font) is raylib-owned: never unload.
     }
 
     /// The font every draw actually uses: the SDF font when the pipeline is
-    /// available, else the coverage-atlas fallback. `fontMetrics` reads from
+    /// available, else raylib's default bitmap font. `fontMetrics` reads from
     /// it so layout always measures with the advances the renderer draws
     /// with — whichever path is active.
     fn activeFont(self: *const TextRenderer) rl.Font {
@@ -462,16 +395,17 @@ pub const TextRenderer = struct {
     /// Extract per-glyph advance widths from the ACTIVE font (see
     /// `activeFont`) into a raylib-free `ui.FontMetrics` value, so the layout
     /// seam (`view()` + UI builders) measures text with the same advances
-    /// the renderer draws with. ASCII codepoints 32..126 index `font.glyphs`;
-    /// missing glyphs keep the zero-init advance (the 0.5em fallback handles
-    /// them in `measureSpanWidth`). Uniform across the SDF font, the TTF
-    /// fallback, and the default-font fallback, so layout matches whichever
-    /// font is active.
+    /// the renderer draws with. ASCII codepoints 32..126 index `advances`;
+    /// non-ASCII codepoints ride the session-lifetime `non_ascii_advances`
+    /// (filled once at init — the font is fixed for the session; empty in
+    /// the default-font fallback), so layout matches whichever font is
+    /// active.
     pub fn fontMetrics(self: *TextRenderer) ui.FontMetrics {
         const font = self.activeFont();
         var metrics = ui.FontMetrics{
             .base_size = @intCast(font.baseSize),
             .advances = [_]i32{0} ** 95,
+            .non_ascii = self.non_ascii_advances,
         };
         const count: usize = @intCast(font.glyphCount);
         var i: usize = 0;
@@ -527,8 +461,8 @@ pub const TextRenderer = struct {
     /// Draw text with a black edge-outline of `outline_width` px (in the drawn
     /// text's own pixel space) — the SDF pipeline's fill + outline band in
     /// ONE shader-driven draw. The 8-direction offset-shadow ring (9 draws,
-    /// on the coverage-atlas fallback font) remains the fallback for
-    /// environments where the SDF pipeline failed to init.
+    /// on raylib's default bitmap font) remains the fallback for the
+    /// near-unreachable case where the SDF pipeline failed to init.
     pub fn drawOutlinedText(
         self: *TextRenderer,
         text: [:0]const u8,
@@ -580,8 +514,8 @@ pub const TextRenderer = struct {
         // Plain = the SAME SDF shader with a zero outline width — one text
         // path for everything (see `drawSdfText`); outlined = width 8 (UI is
         // drawn 1:1 at reference resolution into the render target, so the
-        // width needs no world_scale). Fallback (SDF init failed): the
-        // coverage-atlas font, plain drawTextEx / shadow ring respectively.
+        // width needs no world_scale). Fallback (SDF init failed): raylib's
+        // default bitmap font, plain drawTextEx / shadow ring respectively.
         if (label.outlined) {
             self.drawOutlinedText(text, pos, font_size, spacing, toRaylibColor(color, 255), @floatFromInt(text_outline_thickness));
         } else if (self.sdf) |sdf| {

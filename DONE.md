@@ -17474,3 +17474,69 @@ use. Browser verification: the three listing surfaces on web (the
 load-save browser, the mission browser, an export) - `Dir.iterate` through
 plain MEMFS readdir everywhere; a surface turning up empty or erroring
 restores the splits from git.
+
+## Font: full cmap coverage baked (95 -> 407 glyphs) + the coverage fallback removed
+
+The atlas glyph set was raylib's default 95 ASCII codepoints (the
+`loadFontData(..., null, ...)` path) even after the Cause font swap and the
+SDF pipeline unification - the font's Latin-1 + Latin Extended + punctuation
+coverage was never baked, so any non-ASCII glyph in a rendered string drew
+`?`. This slice bakes the font's FULL cmap coverage and, on the way through,
+removed the runtime coverage-atlas fallback font entirely.
+
+- `src/font_codepoints.zig`: a raylib-free TTF cmap parser (format 4 + 12,
+  standard best-subtable preference (3,10) -> (3,1) -> platform-0 -> first,
+  notdef + NUL excluded - the shipped font maps U+0000 to the blank .null
+  glyph, caught by diffing the parser's output against fontconfig's
+  charset). Unit tests build fixture TTFs by hand (format-4 segments with
+  idDelta and idRangeOffset paths, format-12 groups, malformed inputs as
+  errors-never-panics, including the NUL regression). One parser, two
+  consumers: the build-time generator + the contract test.
+- `src/font_codepoints_tests.zig` (the content_validation_tests.zig pattern
+  - separate file because it imports generated_assets, a module the
+  generator tool does not have): pins the shipped font's contract - full
+  ASCII 0x20..0x7E plus en-dash/em-dash/ellipsis coverage, sorted + bounded
+  - so a future font swap that breaks the dash-sweep policy's premise
+  fails a test instead of rendering `?`.
+- The measurement seam follows the coverage: `ui.FontMetrics` gained a
+  `non_ascii` advance table (sorted by codepoint, binary-searched in
+  `measureSpanWidth` with proper UTF-8 decode; invalid/truncated sequences
+  and absent codepoints keep the 0.5em approximation). `TextRenderer`
+  fills it once at init from the active font (session-fixed, so the
+  per-frame `fontMetrics()` borrows instead of allocating).
+  `ui.NonAsciiAdvance` re-exported through the facade.
+- `TextRenderer.deinit` now actually frees the SDF `recs`/`glyphs` slices
+  its doc comment always claimed it freed (a doc/behavior mismatch found
+  while adding the `non_ascii` ownership).
+- **The coverage fallback removed**: SDF init failure now falls back to
+  raylib's DEFAULT bitmap font directly (borrowed, never unloaded; outlined
+  text degrades to the existing shadow ring). Deleted: `loadFont` (the
+  runtime TTF raster + CPU-premultiply machinery, whose GRAY_ALPHA
+  readback subtleties were the web-garbling bug class during the pre-SDF
+  era), the runtime TTF read (no font file is touched at runtime anymore -
+  the persistent-dir font shadow concept dies with it), and
+  `premultiplyAlpha` de-pubbed back to textures.zig-internal. WHY removed:
+  the path was unverifiable (raylib-only code, no way to force the failure
+  short of broken hardware, excluded from the headless suite) and its
+  failure classes near-impossible (blob invalid: build-time artifact +
+  comptime guards; shader: WebGL2 guarantees GLSL 300 es and desktop needs
+  2010-era GL 3.3; texture upload: only a GPU with MAX_TEXTURE_SIZE <
+  4096) - complexity maintained for a promise that could never be tested.
+  Settled design + the removal rationale: DESIGN -> Platform Seam -> SDF
+  text outline (Fallback policy).
+- Sizes: blob 2.1 -> 8.4 MB, atlas 2048x1024 -> 4096x2048, release exe
+  +6.6 MB, wasm +6.4 MB (exactly the blob delta). The native DEBUG exe
+  grows +63 MB instead - an lld file-layout hole between the non-alloc
+  debug sections and `.text` (all segments 4KB-aligned, nothing mapped in
+  the hole, invisible in release); dev-only disk cosmetic, unexplained
+  beyond "lld layout quirk with the bigger embedded array".
+- The 4096-wide atlas exceeds WebGL2's guaranteed minimum texture size
+  (2048): such a GPU fails the SDF upload and degrades to the default-font
+  fallback - documented in DESIGN. The honest lever for that device class
+  is atlas packing, not a parallel font pipeline.
+- Verification: full suite PASS; node headless probe reaches the GL
+  boundary with no traps; native smoke run boots + quits clean with no SDF
+  warnings; em-dash rendering eyeballed in-game (tooltips + the keybind
+  steal warning) BEFORE the dash sweep removed the fixtures. The dash
+  sweep's premise changed accordingly (TODO updated): rendered em-dashes
+  are no longer a bug, the sweep is uniformity.

@@ -119,17 +119,36 @@ pub fn italic(value: []const u8) Span {
 /// One source of truth — keep the two in sync.
 pub const glyph_spacing_font_divisor: i32 = 20;
 
+/// One non-ASCII glyph's advance, extracted from the active font by the
+/// backend. A `FontMetrics`'s `non_ascii` slice is sorted ascending by
+/// codepoint so lookups binary-search.
+pub const NonAsciiAdvance = struct {
+    codepoint: u21,
+    /// Advance width at `base_size`; 0 treated as "no advance recorded"
+    /// (the 0.5em fallback applies, mirroring the ASCII zero-advance rule).
+    advance: i32,
+};
+
 /// Per-glyph advance widths for the loaded font, in source pixels at
-/// `base_size`. Indexed by ASCII codepoint (32..126); a codepoint outside
-/// that range falls back to a rough 0.5em advance. The backend fills this
-/// from the loaded `rl.Font` (`RaylibBackend.fontMetrics`); layout code
-/// receives it via `RenderContext.font_metrics` so `view()` and its builders
-/// measure text with the same advances the renderer draws with.
+/// `base_size`. ASCII codepoints (32..126) index `advances`; non-ASCII
+/// codepoints binary-search `non_ascii` (filled from the font's full cmap
+/// coverage); a codepoint the font lacks falls back to a rough 0.5em
+/// advance. The backend fills this from the loaded `rl.Font`
+/// (`RaylibBackend.fontMetrics`); layout code receives it via
+/// `RenderContext.font_metrics` so `view()` and its builders measure text
+/// with the same advances the renderer draws with. `non_ascii` borrows
+/// backend-owned storage (session lifetime) — a FontMetrics value is only
+/// valid within the frame it was fetched in.
 pub const FontMetrics = struct {
     /// The font size the `advances` were rasterized at (raylib `Font.baseSize`).
     base_size: i32,
     /// Advance width at `base_size` for ASCII codepoint `(index + 32)`.
     advances: [95]i32,
+    /// Advances at `base_size` for the font's non-ASCII glyphs, sorted by
+    /// codepoint. Empty when the active font was baked without them (the
+    /// default-font fallback) — every multibyte sequence then measures via the
+    /// 0.5em fallback.
+    non_ascii: []const NonAsciiAdvance = &.{},
 
     /// Advance width of a span at `font_size`, in reference pixels. Mirrors
     /// raylib's `DrawTextEx` cursor advance per glyph — `advanceX *
@@ -137,8 +156,9 @@ pub const FontMetrics = struct {
     /// renderer's cursor actually lands (and multi-span emit flows like one
     /// continuous string). Float-accumulated per glyph, truncated to i32 at
     /// the end. UTF-8-aware: ASCII bytes index `advances`; a multibyte
-    /// sequence skips its full byte length (clamped to the slice end) and
-    /// uses the 0.5em fallback + spacing.
+    /// sequence decodes to a codepoint and binary-searches `non_ascii`,
+    /// falling back to a rough 0.5em advance when the sequence is invalid,
+    /// truncated, or the codepoint has no recorded advance.
     pub fn measureSpanWidth(self: FontMetrics, span: Span, font_size: i32) i32 {
         const scale_factor: f32 = @as(f32, @floatFromInt(font_size)) / @as(f32, @floatFromInt(self.base_size));
         const spacing: f32 = @as(f32, @floatFromInt(font_size)) / @as(f32, @floatFromInt(glyph_spacing_font_divisor));
@@ -150,21 +170,50 @@ pub const FontMetrics = struct {
                 total += self.asciiAdvance(byte, font_size, scale_factor, spacing);
                 i += 1;
             } else {
-                // Multibyte lead byte: skip the whole sequence (clamped to
-                // the slice end so a truncated tail can't overrun) and use the
-                // non-ASCII fallback. The decoded value is > 126 regardless, so
-                // it never indexes `advances` — no need to decode it.
+                // Multibyte lead byte: decode the codepoint to look up its
+                // advance in `non_ascii` (the font's full-coverage glyph
+                // set). An invalid sequence, a truncated tail (clamped to
+                // the slice end so it can't overrun), or a codepoint the
+                // font lacks falls back to the 0.5em approximation.
                 const len: usize = switch (byte & 0xF0) {
                     0xC0, 0xD0 => 2,
                     0xE0 => 3,
                     0xF0 => 4,
                     else => 1, // invalid lead byte — skip one, stay in bounds
                 };
-                i += @min(len, span.text.len - i);
+                const sequence_end = @min(i + len, span.text.len);
+                const codepoint: ?u21 = if (sequence_end - i == len)
+                    std.unicode.utf8Decode(span.text[i..sequence_end]) catch null
+                else
+                    null;
+                i = sequence_end;
+                if (codepoint) |value| {
+                    if (self.nonAsciiAdvance(value)) |advance| {
+                        total += @as(f32, @floatFromInt(advance)) * scale_factor + spacing;
+                        continue;
+                    }
+                }
                 total += @as(f32, @floatFromInt(font_size)) * 0.5 + spacing;
             }
         }
         return @intFromFloat(total);
+    }
+
+    /// Binary-search `non_ascii` for one codepoint's advance; null when the
+    /// font has no recorded advance for it (absent from the baked set, or a
+    /// zero advance).
+    fn nonAsciiAdvance(self: FontMetrics, codepoint: u21) ?i32 {
+        var low: usize = 0;
+        var high: usize = self.non_ascii.len;
+        while (low < high) {
+            const mid = low + (high - low) / 2;
+            const entry = self.non_ascii[mid];
+            if (entry.codepoint == codepoint) {
+                return if (entry.advance > 0) entry.advance else null;
+            }
+            if (entry.codepoint < codepoint) low = mid + 1 else high = mid;
+        }
+        return null;
     }
 
     /// Per-glyph advance for one ASCII byte at `font_size`. Matches raylib's
@@ -199,6 +248,57 @@ pub const FontMetrics = struct {
 /// of `FontMetrics`.
 pub fn lineHeight(font_size: i32) i32 {
     return @divTrunc(font_size * 120, 100);
+}
+
+test "measurement seam: non-ASCII glyphs measure via their real advances" {
+    // Synthetic metrics: base_size 100, uniform 50px ASCII advance; the
+    // font's full-coverage set records em-dash (U+2014) at 90 and ellipsis
+    // (U+2026) at 130. At font_size 100 each glyph adds its advance + 5px
+    // spacing: ASCII 55, em-dash 95, ellipsis 135.
+    const non_ascii = [_]NonAsciiAdvance{
+        .{ .codepoint = 0x2014, .advance = 90 },
+        .{ .codepoint = 0x2026, .advance = 130 },
+    };
+    const metrics = FontMetrics{
+        .base_size = 100,
+        .advances = [_]i32{50} ** 95,
+        .non_ascii = &non_ascii,
+    };
+    const font_size: i32 = 100;
+    // "a — b": 55 + 95 + 55 = 205 (the em-dash advance, not 0.5em).
+    try std.testing.expectEqual(
+        @as(i32, 205),
+        metrics.measureSpanWidth(text("a\u{2014}b"), font_size),
+    );
+    // "a...b" with a real ellipsis: 55 + 135 + 55 = 245.
+    try std.testing.expectEqual(
+        @as(i32, 245),
+        metrics.measureSpanWidth(text("a\u{2026}b"), font_size),
+    );
+
+    // A codepoint the font lacks (en-dash) falls back to 0.5em: 50 + 5.
+    try std.testing.expectEqual(
+        @as(i32, 55),
+        metrics.measureSpanWidth(text("\u{2013}"), font_size),
+    );
+    // Empty non_ascii (the default-font fallback) keeps the 0.5em behavior.
+    const ascii_only = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    try std.testing.expectEqual(
+        @as(i32, 55),
+        ascii_only.measureSpanWidth(text("\u{2014}"), font_size),
+    );
+
+    // Invalid UTF-8 and truncated multibyte tails measure via the fallback
+    // without reading out of bounds.
+    try std.testing.expectEqual(
+        @as(i32, 55),
+        metrics.measureSpanWidth(text("\xFF"), font_size),
+    );
+    // "\xE2\x80" is a 3-byte em-dash sequence missing its last byte.
+    try std.testing.expectEqual(
+        @as(i32, 55),
+        metrics.measureSpanWidth(text("\xE2\x80"), font_size),
+    );
 }
 
 test "measurement seam: row width sums spans, bold equals plain" {

@@ -33,6 +33,7 @@ pub const bold = ui_element.bold;
 pub const italic = ui_element.italic;
 pub const glyph_spacing_font_divisor = ui_element.glyph_spacing_font_divisor;
 pub const FontMetrics = ui_element.FontMetrics;
+pub const NonAsciiAdvance = ui_element.NonAsciiAdvance;
 pub const lineHeight = ui_element.lineHeight;
 pub const top_bar_height = ui_element.top_bar_height;
 pub const top_bar_slot_size = ui_element.top_bar_slot_size;
