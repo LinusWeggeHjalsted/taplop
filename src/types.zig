@@ -256,6 +256,11 @@ pub const Action = enum {
     // consumes it - the overlay + the re-boot. See game_zip.zig + DESIGN →
     // File System & IO → Web storage model.
     import_game,
+    // Open the upstream repo's page in the player's browser (the
+    // main-menu "Explore the code" link - src/browser_url.zig). A pure
+    // input-path side effect, the import_game class: no event, nothing
+    // recorded (nothing about the game state changes).
+    open_repo_link,
     // Save the edited mission to the persistent dir (the editor options
     // menu's Save Mission button + the ctrl+S binding). A pure side effect
     // - the dump_event_log class, not the save_game class: there is no
@@ -1049,6 +1054,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // Import Game (web only, the main-menu button - the defensive
         // future-keybind half, the save_game discipline).
         .import_game,
+        // The upstream-repo link (main-menu button; keybindable like every
+        // action - the defensive future-keybind half again).
+        .open_repo_link,
         .open_credits,
         .exit_game,
         => .{ .menu = true },
@@ -1324,6 +1332,9 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .save_game,
         .export_game,
         .import_game,
+        // The repo link: a pure input-path side effect (nothing clicked
+        // BEYOND the action itself - the URL is a build-time constant).
+        .open_repo_link,
         .save_editor_mission,
         .export_editor_mission,
         .restart_mission,

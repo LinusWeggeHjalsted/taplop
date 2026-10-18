@@ -17600,3 +17600,43 @@ atlas bakes the font's full cmap coverage now, so "rendered strings are
 ASCII-only, period" was outdated; the surviving rendering caveat is only
 "codepoints the font lacks still draw `?`" (kept honest by the
 font_codepoints contract test).
+
+## The upstream-repo link on the main menu ("Explore the code")
+
+Bottom-right of the main menu (mirroring the version stamp bottom-left):
+an outlined "Explore the code" label with an invisible button hit-rect
+over it (the emitPanelButton element pattern minus the panel - the
+spriteless button still gets the hover-rect treatment), opening the
+upstream repo's page in the player's browser.
+
+- The URL is DERIVED, not hardcoded: build.zig computeRepoUrl reads the
+  `origin` remote at build time (the computeGameVersion pattern), normalizes
+  the SSH form (git@host:path -> https://host/path) and strips .git. The
+  sr.ht -> GitHub migration therefore retargets the link with zero code
+  edits - the remote is the source of truth. Empty result (no git, no
+  origin, an unrecognized form like ssh://) emits no link at all.
+- The click is a pure input-path side effect, the import_game precedent
+  end to end: a new `.open_repo_link` Action (the wiring the compiler's
+  exhaustive switches surfaced: the enum, the binding-context table (menu
+  context), the no-payload list in actionButtonPayload, the applyAction
+  menu_action arm) + the consumption arm in the main-menu idle switch. No
+  event, nothing recorded - nothing about the game state changes.
+- `src/browser_url.zig` owns the platform split: web opens window.open
+  through the emscripten JS seam (the file_source pattern, bufPrintZ for
+  the NUL the extern needs); native spawns the platform URL handler
+  (xdg-open, `open` on macOS) via std.process.run with a per-call threaded
+  Io (the file_source scratch pattern), best-effort - a missing opener
+  warns, never crashes. Headless test build compiles the native branch
+  but no test fires it.
+- Verified: the suite (the link test is conditional on build_info.repo_url
+  being non-empty - a tarball build emits no link and the test honestly
+  skips), the derived URL on this checkout
+  (https://git.sr.ht/~narkokran/ziglop), and the console-channel
+  end-to-end run (`action open_repo_link` piped into the native binary -
+  the same applyAction fold a click goes through, opening the tab). That
+  run caught a real bug the compiler could not: the first version capped
+  the child's stdout/stderr with Io.Limit.limited(0), which trips
+  error.StreamTooLong IMMEDIATELY (a zero limit rejects even an empty
+  stream) - compiles fine, fails at the only moment it runs. The fix is
+  .unlimited + explicit free (the opener writes nothing on success).
+  Compiles-=-runs, one more instance for the pile.

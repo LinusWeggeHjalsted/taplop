@@ -109,6 +109,13 @@ pub fn build(b: *std.Build) void {
     // number). See computeGameVersion.
     const build_info = b.addOptions();
     build_info.addOption([]const u8, "game_version", computeGameVersion(b));
+    // The upstream repo URL (the main-menu "Explore the code" link - see
+    // src/browser_url.zig): the `origin` remote's URL at build time, SSH
+    // form normalized to https + `.git` stripped. Empty when git / the
+    // remote is unavailable or the URL form is unrecognized - the link is
+    // simply not emitted then. Deriving from the remote means migrating
+    // the repo (sr.ht -> GitHub) retargets the link with zero code edits.
+    build_info.addOption([]const u8, "repo_url", computeRepoUrl(b));
     // Dev mode gates dev-only keybinds (e.g. skip_level on ctrl+Enter). A
     // `-Ddev-mode` build option, defaulted to `optimize == .Debug` so
     // `zig build run` (debug) gets dev tools for free while release/web
@@ -509,6 +516,28 @@ fn computeGameVersion(b: *std.Build) []const u8 {
 
     // Git unavailable: mark the build as not stamped from tracked history.
     return b.fmt("{d:0>4}.{d:0>2}.unofficial", .{ year, month });
+}
+
+/// The upstream repo URL, from the `origin` remote: `git@host:path` (the
+/// SSH form) normalized to `https://host/path`, an already-http(s) URL
+/// kept as-is (`.git` suffix + trailing slashes stripped). Any other form
+/// (e.g. `ssh://`) yields "" - omit the link rather than emit a wrong URL.
+fn computeRepoUrl(b: *std.Build) []const u8 {
+    const raw = gitOutput(b, &.{ "git", "remote", "get-url", "origin" }) orelse return "";
+    if (std.mem.startsWith(u8, raw, "git@")) {
+        const colon = std.mem.indexOfScalar(u8, raw, ':') orelse return "";
+        return stripGitSuffix(b.fmt("https://{s}/{s}", .{ raw[4..colon], raw[colon + 1 ..] }));
+    }
+    if (std.mem.startsWith(u8, raw, "https://") or std.mem.startsWith(u8, raw, "http://")) {
+        return stripGitSuffix(raw);
+    }
+    return "";
+}
+
+fn stripGitSuffix(url: []const u8) []const u8 {
+    var trimmed = std.mem.trimEnd(u8, url, "/");
+    if (std.mem.endsWith(u8, trimmed, ".git")) trimmed = trimmed[0 .. trimmed.len - 4];
+    return trimmed;
 }
 
 /// The .app bundle's Info.plist. Minimal but complete enough for Finder +

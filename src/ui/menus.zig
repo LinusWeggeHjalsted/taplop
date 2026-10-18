@@ -453,6 +453,34 @@ pub fn buildMainMenu(
         .outlined = true,
         .blocks_input = false,
     } });
+
+    // The upstream-repo link (bottom-right, mirroring the stamp): opens
+    // the `origin` remote's URL (build.zig computeRepoUrl) in the player's
+    // browser - browser_url.openRepoLink via the open_repo_link action.
+    // A spriteless button hit-rect over outlined text (the emitPanelButton
+    // element pattern minus the panel); NOT emitted when the build
+    // carries no repo URL (no git / no origin / unrecognized form).
+    if (build_info.repo_url.len > 0) {
+        const link_label = "Explore the code";
+        const link_width = font_metrics.measureSpanWidth(text(link_label), main_menu_version_font_size);
+        const link_position: types.ScreenPosition = .{
+            .x = screen.x + screen.width - link_width - ui_gap,
+            .y = screen.y + screen.height - main_menu_version_font_size - ui_gap,
+        };
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = link_position,
+            .width = link_width,
+            .height = main_menu_version_font_size,
+            .action = .open_repo_link,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = link_label,
+            .screen_position = link_position,
+            .font_size = main_menu_version_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+    }
 }
 
 // --- Load-save browser (main menu, full screen) ---
@@ -2839,6 +2867,31 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
             else => {},
         };
         try std.testing.expect(found_version_stamp);
+    }
+    // The upstream-repo link: a button hit-rect + an outlined label in
+    // the bottom-right corner. Conditional on the build carrying a repo
+    // URL (a tarball build without git emits no link).
+    if (build_info.repo_url.len > 0) {
+        var found_link_button = false;
+        var found_link_label = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .open_repo_link) {
+                    found_link_button = true;
+                    try std.testing.expect(button.screen_position.x + button.width >= screen.x + screen.width - 100);
+                    try std.testing.expect(button.screen_position.y >= screen.y + screen.height - 100);
+                }
+            },
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "Explore the code")) {
+                    found_link_label = true;
+                    try std.testing.expect(label.outlined);
+                }
+            },
+            else => {},
+        };
+        try std.testing.expect(found_link_button);
+        try std.testing.expect(found_link_label);
     }
     for ([_]types.Action{ .open_settings, .open_credits }) |moved| {
         for (elements.items) |element| switch (element) {

@@ -24,6 +24,7 @@ const session_log_bundle = @import("session_log_bundle.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
+const browser_url = @import("browser_url.zig");
 const parser = @import("parser.zig");
 const event_handlers = @import("event_handlers.zig");
 const game_zip = @import("game_zip.zig");
@@ -3242,6 +3243,11 @@ pub fn handleIdleInput(
                 // nothing recorded: the import replaces the session, so
                 // there is no timeline to record into).
                 .import_game => file_source_mod.triggerBrowserGameUpload(),
+                // The upstream-repo link (bottom-right, next to the
+                // version stamp): opens the build-time repo URL in the
+                // player's browser - a pure input-path side effect, the
+                // import_game class (no event, nothing recorded).
+                .open_repo_link => browser_url.openRepoLink(history.backing_allocator),
                 else => {},
             }
         }

@@ -591,6 +591,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // Import Game (web only, the main-menu button - a pure input-path
         // side effect consumed in the main-menu idle arm).
         .import_game,
+        // The upstream-repo link (main-menu button - same class: consumed
+        // in the main-menu idle arm, browser_url.openRepoLink).
+        .open_repo_link,
         => player_input.idle.menu_action = action,
     }
 }

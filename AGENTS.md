@@ -555,6 +555,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `src/font_codepoints.zig`, the cmap reader both the build-time atlas
   generator and the contract tests use) +
   `src/raylib/conversions.zig` (shared Color/rect raylib conversions) +
+  `src/browser_url.zig` (the upstream-repo link opener: web window.open
+  via the emscripten seam / native xdg-open or open, best-effort; the
+  URL is the `origin` remote derived at build time - build.zig
+  computeRepoUrl) +
   `src/raylib/diagnostics.zig` (the GL-gathering probe sites for the
   diagnostics log - see Dev Tools; the type is raylib-free
   `src/diagnostics.zig`) + `src/raylib/draw.zig` (the world +
