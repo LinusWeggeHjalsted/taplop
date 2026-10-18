@@ -538,6 +538,15 @@ pub const RaylibBackend = struct {
         self.audio.playSounds(sounds, settings);
     }
 
+    /// Copy text to the platform clipboard (the repo-link button's native
+    /// click - queued on SessionState, drained by `frame()`). raylib owns
+    /// the per-platform implementation; the frame-arena NUL-terminated
+    /// copy is safe because raylib/GLFW copies the string internally.
+    pub fn setClipboardText(self: *RaylibBackend, text: []const u8) void {
+        const copy = self.frame_arena.allocator().dupeZ(u8, text) catch return;
+        rl.setClipboardText(copy);
+    }
+
     /// Advance the music streams + drive the intensity-layer volumes from
     /// the frame's active-enemy projection (the Audio subsystem - see
     /// audio.zig). No-op when audio isn't ready.

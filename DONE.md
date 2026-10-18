@@ -17648,3 +17648,45 @@ upstream repo's page in the player's browser.
   is now an AGENTS → Zig 0.16 Gotchas entry. The intermediate
   `Io.Limit.limited(0)` StreamTooLong bug (a zero limit rejects even an
   empty stream) was found on the way.
+
+## The repo-link redesign: clipboard on native (the spawn removed)
+
+The user rejected the xdg-open/open process spawn after seeing its
+fragility - and the rejection was right for one more reason the debug
+session had surfaced: std.process.run WAITS for the child, so a machine
+where the generic fallback runs a browser binary synchronously (no
+running instance to remote into) would FREEZE a game frame for seconds.
+Fixing that means detached spawns + POSIX zombie reaping - even more
+platform machinery to own. The decision: use platform capabilities that
+someone else already maintains.
+
+- Web: UNCHANGED in spirit - window.open(url, '_blank', 'noopener').
+  '_blank' is spec-defined to create a NEW browsing context and can never
+  navigate the calling tab (the game tab - whose death would kill the
+  in-memory session, the exact risk the user asked to close); the unsafe
+  forms are `location = url` / '_self', and a popup-blocked call no-ops
+  in the safe direction.
+- Native: the click queues the URL on SessionState.pending_clipboard_text
+  (the pending_sounds convention: input-path queue, frame() drains at the
+  boundary, backing_allocator, deinit'd with the session) and the backend
+  applies it via raylib's SetClipboardText - ONE call behind the existing
+  platform seam, cross-platform by construction (raylib owns the per-OS
+  clipboard). browser_url.zig shrank to the split + the extern; the
+  spawn, processEnviron, and the term-check all deleted.
+- The UI follows the behavior: the label is the URL itself (the thing you
+  act on is the thing shown), the tooltip says what the click does -
+  "Opens link in a new tab" (web) / "Copies link to your clipboard"
+  (native).
+- Verified: the e2e console pin (action open_repo_link -> the queue ->
+  the drain - headless, pure state, no platform contact), the live
+  native run (the clipboard contains the URL while the game runs - read
+  back via xclip), and the suite passing with DISPLAY and WAYLAND_DISPLAY
+  removed from the environment (the platform-agnosticism question the
+  user raised, answered by proof: the platform call lives behind the
+  src/raylib/ seam the test build structurally excludes).
+- Two X11 notes for the record: the clipboard data is served by its
+  OWNER process, so a verification read must happen while the game is
+  alive (the first xclip probe read an empty clipboard only because the
+  game had quit - owner dead, data gone); same mechanism means a copy
+  can vanish when the game exits on X11 WITHOUT a clipboard manager
+  (GNOME/KDE run one; a bare-WM user shares this with every other app).

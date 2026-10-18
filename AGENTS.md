@@ -392,13 +392,13 @@ survived many sessions this way).
   environment** - the options' `environ` field defaults to `.empty`, so a
   child process (e.g. `xdg-open`) gets no PATH/DISPLAY/DBUS and fails
   with a baffling exit code while the spawn itself "succeeds". When
-  spawning, pass the process environ explicitly (see
-  `src/browser_url.zig`'s `processEnviron` - the C `environ` global,
+  spawning, pass the process environ explicitly (the C `environ` global,
   reachable only in libc builds; start.zig wires no environ source
   otherwise). Related trap: `std.process.run` NEVER errors on a nonzero
   child exit - check `result.term` or "success" is a false positive.
-  Found as the repo-link bug: xdg-open exit 3 ("no method available")
-  from the game, exit 0 from any shell (history in DONE.md).
+  Found as the repo-link bug (xdg-open exit 3 from the game, exit 0 from
+  any shell); the spawn design was then removed entirely in favor of the
+  clipboard - history in DONE.md.
 - `std.heap.page_allocator` is UNUSABLE on wasm32-emscripten: on wasm it is
   BrkAllocator, which grows memory via the raw `@wasmMemoryGrow` intrinsic
   behind emscripten's back - the JS heap views detach and SAFE_HEAP bounds
@@ -566,10 +566,12 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `src/font_codepoints.zig`, the cmap reader both the build-time atlas
   generator and the contract tests use) +
   `src/raylib/conversions.zig` (shared Color/rect raylib conversions) +
-  `src/browser_url.zig` (the upstream-repo link opener: web window.open
-  via the emscripten seam / native xdg-open or open, best-effort; the
-  URL is the `origin` remote derived at build time - build.zig
-  computeRepoUrl) +
+  `src/browser_url.zig` (the upstream-repo link click: web opens a new
+  tab via the emscripten seam - `window.open` with `'_blank'`, spec-
+  guaranteed never to navigate the game tab; native queues a clipboard
+  copy on SessionState that frame() drains to the backend's raylib
+  clipboard; the URL is the `origin` remote derived at build time -
+  build.zig computeRepoUrl) +
   `src/raylib/diagnostics.zig` (the GL-gathering probe sites for the
   diagnostics log - see Dev Tools; the type is raylib-free
   `src/diagnostics.zig`) + `src/raylib/draw.zig` (the world +

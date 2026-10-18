@@ -360,6 +360,17 @@ pub const SessionState = struct {
     /// an arena would leak growth). See DESIGN → Audio.
     pending_sounds: std.ArrayListUnmanaged(types.SoundCue) = .empty,
 
+    /// Pending clipboard text queued by the input path (the repo-link
+    /// button's native click - browser_url.handleRepoLinkClick; the web
+    /// arm opens the tab directly instead). Drained by `frame()` after
+    /// the update drain and applied via the backend's clipboard
+    /// (`rl.setClipboardText`); empty = nothing pending. A pure input-path
+    /// side effect, never recorded - off the undoable GameState →
+    /// replay-safe by construction (replays replay events, never
+    /// PlayerInput). Backed by `backing_allocator`, cleared each drain
+    /// (the `pending_sounds` convention).
+    pending_clipboard_text: std.ArrayListUnmanaged(u8) = .empty,
+
     /// Pending one-shot anims queued by event handlers (gated `!replaying`)
     /// during a frame. `frame()` drains this after the update drain, stamps
     /// `end_clock = animation_clock + duration_us`, and appends to
@@ -496,6 +507,27 @@ pub const SessionState = struct {
     ) void {
         self.pending_sounds.append(allocator, cue) catch
             @panic("failed to queue sound");
+    }
+
+    /// Queue text for the platform clipboard (the repo-link button's
+    /// native click). The `queueSound` convention: pushed on the input
+    /// path, drained by `frame()` at the frame boundary.
+    pub fn queueClipboardText(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        text: []const u8,
+    ) void {
+        self.pending_clipboard_text.appendSlice(allocator, text) catch
+            @panic("failed to queue clipboard text");
+    }
+
+    /// Drain and return the pending clipboard text (empty = nothing
+    /// pending). The `drainPendingSounds` convention: length reset to 0,
+    /// the backing bytes left intact for the caller's read.
+    pub fn drainPendingClipboardText(self: *SessionState) []const u8 {
+        const text = self.pending_clipboard_text.items;
+        self.pending_clipboard_text.items.len = 0;
+        return text;
     }
 
     /// Queue the layer half of an action cue for `action` - no base (the
@@ -1023,6 +1055,7 @@ pub const GameStateHistory = struct {
 
         // SessionState's backing-owned lists + scan entries.
         self.session.pending_sounds.deinit(allocator);
+        self.session.pending_clipboard_text.deinit(allocator);
         self.session.pending_anims.deinit(allocator);
         self.session.active_anims.deinit(allocator);
         self.session.editor_tile_drag_visited.deinit(allocator);

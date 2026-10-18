@@ -548,3 +548,34 @@ test "dump path: the observability stash is addressable (previous_player_input /
     @import("dump_walker.zig").writeDump(&writer3, const_root, "previous_player_input.clicked_payload.editor_sprite");
     try testing.expectEqualStrings("custom/artists_den/boss\n", buffer[0..writer3.end]);
 }
+
+test "console action open_repo_link queues the clipboard copy (the native click path)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    // The fresh history sits on the main menu - the same consumption arm a
+    // real button click fires (release seam -> applyAction -> idle
+    // menu_action -> handleIdleInput). Tests run the native branch of
+    // browser_url: the URL lands on the session's clipboard queue, which
+    // frame() drains to the backend. Conditional on the build carrying a
+    // repo URL (a tarball build without git emits no link and the action
+    // no-ops).
+    var input_state: input.InputState = .{};
+    const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"action open_repo_link"});
+    try testing.expect(player_input.idle.menu_action == .open_repo_link);
+    input_handlers.handleIdleInput(&history, player_input.idle, player_input.clicked_payload, .{});
+
+    const build_info = @import("build_info");
+    if (build_info.repo_url.len > 0) {
+        try testing.expectEqualStrings(build_info.repo_url, history.session.pending_clipboard_text.items);
+        // The drain hands the text to the frame and empties the queue.
+        const drained = history.session.drainPendingClipboardText();
+        try testing.expectEqualStrings(build_info.repo_url, drained);
+        try testing.expectEqual(@as(usize, 0), history.session.pending_clipboard_text.items.len);
+    } else {
+        try testing.expectEqual(@as(usize, 0), history.session.pending_clipboard_text.items.len);
+    }
+}

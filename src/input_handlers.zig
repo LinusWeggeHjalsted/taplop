@@ -3243,11 +3243,12 @@ pub fn handleIdleInput(
                 // nothing recorded: the import replaces the session, so
                 // there is no timeline to record into).
                 .import_game => file_source_mod.triggerBrowserGameUpload(),
-                // The upstream-repo link (bottom-right, next to the
-                // version stamp): opens the build-time repo URL in the
-                // player's browser - a pure input-path side effect, the
-                // import_game class (no event, nothing recorded).
-                .open_repo_link => browser_url.openRepoLink(history.backing_allocator),
+                // The upstream-repo link (bottom-right, next to the version
+                // stamp): web opens a new browser tab, native queues a
+                // clipboard copy - browser_url owns the split. A pure
+                // input-path side effect, the import_game class (no event,
+                // nothing recorded).
+                .open_repo_link => browser_url.handleRepoLinkClick(history),
                 else => {},
             }
         }

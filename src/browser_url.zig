@@ -1,90 +1,52 @@
-//! The upstream-repo link opener (the main-menu "Explore the code"
-//! button): opens `build_info.repo_url` - the `origin` remote's URL,
-//! normalized to https at build time (see build.zig `computeRepoUrl`) - in
-//! the player's browser. A pure input-path side effect, the import_game
-//! precedent: no event, nothing recorded (nothing about the game state
-//! changes). Web: `window.open` through the emscripten JS seam (the
-//! file_source.zig pattern); native: the platform's URL handler as a
-//! best-effort child process.
+//! The upstream-repo link click (the main-menu repo-link button): web
+//! opens the repo in a NEW browser tab; native queues the URL for the
+//! platform clipboard (SessionState.pending_clipboard_text - frame()
+//! drains it and the backend applies it via raylib's SetClipboardText).
+//! A pure input-path side effect, the import_game precedent: no event,
+//! nothing recorded. The URL is `build_info.repo_url` - the `origin`
+//! remote's address, normalized to https at build time (see build.zig
+//! computeRepoUrl).
+//!
+//! WHY no process spawn on native (the earlier xdg-open/open design was
+//! removed): three runtime bugs in twenty lines (a zero Io.Limit rejects
+//! even an empty stream; Threaded.init defaults its environ to EMPTY so
+//! the child got no PATH/DISPLAY and exited 3; std.process.run never
+//! errors on a nonzero child exit - each invisible to the compiler), plus
+//! a frame-blocking wait on the child and per-OS opener binaries we would
+//! own forever, untestable headless. The clipboard is one raylib call
+//! behind the existing backend seam. History in DONE.md.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const build_info = @import("build_info");
+const state = @import("state.zig");
 
-/// Open the repo link in a new browser tab. Best-effort: a failed native
-/// spawn logs a warning and returns (a machine without `xdg-open`/`open`
-/// must never crash the game over a link). No-op when the build carries no
-/// repo URL (no git / no origin remote / an unrecognized URL form - the
-/// button is not emitted then either).
-pub fn openRepoLink(allocator: std.mem.Allocator) void {
+/// Handle the repo-link button's click. No-op when the build carries no
+/// repo URL (the button is not emitted then either).
+pub fn handleRepoLinkClick(history: *state.GameStateHistory) void {
     if (build_info.repo_url.len == 0) return;
     if (@import("builtin").os.tag == .emscripten) {
-        // Runtime-formatted (bufPrintZ gives the NUL the C extern needs),
-        // matching the file_source JS seams' handling of runtime values.
+        // '_blank' is spec-defined to create a NEW browsing context - it
+        // can never navigate the game tab (which would kill the in-memory
+        // session; the unsafe forms are `location = url` and '_self').
+        // 'noopener' is opener hygiene; a popup-blocked call no-ops in the
+        // safe direction. Runtime-formatted (bufPrintZ gives the NUL the C
+        // extern needs) - the file_source JS-seam pattern.
         var script_buffer: [512]u8 = undefined;
         const script = std.fmt.bufPrintZ(
             &script_buffer,
-            "window.open('{s}', '_blank')",
+            "window.open('{s}', '_blank', 'noopener')",
             .{build_info.repo_url},
         ) catch return;
         emscripten_run_script(script.ptr);
         return;
     }
-    // The platform's URL handler: `open` on macOS, `xdg-open` on the Linux
-    // desktops (a future Windows port wants `start` via cmd).
-    const opener = if (builtin.os.tag == .macos) "open" else "xdg-open";
-    var threaded_io = std.Io.Threaded.init(allocator, .{
-        // The child needs the FULL process environment (PATH, DISPLAY,
-        // DBUS, XDG_* - xdg-open's browser detection reads them all).
-        // Threaded.init defaults its environ to EMPTY, which spawns
-        // children with no environment at all (the exit-3 "no method
-        // available" bug this field exists to fix).
-        .environ = processEnviron(),
-    });
-    defer threaded_io.deinit();
-    const result = std.process.run(allocator, threaded_io.io(), .{
-        .argv = &.{ opener, build_info.repo_url },
-    }) catch |open_error| {
-        std.debug.print("warning: failed to open the repo link in a browser ({} - {s} missing?)\n", .{ open_error, opener });
-        return;
-    };
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-    // `run` succeeding does NOT mean the opener worked - it never errors on
-    // a nonzero child exit (the silent-failure class that hid the empty-
-    // environ bug; "no warning" was a false positive until this check).
-    switch (result.term) {
-        .exited => |exit_code| if (exit_code != 0) {
-            std.debug.print("warning: the repo-link opener ({s}) exited with code {d}\n", .{ opener, exit_code });
-        },
-        else => std.debug.print("warning: the repo-link opener did not exit cleanly ({any})\n", .{result.term}),
-    }
+    // Native: queue the clipboard copy - drained by frame() and applied
+    // via the backend (raylib's SetClipboardText, cross-platform by
+    // construction - the platform seam owns the platform).
+    history.session.queueClipboardText(history.backing_allocator, build_info.repo_url);
 }
 
 // The emscripten JS seam extern (the file_source.zig pattern): the symbol
 // is only referenced from the comptime emscripten branch above, so native
 // and the headless test build never need to resolve it.
 extern fn emscripten_run_script(script: [*:0]const u8) void;
-
-/// The process environment for spawned children (see the Threaded init
-/// call above). POSIX + libc (the native game links libc via raylib): read
-/// off the C `environ` global - start.zig wires an environ source only for
-/// libc builds, so there is no portable fallback without it (the headless
-/// test build links no libc; the branch is comptime-unreachable there,
-/// which is also why the extern reference never needs to resolve). Other
-/// targets: the empty environ (a degraded spawn - the opener probably
-/// fails, and the term check above warns).
-fn processEnviron() std.process.Environ {
-    if (builtin.link_libc) {
-        switch (builtin.os.tag) {
-            .windows, .wasi, .emscripten, .freestanding, .other => {},
-            else => {
-                const c_environ = std.c.environ;
-                var count: usize = 0;
-                while (c_environ[count] != null) : (count += 1) {}
-                return .{ .block = .{ .slice = c_environ[0..count :null] } };
-            },
-        }
-    }
-    return .empty;
-}

@@ -716,6 +716,15 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend.playSounds(pending_sounds, history.settings);
     }
 
+    // Drain queued clipboard text (the repo-link button's native click -
+    // browser_url.handleRepoLinkClick queued it; the web arm opens the
+    // tab directly instead). The `pending_sounds` convention: applied at
+    // the frame boundary by the platform layer.
+    const pending_clipboard_text = history.session.drainPendingClipboardText();
+    if (pending_clipboard_text.len > 0) {
+        backend.setClipboardText(pending_clipboard_text);
+    }
+
     // Drain queued one-shot anims: stamp `end_clock` from the live animation
     // clock and move them into `active_anims`, where `view()` gates them by
     // event index + time. Handlers push gated `!replaying` (same as sounds);

@@ -454,14 +454,23 @@ pub fn buildMainMenu(
         .blocks_input = false,
     } });
 
-    // The upstream-repo link (bottom-right, mirroring the stamp): opens
-    // the `origin` remote's URL (build.zig computeRepoUrl) in the player's
-    // browser - browser_url.openRepoLink via the open_repo_link action.
-    // A spriteless button hit-rect over outlined text (the emitPanelButton
-    // element pattern minus the panel); NOT emitted when the build
-    // carries no repo URL (no git / no origin / unrecognized form).
+    // The upstream-repo link (bottom-right, mirroring the stamp): the
+    // `origin` remote's URL (build.zig computeRepoUrl) as the label - the
+    // thing you act on is the thing shown. The click is platform-split
+    // (browser_url): web opens a new browser tab, native copies the URL
+    // to the clipboard - the tooltip says which. A spriteless button
+    // hit-rect over outlined text (the emitPanelButton element pattern
+    // minus the panel); NOT emitted when the build carries no repo URL
+    // (no git / no origin / unrecognized form).
     if (build_info.repo_url.len > 0) {
-        const link_label = "Explore the code";
+        const link_label = build_info.repo_url;
+        const link_tooltip_text = if (on_web)
+            "Opens link in a new tab"
+        else
+            "Copies link to your clipboard";
+        const link_tooltip = Tooltip{ .body = try allocator.dupe(TooltipRow, &.{
+            try spanRow(allocator, text(link_tooltip_text)),
+        }) };
         const link_width = font_metrics.measureSpanWidth(text(link_label), main_menu_version_font_size);
         const link_position: types.ScreenPosition = .{
             .x = screen.x + screen.width - link_width - ui_gap,
@@ -472,6 +481,7 @@ pub fn buildMainMenu(
             .width = link_width,
             .height = main_menu_version_font_size,
             .action = .open_repo_link,
+            .tooltip = link_tooltip,
         } });
         try elements.append(allocator, .{ .text_label = .{
             .text = link_label,
@@ -2868,9 +2878,11 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
         };
         try std.testing.expect(found_version_stamp);
     }
-    // The upstream-repo link: a button hit-rect + an outlined label in
-    // the bottom-right corner. Conditional on the build carrying a repo
-    // URL (a tarball build without git emits no link).
+    // The upstream-repo link: a button hit-rect + an outlined label (the
+    // URL itself) in the bottom-right corner, with the platform's tooltip
+    // (web opens a tab; this invocation is the web signal). Conditional
+    // on the build carrying a repo URL (a tarball build without git
+    // emits no link).
     if (build_info.repo_url.len > 0) {
         var found_link_button = false;
         var found_link_label = false;
@@ -2880,10 +2892,16 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
                     found_link_button = true;
                     try std.testing.expect(button.screen_position.x + button.width >= screen.x + screen.width - 100);
                     try std.testing.expect(button.screen_position.y >= screen.y + screen.height - 100);
+                    try std.testing.expect(button.tooltip != null);
+                    if (button.tooltip) |tooltip| {
+                        try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+                        try std.testing.expectEqual(@as(usize, 1), tooltip.body[0].len);
+                        try std.testing.expectEqualStrings("Opens link in a new tab", tooltip.body[0][0].text);
+                    }
                 }
             },
             .text_label => |label| {
-                if (std.mem.eql(u8, label.text, "Explore the code")) {
+                if (std.mem.eql(u8, label.text, build_info.repo_url)) {
                     found_link_label = true;
                     try std.testing.expect(label.outlined);
                 }
@@ -2949,13 +2967,27 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
     {
         var elements: UiElementList = .empty;
         try buildMainMenu(&elements, allocator, metrics, screen, true, "zig-cache/fake-persistent-dir", button_color);
+        var found_native_link = false;
         for (elements.items) |element| switch (element) {
-            .button => |b| try std.testing.expect(b.action != .import_game),
+            .button => |b| {
+                try std.testing.expect(b.action != .import_game);
+                // The repo link is NOT web-only - native shows it too, with
+                // the clipboard tooltip (the platform's click behavior).
+                if (b.action == .open_repo_link) {
+                    found_native_link = true;
+                    if (b.tooltip) |tooltip| {
+                        try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+                        try std.testing.expectEqual(@as(usize, 1), tooltip.body[0].len);
+                        try std.testing.expectEqualStrings("Copies link to your clipboard", tooltip.body[0][0].text);
+                    }
+                }
+            },
             .text_label => |label| try std.testing.expect(
                 std.mem.indexOf(u8, label.text, "WEB DISCLAIMER:") == null,
             ),
             else => {},
         };
+        if (build_info.repo_url.len > 0) try std.testing.expect(found_native_link);
     }
 }
 
