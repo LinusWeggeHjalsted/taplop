@@ -270,7 +270,10 @@ session + the ButtonPayload migration):
   font's FULL cmap coverage (`src/font_codepoints.zig` - DESIGN → Platform
   Seam → SDF text outline), so covered punctuation renders correctly; a
   codepoint the font lacks still draws `?`, and the committed-plain rule
-  keeps the tree inside the covered set in practice.
+  keeps the tree inside the covered set in practice. `scripts/test.sh`
+  surfaces findings as a non-fatal advisory (the commit checkpoint) - a
+  hard gate was deliberately rejected: failing a build over prose
+  punctuation would reintroduce the per-token avoidance the relax removed.
 - **Minimize `pub`.** Mark a symbol `pub` only if another file imports it;
   everything else is `fn`/`const` (file-private). The compiler errors on
   unused file-private symbols, so this turns it into a free dead-code detector.

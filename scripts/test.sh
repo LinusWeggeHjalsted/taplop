@@ -61,6 +61,17 @@ if [ -n "$advisory" ]; then
     printf '%s\n' "[advisory, non-fatal] $advisory"
 fi
 
+# Dash-sweep advisory (non-fatal): banned punctuation in the tree is one
+# pre-commit sweep away from clean. Surface it here because this script is
+# the canonical pre-commit verification (the commit checkpoint), but never
+# FAIL a test run over prose punctuation - a hard gate would make agents
+# avoid the characters mid-sentence again (the tax the relaxed rule
+# removed; see AGENTS -> Code Style + scripts/dash_sweep.sh).
+dash_summary="$("$(dirname "$0")/dash_sweep.sh" --check 2>/dev/null | grep -oE '[0-9]+ occurrence\(s\) across [0-9]+ file\(s\)' || true)"
+if [ -n "$dash_summary" ]; then
+    printf '[dash sweep, advisory] %s - run scripts/dash_sweep.sh before committing\n' "$dash_summary"
+fi
+
 if [ -n "$failures" ]; then
     printf '%s\n' "--- failures ---"
     printf '%s\n' "$failures"
