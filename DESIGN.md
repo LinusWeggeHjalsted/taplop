@@ -2434,10 +2434,17 @@ production (settings live for the session).
 `loadConfigWithFallback` still leaks the raw config bytes + parsed sections
 for process lifetime (it's generic over `T`, can't selectively free). After
 the ownership fix the `Settings` it returns no longer references those bytes -
-they're unreferenced garbage that stays leaked (fine, process lifetime). The
-other loaders (levels, hubs, themes, etc.) still borrow into the leaked
-bytes; making them self-owned is the same direction, deferred until a load
-change lands. See AGENTS → Build & Test → Testing discipline for why the leak matters for tests.
+they're unreferenced garbage that stays leaked (fine, process lifetime).
+`loadHub` + `loadCampaign` are self-owned as well (the campaign-editor
+slice 1 rider): every returned field is duped into the passed allocator and
+freed by `freeHub`/`freeCampaign` (tests only; production allocates into the
+history arenas). Their tests hold the ownership contract - the parse
+sections are freed BEFORE the assertions, so a borrow would be a
+use-after-free by construction. The remaining loaders (levels, missions,
+themes) still borrow into the leaked bytes; making them self-owned is the
+same direction, landing with the load change that touches them
+(`loadMission` rides campaign-editor slice 1's mission.txt step). See AGENTS
+→ Build & Test → Testing discipline for why the leak matters for tests.
 
 ### Reconstruction cache (deterministic replay over mutable files)
 

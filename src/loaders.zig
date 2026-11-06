@@ -1958,9 +1958,13 @@ fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
     allocator.free(level.ground_items);
 }
 
-/// Free all heap-allocated data in a Hub (tiles, player, npcs, decorations,
-/// mission exits).
+/// Free all heap-allocated data in a Hub (name, tiles, player, npcs,
+/// decorations, mission exits). The Hub is self-owned: after loadHub, no
+/// field borrows from the parsed sections, so freeing the sections before
+/// the Hub is safe. Use in tests with `std.testing.allocator`; in
+/// production, the arena absorbs everything.
 fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
+    allocator.free(hub.name);
     allocator.free(hub.hub_tiles);
     freeEntity(hub.player, allocator);
     for (hub.npcs) |npc| freeEntity(npc.entity, allocator);
@@ -2249,7 +2253,7 @@ pub fn loadHub(
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "name")) |value| {
-                hub.name = value;
+                hub.name = dupeString(allocator, value);
             }
             if (findValue(pairs, "color_wheel_index")) |value| {
                 hub.color_wheel_index = asU32(value) orelse 0;
@@ -2396,11 +2400,13 @@ pub fn loadHub(
     return hub;
 }
 
+/// Load a campaign from parsed sections. Self-owned: `name` and `start_hub`
+/// are duped into `allocator`, so the result does not borrow from the parse
+/// bytes - free with `freeCampaign` (tests) or the arena (production).
 pub fn loadCampaign(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !Campaign {
-    _ = allocator;
     try validateSections(sections, &campaign_sections);
     try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version);
     var campaign: Campaign = .{};
@@ -2408,12 +2414,20 @@ pub fn loadCampaign(
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
-            if (findValue(pairs, "name")) |value| campaign.name = value;
-            if (findValue(pairs, "start_hub")) |value| campaign.start_hub = value;
+            if (findValue(pairs, "name")) |value| campaign.name = dupeString(allocator, value);
+            if (findValue(pairs, "start_hub")) |value| campaign.start_hub = dupeString(allocator, value);
         }
     }
 
     return campaign;
+}
+
+/// Free a campaign's owned strings (name + start_hub). Both default to the
+/// static empty slice, whose free is a no-op, so this is safe on a campaign
+/// loaded without a Metadata name/start_hub.
+fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
+    allocator.free(campaign.name);
+    allocator.free(campaign.start_hub);
 }
 
 pub fn loadMission(
@@ -3958,10 +3972,12 @@ test "loadHub parses a complete hub" {
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
-    defer freeParsedSections(sections, allocator);
 
     const hub = try loadHub(sections, null, allocator, "", null);
-    defer freeHub(hub, allocator);
+    // Ownership contract: free the parse bytes BEFORE reading the hub -
+    // every field must be owned (leak-checked by testing.allocator via
+    // freeHub below). See DESIGN → File System & IO → Settings ownership.
+    freeParsedSections(sections, allocator);
 
     // Metadata
     try std.testing.expectEqualStrings("Test Village", hub.name);
@@ -3971,7 +3987,8 @@ test "loadHub parses a complete hub" {
     try std.testing.expectEqual(0, hub.player.position.x);
     try std.testing.expectEqual(0, hub.player.position.y);
 
-    // NPC
+    // NPC + player strings are owned by the hub (cloneEntityOwned /
+    // dupeString in loadHub), so they outlive the freed sections.
     try std.testing.expectEqual(1, hub.npcs.len);
     try std.testing.expectEqualStrings("Blacksmith", hub.npcs[0].entity.name);
     // N at raw (3,0), displaced by the spawn (1,1) → (2,-1)
@@ -3991,6 +4008,8 @@ test "loadHub parses a complete hub" {
     // Row 1 ".!..." -> 5 tiles
     // Row 2 "..E.." -> 5 tiles (exit gets a tile)
     try std.testing.expectEqual(15, hub.hub_tiles.len);
+
+    freeHub(hub, allocator);
 }
 
 test "loadCampaign parses campaign metadata" {
@@ -4003,12 +4022,35 @@ test "loadCampaign parses campaign metadata" {
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
-    defer freeParsedSections(sections, allocator);
 
     const campaign = try loadCampaign(sections, allocator);
+    // Ownership contract: free the parse bytes BEFORE reading the campaign
+    // (see the loadHub test above).
+    freeParsedSections(sections, allocator);
 
     try std.testing.expectEqualStrings("Main Campaign", campaign.name);
     try std.testing.expectEqualStrings("starting_village", campaign.start_hub);
+
+    freeCampaign(campaign, allocator);
+}
+
+test "loadCampaign without name/start_hub defaults to empty and frees clean" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const campaign = try loadCampaign(sections, allocator);
+    try std.testing.expectEqualStrings("", campaign.name);
+    try std.testing.expectEqualStrings("", campaign.start_hub);
+
+    // The empty defaults are the static empty slice - freeCampaign must
+    // treat them as a no-op, not a double-free or a leak.
+    freeCampaign(campaign, allocator);
 }
 
 test "loadMission parses mission metadata" {

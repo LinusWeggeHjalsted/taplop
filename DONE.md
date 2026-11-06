@@ -17690,3 +17690,32 @@ someone else already maintains.
   game had quit - owner dead, data gone); same mechanism means a copy
   can vanish when the game exits on X11 WITHOUT a clipboard manager
   (GNOME/KDE run one; a bare-WM user shares this with every other app).
+
+## Campaign-editor slice 1, step 1: loadHub + loadCampaign self-owned
+
+The ownership rider that opens the campaign-editor format work (TODO →
+Level Editor → campaign editor, slice 1). `loadHub` and `loadCampaign`
+now dupe every returned string into the passed allocator, so their
+results never borrow from the parse bytes: `loadHub`'s only remaining
+borrow was `hub.name` (placed entities/decorations/exits were already
+clone-owned by the earlier per-field work); `loadCampaign` borrowed both
+`name` and `start_hub`. `freeHub` frees `hub.name` now; `freeCampaign`
+is new (both strings; the static empty default frees as a no-op, covered
+by a dedicated test).
+
+The tests hold the ownership CONTRACT, not just leak-cleanliness: parse
+sections are freed BEFORE the assertions, so any borrow would be a
+use-after-free by construction, and the trailing `freeHub`/`freeCampaign`
+under `testing.allocator` catches a forgotten free. This is the
+`freeSettings` precedent applied to the hub/campaign loaders - the
+leak-checked testing path TODO's arena-blind-spots policy required
+before the new format tests land (steps 2-4: hub.txt v2 NPCs +
+destination_hub, campaign.txt v2 Hubs + integrity checks, mission.txt
+v3 dropping start_hub/end_hub + derived level_count; `loadMission`'s
+self-ownership rides the mission.txt step).
+
+Why production needs no frees: hub/campaign load only through event
+handlers into `current_arena`/`history_arena`, reclaimed wholesale -
+`freeHub`/`freeCampaign` stay file-private test utilities (the
+`free*` family keeps its de-pubbed status; no cross-file test needs
+them).
