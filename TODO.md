@@ -536,29 +536,39 @@ work:
   Artist dependency: a plain world-map background image for the official
   campaign (a placeholder unblocks the editor meanwhile).
   Slices (rough, re-cut at implementation):
-  - [ ] 1. Formats + model: campaign.txt gains `background` + a `Hubs`
-        section (version bump); hub.txt exits gain `destination_hub`,
-        NPCs become `npc_type` (+ position; the NPC entity-ness removed
-        - types.zig, loadHub, view, the hub-click path) (version bump);
-        hub bundled custom decoration art (the mission-bundle pattern);
-        mission.txt drops `start_hub`/`end_hub` (the campaign graph owns
-        the edge; dreams = entering-hub fallback) + `level_count`
+  - [x] 1a. `loadHub` + `loadCampaign` become SELF-OWNED (the
+        arena-blind-spots policy - AGENTS → Build & Test) so the new
+        format tests run leak-checked from the start, not arena-wrapped
+        with the blind spot inherited - DONE (see DONE.md, campaign-editor
+        slice 1 step 1).
+  - [x] 1b. hub.txt v2: exits gain `destination_hub` (empty = dangling
+        forward reference, legal by design), NPCs become `character_code` +
+        `npc_type` (position from the layout; the NPC entity-ness removed -
+        types.zig, loadHub, view, main, console report, the hub-click path;
+        the sprite derives from the type, `NpcType.spriteId`) - DONE (see
+        DONE.md, campaign-editor slice 1 step 2).
+  - [ ] 1c. Hub bundled custom decoration art (the mission-bundle
+        pattern): `hubs/<hub>/` gains the art folder, custom stems resolve
+        as `custom/<hub-dir>/<stem>`. The official campaign ships no custom
+        art - loader + resolution plumbing + tests only.
+  - [ ] 1d. campaign.txt v2: gains `background` + a `Hubs` section (one
+        group per hub: dir name + map position; OPEN: position units -
+        normalized vs background pixels, decide here) + campaign graph
+        INTEGRITY checks at load (dangling destination names, exits naming
+        missing missions, no start hub placed, unreachable hubs - warn,
+        the loader convention): the dangling format is save-legal BY
+        DESIGN, so the catch belongs at load/validation time from day one,
+        not as a trailing afterthought (a hand-edited campaign must not
+        silently misresolve).
+  - [ ] 1e. mission.txt v3: drops `start_hub`/`end_hub` (the campaign
+        graph owns the edge; dreams = entering-hub fallback) + `level_count`
         becomes derived (writer/loader round-trip + tests; consumers:
         start_mission's level loop, the mission-browser scan,
-        content_hash). RIDERS while the load layer is open:
-        - `loadHub` + `loadCampaign` become SELF-OWNED (the
-          arena-blind-spots policy - AGENTS → Build & Test: the ownership
-          fix is the prerequisite for leak-checked tests, deferred until
-          a load change lands; THIS is the load change) so the new
-          format tests run leak-checked from the start, not
-          arena-wrapped with the blind spot inherited.
-        - Campaign graph INTEGRITY checks at load (dangling
-          destination names, exits naming missing missions, no start
-          hub placed, unreachable hubs - warn, the loader convention):
-          the dangling format is save-legal BY DESIGN, so the catch
-          belongs at load/validation time from day one, not as a
-          trailing afterthought (a hand-edited campaign must not
-          silently misresolve).
+        content_hash; `loadMission` self-ownership rides this step). RIDER:
+        the exit-click path populates `start_mission.end_hub_id` from the
+        exit's `destination_hub` so hub-to-hub missions still end at the
+        right hub (nominally slice 2's runtime, but the game breaks
+        without it once end_hub is dropped).
   - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
         new_game, discovered on arrival), `start_mission.end_hub_id`
         populated from the exit's destination_hub by the exit-click

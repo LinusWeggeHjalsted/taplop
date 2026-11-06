@@ -17719,3 +17719,47 @@ handlers into `current_arena`/`history_arena`, reclaimed wholesale -
 `freeHub`/`freeCampaign` stay file-private test utilities (the
 `free*` family keeps its de-pubbed status; no cross-file test needs
 them).
+
+## Campaign-editor slice 1, step 2: hub.txt v2 (npc_type + destination_hub)
+
+The hub format half of the formats+model slice (TODO → Level Editor →
+campaign editor, slice 1b). hub_file_format_version 1 -> 2; the shipped
+hub.txt's four exits gain `destination_hub camp_at_the_crossroads`
+(all camp->camp self-loops today) + the version bump.
+
+NPCs: `NpcType = { gear_upgrader, dream_guide }` (types.zig) with a
+`spriteId()` method returning the static full id (`npcs/<type>`) - the
+derive-from-the-type pattern (skillIconSpriteId's philosophy), consumed
+by view (the drawable), main (the bounds key), and art_report (the enum
+walk). `NPC = { npc_type, position }` - the entity-ness is gone. The
+NPCs section authors `character_code` + `npc_type` only; unknown/missing
+type warns + drops (the recoverable convention; both covered by tests).
+Rendering: the npcs/ art is grayscale (verified - zero channel spread),
+same convention as entity art, so NPCs tint with the player gradient at
+index 0 - exactly what a default team-0 Entity NPC rendered as, no
+visual change. view builds the EntityDrawable directly via
+`npcEntityDrawable` (no synthetic per-frame Entity - that would re-import
+the deleted entity-ness) and rides the same GroundEntry machinery for
+sorting + occlusion. `entityFrameTopLeft` now takes a position (it only
+ever read entity.position). main.zig's hub-branch bounds population uses
+the new general `backend.spriteBounds(full_id)` seam (entitySpriteBounds
+hardcodes the entities/ prefix); the NPC bounds key is the full
+`npcs/<type>` id, matching the entity_sprite value view reports per
+ground entry.
+
+Exits: `MissionExit.destination_hub` (empty = dangling forward
+reference, legal by design; the load-time integrity checks land with
+slice 1d). Loader dupes it (self-owned since step 1); freeHub frees it.
+
+Ripples: console `report level` prints `entity N npc <type> tile (x,y)`
+lines instead of entity lines for NPCs; the input_handlers hub-click
+NPC check reads npc.position; art_report's data-scan NPCs branch is
+deleted (the section no longer authors sprites) and the enum walk + the
+retired "future stock" manual note replace it - both npc sprites now
+report consumed/shipped by derivation.
+
+Test note (config format footgun, hit twice): entry groups within a
+section are separated by BLANK LINES - a fixture stacking three
+`character_code` groups without separators parses as ONE group
+(last-wins keys), so the warn+drop cases silently vanish. The new
+loader test uses blank-line-separated groups.

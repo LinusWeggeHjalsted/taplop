@@ -1065,7 +1065,12 @@ fn dumpLevelText(
         buffer.appendSlice(allocator, "entities: 1 + npcs\n") catch @panic("failed to format level dump");
         appendEntityLine(&buffer, allocator, 0, hub.player, camera, camera_zoom);
         for (hub.npcs, 0..) |npc, index| {
-            appendEntityLine(&buffer, allocator, index + 1, npc.entity, camera, camera_zoom);
+            const center = view.tileClickCenter(npc.position, camera, camera_zoom);
+            buffer.print(
+                allocator,
+                "entity {d} npc {s} tile ({d}, {d}) center {d} {d}\n",
+                .{ index + 1, @tagName(npc.npc_type), npc.position.x, npc.position.y, center.x, center.y },
+            ) catch @panic("failed to format level dump");
         }
 
         buffer.print(allocator, "mission_exits: {d}\n", .{hub.mission_exits.len}) catch

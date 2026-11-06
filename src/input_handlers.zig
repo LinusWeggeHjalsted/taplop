@@ -3552,8 +3552,8 @@ pub fn handleIdleInput(
             // this is where the click → interact_with_npc push goes.
             var clicked_npc = false;
             for (hub.npcs) |npc| {
-                if (npc.entity.position.x == clicked_position.x and
-                    npc.entity.position.y == clicked_position.y)
+                if (npc.position.x == clicked_position.x and
+                    npc.position.y == clicked_position.y)
                 {
                     clicked_npc = true;
                     break;
@@ -5253,10 +5253,10 @@ test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
 
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
-    const npcs = [_]types.NPC{.{ .entity = .{
-        .name = "Shopkeeper",
+    const npcs = [_]types.NPC{.{
+        .npc_type = .gear_upgrader,
         .position = .{ .x = 2, .y = 0 },
-    } }};
+    }};
     var history = harness.newHistory(.{
         .screen = .hub,
         .event_stack = &.{},

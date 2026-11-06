@@ -1967,11 +1967,13 @@ fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
     allocator.free(hub.name);
     allocator.free(hub.hub_tiles);
     freeEntity(hub.player, allocator);
-    for (hub.npcs) |npc| freeEntity(npc.entity, allocator);
     allocator.free(hub.npcs);
     for (hub.decorations) |decoration| freeDecoration(decoration, allocator);
     allocator.free(hub.decorations);
-    for (hub.mission_exits) |exit| allocator.free(exit.mission_id);
+    for (hub.mission_exits) |exit| {
+        allocator.free(exit.mission_id);
+        allocator.free(exit.destination_hub);
+    }
     allocator.free(hub.mission_exits);
 }
 
@@ -2281,23 +2283,34 @@ pub fn loadHub(
             try exit_codes.append(allocator, code_string[0]);
             try exit_definitions.put(code_string[0], .{
                 .mission_id = findValue(pairs, "mission_id") orelse &.{},
+                // Empty = a dangling forward reference (legal by design -
+                // see DESIGN → Campaigns & the Campaign Editor).
+                .destination_hub = findValue(pairs, "destination_hub") orelse &.{},
                 .position = .{ .x = 0, .y = 0 },
             });
         }
     }
 
-    // Collect NPC definitions
-    var npc_definitions = std.AutoHashMap(u8, types.NPC).init(allocator);
+    // Collect NPC definitions: character_code + npc_type (the type is the
+    // whole identity - the sprite derives from it; DESIGN → Campaigns &
+    // the Campaign Editor → File formats). Missing/unknown type: warn +
+    // drop the entry (the recoverable-problem convention).
+    var npc_definitions = std.AutoHashMap(u8, types.NpcType).init(allocator);
     defer npc_definitions.deinit();
     if (findSection(sections, "NPCs")) |section| {
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            var entity: types.Entity = .{};
-            if (findValue(pairs, "name")) |value| entity.name = value;
-            if (findValue(pairs, "sprite")) |value| entity.sprite = value;
-            try npc_definitions.put(code_string[0], .{ .entity = entity });
+            const type_value = findValue(pairs, "npc_type") orelse {
+                appendWarning(warnings, allocator, "{s}: NPC entry '{c}' has no npc_type - dropped", .{ file_path, code_string[0] });
+                continue;
+            };
+            const npc_type = parseEnum(types.NpcType, type_value) orelse {
+                appendWarning(warnings, allocator, "{s}: unknown npc_type '{s}' (NPC entry '{c}') - dropped", .{ file_path, type_value, code_string[0] });
+                continue;
+            };
+            try npc_definitions.put(code_string[0], npc_type);
         }
     }
 
@@ -2345,12 +2358,10 @@ pub fn loadHub(
                                 exit.position = position;
                                 var exit_copy = exit.*;
                                 exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
+                                exit_copy.destination_hub = dupeString(allocator, exit_copy.destination_hub);
                                 try exit_list.append(allocator, exit_copy);
-                            } else if (npc_definitions.getPtr(character)) |npc| {
-                                var npc_copy = npc.*;
-                                npc_copy.entity.position = position;
-                                cloneEntityOwned(&npc_copy.entity, allocator);
-                                try npc_list.append(allocator, npc_copy);
+                            } else if (npc_definitions.get(character)) |npc_type| {
+                                try npc_list.append(allocator, .{ .npc_type = npc_type, .position = position });
                             }
                         }
                     },
@@ -2373,7 +2384,7 @@ pub fn loadHub(
             decoration.position = .{ .x = decoration.position.x + offset.x, .y = decoration.position.y + offset.y };
         }
         for (npc_list.items) |*npc| {
-            npc.entity.position = .{ .x = npc.entity.position.x + offset.x, .y = npc.entity.position.y + offset.y };
+            npc.position = .{ .x = npc.position.x + offset.x, .y = npc.position.y + offset.y };
         }
         for (exit_list.items) |*exit| {
             exit.position = .{ .x = exit.position.x + offset.x, .y = exit.position.y + offset.y };
@@ -3952,7 +3963,7 @@ test "loadHub parses a complete hub" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\name Test Village
         \\
         \\Layout
@@ -3962,13 +3973,14 @@ test "loadHub parses a complete hub" {
         \\
         \\NPCs
         \\character_code N
-        \\name Blacksmith
+        \\npc_type gear_upgrader
         \\
         \\Decorations
         \\
         \\Exits
         \\character_code E
         \\mission_id first_mission
+        \\destination_hub another_camp
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
@@ -3987,18 +3999,18 @@ test "loadHub parses a complete hub" {
     try std.testing.expectEqual(0, hub.player.position.x);
     try std.testing.expectEqual(0, hub.player.position.y);
 
-    // NPC + player strings are owned by the hub (cloneEntityOwned /
-    // dupeString in loadHub), so they outlive the freed sections.
+    // NPC: type + position (not an entity). N at raw (3,0), displaced by
+    // the spawn (1,1) → (2,-1)
     try std.testing.expectEqual(1, hub.npcs.len);
-    try std.testing.expectEqualStrings("Blacksmith", hub.npcs[0].entity.name);
-    // N at raw (3,0), displaced by the spawn (1,1) → (2,-1)
-    try std.testing.expectEqual(2, hub.npcs[0].entity.position.x);
-    try std.testing.expectEqual(-1, hub.npcs[0].entity.position.y);
+    try std.testing.expectEqual(types.NpcType.gear_upgrader, hub.npcs[0].npc_type);
+    try std.testing.expectEqual(2, hub.npcs[0].position.x);
+    try std.testing.expectEqual(-1, hub.npcs[0].position.y);
 
-    // Mission exit
+    // Mission exit: mission_id + destination_hub + position. E at raw
+    // (2,2), displaced by the spawn (1,1) → (1,1)
     try std.testing.expectEqual(1, hub.mission_exits.len);
     try std.testing.expectEqualStrings("first_mission", hub.mission_exits[0].mission_id);
-    // E at raw (2,2), displaced by the spawn (1,1) → (1,1)
+    try std.testing.expectEqualStrings("another_camp", hub.mission_exits[0].destination_hub);
     try std.testing.expectEqual(1, hub.mission_exits[0].position.x);
     try std.testing.expectEqual(1, hub.mission_exits[0].position.y);
 
@@ -4008,6 +4020,60 @@ test "loadHub parses a complete hub" {
     // Row 1 ".!..." -> 5 tiles
     // Row 2 "..E.." -> 5 tiles (exit gets a tile)
     try std.testing.expectEqual(15, hub.hub_tiles.len);
+
+    freeHub(hub, allocator);
+}
+
+test "loadHub: NPC entries with missing/unknown npc_type warn and drop; destination_hub defaults empty" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\name Test Village
+        \\
+        \\Layout
+        \\.!M.
+        \\..U..
+        \\..E..
+        \\
+        \\NPCs
+        \\character_code M
+        \\npc_type dream_guide
+        \\
+        \\character_code U
+        \\npc_type blacksmith
+        \\
+        \\character_code X
+        \\
+        \\Exits
+        \\character_code E
+        \\mission_id first_mission
+    ;
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |warning| allocator.free(warning);
+        warnings.deinit(allocator);
+    }
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    const hub = try loadHub(sections, null, allocator, "hub.txt", &warnings);
+    freeParsedSections(sections, allocator);
+
+    // M parses; U (unknown type) and X (no npc_type) warn + drop.
+    try std.testing.expectEqual(1, hub.npcs.len);
+    try std.testing.expectEqual(types.NpcType.dream_guide, hub.npcs[0].npc_type);
+    // M at raw (2,0), displaced by the spawn (1,0) → (1,0)
+    try std.testing.expectEqual(1, hub.npcs[0].position.x);
+    try std.testing.expectEqual(0, hub.npcs[0].position.y);
+
+    // destination_hub absent = the dangling-forward-reference default.
+    try std.testing.expectEqualStrings("", hub.mission_exits[0].destination_hub);
+
+    try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
+    for (warnings.items) |warning| {
+        try std.testing.expect(std.mem.indexOf(u8, warning, "hub.txt") != null);
+    }
 
     freeHub(hub, allocator);
 }

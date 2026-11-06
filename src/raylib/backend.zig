@@ -578,6 +578,12 @@ pub const RaylibBackend = struct {
         return self.textures.entitySpriteBounds(allocator, bare_stem);
     }
 
+    /// Opaque-pixel bounds for a FULL sprite id (any namespace) - the
+    /// general form of `entitySpriteBounds` (NPCs: `npcs/<npc_type>`).
+    pub fn spriteBounds(self: *RaylibBackend, sprite_id: []const u8) ?types.SpriteBounds {
+        return self.textures.spriteBounds(sprite_id);
+    }
+
     pub fn shouldClose(_: *RaylibBackend) bool {
         return rl.windowShouldClose();
     }

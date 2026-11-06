@@ -142,13 +142,19 @@ pub fn view(
                 .drawable = .{ .level_end = levelEndDrawable(exit.position, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps, true) },
             }) catch @panic("failed to append mission-start entry");
         }
-        // Hub entities: the player + NPCs as a pointer slice.
+        // Hub entities: the player rides the entity path; NPCs are plain
+        // {npc_type, position} - their drawables derive from the type.
         {
-            const hub_entity_ptrs = frame_allocator.alloc(*const Entity, 1 + hub.npcs.len) catch
-                @panic("failed to alloc hub entity pointer slice");
-            hub_entity_ptrs[0] = &hub.player;
-            for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
-            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_bounds, false);
+            const player_ptrs = [_]*const Entity{&hub.player};
+            collectEntityEntries(&ground_entries, frame_allocator, &player_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_bounds, false);
+        }
+        for (hub.npcs) |npc| {
+            ground_entries.append(frame_allocator, .{
+                .sort_y = npc.position.y,
+                .sort_x = npc.position.x,
+                .drawable = .{ .entity = npcEntityDrawable(npc, active_theme, camera, camera_zoom) },
+                .entity_sprite = npc.npc_type.spriteId(),
+            }) catch @panic("failed to append npc ground entry");
         }
         for (hub.decorations) |decoration| {
             const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
@@ -1458,8 +1464,8 @@ fn groundItemsDrawable(
 /// aligning the shared pivot (0.5, 0.8) to the center of the entity's tile.
 /// Shared by `entityDrawable` (body + weapons + layers register here) and
 /// the world-overlay builder (floating icons place above this point).
-fn entityFrameTopLeft(entity: *const Entity, camera: types.Camera, zoom: f32) types.ScreenPosition {
-    const tile_top_left = tileToScreen(entity.position, camera, zoom);
+fn entityFrameTopLeft(position: types.Vector2, camera: types.Camera, zoom: f32) types.ScreenPosition {
+    const tile_top_left = tileToScreen(position, camera, zoom);
     const tile_pixels = input.tile_size_pixels * zoom;
     const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
     const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
@@ -1505,7 +1511,7 @@ fn buildWorldOverlays(
                 const entity = &level.entities[info.entity_index];
                 if (entity.current_health == 0) continue;
 
-                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const top_left = entityFrameTopLeft(entity.position, camera, zoom);
                 const draw_width = entity_frame_width * zoom;
                 const drawn_size: f32 = @as(f32, @floatFromInt(skill_icon_size_native)) * zoom;
                 const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
@@ -1552,7 +1558,7 @@ fn buildWorldOverlays(
                 const entity = &level.entities[info.entity_index];
                 if (entity.current_health == 0) continue;
 
-                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const top_left = entityFrameTopLeft(entity.position, camera, zoom);
                 const draw_width = entity_frame_width * zoom;
                 const drawn_size: f32 = @as(f32, @floatFromInt(aggro_indicator_size_native)) * zoom;
                 const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
@@ -1585,7 +1591,7 @@ fn buildWorldOverlays(
                 if (info.entity_index >= level.entities.len) continue;
                 const entity = &level.entities[info.entity_index];
 
-                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const top_left = entityFrameTopLeft(entity.position, camera, zoom);
                 const draw_width = entity_frame_width * zoom;
                 const draw_height = entity_frame_height * zoom;
                 // Horizontal: entities are always horizontally centered in
@@ -1690,7 +1696,7 @@ fn buildWorldOverlays(
         if (entity.stun_duration == 0) continue;
         if (entity.current_health == 0) continue;
 
-        const top_left = entityFrameTopLeft(entity, camera, zoom);
+        const top_left = entityFrameTopLeft(entity.position, camera, zoom);
         const draw_width = entity_frame_width * zoom;
         const drawn_size: f32 = @as(f32, @floatFromInt(stun_icon_size_native)) * zoom;
         const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
@@ -1748,7 +1754,7 @@ fn numberAnimPosition(
     font_metrics: ui.FontMetrics,
     text: []const u8,
 ) types.ScreenPosition {
-    const top_left = entityFrameTopLeft(entity, camera, zoom);
+    const top_left = entityFrameTopLeft(entity.position, camera, zoom);
     const draw_width = entity_frame_width * zoom;
     const draw_height = entity_frame_height * zoom;
     // Resolve the opaque-art bbox in screen space; fall back to the frame
@@ -1829,7 +1835,7 @@ fn entityDrawable(
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     show_health_bar: bool,
 ) types.EntityDrawable {
-    const top_left = entityFrameTopLeft(entity, camera, zoom);
+    const top_left = entityFrameTopLeft(entity.position, camera, zoom);
     const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
         @panic("failed to build entity sprite id");
 
@@ -2048,6 +2054,35 @@ fn groundEntryBefore(_: void, a: GroundEntry, b: GroundEntry) bool {
 /// its tile (y, x). Replaces the old `buildEntities` (which sorted and
 /// appended directly); the unified sort happens once after all entries
 /// (entities + decorations + markers) are collected.
+/// Build an NPC's EntityDrawable from {npc_type, position}: the type's
+/// sprite in the shared entity frame, tinted by the player gradient at
+/// index 0 (the npcs/ art is grayscale, the same convention as entity
+/// art - the same tint a default team-0 entity renders with). No layers,
+/// weapons, or health bar: the NPC is not an Entity. See DESIGN →
+/// Campaigns & the Campaign Editor → File formats.
+fn npcEntityDrawable(
+    npc: types.NPC,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) types.EntityDrawable {
+    return .{
+        .back_effect_sprites = &.{},
+        .base_sprite = .{
+            .sprite_id = npc.npc_type.spriteId(),
+            .screen_position = entityFrameTopLeft(npc.position, camera, zoom),
+            .draw_offset = .{ .x = 0, .y = 0 },
+            .source_rectangle = null,
+            .color = playerColor(active_theme, 0),
+        },
+        .layer_sprites = &.{},
+        .weapon_sprites = .{ null, null },
+        .gear_sprites = &.{},
+        .front_effect_sprites = &.{},
+        .health_bar = null,
+    };
+}
+
 fn collectEntityEntries(
     list: *std.ArrayList(GroundEntry),
     allocator: std.mem.Allocator,

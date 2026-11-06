@@ -425,6 +425,13 @@ pub const TextureStore = struct {
         return self.getSpriteBounds(sprite_id);
     }
 
+    /// Opaque-pixel bounding box for a FULL sprite id (any namespace) - the
+    /// general form of `entitySpriteBounds`. Used for NPC bounds
+    /// (`npcs/<npc_type>`).
+    pub fn spriteBounds(self: *TextureStore, sprite_id: []const u8) ?types.SpriteBounds {
+        return self.getSpriteBounds(sprite_id);
+    }
+
     fn ensureSpriteBoundsLoaded(self: *TextureStore, sprite_id: []const u8) void {
         if (self.sprite_bounds_cache.contains(sprite_id)) return;
 

@@ -23,7 +23,9 @@ const FileSource = file_source_mod.FileSource;
 /// type): it's a parse-time compatibility check, not runtime state. The save
 /// writer emits the current constant. See DESIGN → Versioning.
 pub const level_file_format_version: u32 = 1;
-pub const hub_file_format_version: u32 = 1;
+/// v2 (campaign-editor slice 1): NPCs become `character_code` + `npc_type`
+/// (the entity fields name/sprite are gone); Exits gain `destination_hub`.
+pub const hub_file_format_version: u32 = 2;
 pub const mission_file_format_version: u32 = 2;
 pub const campaign_file_format_version: u32 = 1;
 pub const player_save_file_format_version: u32 = 2;
@@ -564,16 +566,17 @@ pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).
 
 // --- Hub file key whitelists ---
 //
-// Metadata carries hub metadata. NPCs entries are simple entity definitions
-// (character_code + name + sprite). Exits entries carry character_code +
-// mission_id. Decorations share the level decoration key set. Layout is a
-// raw grid (excluded).
+// Metadata carries hub metadata. NPCs entries are character_code + npc_type
+// (the type is the whole identity - the sprite derives from it). Exits
+// entries carry character_code + mission_id + destination_hub (empty = a
+// dangling forward reference, legal by design). Decorations share the
+// level decoration key set. Layout is a raw grid (excluded).
 
 const hub_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
 
-const hub_npcs_keys = [_][]const u8{ "character_code", "name", "sprite" };
+const hub_npcs_keys = [_][]const u8{ "character_code", "npc_type" };
 
-const hub_exits_keys = [_][]const u8{ "character_code", "mission_id" };
+const hub_exits_keys = [_][]const u8{ "character_code", "mission_id", "destination_hub" };
 
 /// Hub file key map: section header → valid keys. Decorations share the
 /// level decoration key set (same format). Layout is excluded (raw grid).

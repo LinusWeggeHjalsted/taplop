@@ -18,8 +18,10 @@
 //!      the shopping list).
 //!   3. Every `sprite <stem>` reference in shipped data (levels, hubs,
 //!      decorations.txt, editor defaults), mapped by section: Entities ->
-//!      entities/, Decorations -> decorations/, NPCs -> npcs/.
-//! Plus two hand-maintained notes that are not machine-derivable today -
+//!      entities/, Decorations -> decorations/. (NPCs author `npc_type`,
+//!      never a sprite - the NpcType enum walk in Source 1 covers their
+//!      art.)
+//! Plus one hand-maintained note that is not machine-derivable today -
 //! see `manual_notes`. See DESIGN → Testing for why enum/table walks beat
 //! coverage matrices; the sound_report.zig pattern throughout.
 
@@ -56,11 +58,6 @@ const manual_notes = [_][]const u8{
     \\flipped); a future `ui/icon_redo` replaces it, at which point this note
     \\and the code alias both retire. Until then `ui/icon_redo` correctly does
     \\not appear as consumed.
-,
-    \\The `npcs/` palette (dream_guide, gear_upgrader) is future stock for the
-    \\campaign editor's `npc_type` model (DESIGN → Campaigns & the Campaign
-    \\Editor → File formats) - nothing consumes the namespace until that slice
-    \\lands; today hub NPCs render through the entity path.
 ,
 };
 
@@ -115,6 +112,9 @@ pub fn main() !void {
         try addConsumed(&consumed, allocator, id, "player body + weapon art (team 0 uses the plain art)");
         const enemy_id = try std.fmt.allocPrint(allocator, "weapons/enemy_{s}", .{@tagName(weapon_type)});
         try addConsumed(&consumed, allocator, enemy_id, "enemy weapon art (the enemy_ variant)");
+    }
+    for (std.meta.tags(types.NpcType)) |npc_type| {
+        try addConsumed(&consumed, allocator, npc_type.spriteId(), "hub NPC sprite (derives from the type - hub files author npc_type, never a sprite)");
     }
 
     // === Source 2: sprite-id string literals under src/ ===
@@ -179,7 +179,8 @@ pub fn main() !void {
         \\code (test blocks excluded - fixture ids are not game consumption),
         \\and every `sprite <stem>` reference in shipped data (levels/hubs/
         \\decorations/editor defaults, mapped by section: Entities ->
-        \\entities/, Decorations -> decorations/, NPCs -> npcs/).
+        \\entities/, Decorations -> decorations/; NPC art derives from the
+        \\NpcType enum walk above).
         \\
         \\Hand-maintained notes (each retires when its condition lands):
         \\
@@ -387,7 +388,7 @@ fn scanLineLiterals(
 }
 
 /// Scan data bytes for `sprite <stem>` lines, mapping the stem to its
-/// namespace by the current section header (Entities/Decorations/NPCs - the
+/// namespace by the current section header (Entities/Decorations - the
 /// parser's section model). Mirrors the loaders' namespace derivation.
 fn scanDataSpriteLines(
     consumed: *std.StringArrayHashMapUnmanaged(ConsumedEntry),
@@ -410,8 +411,6 @@ fn scanDataSpriteLines(
             "entities"
         else if (std.mem.eql(u8, section, "Decorations"))
             "decorations"
-        else if (std.mem.eql(u8, section, "NPCs"))
-            "npcs"
         else
             null;
         if (namespace == null) continue;

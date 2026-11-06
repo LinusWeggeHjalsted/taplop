@@ -3329,6 +3329,12 @@ pub const Level = struct {
 
 pub const MissionExit = struct {
     mission_id: []const u8,
+    /// The hub this mission's edge ends at (hub dir name), or empty for a
+    /// dangling forward reference - legal by design, caught by the
+    /// load-time campaign integrity checks. The campaign graph owns the
+    /// edge; mission.txt carries no hub metadata. See DESIGN → Campaigns
+    /// & the Campaign Editor.
+    destination_hub: []const u8 = &.{},
     position: Vector2,
 };
 
@@ -3342,8 +3348,31 @@ pub const Hub = struct {
     mission_exits: []const MissionExit = &.{},
 };
 
+/// The NPC cast for the foreseeable future. Config values match the enum
+/// exactly. See DESIGN → Campaigns & the Campaign Editor → File formats.
+pub const NpcType = enum {
+    gear_upgrader,
+    dream_guide,
+
+    /// The full sprite id this NPC type renders as (the shipped
+    /// assets/npcs/ art). The id derives from the type - it is never
+    /// authored in a hub file.
+    pub fn spriteId(self: NpcType) []const u8 {
+        return switch (self) {
+            .gear_upgrader => "npcs/gear_upgrader",
+            .dream_guide => "npcs/dream_guide",
+        };
+    }
+};
+
+/// A hub NPC: type + position only - NOT an Entity (the old entity shape
+/// was stale scaffolding; see DESIGN → Campaigns & the Campaign Editor →
+/// File formats). The sprite derives from the type via `spriteId`; tile
+/// blocking needs only the position; `interact_with_npc` routes on the
+/// type.
 pub const NPC = struct {
-    entity: Entity,
+    npc_type: NpcType,
+    position: Vector2,
 };
 
 test "Level.hasActiveEnemies: alive + active + hostile; dead / inactive / same-team are not" {

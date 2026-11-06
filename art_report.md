@@ -20,17 +20,14 @@ effects, items, weapons), every sprite-id string literal in shipped
 code (test blocks excluded - fixture ids are not game consumption),
 and every `sprite <stem>` reference in shipped data (levels/hubs/
 decorations/editor defaults, mapped by section: Entities ->
-entities/, Decorations -> decorations/, NPCs -> npcs/).
+entities/, Decorations -> decorations/; NPC art derives from the
+NpcType enum walk above).
 
 Hand-maintained notes (each retires when its condition lands):
 - `ui/icon_undo` serves double duty as the redo button's glyph (drawn
 flipped); a future `ui/icon_redo` replaces it, at which point this note
 and the code alias both retire. Until then `ui/icon_redo` correctly does
 not appear as consumed.
-- The `npcs/` palette (dream_guide, gear_upgrader) is future stock for the
-campaign editor's `npc_type` model (DESIGN → Campaigns & the Campaign
-Editor → File formats) - nothing consumes the namespace until that slice
-lands; today hub NPCs render through the entity path.
 
 ## MISSING - the shopping list
 
@@ -133,6 +130,11 @@ lands; today hub NPCs render through the entity path.
 
 - `assets/effects/reflect.png` - world overlay for the effect **[shipped]**
 - `assets/effects/stun.png` - code-referenced (src/view.zig) **[shipped]**
+
+## npcs (2 consumed)
+
+- `assets/npcs/dream_guide.png` - hub NPC sprite (derives from the type - hub files author npc_type, never a sprite) **[shipped]**
+- `assets/npcs/gear_upgrader.png` - hub NPC sprite (derives from the type - hub files author npc_type, never a sprite) **[shipped]**
 
 ## decorations (48 consumed)
 
@@ -243,8 +245,3 @@ editor). Other namespaces here are genuinely unreferenced.
 - `assets/entities/mushroom.png` - shipped, not referenced by shipped content (editor palette stock)
 - `assets/entities/ghoul.png` - shipped, not referenced by shipped content (editor palette stock)
 - `assets/entities/specter.png` - shipped, not referenced by shipped content (editor palette stock)
-
-**npcs:**
-
-- `assets/npcs/gear_upgrader.png` - shipped, not referenced by shipped content (editor palette stock)
-- `assets/npcs/dream_guide.png` - shipped, not referenced by shipped content (editor palette stock)

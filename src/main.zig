@@ -867,15 +867,18 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                     @panic("failed to populate sprite_bounds");
             }
         } else if (history.current_state.hub) |*hub| {
-            const hub_entity_count = 1 + hub.npcs.len;
-            const hub_entity_ptrs = frame_alloc.alloc(*const types.Entity, hub_entity_count) catch
-                @panic("failed to alloc hub entity pointer slice");
-            hub_entity_ptrs[0] = &hub.player;
-            for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
-            for (hub_entity_ptrs) |entity| {
-                if (sprite_bounds.contains(entity.sprite)) continue;
-                const bounds = backend.entitySpriteBounds(frame_alloc, entity.sprite);
-                sprite_bounds.put(frame_alloc, entity.sprite, bounds) catch
+            // The player's bounds key is its bare stem (the entities/
+            // wrapper below prefixes it); an NPC's key is the type's full
+            // id (npcs/<type>) - matching the entity_sprite value view()
+            // reports per ground entry.
+            const player_bounds = backend.entitySpriteBounds(frame_alloc, hub.player.sprite);
+            sprite_bounds.put(frame_alloc, hub.player.sprite, player_bounds) catch
+                @panic("failed to populate sprite_bounds");
+            for (hub.npcs) |npc| {
+                const sprite_id = npc.npc_type.spriteId();
+                if (sprite_bounds.contains(sprite_id)) continue;
+                const bounds = backend.spriteBounds(sprite_id);
+                sprite_bounds.put(frame_alloc, sprite_id, bounds) catch
                     @panic("failed to populate sprite_bounds");
             }
         } else if (history.current_state.editor) |*editor| {

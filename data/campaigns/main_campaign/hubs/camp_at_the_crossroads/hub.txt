@@ -1,5 +1,5 @@
 Metadata
-file_format_version 1
+file_format_version 2
 name Camp at the Crossroads
 
 Layout
@@ -70,14 +70,18 @@ Exits
 
 character_code 0
 mission_id beginnings
+destination_hub camp_at_the_crossroads
 
 character_code 1
 mission_id forest
+destination_hub camp_at_the_crossroads
 
 character_code 2
 mission_id wetlands
+destination_hub camp_at_the_crossroads
 
 character_code 3
 mission_id seatown
+destination_hub camp_at_the_crossroads
 
 NPCs
