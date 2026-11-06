@@ -16,6 +16,15 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
+- **Crash-dump test stderr noise (confuses every new agent)** - the
+      crash_dump.zig round-trip test prints `wrote crash session log
+      bundle: crashes/...` on every PASSING run (the diagnostic print lives
+      inside `dump()` itself, so exercising the machinery prints it), which
+      also triggers the raw `zig build test` runner's `failed command:`
+      advisory line - a passing run reads like a crash. Fix: split the print
+      out of `dump()` (return the path/count; the panic-namespace caller
+      prints), so the test runs silent. Worth it whenever crash_dump.zig is
+      next open.
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
