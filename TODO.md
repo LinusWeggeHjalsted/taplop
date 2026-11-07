@@ -16,6 +16,24 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
+- **Section-header lockstep guard (session-reflection rider, campaign-editor
+      slice 1)** - section headers are whitelisted TWICE with no link:
+      `parseConfigFile` recognizes headers against the GLOBAL
+      `valid_section_headers` (parser.zig) while each format has its own
+      `*_sections` list, and adding a section ("Hubs", slice 1d) requires
+      both edits. The failure mode is silent + misleading: an unrecognized
+      header's entry lines parse into the PREVIOUS section and surface as
+      "unknown key" warnings pointing the wrong way (exactly what happened
+      with Hubs). Fix: a comptime assert that every per-format section
+      list is a subset of the global list (the key-table comptime-guard
+      pattern) - cheap, machine-walked, makes the trap impossible.
+- **Mission-scan duplication (session-reflection rider, low priority)** -
+      `listMissions` + `listOfficialMissions` (file_source.zig) are
+      near-clones (the same mission.txt-parse-in-arena dance, different
+      roots; each new metadata field grows both) and now each carries its
+      own level-count derivation (the persistent folder scan vs the
+      comptime embedded-map count). A shared scan helper would freeze the
+      duplication. Not urgent - a line to keep it visible.
 - **Crash-dump test stderr noise (confuses every new agent)** - the
       crash_dump.zig round-trip test prints `wrote crash session log
       bundle: crashes/...` on every PASSING run (the diagnostic print lives
