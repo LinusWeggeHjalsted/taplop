@@ -547,10 +547,19 @@ work:
         types.zig, loadHub, view, main, console report, the hub-click path;
         the sprite derives from the type, `NpcType.spriteId`) - DONE (see
         DONE.md, campaign-editor slice 1 step 2).
-  - [ ] 1c. Hub bundled custom decoration art (the mission-bundle
-        pattern): `hubs/<hub>/` gains the art folder, custom stems resolve
-        as `custom/<hub-dir>/<stem>`. The official campaign ships no custom
-        art - loader + resolution plumbing + tests only.
+  - [x] 1c. Custom-asset paths unified (the prerequisite the hub art
+        rider exposed): custom ids are CONTENT-ADDRESSED - the chain after
+        `custom/` IS the file's location (`custom/missions/<dir>/<stem>` for
+        dreams, `custom/campaigns/<campaign>/missions|hubs/<dir>/<stem>` for
+        campaign-bundled art) - one resolution rule
+        (`file_source.customAssetTail` + readFile's persistent/embedded-
+        `data/` tiers) shared by the loader's dims read and the texture
+        store's byte read; the old load-vs-render root split (render
+        hardcoded a `missions/` root) is gone, and hub art resolves by the
+        same rule with zero hub-specific plumbing. Minting via
+        `customStemForContentPath`; the editor scan + save normalization
+        mint the new shape. DONE (see DONE.md, campaign-editor slice 1
+        step 3).
   - [ ] 1d. campaign.txt v2: gains `background` + a `Hubs` section (one
         group per hub: dir name + map position; OPEN: position units -
         normalized vs background pixels, decide here) + campaign graph
@@ -618,6 +627,20 @@ work:
 
 Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 → Logging & Replay; history in DONE.md). Remaining:
+
+- **Session-log bundles do not capture custom-art DIMS reads** (found
+      during campaign-editor slice 1c - the custom-asset path unify): the
+      PNG-header read that resolves a `Decoration.pixel_dims` goes through
+      `file_source.readFile`, not `readReconstructionFile`, so its bytes
+      are not in the bundle's `content/`. No crash + no event-verification
+      impact (dims only ride EDITOR events, which carry them in-band);
+      the effect is state-fidelity drift on an art-less machine (dims fall
+      back to 256x256) - invisible today (the replay viewer renders magenta
+      at the fallback size, visually consistent), but it breaks the
+      bundle's exact-reproduction promise the day a state-strict consumer
+      lands (server validation is the obvious one). Fix when needed: route
+      the dims read through `readReconstructionFile` so art bytes become
+      reconstruction reads and bundles capture them automatically.
 
 - [x] file_format_version now rides every config file's Metadata section
       (wiring DONE, DONE.md). Policy: bump the relevant per-type constant

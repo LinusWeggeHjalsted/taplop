@@ -502,7 +502,6 @@ pub fn handleMetaEvent(
                 history.file_source,
                 allocator,
                 level_path,
-                start.mission_path,
                 &balance_warnings,
             ) catch {
                 failReconstructionRead(history, "failed to parse level file");

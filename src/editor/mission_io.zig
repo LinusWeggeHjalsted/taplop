@@ -26,7 +26,8 @@ const GameStateHistory = state.GameStateHistory;
 
 /// Scan the mission directory's .pngs into `session.editor_mission_sprites`
 /// (the sprite picker's mission-local tab): one entry per file, each
-/// carrying its namespaced id (`custom/<mission-dir>/<stem>`, minted HERE
+/// carrying its content-addressed id (`custom/<mission content path>/<stem>`
+/// - file_source.customStemForContentPath, minted HERE
 /// so the pick payload + the commit id reference session-owned bytes -
 /// see MissionSprite.stored_id) and the PNG's pixel dims (IHDR read at
 /// scan time - the decoration cells' aspect-fit needs them; an
@@ -45,7 +46,6 @@ pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Edit
         allocator.free(entry.stored_id);
     }
     allocator.free(session.editor_mission_sprites);
-    const mission_directory = types.missionDirectoryName(editor.mission.path);
     const names = history.file_source.listPersistentPngFiles(
         allocator,
         editor.mission.path,
@@ -61,11 +61,7 @@ pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Edit
             stem,
             allocator,
         ) orelse types.Vector2{ .x = 0, .y = 0 };
-        const stored_id = std.fmt.allocPrint(
-            allocator,
-            "custom/{s}/{s}",
-            .{ mission_directory, stem },
-        ) catch @panic("failed to scan mission sprites");
+        const stored_id = file_source_mod.customStemForContentPath(editor.mission.path, stem, allocator);
         sprites.append(allocator, .{
             .file_name = file_name,
             .stored_id = stored_id,
@@ -170,32 +166,34 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         uuid = minted_uuid.?;
     }
 
-    // 2. Derive the save target's dir name - the stem-namespace target
-    //    (the writer normalizes custom sprite stems to it) + the art-copy
-    //    target - then project the editor into file contents (transient -
-    //    the scratch arena reclaims them at the next idle point).
+    // 2. Derive the save target's dir path (the content path custom sprite
+    //    stems normalize to - their tail IS the art's read path - and the
+    //    art-copy target), then project the editor into file contents
+    //    (transient - the scratch arena reclaims them at the next idle
+    //    point).
     const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
     const mission_dir_name = std.fmt.allocPrint(
         scratch,
         "{s}_{s}",
         .{ uuid, sanitized_name },
     ) catch @panic("failed to format mission dir name");
-    const written = writers.writeEditorMission(editor.*, uuid, mission_dir_name, scratch) catch |write_error| {
-        const message = switch (write_error) {
-            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
-            else => "failed to save: out of memory",
-        };
-        history.session.setPendingError(history.history_arena.allocator(), message);
-        if (minted_uuid) |minted| durable.free(minted);
-        return null;
-    };
-
-    // 3. Write into missions/<uuid>_<name>/.
     const dir_path = std.fmt.allocPrint(
         durable,
         "missions/{s}",
         .{mission_dir_name},
     ) catch @panic("failed to allocate mission dir path");
+    const written = writers.writeEditorMission(editor.*, uuid, dir_path, scratch) catch |write_error| {
+        const message = switch (write_error) {
+            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
+            else => "failed to save: out of memory",
+        };
+        history.session.setPendingError(history.history_arena.allocator(), message);
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return null;
+    };
+
+    // 3. Write into missions/<uuid>_<name>/.
     const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
         @panic("failed to allocate mission.txt path");
     const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
@@ -277,68 +275,58 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
 /// Copy every REFERENCED custom sprite PNG - entity + decoration palette
 /// types, base + layers (placements reference types; the player has no
 /// custom sprite) - into the save target dir. The single-dir rule: custom
-/// art lives in the mission's OWN directory, and the save is where a
-/// renamed mission carries its art forward (the writer normalizes the
-/// stems' namespace to the same target in the same save). Source
-/// resolution: the mission's CURRENT dir first (the rule's home), then
-/// the stem's embedded namespace - legacy content authored before a
-/// rename, a one-time migration read that self-heals it. A missing
-/// source is skipped - the load side already warned. Returns false only
-/// on a target WRITE failure (the config-write failure class), with the
-/// popup already surfaced.
+/// art is content-addressed (the stem's tail IS its read path - see
+/// file_source.customAssetTail), and the save is where a renamed mission
+/// carries its art forward: the writer rewrites the stems to the new dir
+/// (normalizedCustomStem) and this copy reads each PNG from the path its
+/// OLD stem addresses (readFile's tiers) + writes it into the new dir. A
+/// missing source is skipped - the load side already warned. Returns
+/// false only on a target WRITE failure (the config-write failure class),
+/// with the popup already surfaced.
 fn copyReferencedCustomSprites(
     history: *GameStateHistory,
     editor: *const types.Editor,
     dir_path: []const u8,
 ) bool {
     for (editor.entity_types) |entity_type| {
-        if (!copyOneReferencedCustomSprite(history, editor.mission.path, entity_type.template.sprite, dir_path)) return false;
+        if (!copyOneReferencedCustomSprite(history, entity_type.template.sprite, dir_path)) return false;
         for (entity_type.template.layers) |layer| {
-            if (!copyOneReferencedCustomSprite(history, editor.mission.path, layer.sprite, dir_path)) return false;
+            if (!copyOneReferencedCustomSprite(history, layer.sprite, dir_path)) return false;
         }
     }
     for (editor.decoration_types) |decoration_type| {
-        if (!copyOneReferencedCustomSprite(history, editor.mission.path, decoration_type.sprite, dir_path)) return false;
+        if (!copyOneReferencedCustomSprite(history, decoration_type.sprite, dir_path)) return false;
         for (decoration_type.layers) |layer| {
-            if (!copyOneReferencedCustomSprite(history, editor.mission.path, layer.sprite, dir_path)) return false;
+            if (!copyOneReferencedCustomSprite(history, layer.sprite, dir_path)) return false;
         }
     }
     return true;
 }
 
-/// One referenced stem's PNG: resolve a source (current dir, then the
-/// stem's embedded namespace), read it, write it into `dir_path` under the
-/// FILE STEM (the namespace is identity-only). Non-custom and degenerate
-/// stems no-op; a missing source skips; a write failure surfaces the
-/// popup + returns false.
+/// One referenced stem's PNG: read it from the path its id addresses (the
+/// tail after `custom/` - file_source.customAssetTail; readFile's tiers
+/// cover both the persistent root and embedded `data/` content), write it
+/// into `dir_path` under the FILE STEM. Non-custom and degenerate stems
+/// no-op; a missing source skips (already warned at load); a write failure
+/// surfaces the popup + returns false.
 fn copyOneReferencedCustomSprite(
     history: *GameStateHistory,
-    mission_path: []const u8,
     sprite_stem: []const u8,
     dir_path: []const u8,
 ) bool {
-    if (!std.mem.startsWith(u8, sprite_stem, "custom/")) return true;
-    const slash = std.mem.lastIndexOfScalar(u8, sprite_stem, '/') orelse return true;
-    const file_stem = sprite_stem[slash + 1 ..];
+    const tail = file_source_mod.customAssetTail(sprite_stem) orelse return true;
+    const slash = std.mem.lastIndexOfScalar(u8, tail, '/') orelse return true;
+    const file_stem = tail[slash + 1 ..];
     if (file_stem.len == 0) return true;
     const scratch = history.current_arena.allocator();
 
-    const current_dir_path = std.fmt.allocPrint(
+    const source_path = std.fmt.allocPrint(
         scratch,
-        "{s}/{s}.png",
-        .{ mission_path, file_stem },
+        "{s}.png",
+        .{tail},
     ) catch @panic("failed to build custom sprite source path");
-    const bytes = history.file_source.readFile(scratch, current_dir_path) catch blk: {
-        // Legacy source: the stem's embedded namespace (pre-rename
-        // content - the migration read).
-        const embedded_path = std.fmt.allocPrint(
-            scratch,
-            "missions/{s}.png",
-            .{sprite_stem["custom/".len..]},
-        ) catch @panic("failed to build custom sprite legacy source path");
-        break :blk history.file_source.readFile(scratch, embedded_path) catch
-            return true; // missing source: skip - already warned at load
-    };
+    const bytes = history.file_source.readFile(scratch, source_path) catch
+        return true; // missing source: skip - already warned at load
     const target_path = std.fmt.allocPrint(
         scratch,
         "{s}/{s}.png",

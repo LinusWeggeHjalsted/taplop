@@ -247,7 +247,7 @@ pub fn buildEditorSkillPicker(
 /// The centered SPRITE picker (the picker framework's second consumer):
 /// pick the edited entity type's base sprite. Two tabs top-left - Mission
 /// (the .pngs scanned from the mission directory, stored as namespaced
-/// `custom/<mission-dir>/<stem>` ids) and Official (the shipped entity
+/// `custom/missions/<dir>/<stem>` ids) and Official (the shipped entity
 /// sprites, minus the player body); close top-right. One 256×256 cell per
 /// option (the palette tool-cell look). Dropdown semantics like the skill
 /// picker: blocks only where it sits, stays open until a pick or close.
@@ -369,7 +369,7 @@ pub fn buildEditorSpritePicker(
     };
 
     // One cell per offered sprite, built per frame into the frame arena:
-    // the stored id (a bare stem or a namespaced `custom/<mission>/<stem>`),
+    // the stored id (a bare stem or a content-addressed `custom/<path>/<stem>`),
     // the cell label, the renderable graphic (null = a text-only cell,
     // the degenerate-dims fallback), and the graphic's aspect-fit
     // frame. The Official tab's list differs per kind: the shipped entity
@@ -400,9 +400,9 @@ pub fn buildEditorSpritePicker(
         untinted: bool = false,
     };
     var cells: std.ArrayList(PickerCell) = .empty;
-    // Custom mission-bundled art renders under the kind's folder prefix
+    // Custom (content-bundled) art renders under the kind's folder prefix
     // (the same id view() builds - the texture store resolves
-    // `custom/<mission-dir>/<stem>` ids to the mission directory; see
+    // `custom/<content-path>/<stem>` ids to the art's own location; see
     // assetPathFor in src/raylib/textures.zig).
     const mission_kind_prefix: []const u8 = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
         "decorations/"
@@ -1445,7 +1445,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     }
 
     // Mission tab: the scanned files become namespaced
-    // `custom/<mission-dir>/<stem>` payloads with RENDERABLE graphics -
+    // `custom/<content-path>/<stem>` payloads with RENDERABLE graphics -
     // the kind's folder-prefixed id (`entities/custom/...`, resolved to
     // the mission dir at the texture store) UNTINTED (custom art keeps
     // its own colors) at the 512x640 entity-frame convention.

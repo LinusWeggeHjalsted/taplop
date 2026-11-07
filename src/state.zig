@@ -127,7 +127,7 @@ pub const EditorSavedMission = struct {
 /// aspect-fit degrades to the full cell - `scaleToFit`'s fallback).
 pub const MissionSprite = struct {
     file_name: []const u8,
-    /// The namespaced mission-local id (`custom/<mission-dir>/<stem>`)
+    /// The content-addressed mission-local id (`custom/missions/<dir>/<stem>`)
     /// - the sprite picker's pick payload + the id the edited type
     /// stores on commit. MINTED AT SCAN TIME (backing_allocator, freed
     /// with the list) so every consumer references session-owned bytes:

@@ -9,6 +9,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const types = @import("../types.zig");
+const file_source = @import("../file_source.zig");
 
 /// Which side of the silhouette an outline mask sits on. OUTER = the band
 /// of transparent pixels within `thickness` of an opaque pixel (a halo
@@ -47,15 +48,22 @@ const path_buffer_size = 512;
 /// dir name, so the path is derivable from the id alone - see DESIGN →
 /// Custom Missions & Online Services → the sprite id convention). The
 /// returned slice borrows `path_buffer`.
+/// Map a sprite id to its file path. Shipped art is `assets/{id}.png`.
+/// Custom ids (`entities/custom/...`, `decorations/custom/...`) are
+/// content-addressed: the segment chain after `custom/` IS the content
+/// path (file_source.customAssetTail - the same rule the loader's dims
+/// resolution uses), so the tail + `.png` is the read path and
+/// FileSource.readFile's tiers resolve it (persistent root, then
+/// embedded `data/` content - dreams vs campaign-bundled art). See
+/// DESIGN → Custom Missions & Online Services → Custom-asset paths.
 fn assetPathFor(sprite_id: []const u8, path_buffer: []u8) []const u8 {
     const custom_kinds = [_][]const u8{ "entities/custom/", "decorations/custom/" };
     for (custom_kinds) |custom_kind| {
         if (std.mem.startsWith(u8, sprite_id, custom_kind)) {
-            return std.fmt.bufPrint(
-                path_buffer,
-                "missions/{s}.png",
-                .{sprite_id[custom_kind.len..]},
-            ) catch @panic("failed to build custom asset path");
+            const tail = file_source.customAssetTail(sprite_id) orelse
+                @panic("degenerate custom sprite id");
+            return std.fmt.bufPrint(path_buffer, "{s}.png", .{tail}) catch
+                @panic("failed to build custom asset path");
         }
     }
     return std.fmt.bufPrint(path_buffer, "assets/{s}.png", .{sprite_id}) catch

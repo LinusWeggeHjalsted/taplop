@@ -1929,7 +1929,6 @@ pub fn handleAnytimeInput(
                 if (std.mem.startsWith(u8, sprite, "custom/") and
                     !loaders.customEntitySpriteConforms(
                         history.file_source,
-                        editor.mission.path,
                         sprite,
                         history.current_arena.allocator(),
                     ))
@@ -1986,7 +1985,7 @@ pub fn handleAnytimeInput(
 
                 // Resolve the new definition from the pick: a registry
                 // stem adopts its prefab, anything else is a mission-local
-                // stem (`custom/<mission-dir>/<file-stem>` - the file stem
+                // stem (`custom/<content-path>/<file-stem>` - the file stem
                 // is the last path segment; file names carry no '/').
                 var prefab: ?types.DecorationTypeDef = null;
                 for (history.session.editor_decoration_registry) |definition| {
@@ -2098,7 +2097,6 @@ pub fn handleAnytimeInput(
                 if (std.mem.startsWith(u8, sprite, "custom/") and
                     !loaders.customEntitySpriteConforms(
                         history.file_source,
-                        editor.mission.path,
                         sprite,
                         arena,
                     ))

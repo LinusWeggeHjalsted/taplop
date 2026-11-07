@@ -2459,8 +2459,8 @@ fn decorationLayerSpriteId(sprite_name: []const u8, allocator: std.mem.Allocator
 fn decorationSpriteIdFromName(name: []const u8, allocator: std.mem.Allocator) []const u8 {
     // Config stores the bare stem (e.g. `tree_1`); the `decorations/` folder
     // is a code-level convention, same as `entities/{s}` for entity sprites.
-    // Custom decorations use a stem like `custom/<mission>/<name>` which still
-    // lands under `decorations/custom/<mission>/<name>`.
+    // Custom decorations use a content-addressed stem (`custom/<path>/<name>`)
+    // which lands under `decorations/custom/<path>/<name>`.
     return std.fmt.allocPrint(allocator, "decorations/{s}", .{name}) catch
         @panic("failed to build decoration sprite id");
 }

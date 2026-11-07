@@ -3524,18 +3524,18 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0].file_name);
     // The scan MINTS the namespaced id (session-owned - the pick payload
     // + the commit id reference these bytes; see MissionSprite.stored_id).
-    try testing.expectEqualStrings("custom/artists_den/boss", history.session.editor_mission_sprites[0].stored_id);
+    try testing.expectEqualStrings("custom/missions/artists_den/boss", history.session.editor_mission_sprites[0].stored_id);
 
     // Pick the mission-local sprite: the namespaced id
-    // (`custom/<mission-dir>/<stem>`) commits through the existing
+    // (`custom/missions/<dir>/<stem>` - content-addressed) commits through the existing
     // player_set_editor_entity_sprite event (on the undo timeline).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-    }, .{ .editor_sprite = "custom/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/missions/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.picker == null);
     try testing.expectEqualStrings(
-        "custom/artists_den/boss",
+        "custom/missions/artists_den/boss",
         history.current_state.editor.?.entity_types[0].template.sprite,
     );
     // The pick-time default follows the art source: a mission-local pick
@@ -3619,7 +3619,7 @@ test "sprite pick backstop: a wrong-dims custom entity sprite no-ops" {
     }, null, .{ .x = 0, .y = 0 }, &.{});
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_sprite,
-    }, .{ .editor_sprite = "custom/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
+    }, .{ .editor_sprite = "custom/missions/artists_den/boss" }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
 
     // The pick visibly didn't take: the sprite is unchanged and no undo
@@ -4101,7 +4101,7 @@ test "editor save: a renamed mission carries its custom art + heals stale stem n
         .entity_types = &[_]types.EntityTypeDef{
             .{ .id = "Hero", .template = .{
                 .name = "Hero",
-                .sprite = "custom/11111111-1111-1111-1111-111111111111_Old Name/hero",
+                .sprite = "custom/missions/11111111-1111-1111-1111-111111111111_Old Name/hero",
                 .team = 1,
             } },
         },
@@ -4142,7 +4142,7 @@ test "editor save: a renamed mission carries its custom art + heals stale stem n
             try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{new_dir}),
         );
         try testing.expect(
-            std.mem.indexOf(u8, level_txt, "custom/11111111-1111-1111-1111-111111111111_New Name/hero") != null,
+            std.mem.indexOf(u8, level_txt, "custom/missions/11111111-1111-1111-1111-111111111111_New Name/hero") != null,
         );
         try testing.expect(std.mem.indexOf(u8, level_txt, "Old Name") == null);
     }

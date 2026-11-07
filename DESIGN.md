@@ -2765,6 +2765,45 @@ the campaign.
   stats. `boundedU32(value_str, max, field_name, file_path, warnings, allocator)`
   is the helper; a null `warnings` list clamps silently (the test path).
 
+### Custom-asset paths (the id IS the location)
+
+A custom sprite id is CONTENT-ADDRESSED: the segment chain after `custom/`
+IS the file's location, relative to the content root, minus the `.png`
+(`file_source.customAssetTail` - the ONE resolution rule, shared by the
+loader's dims read and the texture store's byte read so the two can never
+drift again):
+
+- dreams: `custom/missions/<mission-dir>/<stem>` (persistent
+  `missions/<mission-dir>/<stem>.png`)
+- campaign-bundled art: `custom/campaigns/<campaign>/missions|hubs/<dir>/<stem>`
+  (embedded `data/campaigns/...` for the official campaign, persistent
+  `campaigns/...` for custom campaigns)
+
+`FileSource.readFile` resolves those paths across both tiers: persistent
+dir first, then embedded as-is (`assets/...`), then embedded under a
+`data/` prefix (the campaign-content bridge). Minting goes through
+`file_source.customStemForContentPath` (the inverse; a leading `data/` is
+stripped) - the editor scan mints dream ids from the mission's path, the
+future hub editor mints hub ids the same way, and the save's stem
+normalization (`normalizedCustomStem`) rewrites stale paths to the save
+target while the save's art copy carries the bytes there.
+
+Why the id must carry the full path (not a dir name + context): the
+texture cache keys by sprite id with no knowledge of what's currently
+loaded, so ids must be globally unique and mean the same file everywhere -
+a context-relative id from two missions would collide in the cache and
+render the wrong art. Consequence: renaming a campaign/hub/mission dir
+means rewriting the custom stems in its files (the same
+rewrite-references pass as `destination_hub` values).
+
+History: the pre-campaign-editor shape was `custom/<mission-dir>/<stem>`,
+resolved by the LOADER against the loading file's dir but by the TEXTURE
+STORE against a hardcoded persistent `missions/` root - internally
+inconsistent (campaign-bundled art would have resolved dims at load and
+rendered magenta), and hubs could not even construct their path (no
+campaign segment). The campaign-editor slice 1c settle replaced both
+channels with the one rule above.
+
 ### Custom-asset dimensions (warn + degrade, never reject)
 
 Custom (mission-bundled) sprites follow the shipped asset structure:
@@ -2902,10 +2941,11 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   question - see TODO.
 - **hub.txt**: `Exits` entries gain `destination_hub`; the `NPCs` section
   becomes `character_code` + `npc_type`. Hubs bundle their own custom
-  decoration art - `hubs/<hub>/` gains the art folder, custom stems resolve
-  as `custom/<hub-dir>/<stem>` (the exact mission-bundle pattern). The
-  official campaign ships no custom art, but fully custom campaigns are
-  possible and self-contained.
+  decoration art - `hubs/<hub>/` gains the art folder, custom stems
+  content-addressed as `custom/campaigns/<campaign>/hubs/<hub>/<stem>`
+  (the ONE rule - Custom Missions & Online Services → Custom-asset paths).
+  The official campaign ships no custom art, but fully custom campaigns
+  are possible and self-contained.
 - **NPCs are NOT entities** (the old `NPC { entity }` was stale scaffolding):
   `NPC = { npc_type, position }` - the sprite DERIVES from the type (the
   two shipped `assets/npcs/` files; `NpcType = { gear_upgrader,

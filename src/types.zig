@@ -115,17 +115,6 @@ pub fn decorationSpriteDimsConform(dims: Vector2) bool {
     return dims.x > 0 and dims.y > 0 and @rem(dims.x, 256) == 0 and @rem(dims.y, 256) == 0;
 }
 
-/// The mission directory's NAME (the last path segment) - the namespace
-/// for mission-local sprite ids (`custom/<mission-dir>/<stem>`). The id
-/// convention's own helper: the scan mints the ids (mission_io), the
-/// picker + the load side read them back.
-pub fn missionDirectoryName(mission_path: []const u8) []const u8 {
-    if (std.mem.lastIndexOfScalar(u8, mission_path, '/')) |slash| {
-        return mission_path[slash + 1 ..];
-    }
-    return mission_path;
-}
-
 /// The render-side custom-art gate: does this sprite id's kind accept these
 /// pixel dims? Custom (mission-bundled) art must follow the shipped asset
 /// structure - entity sprites exactly the fixed 512x640 frame, decoration

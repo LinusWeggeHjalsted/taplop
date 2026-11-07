@@ -871,7 +871,7 @@ pub fn buildEditorMission(
     var editor_levels: std.ArrayList(types.EditorLevel) = .empty;
 
     for (parsed_level_sections) |sections| {
-        const level = try loadLevel(sections, file_source, allocator, mission_path, mission_path, warnings);
+        const level = try loadLevel(sections, file_source, allocator, mission_path, warnings);
 
         // Entity placements: entity 0 is the player (skip - loadout comes from
         // player_def, spawn is player_start). entities 1..N dedup into the palette.
@@ -1001,10 +1001,9 @@ pub fn loadEditorDefaultLevel(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !types.EditorLevel {
-    // The template contract forbids decorations, so it carries no
-    // mission-bundled stems - an empty mission path makes any custom
-    // stem fail fast.
-    const level = try loadLevel(sections, file_source, allocator, "", file_path, warnings);
+    // The template contract forbids decorations (the DefaultLevelHasEntries
+    // check below enforces it).
+    const level = try loadLevel(sections, file_source, allocator, file_path, warnings);
     if (level.level_end == null) return error.MissingDefaultLevelEnd;
     if (level.entities.len != 1 or level.decorations.len != 0 or level.ground_items.len != 0) {
         return error.DefaultLevelHasEntries;
@@ -1245,14 +1244,13 @@ pub fn decorationFootprintCovers(
 /// metadata table and skip the check.
 fn warnEntitySpriteDimensions(
     entity: types.Entity,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
     file_path: []const u8,
 ) void {
     if (!std.mem.startsWith(u8, entity.sprite, "custom/")) return;
-    const dims = resolveCustomSpriteFileDims(entity.sprite, mission_path, file_source, allocator) orelse {
+    const dims = resolveCustomSpriteFileDims(entity.sprite, file_source, allocator) orelse {
         appendLoadWarning(
             allocator,
             warnings,
@@ -1271,7 +1269,7 @@ fn warnEntitySpriteDimensions(
     }
     for (entity.layers) |layer| {
         if (!std.mem.startsWith(u8, layer.sprite, "custom/")) continue;
-        const layer_dims = resolveCustomSpriteFileDims(layer.sprite, mission_path, file_source, allocator) orelse {
+        const layer_dims = resolveCustomSpriteFileDims(layer.sprite, file_source, allocator) orelse {
             appendLoadWarning(
                 allocator,
                 warnings,
@@ -1401,7 +1399,6 @@ fn clampDecorationFootprint(
 /// shape + `layer` delimiter semantics.
 fn parseDecorationEntry(
     pairs: []const KeyValuePair,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
@@ -1421,7 +1418,7 @@ fn parseDecorationEntry(
     //     view math chunks per 256px bbox tile; edge remainder crops)
     //   - beyond 4096px → kept, warned (may exceed device max texture size)
     var base_pixel_dims: types.Vector2 = undefined;
-    if (resolveDecorationSpriteDimensions(base_sprite, mission_path, file_source, allocator)) |dims| {
+    if (resolveDecorationSpriteDimensions(base_sprite, file_source, allocator)) |dims| {
         base_pixel_dims = dims;
     } else {
         appendLoadWarning(
@@ -1470,7 +1467,6 @@ fn parseDecorationEntry(
                 current_layer_behind,
                 base_sprite,
                 base_pixel_dims,
-                mission_path,
                 file_source,
                 allocator,
                 warnings,
@@ -1520,7 +1516,6 @@ fn parseDecorationEntry(
         current_layer_behind,
         base_sprite,
         base_pixel_dims,
-        mission_path,
         file_source,
         allocator,
         warnings,
@@ -1552,7 +1547,6 @@ fn finishLayer(
     layer_behind: bool,
     base_sprite: []const u8,
     base_pixel_dims: types.Vector2,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
@@ -1560,7 +1554,7 @@ fn finishLayer(
     layers: *std.ArrayList(types.DecorationLayer),
 ) void {
     const sprite = layer_sprite orelse return;
-    const layer_dims = resolveDecorationSpriteDimensions(sprite, mission_path, file_source, allocator) orelse {
+    const layer_dims = resolveDecorationSpriteDimensions(sprite, file_source, allocator) orelse {
         appendLoadWarning(
             allocator,
             warnings,
@@ -1610,7 +1604,6 @@ fn finishLayer(
 /// `parseDecorationEntry` + `finishLayer`.
 fn parseDecorationDefinitions(
     sections: []const Section,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
@@ -1621,7 +1614,7 @@ fn parseDecorationDefinitions(
         for (section.entry_groups) |group| {
             const code_string = findValue(group.pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            definitions.put(code_string[0], parseDecorationEntry(group.pairs, mission_path, file_source, allocator, warnings, file_path)) catch
+            definitions.put(code_string[0], parseDecorationEntry(group.pairs, file_source, allocator, warnings, file_path)) catch
                 @panic("failed to insert decoration definition");
         }
     }
@@ -1652,7 +1645,7 @@ pub fn loadDecorationRegistry(
             if (findValue(group.pairs, "sprite") == null) continue;
             // Shipped content; warnings are null (registry regressions are
             // caught by the content tests, not surfaced at runtime).
-            const def = parseDecorationEntry(group.pairs, "", file_source, allocator, null, "");
+            const def = parseDecorationEntry(group.pairs, file_source, allocator, null, "");
             list.append(allocator, .{
                 .id = def.sprite,
                 .sprite = def.sprite,
@@ -1710,10 +1703,7 @@ pub fn loadEditorDefaults(
     if (decorations_section.entry_groups.len == 0) return error.MissingDefaultEntry;
     const decoration_pairs = decorations_section.entry_groups[0].pairs;
     if (findValue(decoration_pairs, "sprite") == null) return error.MissingDefaultEntry;
-    // Registry + editor-defaults entries are shipped, mission-agnostic
-    // content - a custom (mission-bundled) stem can't resolve here; it
-    // degrades to the 256x256 fallback with a warning.
-    const decoration_definition = parseDecorationEntry(decoration_pairs, "", file_source, allocator, warnings, file_path);
+    const decoration_definition = parseDecorationEntry(decoration_pairs, file_source, allocator, warnings, file_path);
 
     // Item: the first Items entry (a valid item_type is required).
     const items_section = findSection(sections, "Items") orelse return error.MissingDefaultEntry;
@@ -1745,32 +1735,22 @@ fn parseVector2Pair(value: []const u8) ?types.Vector2 {
     return .{ .x = x, .y = y };
 }
 
-/// Extract the file stem from a namespaced custom stem
-/// (`custom/<mission-dir>/<file-stem>` - the last path segment; the dir
-/// name is namespace-only, never a read path). Returns null for a stem
-/// with no segment after the last slash.
-fn customFileStem(sprite_stem: []const u8) ?[]const u8 {
-    const slash = std.mem.lastIndexOfScalar(u8, sprite_stem, '/') orelse return null;
-    if (slash + 1 >= sprite_stem.len) return null;
-    return sprite_stem[slash + 1 ..];
-}
-
-/// Resolve a namespaced custom stem's pixel dims by reading
-/// `<mission_path>/<file-stem>.png` and parsing its IHDR. Returns null
-/// when the stem is malformed, the mission path or file source is
-/// missing, or the file is unreadable or not a valid PNG - callers
-/// degrade with a warning (custom content is untrusted; never a crash).
+/// Resolve a custom sprite stem's pixel dims by reading the PNG its id
+/// addresses (the tail after `custom/` IS the content path -
+/// file_source.customAssetTail; readFile's tiers cover both the persistent
+/// root and embedded `data/` content). Returns null when the stem is
+/// malformed, the file source is missing, or the file is unreadable or not
+/// a valid PNG - callers degrade with a warning (custom content is
+/// untrusted; never a crash).
 fn resolveCustomSpriteFileDims(
     sprite_stem: []const u8,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) ?types.Vector2 {
-    const file_stem = customFileStem(sprite_stem) orelse return null;
-    if (mission_path.len == 0) return null;
+    const tail = file_source_mod.customAssetTail(sprite_stem) orelse return null;
     const source = file_source orelse return null;
-    const path = std.fmt.allocPrint(allocator, "{s}/{s}.png", .{ mission_path, file_stem }) catch
-        @panic("failed to build mission sprite path for dims resolution");
+    const path = std.fmt.allocPrint(allocator, "{s}.png", .{tail}) catch
+        @panic("failed to build custom sprite path for dims resolution");
     defer allocator.free(path);
     const bytes = source.readFile(allocator, path) catch return null;
     defer allocator.free(bytes);
@@ -1778,39 +1758,39 @@ fn resolveCustomSpriteFileDims(
 }
 
 /// The pick-commit backstop for custom ENTITY sprites (the picker filter's
-/// defense-in-depth - a stale scan or crafted input): does the namespaced
-/// stem resolve to a PNG with exactly the fixed 512x640 entity frame?
+/// defense-in-depth - a stale scan or crafted input): does the custom stem
+/// resolve to a PNG with exactly the fixed 512x640 entity frame?
 /// False on missing/invalid files too.
 pub fn customEntitySpriteConforms(
     file_source: *const FileSource,
-    mission_path: []const u8,
     sprite_stem: []const u8,
     allocator: std.mem.Allocator,
 ) bool {
-    const dims = resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator) orelse
+    const dims = resolveCustomSpriteFileDims(sprite_stem, file_source, allocator) orelse
         return false;
     return types.entitySpriteDimsConform(dims);
 }
 
 /// Resolve a decoration sprite's pixel dims at LOAD time. Exactly two
-/// channels - custom assets are always mission-bundled and never live
-/// under assets/ (see DESIGN → Custom Missions & Online Services):
-///   1. a `custom/<mission-dir>/<file-stem>` stem reads the PNG from the
-///      mission directory being loaded (`{mission_path}/{file-stem}.png`)
+/// channels - custom assets are always content-addressed and never live
+/// under assets/ (see DESIGN → Custom Missions & Online Services →
+/// Custom-asset paths):
+///   1. a `custom/<content-path>/<file-stem>` stem reads the PNG its id
+///      addresses (file_source.customAssetTail - the same rule the texture
+///      store uses for the bytes)
 ///   2. anything else must be a shipped decoration (comptime table -
 ///      keyed by the asset-relative path `decorations/tree_1`, so the
 ///      bare config stem gets the `decorations/` prefix)
 /// Returns null when neither channel resolves (an unknown shipped stem,
-/// or a missing/invalid mission PNG) - the caller degrades with a
+/// or a missing/invalid custom PNG) - the caller degrades with a
 /// warning (custom content is untrusted; never a crash).
 fn resolveDecorationSpriteDimensions(
     sprite_stem: []const u8,
-    mission_path: []const u8,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) ?types.Vector2 {
     if (std.mem.startsWith(u8, sprite_stem, "custom/")) {
-        return resolveCustomSpriteFileDims(sprite_stem, mission_path, file_source, allocator);
+        return resolveCustomSpriteFileDims(sprite_stem, file_source, allocator);
     }
 
     const full_id = std.fmt.allocPrint(allocator, "decorations/{s}", .{sprite_stem}) catch
@@ -2054,7 +2034,6 @@ pub fn loadLevel(
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
     file_path: []const u8,
-    mission_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !Level {
     try validateSections(sections, &level_sections);
@@ -2084,7 +2063,7 @@ pub fn loadLevel(
     // Parse decoration definitions keyed by character code (sprite +
     // sprite-grid footprint + pixel dims). Replaces the old decoration_codes
     // list - the layout walk now looks up the full definition per char.
-    var decoration_definitions = parseDecorationDefinitions(sections, mission_path, file_source, allocator, warnings, file_path);
+    var decoration_definitions = parseDecorationDefinitions(sections, file_source, allocator, warnings, file_path);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
     var entity_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
     defer freeEntityDefinitions(&entity_definitions, allocator);
@@ -2094,7 +2073,7 @@ pub fn loadLevel(
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
             const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator, file_path, warnings);
-            warnEntitySpriteDimensions(entity, mission_path, file_source, allocator, warnings, file_path);
+            warnEntitySpriteDimensions(entity, file_source, allocator, warnings, file_path);
             try entity_definitions.put(code_string[0], entity);
         }
     }
@@ -2263,11 +2242,10 @@ pub fn loadHub(
         }
     }
 
-    // Parse decoration definitions keyed by character code (same as levels).
-    // Hubs carry no mission-bundled stems (campaign content only) - a custom
-    // stem can't resolve against the empty mission path and degrades to the
-    // fallback with a warning.
-    var decoration_definitions = parseDecorationDefinitions(sections, "", file_source, allocator, warnings, file_path);
+    // Parse decoration definitions keyed by character code (same as levels;
+    // custom stems are content-addressed - see DESIGN → Campaigns & the
+    // Campaign Editor → File formats).
+    var decoration_definitions = parseDecorationDefinitions(sections, file_source, allocator, warnings, file_path);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
 
     // Collect exit character codes
@@ -3018,7 +2996,7 @@ test "loadLevel parses a complete level" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // Metadata
@@ -3087,7 +3065,7 @@ test "loadLevel decorations do not create tiles" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // 8 tiles: 9 positions minus 1 decoration
@@ -3138,7 +3116,7 @@ test "loadLevel multi-tile decoration footprint" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // T is at row 0, col 0 -> world (0, 0) (natural reading order). The
@@ -3195,7 +3173,7 @@ test "keep_original_colors: parses for entities + decorations, default false, de
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // The authored flags parse; the absent key defaults false.
@@ -3245,7 +3223,7 @@ test "loadLevel decoration with layers" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     try std.testing.expectEqual(1, level.decorations.len);
@@ -3280,11 +3258,12 @@ pub fn minimalPngHeader(allocator: std.mem.Allocator, width: u32, height: u32) [
 
 test "loadLevel resolves mission-bundled custom decoration stems" {
     const allocator = std.testing.allocator;
-    // Custom assets are mission-bundled: a `custom/<mission-dir>/<stem>`
-    // decoration stem must resolve its pixel dims from the mission being
-    // LOADED (`{mission_path}/{file-stem}.png`), never from assets/ - the
-    // reload path that used to panic (see DESIGN → Custom Missions & Online
-    // Services → the centered sprite picker). Base + layer both route.
+    // Custom assets are content-addressed: a `custom/<content-path>/<stem>`
+    // decoration stem resolves its pixel dims from the PNG its id addresses
+    // (the tail after `custom/` + `.png`, through readFile's tiers), never
+    // from assets/ - the reload path that used to panic (see DESIGN →
+    // Custom Missions & Online Services → Custom-asset paths). Base + layer
+    // both route.
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
@@ -3298,10 +3277,10 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
     // Two mission-local PNGs: 512x256 (a 2x1 tile grid).
     const boss_png = minimalPngHeader(allocator, 512, 256);
     defer allocator.free(boss_png);
-    file_source.writeFile("test_m/boss.png", boss_png) catch @panic("write boss.png");
+    file_source.writeFile("missions/test_m/boss.png", boss_png) catch @panic("write boss.png");
     const banner_png = minimalPngHeader(allocator, 512, 256);
     defer allocator.free(banner_png);
-    file_source.writeFile("test_m/banner.png", banner_png) catch @panic("write banner.png");
+    file_source.writeFile("missions/test_m/banner.png", banner_png) catch @panic("write banner.png");
 
     const raw_text =
         \\Metadata
@@ -3316,10 +3295,10 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
         \\
         \\Decorations
         \\character_code D
-        \\sprite custom/test_m/boss
+        \\sprite custom/missions/test_m/boss
         \\footprint 0 0
         \\layer
-        \\sprite custom/test_m/banner
+        \\sprite custom/missions/test_m/banner
         \\color_index 2
         \\
         \\Items
@@ -3327,11 +3306,11 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, &file_source, allocator, "test_m/level_1.txt", "test_m", null);
+    const level = try loadLevel(sections, &file_source, allocator, "test_m/level_1.txt", null);
     defer freeLevel(level, allocator);
 
     try std.testing.expectEqual(1, level.decorations.len);
-    try std.testing.expectEqualStrings("custom/test_m/boss", level.decorations[0].name);
+    try std.testing.expectEqualStrings("custom/missions/test_m/boss", level.decorations[0].name);
     try std.testing.expectEqual(@as(i32, 512), level.decorations[0].pixel_dims.x);
     try std.testing.expectEqual(@as(i32, 256), level.decorations[0].pixel_dims.y);
     try std.testing.expectEqual(@as(i32, 512), level.decorations[0].layers[0].pixel_dims.x);
@@ -3394,7 +3373,7 @@ test "loadLevel clamps invalid decoration footprints (malformed, out-of-bbox, ov
     const sections = try parseConfigFile(raw_text, arena);
 
     var warnings: std.ArrayList([]const u8) = .empty;
-    const level = try loadLevel(sections, null, arena, "", "", &warnings);
+    const level = try loadLevel(sections, null, arena, "", &warnings);
 
     try std.testing.expectEqual(4, level.decorations.len);
     // A: default bottom-left tile.
@@ -3449,7 +3428,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
     for (fixtures) |fixture| {
         const png = minimalPngHeader(std.testing.allocator, fixture.width, fixture.height);
         defer std.testing.allocator.free(png);
-        const path = std.fmt.allocPrint(std.testing.allocator, "test_m/{s}", .{fixture.name}) catch
+        const path = std.fmt.allocPrint(std.testing.allocator, "missions/test_m/{s}", .{fixture.name}) catch
             @panic("failed to format fixture path");
         defer std.testing.allocator.free(path);
         file_source.writeFile(path, png) catch @panic("write fixture png");
@@ -3468,19 +3447,19 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
         \\
         \\Decorations
         \\character_code W
-        \\sprite custom/test_m/wide
+        \\sprite custom/missions/test_m/wide
         \\footprint 0 0
         \\
         \\character_code H
-        \\sprite custom/test_m/huge
+        \\sprite custom/missions/test_m/huge
         \\footprint 0 0
         \\
         \\character_code T
-        \\sprite custom/test_m/tiny
+        \\sprite custom/missions/test_m/tiny
         \\footprint 0 0
         \\
         \\character_code G
-        \\sprite custom/test_m/ghost
+        \\sprite custom/missions/test_m/ghost
         \\footprint 0 0
         \\
         \\character_code U
@@ -3492,7 +3471,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
     const sections = try parseConfigFile(raw_text, arena);
 
     var warnings: std.ArrayList([]const u8) = .empty;
-    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", "test_m", &warnings);
+    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", &warnings);
 
     try std.testing.expectEqual(5, level.decorations.len);
     // wide: floored to whole tiles.
@@ -3508,7 +3487,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "floored to 768x1024"));
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "exceeds 4096px"));
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "floored to 256x256"));
-    try std.testing.expect(hasLoadWarningContaining(warnings.items, "'custom/test_m/ghost'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "'custom/missions/test_m/ghost'"));
     try std.testing.expect(hasLoadWarningContaining(warnings.items, "'tree_99'"));
     // huge is grid-conformant: no floor warning for it (the >4096 device
     // warning still names its dims - different needle).
@@ -3548,7 +3527,7 @@ test "decoration layer dims mismatch vs base: kept + warned (no panic)" {
     const sections = try parseConfigFile(raw_text, arena);
 
     var warnings: std.ArrayList([]const u8) = .empty;
-    const level = try loadLevel(sections, null, arena, "", "", &warnings);
+    const level = try loadLevel(sections, null, arena, "", &warnings);
 
     try std.testing.expectEqual(1, level.decorations[0].layers.len);
     try std.testing.expectEqualStrings("stone_1", level.decorations[0].layers[0].sprite);
@@ -3574,10 +3553,10 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
     // PNG at all. All warn-only - the fixed-frame render continues.
     const hero_png = minimalPngHeader(std.testing.allocator, 512, 640);
     defer std.testing.allocator.free(hero_png);
-    file_source.writeFile("test_m/hero.png", hero_png) catch @panic("write hero.png");
+    file_source.writeFile("missions/test_m/hero.png", hero_png) catch @panic("write hero.png");
     const tiny_png = minimalPngHeader(std.testing.allocator, 256, 256);
     defer std.testing.allocator.free(tiny_png);
-    file_source.writeFile("test_m/tiny.png", tiny_png) catch @panic("write tiny.png");
+    file_source.writeFile("missions/test_m/tiny.png", tiny_png) catch @panic("write tiny.png");
 
     const raw_text =
         \\Metadata
@@ -3591,21 +3570,21 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
         \\Entities
         \\character_code E
         \\name Hero
-        \\sprite custom/test_m/hero
+        \\sprite custom/missions/test_m/hero
         \\
         \\character_code F
         \\name WrongDims
-        \\sprite custom/test_m/tiny
+        \\sprite custom/missions/test_m/tiny
         \\
         \\character_code G
         \\name Missing
-        \\sprite custom/test_m/missing
+        \\sprite custom/missions/test_m/missing
         \\
         \\character_code H
         \\name Layered
-        \\sprite custom/test_m/hero
+        \\sprite custom/missions/test_m/hero
         \\layer
-        \\sprite custom/test_m/tiny
+        \\sprite custom/missions/test_m/tiny
         \\color_index 2
         \\
         \\Decorations
@@ -3615,21 +3594,21 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
     const sections = try parseConfigFile(raw_text, arena);
 
     var warnings: std.ArrayList([]const u8) = .empty;
-    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", "test_m", &warnings);
+    const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", &warnings);
 
     // All four entities load regardless of sprite spec - warn-only.
     try std.testing.expectEqual(5, level.entities.len);
-    try std.testing.expectEqualStrings("custom/test_m/hero", level.entities[1].sprite);
-    try std.testing.expectEqualStrings("custom/test_m/tiny", level.entities[2].sprite);
-    try std.testing.expectEqualStrings("custom/test_m/missing", level.entities[3].sprite);
+    try std.testing.expectEqualStrings("custom/missions/test_m/hero", level.entities[1].sprite);
+    try std.testing.expectEqualStrings("custom/missions/test_m/tiny", level.entities[2].sprite);
+    try std.testing.expectEqualStrings("custom/missions/test_m/missing", level.entities[3].sprite);
 
     // Exactly the three spec violations warn: wrong base dims, a missing
     // base PNG, a wrong-dims layer. The conforming hero base stays silent.
     try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
-    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/test_m/tiny'"));
-    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/test_m/missing'"));
-    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity layer sprite 'custom/test_m/tiny'"));
-    try std.testing.expect(!hasLoadWarningContaining(warnings.items, "'custom/test_m/hero' in"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/missions/test_m/tiny'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity sprite 'custom/missions/test_m/missing'"));
+    try std.testing.expect(hasLoadWarningContaining(warnings.items, "entity layer sprite 'custom/missions/test_m/tiny'"));
+    try std.testing.expect(!hasLoadWarningContaining(warnings.items, "'custom/missions/test_m/hero' in"));
 }
 
 test "loadDecorationRegistry parses prefabs (no character_code)" {
@@ -3955,7 +3934,7 @@ test "loadLevel rejects unexpected sections" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const result = loadLevel(sections, null, allocator, "", "", null);
+    const result = loadLevel(sections, null, allocator, "", null);
     try std.testing.expectError(error.UnexpectedSection, result);
 }
 
@@ -4964,7 +4943,7 @@ test "entity utility slots: a weapon skill is warned + dropped, utility skills k
 
     var warnings: std.ArrayList([]const u8) = .empty;
     defer warnings.deinit(allocator);
-    const level = try loadLevel(sections, null, allocator, "level.txt", "", &warnings);
+    const level = try loadLevel(sections, null, allocator, "level.txt", &warnings);
     defer freeLevel(level, allocator);
 
     // The enemy is entity index 1 (the player is 0). slot_4 (slice, a
@@ -5155,7 +5134,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator, "", "", null);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     try std.testing.expectEqual(@as(u32, 2), level.color_wheel_index);
@@ -5180,7 +5159,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
     ;
     const plain_sections = try parseConfigFile(plain_text, allocator);
     defer freeParsedSections(plain_sections, allocator);
-    const plain_level = try loadLevel(plain_sections, null, allocator, "", "", null);
+    const plain_level = try loadLevel(plain_sections, null, allocator, "", null);
     defer freeLevel(plain_level, allocator);
     try std.testing.expectEqual(@as(?u32, null), plain_level.enemy_gradient_index);
     try std.testing.expectEqual(@as(?u32, null), plain_level.player_gradient_index);

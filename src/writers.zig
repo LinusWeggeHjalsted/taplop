@@ -400,7 +400,7 @@ const LayoutCodeAssignment = struct {
 pub fn writeEditorMission(
     editor: types.Editor,
     mission_uuid: []const u8,
-    mission_dir_name: []const u8,
+    mission_content_path: []const u8,
     allocator: std.mem.Allocator,
 ) !WrittenEditorMission {
     var mission_buffer: std.ArrayList(u8) = .empty;
@@ -419,7 +419,7 @@ pub fn writeEditorMission(
             editor.entity_types,
             editor.decoration_types,
             editor.item_types,
-            mission_dir_name,
+            mission_content_path,
             allocator,
         ));
     }
@@ -547,25 +547,25 @@ fn setGridCell(
     grid[@intCast(y * grid_width + x)] = character;
 }
 
-/// Rewrite a custom sprite stem's namespace to the save target:
-/// `custom/<anything>/<file-stem>` → `custom/<mission_dir_name>/<file-stem>`.
-/// The namespace component is IDENTITY ONLY, never a read path - custom
-/// art resolves from the mission's own directory (see DESIGN → Custom
-/// Missions & Online Services → the sprite id convention + the save flow's
-/// art copy) - so the save is where a stale namespace (a mission renamed
-/// after authoring keeps stems naming the old dir) is healed. Non-custom
-/// stems and degenerate stems (no dir segment - the picker never writes
-/// them) pass through unchanged.
+/// Rewrite a custom sprite stem to the save target: the last segment
+/// (the file stem) is kept, everything else becomes `custom/<mission
+/// content path>/<file-stem>` - the stem's tail IS the art's read path
+/// (file_source.customAssetTail; see DESIGN → Custom Missions & Online
+/// Services → Custom-asset paths), so the save is where a stale path (a
+/// mission renamed after authoring keeps stems pointing at the old dir)
+/// is healed: the stems rewrite to the new dir and the save's art copy
+/// carries the bytes there. Non-custom stems and degenerate stems (no
+/// dir segment - the picker never writes them) pass through unchanged.
 fn normalizedCustomStem(
     sprite: []const u8,
-    mission_dir_name: []const u8,
+    mission_content_path: []const u8,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
     if (!std.mem.startsWith(u8, sprite, "custom/")) return sprite;
     const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return sprite;
     const file_stem = sprite[slash + 1 ..];
     if (file_stem.len == 0) return sprite;
-    return std.fmt.allocPrint(allocator, "custom/{s}/{s}", .{ mission_dir_name, file_stem });
+    return std.fmt.allocPrint(allocator, "custom/{s}/{s}", .{ mission_content_path, file_stem });
 }
 
 /// Write one level file. The layout is TRANSLATED so the written grid is
@@ -579,7 +579,7 @@ fn writeEditorLevel(
     entity_types: []const types.EntityTypeDef,
     decoration_types: []const types.DecorationTypeDef,
     item_types: []const types.ItemTypeDef,
-    mission_dir_name: []const u8,
+    mission_content_path: []const u8,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
     const codes = try assignLayoutCodes(level, entity_types, decoration_types, item_types, allocator);
@@ -677,7 +677,7 @@ fn writeEditorLevel(
         try buffer.appendSlice(allocator, "\nEntities\n");
         for (codes.entity, 0..) |assignment, index| {
             if (index > 0) try buffer.appendSlice(allocator, "\n");
-            try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template, mission_dir_name);
+            try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template, mission_content_path);
         }
     }
 
@@ -688,7 +688,7 @@ fn writeEditorLevel(
             if (index > 0) try buffer.appendSlice(allocator, "\n");
             const definition = decoration_types[assignment.type_id];
             try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
-            try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(definition.sprite, mission_dir_name, allocator)});
+            try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(definition.sprite, mission_content_path, allocator)});
             try buffer.print(allocator, "color_index {d}\n", .{definition.color_index});
             if (definition.keep_original_colors) {
                 try buffer.print(allocator, "keep_original_colors true\n", .{});
@@ -698,7 +698,7 @@ fn writeEditorLevel(
             }
             for (definition.layers) |layer| {
                 try buffer.appendSlice(allocator, "layer\n");
-                try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_dir_name, allocator)});
+                try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_content_path, allocator)});
                 try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
                 if (layer.behind) {
                     try buffer.appendSlice(allocator, "behind true\n");
@@ -729,11 +729,11 @@ fn writeEntityDefinition(
     allocator: std.mem.Allocator,
     code: u8,
     template: types.Entity,
-    mission_dir_name: []const u8,
+    mission_content_path: []const u8,
 ) !void {
     try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{code}});
     try buffer.print(allocator, "name {s}\n", .{template.name});
-    try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(template.sprite, mission_dir_name, allocator)});
+    try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(template.sprite, mission_content_path, allocator)});
     if (template.team != 1) {
         try buffer.print(allocator, "team {d}\n", .{template.team});
     }
@@ -787,7 +787,7 @@ fn writeEntityDefinition(
     }
     for (template.layers) |layer| {
         try buffer.appendSlice(allocator, "layer\n");
-        try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_dir_name, allocator)});
+        try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, mission_content_path, allocator)});
         try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
     }
 }

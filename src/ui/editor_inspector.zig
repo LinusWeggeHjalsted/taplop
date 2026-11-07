@@ -1595,7 +1595,7 @@ fn buildEditorInspectorContent(
                     ),
                     // The decoration content's sprite row - same emitter,
                     // decoration context (a decoration's sprite id is its
-                    // bare stem or `custom/<mission>/<stem>`).
+                    // bare stem or `custom/<content-path>/<stem>`).
                     .decoration_sprite_button => try emitInspectorSpriteButton(
                         elements,
                         allocator,
@@ -2823,10 +2823,9 @@ fn emitInspectorFootprintButton(
 }
 
 /// The display form of a sprite stem: the FILE STEM only. Official stems
-/// are already bare (`skeleton_1`); custom mission-bundled stems are
-/// namespaced `custom/<mission-dir>/<stem>` - the path is identity for
-/// the config + the pick payloads, noise for the author. A suffix slice
-/// of the input (no allocation).
+/// are already bare (`skeleton_1`); custom stems are content-addressed
+/// `custom/<content-path>/<stem>` - the path addresses the art's file and
+/// is noise for the author. A suffix slice of the input (no allocation).
 fn spriteDisplayName(sprite: []const u8) []const u8 {
     if (std.mem.lastIndexOfScalar(u8, sprite, '/')) |slash| return sprite[slash + 1 ..];
     return sprite;

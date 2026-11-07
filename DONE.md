@@ -17763,3 +17763,60 @@ section are separated by BLANK LINES - a fixture stacking three
 `character_code` groups without separators parses as ONE group
 (last-wins keys), so the warn+drop cases silently vanish. The new
 loader test uses blank-line-separated groups.
+
+## Campaign-editor slice 1, step 3: custom-asset paths unified (content-addressed ids)
+
+The hub-bundled-art rider (TODO slice 1c) exposed a latent split in the
+custom-art machinery before any hub code was written: the LOADER resolved
+`custom/<dir>/<stem>` against the loading file's directory (worked
+anywhere), but the TEXTURE STORE resolved the same id against a hardcoded
+persistent `missions/` root (worked only for dreams) - so campaign-bundled
+art would have resolved its dims at load and rendered magenta, and hubs
+could not even construct their path (the id carried no campaign segment;
+hub art lives under campaigns/<campaign>/hubs/<hub>/). Copying "the exact
+mission-bundle pattern" would have shipped a known-broken render path.
+
+The settle (discussed + chosen over a multi-root render search): custom
+ids are CONTENT-ADDRESSED - the segment chain after `custom/` IS the
+file's location. Dreams: `custom/missions/<dir>/<stem>`; campaign-bundled
+art: `custom/campaigns/<campaign>/missions|hubs/<dir>/<stem>`. One
+resolution rule (`file_source.customAssetTail`) is shared by the loader's
+dims read and the texture store's byte read, so the two sides can never
+drift again; `FileSource.readFile` gained a third tier (embedded under a
+`data/` prefix) so a content-root-relative path resolves across BOTH
+roots - the official campaign's art (embedded data/campaigns/...) and
+custom campaigns (persistent campaigns/...) address identically. The id
+must carry the full path because the texture cache keys by id with no
+context: a context-relative id from two missions would collide in the
+cache and render the wrong art. Consequence: dir renames rewrite custom
+stems (the same rewrite-references pass as destination_hub values).
+
+Minting: `customStemForContentPath` (the inverse; strips a leading
+data/) - the editor scan mints dream ids from the mission's path, the
+save's stem normalization rewrites to the save target's full content path
+(mission_dir_name -> mission_content_path through the writer chain), and
+the future hub editor mints hub ids the same way. The save's art copy
+simplified: one read from the path the (stale) stem addresses replaces
+the current-dir-first + legacy-namespace fallback channels.
+
+Dead code: `customFileStem` (namespace-only stem extraction) +
+`types.missionDirectoryName` (the old mint's dir-name helper) lost their
+callers. `loadLevel`/`loadHub` lost the `mission_path` parameter entirely
+(custom resolution no longer needs loading context); the ripples reached
+meta.zig, content_validation_tests, input_handlers' conformance
+backstops, and the editor io.
+
+Old-shape stems (`custom/<mission-dir>/<stem>`) warn + degrade to magenta
+under the new rule - acceptable pre-release (no in-game authoring path
+has landed; the picker-scan mint is the source of authored ids and now
+mints the new shape). Tests: the tail/mint round trip, the readFile
+data/-tier contract (a content-root-relative campaign path resolves to
+the embedded bytes), and the existing custom-art fixtures moved to the
+real content shape (missions/test_m/... - they previously passed via a
+scratch-root coincidence).
+
+Adjacent discovery (noted in TODO → Logging & Replay, not fixed here):
+the dims reads go through file_source.readFile, not the reconstruction
+cache, so session-log bundles don't capture art bytes. No crash, no
+event-verification impact (dims only ride editor events, which carry them
+in-band); it's a state-fidelity gap for future state-strict consumers.

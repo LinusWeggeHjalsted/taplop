@@ -60,6 +60,40 @@ const official_mission_dir_paths: []const []const u8 = build: {
     break :build paths;
 };
 
+/// The content-root-relative location a `custom/...` sprite id resolves
+/// to: everything after the `custom/` path segment IS the file's location
+/// (sans `.png`). The id bakes in its own path - `custom/missions/<dir>/<s>`
+/// (dreams), `custom/campaigns/<campaign>/missions|hubs/<dir>/<s>`
+/// (campaign-bundled art) - so resolution is context-free and the same id
+/// means the same file everywhere (a requirement of the texture cache's
+/// global id keys). Accepts either form callers carry: a bare stem
+/// (`custom/...`) or a kind-prefixed sprite id (`entities/custom/...`) -
+/// both find the `custom/` segment. Returns null when there is no
+/// `custom/` segment or nothing follows it. The ONE resolution rule -
+/// both the loader (dims) and the texture store (bytes) go through this;
+/// see DESIGN → Custom Missions & Online Services → Custom-asset paths.
+pub fn customAssetTail(sprite: []const u8) ?[]const u8 {
+    const prefix = "custom/";
+    const index = std.mem.indexOf(u8, sprite, prefix) orelse return null;
+    const tail = sprite[index + prefix.len ..];
+    if (tail.len == 0) return null;
+    return tail;
+}
+
+/// Mint a custom sprite stem for art living at `content_path` (a
+/// content-root-relative dir, e.g. `missions/<dir>` or
+/// `data/campaigns/<c>/hubs/<h>` - a leading `data/` is stripped since
+/// embedded content addresses as `data/<tail>` inside readFile's tiers).
+/// The inverse of `customAssetTail`: the minted stem's tail IS the dir.
+pub fn customStemForContentPath(content_path: []const u8, file_stem: []const u8, allocator: std.mem.Allocator) []const u8 {
+    const path = if (std.mem.startsWith(u8, content_path, "data/"))
+        content_path["data/".len..]
+    else
+        content_path;
+    return std.fmt.allocPrint(allocator, "custom/{s}/{s}", .{ path, file_stem }) catch
+        @panic("failed to mint custom sprite stem");
+}
+
 pub const FileSource = struct {
     io: std.Io,
     // The persistent data directory (~/.ziglop/). All writes land here, and
@@ -71,8 +105,11 @@ pub const FileSource = struct {
         return .{ .io = io, .persistent_dir = persistent_dir };
     }
 
-    /// Read a file by project-root-relative path. Lookup order:
-    /// persistent dir -> embedded map. Always returns freshly allocated bytes
+    /// Read a file by content-root-relative path. Lookup order:
+    /// persistent dir -> embedded map (as-is; `assets/...` art) -> embedded
+    /// map under a `data/` prefix (campaign-bundled content: a path like
+    /// `campaigns/<c>/hubs/<h>/<s>.png` addresses the embedded
+    /// `data/campaigns/...` bytes). Always returns freshly allocated bytes
     /// owned by the caller (embedded bytes are duped so the caller can free
     /// uniformly). Returns `error.FileNotFound` if no layer has the path.
     pub fn readFile(
@@ -93,6 +130,18 @@ pub const FileSource = struct {
         // 3. embedded map (shipped data/ + assets/).
         if (embedded_assets.map.get(path)) |bytes| {
             return try allocator.dupe(u8, bytes);
+        }
+
+        // 4. embedded map under the `data/` prefix - campaign-bundled
+        // content addressed content-root-relative (see customAssetTail;
+        // `data/data/` is never a real key, so already-prefixed paths skip).
+        if (!std.mem.startsWith(u8, path, "data/")) {
+            const embedded_key = std.fmt.allocPrint(allocator, "data/{s}", .{path}) catch
+                return error.OutOfMemory;
+            defer allocator.free(embedded_key);
+            if (embedded_assets.map.get(embedded_key)) |bytes| {
+                return try allocator.dupe(u8, bytes);
+            }
         }
 
         return error.FileNotFound;
@@ -1244,4 +1293,69 @@ test "readAudioFile: embedded .ogg fallback, .wav shadow wins, priority order" {
 
     // No candidate in any layer → null (the backend caches silence).
     try testing.expect(file_source.readAudioFile(allocator, "assets/audio/sfx/nonexistent") == null);
+}
+
+test "customAssetTail: the segment chain after custom/ is the path (stem or kind-prefixed id)" {
+    // Bare stem (config-authored) and kind-prefixed sprite id (render
+    // side) both find the custom/ segment - one resolution rule.
+    try testing.expectEqualStrings(
+        "missions/artists_den/boss",
+        customAssetTail("custom/missions/artists_den/boss").?,
+    );
+    try testing.expectEqualStrings(
+        "campaigns/main_campaign/hubs/camp/tree",
+        customAssetTail("decorations/custom/campaigns/main_campaign/hubs/camp/tree").?,
+    );
+    try testing.expectEqualStrings(
+        "campaigns/main_campaign/missions/forest/boss",
+        customAssetTail("entities/custom/campaigns/main_campaign/missions/forest/boss").?,
+    );
+    // Non-custom + degenerate shapes.
+    try testing.expect(customAssetTail("skeleton_1") == null);
+    try testing.expect(customAssetTail("entities/skeleton_1") == null);
+    try testing.expect(customAssetTail("custom/") == null);
+}
+
+test "customStemForContentPath: mints the tail (data/ stripped) + round-trips customAssetTail" {
+    const allocator = testing.allocator;
+    // A dream mission dir (already content-root-relative).
+    {
+        const stem = customStemForContentPath("missions/uuid_Artists Den", "boss", allocator);
+        defer allocator.free(stem);
+        try testing.expectEqualStrings("custom/missions/uuid_Artists Den/boss", stem);
+        try testing.expectEqualStrings("missions/uuid_Artists Den/boss", customAssetTail(stem).?);
+    }
+    // An embedded (official campaign) dir: the data/ prefix is stripped -
+    // the minted tail addresses the embedded copy through readFile's
+    // data/-prefixed tier.
+    {
+        const stem = customStemForContentPath("data/campaigns/main_campaign/hubs/camp", "tree", allocator);
+        defer allocator.free(stem);
+        try testing.expectEqualStrings("custom/campaigns/main_campaign/hubs/camp/tree", stem);
+    }
+}
+
+test "readFile: campaign-bundled content resolves through the embedded data/ tier" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    // cwd-backed: the persistent tier misses (no campaigns/ in the repo
+    // cwd), so the embedded data/-prefixed tier must serve the bytes.
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const bytes = try file_source.readFile(allocator, "campaigns/main_campaign/campaign.txt");
+    defer allocator.free(bytes);
+    try testing.expect(bytes.len > 0);
+    try testing.expect(std.mem.indexOf(u8, bytes, "Main Campaign") != null);
+
+    // And the customAssetTail shape addresses the same file: tail + .png
+    // is the read path for art; here we prove the tail + extension form
+    // resolves against the same tiers with a non-png extension.
+    const config_via_tail = try file_source.readFile(allocator, "campaigns/main_campaign/hubs/camp_at_the_crossroads/hub.txt");
+    defer allocator.free(config_via_tail);
+    try testing.expect(std.mem.indexOf(u8, config_via_tail, "Camp at the Crossroads") != null);
+
+    // A path no tier has still misses cleanly.
+    try testing.expectError(error.FileNotFound, file_source.readFile(allocator, "campaigns/nowhere/x.txt"));
 }
