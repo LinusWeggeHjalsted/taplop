@@ -26,7 +26,11 @@ pub const level_file_format_version: u32 = 1;
 /// v2 (campaign-editor slice 1): NPCs become `character_code` + `npc_type`
 /// (the entity fields name/sprite are gone); Exits gain `destination_hub`.
 pub const hub_file_format_version: u32 = 2;
-pub const mission_file_format_version: u32 = 2;
+/// v3 (campaign-editor slice 1): drops `start_hub`/`end_hub` (the campaign
+/// graph owns the edge - the exit's destination_hub rides
+/// start_mission.end_hub_id) + `level_count` (derived - count the mission
+/// dir's consecutive level_N.txt files).
+pub const mission_file_format_version: u32 = 3;
 /// v2 (campaign-editor slice 1): Metadata gains `background` (a bare stem
 /// for a PNG in the campaign's own directory) + a `Hubs` section (hub_id +
 /// position, one group per placed hub).
@@ -593,9 +597,11 @@ pub const hub_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
 
 // --- Mission file key whitelists ---
 //
-// Only a Metadata section with name, start_hub, end_hub, level_count.
+// Only a Metadata section with name + mission_uuid. The hub endpoints are
+// the campaign graph's (the exit's destination_hub), and the level count
+// is the mission dir's (its consecutive level_N.txt files).
 
-const mission_metadata_keys = [_][]const u8{ "file_format_version", "mission_uuid", "name", "start_hub", "end_hub", "level_count" };
+const mission_metadata_keys = [_][]const u8{ "file_format_version", "mission_uuid", "name" };
 
 pub const mission_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &mission_metadata_keys },

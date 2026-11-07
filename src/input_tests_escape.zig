@@ -162,12 +162,14 @@ test "escape: mission fail exits the mission" {
         &three_by_three,
     ));
     history.current_state.player_data.current_campaign = "main_campaign";
+    // The entering hub (the mission-exit path reads current_hub - the hub
+    // the player was in when the mission started).
+    history.current_state.player_data.current_hub = "camp_at_the_crossroads";
     history.current_state.mission = .{
         .name = "beginnings",
         .path = "data/campaigns/main_campaign/missions/beginnings",
         .level_count = 1,
         .current_level_index = 1,
-        .start_hub = "camp_at_the_crossroads",
     };
     test_harness.runToIdle(&history);
 

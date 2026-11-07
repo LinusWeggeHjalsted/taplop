@@ -2607,11 +2607,15 @@ pub fn checkCampaignGraph(
     }
 }
 
+/// Load a mission's metadata (uuid + name - the hub endpoints are the
+/// campaign graph's, the level count is the dir's; both derived elsewhere).
+/// Self-owned: `uuid` + `name` are duped into `allocator`, so the result
+/// does not borrow from the parse bytes - free with `freeMission` (tests)
+/// or the arena (production).
 pub fn loadMission(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !Mission {
-    _ = allocator;
     try validateSections(sections, &mission_sections);
     try validateFileFormatVersion(sections, "Metadata", mission_file_format_version);
     var mission: Mission = .{};
@@ -2619,15 +2623,20 @@ pub fn loadMission(
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
-            mission.uuid = findValue(pairs, "mission_uuid") orelse return error.MissingMissionUuid;
-            if (findValue(pairs, "name")) |value| mission.name = value;
-            if (findValue(pairs, "start_hub")) |value| mission.start_hub = value;
-            if (findValue(pairs, "end_hub")) |value| mission.end_hub = value;
-            if (findValue(pairs, "level_count")) |value| mission.level_count = asU32(value) orelse 0;
+            const uuid = findValue(pairs, "mission_uuid") orelse return error.MissingMissionUuid;
+            mission.uuid = dupeString(allocator, uuid);
+            if (findValue(pairs, "name")) |value| mission.name = dupeString(allocator, value);
         }
     }
 
     return mission;
+}
+
+/// Free a mission's owned strings (uuid + name). The empty defaults are
+/// the static empty slice, whose free is a no-op.
+fn freeMission(mission: types.Mission, allocator: std.mem.Allocator) void {
+    allocator.free(mission.uuid);
+    allocator.free(mission.name);
 }
 
 /// Parse the shared LOADOUT sections (MainHandWeapon .. UtilitySkills,
@@ -4367,8 +4376,8 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
         "campaigns/check/hubs/far/hub.txt",
         "Metadata\nfile_format_version 2\nname Far\n\nExits\ncharacter_code E\nmission_id m2\n",
     ) catch @panic("write far hub");
-    file_source.writeFile("campaigns/check/missions/m1/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid u1\nname M1\n") catch @panic("write m1");
-    file_source.writeFile("campaigns/check/missions/m2/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid u2\nname M2\n") catch @panic("write m2");
+    file_source.writeFile("campaigns/check/missions/m1/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u1\nname M1\n") catch @panic("write m1");
+    file_source.writeFile("campaigns/check/missions/m2/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u2\nname M2\n") catch @panic("write m2");
 
     const campaign_path = "campaigns/check";
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -4455,28 +4464,31 @@ fn clearWarnings(warnings: *std.ArrayList([]const u8), allocator: std.mem.Alloca
     warnings.clearRetainingCapacity();
 }
 
-test "loadMission parses mission metadata" {
+test "loadMission parses mission metadata (self-owned; hub endpoints + level count are gone)" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\mission_uuid 11111111-1111-1111-1111-111111111111
         \\name First Mission
-        \\start_hub camp
-        \\end_hub village
-        \\level_count 3
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
-    defer freeParsedSections(sections, allocator);
 
     const mission = try loadMission(sections, allocator);
+    // Ownership contract: free the parse bytes BEFORE reading the mission.
+    freeParsedSections(sections, allocator);
 
     try std.testing.expectEqualStrings("11111111-1111-1111-1111-111111111111", mission.uuid);
     try std.testing.expectEqualStrings("First Mission", mission.name);
-    try std.testing.expectEqualStrings("camp", mission.start_hub.?);
-    try std.testing.expectEqualStrings("village", mission.end_hub.?);
-    try std.testing.expectEqual(3, mission.level_count);
+    // The hub endpoints + level count are no longer mission data: the
+    // campaign graph owns the edge (the exit's destination_hub rides
+    // start_mission.end_hub_id), and the level count derives from the
+    // dir's files. All three default empty/zero here.
+    try std.testing.expect(mission.end_hub == null);
+    try std.testing.expectEqual(@as(u32, 0), mission.level_count);
+
+    freeMission(mission, allocator);
 }
 
 test "loadPlayerSave parses a save file" {

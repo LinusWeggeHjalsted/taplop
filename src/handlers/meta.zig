@@ -290,6 +290,14 @@ pub fn handleMetaEvent(
             };
             current.mission.?.path = start.mission_path;
             current.mission.?.current_level_index = 1;
+            current.mission.?.level_count = shared.countMissionLevelsCached(
+                history,
+                start.mission_path,
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to read mission level files");
+                return;
+            };
             // The no-editor validation marker (end_level's guard reads it
             // when no Editor exists - cross-session replay of a validation
             // replay). Rides the working copy: replay reproduces it, and
@@ -424,6 +432,14 @@ pub fn handleMetaEvent(
 
             current.mission.?.path = start.mission_path;
             current.mission.?.current_level_index = 1;
+            current.mission.?.level_count = shared.countMissionLevelsCached(
+                history,
+                start.mission_path,
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to read mission level files");
+                return;
+            };
 
             // Clear the mission-complete overlay info - entering a
             // mission (new game or replay) retires any prior
@@ -431,18 +447,16 @@ pub fn handleMetaEvent(
             // DESIGN → Architecture.
             current.last_completed_mission = null;
 
-            // Return-hub override: when the caller passes a non-null
-            // end_hub_id, the mission returns THERE on end_mission
-            // instead of its authored end_hub. Used by dreams
-            // (custom missions): the authored end_hub may name a hub
-            // that doesn't exist in the player's campaign, so the
-            // caller overrides the return to the hub the player was
-            // at. Official missions pass null and keep the authored
-            // end_hub (existing behavior). The override lives on the
-            // live mission working copy (current_arena), so it is
-            // captured by deepCopy and reproduced on replay
-            // (start_mission re-applies it from the recorded event).
-            // See DESIGN → Custom Missions & Online Services → Dreams.
+            // Return destination: the event's end_hub_id override is the
+            // ONLY source - the exit-click path passes the exit's
+            // destination_hub (the campaign edge), restarts pass the live
+            // value through, dreams pass null and return to the hub the
+            // player was at. The override lives on the live mission
+            // working copy (current_arena), so it is captured by deepCopy
+            // and reproduced on replay (start_mission re-applies it from
+            // the recorded event). See DESIGN → Custom Missions & Online
+            // Services → Dreams + DESIGN → Campaigns & the Campaign
+            // Editor → The graph model.
             if (start.end_hub_id) |hub_id| {
                 current.mission.?.end_hub = hub_id;
             }
@@ -717,7 +731,10 @@ pub fn handleMetaEvent(
                                 }
                             }
                             pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
-                                .hub_id = mission.end_hub,
+                                // The override (the exit's destination) or
+                                // the entering hub - the campaign edge or
+                                // the dream fallback.
+                                .hub_id = mission.end_hub orelse current.player_data.current_hub,
                                 .completed_mission = .{
                                     .uuid = mission.uuid,
                                     .name = mission.name,
@@ -743,18 +760,20 @@ pub fn handleMetaEvent(
                     if (current.mission) |mission| {
                         pushEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
                             .mission_path = mission.path,
-                            .start_hub_id = null,
-                            .end_hub_id = null,
+                            // Carry the return destination through the
+                            // restart (a re-completed campaign mission
+                            // still ends at its edge's destination).
+                            .end_hub_id = mission.end_hub,
                         } } }}, allocator);
                     }
                 },
                 // Abandon the mission: return to the hub the player
-                // was at before entering it (the mission's start_hub).
-                // end_mission's handler pushes start_hub with the
-                // given hub_id.
+                // was at before entering it. player_data.current_hub
+                // still names the entering hub during a mission (only
+                // start_hub's handler changes it).
                 .exit_mission => {
-                    if (current.mission) |mission| {
-                        const hub_id = mission.start_hub orelse current.player_data.current_hub;
+                    if (current.mission != null) {
+                        const hub_id = current.player_data.current_hub;
                         pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                             .hub_id = hub_id,
                         } } }}, allocator);

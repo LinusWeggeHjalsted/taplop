@@ -383,6 +383,11 @@ test "bundle write + load round-trips, and the embedded bytes survive source cha
         .{ .event_index = 0, .path = "saves/autosave.txt", .bytes = "version1" },
         .{ .event_index = 3, .path = "missions/My Mission/mission.txt", .bytes = "mission bytes" },
         .{ .event_index = 7, .path = "saves/autosave.txt", .bytes = "version2" },
+        // The known-absent marker (readReconstructionFileOptional's
+        // FileNotFound cache entry - the level-count probe's terminator):
+        // empty bytes, and it must round-trip like any other entry so
+        // bundle replay re-derives the same absence.
+        .{ .event_index = 9, .path = "missions/My Mission/level_3.txt", .bytes = "" },
     };
     const event_history = [_]Event{.{ .meta_event = .open_main_menu }};
 
@@ -405,7 +410,7 @@ test "bundle write + load round-trips, and the embedded bytes survive source cha
     const loaded = try loadSessionLogBundle(persistent_dir, "logs/test_bundle", io, arena.allocator());
 
     try std.testing.expectEqual(@as(usize, 1), loaded.log.events.len);
-    try std.testing.expectEqual(@as(usize, 3), loaded.cache_entries.len);
+    try std.testing.expectEqual(@as(usize, 4), loaded.cache_entries.len);
     // Manifest order preserved, bytes are the version the SESSION saw.
     try std.testing.expectEqualStrings("version1", loaded.cache_entries[0].bytes);
     try std.testing.expectEqualStrings("mission bytes", loaded.cache_entries[1].bytes);
@@ -415,6 +420,9 @@ test "bundle write + load round-trips, and the embedded bytes survive source cha
 
     // The manifest's paths round-trip verbatim, spaces included.
     try std.testing.expectEqualStrings("missions/My Mission/mission.txt", loaded.cache_entries[1].path);
+    // The absent marker survives as an empty-bytes entry.
+    try std.testing.expectEqual(@as(usize, 0), loaded.cache_entries[3].bytes.len);
+    try std.testing.expectEqualStrings("missions/My Mission/level_3.txt", loaded.cache_entries[3].path);
 }
 
 test "bundle with zero cache entries round-trips (a menu-only session)" {

@@ -405,7 +405,6 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
         history.file_source,
         scratch,
         mission.path,
-        mission.level_count,
     ) catch {
         history.session.setPendingError(
             history.history_arena.allocator(),

@@ -3274,6 +3274,11 @@ pub const Mission = struct {
     uuid: []const u8 = &.{},
     name: []const u8 = &.{},
     path: []const u8 = &.{},
+    /// DERIVED at mission start (never authored): the count of consecutive
+    /// level_N.txt files from 1 in the mission dir, probed through the
+    /// reconstruction cache (readReconstructionFileOptional - see
+    /// handlers/shared.countMissionLevelsCached). Derived at start so the
+    /// recorded level-loop events re-derive identically on replay.
     level_count: u32 = 0,
     current_level_index: u32 = 0,
     /// Runtime working-copy flag: this mission is a VALIDATION RUN (loaded
@@ -3285,7 +3290,13 @@ pub const Mission = struct {
     /// with the mission. Campaign missions never set it. See DESIGN →
     /// Custom Missions & Online Services → Validation replay.
     validation_run: bool = false,
-    start_hub: ?[]const u8 = null,
+    /// The mission's return destination (a hub dir name), set ONLY by the
+    /// start_mission handler from the event's end_hub_id override (the
+    /// exit-click path passes the exit's destination_hub; restarts pass
+    /// the live value through). Null = return to the entering hub
+    /// (player_data.current_hub - the dream story). Never authored: the
+    /// campaign graph owns the edge. See DESIGN → Campaigns & the
+    /// Campaign Editor → The graph model.
     end_hub: ?[]const u8 = null,
     turns_spent: u32 = 0,
     /// Tiles the player moved this mission (incremented in `move_entity`,

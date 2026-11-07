@@ -2518,13 +2518,13 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
 - **File source:** the VFS layer (layer 1 of the FileSource read order) or
   the persistent `missions/` dir, NOT the embedded map. This is the
   outstanding VFS piece from File System & IO.
-- **Return target = where the player was when they opened the browser**, NOT
-  the mission's authored `start_hub`/`end_hub` (those may name a hub that
-  doesn't exist in the player's campaign). In-hub / in-world-map / in-level
-  launch → return to `player_data.current_hub`. Main-menu launch → return to
-  the main menu (don't drop the player into the campaign world via a dream).
-  The `start_mission` event for a dream carries `start_hub_id =
-  current_hub`; the exit guard overrides `end_mission`'s return accordingly.
+- **Return target = where the player was when they opened the browser**
+  (a dream's mission.txt carries no hub endpoints - the campaign graph
+  owns edges, and a dream is no campaign edge). In-hub / in-world-map /
+  in-level launch → return to `player_data.current_hub` (the dream launch
+  passes `end_hub_id = null`; the entering-hub fallback covers the
+  return). Main-menu launch → return to the main menu (don't drop the
+  player into the campaign world via a dream).
 - **Main-menu launch requires a save pick** (existing save or new game) before
   `start_mission` - you need a character to dream with. Reuses the existing
   `load_save` / `start_new_game` machinery; the browser feeds into it.
@@ -2970,9 +2970,23 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   simply a `gear_upgrader` NPC placed in a hub (no extra hub-format
   marker); `dream_guide` is the dreams-browser entry (already designed -
   Custom Missions & Online Services → Browser).
-- **mission.txt drops `start_hub` + `end_hub` + `level_count`** (the writer
-  stops emitting them; the loader warns + drops old keys - free
-  pre-release, the files ship embedded with the exe).
+- **mission.txt drops `start_hub` + `end_hub` + `level_count`** (v3,
+  landed): the writer stops emitting them; the loader warns + drops old
+  keys. `Mission.end_hub` survives as a pure runtime channel populated
+  only by the `start_mission` override (the exit-click path passes the
+  exit's `destination_hub`; restarts pass the live value through; the
+  overlay's re-run derives it from the hub's exit for the mission) - null
+  means the entering-hub fallback. The level count DERIVES at
+  start_mission/start_validation/open-editor via a reconstruction-sound
+  probe (`countMissionLevelsCached` over
+  `readReconstructionFileOptional`): read `level_1..level_N` through the
+  cache until one is absent; the absent file caches an empty-bytes
+  known-absent MARKER, so replay re-derives the same count even if level
+  files appear on disk mid-session (a plain listing would drift - the
+  reconstruction-cache motivating case). The non-replay consumers
+  (mission browser scan, content hash) derive the same rule from
+  file_source listings directly; the count rule everywhere: the largest
+  N with level_1..level_N all present (a gap truncates).
 
 ### The map coordinate model
 

@@ -85,7 +85,11 @@ pub const MetaEvent = union(enum) {
     backup_autosave: void,
     start_mission: struct {
         mission_path: []const u8,
-        start_hub_id: ?[]const u8,
+        // The mission's return destination (the exit's destination_hub -
+        // the campaign edge) or null = return to the entering hub (the
+        // dream story). The event, not a completion-time lookup, is the
+        // replay-safe record of the edge. See DESIGN → Campaigns & the
+        // Campaign Editor → The graph model.
         end_hub_id: ?[]const u8,
     },
     end_mission: struct {

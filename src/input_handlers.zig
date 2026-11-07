@@ -5245,6 +5245,88 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.highlighted_tiles.len);
 }
 
+test "hub exit click rides the exit's destination_hub on start_mission (dangling passes null)" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    // Two exits to the same real mission: one with a destination (the
+    // campaign edge's to-end), one dangling (empty destination_hub - a
+    // forward reference, legal by design).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const exits = [_]types.MissionExit{
+        .{ .mission_id = "beginnings", .destination_hub = "far_camp", .position = .{ .x = 1, .y = 0 } },
+        .{ .mission_id = "beginnings", .destination_hub = "", .position = .{ .x = 2, .y = 0 } },
+    };
+
+    // Exit A: the destination rides the recorded start_mission (the event,
+    // not a completion-time lookup, is the replay-safe record of the edge).
+    {
+        var history = harness.newHistory(.{
+            .screen = .hub,
+            .event_stack = &.{},
+            .player_data = .{ .current_campaign = "main_campaign", .current_hub = "camp_at_the_crossroads" },
+            .camera = null,
+            .editor = null,
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = .{
+                .hub_tiles = &tiles,
+                .player = .{ .position = .{ .x = 0, .y = 0 } },
+                .mission_exits = &exits,
+            },
+        });
+        @import("event_push.zig").pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+            .destination = exits[0].position,
+        } } }}, history.current_arena.allocator());
+        @import("test_harness.zig").runToIdle(&history);
+
+        var ridden: ?[]const u8 = null;
+        for (history.event_history.items) |event| switch (event) {
+            .meta_event => |meta| if (meta == .start_mission) { ridden = meta.start_mission.end_hub_id; },
+            else => {},
+        };
+        try std.testing.expect(ridden != null);
+        try std.testing.expectEqualStrings("far_camp", ridden.?);
+        try std.testing.expectEqualStrings("far_camp", history.current_state.mission.?.end_hub.?);
+    }
+
+    // Exit B: dangling destination passes null - the mission returns to
+    // the entering hub (the fallback).
+    {
+        var history = harness.newHistory(.{
+            .screen = .hub,
+            .event_stack = &.{},
+            .player_data = .{ .current_campaign = "main_campaign", .current_hub = "camp_at_the_crossroads" },
+            .camera = null,
+            .editor = null,
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = .{
+                .hub_tiles = &tiles,
+                .player = .{ .position = .{ .x = 0, .y = 0 } },
+                .mission_exits = &exits,
+            },
+        });
+        @import("event_push.zig").pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+            .destination = exits[1].position,
+        } } }}, history.current_arena.allocator());
+        @import("test_harness.zig").runToIdle(&history);
+
+        var passed: ?[]const u8 = "sentinel";
+        for (history.event_history.items) |event| switch (event) {
+            .meta_event => |meta| if (meta == .start_mission) { passed = meta.start_mission.end_hub_id; },
+            else => {},
+        };
+        try std.testing.expect(passed == null);
+        try std.testing.expect(history.current_state.mission.?.end_hub == null);
+    }
+}
+
 test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();

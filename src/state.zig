@@ -1201,6 +1201,64 @@ pub const GameStateHistory = struct {
         return bytes;
     }
 
+    /// Absence-tolerant reconstruction read: same cache discipline as
+    /// `readReconstructionFile`, but a live `FileNotFound` is an EXPECTED
+    /// answer, not an error - it caches an empty-bytes "known absent"
+    /// marker for the path and returns null, so replay re-derives the same
+    /// absence even if the file appears on disk later (the listing
+    /// alternative would re-list and drift). Replay serves real bytes or
+    /// the marker (null); a genuine cache miss still panics (the
+    /// fail-fast invariant - only a live read populates the cache). The
+    /// empty marker rides the session-log bundle as an empty content file
+    /// (hash-consistent). Used by the mission level-count probe - see
+    /// handlers/shared.countMissionLevelsCached. Any error other than
+    /// FileNotFound propagates (the recoverable-read convention).
+    pub fn readReconstructionFileOptional(
+        self: *GameStateHistory,
+        path: []const u8,
+    ) !?[]const u8 {
+        const event_index = self.current_event_index - 1;
+        if (self.replaying) {
+            const items = self.reconstruction_cache.items;
+            var lo: usize = 0;
+            var hi: usize = items.len;
+            while (lo < hi) {
+                const mid = lo + (hi - lo) / 2;
+                if (items[mid].event_index < event_index) lo = mid + 1 else hi = mid;
+            }
+            var index = lo;
+            while (index < items.len and items[index].event_index == event_index) : (index += 1) {
+                if (std.mem.eql(u8, items[index].path, path)) {
+                    // Empty bytes = the cached known-absent marker.
+                    if (items[index].bytes.len == 0) return null;
+                    return items[index].bytes;
+                }
+            }
+            // Miss. Same rule as readReconstructionFile: in-session replay
+            // + bundles never miss (the live run cached, the bundle
+            // pre-populated); lazy-disk reconstruction (.lazy_disk - the
+            // revalidate path) starts empty BY DESIGN and falls back to
+            // file_source, caching the result (FileNotFound caches the
+            // absent marker, same as the live path).
+            if (!self.reconstruction_disk_fallback) {
+                @panic("reconstruction cache miss on optional read: no cached bytes for this event+path (a live read did not cache, or the replayed session-log bundle is missing its cache entry - broken or hand-edited bundle)");
+            }
+        }
+        const arena = self.history_arena.allocator();
+        const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
+        const bytes = self.file_source.readFile(arena, path) catch |err| switch (err) {
+            error.FileNotFound => &[_]u8{},
+            else => return err,
+        };
+        self.reconstruction_cache.append(arena, .{
+            .event_index = event_index,
+            .path = durable_path,
+            .bytes = bytes,
+        }) catch @panic("failed to append reconstruction cache entry");
+        if (bytes.len == 0) return null;
+        return bytes;
+    }
+
     /// Drop the recorded timeline ahead of the current position - the stale
     /// future left behind when the player undoes and then acts. Trims the event
     /// log and idle points to the current position and frees any snapshots /
@@ -3445,6 +3503,47 @@ test "isPlayerAction: whitelist accepts player-pushable events" {
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .interact_with_npc = .{ .npc_index = 0 } } }));
 }
 
+test "readReconstructionFileOptional: live read + absent marker, replay serve, lazy-disk fallback" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    // readReconstructionFile* is called from INSIDE a handler (after
+    // processEvent incremented the index) - simulate that mid-event
+    // position (a fresh history sits at 0 and would underflow).
+    history.current_event_index = 1;
+
+    // LIVE: an existing file serves bytes; a missing file returns null and
+    // caches the known-absent (empty) marker.
+    const existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    try std.testing.expect(existing != null);
+    try std.testing.expect(existing.?.len > 0);
+    const missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
+    try std.testing.expect(missing == null);
+
+    // REPLAY over the cache just built: same event index (the reads above
+    // all recorded at the current index), same answers - the marker serves
+    // absent deterministically even though the disk state is unchanged
+    // (the point is replay never consults the disk here).
+    history.replaying = true;
+    const replayed_existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    try std.testing.expect(replayed_existing != null);
+    const replayed_missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
+    try std.testing.expect(replayed_missing == null);
+    history.replaying = false;
+
+    // LAZY-DISK fallback (the revalidate shape: empty cache BY DESIGN, the
+    // disk read is the point): a fresh event index with no cache entries +
+    // the fallback flag on - an existing path serves from disk, a missing
+    // one returns null (caching its marker).
+    history.reconstruction_disk_fallback = true;
+    history.current_event_index += 1;
+    const fallback_existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    try std.testing.expect(fallback_existing != null);
+    const fallback_missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
+    try std.testing.expect(fallback_missing == null);
+}
+
 test "isPlayerAction: whitelist rejects machinery events" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -3455,7 +3554,7 @@ test "isPlayerAction: whitelist rejects machinery events" {
     try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .open_main_menu }));
     try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .end_level = .{} } }));
     try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .end_hub }));
-    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .start_mission = .{ .mission_path = "m", .start_hub_id = null, .end_hub_id = null } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .start_mission = .{ .mission_path = "m", .end_hub_id = null } } }));
     try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .start_level = .{ .mission_path = "m", .level_index = 0 } } }));
     try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .wait = .{ .duration_milliseconds = 100 } } }));
 

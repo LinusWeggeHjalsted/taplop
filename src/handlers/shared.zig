@@ -159,6 +159,40 @@ pub fn loadCampaignAndPushHub(
     } } }}, allocator);
 }
 
+/// Derive a mission's level count: the largest N such that
+/// `{mission_path}/level_1.txt` .. `level_N.txt` all exist, probed
+/// consecutively from 1 through `readReconstructionFileOptional` (the
+/// absence-tolerant reconstruction read - every hit is cached, and the
+/// terminating miss caches a known-absent marker, so replay re-derives
+/// the SAME count even if files change mid-session; a plain listing
+/// would drift). The level bytes cached here are the ones start_level
+/// reads as the mission progresses - the probe adds no IO beyond the
+/// terminator. A gap (level_2 missing, level_3 present) truncates the
+/// count at 1 - deterministic, documented, broken-content-tolerant.
+/// Used by start_mission + start_validation; the non-replay consumers
+/// (browser scan, content hash) derive the same rule through
+/// file_source directly. Propagates non-FileNotFound read errors (the
+/// recoverable-read convention - callers failReconstructionRead).
+pub fn countMissionLevelsCached(
+    history: *GameStateHistory,
+    mission_path: []const u8,
+    allocator: std.mem.Allocator,
+) !u32 {
+    var count: u32 = 0;
+    while (true) {
+        const level_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/level_{d}.txt",
+            .{ mission_path, count + 1 },
+        ) catch @panic("failed to allocate level probe path");
+        defer allocator.free(level_path);
+        const bytes = try history.readReconstructionFileOptional(level_path);
+        if (bytes == null) break;
+        count += 1;
+    }
+    return count;
+}
+
 /// Push the gameplay start batch for a freshly-loaded level: player sync
 /// (build_player_from_data, runs first) + per-entity aggro checks + the
 /// player's turn_start (runs last). Shared by start_level (normal gameplay

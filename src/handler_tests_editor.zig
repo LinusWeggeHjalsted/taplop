@@ -4031,7 +4031,8 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
         const mission = try loaders.loadMission(sections, arena);
         try testing.expectEqualStrings(first_save.uuid, mission.uuid);
         try testing.expectEqualStrings("New Mission", mission.name);
-        try testing.expectEqual(@as(u32, 1), mission.level_count);
+        // (level_count is no longer mission.txt data - the saved dir's
+        // level files derive it; the level round-trip is asserted below.)
     }
     {
         const level_txt = try harness.file_source.readFile(
@@ -5966,10 +5967,9 @@ const validation_fixture_path = "missions/validation_fixture";
 fn writeValidationFixtureMission(harness: *Harness) !void {
     try harness.file_source.writeFile(validation_fixture_path ++ "/mission.txt",
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\mission_uuid 33333333-3333-3333-3333-333333333333
         \\name Validation Fixture
-        \\level_count 2
         \\
     );
     try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
@@ -6712,17 +6712,10 @@ test "revalidate: a benign edit re-binds the stored replay to the new content" {
     try testing.expectEqualStrings(before.replay.mission_uuid, after.replay.mission_uuid);
     try testing.expect(!std.mem.eql(u8, before.replay.content_hash, after.replay.content_hash));
 
-    const mission_bytes = try harness.file_source.readFile(
-        arena,
-        validation_fixture_path ++ "/mission.txt",
-    );
-    const mission_sections = try parser.parseConfigFile(mission_bytes, arena);
-    const mission = try loaders.loadMission(mission_sections, arena);
     const hash = try content_hash.computeMissionHash(
         &harness.file_source,
         arena,
         validation_fixture_path,
-        mission.level_count,
     );
     try testing.expectEqualStrings(&content_hash.hashToHex(hash), after.replay.content_hash);
 }
@@ -6851,10 +6844,9 @@ test "revalidate: no stored replay / a different mission's uuid both reject" {
         try playFixtureRunToCompletion(&history, false);
         try harness.file_source.writeFile(validation_fixture_path ++ "/mission.txt",
             \\Metadata
-            \\file_format_version 2
+            \\file_format_version 3
             \\mission_uuid 44444444-4444-4444-4444-444444444444
             \\name Validation Fixture
-            \\level_count 2
             \\
         );
         pushRevalidateFixture(&history);
@@ -7020,7 +7012,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     const sections = try parser.parseConfigFile(replay_bytes, arena);
     const replay = try validation_replay.loadValidationReplay(sections, arena);
     try testing.expectEqualStrings(saved.uuid, replay.mission_uuid);
-    const hash = try content_hash.computeMissionHash(&harness.file_source, arena, saved.dir_path, 2);
+    const hash = try content_hash.computeMissionHash(&harness.file_source, arena, saved.dir_path);
     const hash_hex = content_hash.hashToHex(hash);
     try testing.expectEqualStrings(&hash_hex, replay.content_hash);
     // Derived turns == the live run's begun-turn counter (two per level:
@@ -7125,10 +7117,9 @@ test "open_editor: a mission without player.txt falls back to the maxed default 
     // player.txt (the custom/new-mission case).
     try harness.file_source.writeFile("missions/no_player/mission.txt",
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\mission_uuid 00000000-0000-0000-0000-000000000000
         \\name No Player Mission
-        \\level_count 1
         \\
     );
     try harness.file_source.writeFile("missions/no_player/level_1.txt",
@@ -8048,7 +8039,7 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
 
     // A local mission in the harness's scratch persistent dir: the minimal
     // valid shape (mission.txt + one level with the '!=' layout).
-    harness.file_source.writeFile("missions/test_mission/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Test Mission\n") catch @panic("w1");
+    harness.file_source.writeFile("missions/test_mission/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid 11111111-1111-1111-1111-111111111111\nname Test Mission\n") catch @panic("w1");
     harness.file_source.writeFile("missions/test_mission/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!=\n") catch @panic("w2");
 
     // Open the browser (scans) - the local list now carries the mission.
@@ -8125,7 +8116,7 @@ test "mission import: a picked zip extracts into missions/, the row appears, the
 
     // A mission zip (the Export Mission shape): configs + a custom sprite.
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid a1b2c3d4-e5f6-7890-abcd-ef1234567890\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 3\nmission_uuid a1b2c3d4-e5f6-7890-abcd-ef1234567890\nname Skeleton Den\n" },
         .{ .name = "level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
         .{ .name = "boss.png", .bytes = "pretend png bytes" },
     };
@@ -8177,7 +8168,7 @@ test "mission import: an OS-made zip with a single root folder strips it" {
     // The "compress folder" shape: every file under one root segment, plus
     // macOS junk that must be skipped.
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "Skeleton Den/mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "Skeleton Den/mission.txt", .bytes = "Metadata\nfile_format_version 3\nmission_uuid 22222222-2222-2222-2222-222222222222\nname Skeleton Den\n" },
         .{ .name = "Skeleton Den/level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
         .{ .name = "__MACOSX/Skeleton Den/._mission.txt", .bytes = "junk" },
         .{ .name = "Skeleton Den/.DS_Store", .bytes = "junk" },
@@ -8218,7 +8209,7 @@ test "mission import: an unsafe entry name fails whole - popup, nothing written"
     runToIdle(&history);
 
     const zip_entries = [_]zip_writer.ZipEntry{
-        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Evil\n" },
+        .{ .name = "mission.txt", .bytes = "Metadata\nfile_format_version 3\nmission_uuid 33333333-3333-3333-3333-333333333333\nname Evil\n" },
         .{ .name = "../escape.txt", .bytes = "should never be written" },
     };
     const archive = try zip_writer.writeZipArchive(&zip_entries, arena);

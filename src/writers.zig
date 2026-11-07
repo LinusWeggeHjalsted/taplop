@@ -408,7 +408,8 @@ pub fn writeEditorMission(
     try mission_buffer.print(allocator, "file_format_version {d}\n", .{parser.mission_file_format_version});
     try mission_buffer.print(allocator, "mission_uuid {s}\n", .{mission_uuid});
     try mission_buffer.print(allocator, "name {s}\n", .{editor.mission.name});
-    try mission_buffer.print(allocator, "level_count {d}\n", .{editor.levels.len});
+    // No level_count: derived from the dir's level files (the loader's
+    // probe) - nothing authored duplicates the dir's truth.
 
     const player_txt = try writePlayerLoadout(editor.player_def.template, allocator);
 
@@ -1249,8 +1250,10 @@ test "writeEditorMission round-trips through the load path" {
         const mission = try loaders.loadMission(sections, arena);
         try std.testing.expectEqualStrings("436ab363-3588-42ce-950a-0bc813069c3d", mission.uuid);
         try std.testing.expectEqualStrings("My Mission", mission.name);
-        try std.testing.expectEqual(@as(u32, 2), mission.level_count);
-        try std.testing.expect(mission.start_hub == null);
+        // level_count is no longer mission.txt data (derived from the
+        // dir's level files); end_hub is runtime-only (the start_mission
+        // override) - both default here.
+        try std.testing.expectEqual(@as(u32, 0), mission.level_count);
         try std.testing.expect(mission.end_hub == null);
     }
 

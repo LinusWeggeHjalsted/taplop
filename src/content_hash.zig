@@ -30,9 +30,12 @@ pub const ContentHash = [32]u8;
 
 /// Compute the content hash of a mission. `mission_path` is the project-root-
 /// relative folder path (e.g. "data/campaigns/main_campaign/missions/
-/// beginnings" or a VFS/persistent-dir custom-mission path). `level_count`
-/// is the mission's declared level count (from mission.txt); levels are read
-/// as `{mission_path}/level_{1..level_count}.txt`.
+/// beginnings" or a VFS/persistent-dir custom-mission path). The level
+/// count is DERIVED here (the same rule as everywhere: the largest N with
+/// `{mission_path}/level_{1..N}.txt` all present, probed consecutively from
+/// 1 - a gap truncates); mission.txt no longer declares it. This is a
+/// side-effect context (not the reconstruction cache), so the probe reads
+/// file_source directly.
 ///
 /// Canonicalization: the file set is sorted lexicographically by path. Each
 /// file is fed into the hash as a path-prefixed entry - `<path>\n` then the
@@ -43,13 +46,12 @@ pub const ContentHash = [32]u8;
 /// `player.txt` is OPTIONAL - official missions ship one, but its absence is
 /// a normal state (editor playtest loads it lazily). A missing optional file
 /// is simply skipped (contributes nothing to the hash). A missing REQUIRED
-/// file (mission.txt, any level_N.txt within the declared count) is an error
-/// - the mission is broken, fail fast.
+/// file (mission.txt, level_1.txt) is an error - the mission is broken, fail
+/// fast - a mission dir with no level_1.txt is the broken case.
 pub fn computeMissionHash(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
     mission_path: []const u8,
-    level_count: u32,
 ) !ContentHash {
     // Collect the file set as owned path strings.
     var paths: std.ArrayList([]u8) = .empty;
@@ -69,15 +71,25 @@ pub fn computeMissionHash(
         allocator.free(player_path);
     }
 
-    // level_1..level_{count}.txt - required (count comes from mission.txt).
+    // level_1..level_N.txt - required, N derived by probing consecutive
+    // level files until one is absent (level_1 missing = error below: the
+    // required-file check fires on the empty level set's first entry).
     var level_index: u32 = 1;
-    while (level_index <= level_count) : (level_index += 1) {
-        try paths.append(allocator, try std.fmt.allocPrint(
+    while (true) : (level_index += 1) {
+        const level_path = try std.fmt.allocPrint(
             allocator,
             "{s}/level_{d}.txt",
             .{ mission_path, level_index },
-        ));
+        );
+        if (!fileExists(file_source, level_path)) {
+            allocator.free(level_path);
+            break;
+        }
+        try paths.append(allocator, level_path);
     }
+    // A mission with no level_1.txt is broken (the required-file
+    // contract): fail fast rather than hashing a levelless mission.
+    if (level_index == 1) return error.MissingRequiredMissionLevel;
 
     // Sort lexicographically by path for a canonical, order-independent hash.
     std.mem.sort([]u8, paths.items, {}, struct {
@@ -176,8 +188,8 @@ test "computeMissionHash: deterministic for the same file set" {
     file_source.writeFile("test_mission/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\nname Test\n") catch @panic("write mission");
     file_source.writeFile("test_mission/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n.\n!\n") catch @panic("write level");
 
-    const h1 = try computeMissionHash(&file_source, arena, "test_mission", 1);
-    const h2 = try computeMissionHash(&file_source, arena, "test_mission", 1);
+    const h1 = try computeMissionHash(&file_source, arena, "test_mission");
+    const h2 = try computeMissionHash(&file_source, arena, "test_mission");
     try testing.expectEqualSlices(u8, &h1, &h2);
 }
 
@@ -201,12 +213,12 @@ test "computeMissionHash: content change changes the hash" {
     file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\n") catch @panic("w1");
     file_source.writeFile("m/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
 
-    const h1 = try computeMissionHash(&file_source, arena, "m", 1);
+    const h1 = try computeMissionHash(&file_source, arena, "m");
 
     // Mutate level_1.txt content.
     file_source.writeFile("m/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n.!\n") catch @panic("w3");
 
-    const h2 = try computeMissionHash(&file_source, arena, "m", 1);
+    const h2 = try computeMissionHash(&file_source, arena, "m");
     try testing.expect(!std.mem.eql(u8, &h1, &h2));
 }
 
@@ -227,12 +239,12 @@ test "computeMissionHash: missing required file errors" {
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // mission.txt declares level_count 1 but no level_1.txt is written.
-    file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\n") catch @panic("w");
+    // No level_1.txt in the dir (the derived count is zero).
+    file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\n") catch @panic("w");
 
     try testing.expectError(
-        error.FileNotFound,
-        computeMissionHash(&file_source, arena, "m", 1),
+        error.MissingRequiredMissionLevel,
+        computeMissionHash(&file_source, arena, "m"),
     );
 }
 

@@ -17880,3 +17880,64 @@ Tests: campaign parse + background mint + Hubs ownership contract;
 warn-and-drop; the graph-check battery (clean -> no warnings, then each
 defect); the shipped campaign runs through checkCampaignGraph inside
 the content-validation test (the integrity contract over real content).
+
+## Campaign-editor slice 1, step 5: mission.txt v3 (the edge + the count are nobody's to author)
+
+mission_file_format_version 2 -> 3; the four shipped mission.txt files
+drop start_hub/end_hub/level_count (uuid + name remain). SLICE 1 IS
+COMPLETE (1a-1e; the formats + model slice of TODO → Level Editor →
+campaign editor).
+
+The return destination: Mission.end_hub survives as a PURE RUNTIME
+channel - populated only by the start_mission handler from the event's
+end_hub_id. The exit-click path (move_player onto an exit) passes the
+exit's destination_hub (the campaign edge's to-end; empty/dangling passes
+null), restart_mission passes the live value through, and the
+mission-complete overlay's re-run derives it by looking up the hub exit
+whose mission this is (the exit IS the edge - the same source of truth as
+the exit-click; a dream has no matching exit -> null). Null everywhere
+means the entering-hub fallback (player_data.current_hub - the
+from-hub never changes during a mission). Mission.start_hub deleted;
+start_mission dropped start_hub_id - a DEAD payload (never read at any
+consumer; the dreams design prose referenced it, updated).
+
+The level count derives FOUR ways, one rule (largest N with
+level_1..level_N present, a gap truncates):
+- start_mission / start_validation / open-editor (reconstruction-read
+  events): countMissionLevelsCached - a probe through the NEW
+  readReconstructionFileOptional, because the count drives recorded
+  events and must re-derive identically on replay. A plain listing is
+  unsound (the editor-saves-then-undo case - the reconstruction cache's
+  own motivating scenario), and a probe through the EXISTING
+  readReconstructionFile panics at the terminating miss (negative
+  results were unrepresentable). The optional variant caches an
+  EMPTY-BYTES known-absent marker on a live FileNotFound; replay serves
+  the marker back as null - determinism even when level files appear on
+  disk mid-session. The marker rides the session-log bundle as an empty
+  content file (hash-consistent, covered by the bundle round-trip
+  test); the lazy-disk fallback (revalidate) mirrors the plain read's.
+  Bonus: the probe caches every level file at mission start, which
+  start_level was going to read anyway - the only new IO is the
+  terminator probe.
+- computeMissionHash: derives internally (the param dies at all call
+  sites); zero levels = error.MissingRequiredMissionLevel (the
+  required-file contract survives).
+- The browser's persistent scan: counted inside scanMissionFolder (it
+  lists the dir anyway); classification is now count-free (any
+  well-formed level_N.txt is config - a gapped level is not an "asset").
+- The official tab: comptime from the embedded map keys
+  (official_mission_level_counts - the official_mission_dir_paths
+  pattern, zero runtime cost).
+
+loadMission is self-owned (uuid + name duped; freeMission) - the last of
+the slice's ownership riders; the browser scans' borrow comments updated.
+The editor writer stops emitting level_count (the editor's own
+levels.len-mirror field is untouched - runtime state).
+
+Tests: the main round-trip now asserts the rider + the derived count over
+real embedded content (and its deep-equal replay re-derives both); a
+handler test covers the exit-click rider (destination rides; dangling
+passes null); a state unit test covers the optional read's live/replay/
+lazy-disk faces; the bundle round-trip covers the absent marker; the
+scan/hash/loader fixtures moved to the v3 shape. One 0.16 gotcha hit
+again (blockless if in a switch prong - braces).

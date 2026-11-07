@@ -406,11 +406,21 @@ pub fn handlePlayerInputEvent(
                 };
             };
             validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
-            const mission = loaders.loadMission(
+            var mission = loaders.loadMission(
                 mission_sections,
                 allocator,
             ) catch {
                 failReconstructionRead(history, "failed to parse mission file");
+                return;
+            };
+            // The derived level count (same reconstruction-sound probe as
+            // start_mission - open_editor is a reconstruction-read event).
+            mission.level_count = shared.countMissionLevelsCached(
+                history,
+                mission_path,
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to read mission level files");
                 return;
             };
             const player_file_path = std.fmt.allocPrint(
@@ -521,11 +531,24 @@ pub fn handlePlayerInputEvent(
             const info = current.last_completed_mission orelse return;
             const mission_path = allocator.dupe(u8, info.path) catch
                 @panic("failed to allocate replay mission path");
+            // Return destination: the hub exit whose mission this is (the
+            // exit IS the edge - same derivation as the exit-click path).
+            // No matching exit, or a dangling destination (a dream, or a
+            // hand-edited hub) -> null -> the entering-hub fallback.
+            var end_hub_id: ?[]const u8 = null;
+            if (current.hub) |hub| {
+                const mission_id = std.fs.path.basename(info.path);
+                for (hub.mission_exits) |exit| {
+                    if (std.mem.eql(u8, exit.mission_id, mission_id) and exit.destination_hub.len > 0) {
+                        end_hub_id = exit.destination_hub;
+                        break;
+                    }
+                }
+            }
             pushEvents(current, &.{
                 .{ .meta_event = .{ .start_mission = .{
                     .mission_path = mission_path,
-                    .start_hub_id = current.player_data.current_hub,
-                    .end_hub_id = null,
+                    .end_hub_id = end_hub_id,
                 } } },
                 .{ .meta_event = .end_hub },
             }, allocator);
@@ -1080,11 +1103,18 @@ pub fn handlePlayerInputEvent(
                             "data/campaigns/{s}/missions/{s}",
                             .{ current.player_data.current_campaign, exit.mission_id },
                         ) catch @panic("failed to allocate mission path");
+                        // The campaign edge's to-end: the exit's
+                        // destination_hub rides the event (a dangling/
+                        // empty destination passes null - the mission
+                        // returns to this hub, the entering-hub
+                        // fallback). See DESIGN → Campaigns & the
+                        // Campaign Editor → The graph model.
+                        const end_hub_id: ?[]const u8 =
+                            if (exit.destination_hub.len > 0) exit.destination_hub else null;
                         pushEvents(current, &.{
                             .{ .meta_event = .{ .start_mission = .{
                                 .mission_path = mission_path,
-                                .start_hub_id = current.player_data.current_hub,
-                                .end_hub_id = null,
+                                .end_hub_id = end_hub_id,
                             } } },
                             .{ .meta_event = .end_hub },
                         }, allocator);

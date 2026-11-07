@@ -179,9 +179,10 @@ pub fn revalidateMission(
     }.reason;
 
     // The CURRENT content's mission identity: a fresh read of mission.txt
-    // (uuid for the identity gate + level_count for the hash). The recorded
-    // files are read by the checking replay itself (start_validation
-    // re-loads them from disk).
+    // (the uuid for the identity gate; the level count for the hash
+    // derives inside computeMissionHash from the dir's level files). The
+    // recorded files are read by the checking replay itself
+    // (start_validation re-loads them from disk).
     const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{mission_dir}) catch
         return invalid(result_allocator, "revalidation failed: out of memory", .{});
     const mission_bytes = history.file_source.readFile(scratch, mission_path) catch
@@ -241,7 +242,6 @@ pub fn revalidateMission(
         history.file_source,
         scratch,
         mission_dir,
-        mission.level_count,
     ) catch
         return invalid(result_allocator, "revalidation failed: could not hash the mission files", .{});
 

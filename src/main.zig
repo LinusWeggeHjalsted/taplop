@@ -1458,6 +1458,15 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     } } }}, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.level, history1.current_state.screen);
+    // The exit-click rider + the derived level count: the exit's
+    // destination_hub rode start_mission (the campaign edge's to-end), and
+    // the count derived from the mission dir's level files (beginnings has
+    // 3). Reconstruction re-derives both identically (deep-equal below).
+    try std.testing.expectEqualStrings(
+        "camp_at_the_crossroads",
+        history1.current_state.mission.?.end_hub.?,
+    );
+    try std.testing.expectEqual(@as(u32, 3), history1.current_state.mission.?.level_count);
 
     // The player starts out of aggro range of every enemy, so skipping the
     // turn alone won't trigger enemy turns (enemies are inactive until
@@ -1665,7 +1674,6 @@ test "ported campaign missions load through the event path" {
         runToIdle(&history);
         event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
             .mission_path = mission.path,
-            .start_hub_id = null,
             .end_hub_id = null,
         } } }}, history.current_arena.allocator());
         runToIdle(&history);
@@ -2154,7 +2162,6 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
     // Push start_mission pointing at the broken mission.
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
-        .start_hub_id = null,
         .end_hub_id = null,
     } } }}, history.current_arena.allocator());
 

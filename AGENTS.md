@@ -117,10 +117,10 @@ return is duped into the passed allocator, freed by `freeHub`/`freeCampaign`
 them). Their tests run the ownership CONTRACT: parse sections freed BEFORE
 the assertions (no borrows by construction) + the free under
 `testing.allocator` (leak-checked). Loaders that still borrow into leaked
-bytes (levels, missions, themes - not yet self-owned) stay arena-wrapped;
-their ownership fix is the prerequisite for leak-checked testing, landing
-with the load change that touches them (loadMission rides campaign-editor
-slice 1's mission.txt step - see TODO → Level Editor → campaign editor).
+bytes (levels, themes - not yet self-owned) stay arena-wrapped; their
+ownership fix is the prerequisite for leak-checked testing, landing with
+the load change that touches them (see TODO → Level Editor → campaign
+editor).
 `scripts/test.sh`
 cleans `crashes/` before and after a passing run so a panicking test's crash
 dump doesn't pollute the tree.

@@ -1,7 +1,4 @@
 Metadata
-file_format_version 2
+file_format_version 3
 mission_uuid 436ab363-3588-42ce-950a-0bc813069c3d
 name Beginnings
-start_hub camp_at_the_crossroads
-end_hub camp_at_the_crossroads
-level_count 3

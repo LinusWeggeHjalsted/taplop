@@ -37,6 +37,32 @@ const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 /// browser's Official tab. Comptime from the embedded map (shipped content
 /// is immutable per build); sorted for a stable browser order. Mirrors
 /// ui/editor_pickers.zig's `official_entity_sprite_stems` comptime scan.
+/// The OFFICIAL missions' level counts, comptime from the embedded map:
+/// dir path -> the largest N with level_1..level_N embedded. Shipped
+/// content is immutable per build, so this is machine-walked truth with
+/// zero runtime cost (the runtime probe + the persistent scan derive the
+/// same rule from disk listings).
+const official_mission_level_counts: []const u32 = build: {
+    @setEvalBranchQuota(20000);
+    var counts: []const u32 = &.{};
+    for (official_mission_dir_paths) |dir_path| {
+        var count: u32 = 0;
+        probe: while (true) {
+            const level_key = "level_" ++ std.fmt.comptimePrint("{d}", .{count + 1}) ++ ".txt";
+            const probe_path = dir_path ++ "/" ++ level_key;
+            for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
+                if (std.mem.eql(u8, key, probe_path)) {
+                    count += 1;
+                    continue :probe;
+                }
+            }
+            break :probe;
+        }
+        counts = counts ++ [_]u32{count};
+    }
+    break :build counts;
+};
+
 const official_mission_dir_paths: []const []const u8 = build: {
     @setEvalBranchQuota(20000);
     var paths: []const []const u8 = &.{};
@@ -410,26 +436,25 @@ pub const FileSource = struct {
                 continue;
             };
 
-            // loadMission returns borrowed strings pointing into the parsed
-            // sections (which point into mission_bytes). Dupe the name BEFORE
-            // freeing mission_bytes so the source is still valid.
+            // loadMission owns its strings into the throwaway parse arena
+            // (which dies below) - dupe the name out of it for the entry.
             const owned_name = try allocator.dupe(u8, mission.name);
             errdefer allocator.free(owned_name);
             allocator.free(mission_bytes);
 
-            // Folder scan: custom-asset detection + the recency stamp
-            // (the max file mtime - any change is an update).
+            // Folder scan: custom-asset detection, the recency stamp (the
+            // max file mtime - any change is an update), + the derived
+            // level count (the folder's consecutive level files).
             const folder_scan = try self.scanMissionFolder(
                 allocator,
                 mission_id,
-                mission.level_count,
             );
 
             try entries.append(allocator, .{
                 .id = owned_id,
                 .path = mission_dir_path,
                 .name = owned_name,
-                .level_count = mission.level_count,
+                .level_count = folder_scan.level_count,
                 .has_custom_assets = folder_scan.has_custom_assets,
                 .author_turns = null, // no validation replay format
                 .mtime_ns = folder_scan.max_mtime_ns,
@@ -479,7 +504,6 @@ pub const FileSource = struct {
         self: *const FileSource,
         allocator: std.mem.Allocator,
         mission_id: []const u8,
-        level_count: u32,
     ) !MissionFolderScan {
         var result: MissionFolderScan = .{};
         const dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
@@ -489,23 +513,45 @@ pub const FileSource = struct {
             .iterate = true,
         }) catch return result; // unreadable folder → no custom assets, mtime 0
         defer std.Io.Dir.close(mission_dir, self.io);
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(allocator);
         var it = mission_dir.iterate();
         while (try it.next(self.io)) |entry| {
             if (entry.kind == .directory) continue; // subdirs aren't config files
-            if (!isKnownMissionConfigFile(entry.name, level_count)) result.has_custom_assets = true;
+            names.append(allocator, allocator.dupe(u8, entry.name) catch
+                @panic("failed to dupe mission folder entry name")) catch
+                @panic("failed to collect mission folder entry name");
+            if (!isKnownMissionConfigFile(entry.name)) result.has_custom_assets = true;
             // Stat through the open mission dir by bare name (the
             // save-listing pattern); a stat failure (vanished between
             // iterate + stat) just skips the stamp.
             const stat = mission_dir.statFile(self.io, entry.name, .{}) catch continue;
             result.max_mtime_ns = @max(result.max_mtime_ns, stat.mtime.nanoseconds);
         }
+        // The derived level count: consecutive level_1..level_N present.
+        // (One pass would track presence per N; the folder is small, so
+        // the simple probe over the collected names is clearer.)
+        count: while (true) {
+            const level_name = std.fmt.allocPrint(allocator, "level_{d}.txt", .{result.level_count + 1}) catch
+                @panic("failed to format level probe name");
+            defer allocator.free(level_name);
+            for (names.items) |name| {
+                if (std.mem.eql(u8, name, level_name)) {
+                    result.level_count += 1;
+                    continue :count;
+                }
+            }
+            break :count;
+        }
+        for (names.items) |name| allocator.free(name);
         return result;
     }
 
     /// Enumerate the OFFICIAL missions (shipped embedded campaign content)
-    /// for the mission browser's Official tab. Metadata (name +
-    /// level_count) is parsed from each mission's embedded mission.txt at
-    /// call time - the path list is comptime-known, the parse is not.
+    /// for the mission browser's Official tab. The name is parsed from
+    /// each mission's embedded mission.txt at call time (the path list is
+    /// comptime-known, the parse is not); the level count is comptime-
+    /// derived (official_mission_level_counts).
     /// Entries mirror `listMissions` (same `MissionEntry` shape; `id` is the
     /// mission's folder stem, `path` is the embedded dir path exactly as
     /// `open_editor` consumes it). The caller owns the returned slice +
@@ -522,7 +568,7 @@ pub const FileSource = struct {
             entries.deinit(allocator);
         }
 
-        for (official_mission_dir_paths) |dir_path| {
+        for (official_mission_dir_paths, 0..) |dir_path, dir_index| {
             const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{dir_path});
             defer allocator.free(mission_txt_path);
             const mission_bytes = self.readEmbeddedFile(allocator, mission_txt_path) catch continue;
@@ -555,7 +601,9 @@ pub const FileSource = struct {
                 .id = id,
                 .path = path,
                 .name = name,
-                .level_count = mission.level_count,
+                // Comptime-derived (the embedded map's consecutive level
+                // files) - see official_mission_level_counts.
+                .level_count = official_mission_level_counts[dir_index],
                 .has_custom_assets = false,
                 .author_turns = null,
             });
@@ -730,23 +778,19 @@ fn isPersistentDirArtifactName(name: []const u8) bool {
 /// `FileSource.hasMissionCustomAssets`): native iterates the folder; web
 /// uses a JS listing. Both share `isKnownMissionConfigFile`.
 /// True if `name` is one of the KNOWN mission config files (mission.txt,
-/// player.txt, level_<N>.txt for 1 <= N <= level_count) - anything else is
-/// a custom asset. Shared by the native folder iteration + the web JS
-/// listing (both has-custom-assets paths).
-fn isKnownMissionConfigFile(name: []const u8, level_count: u32) bool {
+/// player.txt, any well-formed level_<N>.txt with N >= 1) - anything else
+/// is a custom asset. Count-free: a level file is config regardless of
+/// where the consecutive-from-1 derivation stops (a gapped level_3.txt is
+/// a level file, not an asset).
+fn isKnownMissionConfigFile(name: []const u8) bool {
     if (std.mem.eql(u8, name, "mission.txt")) return true;
     if (std.mem.eql(u8, name, "player.txt")) return true;
-    return matchesLevelFile(name, level_count);
-}
-
-/// Returns true if `name` is `level_<N>.txt` for some 1 <= N <= level_count.
-fn matchesLevelFile(name: []const u8, level_count: u32) bool {
     if (!std.mem.startsWith(u8, name, "level_")) return false;
     if (!std.mem.endsWith(u8, name, ".txt")) return false;
     const digits = name["level_".len .. name.len - ".txt".len];
     if (digits.len == 0) return false;
     const n = std.fmt.parseInt(u32, digits, 10) catch return false;
-    return n >= 1 and n <= level_count;
+    return n >= 1;
 }
 
 /// One save file in the load-save browser. `path` is persistent-dir
@@ -802,6 +846,12 @@ fn missionOrder(_: void, a: FileSource.MissionEntry, b: FileSource.MissionEntry)
 const MissionFolderScan = struct {
     has_custom_assets: bool = false,
     max_mtime_ns: i128 = 0,
+    /// DERIVED from the folder's files (never mission.txt - it carries no
+    /// count anymore): the largest N with level_1..level_N all present.
+    /// Same rule as the runtime probe
+    /// (handlers/shared.countMissionLevelsCached) + content_hash's
+    /// derivation - three implementations of one rule, cross-referenced.
+    level_count: u32 = 0,
 };
 
 /// Newest-first ordering: mtime descending, name ascending as the
@@ -1041,7 +1091,7 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     const file_source = FileSource.init(io, dir);
 
     // Mission 1: plain folder name, config files only (no custom assets).
-    file_source.writeFile("missions/skeleton_attack/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
+    file_source.writeFile("missions/skeleton_attack/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid 11111111-1111-1111-1111-111111111111\nname Skeleton Attack\n") catch @panic("w1");
     file_source.writeFile("missions/skeleton_attack/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
     // Sleep between the two missions so their mtimes are strictly ordered
     // (sequential writes can tie within filesystem mtime resolution - the
@@ -1049,7 +1099,7 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
 
     // Mission 2: UUID_slug folder name, config + a custom sprite (custom assets).
-    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 2\nname Tree Grove\n") catch @panic("w3");
+    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid 22222222-2222-2222-2222-222222222222\nname Tree Grove\n") catch @panic("w3");
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w4");
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_2.txt", "Metadata\nfile_format_version 1\n\nLayout\n.!\n") catch @panic("w5");
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/custom_tree.png", "fake png bytes") catch @panic("w6");
@@ -1108,10 +1158,10 @@ test "listMissions: newest first - any file change (custom png) is an update" {
     // recency above beta's: the sort key is the max mtime across ALL
     // folder files. Sleeps force distinct stamps (the tie discipline
     // above).
-    file_source.writeFile("missions/alpha/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Alpha\n") catch @panic("w1");
+    file_source.writeFile("missions/alpha/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid 33333333-3333-3333-3333-333333333333\nname Alpha\n") catch @panic("w1");
     file_source.writeFile("missions/alpha/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
     try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
-    file_source.writeFile("missions/beta/mission.txt", "Metadata\nfile_format_version 2\nmission_uuid 44444444-4444-4444-4444-444444444444\nlevel_count 1\nname Beta\n") catch @panic("w3");
+    file_source.writeFile("missions/beta/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid 44444444-4444-4444-4444-444444444444\nname Beta\n") catch @panic("w3");
     file_source.writeFile("missions/beta/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w4");
     try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
     file_source.writeFile("missions/alpha/custom.png", "fake png bytes") catch @panic("w5");

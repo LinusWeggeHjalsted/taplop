@@ -571,20 +571,25 @@ work:
         unplaced start hub, missing hub.txt, dangling destination, missing
         mission, unreachable hub - warn-only) + a procedural placeholder
         map for the official campaign.
-  - [ ] 1e. mission.txt v3: drops `start_hub`/`end_hub` (the campaign
-        graph owns the edge; dreams = entering-hub fallback) + `level_count`
-        becomes derived (writer/loader round-trip + tests; consumers:
-        start_mission's level loop, the mission-browser scan,
-        content_hash; `loadMission` self-ownership rides this step). RIDER:
-        the exit-click path populates `start_mission.end_hub_id` from the
-        exit's `destination_hub` so hub-to-hub missions still end at the
-        right hub (nominally slice 2's runtime, but the game breaks
-        without it once end_hub is dropped).
+  - [x] 1e. mission.txt v3 DONE (see DONE.md, campaign-editor slice 1
+        step 5): drops `start_hub`/`end_hub`/`level_count` (version 3);
+        `Mission.end_hub` is a pure runtime channel (the start_mission
+        override - exit-click passes the exit's destination_hub,
+        restart passes the live value, the overlay re-run derives it from
+        the hub's exit; null = entering-hub fallback); the level count
+        DERIVES at start_mission/start_validation/open-editor via a
+        reconstruction-sound probe (countMissionLevelsCached over
+        readReconstructionFileOptional - absent files cache a known-absent
+        marker so replay re-derives identically), and inside
+        computeMissionHash + the browser scans (file_source listings; the
+        official tab comptime from the embedded map); `loadMission` is
+        self-owned; `start_mission` dropped the dead `start_hub_id`
+        payload. SLICE 1 COMPLETE.
   - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
-        new_game, discovered on arrival), `start_mission.end_hub_id`
-        populated from the exit's destination_hub by the exit-click
-        path, world-map travel (backtrack to discovered) + mission
-        starts (edge clickable when the start hub is discovered) -
+        new_game, discovered on arrival), world-map travel (backtrack to
+        discovered) + mission starts (edge clickable when the start hub
+        is discovered) - the exit-click end_hub_id population landed
+        early with slice 1e -
         buildWorldMap renders the mirror (dim undiscovered hubs /
         unavailable missions).
   - [ ] 3. The campaign editor state + framing + the editor browser's
@@ -607,15 +612,11 @@ work:
   warn+degrade, render magenta gate, picker filter, pick-commit backstops,
   Revalidate report - see DESIGN → Custom Missions & Online Services →
   Custom-asset dimensions; history in DONE.md).
-- **Mission metadata cleanup - SETTLED** (see DESIGN → Campaigns & the
-  Campaign Editor → The graph model): mission.txt DROPS `start_hub` and
-  `end_hub` outright (no authored copy, no derivation - the campaign
-  graph owns the edge: the from-hub is the exit's file, the to-hub
-  rides `start_mission.end_hub_id` from the exit's `destination_hub`;
-  dreams = the existing entering-hub fallback); `level_count` becomes
-  DERIVED (count the mission dir's `level_N.txt` files). Lands as
-  campaign-editor slice 1 (formats + model, above) - one version bump
-  + writer/loader round-trip, not a standalone slice.
+- [x] **Mission metadata cleanup - SETTLED + LANDED** (see DESIGN →
+      Campaigns & the Campaign Editor → The graph model + File formats):
+      mission.txt v3 drops `start_hub`/`end_hub`/`level_count`; the level
+      count derives (the reconstruction-sound probe - DESIGN → File
+      formats). Landed as campaign-editor slice 1 step 1e.
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
 - **Editor browser polish** (the browser itself - kind tabs + New
