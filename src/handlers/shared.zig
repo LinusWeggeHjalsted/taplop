@@ -112,6 +112,10 @@ pub fn loadCampaignAndPushHub(
         "data/campaigns/{s}/campaign.txt",
         .{current.player_data.current_campaign},
     ) catch @panic("failed to allocate campaign path");
+    // The campaign's content dir (the background mint + the integrity
+    // checks' hub/mission reads resolve from here).
+    const campaign_dir_path = std.fs.path.dirname(campaign_path) orelse
+        @panic("campaign path has no directory component");
 
     const campaign_sections = blk: {
         const bytes = history.readReconstructionFile(campaign_path) catch {
@@ -124,13 +128,29 @@ pub fn loadCampaignAndPushHub(
         };
     };
     validateConfigKeys(history, campaign_sections, parser.campaign_key_map, campaign_path, allocator);
+    var campaign_warnings: std.ArrayList([]const u8) = .empty;
     current.campaign = loaders.loadCampaign(
         campaign_sections,
+        campaign_dir_path,
         allocator,
+        &campaign_warnings,
     ) catch {
         failReconstructionRead(history, "failed to parse campaign file");
         return;
     };
+
+    // Graph integrity checks (dangling destinations, missing missions/
+    // hub files, unplaced/unreachable hubs - warn-only; see
+    // loaders.checkCampaignGraph for why the reads bypass the
+    // reconstruction cache).
+    loaders.checkCampaignGraph(
+        current.campaign.?,
+        campaign_dir_path,
+        history.file_source,
+        allocator,
+        &campaign_warnings,
+    );
+    surfaceWarnings(history, &campaign_warnings, allocator);
 
     // Push start_hub with the player's current hub
     const hub_id = current.player_data.current_hub;

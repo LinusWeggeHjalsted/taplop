@@ -53,7 +53,14 @@ fn validateConfigFile(
         _ = try loaders.loadPlayerSave(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_save_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/campaign.txt")) {
-        _ = try loaders.loadCampaign(sections, allocator);
+        // The campaign dir (path minus campaign.txt) feeds the background
+        // mint; the graph checks then read the campaign's hub + mission
+        // files through the same file source - a shipped campaign with a
+        // dangling edge or unplaced start hub fails HERE (the integrity
+        // contract over real content).
+        const campaign_dir = path[0 .. std.mem.lastIndexOfScalar(u8, path, '/').?];
+        const campaign = try loaders.loadCampaign(sections, campaign_dir, allocator, warnings);
+        loaders.checkCampaignGraph(campaign, campaign_dir, file_source, allocator, warnings);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/hub.txt")) {
         _ = try loaders.loadHub(sections, file_source, allocator, "", null);

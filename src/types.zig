@@ -3196,9 +3196,32 @@ pub const Editor = struct {
 
 pub const ReplayViewer = struct {};
 
+/// One placed hub on the campaign map. `id` is the hub's directory name
+/// (the reference everywhere - exits' destination_hub, start_hub, saves).
+/// `position` is the hub icon's CENTER as an offset from the map's center:
+/// integer background-pixel space, `0 0` = the center (where the
+/// background is anchored), UNBOUNDED in every direction (a hub outside
+/// the map view's default framing is reachable by zooming out - the
+/// levels-are-infinite philosophy; no clamps, no validation). The map
+/// view's default framing (a 3840x2160 region centered on the origin) is
+/// a VIEW constant, never campaign data. See DESIGN → Campaigns & the
+/// Campaign Editor → The map coordinate model.
+pub const CampaignHub = struct {
+    id: []const u8,
+    position: Vector2,
+};
+
+/// The loaded campaign. Self-owned: `name`, `start_hub`, and every hub id
+/// are duped by `loadCampaign`; `background` holds the RESOLVED
+/// content-addressed sprite id (minted at load from the bare stem in
+/// campaign.txt + the campaign's content path - see
+/// file_source.customStemForContentPath), empty when the campaign has no
+/// background.
 pub const Campaign = struct {
     name: []const u8 = &.{},
     start_hub: []const u8 = &.{},
+    background: []const u8 = &.{},
+    hubs: []const CampaignHub = &.{},
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

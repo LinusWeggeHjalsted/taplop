@@ -17820,3 +17820,63 @@ the dims reads go through file_source.readFile, not the reconstruction
 cache, so session-log bundles don't capture art bytes. No crash, no
 event-verification impact (dims only ride editor events, which carry them
 in-band); it's a state-fidelity gap for future state-strict consumers.
+
+## Campaign-editor slice 1, step 4: campaign.txt v2 (map layer + graph checks)
+
+campaign_file_format_version 1 -> 2. campaign.txt gains the map layer:
+`background` + a `Hubs` section (one group per hub). The shipped
+campaign.txt carries `background map` + the one hub at `position 0 0`;
+a procedural PLACEHOLDER background ships at
+data/campaigns/main_campaign/map.png (1024x1024 - a quiet deep-sea fill
+with a soft central island, the ui/panel.png precedent; the artist
+replaces it freely - any size works, center-anchored).
+
+The coordinate model (settled in discussion; DESIGN → Campaigns & the
+Campaign Editor → The map coordinate model): positions are CENTER-OFFSET
+integers - `0 0` is the map's center, the same point the background
+anchors to, so a 1000x1000 image reads as a small island and the start
+hub (currently at 0 0, an authored placement that moves with the art)
+sits on the background's center. UNBOUNDED in every direction: the 4k
+"reference space" is NOT stored data at all - it is the map VIEW's
+default framing constant (a 3840x2160 region centered on the origin,
+zooming in/out like in-game zoom), so a hub outside the default view is
+reachable by zooming out (the levels-are-infinite philosophy), and a
+wrong-sized default is a one-constant change instead of a data
+migration. Positions never depend on the background's dimensions.
+
+`background` is a bare stem naming a PNG in the campaign's OWN
+directory - official and custom campaigns author it identically (the
+user's rule). loadCampaign mints it into the content-addressed sprite id
+at load (customStemForContentPath + the campaign content path; the
+data/ prefix strips), so the render side resolves it through the
+standard 1c custom-asset rule with zero new path machinery. loadCampaign
+gained the campaign-content-path + warnings params; the Hubs entries
+follow the NPC convention (hub_id missing -> silent skip, position
+missing/unparsable -> warn + drop). CampaignHub = { id, position };
+Campaign gains background + hubs, self-owned, freeCampaign extended.
+
+Graph INTEGRITY checks (loaders.checkCampaignGraph, warn-only, called
+from loadCampaignAndPushHub + the shipped-content validation test):
+unplaced start hub; a placed hub with no readable/parsable hub.txt; an
+exit destination naming an unplaced hub (the dangling forward reference
+- save-legal by design, caught at load, as the slice demanded from day
+one); an exit naming a missing mission dir; unreachable hubs (BFS from
+the start hub). The checks read hub + mission files through file_source
+DIRECTLY, not the reconstruction cache - warnings apply no bytes to
+state (surfaceWarnings is !replaying-gated, advisory-only), so replay
+purity is unaffected.
+
+Two implementation notes worth keeping: (1) parseConfigFile recognizes
+section headers against a global whitelist (`valid_section_headers`) -
+"Hubs" had to be added there before anything else worked. (2) The
+checker's edge list initially borrowed mission_id/destination slices
+into the per-hub parsed sections, which are freed before the
+edge-consuming loops run - a genuine use-after-free that
+testing.allocator surfaced as a segfault (the arena-blind-spot class,
+caught precisely because the new tests are leak-checked); the edges now
+own their strings.
+
+Tests: campaign parse + background mint + Hubs ownership contract;
+warn-and-drop; the graph-check battery (clean -> no warnings, then each
+defect); the shipped campaign runs through checkCampaignGraph inside
+the content-validation test (the integrity contract over real content).

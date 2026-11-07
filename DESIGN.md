@@ -2932,13 +2932,27 @@ to reference + its hubs as destinations), and the exit entry IS the edge
 
 ### File formats (each change bumps its per-type file_format_version)
 
-- **campaign.txt gains the map layer**: `background` (a plain world-map
-  image bundled in the campaign dir) + a `Hubs` section, one group per hub
-  (dir name + map position). Positions live HERE, not in hub.txt - the map
-  is campaign-level data: moving a hub edits one file, and the world map
-  loads the whole graph geometry in one read without touching every hub
-  file. Position units (normalized vs background pixels) are an OPEN
-  question - see TODO.
+- **campaign.txt carries the map layer** (v2, landed): `background` (a
+  bare stem naming a PNG in the campaign's OWN directory - official and
+  custom campaigns author it identically; the loader mints it into the
+  content-addressed sprite id at load, so the render side resolves it
+  through the standard custom-asset rule) + a `Hubs` section, one group
+  per hub (`hub_id` + `position`). Positions live HERE, not in hub.txt -
+  the map is campaign-level data: moving a hub edits one file, and the
+  world map loads the whole graph geometry in one read without touching
+  every hub file. The coordinate model: see The map coordinate model
+  below.
+- **Load-time graph integrity checks** (landed -
+  `loaders.checkCampaignGraph`, called from `loadCampaignAndPushHub`,
+  warn-only through the standard surfaceWarnings popup): start hub not
+  placed; a placed hub with no readable/parsable hub.txt; an exit's
+  `destination_hub` naming an unplaced hub (the dangling forward
+  reference - save-legal by design, caught at load); an exit naming a
+  mission dir that doesn't exist; unreachable hubs (BFS from the start
+  hub over hub → exit → destination edges). The checks read hub + mission
+  files through `file_source` directly, NOT the reconstruction cache:
+  warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
+  advisory-only), so replay purity is unaffected.
 - **hub.txt**: `Exits` entries gain `destination_hub`; the `NPCs` section
   becomes `character_code` + `npc_type`. Hubs bundle their own custom
   decoration art - `hubs/<hub>/` gains the art folder, custom stems
@@ -2959,6 +2973,32 @@ to reference + its hubs as destinations), and the exit entry IS the edge
 - **mission.txt drops `start_hub` + `end_hub` + `level_count`** (the writer
   stops emitting them; the loader warns + drops old keys - free
   pre-release, the files ship embedded with the exe).
+
+### The map coordinate model
+
+Hub positions are **center-offset integers**: `position 0 0` is the
+map's center - the same point the background anchors to - and values are
+pixel offsets from it, unbounded in every direction (negative values are
+normal; a hub outside the map view's default framing is reachable by
+zooming out - the levels-are-infinite philosophy, no clamps, no
+validation). The hub icon renders CENTERED on its position.
+
+The background is embedded **centered on the origin**: a 1000×1000 image
+is a small island in the middle of the map, whatever its size - the
+stored positions never depend on the background's dimensions, so
+re-skinning or resizing the art moves nothing.
+
+The **default map framing** is a VIEW constant, never campaign data: the
+map view (buildWorldMap + the campaign editor view) opens framed on a
+3840×2160 region centered on the origin, and zooms in/out exactly like
+in-game zoom (the same camera model over the same space). If 4k proves
+the wrong default, it is a one-constant change - nothing stored depends
+on it.
+
+The start hub's position is ordinary authored data - no rule places it
+at the center. The official campaign currently places it at `0 0`
+(sitting on the background's center); that placement moves with the art
+whenever the real map lands.
 
 ### Discovery + travel (the world map's gameplay)
 

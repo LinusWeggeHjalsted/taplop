@@ -1,4 +1,10 @@
 Metadata
-file_format_version 1
+file_format_version 2
 name Main Campaign
 start_hub camp_at_the_crossroads
+background map
+
+Hubs
+
+hub_id camp_at_the_crossroads
+position 0 0

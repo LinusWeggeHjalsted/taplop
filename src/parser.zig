@@ -27,7 +27,10 @@ pub const level_file_format_version: u32 = 1;
 /// (the entity fields name/sprite are gone); Exits gain `destination_hub`.
 pub const hub_file_format_version: u32 = 2;
 pub const mission_file_format_version: u32 = 2;
-pub const campaign_file_format_version: u32 = 1;
+/// v2 (campaign-editor slice 1): Metadata gains `background` (a bare stem
+/// for a PNG in the campaign's own directory) + a `Hubs` section (hub_id +
+/// position, one group per placed hub).
+pub const campaign_file_format_version: u32 = 2;
 pub const player_save_file_format_version: u32 = 2;
 pub const settings_file_format_version: u32 = 2;
 pub const color_themes_file_format_version: u32 = 1;
@@ -62,6 +65,7 @@ pub const Section = struct {
 const valid_section_headers = [_][]const u8{
     "Metadata",
     "Layout",
+    "Hubs",
     "Entities",
     "Decorations",
     "Items",
@@ -409,7 +413,7 @@ pub const settings_sections = [_][]const u8{ "Metadata", "Audio", "Display", "Ga
 pub const weapon_type_sections = [_][]const u8{"Skills"};
 pub const level_sections = [_][]const u8{ "Metadata", "Layout", "Entities", "Decorations", "Items" };
 pub const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
-pub const campaign_sections = [_][]const u8{"Metadata"};
+pub const campaign_sections = [_][]const u8{ "Metadata", "Hubs" };
 pub const mission_sections = [_][]const u8{"Metadata"};
 pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
 
@@ -599,12 +603,17 @@ pub const mission_key_map = std.StaticStringMap([]const []const u8).initComptime
 
 // --- Campaign file key whitelists ---
 //
-// Only a Metadata section with name + start_hub.
+// Metadata carries name + start_hub + background (a bare stem naming a
+// PNG in the campaign's own directory). Hubs entries carry hub_id +
+// position (center-offset integers - see types.CampaignHub).
 
-const campaign_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub" };
+const campaign_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub", "background" };
+
+const campaign_hubs_keys = [_][]const u8{ "hub_id", "position" };
 
 pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &campaign_metadata_keys },
+    .{ "Hubs", &campaign_hubs_keys },
 });
 
 // --- Settings file key whitelists ---

@@ -516,8 +516,6 @@ work:
   READ-side mirror of the same view (discovery + travel semantics
   settled in DESIGN). OPEN questions (inline, decide at the
   corresponding slices):
-  - map position units - normalized (0-1, survives a background
-    re-skin; the lean) vs background pixels;
   - hub rename - rewrite references (destination_hub values +
     start_hub; the mission editor's stem-normalization precedent; the
     lean) vs no rename in v1;
@@ -533,8 +531,10 @@ work:
   (leaderboards, clone info + medal - before ANY mission start, map
   edge / exit tile / re-run alike); fog-of-war hiding as a possible
   refinement of the dim-undiscovered mirror.
-  Artist dependency: a plain world-map background image for the official
-  campaign (a placeholder unblocks the editor meanwhile).
+  Artist dependency: the official campaign's real world-map background -
+  a procedural PLACEHOLDER ships at
+  data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
+  replace freely, the format is a bare stem + any size, center-anchored).
   Slices (rough, re-cut at implementation):
   - [x] 1a. `loadHub` + `loadCampaign` become SELF-OWNED (the
         arena-blind-spots policy - AGENTS → Build & Test) so the new
@@ -560,15 +560,17 @@ work:
         `customStemForContentPath`; the editor scan + save normalization
         mint the new shape. DONE (see DONE.md, campaign-editor slice 1
         step 3).
-  - [ ] 1d. campaign.txt v2: gains `background` + a `Hubs` section (one
-        group per hub: dir name + map position; OPEN: position units -
-        normalized vs background pixels, decide here) + campaign graph
-        INTEGRITY checks at load (dangling destination names, exits naming
-        missing missions, no start hub placed, unreachable hubs - warn,
-        the loader convention): the dangling format is save-legal BY
-        DESIGN, so the catch belongs at load/validation time from day one,
-        not as a trailing afterthought (a hand-edited campaign must not
-        silently misresolve).
+  - [x] 1d. campaign.txt v2 DONE (see DONE.md, campaign-editor slice 1
+        step 4): `background` (bare stem, PNG in the campaign dir, minted
+        to the content-addressed id at load) + the `Hubs` section
+        (`hub_id` + `position` - center-offset integers, unbounded; the
+        coordinate model: DESIGN → Campaigns & the Campaign Editor → The
+        map coordinate model, incl. the 3840x2160 view-only default
+        framing + zoom-like-in-game) + load-time graph INTEGRITY checks
+        (`loaders.checkCampaignGraph` from `loadCampaignAndPushHub`:
+        unplaced start hub, missing hub.txt, dangling destination, missing
+        mission, unreachable hub - warn-only) + a procedural placeholder
+        map for the official campaign.
   - [ ] 1e. mission.txt v3: drops `start_hub`/`end_hub` (the campaign
         graph owns the edge; dreams = entering-hub fallback) + `level_count`
         becomes derived (writer/loader round-trip + tests; consumers:
