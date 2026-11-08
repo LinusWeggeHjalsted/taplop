@@ -18396,3 +18396,30 @@ assertions incl. the dedup collapse, freeEditorBuild sweep). The stale
 "arena-wrapped: buildEditorMission borrows" comment on the gradient
 test updated (the arena stays for that test's un-freed
 instantiateEditorLevel result, a separate ride).
+
+## Config-layer OOM slice 4: the self-owned loaders + loadLevel/loadHub converted
+
+The mechanical completion of the convention in loaders.zig: every
+remaining `try`-allocation site (loadSettings ~6, loadLevel ~16 incl.
+the two definitions.put sites, loadHub ~15 incl. exit/NPC definition
+puts, loadCampaign 2, loadPlayerSave 6) became an inline
+catch @panic. The last error.OutOfMemory returns in the file were
+already gone (slice 2); after this slice a loader error return is an
+INPUT problem by construction.
+
+The convention simplified the plan: no new errdefers were needed -
+after conversion, loadSettings / loadCampaign / loadPlayerSave have
+ZERO error returns after allocation (their only errors are the
+pre-allocation version checks; their validation is warn-only), so the
+"errdefer as defense" idea from the survey dissolved - there is nothing
+to defend. loadLevel / loadHub keep their validation errors and their
+existing errdefers (OOM dropped from those comments - panics skip
+errdefer, the dying process owns the build). loadPlayerLoadout and
+parsePlayerLoadoutFields were confirmed to have no allocation error
+sites at all. The testOwnedBindings helper keeps try (test code: an
+allocation failure there IS a test failure).
+
+loadConfigWithFallback's "a failed load_fn may have left partial
+allocations that cannot be named here" debt comment deleted - every
+load_fn now owns its error path, so the comment described a state that
+no longer exists.

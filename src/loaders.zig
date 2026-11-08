@@ -348,7 +348,8 @@ pub fn loadSettings(
             // testing.allocator (the old borrow-into-freed-bytes pattern was
             // invisible under an arena). See DESIGN → File System & IO →
             // Settings ownership.
-            const input_name_owned = try allocator.dupe(u8, input_name);
+            const input_name_owned = allocator.dupe(u8, input_name) catch
+                @panic("failed to dupe binding input name");
             const input: types.RawInput = switch (input_type_id) {
                 .key => .{ .key = input_name_owned },
                 .mouse_button => .{ .mouse_button = input_name_owned },
@@ -375,11 +376,11 @@ pub fn loadSettings(
                 .alt = asBool(findValue(pairs, "alt") orelse "false") orelse false,
             };
 
-            try bindings.append(allocator, .{
+            bindings.append(allocator, .{
                 .input = input,
                 .modifiers = modifiers,
                 .action = action,
-            });
+            }) catch @panic("failed to append binding");
         }
 
         // How many entries came from the user file - everything appended
@@ -414,17 +415,18 @@ pub fn loadSettings(
                     .mouse_button => |name| name,
                     .gamepad_button => |name| name,
                 };
-                const default_name_owned = try allocator.dupe(u8, default_name);
+                const default_name_owned = allocator.dupe(u8, default_name) catch
+                    @panic("failed to dupe injected default binding input name");
                 const default_input: types.RawInput = switch (default_binding.input) {
                     .key => .{ .key = default_name_owned },
                     .mouse_button => .{ .mouse_button = default_name_owned },
                     .gamepad_button => .{ .gamepad_button = default_name_owned },
                 };
-                try bindings.append(allocator, .{
+                bindings.append(allocator, .{
                     .input = default_input,
                     .modifiers = default_binding.modifiers,
                     .action = default_binding.action,
-                });
+                }) catch @panic("failed to append injected default binding");
             }
         }
 
@@ -494,7 +496,7 @@ pub fn loadSettings(
                     freeRawInputString(binding.input, allocator);
                     continue :outer;
                 }
-                try kept.append(allocator, binding);
+                kept.append(allocator, binding) catch @panic("failed to append kept binding");
             }
             bindings.deinit(allocator);
             bindings = kept;
@@ -512,7 +514,7 @@ pub fn loadSettings(
             }
             allocator.free(settings.input_bindings);
         }
-        settings.input_bindings = try bindings.toOwnedSlice(allocator);
+        settings.input_bindings = bindings.toOwnedSlice(allocator) catch @panic("failed to own input bindings slice");
     }
 
     return settings;
@@ -2294,7 +2296,7 @@ pub fn loadLevel(
             if (code_string.len != 1) continue;
             const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator, file_path, warnings);
             warnEntitySpriteDimensions(entity, file_source, allocator, warnings, file_path);
-            try entity_definitions.put(code_string[0], entity);
+            entity_definitions.put(code_string[0], entity) catch @panic("failed to insert entity definition");
         }
     }
 
@@ -2308,7 +2310,7 @@ pub fn loadLevel(
             if (code_string.len != 1) continue;
             const item = parseItemEntry(pairs, file_path, warnings, allocator) orelse continue;
 
-            try item_definitions.put(code_string[0], item);
+            item_definitions.put(code_string[0], item) catch @panic("failed to insert item definition");
         }
     }
 
@@ -2318,15 +2320,15 @@ pub fn loadLevel(
     var entity_list: std.ArrayList(types.Entity) = .empty;
     var player_entity: types.Entity = .{ .name = "Player", .sprite = "player", .team = 0 };
     cloneEntityOwned(&player_entity, allocator);
-    try entity_list.append(allocator, player_entity);
+    entity_list.append(allocator, player_entity) catch @panic("failed to append player entity");
     var decoration_list: std.ArrayList(types.Decoration) = .empty;
     var ground_item_list: std.ArrayList(types.GroundItems) = .empty;
     var player_start: ?types.Vector2 = null;
 
     // Partial-build cleanup on any error return (missing markers, an
-    // unknown layout character, OOM): the local lists own everything
-    // until the tail's toOwnedSlice calls move it into `level`. Both
-    // halves are safe together - a toOwnedSlice'd list is empty (its loop
+    // unknown layout character): the local lists own everything until
+    // the tail's toOwnedSlice calls move it into `level`. Both halves
+    // are safe together - a toOwnedSlice'd list is empty (its loop
     // no-ops) and a not-yet-assigned level field is an empty slice.
     errdefer {
         for (entity_list.items) |entity| freeEntity(entity, allocator);
@@ -2358,14 +2360,14 @@ pub fn loadLevel(
 
                 switch (character) {
                     ' ' => {},
-                    '.' => try tile_positions.append(allocator, position),
+                    '.' => tile_positions.append(allocator, position) catch @panic("failed to append tile position"),
                     '!' => {
                         player_start = position;
-                        try tile_positions.append(allocator, position);
+                        tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                     },
                     '=' => {
                         level.level_end = position;
-                        try tile_positions.append(allocator, position);
+                        tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                     },
                     else => {
                         // Check if this character is a decoration (no tile underneath)
@@ -2385,21 +2387,21 @@ pub fn loadLevel(
                             decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
                         } else if (entity_definitions.get(character)) |definition| {
                             // An entity's tile is walkable.
-                            try tile_positions.append(allocator, position);
+                            tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                             var entity = definition;
                             entity.position = position;
                             cloneEntityOwned(&entity, allocator);
-                            try entity_list.append(allocator, entity);
+                            entity_list.append(allocator, entity) catch @panic("failed to append entity");
                         } else if (item_definitions.get(character)) |item| {
                             // An item's tile is walkable.
-                            try tile_positions.append(allocator, position);
-                            const items = try allocator.alloc(types.Item, 1);
+                            tile_positions.append(allocator, position) catch @panic("failed to append tile position");
+                            const items = allocator.alloc(types.Item, 1) catch @panic("failed to alloc ground item stack");
                             items[0] = item;
                             cloneItemOwned(&items[0], allocator);
-                            try ground_item_list.append(allocator, .{
+                            ground_item_list.append(allocator, .{
                                 .position = position,
                                 .items = items,
-                            });
+                            }) catch @panic("failed to append ground item stack");
                         } else {
                             // Declared nowhere in THIS file - not a
                             // decoration, entity, or item code, not a
@@ -2467,10 +2469,10 @@ pub fn loadLevel(
         clampDecorationFootprint(decoration, &tile_set, allocator, warnings, file_path);
     }
 
-    level.level_tiles = try tile_positions.toOwnedSlice(allocator);
-    level.entities = try entity_list.toOwnedSlice(allocator);
-    level.decorations = try decoration_list.toOwnedSlice(allocator);
-    level.ground_items = try ground_item_list.toOwnedSlice(allocator);
+    level.level_tiles = tile_positions.toOwnedSlice(allocator) catch @panic("failed to own level tiles slice");
+    level.entities = entity_list.toOwnedSlice(allocator) catch @panic("failed to own level entities slice");
+    level.decorations = decoration_list.toOwnedSlice(allocator) catch @panic("failed to own level decorations slice");
+    level.ground_items = ground_item_list.toOwnedSlice(allocator) catch @panic("failed to own level ground items slice");
 
     return level;
 }
@@ -2526,14 +2528,14 @@ pub fn loadHub(
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            try exit_codes.append(allocator, code_string[0]);
-            try exit_definitions.put(code_string[0], .{
+            exit_codes.append(allocator, code_string[0]) catch @panic("failed to append exit code");
+            exit_definitions.put(code_string[0], .{
                 .mission_id = findValue(pairs, "mission_id") orelse &.{},
                 // Empty = a dangling forward reference (legal by design -
                 // see DESIGN → Campaigns & the Campaign Editor).
                 .destination_hub = findValue(pairs, "destination_hub") orelse &.{},
                 .position = .{ .x = 0, .y = 0 },
-            });
+            }) catch @panic("failed to insert exit definition");
         }
     }
 
@@ -2557,15 +2559,15 @@ pub fn loadHub(
             if (code_string.len != 1) continue;
             const type_value = findValue(pairs, "npc_type") orelse {
                 appendWarning(warnings, allocator, "{s}: NPC entry '{c}' has no npc_type - dropped", .{ file_path, code_string[0] });
-                try dropped_npc_codes.append(allocator, code_string[0]);
+                dropped_npc_codes.append(allocator, code_string[0]) catch @panic("failed to append dropped NPC code");
                 continue;
             };
             const npc_type = parseEnum(types.NpcType, type_value) orelse {
                 appendWarning(warnings, allocator, "{s}: unknown npc_type '{s}' (NPC entry '{c}') - dropped", .{ file_path, type_value, code_string[0] });
-                try dropped_npc_codes.append(allocator, code_string[0]);
+                dropped_npc_codes.append(allocator, code_string[0]) catch @panic("failed to append dropped NPC code");
                 continue;
             };
-            try npc_definitions.put(code_string[0], npc_type);
+            npc_definitions.put(code_string[0], npc_type) catch @panic("failed to insert NPC definition");
         }
     }
 
@@ -2577,7 +2579,7 @@ pub fn loadHub(
     var player_start: ?types.Vector2 = null;
 
     // Partial-build cleanup on any error return (missing spawn, unknown
-    // layout character, OOM) - same shape as loadLevel's errdefer: the
+    // layout character) - same shape as loadLevel's errdefer: the
     // lists own everything until the tail moves it into `hub`.
     errdefer {
         for (decoration_list.items) |decoration| freeDecoration(decoration, allocator);
@@ -2606,13 +2608,13 @@ pub fn loadHub(
 
                 switch (character) {
                     ' ' => {},
-                    '.' => try tile_positions.append(allocator, position),
+                    '.' => tile_positions.append(allocator, position) catch @panic("failed to append tile position"),
                     '!' => {
                         hub.player.position = position;
                         player_start = position;
                         hub.player.name = dupeString(allocator, "Player");
                         hub.player.sprite = dupeString(allocator, "player");
-                        try tile_positions.append(allocator, position);
+                        tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                     },
                     else => {
                         if (decoration_definitions.get(character)) |deco_def| {
@@ -2629,21 +2631,21 @@ pub fn loadHub(
                             decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
                         } else if (exit_definitions.getPtr(character)) |exit| {
                             // An exit's tile is walkable.
-                            try tile_positions.append(allocator, position);
+                            tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                             exit.position = position;
                             var exit_copy = exit.*;
                             exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
                             exit_copy.destination_hub = dupeString(allocator, exit_copy.destination_hub);
-                            try exit_list.append(allocator, exit_copy);
+                            exit_list.append(allocator, exit_copy) catch @panic("failed to append mission exit");
                         } else if (npc_definitions.get(character)) |npc_type| {
                             // An NPC's tile is walkable.
-                            try tile_positions.append(allocator, position);
-                            try npc_list.append(allocator, .{ .npc_type = npc_type, .position = position });
+                            tile_positions.append(allocator, position) catch @panic("failed to append tile position");
+                            npc_list.append(allocator, .{ .npc_type = npc_type, .position = position }) catch @panic("failed to append NPC");
                         } else if (containsCharacter(dropped_npc_codes.items, character)) {
                             // A code whose NPC entry was warned + dropped:
                             // the tile stays walkable, the defect stays
                             // non-fatal (see the dropped_npc_codes decl).
-                            try tile_positions.append(allocator, position);
+                            tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                         } else {
                             // Declared nowhere in THIS file - not a
                             // decoration, exit, or NPC code, not a special.
@@ -2694,10 +2696,10 @@ pub fn loadHub(
         clampDecorationFootprint(decoration, &tile_set, allocator, warnings, file_path);
     }
 
-    hub.hub_tiles = try tile_positions.toOwnedSlice(allocator);
-    hub.decorations = try decoration_list.toOwnedSlice(allocator);
-    hub.npcs = try npc_list.toOwnedSlice(allocator);
-    hub.mission_exits = try exit_list.toOwnedSlice(allocator);
+    hub.hub_tiles = tile_positions.toOwnedSlice(allocator) catch @panic("failed to own hub tiles slice");
+    hub.decorations = decoration_list.toOwnedSlice(allocator) catch @panic("failed to own hub decorations slice");
+    hub.npcs = npc_list.toOwnedSlice(allocator) catch @panic("failed to own hub NPCs slice");
+    hub.mission_exits = exit_list.toOwnedSlice(allocator) catch @panic("failed to own hub mission exits slice");
 
     return hub;
 }
@@ -2753,12 +2755,12 @@ pub fn loadCampaign(
                 appendWarning(warnings, allocator, "Hubs entry '{s}' has an unparsable position '{s}' - dropped", .{ hub_id, position_value });
                 continue;
             };
-            try hub_list.append(allocator, .{
+            hub_list.append(allocator, .{
                 .id = dupeString(allocator, hub_id),
                 .position = position,
-            });
+            }) catch @panic("failed to append campaign hub");
         }
-        campaign.hubs = try hub_list.toOwnedSlice(allocator);
+        campaign.hubs = hub_list.toOwnedSlice(allocator) catch @panic("failed to own campaign hubs slice");
     }
 
     return campaign;
@@ -3177,11 +3179,11 @@ pub fn loadPlayerSave(
         for (section.entry_groups) |group| {
             if (findValue(group.pairs, "name")) |value| {
                 if (parseEnum(types.SkillId, value)) |skill_id| {
-                    try skills.append(allocator, skill_id);
+                    skills.append(allocator, skill_id) catch @panic("failed to append learned skill");
                 }
             }
         }
-        player_data.learned_skills = try skills.toOwnedSlice(allocator);
+        player_data.learned_skills = skills.toOwnedSlice(allocator) catch @panic("failed to own learned skills slice");
     }
 
     // DiscoveredHubs - one `name` per entry group (the writer's shape;
@@ -3191,10 +3193,10 @@ pub fn loadPlayerSave(
         var hubs: std.ArrayList(types.Hub) = .empty;
         for (section.entry_groups) |group| {
             if (findValue(group.pairs, "name")) |name| {
-                try hubs.append(allocator, .{ .name = name });
+                hubs.append(allocator, .{ .name = name }) catch @panic("failed to append discovered hub");
             }
         }
-        player_data.discovered_hubs = try hubs.toOwnedSlice(allocator);
+        player_data.discovered_hubs = hubs.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice");
     }
 
     try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
@@ -3204,7 +3206,7 @@ pub fn loadPlayerSave(
         var clones: std.ArrayList(types.Clone) = .empty;
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
-            try clones.append(allocator, .{
+            clones.append(allocator, .{
                 .mission_uuid = findValue(pairs, "mission_uuid") orelse &.{},
                 .name = findValue(pairs, "clone_name") orelse &.{},
                 .turns_to_complete = asU32(findValue(pairs, "turns_to_complete") orelse "0") orelse 0,
@@ -3215,9 +3217,9 @@ pub fn loadPlayerSave(
                     .cloth = asU32(findValue(pairs, "cloth") orelse "0") orelse 0,
                     .knowledge = asU32(findValue(pairs, "knowledge") orelse "0") orelse 0,
                 },
-            });
+            }) catch @panic("failed to append clone");
         }
-        player_data.clones = try clones.toOwnedSlice(allocator);
+        player_data.clones = clones.toOwnedSlice(allocator) catch @panic("failed to own clones slice");
     }
 
     return player_data;

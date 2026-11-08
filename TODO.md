@@ -1276,12 +1276,16 @@ Session-reflection riders (the parser-grammar + tips sessions):
         site rode along; loadSalvageDefinitions also had a SECOND leak
         shape - each gear try-arm dropped its own result when a LATER arm
         failed)
-  - [ ] editor trio: loadEditorDefaultLevel (the whole level leaks on
+  - [x] editor trio: loadEditorDefaultLevel (the whole level leaks on
         MissingDefaultLevelEnd / DefaultLevelHasEntries), loadEditorDefaults
         (entity/decoration layers leak on a later MissingDefaultEntry),
         buildEditorMission (palette lists + duped footprints/layers leak
         when a level section fails loadLevel - reachable via open_editor
-        on hand-edited content)
+        on hand-edited content) - DONE (see DONE.md, OOM convention
+        slice 3 parts 1+2; buildEditorMission needed the full ownership
+        restructure - success-path remnants + borrowed layer sprites +
+        mixed item-id ownership - to be testable at all; freeEditorBuild
+        is the per-kind contract)
   - [ ] self-owned loaders (loadCampaign, loadPlayerSave, loadSettings,
         loadPlayerLoadout, loadTips): convert the `try`-allocation sites
         to inline panics + errdefers for validation paths

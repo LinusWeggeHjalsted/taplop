@@ -148,8 +148,11 @@ fn loadConfigWithFallback(
             } else |_| {
                 // A load_fn failure falls through to the embedded retry with
                 // the attempt's bytes + sections retained (tracked - freed
-                // by the teardown; a failed load_fn may have left partial
-                // allocations that cannot be named here).
+                // by the teardown). A failed load_fn owns its error path
+                // (errdefer frees the partial build - the config-layer
+                // convention, DESIGN → Error Handling), so nothing is
+                // left dangling here; the retention covers the bytes +
+                // sections themselves.
                 startup.retain(allocator, bytes, sections);
             }
         } else |_| {
