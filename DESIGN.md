@@ -1963,6 +1963,21 @@ silent bug. Allocation panics are written inline (e.g.
 recoverable path surfaces failures to the player via the error popup, not
 silently.
 
+**OOM never propagates as a config-layer error.** Allocation failure at
+parser/loader/file-source sites panics inline - it is unrecoverable,
+exactly as the class list above says, and an error return would let a
+generic `catch` site mistake a fatal condition for a content problem
+(the loadConfigWithFallback shape: an OOM inside loadSettings falling
+through to default settings, whose debounced write could clobber the
+player's settings file with defaults). Loader error unions therefore
+carry INPUT problems (validation) only, and their errdefers guard
+validation-error paths only - which is what makes every loader error
+path reachable by crafted malformed content, and thus leak-check-
+testable under `testing.allocator` with a malformed fixture (the parse →
+expectError → freeParsedSections pattern). Panic paths need no errdefer:
+panics skip them, and the dying process owns the partial build. The
+crash dump (below) is the designed response.
+
 ### Recoverable error surface (the popup)
 
 `SessionState.pending_error: ?[]const u8` (off the undoable GameState, so

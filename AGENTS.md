@@ -292,6 +292,18 @@ session + the ButtonPayload migration):
   test (`test "..."` blocks in the same file can see file-private symbols, so
   this is rare), keep it `pub` but note why.
 
+### Config-layer allocation + error convention
+
+Allocation failure in parser.zig / loaders.zig / file_source.zig never
+surfaces as an error return - those sites `catch @panic` inline (the
+dominant tree convention; the core - state.zig, event_push - does the
+same). Loader error returns carry INPUT problems (validation) only, so
+every error return needs its errdefer cleanup + a leak-checked
+malformed-fixture test (parse → expectError → freeParsedSections under
+`testing.allocator`; the loadCampaign tests are the model). Settled
+design + the fallback-swallow rationale: DESIGN → Error Handling → OOM
+never propagates as a config-layer error.
+
 ### Code Comments
 
 Comments describe the code AS IT IS - never an imagined future state. This

@@ -1258,15 +1258,42 @@ Done items in DONE.md. Open:
 
 Session-reflection riders (the parser-grammar + tips sessions):
 
-- **Error-path-leak sweep on the remaining loaders (the errdefer class).**
-  Three instances fixed across the parser-grammar slices (`parseConfigFile`,
-  `loadLevel`, `loadHub` - error paths never freed the partial build; the
-  new error returns made the class reachable under `testing.allocator`).
-  The same shape plausibly remains in `loadCampaign`/`loadPlayerSave`/
-  `loadEditorDefaults`/`loadDecorationRegistry` etc. One pass adding
-  errdefers + one leak-checked error-path test per loader closes the class
-  (the arena-blind-spot lesson: a leak-checked ERROR path, not just the
-  success path).
+- **Config-layer OOM + error-path cleanup (settled: DESIGN → Error
+  Handling → OOM never propagates; convention + full survey from the
+  cleanup session).** Allocation failure at parser/loader/file-source
+  sites panics inline - never an error return (the fallback-swallow
+  hazard: an OOM in loadSettings falling through loadConfigWithFallback
+  to default settings, whose debounced write could clobber the player's
+  file). Loader errors carry INPUT problems only; every error return
+  needs its errdefer + a leak-checked malformed-fixture test. Slices
+  (the survey's findings - all input-reachable except where noted):
+  - [ ] salvage chain + themes: parseSalvageSplits (partial list leaks on
+        InvalidData mid-list), loadSalvageDefinitions (earlier weapon
+        splits leak when a later gear section is missing),
+        loadColorThemeDefinitions (gradient list leaks on a
+        gradient_index mismatch) - convert + errdefer + tests
+  - [ ] editor trio: loadEditorDefaultLevel (the whole level leaks on
+        MissingDefaultLevelEnd / DefaultLevelHasEntries), loadEditorDefaults
+        (entity/decoration layers leak on a later MissingDefaultEntry),
+        buildEditorMission (palette lists + duped footprints/layers leak
+        when a level section fails loadLevel - reachable via open_editor
+        on hand-edited content)
+  - [ ] self-owned loaders (loadCampaign, loadPlayerSave, loadSettings,
+        loadPlayerLoadout, loadTips): convert the `try`-allocation sites
+        to inline panics + errdefers for validation paths
+        (loadPlayerSave/loadSettings are OOM-only today - errdefer lands
+        as defense; untestable without failure injection, which the
+        convention removes the need for)
+  - [ ] parser.zig + file_source.readFile allocation sites (the
+        parseConfigFile errdefer stays - it guards validation paths;
+        the grammar-slice tests already cover them)
+  - Clean already: loadLevel/loadHub (errdefer + tests), loadMission
+        (its error returns before any allocation), loadWeaponTypeDefinition
+        (allocates nothing), loadDecorationRegistry (panic-only by
+        design), parsePlayerLoadoutFields (no error sites).
+  - writers.zig rides the same convention eventually (its OOM
+        propagation is harmless today - build-buffer-then-write, nothing
+        partial hits disk); not part of this sweep.
 - **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
   `init` has ~20 call sites and every new history-resident config field
   (tips was the latest) mechanically edits all of them (tests pass `&.{}`);
