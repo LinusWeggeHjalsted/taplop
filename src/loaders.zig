@@ -844,6 +844,58 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
     return true;
 }
 
+/// Free everything `buildEditorMission` allocates (the palette lists +
+/// the editor levels' owned fields). NOT the Editor's `mission` or
+/// `player_def` - those are moved in from the caller, not allocated by
+/// the build. Per-kind ownership (the build's contract):
+///   - entity types: the template is loadLevel's placed entity, MOVED
+///     wholesale (fully clone-owned: strings + layers); `id` aliases
+///     `template.name`, so it is freed with the template, never by
+///     itself.
+///   - decoration types: `id`/`sprite` alias ONE moved string (the
+///     level decoration's owned name - freed once, via `id`);
+///     `footprint` + `layers` are deep-duped with owned layer sprite
+///     strings.
+///   - item types: the item is MOVED (owns its name); the `id` is OWNED
+///     by construction (duped - `itemDisplayName` allocates for skill
+///     tomes and borrows for everything else, so every id frees the
+///     same way).
+///   - editor levels: `level_tiles` + the three placements buffers are
+///     MOVED (owned); `name` borrows the parsed sections.
+/// Takes EXACT slices (toOwnedSlice-shaped) - a bare ArrayList .items
+/// slice can be shorter than its buffer's capacity, and freeing it
+/// would be a size-mismatch free.
+/// Used by the build's errdefer + its leak-checked tests.
+fn freeEditorBuild(
+    levels: []const types.EditorLevel,
+    entity_types: []const types.EntityTypeDef,
+    decoration_types: []const types.DecorationTypeDef,
+    item_types: []const types.ItemTypeDef,
+    allocator: std.mem.Allocator,
+) void {
+    for (entity_types) |entity_type| freeEntity(entity_type.template, allocator);
+    allocator.free(entity_types);
+    for (decoration_types) |decoration_type| {
+        allocator.free(decoration_type.id);
+        allocator.free(decoration_type.footprint);
+        for (decoration_type.layers) |layer| allocator.free(layer.sprite);
+        allocator.free(decoration_type.layers);
+    }
+    allocator.free(decoration_types);
+    for (item_types) |item_type| {
+        allocator.free(item_type.id);
+        freeItem(item_type.item, allocator);
+    }
+    allocator.free(item_types);
+    for (levels) |editor_level| {
+        allocator.free(editor_level.level_tiles);
+        allocator.free(editor_level.entity_placements);
+        allocator.free(editor_level.decoration_placements);
+        allocator.free(editor_level.item_placements);
+    }
+    allocator.free(levels);
+}
+
 /// Build an Editor session from already-parsed mission/player/level sections.
 /// Pure (no file I/O) - the caller (open_editor handler) reads via
 /// history.readReconstructionFile so the reconstruction cache makes undo
@@ -853,6 +905,13 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
 /// The result is reference-based (EditorLevel + placements); save flattens
 /// back to the existing inline format. Unused palette types are lost on
 /// editor close (accepted). See DESIGN → Architecture → Level Editor.
+///
+/// OWNERSHIP: the palette + editor levels own everything they keep
+/// (moved wholesale or deep-copied); each level's remnants are freed at
+/// the end of its iteration, and a later level failing loadLevel frees
+/// the accumulated palette via the errdefer - `freeEditorBuild`'s doc is
+/// the per-kind contract. `mission` + `player_def` are moved in from the
+/// caller; the Editor does not own them.
 pub fn buildEditorMission(
     mission: types.Mission,
     player_entity: types.Entity,
@@ -866,6 +925,29 @@ pub fn buildEditorMission(
     var decoration_types: std.ArrayList(types.DecorationTypeDef) = .empty;
     var item_types: std.ArrayList(types.ItemTypeDef) = .empty;
     var editor_levels: std.ArrayList(types.EditorLevel) = .empty;
+
+    // Error-path cleanup: the only error return past this point is a
+    // LATER level's loadLevel failing (everything after a successful
+    // loadLevel allocates with inline panics, per the config-layer OOM
+    // convention) - free the accumulated palette. Per-level remnants
+    // are freed inside the loop; the ownership model is freeEditorBuild's
+    // doc. The lists convert to exact slices first (a bare .items slice
+    // can be shorter than the buffer's capacity - freeing it would be a
+    // size-mismatch free; empty lists yield empty slices, whose frees
+    // are no-ops).
+    errdefer {
+        const owned_levels = editor_levels.toOwnedSlice(allocator) catch @panic("failed to own editor levels slice");
+        const owned_entity_types = entity_types.toOwnedSlice(allocator) catch @panic("failed to own entity types slice");
+        const owned_decoration_types = decoration_types.toOwnedSlice(allocator) catch @panic("failed to own decoration types slice");
+        const owned_item_types = item_types.toOwnedSlice(allocator) catch @panic("failed to own item types slice");
+        freeEditorBuild(
+            owned_levels,
+            owned_entity_types,
+            owned_decoration_types,
+            owned_item_types,
+            allocator,
+        );
+    }
 
     for (parsed_level_sections) |sections| {
         const level = try loadLevel(sections, file_source, allocator, mission_path, warnings);
@@ -883,10 +965,17 @@ pub fn buildEditorMission(
             }
             if (type_id == null) {
                 type_id = @intCast(entity_types.items.len);
+                // MOVED: the palette's template owns the entity's strings
+                // + layers (loadLevel's placed entities are fully
+                // clone-owned); id aliases template.name.
                 entity_types.append(allocator, .{
                     .id = entity.name,
                     .template = entity,
                 }) catch @panic("failed to append entity type");
+            } else {
+                // Dedup-hit: this level's copy is redundant - the palette
+                // kept the first occurrence's.
+                freeEntity(entity, allocator);
             }
             placements.append(allocator, .{
                 .type_id = type_id.?,
@@ -912,8 +1001,23 @@ pub fn buildEditorMission(
             }
             if (type_id == null) {
                 type_id = @intCast(decoration_types.items.len);
-                const fp = allocator.dupe(types.Vector2, decoration.footprint) catch @panic("failed to dupe footprint");
-                const ly = allocator.dupe(types.DecorationLayer, decoration.layers) catch @panic("failed to dupe layers");
+                // Deep-copy the visual identity: the footprint array +
+                // layers with OWNED sprite strings (a shallow dupe would
+                // borrow the level decoration's strings, which are freed
+                // as remnants below). The name string MOVES - id/sprite
+                // alias it (one string, freed once, via id).
+                const fp = allocator.dupe(types.Vector2, decoration.footprint) catch
+                    @panic("failed to dupe decoration footprint");
+                const ly = allocator.alloc(types.DecorationLayer, decoration.layers.len) catch
+                    @panic("failed to alloc decoration layers");
+                for (decoration.layers, 0..) |layer, layer_index| {
+                    ly[layer_index] = .{
+                        .sprite = dupeString(allocator, layer.sprite),
+                        .color_index = layer.color_index,
+                        .behind = layer.behind,
+                        .pixel_dims = layer.pixel_dims,
+                    };
+                }
                 decoration_types.append(allocator, .{
                     .id = decoration.name,
                     .sprite = decoration.name,
@@ -923,6 +1027,14 @@ pub fn buildEditorMission(
                     .keep_original_colors = decoration.keep_original_colors,
                     .layers = ly,
                 }) catch @panic("failed to append decoration type");
+                // The name moved to the palette; free the original's
+                // remainder (footprint + layers + layer sprite strings).
+                allocator.free(decoration.footprint);
+                for (decoration.layers) |layer| allocator.free(layer.sprite);
+                allocator.free(decoration.layers);
+            } else {
+                // Dedup-hit: this level's copy is redundant.
+                freeDecoration(decoration, allocator);
             }
             deco_placements.append(allocator, .{
                 .type_id = type_id.?,
@@ -947,16 +1059,31 @@ pub fn buildEditorMission(
                 }
                 if (type_id == null) {
                     type_id = @intCast(item_types.items.len);
+                    // The item MOVES (owns its name); the id is OWNED by
+                    // construction - itemDisplayName allocates for skill
+                    // tomes and borrows for everything else, so the
+                    // borrowed names are duped and every id frees the
+                    // same way (freeEditorBuild).
                     item_types.append(allocator, .{
-                        .id = itemDisplayName(item, allocator),
+                        .id = switch (item) {
+                            .skill_tome => itemDisplayName(item, allocator),
+                            else => dupeString(allocator, itemDisplayName(item, allocator)),
+                        },
                         .item = item,
                     }) catch @panic("failed to append item type");
+                } else {
+                    // Dedup-hit: this level's copy is redundant.
+                    freeItem(item, allocator);
                 }
                 item_placements.append(allocator, .{
                     .type_id = type_id.?,
                     .position = stack.position,
                 }) catch @panic("failed to append item placement");
             }
+            // The stack's item buffer: the items themselves moved into
+            // the palette (or were freed as dedup-hits) - the buffer is
+            // this level's own.
+            allocator.free(stack.items);
         }
 
         editor_levels.append(allocator, .{
@@ -967,18 +1094,37 @@ pub fn buildEditorMission(
             .level_tiles = level.level_tiles,
             .player_start = level.entities[0].position,
             .level_end = level.level_end,
-            .entity_placements = placements.items,
-            .decoration_placements = deco_placements.items,
-            .item_placements = item_placements.items,
+            // toOwnedSlice (not a bare .items move): the exact-allocation
+            // slice the editor level can hand to freeEditorBuild later -
+            // .items can be shorter than the buffer's capacity.
+            .entity_placements = placements.toOwnedSlice(allocator) catch @panic("failed to own entity placements slice"),
+            .decoration_placements = deco_placements.toOwnedSlice(allocator) catch @panic("failed to own decoration placements slice"),
+            .item_placements = item_placements.toOwnedSlice(allocator) catch @panic("failed to own item placements slice"),
         }) catch @panic("failed to append editor level");
+
+        // End of iteration - free this level's remnants: everything the
+        // palette and the editor level did not take. The entities,
+        // decorations, and items were each MOVED or freed above; what
+        // remains is the player entity (never palette material -
+        // player_def is the caller's), the three definition-array
+        // buffers, and the stack buffers (freed in the item loop).
+        // level.name borrows the sections; level_tiles + the placements
+        // moved into the editor level entry.
+        freeEntity(level.entities[0], allocator);
+        allocator.free(level.entities);
+        allocator.free(level.decorations);
+        allocator.free(level.ground_items);
     }
 
     return .{
         .mission = mission,
-        .levels = editor_levels.items,
-        .entity_types = entity_types.items,
-        .decoration_types = decoration_types.items,
-        .item_types = item_types.items,
+        // toOwnedSlice per the placements note above; catch @panic (not
+        // try) because a mid-literal try failure would drop the already-
+        // converted slices with no errdefer coverage.
+        .levels = editor_levels.toOwnedSlice(allocator) catch @panic("failed to own editor levels slice"),
+        .entity_types = entity_types.toOwnedSlice(allocator) catch @panic("failed to own entity types slice"),
+        .decoration_types = decoration_types.toOwnedSlice(allocator) catch @panic("failed to own decoration types slice"),
+        .item_types = item_types.toOwnedSlice(allocator) catch @panic("failed to own item types slice"),
         .player_def = .{ .id = "Player", .template = player_entity },
     };
 }
@@ -4317,6 +4463,128 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(usize, 0), tent_def.layers.len);
 }
 
+test "buildEditorMission: a later level failing loadLevel leaks nothing" {
+    // The leak-checked error path: level 1 is VALID (entity + decoration
+    // + item into the palette, a dedup-hit entity, remnants freed),
+    // level 2 has an undefined layout character - loadLevel errors and
+    // the errdefer must free the whole accumulated palette.
+    // testing.allocator flags any leak.
+    const allocator = std.testing.allocator;
+    const good_level_text =
+        \\Metadata
+        \\file_format_version 2
+        \\name Build Test
+        \\
+        \\Layout 3
+        \\!.i
+        \\ee.
+        \\.d=
+        \\
+        \\Entities
+        \\character_code e
+        \\name Enemy
+        \\sprite skeleton_1
+        \\
+        \\Decorations
+        \\character_code d
+        \\sprite stone_1
+        \\footprint 0 0
+        \\
+        \\Items
+        \\character_code i
+        \\item_type weapon
+        \\item_name Test Sword
+        \\weapon_type sword
+        \\damage 3
+    ;
+    const bad_level_text =
+        \\Metadata
+        \\file_format_version 2
+        \\name Bad
+        \\
+        \\Layout 1
+        \\!x=
+    ;
+    const good_sections = try parseConfigFile(good_level_text, allocator, &level_sections);
+    defer freeParsedSections(good_sections, allocator);
+    const bad_sections = try parseConfigFile(bad_level_text, allocator, &level_sections);
+    defer freeParsedSections(bad_sections, allocator);
+
+    const parsed_levels = [_][]const Section{ good_sections, bad_sections };
+    try std.testing.expectError(
+        error.UnknownLayoutCharacter,
+        buildEditorMission(types.Mission{ .name = "M" }, .{}, parsed_levels[0..], null, allocator, "", null),
+    );
+}
+
+test "buildEditorMission: the palette owns its data; a full build frees clean" {
+    // Success-path ownership: one level with all three palette kinds + a
+    // dedup-hit entity; the build owns everything (ids included), the
+    // sections can go first, and freeEditorBuild sweeps the result.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\name Build Test
+        \\
+        \\Layout 3
+        \\!.i
+        \\ee.
+        \\.d=
+        \\
+        \\Entities
+        \\character_code e
+        \\name Enemy
+        \\sprite skeleton_1
+        \\
+        \\Decorations
+        \\character_code d
+        \\sprite stone_1
+        \\footprint 0 0
+        \\
+        \\Items
+        \\character_code i
+        \\item_type weapon
+        \\item_name Test Sword
+        \\weapon_type sword
+        \\damage 3
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+
+    const parsed_levels = [_][]const Section{sections};
+    const editor = try buildEditorMission(
+        types.Mission{ .name = "M" },
+        .{},
+        parsed_levels[0..],
+        null,
+        allocator,
+        "",
+        null,
+    );
+    // Ownership contract: the parse bytes go FIRST (nothing in the
+    // editor borrows them anymore except EditorLevel.name, which is
+    // only read, never freed).
+    freeParsedSections(sections, allocator);
+
+    // Content: the two same-definition entities dedup into one palette
+    // type with two placements; the decoration + item are one type each.
+    try std.testing.expectEqual(@as(usize, 1), editor.entity_types.len);
+    try std.testing.expectEqualStrings("Enemy", editor.entity_types[0].id);
+    try std.testing.expectEqual(@as(usize, 2), editor.levels[0].entity_placements.len);
+    try std.testing.expectEqual(@as(usize, 1), editor.decoration_types.len);
+    try std.testing.expectEqual(@as(usize, 1), editor.item_types.len);
+    // The item id is OWNED (duped) - uniform with the skill-tome case.
+    try std.testing.expectEqualStrings("Test Sword", editor.item_types[0].id);
+
+    freeEditorBuild(
+        editor.levels,
+        editor.entity_types,
+        editor.decoration_types,
+        editor.item_types,
+        allocator,
+    );
+}
+
 test "loadEditorDefaults parses the shipped palette defaults" {
     // The shipped data/editor_defaults.txt via the real FileSource - the
     // registry test's read-the-shipped-file pattern, so the test guards the
@@ -6085,8 +6353,10 @@ test "the shipped beginnings player.txt loads in the save-shaped format" {
 }
 
 test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
-    // Arena-wrapped: buildEditorMission borrows into its allocator (the
-    // editor is not yet self-owned - see AGENTS → Testing discipline).
+    // Arena-wrapped: the instantiateEditorLevel result at the end is not
+    // freed (a separate ownership ride); buildEditorMission itself is
+    // self-owned now (freeEditorBuild) - see AGENTS → Testing discipline
+    // for the arena policy.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const allocator = backing.allocator();

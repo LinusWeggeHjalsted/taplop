@@ -18355,3 +18355,44 @@ Slice 2 (salvage chain + themes), all input-reachable leaks closed:
 buildEditorMission (the trio's third) deferred to its own decision - its
 error path needs a per-iteration ownership restructure to be testable
 (see the next DONE entry when it lands).
+
+## Config-layer OOM slice 3 (part 2): buildEditorMission fully self-owned
+
+The trio's third turned out bigger than the TODO line implied - the error
+path (palette leak when a later level fails loadLevel) was untestable
+because the SUCCESS path leaked too (masked by the history arena in
+production): per-iteration level remnants (the player entity's cloned
+strings, each decoration's own footprint/layers, dedup-hit
+entities/items, stack buffers) were dropped every iteration; the
+palette's decoration layer sprites were BORROWED from the level (the
+shallow allocator.dupe of the layer structs); and item-type ids had
+mixed ownership (borrowed names, allocated tome strings).
+
+Restructure (the full ownership model is `freeEditorBuild`'s doc):
+- the palette + editor levels OWN everything they keep: entity
+  templates move wholesale (clone-owned); decoration types take a MOVED
+  name string (id/sprite alias it - one string, freed once via id) +
+  deep-duped footprint/layers with owned layer sprite strings; items
+  move + ids are OWNED by construction (non-tome names duped - the tome
+  case allocates in itemDisplayName, so now every id frees the same
+  way); editor levels move level_tiles + exact-slice placements.
+- each level's remnants are freed at the end of its iteration (moved-vs-
+  dedup-hit tracked in the existing branches); a later level failing
+  loadLevel frees the accumulated palette via errdefer ->
+  freeEditorBuild.
+- The ArrayList trap the first test run caught: a bare `.items` slice
+  can be shorter than the buffer's CAPACITY - freeing it is a
+  size-mismatch free ("Invalid free" under the debug allocator). All
+  list handoffs (the three placements, the four result lists, the
+  errdefer's conversions) go through toOwnedSlice (exact allocations);
+  the return uses catch @panic, not try - a mid-literal try failure
+  would drop already-converted slices with no errdefer coverage.
+
+Tests: the error path (valid level with all three palette kinds + a
+dedup-hit entity, then a level with an undefined layout character -
+expectError UnknownLayoutCharacter, testing.allocator flags any leak)
+and the success round-trip (full build, sections freed FIRST, content
+assertions incl. the dedup collapse, freeEditorBuild sweep). The stale
+"arena-wrapped: buildEditorMission borrows" comment on the gradient
+test updated (the arena stays for that test's un-freed
+instantiateEditorLevel result, a separate ride).
