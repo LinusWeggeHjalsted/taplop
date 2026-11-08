@@ -238,7 +238,7 @@ pub fn loadSettings(
     /// round-trip-tested, so binding warnings there are dev noise.
     warnings: ?*std.ArrayList([]const u8),
 ) !Settings {
-    try validateFileFormatVersion(sections, "Metadata", settings_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", settings_file_format_version, settings_file_format_version);
     var settings: Settings = base orelse .{ .input_bindings = &.{} };
     const has_base = base != null;
 
@@ -721,7 +721,7 @@ pub fn loadPlayerLoadout(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !types.Entity {
-    try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version, player_loadout_file_format_version);
     var player_data: PlayerData = .{};
     try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
     return playerLoadoutEntity(player_data);
@@ -1632,7 +1632,7 @@ pub fn loadDecorationRegistry(
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) ![]types.DecorationTypeDef {
-    try validateFileFormatVersion(sections, "Metadata", decorations_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", decorations_file_format_version, decorations_file_format_version);
     var list: std.ArrayList(types.DecorationTypeDef) = .empty;
     if (findSection(sections, "Decorations")) |section| {
         for (section.entry_groups) |group| {
@@ -1679,7 +1679,7 @@ pub fn loadEditorDefaults(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !EditorDefaults {
-    try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version, editor_defaults_file_format_version);
 
     // Entity: the first Entities entry. name + sprite are required - the
     // template's other absent keys are exactly the "none of it" defaults
@@ -2031,7 +2031,7 @@ pub fn loadLevel(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !Level {
-    try validateFileFormatVersion(sections, "Metadata", level_file_format_version);
+    const file_version = try validateFileFormatVersion(sections, "Metadata", parser.oldest_supported_level_file_format_version, level_file_format_version);
     var level: Level = .{};
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
@@ -2117,6 +2117,13 @@ pub fn loadLevel(
     }
 
     if (findSection(sections, "Layout")) |section| {
+        // A current-version file must use the counted grammar - a bare
+        // Layout here means a hand-authored v2 file that forgot the count,
+        // silently falling back to the legacy grammar's known ambiguity
+        // (a row spelling a header ends the section).
+        if (file_version == level_file_format_version and section.layout_row_count == null) {
+            return error.UncountedLayout;
+        }
         for (section.raw_lines, 0..) |row, raw_y| {
             const y: i32 = @intCast(raw_y);
             for (row, 0..) |character, raw_x| {
@@ -2261,7 +2268,7 @@ pub fn loadHub(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !Hub {
-    try validateFileFormatVersion(sections, "Metadata", hub_file_format_version);
+    const file_version = try validateFileFormatVersion(sections, "Metadata", parser.oldest_supported_hub_file_format_version, hub_file_format_version);
     var hub: Hub = .{};
 
     // Metadata
@@ -2360,6 +2367,11 @@ pub fn loadHub(
     }
 
     if (findSection(sections, "Layout")) |section| {
+        // A current-version file must use the counted grammar - see the
+        // loadLevel site.
+        if (file_version == hub_file_format_version and section.layout_row_count == null) {
+            return error.UncountedLayout;
+        }
         for (section.raw_lines, 0..) |row, raw_y| {
             const y: i32 = @intCast(raw_y);
             for (row, 0..) |character, raw_x| {
@@ -2482,7 +2494,7 @@ pub fn loadCampaign(
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
 ) !Campaign {
-    try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version, campaign_file_format_version);
     var campaign: Campaign = .{};
 
     if (findSection(sections, "Metadata")) |section| {
@@ -2690,7 +2702,7 @@ pub fn loadMission(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !Mission {
-    try validateFileFormatVersion(sections, "Metadata", mission_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", mission_file_format_version, mission_file_format_version);
     var mission: Mission = .{};
 
     if (findSection(sections, "Metadata")) |section| {
@@ -2911,7 +2923,7 @@ pub fn loadPlayerSave(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !PlayerData {
-    try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version, player_save_file_format_version);
     var player_data: PlayerData = .{};
 
     // Info
@@ -3004,7 +3016,7 @@ pub fn loadColorThemeDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !ColorThemeDefinitions {
-    try validateFileFormatVersion(sections, "Metadata", color_themes_file_format_version);
+    _ = try validateFileFormatVersion(sections, "Metadata", color_themes_file_format_version, color_themes_file_format_version);
 
     var theme: ColorThemeDefinitions = .{
         .lightest = .{ .r = 255, .g = 255, .b = 240 },
@@ -3501,6 +3513,144 @@ test "loadHub errors on an undefined layout character / missing player spawn" {
         defer freeParsedSections(sections, allocator);
         try std.testing.expectError(
             error.MissingPlayerSpawn,
+            loadHub(sections, null, allocator, "hub.txt", null),
+        );
+    }
+}
+
+test "level file_format_version is a supported range; current requires the counted Layout" {
+    const allocator = std.testing.allocator;
+    {
+        // v2 + counted: the writer's shape.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 2
+            \\
+            \\Layout 2
+            \\..!
+            \\..=
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        const level = try loadLevel(sections, null, allocator, "level.txt", null);
+        defer freeLevel(level, allocator);
+        // Six tiles: four '.' plus the '!' and '=' marker tiles.
+        try std.testing.expectEqual(6, level.level_tiles.len);
+    }
+    {
+        // v2 + bare Layout: the count was forgotten - an error, not a
+        // silent legacy-grammar fallback into the known ambiguity.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 2
+            \\
+            \\Layout
+            \\..!
+            \\..=
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UncountedLayout,
+            loadLevel(sections, null, allocator, "level.txt", null),
+        );
+    }
+    {
+        // Newer than this build.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 3
+            \\
+            \\Layout 2
+            \\..!
+            \\..=
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UnsupportedFileFormatVersion,
+            loadLevel(sections, null, allocator, "level.txt", null),
+        );
+    }
+    {
+        // Older than the supported floor (v1 is the oldest).
+        const raw_text =
+            \\Metadata
+            \\file_format_version 0
+            \\
+            \\Layout
+            \\..!
+            \\..=
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UnsupportedFileFormatVersion,
+            loadLevel(sections, null, allocator, "level.txt", null),
+        );
+    }
+}
+
+test "hub file_format_version is a supported range; current requires the counted Layout" {
+    const allocator = std.testing.allocator;
+    {
+        // v3 + counted: the current hub shape.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 3
+            \\
+            \\Layout 1
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        const hub = try loadHub(sections, null, allocator, "hub.txt", null);
+        defer freeHub(hub, allocator);
+    }
+    {
+        const raw_text =
+            \\Metadata
+            \\file_format_version 3
+            \\
+            \\Layout
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UncountedLayout,
+            loadHub(sections, null, allocator, "hub.txt", null),
+        );
+    }
+    {
+        // Newer than this build.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 4
+            \\
+            \\Layout 1
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UnsupportedFileFormatVersion,
+            loadHub(sections, null, allocator, "hub.txt", null),
+        );
+    }
+    {
+        // Older than the supported floor (v2 is the oldest).
+        const raw_text =
+            \\Metadata
+            \\file_format_version 1
+            \\
+            \\Layout
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UnsupportedFileFormatVersion,
             loadHub(sections, null, allocator, "hub.txt", null),
         );
     }

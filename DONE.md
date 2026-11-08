@@ -1641,6 +1641,45 @@ existing warn+drop test (U in the layout stays walkable). Shipped data
 verified through content_validation_tests (every campaign level + hub
 walks the tightened readers). Full suite PASS.
 
+### Parser grammar slice 4 - the version range policy (DONE)
+
+Design: DESIGN → Versioning (updated with it) + DESIGN → File System & IO
+→ Config grammar; slices: TODO → Parser grammar overhaul. Slice 4 of 5.
+
+**The change.** `validateFileFormatVersion` takes the supported RANGE
+`(minimum_version, current_version)` and RETURNS the file's version
+(previously validate-and-discard, exact match). Level versions: 1→2
+(v2 = the counted Layout, from slice 2); hub 2→3 (same). New
+`oldest_supported_level_file_format_version` (1) and
+`oldest_supported_hub_file_format_version` (2) are the floors: older
+files load with the legacy Layout grammar forever (old user missions,
+embedded session-log content copies), newer-than-build errors as before.
+All other formats pass (current, current) - exact match, no floor (their
+old versions were never loadable and nothing needs that now).
+
+**The strictness rule.** A CURRENT-version file with a bare `Layout`
+errors (`error.UncountedLayout`) in loadLevel/loadHub - a hand-authored
+v2/v3 file that forgot the count would otherwise silently fall back to
+the legacy grammar's known ambiguity. The signal: the parser records the
+declared count on the Layout section (`Section.layout_row_count`,
+captured before the append's toOwnedSlice empties the list - field
+evaluation order is not guaranteed). v1-with-count (slice 2's transient
+window) still loads: the grammar choice is the opening line's shape, the
+version only gates the strictness.
+
+**Writer.** No edit: `writeEditorLevel` prints the
+`level_file_format_version` constant, so editor saves are now v2 +
+counted automatically. This closes slice 2's deliberate version-window
+note (v1-with-count saves existed only between the slice-2 and slice-4
+commits; they keep loading via the range floor).
+
+Tests: the level + hub range contracts (v-current+counted loads,
+v-current+bare → UncountedLayout, newer-than-build →
+UnsupportedFileFormatVersion, older-than-floor → same), all under
+`testing.allocator`. The writer round-trip exercises v2+counted
+end-to-end; every pre-existing v1/v2 fixture loads through its floor.
+Full suite PASS.
+
 ## Error Handling
 
 ### Slice 1 - error surface (DONE)

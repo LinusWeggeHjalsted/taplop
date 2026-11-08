@@ -69,10 +69,16 @@ Test by running `zig build run` and clicking through.
         MissingPlayerSpawn/MissingLevelEnd, errdefer cleanup in both
         loaders, the hub dropped-NPC-code leniency distinction, and nine
         test fixtures upgraded to the mandatory-marker invariant).
-  - [ ] 4. Version range policy: level 1 to 2, hub 2 to 3; the hard
+  - [x] 4. Version range policy: level 1 to 2, hub 2 to 3; the hard
         gate becomes a supported range (newer errors, older loads with
         legacy grammar); current-version + bare Layout errors.
-        DESIGN → Versioning prose updated when this lands.
+        DESIGN → Versioning prose updated when this lands - DONE (see
+        DONE.md, "Parser grammar slice 4"; validateFileFormatVersion takes
+        (minimum, current) and returns the file's version;
+        Section.layout_row_count is the grammar signal; UncountedLayout
+        in loadLevel/loadHub; the writer's version emission updates
+        automatically via the constant bump). Closes slice 2's deliberate
+        version-window note: new editor saves are v2 + counted.
   - [ ] 5. Data sweep: the 13 campaign levels + default_level.txt +
         camp_at_the_crossroads/hub.txt get `Layout <N>` (N derived from
         actual rows) + bumped versions; AGENTS → Config File Format

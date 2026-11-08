@@ -19,15 +19,31 @@ const FileSource = file_source_mod.FileSource;
 
 /// Monotonic schema versions for each config-file type. Bump on any breaking
 /// change to that file's layout. The loader validates the file's
-/// `file_format_version` (in its Metadata/Info section) against the expected
-/// constant and returns `error.UnsupportedFileFormatVersion` on mismatch - a
-/// HARD gate. The version is validate-and-discard (not stored on the parsed
-/// type): it's a parse-time compatibility check, not runtime state. The save
-/// writer emits the current constant. See DESIGN → Versioning.
-pub const level_file_format_version: u32 = 1;
+/// `file_format_version` (in its Metadata/Info section) against the type's
+/// supported RANGE - `oldest_supported_*`..current - and returns
+/// `error.UnsupportedFileFormatVersion` for a file outside it (older than
+/// the floor or newer than this build). The validated version is returned
+/// to the caller (loaders use it for version-paired strictness, e.g.
+/// current-version files must carry the Layout row count); it is not
+/// stored on the parsed type. The save writer emits the current constant.
+/// See DESIGN → Versioning.
+/// v2 (parser grammar): the Layout section opens with its row count
+/// (`Layout 12` - the counted grammar; nothing a row contains can end the
+/// section). A CURRENT-version file with a bare Layout errors
+/// (UncountedLayout, enforced in loadLevel).
+pub const level_file_format_version: u32 = 2;
+/// The range floor: v1 files (bare `Layout`, terminated at the next
+/// recognized header) still load under the legacy grammar - an editor
+/// re-save upgrades them to v2.
+pub const oldest_supported_level_file_format_version: u32 = 1;
 /// v2 (campaign-editor slice 1): NPCs become `character_code` + `npc_type`
 /// (the entity fields name/sprite are gone); Exits gain `destination_hub`.
-pub const hub_file_format_version: u32 = 2;
+/// v3 (parser grammar): counted layouts, exactly as levels v2 - a
+/// current-version hub with a bare Layout errors (UncountedLayout).
+pub const hub_file_format_version: u32 = 3;
+/// The range floor: v2 hub files (bare `Layout`) still load under the
+/// legacy grammar.
+pub const oldest_supported_hub_file_format_version: u32 = 2;
 /// v3 (campaign-editor slice 1): drops `start_hub`/`end_hub` (the campaign
 /// graph owns the edge - the exit's destination_hub rides
 /// start_mission.end_hub_id) + `level_count` (derived - count the mission
@@ -66,6 +82,11 @@ pub const Section = struct {
     entry_groups: []const EntryGroup,
     /// Raw lines of the section, for sections like Layout that aren't key-value based.
     raw_lines: []const []const u8,
+    /// For Layout sections: the row count the opening line declared (the
+    /// counted grammar), or null when the section opened bare (the legacy
+    /// grammar). Null for every other section. Loaders use this to require
+    /// current-version files to carry the count.
+    layout_row_count: ?u32 = null,
 };
 
 fn isExpectedSectionHeader(
@@ -166,10 +187,16 @@ pub fn parseConfigFile(
                 try current_raw_lines.append(allocator, line);
                 layout_rows_remaining -= 1;
                 if (layout_rows_remaining == 0) {
+                    // Captured before the append: the toOwnedSlice below
+                    // empties the list, and field evaluation order is not
+                    // guaranteed. The counted grammar consumed exactly
+                    // this many rows (never blank-stripped).
+                    const declared_row_count: u32 = @intCast(current_raw_lines.items.len);
                     try sections.append(allocator, .{
                         .header = current_header.?,
                         .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
                         .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
+                        .layout_row_count = declared_row_count,
                     });
                     current_entry_groups = .empty;
                     current_raw_lines = .empty;
@@ -354,14 +381,16 @@ pub fn parseConfigFileFromPath(
 // ============================================================
 
 /// Validate `file_format_version` from a parsed Metadata/Info section's first
-/// entry group. Required (hard gate): a file without it returns
-/// `error.UnsupportedFileFormatVersion`. Mismatch returns the same error.
-/// Validate-and-discard - the version is not stored on the parsed type.
+/// entry group, against the supported range `minimum_version..current_version`.
+/// Required (hard gate): a file without it, an unparsable value, a version
+/// older than the floor, or a version newer than this build all return
+/// `error.UnsupportedFileFormatVersion`. Returns the file's version.
 pub fn validateFileFormatVersion(
     sections: []const Section,
     section_header: []const u8,
-    expected_version: u32,
-) !void {
+    minimum_version: u32,
+    current_version: u32,
+) !u32 {
     const section = findSection(sections, section_header) orelse
         return error.UnsupportedFileFormatVersion;
     if (section.entry_groups.len == 0) return error.UnsupportedFileFormatVersion;
@@ -369,7 +398,8 @@ pub fn validateFileFormatVersion(
     const version_str = findValue(pairs, "file_format_version") orelse
         return error.UnsupportedFileFormatVersion;
     const version = asU32(version_str) orelse return error.UnsupportedFileFormatVersion;
-    if (version != expected_version) return error.UnsupportedFileFormatVersion;
+    if (version < minimum_version or version > current_version) return error.UnsupportedFileFormatVersion;
+    return version;
 }
 
 pub fn asU32(value: []const u8) ?u32 {

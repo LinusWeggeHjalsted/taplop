@@ -1038,13 +1038,20 @@ gameplay - not in snapshots, not touched by replay.
   in the file's `Metadata` section (the FIRST section, before any type-
   specific sections). Weapon-type definitions and salvage tables are config
   files WITHOUT a version (no `Metadata` section); they'd join if their
-  format stabilizes. The loader validates it as a HARD gate
-  (`error.UnsupportedFileFormatVersion` on mismatch or absence) and discards
-  it - it's a parse-time compatibility check, not runtime state (not stored
-  on the parsed type). The save writer emits the current constant in a
-  `Metadata` section. Per-type version constants live in parser.zig
-  (`level_file_format_version`, `hub_file_format_version`, etc.); most are 1,
-  `mission` and `player_save` are 2.
+  format stabilizes. The loader validates it as a HARD gate over a
+  supported RANGE (`oldest_supported_*_file_format_version`..
+  `<type>_file_format_version`): a missing/unparsable version, one older
+  than the floor, or one newer than this build all return
+  `error.UnsupportedFileFormatVersion`. Most types have no older supported
+  version (floor == current, exact match); the Layout-bearing types are
+  ranged - levels 1-2, hubs 2-3 - because the older versions select the
+  legacy Layout grammar (DESIGN → File System & IO → Config grammar).
+  The validated version is RETURNED to the caller for version-paired
+  strictness (a current-version level/hub with a bare Layout errors) and
+  is not stored on the parsed type - it's a parse-time compatibility
+  check, not runtime state. The save writer emits the current constant in
+  a `Metadata` section. Per-type version constants live in parser.zig
+  (`level_file_format_version`, `hub_file_format_version`, etc.).
 
 ## Logging & Replay
 
@@ -2528,10 +2535,13 @@ opening line's shape, so no version pre-scan is needed. Legacy files
 keep loading forever (old user missions, embedded session-log content
 copies); an editor re-save upgrades them to the counted form.
 
-Version pairing: `file_format_version` becomes a supported RANGE per
-type (levels 1-2, hubs 2-3) - newer-than-current errors as before, older
+Version pairing: `file_format_version` is a supported RANGE per type
+(levels 1-2, hubs 2-3) - newer-than-current errors as before, older
 loads with the legacy grammar, and a CURRENT-version file with a bare
-`Layout` errors (current files are required to carry the count). The
+`Layout` errors (UncountedLayout, enforced in the loaders: the parser
+records the declared count on the Layout section -
+`Section.layout_row_count` - and a current-version file with a null count
+is a hand-authored file that forgot it). The
 layout READERS accept only the fixed specials (`' '`, `'.'`, `'!'`,
 `'='`) plus the file's own defined codes - a typo'd `character_code` is
 a truthful load error (UnknownLayoutCharacter), not a silent walkable
