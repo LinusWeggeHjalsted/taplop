@@ -18283,3 +18283,51 @@ silently surviving screen transitions). Now: a file-private
 same way as in the other three switches. The closeAll test opens every
 surface DERIVED from the enum (a new surface joins the test
 automatically) instead of a hand-picked subset.
+
+## Config-layer OOM convention settled + slice: salvage chain + themes
+
+DECISION (the cleanup-session analysis): allocation failure at
+parser/loader/file-source sites NEVER surfaces as an error return - those
+sites panic inline. Rationale: (1) OOM is already DESIGN → Error
+Handling's unrecoverable class, and the tree's dominant convention (65
+panic sites in loaders vs 48 try sites; state.zig + event_push panic
+throughout) - the try sites were drift; (2) nobody anywhere handles
+error.OutOfMemory - every consumer is a generic catch, so propagation is
+pure liability; (3) one real hazard: loadConfigWithFallback catches ANY
+error into embedded/default fallback, so an OOM in loadSettings at boot
+yields a default-settings session whose debounced write could clobber
+the player's settings file (wasm32 memory.grow genuinely fails, so this
+is reachable on the web build, not desktop-only). Consequences: loader
+error unions carry INPUT problems only; errdefers guard validation paths
+only; every error path is reachable by crafted malformed content and
+thus leak-check-testable with a fixture (no failure injection needed -
+panics skip errdefers and the dying process owns the partial build).
+Considered alternative: full propagation + checkAllAllocationFailures
+(available in 0.16 std) - rejected as a ~200-site sweep over the core
+that would still hand-write @panic at every policy boundary.
+
+Slice 1 (convention): DESIGN → Error Handling gained the "OOM never
+propagates as a config-layer error" paragraph; AGENTS → Code Style gained
+the working rule; TODO's errdefer-sweep rider replaced with the survey
+findings + slice checklist.
+
+Slice 2 (salvage chain + themes), all input-reachable leaks closed:
+- parseSalvageSplits: errdefer deinit for the partial list on InvalidData
+  mid-list (unknown material / bad value after valid entries); the two
+  catch return error.OutOfMemory sites became inline panics.
+- loadSalvageDefinitions: restructured - weapon_definitions initialized
+  to empty-split defaults (an unfilled slot's free is a no-op, so the
+  errdefer can sweep the whole array mid-fill) + the six gear sections
+  moved from six inline try-arms (each dropping its result on a LATER
+  arm's failure - a second leak shape the survey missed) into one
+  inline-for over comptime headers with its own errdefer.
+- loadColorThemeDefinitions: errdefer deinit for the gradient list on a
+  gradient_index mismatch; both try-alloc sites became inline panics.
+- loadTips (rode along - its doc comment was touched): the one
+  catch return error.OutOfMemory site became an inline panic.
+- Tests: three leak-checked malformed fixtures (unknown material
+  mid-list; missing Coat section after valid Sword+Amulet; gradient_index
+  0 then 2) under testing.allocator. The parseSalvageSplits test caught
+  its own bug on the first run: the first edit batch had failed
+  wholesale and the errdefer was silently absent - the fixture flagged
+  the leak exactly as designed.

@@ -1267,11 +1267,15 @@ Session-reflection riders (the parser-grammar + tips sessions):
   file). Loader errors carry INPUT problems only; every error return
   needs its errdefer + a leak-checked malformed-fixture test. Slices
   (the survey's findings - all input-reachable except where noted):
-  - [ ] salvage chain + themes: parseSalvageSplits (partial list leaks on
+  - [x] salvage chain + themes: parseSalvageSplits (partial list leaks on
         InvalidData mid-list), loadSalvageDefinitions (earlier weapon
         splits leak when a later gear section is missing),
         loadColorThemeDefinitions (gradient list leaks on a
-        gradient_index mismatch) - convert + errdefer + tests
+        gradient_index mismatch) - convert + errdefer + tests - DONE (see
+        DONE.md, config-layer OOM convention slice 2; loadTips' one OOM
+        site rode along; loadSalvageDefinitions also had a SECOND leak
+        shape - each gear try-arm dropped its own result when a LATER arm
+        failed)
   - [ ] editor trio: loadEditorDefaultLevel (the whole level leaks on
         MissingDefaultLevelEnd / DefaultLevelHasEntries), loadEditorDefaults
         (entity/decoration layers leak on a later MissingDefaultEntry),

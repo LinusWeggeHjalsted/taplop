@@ -3040,6 +3040,12 @@ pub fn loadColorThemeDefinitions(
     // Gradients - each entry group is one gradient, starting with gradient_index
     if (findSection(sections, "Gradients")) |section| {
         var gradient_list: std.ArrayList(ColorGradient) = .empty;
+        // Partial-list cleanup on a gradient_index mismatch (earlier
+        // gradients are already appended when the InvalidData fires) -
+        // items are value types, so deinit alone frees everything. OOM
+        // panics inline (the config-layer convention - DESIGN → Error
+        // Handling) and skips errdefer.
+        errdefer gradient_list.deinit(allocator);
 
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
@@ -3061,10 +3067,10 @@ pub fn loadColorThemeDefinitions(
                 }
             }
 
-            try gradient_list.append(allocator, gradient);
+            gradient_list.append(allocator, gradient) catch @panic("failed to append color gradient");
         }
 
-        theme.gradients = try gradient_list.toOwnedSlice(allocator);
+        theme.gradients = gradient_list.toOwnedSlice(allocator) catch @panic("failed to own color gradients slice");
     }
 
     return theme;
@@ -5066,6 +5072,32 @@ test "color_themes.txt parses from disk" {
     try std.testing.expectEqual(0x4c, theme.darkest.r);
 }
 
+test "color themes: a gradient_index mismatch InvalidData leaks nothing" {
+    // The error-path ownership contract (the arena-blind-spot lesson):
+    // the error must fire AFTER the first gradient is appended, and the
+    // errdefer must free the partial list - testing.allocator flags any
+    // leak.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Gradients
+        \\
+        \\gradient_index 0
+        \\color_0 #f6f6bb
+        \\
+        \\gradient_index 2
+        \\color_0 #f2ef90
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &color_theme_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.InvalidData,
+        loadColorThemeDefinitions(sections, allocator),
+    );
+}
+
 // ============================================================
 // Salvage definitions
 // ============================================================
@@ -5077,6 +5109,12 @@ fn parseSalvageSplits(
     if (section.entry_groups.len == 0) return .{ .splits = &.{} };
 
     var splits: std.ArrayList(SalvageSplit) = .empty;
+    // Partial-list cleanup on InvalidData mid-list (an unknown material or
+    // unparsable value after earlier valid entries) - items are value
+    // types, so deinit alone frees everything. OOM panics inline (the
+    // config-layer convention - DESIGN → Error Handling) and skips
+    // errdefer: the dying process owns the partial build.
+    errdefer splits.deinit(allocator);
     for (section.entry_groups) |group| {
         for (group.pairs) |pair| {
             const material = parseEnum(MaterialType, pair.key) orelse return error.InvalidData;
@@ -5084,12 +5122,12 @@ fn parseSalvageSplits(
             splits.append(allocator, .{
                 .material = material,
                 .parts = parts,
-            }) catch return error.OutOfMemory;
+            }) catch @panic("failed to append salvage split");
         }
     }
 
     return .{
-        .splits = splits.toOwnedSlice(allocator) catch return error.OutOfMemory,
+        .splits = splits.toOwnedSlice(allocator) catch @panic("failed to own salvage splits slice"),
     };
 }
 
@@ -5108,7 +5146,14 @@ pub fn loadSalvageDefinitions(
 ) !SalvageDefinitions {
 
     const weapon_type_fields = @typeInfo(WeaponType).@"enum".fields;
-    var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
+    // Empty-split defaults: an unfilled slot's free is a no-op, so the
+    // errdefer can sweep the whole array even when an error fires
+    // partway through the fill.
+    var weapon_definitions: [types.weapon_type_count]SalvageDefinition =
+        [_]SalvageDefinition{.{ .splits = &.{} }} ** types.weapon_type_count;
+    errdefer {
+        for (weapon_definitions) |definition| allocator.free(definition.splits);
+    }
 
     inline for (weapon_type_fields, 0..) |field, index| {
         const capitalized = comptime blk: {
@@ -5120,15 +5165,74 @@ pub fn loadSalvageDefinitions(
         weapon_definitions[index] = try loadWeaponSalvage(sections, &capitalized, allocator);
     }
 
+    // The gear/skill-tome sections in declaration order. A missing later
+    // section is InvalidData AFTER the earlier sections' splits are
+    // already owned - the errdefer sweeps both arrays (weapon + the
+    // partial gear fill).
+    const gear_headers = .{ "Amulet", "Coat", "Gloves", "Pants", "Boots", "SkillTome" };
+    var gear_definitions: [gear_headers.len]SalvageDefinition =
+        [_]SalvageDefinition{.{ .splits = &.{} }} ** gear_headers.len;
+    errdefer {
+        for (gear_definitions) |definition| allocator.free(definition.splits);
+    }
+    inline for (gear_headers, 0..) |header, index| {
+        gear_definitions[index] = try parseSalvageSplits(
+            findSection(sections, header) orelse return error.InvalidData,
+            allocator,
+        );
+    }
+
     return .{
         .weapon = weapon_definitions,
-        .amulet = try parseSalvageSplits(findSection(sections, "Amulet") orelse return error.InvalidData, allocator),
-        .coat = try parseSalvageSplits(findSection(sections, "Coat") orelse return error.InvalidData, allocator),
-        .gloves = try parseSalvageSplits(findSection(sections, "Gloves") orelse return error.InvalidData, allocator),
-        .pants = try parseSalvageSplits(findSection(sections, "Pants") orelse return error.InvalidData, allocator),
-        .boots = try parseSalvageSplits(findSection(sections, "Boots") orelse return error.InvalidData, allocator),
-        .skill_tome = try parseSalvageSplits(findSection(sections, "SkillTome") orelse return error.InvalidData, allocator),
+        .amulet = gear_definitions[0],
+        .coat = gear_definitions[1],
+        .gloves = gear_definitions[2],
+        .pants = gear_definitions[3],
+        .boots = gear_definitions[4],
+        .skill_tome = gear_definitions[5],
     };
+}
+
+test "salvage: InvalidData mid-list leaks nothing (parseSalvageSplits)" {
+    // The error-path ownership contract: the unknown material key fires
+    // AFTER two valid splits were appended - the errdefer must free the
+    // partial list, testing.allocator flags any leak.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Sword
+        \\
+        \\metal 2
+        \\wood 1
+        \\
+        \\unobtainium 5
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser.salvage_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.InvalidData,
+        parseSalvageSplits(sections[0], allocator),
+    );
+}
+
+test "salvage: a missing gear section InvalidData leaks nothing (loadSalvageDefinitions)" {
+    // Sword + Amulet parse (owned splits), then no Coat section: the
+    // error must free the weapon + amulet splits on the way out.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Sword
+        \\
+        \\metal 2
+        \\
+        \\Amulet
+        \\
+        \\cloth 1
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser.salvage_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.InvalidData,
+        loadSalvageDefinitions(sections, allocator),
+    );
 }
 
 /// Load the tips file (data/tips.txt): one self-owned prose string per
@@ -5148,6 +5252,10 @@ pub fn loadTips(
     );
     const tips_section = findSection(sections, "Tips") orelse return error.MissingTipsSection;
     var tips: std.ArrayList([]const u8) = .empty;
+    // Error-path ownership: dupeString panics on OOM (the config-layer
+    // convention - DESIGN → Error Handling); the errdefer covers the
+    // input-error returns (version gate fires before allocation;
+    // MissingTipsSection fires before the list exists).
     errdefer {
         for (tips.items) |tip| allocator.free(tip);
         tips.deinit(allocator);
@@ -5155,7 +5263,8 @@ pub fn loadTips(
     for (tips_section.entry_groups) |group| {
         for (group.pairs) |pair| {
             if (std.mem.eql(u8, pair.key, "tip")) {
-                tips.append(allocator, dupeString(allocator, pair.value)) catch return error.OutOfMemory;
+                tips.append(allocator, dupeString(allocator, pair.value)) catch
+                    @panic("failed to append tip");
             }
         }
     }
