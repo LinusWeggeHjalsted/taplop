@@ -18242,3 +18242,15 @@ transient-allocator-backed - the panic caller prints them immediately,
 nothing else holds them) instead of printing; `panic.call` owns the
 print. The test now asserts the result is non-null instead of relying on
 side effects, and runs silent.
+
+## Skill targeting: the null-vs-empty convention documented
+
+The prepared-skill bug class (root cause: `get_valid_targets_fn`
+returning NULL = "push no event" vs `&.{}` = "push a zero-tile clearing
+event") is now documented at the interface: `Skill.get_valid_targets_fn`
+carries the convention + why the prepare seam's clear-first defuses it,
+and `skill_helpers.highlightTargets` states the exact mapping (null ->
+no event, empty -> clearing event). The old "or maybe the event handler
+should skip" prose was resolved into settled text (the input layer's
+`resolveSkillSlotAction` does skip straight to useSkill for
+non-targeting skills).

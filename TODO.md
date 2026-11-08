@@ -119,13 +119,6 @@ Test by running `zig build run` and clicking through.
       0 DEAD / 0 UNUSED; the 3 TEST-ONLY pubs carry why-notes. Forward-
       looking de-pubs (the loaders `free*` family) re-pub when
       campaign-editor slice 1 lands.
-- **Skill targeting null-vs-empty convention doc (session reflection rider)**
-  - the prepared-skill bug's root cause: `get_valid_targets_fn` returning
-  NULL ("push no event") vs `&.{}` ("push a clearing event") is an
-  undocumented API convention (skill.zig's Skill interface +
-  skill_helpers.highlightTargets). The prepare seam now clears first so the
-  edge is defused there, but the convention deserves a doc comment on the
-  interface so the next skill doesn't trip it elsewhere.
 - **World overlay stripe scopes batch-flush per tile (session reflection
   rider, unmeasured)** - each highlighted tile opens its own stripe scope
   (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
