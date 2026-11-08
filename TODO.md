@@ -75,6 +75,25 @@ Test by running `zig build run` and clicking through.
         in loadLevel/loadHub; the writer's version emission updates
         automatically via the constant bump). Closes slice 2's deliberate
         version-window note: new editor saves are v2 + counted.
+- **Tips UI (data/tips.txt + panel)** - one tip at a time in a
+      fullscreen overlay. Format normalized to the config format (Metadata
+      + Tips, one `tip <prose>` group). The tip index is a view affordance
+      (UiState, the settings_tab precedent); NO new event types -
+      open/close rides the existing toggle_ui_surface via a new open_tips
+      action, cycling is a cycle_tips action + a tips_direction payload
+      consumed at the input layer. Design settled in-session (glyphs not
+      sprites: ? and < >; no counter; button top right mirroring options
+      top left). Slices:
+  - [ ] 1. Data + loader: tips_sections / tips_file_format_version /
+        tips key map (parser.zig), loadTips/freeTips (loaders.zig), the
+        history field + createSessionSetup load + view() threading.
+  - [ ] 2. Surface + actions: UiSurfaceId.tips + tips_open; open_tips +
+        cycle_tips actions + TipsDirection payload variant; consumption
+        arms; ui_state.tips_index.
+  - [ ] 3. UI: top-bar ? button (top right, 128x128 + font glyph),
+        buildTipsPanel (credits model: half-width wrapped text column,
+        < > glyph nav buttons flanking, Back bottom-left), view() draw
+        site, tests + docs sync.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different

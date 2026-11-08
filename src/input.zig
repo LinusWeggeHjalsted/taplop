@@ -468,6 +468,13 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_credits,
         .exit_game,
         => player_input.anytime.options_action = action,
+        // The tips button lives in the global top bar (always drawn, so
+        // clickable even while the options menu is open); cycling fires
+        // from the tips panel, which overlays any screen. Both route
+        // through the anytime path's one options_action handler.
+        .open_tips,
+        .cycle_tips,
+        => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .select_settings_tab => player_input.anytime.options_action = action,
         .edit_keybind => player_input.anytime.options_action = action,

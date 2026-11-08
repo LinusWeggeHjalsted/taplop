@@ -40,6 +40,12 @@ pub const UiState = struct {
     /// `keybind_scroll_offset` (the other tab's list has its own extent).
     settings_tab: types.SettingsTab = .settings,
 
+    /// Which tip the open tips overlay shows (an index into the loaded
+    /// tips list - the settings_tab convention: a view affordance, direct
+    /// UiState write, off the undo timeline; cycling wraps). Survives
+    /// closing + reopening the overlay within a session.
+    tips_index: usize = 0,
+
     /// The Keybinds tab's list scroll: the index of the first visible
     /// binding row (the list has no group headers - one row per binding).
     /// One wheel notch = one row; lower clamp at the input site, upper

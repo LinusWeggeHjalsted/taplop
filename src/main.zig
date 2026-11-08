@@ -1184,7 +1184,7 @@ test "session log round-trips through reconstruction (forward play == replay)" {
 
     // Forward-play a short scripted session (main menu -> new game -> hub ->
     // one hub move) into history1, recording events as it goes.
-    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history1);
     event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
@@ -1200,7 +1200,7 @@ test "session log round-trips through reconstruction (forward play == replay)" {
 
     // Reconstruct into a fresh history2 from the loaded log and compare the
     // final states: faithful reconstruction means replay == forward play.
-    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
 
     try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
@@ -1276,7 +1276,7 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
 
     // Forward-play a short session (main menu -> new game -> hub -> one hub
     // move) into history1.
-    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history1);
     event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
@@ -1321,7 +1321,7 @@ test "loadAndReconstructSession: resumes at the end of a loaded bundle" {
 
     // Load + reconstruct into a fresh history2 via the CLI glue (the
     // cwd-relative path to the bundle dir under the scratch tree).
-    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     loadAndReconstructSession(&history2, "zig-cache/test-recon-load/logs/test_bundle", io);
 
     // No pending error (a clean load surfaces no popup).
@@ -1372,7 +1372,7 @@ test "loadAndReconstructSession: missing file sets pending_error, stays at main 
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
 
     loadAndReconstructSession(&history, "zig-cache/nonexistent-replay-bundle", io);
 
@@ -1435,7 +1435,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     // Then move the player adjacent to an enemy and skip the turn to trigger
     // enemy turns with wait events. Every top-level event is a player action,
     // so reconstruction's isPlayerAction gate accepts them.
-    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history1);
     event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
@@ -1524,7 +1524,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     const sections = try parser.parseConfigFile(body, arena, &parser.session_log_sections);
     const log = try session_log.loadEventLog(sections, arena);
 
-    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent, .lazy_disk);
 
     // (1) No stale `waiting` after reconstruction.
@@ -1599,7 +1599,7 @@ test "replay verification: clean replay through the slow path passes" {
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .start_new_game }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1670,7 +1670,7 @@ test "ported campaign missions load through the event path" {
     };
     for (missions) |mission| {
         // Fresh history per mission so each load is independent.
-        var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+        var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
         runToIdle(&history);
         event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
             .mission_path = mission.path,
@@ -1774,7 +1774,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     // Open the editor on the shipped beginnings mission.
@@ -1885,7 +1885,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     // The main-menu Editor button's flow: null mission_path = a FRESH
@@ -1982,7 +1982,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     // Open editor + start playtest on beginnings level 0.
@@ -2072,7 +2072,7 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     // Enter the editor with a fresh mission, then swap to beginnings via a
@@ -2150,7 +2150,7 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     // We're at the main menu (idle). Record the pre-action state for later
@@ -2240,7 +2240,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
         .hub = null,
     };
 
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &.{}, &file_source, io);
     runToIdle(&history);
 
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);

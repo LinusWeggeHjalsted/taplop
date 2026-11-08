@@ -1371,6 +1371,13 @@ pub fn handleAnytimeInput(
             .open_credits => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .credits,
             } }),
+            // Tips (the global top bar's `?` button): toggle the overlay -
+            // the panel's Back button re-fires this to close (the
+            // credits/load-save toggle pattern). Anytime-routed because
+            // the top bar stays clickable while the options menu is open.
+            .open_tips => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .tips,
+            } }),
             // Exit Game (the main-menu options menu variant, native only -
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's
@@ -1465,6 +1472,23 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.settings_tab = settings_tab;
                 history.session.ui_state.keybind_scroll_offset = 0;
                 history.session.ui_state.keybind_edit = null;
+            },
+            // The tips panel's prev/next buttons (the `tips_direction`
+            // payload): step the viewed tip on UiState directly - the
+            // settings_tab convention (a view affordance, off the undo
+            // timeline; no game state changes, so no event beyond the
+            // click itself). Wraps around; a single-tip list no-ops.
+            .cycle_tips => {
+                if (!history.current_state.ui_surfaces.tips_open) return;
+                if (history.tips.len < 2) return;
+                const direction = payloadAs(.tips_direction, clicked_payload) orelse return;
+                const tip_count = history.tips.len;
+                switch (direction) {
+                    .previous => history.session.ui_state.tips_index =
+                        (history.session.ui_state.tips_index + tip_count - 1) % tip_count,
+                    .next => history.session.ui_state.tips_index =
+                        (history.session.ui_state.tips_index + 1) % tip_count,
+                }
             },
             // A settings toggle or choice was clicked (the `SettingRef`
             // payload). Mutate `history.settings` (a
@@ -5505,6 +5529,7 @@ test "keybind confirm/remove: the rebuild-ownership path (leak-checked)" {
         &harness.weapon_type_definitions,
         harness.color_theme_definitions,
         harness.salvage_definitions,
+        &.{},
         &harness.file_source,
         harness.file_source.io,
     );
@@ -5618,6 +5643,7 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
         &harness.weapon_type_definitions,
         harness.color_theme_definitions,
         harness.salvage_definitions,
+        &.{},
         &harness.file_source,
         harness.file_source.io,
     );

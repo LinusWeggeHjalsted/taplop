@@ -5131,6 +5131,79 @@ pub fn loadSalvageDefinitions(
     };
 }
 
+/// Load the tips file (data/tips.txt): one self-owned prose string per
+/// `tip` pair in the Tips section, in file order. Freed by `freeTips`.
+/// Production retains the bytes + sections process-lifetime
+/// (loadConfigWithFallback); tests free via `freeTips` under
+/// `testing.allocator`.
+pub fn loadTips(
+    sections: []const Section,
+    allocator: std.mem.Allocator,
+) ![]const []const u8 {
+    _ = try validateFileFormatVersion(
+        sections,
+        "Metadata",
+        parser.tips_file_format_version,
+        parser.tips_file_format_version,
+    );
+    const tips_section = findSection(sections, "Tips") orelse return error.MissingTipsSection;
+    var tips: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (tips.items) |tip| allocator.free(tip);
+        tips.deinit(allocator);
+    }
+    for (tips_section.entry_groups) |group| {
+        for (group.pairs) |pair| {
+            if (std.mem.eql(u8, pair.key, "tip")) {
+                tips.append(allocator, dupeString(allocator, pair.value)) catch return error.OutOfMemory;
+            }
+        }
+    }
+    return tips.toOwnedSlice(allocator);
+}
+
+/// Free a tips list from `loadTips`.
+pub fn freeTips(
+    tips: []const []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    for (tips) |tip| allocator.free(tip);
+    allocator.free(tips);
+}
+
+test "loadTips parses the shipped tips file; ownership is self-owned" {
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const parsed = try parseConfigFileFromPath(
+        &file_source,
+        "data/tips.txt",
+        allocator,
+        &parser.tips_sections,
+    );
+
+    const tips = try loadTips(parsed.sections, allocator);
+    // Ownership contract: free the parse BEFORE the assertions (no
+    // borrows by construction) + the free is leak-checked under
+    // testing.allocator.
+    freeParsedSections(parsed.sections, allocator);
+    allocator.free(parsed.raw_text);
+    defer freeTips(tips, allocator);
+
+    // The file grows by design (tips are authored content) - assert
+    // existence + a known tip by SEARCH, not by index or count.
+    try std.testing.expect(tips.len > 0);
+    var found_move_step_tip = false;
+    for (tips) |tip| {
+        try std.testing.expect(tip.len > 0);
+        if (std.mem.indexOf(u8, tip, "move step") != null) found_move_step_tip = true;
+    }
+    try std.testing.expect(found_move_step_tip);
+}
+
 test "data/default_settings.txt binds ctrl+L to dump_event_log" {
     const allocator = std.testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});

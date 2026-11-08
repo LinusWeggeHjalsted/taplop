@@ -328,6 +328,18 @@ pub fn loadSalvageDefinitionsFromDisk(
     return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", &parser.salvage_sections, loaders.loadSalvageDefinitions, parser.salvage_key_map, startup);
 }
 
+/// Load the tips (data/tips.txt), falling back to the embedded copy on
+/// parse failure (see DESIGN → Error Handling). Self-owned strings,
+/// retained process-lifetime by the startup tracking; freed by the
+/// history deinit via loaders.freeTips.
+pub fn loadTipsFromDisk(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    startup: *StartupMemory,
+) []const []const u8 {
+    return loadConfigWithFallback([]const []const u8, file_source, allocator, "data/tips.txt", &parser.tips_sections, loaders.loadTips, parser.tips_key_map, startup);
+}
+
 /// Owns the session-long setup state (config definitions + FrameState) that
 /// both platform drivers need. The `weapon_type_definitions` array is stored
 /// BY VALUE here (not on the caller's stack) because GameStateHistory holds a
@@ -373,6 +385,7 @@ pub fn createSessionSetup(
     const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator, &startup);
     const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &startup);
     const salvage_definitions = loadSalvageDefinitionsFromDisk(file_source, allocator, &startup);
+    const tips = loadTipsFromDisk(file_source, allocator, &startup);
 
     const starting_game_state = GameState{
         .screen = .main_menu,
@@ -405,6 +418,7 @@ pub fn createSessionSetup(
         &weapon_type_definitions,
         color_theme_definitions,
         salvage_definitions,
+        tips,
         file_source,
         io,
     );

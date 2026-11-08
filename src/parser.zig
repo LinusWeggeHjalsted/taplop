@@ -59,6 +59,9 @@ pub const color_themes_file_format_version: u32 = 1;
 pub const player_loadout_file_format_version: u32 = 2;
 pub const decorations_file_format_version: u32 = 1;
 pub const editor_defaults_file_format_version: u32 = 1;
+/// v1: the tips file - a `Tips` section, one entry group per tip carrying
+/// a single `tip <prose>` pair (the UI wraps; prose stays one line here).
+pub const tips_file_format_version: u32 = 1;
 
 const Color = types.Color;
 
@@ -536,6 +539,10 @@ pub const salvage_sections = [_][]const u8{
     "Boots",  "SkillTome",
 };
 
+/// The tips file (data/tips.txt): Metadata + one Tips section, one entry
+/// group per tip.
+pub const tips_sections = [_][]const u8{ "Metadata", "Tips" };
+
 // ============================================================
 // Key validation (approach A - see DESIGN → Error Handling)
 // ============================================================
@@ -786,6 +793,18 @@ pub const salvage_key_map = std.StaticStringMap([]const []const u8).initComptime
     .{ "Pants", &salvage_split_keys },
     .{ "Boots", &salvage_split_keys },
     .{ "SkillTome", &salvage_split_keys },
+});
+
+// --- Tips file key whitelist ---
+//
+// Metadata carries file_format_version (shared keys). Each Tips entry
+// group is one tip: a single `tip` pair whose value is the prose.
+
+const tips_tip_keys = [_][]const u8{"tip"};
+
+pub const tips_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "Tips", &tips_tip_keys },
 });
 
 // --- Player save file key whitelists ---

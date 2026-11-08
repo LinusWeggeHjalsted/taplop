@@ -221,6 +221,7 @@ pub fn revalidateMission(
         history.weapon_type_definitions,
         history.color_theme_definitions,
         history.salvage_definitions,
+        &.{},
         history.file_source,
         history.io,
     );

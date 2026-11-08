@@ -92,6 +92,7 @@ pub const Harness = struct {
             &self.weapon_type_definitions,
             self.color_theme_definitions,
             self.salvage_definitions,
+            &.{},
             &self.file_source,
             self.file_source.io,
         );

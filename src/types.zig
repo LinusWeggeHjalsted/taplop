@@ -300,6 +300,15 @@ pub const Action = enum {
     import_save,
     open_settings,
     open_credits,
+    /// The top-bar tips button (the `?`, top right): toggle the tips
+    /// overlay - same toggle semantics as open_credits (the panel's Back
+    /// button re-fires this action to close).
+    open_tips,
+    /// The tips panel's previous/next buttons: cycle the viewed tip. The
+    /// direction rides the click payload (the `tips_direction` variant);
+    /// consumed at the input layer mutating `UiState.tips_index` (the
+    /// settings_tab precedent - a view affordance, not game state).
+    cycle_tips,
     // A settings toggle or choice button was clicked. The SettingRef (which
     // field + which value) rides the click payload (the `setting` variant). See
     // DESIGN → UI Framework → Settings screen.
@@ -916,6 +925,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .zoom_in,
         .zoom_out,
         .zoom_reset,
+        // The top-bar tips button sits in the same always-drawn layer as
+        // options/undo/redo (the global top bar - see view()).
+        .open_tips,
         => .{ .anytime = true },
 
         // The recoverable-error popup only (modal - replaces every other
@@ -1057,6 +1069,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .change_setting,
         .select_settings_tab,
         .edit_keybind,
+        => .{ .menu = true, .game = true },
+        // The tips panel overlays any screen (opened from the global top
+        // bar); cycling only fires while it is open (the consumption arm
+        // guards on tips_open).
+        .cycle_tips,
         => .{ .menu = true, .game = true },
         // Exit to Main Menu: the level/hub options menu and the editor's
         // (where it ends an editor run + closes the editor).
@@ -1215,6 +1232,15 @@ pub const ButtonPayload = union(enum) {
     settings_tab: SettingsTab,
     /// A keybinds-tab edit command (the whole editing UI rides one action).
     keybind_command: KeybindCommand,
+    /// The tips panel's cycle direction (the prev/next buttons - the
+    /// `cycle_tips` action's whole identity beyond its name).
+    tips_direction: TipsDirection,
+};
+
+/// Which way the tips panel's prev/next buttons step.
+pub const TipsDirection = enum {
+    previous,
+    next,
 };
 
 /// The payload variant an action's clicks carry, if any - the single
@@ -1235,6 +1261,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .change_setting => .setting,
         .edit_keybind => .keybind_command,
         .select_settings_tab => .settings_tab,
+        .cycle_tips => .tips_direction,
         .toggle_editor_palette_group,
         .add_editor_palette_type,
         => .editor_group,
@@ -1341,6 +1368,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .import_save,
         .open_settings,
         .open_credits,
+        .open_tips,
         .add_editor_level,
         .toggle_editor_inspector,
         .toggle_editor_metadata_sidebar,
@@ -2718,6 +2746,7 @@ pub const UiSurfaceId = enum {
     settings,
     load_save_menu,
     credits,
+    tips,
     editor_browser,
     inventory,
     gear,
@@ -2762,6 +2791,11 @@ pub const UiSurfaceState = struct {
     /// Credits screen (main menu, full screen).
     credits_open: bool = false,
 
+    /// Tips overlay (any screen, full screen) - opened from the global
+    /// top bar's `?` button. The VIEWED tip index is a view affordance on
+    /// `SessionState.ui_state` (it does not ride the timeline).
+    tips_open: bool = false,
+
     /// Editor browser (main menu or editor, full screen).
     editor_browser_open: bool = false,
 
@@ -2780,6 +2814,7 @@ pub const UiSurfaceState = struct {
             .settings => self.settings_open = !self.settings_open,
             .load_save_menu => self.load_save_menu_open = !self.load_save_menu_open,
             .credits => self.credits_open = !self.credits_open,
+            .tips => self.tips_open = !self.tips_open,
             .editor_browser => self.editor_browser_open = !self.editor_browser_open,
             .inventory => self.toggleMiddlePanel(.inventory),
             .gear => self.toggleMiddlePanel(.gear),
@@ -2799,6 +2834,7 @@ pub const UiSurfaceState = struct {
             .settings => self.settings_open,
             .load_save_menu => self.load_save_menu_open,
             .credits => self.credits_open,
+            .tips => self.tips_open,
             .editor_browser => self.editor_browser_open,
             .inventory => self.isMiddlePanelOpen(.inventory),
             .gear => self.isMiddlePanelOpen(.gear),
@@ -2834,6 +2870,7 @@ pub const UiSurfaceState = struct {
         self.settings_open = false;
         self.load_save_menu_open = false;
         self.credits_open = false;
+        self.tips_open = false;
         self.editor_browser_open = false;
         self.inspected_entity_index = null;
     }

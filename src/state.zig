@@ -865,6 +865,9 @@ pub const GameStateHistory = struct {
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
     color_theme_definitions: ColorThemeDefinitions,
     salvage_definitions: SalvageDefinitions,
+    /// The tips (data/tips.txt), one self-owned prose string each - see
+    /// loaders.loadTips.
+    tips: []const []const u8,
 
     // Unified file I/O (read-only content via the embedded map + player
     // overrides; writable artifacts via the persistent dir). Session-resident,
@@ -993,6 +996,7 @@ pub const GameStateHistory = struct {
         weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
         color_theme_definitions: ColorThemeDefinitions,
         salvage_definitions: SalvageDefinitions,
+        tips: []const []const u8,
         file_source: *const FileSource,
         io: std.Io,
     ) GameStateHistory {
@@ -1001,6 +1005,7 @@ pub const GameStateHistory = struct {
             .weapon_type_definitions = weapon_type_definitions,
             .color_theme_definitions = color_theme_definitions,
             .salvage_definitions = salvage_definitions,
+            .tips = tips,
             .file_source = file_source,
             .io = io,
             .backing_allocator = allocator,
@@ -1052,6 +1057,7 @@ pub const GameStateHistory = struct {
         if (self.salvage_definitions.pants.splits.len > 0) allocator.free(self.salvage_definitions.pants.splits);
         if (self.salvage_definitions.boots.splits.len > 0) allocator.free(self.salvage_definitions.boots.splits);
         if (self.salvage_definitions.skill_tome.splits.len > 0) allocator.free(self.salvage_definitions.skill_tome.splits);
+        loaders.freeTips(self.tips, allocator);
 
         // SessionState's backing-owned lists + scan entries.
         self.session.pending_sounds.deinit(allocator);
@@ -2626,6 +2632,9 @@ pub const GameStateHistory = struct {
         return switch (surface) {
             .options_menu, .settings => true,
             .credits, .load_save_menu => screen == .main_menu,
+            // The tips overlay opens from the global top bar, which draws
+            // on every screen.
+            .tips => true,
             .editor_browser => screen == .main_menu or screen == .editor,
             .inventory,
             .gear,

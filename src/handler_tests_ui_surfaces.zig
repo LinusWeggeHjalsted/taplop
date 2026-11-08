@@ -17,6 +17,7 @@ const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
+const input_handlers = @import("input_handlers.zig");
 
 test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
@@ -96,6 +97,82 @@ test "surface-gated orchestrators: a recorded panel open makes the action replay
         "salvage pin",
         history.current_state.hub.?.player.inventory.slots[0].?.weapon.name,
     );
+}
+
+test "tips surface: flips via the toggle orchestrator, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The tips overlay is legal on any screen (opened from the global
+    // top bar) - the default main-menu state needs no setup.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+            .surface = .tips,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.ui_surfaces.tips_open);
+
+    // Class-1: the surface rides the undo timeline.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(!history.current_state.ui_surfaces.tips_open);
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expect(history.current_state.ui_surfaces.tips_open);
+}
+
+test "cycle_tips: steps + wraps the viewed tip on UiState, off the timeline" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(null);
+    // The tips list is history-loaded in production; the test writes the
+    // field directly (the harness passes an empty list). Static strings -
+    // the arena-backed history never runs the deinit that frees them.
+    history.tips = &.{ "alpha", "beta", "gamma" };
+    runToIdle(&history);
+
+    // Cycling while the panel is CLOSED is a no-op (the consumption
+    // guard).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.session.ui_state.tips_index);
+
+    // Open the surface, then cycle: next steps forward, wraps at the end,
+    // previous wraps at the start. No timeline step (a view affordance -
+    // the click pushes no event beyond itself, so nothing becomes
+    // undoable).
+    history.current_state.ui_surfaces.tips_open = true;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 2), history.session.ui_state.tips_index);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.session.ui_state.tips_index);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .previous }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 2), history.session.ui_state.tips_index);
+    try testing.expect(!history.canUndo());
+
+    // A single-tip list no-ops (nothing to cycle).
+    history.tips = &.{"only"};
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .cycle_tips,
+    }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 2), history.session.ui_state.tips_index);
 }
 
 test "player_inspect_entity: opens, retargets, and closes via the machinery" {
