@@ -4027,7 +4027,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
             arena,
             try std.fmt.allocPrint(arena, "{s}/mission.txt", .{first_save.dir_path}),
         );
-        const sections = try parser.parseConfigFile(mission_txt, arena);
+        const sections = try parser.parseConfigFile(mission_txt, arena, &parser.mission_sections);
         const mission = try loaders.loadMission(sections, arena);
         try testing.expectEqualStrings(first_save.uuid, mission.uuid);
         try testing.expectEqualStrings("New Mission", mission.name);
@@ -4039,7 +4039,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
             arena,
             try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{first_save.dir_path}),
         );
-        const sections = try parser.parseConfigFile(level_txt, arena);
+        const sections = try parser.parseConfigFile(level_txt, arena, &parser.level_sections);
         try testing.expect(parser.findSection(sections, "Layout") != null);
     }
     {
@@ -4047,7 +4047,7 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
             arena,
             try std.fmt.allocPrint(arena, "{s}/player.txt", .{first_save.dir_path}),
         );
-        const sections = try parser.parseConfigFile(player_txt, arena);
+        const sections = try parser.parseConfigFile(player_txt, arena, &parser.player_loadout_sections);
         _ = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
     }
 
@@ -6509,7 +6509,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor - the 
     // BEFORE the final end_validation so the mission is still live - the
     // replay-reproduced turn counter must equal the derived count.
     const body = try session_log.writeEventLog(slice, "20260101_000000", backing.allocator());
-    const sections = try parser.parseConfigFile(body, backing.allocator());
+    const sections = try parser.parseConfigFile(body, backing.allocator(), &parser.session_log_sections);
     const log = try session_log.loadEventLog(sections, backing.allocator());
     // The reconstruction base: the post-boot state (main menu, nothing
     // queued) - the slice starts at the run's entry orchestrator, so the
@@ -6946,7 +6946,7 @@ fn readFixtureReplay(
         arena,
         validation_fixture_path ++ "/validation_replay.txt",
     );
-    const sections = try parser.parseConfigFile(bytes, arena);
+    const sections = try parser.parseConfigFile(bytes, arena, &parser.session_log_sections);
     const replay = try validation_replay.loadValidationReplay(sections, arena);
     return .{ .turns = validation_replay.deriveValidationTurns(replay.events), .replay = replay };
 }
@@ -7009,7 +7009,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
         .{saved.dir_path},
     );
     const replay_bytes = try harness.file_source.readFile(arena, replay_path);
-    const sections = try parser.parseConfigFile(replay_bytes, arena);
+    const sections = try parser.parseConfigFile(replay_bytes, arena, &parser.session_log_sections);
     const replay = try validation_replay.loadValidationReplay(sections, arena);
     try testing.expectEqualStrings(saved.uuid, replay.mission_uuid);
     const hash = try content_hash.computeMissionHash(&harness.file_source, arena, saved.dir_path);
@@ -7080,7 +7080,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     {
         // The stash holds the slower run's slice (4 turns) - what the
         // Overwrite Replay button would write.
-        const sections = try parser.parseConfigFile(history.session.pending_validation_replay.?, arena);
+        const sections = try parser.parseConfigFile(history.session.pending_validation_replay.?, arena, &parser.session_log_sections);
         const stashed = try validation_replay.loadValidationReplay(sections, arena);
         try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(stashed.events));
     }

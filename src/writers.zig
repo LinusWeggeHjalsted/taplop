@@ -938,7 +938,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     defer allocator.free(save_text);
 
     // Parse back
-    const sections = try parseConfigFile(save_text, allocator);
+    const sections = try parseConfigFile(save_text, allocator, &parser.player_save_sections);
     defer freeParsedSections(sections, allocator);
 
     const loaded = try loadPlayerSave(sections, allocator, "", null);
@@ -1016,6 +1016,7 @@ test "new_player.txt parses and round-trips correctly" {
         &file_source,
         "data/new_player.txt",
         allocator,
+        &parser.player_save_sections,
     );
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
@@ -1046,7 +1047,7 @@ test "new_player.txt parses and round-trips correctly" {
     const written = try writePlayerSave(player_data, allocator);
     defer allocator.free(written);
 
-    const sections2 = try parseConfigFile(written, allocator);
+    const sections2 = try parseConfigFile(written, allocator, &parser.player_save_sections);
     defer freeParsedSections(sections2, allocator);
 
     const reloaded = try loadPlayerSave(sections2, allocator, "", null);
@@ -1070,7 +1071,7 @@ test "loadPlayerSave utility gates: weapon skills dropped from slots and out of 
     const save_text = try writePlayerSave(original, allocator);
     defer allocator.free(save_text);
 
-    const sections = try parseConfigFile(save_text, allocator);
+    const sections = try parseConfigFile(save_text, allocator, &parser.player_save_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -1215,7 +1216,7 @@ test "writeSettings round-trips render_resolution through loadSettings" {
     defer allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "render_resolution 2160p") != null);
 
-    const sections = try parser.parseConfigFile(bytes, allocator);
+    const sections = try parser.parseConfigFile(bytes, allocator, &parser.settings_sections);
     defer parser.freeParsedSections(sections, allocator);
     const loaded = try loaders.loadSettings(sections, allocator, null, null);
     defer loaders.freeSettings(loaded, allocator);
@@ -1228,7 +1229,7 @@ test "writeSettings round-trips render_resolution through loadSettings" {
         .{parser.settings_file_format_version},
     );
     defer allocator.free(raw_text);
-    const unknown_sections = try parser.parseConfigFile(raw_text, allocator);
+    const unknown_sections = try parser.parseConfigFile(raw_text, allocator, &parser.settings_sections);
     defer parser.freeParsedSections(unknown_sections, allocator);
     const unknown_loaded = try loaders.loadSettings(unknown_sections, allocator, null, null);
     defer loaders.freeSettings(unknown_loaded, allocator);
@@ -1246,7 +1247,7 @@ test "writeEditorMission round-trips through the load path" {
     // mission.txt: the identity + shape; no hub fields (editor missions have
     // no campaign context, and the loader treats them as optional).
     {
-        const sections = try parseConfigFile(written.mission_txt, arena);
+        const sections = try parseConfigFile(written.mission_txt, arena, &parser.mission_sections);
         const mission = try loaders.loadMission(sections, arena);
         try std.testing.expectEqualStrings("436ab363-3588-42ce-950a-0bc813069c3d", mission.uuid);
         try std.testing.expectEqualStrings("My Mission", mission.name);
@@ -1260,7 +1261,7 @@ test "writeEditorMission round-trips through the load path" {
     // player.txt: the loadout round-trips (the NAME is not part of the
     // format - a reloaded loadout reads back as "Player").
     {
-        const sections = try parseConfigFile(written.player_txt, arena);
+        const sections = try parseConfigFile(written.player_txt, arena, &parser.player_loadout_sections);
         const loaded = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
         try std.testing.expectEqualStrings("Player", loaded.name);
         try std.testing.expect(loaders.entityDefinitionsEqual(loaded, .{
@@ -1281,7 +1282,7 @@ test "writeEditorMission round-trips through the load path" {
     // layout is normalized to the bbox origin).
     var level_sections: [2][]const parser.Section = undefined;
     for (written.level_txts, 0..) |level_txt, index| {
-        level_sections[index] = try parseConfigFile(level_txt, arena);
+        level_sections[index] = try parseConfigFile(level_txt, arena, &parser.level_sections);
     }
     const reloaded = try loaders.buildEditorMission(
         .{ .name = "My Mission", .level_count = 2 },
@@ -1454,7 +1455,7 @@ test "writeEditorLevel layout is translated + row-trimmed" {
     // its own last used column - interior alignment spaces stay, trailing
     // spaces never.
     const level_0_layout = parser.findSection(
-        try parseConfigFile(written.level_txts[0], arena),
+        try parseConfigFile(written.level_txts[0], arena, &parser.level_sections),
         "Layout",
     ).?;
     try std.testing.expectEqual(@as(usize, 3), level_0_layout.raw_lines.len);
@@ -1464,7 +1465,7 @@ test "writeEditorLevel layout is translated + row-trimmed" {
 
     // Level 2 (already at the origin): one compact row.
     const level_1_layout = parser.findSection(
-        try parseConfigFile(written.level_txts[1], arena),
+        try parseConfigFile(written.level_txts[1], arena, &parser.level_sections),
         "Layout",
     ).?;
     try std.testing.expectEqual(@as(usize, 1), level_1_layout.raw_lines.len);

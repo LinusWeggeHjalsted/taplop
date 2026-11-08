@@ -71,6 +71,11 @@ pub const SessionLogBundleError = error{
     /// Propagated from session_log.loadEventLog.
     MalformedSessionLog,
     UnsupportedFileFormatVersion,
+    /// Propagated from parser.parseConfigFile (the per-format header
+    /// grammar - a session-log file with a header-shaped line outside
+    /// session_log_sections, or any other non-conforming line).
+    UnknownSectionHeader,
+    UnknownLine,
     OutOfMemory,
 } || std.Io.Dir.ReadFileAllocError;
 
@@ -229,7 +234,7 @@ pub fn loadSessionLogBundle(
     allocator: std.mem.Allocator,
 ) SessionLogBundleError!LoadedSessionLogBundle {
     const log_bytes = try readBundleFile(dir, io, bundle_path, "session_log.txt", allocator);
-    const sections = try parser.parseConfigFile(log_bytes, allocator);
+    const sections = try parser.parseConfigFile(log_bytes, allocator, &parser.session_log_sections);
     const log = try session_log.loadEventLog(sections, allocator);
     const manifest = try loadCacheManifest(sections, allocator);
 

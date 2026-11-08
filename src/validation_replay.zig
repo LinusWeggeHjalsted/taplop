@@ -187,7 +187,7 @@ pub fn revalidateMission(
         return invalid(result_allocator, "revalidation failed: out of memory", .{});
     const mission_bytes = history.file_source.readFile(scratch, mission_path) catch
         return invalid(result_allocator, "revalidation failed: could not read the mission's mission.txt", .{});
-    const mission_sections = parser.parseConfigFile(mission_bytes, scratch) catch
+    const mission_sections = parser.parseConfigFile(mission_bytes, scratch, &parser.mission_sections) catch
         return invalid(result_allocator, "revalidation failed: the mission's mission.txt is malformed", .{});
     const mission = loaders.loadMission(mission_sections, scratch) catch
         return invalid(result_allocator, "revalidation failed: the mission's mission.txt is malformed", .{});
@@ -358,7 +358,7 @@ test "validation replay round trip through the session-log format" {
         },
         allocator,
     );
-    const sections = try parser.parseConfigFile(body, allocator);
+    const sections = try parser.parseConfigFile(body, allocator, &parser.session_log_sections);
     const replay = try loadValidationReplay(sections, allocator);
 
     try std.testing.expectEqualStrings(
@@ -391,7 +391,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
             &metadata,
             allocator,
         );
-        try expectReplayError(try parser.parseConfigFile(body, allocator), allocator, error.NotAValidationReplay);
+        try expectReplayError(try parser.parseConfigFile(body, allocator, &parser.session_log_sections), allocator, error.NotAValidationReplay);
     }
     // Wrong first event (not the seedable entry orchestrator).
     {
@@ -405,7 +405,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
             &metadata,
             allocator,
         );
-        try expectReplayError(try parser.parseConfigFile(body, allocator), allocator, error.NotAValidationReplay);
+        try expectReplayError(try parser.parseConfigFile(body, allocator, &parser.session_log_sections), allocator, error.NotAValidationReplay);
     }
     // Wrong last event variant.
     {
@@ -419,7 +419,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
             &metadata,
             allocator,
         );
-        try expectReplayError(try parser.parseConfigFile(body, allocator), allocator, error.NotAValidationReplay);
+        try expectReplayError(try parser.parseConfigFile(body, allocator, &parser.session_log_sections), allocator, error.NotAValidationReplay);
     }
     // A failed validation run is not a replay (only successful runs write
     // one, so a hand-crafted success=false file is rejected).
@@ -434,7 +434,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
             &metadata,
             allocator,
         );
-        try expectReplayError(try parser.parseConfigFile(body, allocator), allocator, error.NotAValidationReplay);
+        try expectReplayError(try parser.parseConfigFile(body, allocator, &parser.session_log_sections), allocator, error.NotAValidationReplay);
     }
 }
 
@@ -451,7 +451,7 @@ test "loadValidationReplay requires the mission metadata keys" {
     // validation replay even with a well-formed bracket.
     const body = try session_log.writeEventLog(events[0..], "20260101_000000", allocator);
     try expectReplayError(
-        try parser.parseConfigFile(body, allocator),
+        try parser.parseConfigFile(body, allocator, &parser.session_log_sections),
         allocator,
         error.MissingValidationMetadata,
     );

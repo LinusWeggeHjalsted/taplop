@@ -871,7 +871,7 @@ test "writeEventLog serializes representative event shapes" {
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
-    const sections = try parseConfigFile(output, allocator);
+    const sections = try parseConfigFile(output, allocator, &parser.session_log_sections);
     defer freeParsedSections(sections, allocator);
     try std.testing.expectEqual(@as(usize, 2), sections.len);
     try std.testing.expectEqualStrings("Metadata", sections[0].header);

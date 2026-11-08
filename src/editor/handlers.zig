@@ -108,7 +108,7 @@ pub fn importEditorPlayer(
                     failReconstructionRead(history, "failed to read new_player.txt");
                     return;
                 };
-                const sections = parser.parseConfigFile(bytes, allocator) catch {
+                const sections = parser.parseConfigFile(bytes, allocator, &parser.player_save_sections) catch {
                     failReconstructionRead(history, "failed to parse new_player.txt");
                     return;
                 };
@@ -161,7 +161,7 @@ pub fn addEditorPaletteType(
         failReconstructionRead(history, "failed to read data/editor_defaults.txt");
         return;
     };
-    const sections = parser.parseConfigFile(bytes, allocator) catch {
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.editor_defaults_sections) catch {
         failReconstructionRead(history, "failed to parse data/editor_defaults.txt");
         return;
     };
@@ -204,7 +204,7 @@ fn readEditorDefaultLevel(
         failReconstructionRead(history, "failed to read data/default_level.txt");
         return null;
     };
-    const sections = parser.parseConfigFile(bytes, allocator) catch {
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.level_sections) catch {
         failReconstructionRead(history, "failed to parse data/default_level.txt");
         return null;
     };
@@ -230,7 +230,7 @@ pub fn loadMaxPlayerLoadout(
         failReconstructionRead(history, "failed to read max_player.txt");
         return null;
     };
-    const sections = parser.parseConfigFile(bytes, allocator) catch {
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.player_save_sections) catch {
         failReconstructionRead(history, "failed to parse max_player.txt");
         return null;
     };
@@ -355,7 +355,7 @@ pub fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.m
         degrade.note(history, "failed to read data/decorations.txt - the decoration picker's Official tab is unavailable");
         return;
     };
-    const sections = parser.parseConfigFile(bytes, allocator) catch {
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.decoration_registry_sections) catch {
         degrade.note(history, "failed to parse data/decorations.txt - the decoration picker's Official tab is unavailable");
         return;
     };

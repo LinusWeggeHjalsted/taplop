@@ -132,6 +132,7 @@ fn loadConfigWithFallback(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
     path: []const u8,
+    expected_headers: []const []const u8,
     load_fn: *const fn ([]const parser.Section, std.mem.Allocator) anyerror!T,
     key_map: std.StaticStringMap([]const []const u8),
     startup: *StartupMemory,
@@ -139,7 +140,7 @@ fn loadConfigWithFallback(
     const warnings = &startup.warnings;
     // First attempt: normal read order (persistent dir → embedded).
     if (file_source.readFile(allocator, path)) |bytes| {
-        if (parser.parseConfigFile(bytes, allocator)) |sections| {
+        if (parser.parseConfigFile(bytes, allocator, expected_headers)) |sections| {
             if (load_fn(sections, allocator)) |result| {
                 parser.validateKeys(sections, key_map, path, allocator, warnings);
                 startup.retain(allocator, bytes, sections);
@@ -159,7 +160,7 @@ fn loadConfigWithFallback(
     // Fallback: embedded copy only (skip the persistent-dir shadow).
     const embedded_bytes = file_source.readEmbeddedFile(allocator, path) catch
         @panic("startup config file missing from embedded map");
-    const sections = parser.parseConfigFile(embedded_bytes, allocator) catch
+    const sections = parser.parseConfigFile(embedded_bytes, allocator, expected_headers) catch
         @panic("failed to parse embedded startup config file");
     const result = load_fn(sections, allocator) catch
         @panic("failed to load embedded startup config file");
@@ -210,7 +211,7 @@ pub fn loadSettingsFromDisk(
     allocator: std.mem.Allocator,
     startup: *StartupMemory,
 ) Settings {
-    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", loadSettingsWrapped, parser.settings_key_map, startup);
+    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", &parser.settings_sections, loadSettingsWrapped, parser.settings_key_map, startup);
 }
 
 /// Overlay a user's persistent `settings.txt` (in the persistent dir) on top
@@ -246,7 +247,7 @@ fn overlayUserSettings(
     // user_bytes + the parsed sections eagerly on every path below (success
     // and error). See DESIGN → File System & IO → Settings ownership.
 
-    const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
+    const user_sections = parser.parseConfigFile(user_bytes, allocator, &parser.settings_sections) catch {
         allocator.free(user_bytes);
         warnings.append(allocator, std.fmt.allocPrint(allocator, "Failed to parse user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
@@ -286,7 +287,7 @@ pub fn loadColorThemeDefinitionsFromDisk(
     allocator: std.mem.Allocator,
     startup: *StartupMemory,
 ) ColorThemeDefinitions {
-    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", loaders.loadColorThemeDefinitions, parser.color_theme_key_map, startup);
+    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", &parser.color_theme_sections, loaders.loadColorThemeDefinitions, parser.color_theme_key_map, startup);
 }
 
 /// Load all weapon type definitions from data/weapon_types/, each falling
@@ -307,6 +308,7 @@ pub fn loadWeaponTypeDefinitions(
             file_source,
             allocator,
             file_path,
+            &parser.weapon_type_sections,
             loadWeaponTypeDefinitionWrapped,
             parser.weapon_type_key_map,
             startup,
@@ -323,7 +325,7 @@ pub fn loadSalvageDefinitionsFromDisk(
     allocator: std.mem.Allocator,
     startup: *StartupMemory,
 ) types.SalvageDefinitions {
-    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", loaders.loadSalvageDefinitions, parser.salvage_key_map, startup);
+    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", &parser.salvage_sections, loaders.loadSalvageDefinitions, parser.salvage_key_map, startup);
 }
 
 /// Owns the session-long setup state (config definitions + FrameState) that
@@ -554,7 +556,7 @@ fn loadOwnedDefaults(
 ) Settings {
     const defaults_bytes = file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch
         @panic("embedded default settings missing");
-    const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
+    const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator, &parser.settings_sections) catch
         @panic("failed to parse embedded default settings");
     const defaults = loaders.loadSettings(defaults_sections, allocator, null, null) catch
         @panic("failed to load embedded default settings");

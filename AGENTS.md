@@ -347,7 +347,13 @@ survived many sessions this way).
 
 ## Config File Format
 
-- `.txt` files with CamelCase section headers (whitelisted in parser.zig) and snake_case keys
+- `.txt` files with CamelCase section headers and snake_case keys; headers
+  are whitelisted PER FORMAT (the `*_sections` lists in parser.zig - the
+  parser takes the format's list as its grammar, so a header-shaped line
+  outside the list, or any junk line outside a Layout, errors. See DESIGN
+  → File System & IO → Config grammar)
+- `#` comment lines are skipped outside Layout sections (inside a Layout,
+  `#` is an ordinary tile character)
 - Values separated by space, can contain spaces: `player_name New Player`
 - Blank lines separate entry groups within sections
 - Enum values must match code exactly (lowercase)
@@ -594,8 +600,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/events.zig` - event hierarchy (Meta, Super, Player, Level, SubLevel,
   Editor, PlayerInput, ReplayViewer categories)
 - `src/parser.zig` - generic config-file format layer: `Section`/
-  `EntryGroup`/`KeyValuePair` types, `parseConfigFile`, section/key
-  whitelists + `validateSections`/`validateFileFormatVersion`/
+  `EntryGroup`/`KeyValuePair` types, `parseConfigFile` (the per-format
+  section-header grammar - the expected-headers parameter is both grammar
+  and validation) + the `*_sections` lists, `validateFileFormatVersion`/
   `validateKeys`, value coercion (`asU32`/`asBool`/`asColor`/`parseEnum`),
   `findSection`/`findValue`, and the shared `file_format_version`
   constants. The format layer the other three build on.

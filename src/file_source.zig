@@ -422,7 +422,7 @@ pub const FileSource = struct {
             var parse_arena = std.heap.ArenaAllocator.init(allocator);
             defer parse_arena.deinit();
             const pa = parse_arena.allocator();
-            const sections = parser.parseConfigFile(mission_bytes, pa) catch {
+            const sections = parser.parseConfigFile(mission_bytes, pa, &parser.mission_sections) catch {
                 // Same continue-frees-manually rule as the FileNotFound arm.
                 allocator.free(mission_dir_path);
                 allocator.free(owned_id);
@@ -578,7 +578,7 @@ pub const FileSource = struct {
             var parse_arena = std.heap.ArenaAllocator.init(allocator);
             defer parse_arena.deinit();
             const pa = parse_arena.allocator();
-            const sections = parser.parseConfigFile(mission_bytes, pa) catch {
+            const sections = parser.parseConfigFile(mission_bytes, pa, &parser.mission_sections) catch {
                 allocator.free(mission_bytes);
                 continue;
             };

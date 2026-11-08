@@ -172,7 +172,7 @@ fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8
         );
         return;
     };
-    const sections = parser.parseConfigFile(replay_bytes, scratch) catch {
+    const sections = parser.parseConfigFile(replay_bytes, scratch, &parser.session_log_sections) catch {
         history.session.setPendingError(
             history.history_arena.allocator(),
             "Revalidation failed: the stored validation replay is malformed.",
@@ -294,7 +294,7 @@ pub fn handlePlayerInputEvent(
                     failReconstructionRead(history, "failed to read new_player.txt");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.player_save_sections) catch {
                     failReconstructionRead(history, "failed to parse new_player.txt");
                     return;
                 };
@@ -400,7 +400,7 @@ pub fn handlePlayerInputEvent(
                     failReconstructionRead(history, "failed to read mission file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.mission_sections) catch {
                     failReconstructionRead(history, "failed to parse mission file");
                     return;
                 };
@@ -440,7 +440,7 @@ pub fn handlePlayerInputEvent(
                     // sections map onto the template).
                     break :blk editor_handlers.loadMaxPlayerLoadout(history, allocator, &balance_warnings) orelse return;
                 };
-                const sections = parser.parseConfigFile(bytes, allocator) catch {
+                const sections = parser.parseConfigFile(bytes, allocator, &parser.player_loadout_sections) catch {
                     failReconstructionRead(history, "failed to parse player.txt");
                     return;
                 };
@@ -463,7 +463,7 @@ pub fn handlePlayerInputEvent(
                         failReconstructionRead(history, "failed to read level file");
                         return;
                     };
-                    break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    break :blk parser.parseConfigFile(bytes, allocator, &parser.level_sections) catch {
                         failReconstructionRead(history, "failed to parse level file");
                         return;
                     };

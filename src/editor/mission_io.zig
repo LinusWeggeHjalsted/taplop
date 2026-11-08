@@ -434,7 +434,7 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
             .{mission.path},
         ) catch @panic("failed to allocate validation replay path");
         const bytes = history.file_source.readFile(scratch, replay_path) catch break :blk null;
-        const sections = parser.parseConfigFile(bytes, scratch) catch break :blk null;
+        const sections = parser.parseConfigFile(bytes, scratch, &parser.session_log_sections) catch break :blk null;
         const replay = validation_replay.loadValidationReplay(sections, scratch) catch break :blk null;
         break :blk .{
             .turns = validation_replay.deriveValidationTurns(replay.events),
@@ -487,7 +487,7 @@ pub fn overwritePendingValidationReplay(history: *GameStateHistory) void {
     // The stash is our own serialized output - a parse failure is
     // impossible, but a corrupt stash must never overwrite the best:
     // drop the offer instead of writing garbage.
-    const sections = parser.parseConfigFile(stashed, scratch) catch {
+    const sections = parser.parseConfigFile(stashed, scratch, &parser.session_log_sections) catch {
         clearPendingValidationReplay(history);
         return;
     };
@@ -757,7 +757,7 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         fail.note(history, "failed to import: the zip has no mission.txt at its root");
         return;
     };
-    const sections = parser.parseConfigFile(mission_txt, scratch) catch {
+    const sections = parser.parseConfigFile(mission_txt, scratch, &parser.mission_sections) catch {
         fail.note(history, "failed to import: the zip's mission.txt is not valid");
         return;
     };

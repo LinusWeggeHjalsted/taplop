@@ -28,7 +28,6 @@ const asI32 = parser.asI32;
 const asBool = parser.asBool;
 const asColor = parser.asColor;
 const parseEnum = parser.parseEnum;
-const validateSections = parser.validateSections;
 const validateFileFormatVersion = parser.validateFileFormatVersion;
 const validateKeys = parser.validateKeys;
 const freeParsedSections = parser.freeParsedSections;
@@ -239,7 +238,6 @@ pub fn loadSettings(
     /// round-trip-tested, so binding warnings there are dev noise.
     warnings: ?*std.ArrayList([]const u8),
 ) !Settings {
-    try validateSections(sections, &settings_sections);
     try validateFileFormatVersion(sections, "Metadata", settings_file_format_version);
     var settings: Settings = base orelse .{ .input_bindings = &.{} };
     const has_base = base != null;
@@ -723,7 +721,6 @@ pub fn loadPlayerLoadout(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !types.Entity {
-    try validateSections(sections, &player_loadout_sections);
     try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version);
     var player_data: PlayerData = .{};
     try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
@@ -1635,7 +1632,6 @@ pub fn loadDecorationRegistry(
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) ![]types.DecorationTypeDef {
-    try validateSections(sections, &decoration_registry_sections);
     try validateFileFormatVersion(sections, "Metadata", decorations_file_format_version);
     var list: std.ArrayList(types.DecorationTypeDef) = .empty;
     if (findSection(sections, "Decorations")) |section| {
@@ -1683,7 +1679,6 @@ pub fn loadEditorDefaults(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !EditorDefaults {
-    try validateSections(sections, &parser.editor_defaults_sections);
     try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version);
 
     // Entity: the first Entities entry. name + sprite are required - the
@@ -2036,7 +2031,6 @@ pub fn loadLevel(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !Level {
-    try validateSections(sections, &level_sections);
     try validateFileFormatVersion(sections, "Metadata", level_file_format_version);
     var level: Level = .{};
     if (findSection(sections, "Metadata")) |section| {
@@ -2225,7 +2219,6 @@ pub fn loadHub(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !Hub {
-    try validateSections(sections, &hub_sections);
     try validateFileFormatVersion(sections, "Metadata", hub_file_format_version);
     var hub: Hub = .{};
 
@@ -2407,7 +2400,6 @@ pub fn loadCampaign(
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
 ) !Campaign {
-    try validateSections(sections, &campaign_sections);
     try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version);
     var campaign: Campaign = .{};
 
@@ -2546,7 +2538,7 @@ pub fn checkCampaignGraph(
         };
         defer allocator.free(bytes);
 
-        const parsed_hub_sections = parseConfigFile(bytes, allocator) catch {
+        const parsed_hub_sections = parseConfigFile(bytes, allocator, &hub_sections) catch {
             appendWarning(warnings, allocator, "placed hub '{s}' has an unparsable hub.txt", .{hub.id});
             continue;
         };
@@ -2616,7 +2608,6 @@ pub fn loadMission(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !Mission {
-    try validateSections(sections, &mission_sections);
     try validateFileFormatVersion(sections, "Metadata", mission_file_format_version);
     var mission: Mission = .{};
 
@@ -2838,7 +2829,6 @@ pub fn loadPlayerSave(
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !PlayerData {
-    try validateSections(sections, &player_save_sections);
     try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
     var player_data: PlayerData = .{};
 
@@ -2916,7 +2906,6 @@ pub fn loadPlayerSave(
 pub fn loadWeaponTypeDefinition(
     sections: []const Section,
 ) !WeaponTypeDefinition {
-    try validateSections(sections, &weapon_type_sections);
     const skills_section = findSection(sections, "Skills") orelse return error.InvalidData;
     if (skills_section.entry_groups.len == 0) return error.InvalidData;
 
@@ -2933,7 +2922,6 @@ pub fn loadColorThemeDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !ColorThemeDefinitions {
-    try validateSections(sections, &color_theme_sections);
     try validateFileFormatVersion(sections, "Metadata", color_themes_file_format_version);
 
     var theme: ColorThemeDefinitions = .{
@@ -3104,7 +3092,7 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\context game
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     const settings = try loadSettings(sections, allocator, null, null);
@@ -3148,7 +3136,7 @@ test "loadWeaponTypeDefinition parses skill IDs from config" {
         \\skill_3 flash_strike
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &weapon_type_sections);
     defer freeParsedSections(sections, allocator);
 
     const definition = try loadWeaponTypeDefinition(sections);
@@ -3190,7 +3178,7 @@ test "loadLevel parses a complete level" {
         \\Items
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -3259,7 +3247,7 @@ test "loadLevel decorations do not create tiles" {
         \\Items
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -3310,7 +3298,7 @@ test "loadLevel multi-tile decoration footprint" {
         \\Items
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -3367,7 +3355,7 @@ test "keep_original_colors: parses for entities + decorations, default false, de
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -3417,7 +3405,7 @@ test "loadLevel decoration with layers" {
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -3500,7 +3488,7 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, &file_source, allocator, "test_m/level_1.txt", null);
@@ -3567,7 +3555,7 @@ test "loadLevel clamps invalid decoration footprints (malformed, out-of-bbox, ov
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, arena);
+    const sections = try parseConfigFile(raw_text, arena, &level_sections);
 
     var warnings: std.ArrayList([]const u8) = .empty;
     const level = try loadLevel(sections, null, arena, "", &warnings);
@@ -3665,7 +3653,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, arena);
+    const sections = try parseConfigFile(raw_text, arena, &level_sections);
 
     var warnings: std.ArrayList([]const u8) = .empty;
     const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", &warnings);
@@ -3721,7 +3709,7 @@ test "decoration layer dims mismatch vs base: kept + warned (no panic)" {
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, arena);
+    const sections = try parseConfigFile(raw_text, arena, &level_sections);
 
     var warnings: std.ArrayList([]const u8) = .empty;
     const level = try loadLevel(sections, null, arena, "", &warnings);
@@ -3788,7 +3776,7 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
         \\
         \\Items
     ;
-    const sections = try parseConfigFile(raw_text, arena);
+    const sections = try parseConfigFile(raw_text, arena, &level_sections);
 
     var warnings: std.ArrayList([]const u8) = .empty;
     const level = try loadLevel(sections, &file_source, arena, "test_m/level_1.txt", &warnings);
@@ -3821,7 +3809,7 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
 
     const bytes = try file_source.readFile(allocator, "data/decorations.txt");
     defer allocator.free(bytes);
-    const sections = try parseConfigFile(bytes, allocator);
+    const sections = try parseConfigFile(bytes, allocator, &decoration_registry_sections);
     defer freeParsedSections(sections, allocator);
 
     const registry = try loadDecorationRegistry(sections, &file_source, allocator);
@@ -3924,7 +3912,7 @@ test "loadEditorDefaults parses the shipped palette defaults" {
     const file_source = @import("file_source.zig").FileSource.init(io, std.Io.Dir.cwd());
 
     const bytes = try file_source.readFile(allocator, "data/editor_defaults.txt");
-    const sections = try parseConfigFile(bytes, allocator);
+    const sections = try parseConfigFile(bytes, allocator, &parser.editor_defaults_sections);
     const defaults = try loadEditorDefaults(sections, &file_source, allocator, "data/editor_defaults.txt", null);
 
     // Entity: "New Entity" on skeleton_1, team 1, color 4, weapons shown,
@@ -3981,6 +3969,7 @@ test "loadEditorDefaults rejects missing entries and format drift" {
         const sections = try parseConfigFile(
             "Metadata\nfile_format_version 1\n",
             allocator,
+            &parser.editor_defaults_sections,
         );
         try std.testing.expectError(
             error.MissingDefaultEntry,
@@ -4004,7 +3993,7 @@ test "loadEditorDefaults rejects missing entries and format drift" {
             \\item_type weapon
             \\item_name New Sword
             \\
-        , allocator);
+        , allocator, &parser.editor_defaults_sections);
         try std.testing.expectError(
             error.MissingDefaultEntry,
             loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
@@ -4015,25 +4004,27 @@ test "loadEditorDefaults rejects missing entries and format drift" {
         const sections = try parseConfigFile(
             "Metadata\nfile_format_version 2\n",
             allocator,
+            &parser.editor_defaults_sections,
         );
         try std.testing.expectError(
             error.UnsupportedFileFormatVersion,
             loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
         );
     }
-    // An unexpected section (a Layout snuck in) is rejected.
+    // An unexpected section (a Layout snuck in) is rejected at the PARSE
+    // (UnknownSectionHeader - Layout is not an editor-defaults section),
+    // not later inside loadEditorDefaults.
     {
-        const sections = try parseConfigFile(
-            \\Metadata
-            \\file_format_version 1
-            \\
-            \\Layout
-            \\!
-            \\
-        , allocator);
         try std.testing.expectError(
-            error.UnexpectedSection,
-            loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+            error.UnknownSectionHeader,
+            parseConfigFile(
+                \\Metadata
+                \\file_format_version 1
+                \\
+                \\Layout
+                \\!
+                \\
+            , allocator, &parser.editor_defaults_sections),
         );
     }
 }
@@ -4128,11 +4119,14 @@ test "loadLevel rejects unexpected sections" {
         \\music_volume 0.5
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
-    defer freeParsedSections(sections, allocator);
-
-    const result = loadLevel(sections, null, allocator, "", null);
-    try std.testing.expectError(error.UnexpectedSection, result);
+    // The per-format header grammar rejects the unexpected section at the
+    // PARSE (UnknownSectionHeader, naming the offending line shape) - the
+    // old path let it parse and errored UnexpectedSection inside loadLevel
+    // after the damage was done.
+    try std.testing.expectError(
+        error.UnknownSectionHeader,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
 }
 
 test "loadHub parses a complete hub" {
@@ -4159,7 +4153,7 @@ test "loadHub parses a complete hub" {
         \\destination_hub another_camp
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
 
     const hub = try loadHub(sections, null, allocator, "", null);
     // Ownership contract: free the parse bytes BEFORE reading the hub -
@@ -4232,7 +4226,7 @@ test "loadHub: NPC entries with missing/unknown npc_type warn and drop; destinat
         warnings.deinit(allocator);
     }
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
     const hub = try loadHub(sections, null, allocator, "hub.txt", &warnings);
     freeParsedSections(sections, allocator);
 
@@ -4272,7 +4266,7 @@ test "loadCampaign parses metadata, background mint, + the Hubs section" {
         \\position -1920 1080
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &campaign_sections);
 
     const campaign = try loadCampaign(sections, "data/campaigns/main_campaign", allocator, null);
     // Ownership contract: free the parse bytes BEFORE reading the campaign
@@ -4321,7 +4315,7 @@ test "loadCampaign: Hubs entries without a parsable position warn and drop" {
         warnings.deinit(allocator);
     }
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &campaign_sections);
     defer freeParsedSections(sections, allocator);
 
     const campaign = try loadCampaign(sections, "campaigns/test_c", allocator, &warnings);
@@ -4339,7 +4333,7 @@ test "loadCampaign without name/start_hub/background/hubs defaults to empty and 
         \\file_format_version 2
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &campaign_sections);
     defer freeParsedSections(sections, allocator);
 
     const campaign = try loadCampaign(sections, "campaigns/none", allocator, null);
@@ -4473,7 +4467,7 @@ test "loadMission parses mission metadata (self-owned; hub endpoints + level cou
         \\name First Mission
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &mission_sections);
 
     const mission = try loadMission(sections, allocator);
     // Ownership contract: free the parse bytes BEFORE reading the mission.
@@ -4573,7 +4567,7 @@ test "loadPlayerSave parses a save file" {
         \\turns_to_complete 15
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &player_save_sections);
     defer freeParsedSections(sections, allocator);
 
     const player_data = try loadPlayerSave(sections, allocator, "", null);
@@ -4647,7 +4641,7 @@ test "loadColorThemeDefinitions parses global colors and gradients" {
         \\color_5 #0A0A28
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &color_theme_sections);
     defer freeParsedSections(sections, allocator);
 
     const theme = try loadColorThemeDefinitions(sections, allocator);
@@ -4721,6 +4715,7 @@ test "color_themes.txt parses from disk" {
         &file_source,
         "data/color_themes.txt",
         allocator,
+        &color_theme_sections,
     );
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
@@ -4740,13 +4735,6 @@ test "color_themes.txt parses from disk" {
 // ============================================================
 // Salvage definitions
 // ============================================================
-
-const salvage_sections = [_][]const u8{
-    "Sword",  "Shield",    "Spear",    "Dagger",
-    "Axe",    "Staff",     "Crossbow", "Idol",
-    "Amulet", "Coat",      "Gloves",   "Pants",
-    "Boots",  "SkillTome",
-};
 
 fn parseSalvageSplits(
     section: Section,
@@ -4784,7 +4772,6 @@ pub fn loadSalvageDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !SalvageDefinitions {
-    try validateSections(sections, &salvage_sections);
 
     const weapon_type_fields = @typeInfo(WeaponType).@"enum".fields;
     var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
@@ -4821,6 +4808,7 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
         &file_source,
         "data/default_settings.txt",
         allocator,
+        &settings_sections,
     );
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
@@ -4894,7 +4882,7 @@ test "loadSettings injects default bindings for actions the user file doesn't me
         \\action skip
         \\context game
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     const merged = try loadSettings(sections, allocator, base, null);
@@ -4958,7 +4946,7 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
         \\action dump_event_log
         \\context anytime
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     const merged = try loadSettings(sections, allocator, base, null);
@@ -4992,7 +4980,7 @@ test "loadSettings accepts a context-less binding (contexts are derived)" {
         \\input_name Enter
         \\action skip
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5031,7 +5019,7 @@ test "loadSettings ignores the binding context line (contexts are derived)" {
         \\action select_editor_tool
         \\context game
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5069,7 +5057,7 @@ test "loadSettings warns + drops a conflicting combo (same context, different ac
         \\action skip
         \\context game
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5110,7 +5098,7 @@ test "loadSettings warns + drops a duplicate combo (same action twice)" {
         \\action confirm
         \\context game
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5161,7 +5149,7 @@ test "loadSettings keeps cross-context same-combo bindings (no conflict)" {
         \\action skip
         \\context game
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5205,7 +5193,7 @@ test "loadSettings: a user combo colliding with an injected default drops the de
         \\input_name Enter
         \\action skip
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5237,7 +5225,7 @@ test "loadSettings warns + drops a binding naming an unknown action" {
         \\action no_such_action
         \\context anytime
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5273,7 +5261,7 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
         \\Audio
         \\master_volume 40
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     const merged = try loadSettings(sections, allocator, base, null);
@@ -5307,7 +5295,7 @@ test "entity utility slots: a weapon skill is warned + dropped, utility skills k
         \\Items
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -5347,7 +5335,7 @@ test "loadPlayerLoadout: save-shaped player.txt - loadout fields, default stats,
         \\
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &player_loadout_sections);
     defer freeParsedSections(sections, allocator);
 
     const template = try loadPlayerLoadout(sections, allocator, "player.txt", null);
@@ -5377,14 +5365,12 @@ test "loadPlayerLoadout: the v1 PlayerLoadout format is rejected" {
         \\
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
-    defer freeParsedSections(sections, allocator);
-
-    // The section validation fires first (PlayerLoadout is not a loadout
-    // section anymore) - the old format is rejected either way.
+    // The per-format header grammar rejects the old format's PlayerLoadout
+    // header at the PARSE (UnknownSectionHeader) - not a loadout section,
+    // so no list recognizes it.
     try std.testing.expectError(
-        error.UnexpectedSection,
-        loadPlayerLoadout(sections, allocator, "player.txt", null),
+        error.UnknownSectionHeader,
+        parseConfigFile(raw_text, allocator, &player_loadout_sections),
     );
 }
 
@@ -5395,7 +5381,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const parsed = try parseConfigFileFromPath(&file_source, "data/max_player.txt", allocator);
+    const parsed = try parseConfigFileFromPath(&file_source, "data/max_player.txt", allocator, &player_save_sections);
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
@@ -5462,6 +5448,7 @@ test "the shipped beginnings player.txt loads in the save-shaped format" {
         &file_source,
         "data/campaigns/main_campaign/missions/beginnings/player.txt",
         allocator,
+        &player_loadout_sections,
     );
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
@@ -5500,7 +5487,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
         \\Items
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
     defer freeParsedSections(sections, allocator);
 
     const level = try loadLevel(sections, null, allocator, "", null);
@@ -5526,7 +5513,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
         \\
         \\Items
     ;
-    const plain_sections = try parseConfigFile(plain_text, allocator);
+    const plain_sections = try parseConfigFile(plain_text, allocator, &level_sections);
     defer freeParsedSections(plain_sections, allocator);
     const plain_level = try loadLevel(plain_sections, null, allocator, "", null);
     defer freeLevel(plain_level, allocator);
@@ -5565,7 +5552,7 @@ test "loadSettings warns (keeps) a binding naming an unproducible input id" {
         \\input_name Escapee
         \\action escape
     ;
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &settings_sections);
     defer freeParsedSections(sections, allocator);
 
     var warnings: std.ArrayList([]const u8) = .empty;

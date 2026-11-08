@@ -1483,6 +1483,64 @@ state untouched), hub clicks (own tile / NPC tile / non-walkable fire
 nothing; walkable tile moves), swap binding (both-empty fires nothing,
 weapon fires). 377 total pass.
 
+### Parser grammar slice 1 - per-format section headers (DONE)
+
+Design + slices: TODO → Parser grammar overhaul (superseding the
+section-header lockstep-guard idea); settled design: DESIGN → File System
+& IO → Config grammar. Slice 1 of 5.
+
+**The change.** `parseConfigFile`/`parseConfigFileFromPath` take the file
+type's `*_sections` list as a parameter - ONE list per format, both the
+grammar (which lines open sections) and the validation (which sections are
+legal). The global `valid_section_headers` whitelist is DELETED (the
+lockstep problem is dissolved, not guarded); `validateSections` is deleted
+(its 12 call lines went with it - the parser itself rejects what it
+cannot parse). New truthful errors where the old parser silently
+misbehaved: a header-shaped line (uppercase-initial, after a blank)
+outside the format's list → `error.UnknownSectionHeader` (the old path
+absorbed the section's lines into the PREVIOUS section, surfacing as
+misleading unknown-key warnings - the motivating failure mode); any other
+non-conforming line outside a Layout → `error.UnknownLine` (was silently
+stored as raw content no non-Layout consumer reads). `#` comment lines
+are skipped outside Layouts (preserving blank-line state so a comment
+between separator and header does not hide the header; inside a Layout
+`#` is an ordinary tile character - it's in the writer's 91-code pool).
+
+**Wiring.** ~30 production call sites threaded with their format's list
+(count-asserted migration script, dry-run-first per the sweep discipline):
+the reconstruction-read sites in handlers/meta + player_input + shared,
+the generic `loadConfigWithFallback` (session_setup - gained an
+`expected_headers` parameter threaded from its 4 callers: settings /
+color themes / weapon types / salvage), settings sites, file_source's
+mission scans, session_log_bundle, checkCampaignGraph, mission_io
+(validation replays + zip import), editor/handlers, gradient_report, and
+content_validation_tests (restructured to classify-by-path BEFORE the
+parse - the branch owns its list). New `parser.session_log_sections`
+(Metadata/EventLog/ReconstructionCache - session logs, crash bundles,
+validation replays); `salvage_sections` moved from loaders.zig to
+parser.zig (session_setup needs it at the parse now). ~65 test call sites
+migrated the same way, keyed by test name.
+
+**The errdefer fix (pre-existing leak class exposed).** The new mid-parse
+error returns made reachable a leak that existed for OOM all along:
+`parseConfigFile` on error must free what it already built (completed
+sections' owned slices + the working lists' remainders). The two reworked
+loader tests ("loadLevel rejects unexpected sections", "loadPlayerLoadout:
+the v1 format is rejected") run under `testing.allocator` and caught it
+immediately - the arena-blind-spot lesson in action. `errdefer` cleanup
+added; safe alongside the tail's success-path deinits because those run
+only after `toOwnedSlice` empties the lists.
+
+**Behavior changes (all intentional, all loud):** three tests moved their
+assertion up from loader-level `UnexpectedSection` to parse-level
+`UnknownSectionHeader` (loadLevel unexpected-section, v1 loadout format,
+editor-defaults Layout-sneak). New parser grammar tests: cross-format
+header rejection, junk-line error, comment transparency, `#`-as-tile.
+Layout termination now consults the FORMAT's list (a hub layout row
+spelling `Items` no longer terminates the layout even under the legacy
+grammar - cross-format collision fixed for old files too). Full suite
+PASS; `unused_pub_report` 0 DEAD / 0 UNUSED; dash sweep clean.
+
 ## Error Handling
 
 ### Slice 1 - error surface (DONE)

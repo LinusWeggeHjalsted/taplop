@@ -26,7 +26,7 @@ Test by running `zig build run` and clicking through.
       section header (decoration character_codes cover printable ASCII)
       and truncate the layout - a valid layout the format could not
       express. Slices:
-  - [ ] 1. Per-format header grammar: `parseConfigFile` takes
+  - [x] 1. Per-format header grammar: `parseConfigFile` takes
         `expected_headers`; delete `valid_section_headers`; new
         `session_log_sections` (verify Metadata/EventLog/
         ReconstructionCache against the bundle manifest writer);
@@ -34,7 +34,12 @@ Test by running `zig build run` and clicking through.
         into the parser (deleted + its call lines); unknown
         header-shaped line outside a Layout errors naming the line;
         `#` comment lines skipped; junk lines outside Layouts error.
-        Roughly 18 parseConfigFile callers touched.
+        Roughly 18 parseConfigFile callers touched - DONE (see DONE.md,
+        "Parser grammar slice 1"; ~30 prod + ~65 test call sites, the
+        errdefer leak fix, and the session-log list verified against the
+        bundle writer - the manifest section appends into the SAME
+        session_log.txt, so the one list covers logs, bundles, and
+        validation replays).
   - [ ] 2. Counted layouts: `Layout <count>` opening line consumes
         exactly N raw rows (blank lines are rows); bare `Layout` keeps
         the legacy grammar but terminates only on expected-header lines

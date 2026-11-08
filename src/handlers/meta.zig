@@ -63,7 +63,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read save file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.player_save_sections) catch {
                     failReconstructionRead(history, "failed to parse save file");
                     return;
                 };
@@ -165,7 +165,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read hub file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.hub_sections) catch {
                     failReconstructionRead(history, "failed to parse hub file");
                     return;
                 };
@@ -278,7 +278,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read mission file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.mission_sections) catch {
                     failReconstructionRead(history, "failed to parse mission file");
                     return;
                 };
@@ -322,7 +322,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read player file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.player_loadout_sections) catch {
                     failReconstructionRead(history, "failed to parse player file");
                     return;
                 };
@@ -415,7 +415,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read mission file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.mission_sections) catch {
                     failReconstructionRead(history, "failed to parse mission file");
                     return;
                 };
@@ -499,7 +499,7 @@ pub fn handleMetaEvent(
                     failReconstructionRead(history, "failed to read level file");
                     return;
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                break :blk parser.parseConfigFile(bytes, allocator, &parser.level_sections) catch {
                     failReconstructionRead(history, "failed to parse level file");
                     return;
                 };

@@ -1,5 +1,7 @@
 //! Generic config-file format layer: `Section`/`EntryGroup`/`KeyValuePair`
-//! types, `parseConfigFile`, `validateSections`/`validateFileFormatVersion`/
+//! types, `parseConfigFile` (per-format section-header grammar - the
+//! expected-headers parameter is both the grammar and the validation;
+//! DESIGN → File System & IO → Config grammar), `validateFileFormatVersion`/
 //! `validateKeys` (+ the per-type section/key whitelists), value coercion
 //! (`asU32`/`asI32`/`asF32`/`asBool`/`asColor`/`parseEnum`), `findSection`/
 //! `findValue`, and the shared `file_format_version` constants. The
@@ -66,62 +68,29 @@ pub const Section = struct {
     raw_lines: []const []const u8,
 };
 
-const valid_section_headers = [_][]const u8{
-    "Metadata",
-    "Layout",
-    "Hubs",
-    "Entities",
-    "Decorations",
-    "Items",
-    "Exits",
-    "NPCs",
-    "Audio",
-    "Display",
-    "Gameplay",
-    "InputBindings",
-    "Skills",
-    "Info",
-    "DiscoveredHubs",
-    "UnlockedSkills",
-    "MainHandWeapon",
-    "OffHandWeapon",
-    "Amulet",
-    "Coat",
-    "Gloves",
-    "Pants",
-    "Boots",
-    "Inventory",
-    "UtilitySkills",
-    "CloneData",
-    "GlobalColors",
-    "Gradients",
-    "EventLog",
-    "ReconstructionCache",
-    "PlayerLoadout",
-    "Sword",
-    "Shield",
-    "Spear",
-    "Dagger",
-    "Axe",
-    "Staff",
-    "Crossbow",
-    "Idol",
-    "SkillTome",
-};
-
-fn isValidSectionHeader(line: []const u8) bool {
-    for (&valid_section_headers) |header| {
+fn isExpectedSectionHeader(
+    line: []const u8,
+    expected_headers: []const []const u8,
+) bool {
+    for (expected_headers) |header| {
         if (std.mem.eql(u8, line, header)) return true;
     }
     return false;
 }
 
 /// Parse a .txt config file into sections with entry groups.
-/// Sections start with a recognized header name after a blank line.
-/// Key-value pairs within a section are grouped by blank lines.
+/// `expected_headers` is THIS file type's section list (the per-format
+/// `*_sections` const): it is the grammar (which lines open sections) and
+/// the validation (which sections are legal) in one set. Sections start
+/// with a recognized header name after a blank line. Key-value pairs
+/// within a section are grouped by blank lines. A header-shaped line
+/// (uppercase-initial, after a blank) outside that list, or any other
+/// non-conforming line outside a Layout, errors - see DESIGN → File
+/// System & IO → Config grammar.
 pub fn parseConfigFile(
     raw_text: []const u8,
     allocator: std.mem.Allocator,
+    expected_headers: []const []const u8,
 ) ![]const Section {
     var sections: std.ArrayList(Section) = .empty;
     var current_entry_groups: std.ArrayList(EntryGroup) = .empty;
@@ -129,6 +98,24 @@ pub fn parseConfigFile(
     var current_raw_lines: std.ArrayList([]const u8) = .empty;
     var current_header: ?[]const u8 = null;
     var after_blank_line = true; // start of file counts as "after blank line"
+
+    // A mid-parse error (UnknownSectionHeader/UnknownLine, or OOM) must not
+    // leak what was already built: completed sections own their slices,
+    // and the working lists own their remainders. Safe alongside the tail's
+    // success-path deinits - they run only after the lists are emptied by
+    // toOwnedSlice, and deinit on an emptied list frees nothing.
+    errdefer {
+        for (sections.items) |section| {
+            for (section.entry_groups) |group| allocator.free(group.pairs);
+            allocator.free(section.entry_groups);
+            allocator.free(section.raw_lines);
+        }
+        sections.deinit(allocator);
+        for (current_entry_groups.items) |group| allocator.free(group.pairs);
+        current_entry_groups.deinit(allocator);
+        current_pairs.deinit(allocator);
+        current_raw_lines.deinit(allocator);
+    }
 
     var line_iterator = std.mem.splitScalar(u8, raw_text, '\n');
 
@@ -152,7 +139,7 @@ pub fn parseConfigFile(
                 continue;
             }
             // Check if this line ends the Layout section
-            if (isValidSectionHeader(line)) {
+            if (isExpectedSectionHeader(line, expected_headers)) {
                 // Strip trailing blank lines from layout
                 while (current_raw_lines.items.len > 0 and
                     current_raw_lines.items[current_raw_lines.items.len - 1].len == 0)
@@ -189,8 +176,15 @@ pub fn parseConfigFile(
             continue;
         }
 
-        // Section headers: recognized header name, only after a blank line or start of file.
-        const is_header = after_blank_line and isValidSectionHeader(line);
+        // Comment lines ('#' initial) are skipped outside Layout sections -
+        // inside a Layout, '#' is an ordinary tile character. Skipping
+        // preserves the blank-line state, so a comment between the
+        // separator blank and a header does not hide the header.
+        if (line[0] == '#') continue;
+
+        // Section headers: a recognized header name, only after a blank
+        // line or start of file.
+        const is_header = after_blank_line and isExpectedSectionHeader(line, expected_headers);
 
         // Key-value pairs: start with a lowercase letter.
         const is_key_value = line[0] >= 'a' and line[0] <= 'z';
@@ -228,9 +222,17 @@ pub fn parseConfigFile(
                     .value = "",
                 });
             }
+        } else if (after_blank_line and line[0] >= 'A' and line[0] <= 'Z') {
+            // Header-shaped but not in this format's header list. Error
+            // instead of silently absorbing the section's lines into the
+            // previous section (where they surface as misleading
+            // unknown-key warnings).
+            return error.UnknownSectionHeader;
         } else {
-            // Raw content line (layout grids, etc.)
-            try current_raw_lines.append(allocator, line);
+            // Any other line shape outside a Layout is junk the format
+            // cannot express. Error instead of silently storing it as
+            // raw content that no non-Layout consumer reads.
+            return error.UnknownLine;
         }
 
         after_blank_line = false;
@@ -276,9 +278,10 @@ pub fn parseConfigFileFromPath(
     file_source: *const FileSource,
     file_path: []const u8,
     allocator: std.mem.Allocator,
+    expected_headers: []const []const u8,
 ) !ParsedConfigFile {
     const raw_text = try file_source.readFile(allocator, file_path);
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, expected_headers);
     return .{
         .sections = sections,
         .raw_text = raw_text,
@@ -288,24 +291,6 @@ pub fn parseConfigFileFromPath(
 // ============================================================
 // Value conversion helpers
 // ============================================================
-
-/// Verify that all sections in the parsed file are in the expected set.
-/// Returns an error if an unexpected section is found.
-pub fn validateSections(
-    sections: []const Section,
-    expected_headers: []const []const u8,
-) !void {
-    for (sections) |section| {
-        var found = false;
-        for (expected_headers) |expected| {
-            if (std.mem.eql(u8, section.header, expected)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) return error.UnexpectedSection;
-    }
-}
 
 /// Validate `file_format_version` from a parsed Metadata/Info section's first
 /// entry group. Required (hard gate): a file without it returns
@@ -444,6 +429,20 @@ pub const player_save_sections = [_][]const u8{
 pub const player_loadout_sections = [_][]const u8{
     "Metadata", "MainHandWeapon", "OffHandWeapon", "Amulet",    "Coat",
     "Gloves",   "Pants",          "Boots",         "Inventory", "UtilitySkills",
+};
+
+/// A session-log file (session_log.txt): the log body plus the bundle
+/// manifest section - a bundle appends `ReconstructionCache` to the same
+/// file, a bare log (the validation replay's shape) simply lacks it.
+pub const session_log_sections = [_][]const u8{ "Metadata", "EventLog", "ReconstructionCache" };
+
+/// A salvage-definition file (data/salvage.txt): one section per
+/// salvageable type, no Metadata section.
+pub const salvage_sections = [_][]const u8{
+    "Sword",  "Shield",    "Spear",    "Dagger",
+    "Axe",    "Staff",     "Crossbow", "Idol",
+    "Amulet", "Coat",      "Gloves",   "Pants",
+    "Boots",  "SkillTome",
 };
 
 // ============================================================
@@ -829,6 +828,12 @@ pub fn freeParsedSections(
     allocator.free(sections);
 }
 
+/// Section list for the parser's OWN grammar tests - the fixture headers,
+/// not a real format (the per-format lists are exercised by the loaders'
+/// tests through their real lists; this one exists so the grammar rules
+/// themselves can be tested in isolation).
+const parser_test_sections = [_][]const u8{ "Metadata", "Audio", "Gameplay", "Layout", "Entities" };
+
 test "parseConfigFile handles sections, key-value pairs, and entry groups" {
     const allocator = std.testing.allocator;
     const raw_text =
@@ -847,7 +852,7 @@ test "parseConfigFile handles sections, key-value pairs, and entry groups" {
         \\only_key only_value
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
     defer freeParsedSections(sections, allocator);
 
     // Correct number of sections
@@ -891,6 +896,7 @@ test "parseConfigFileFromPath reads a file from disk without error" {
         &file_source,
         "data/default_settings.txt",
         allocator,
+        &settings_sections,
     );
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
@@ -934,7 +940,7 @@ test "parseConfigFile handles layout grids as raw lines" {
         \\name Skeleton
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
     defer freeParsedSections(sections, allocator);
 
     try std.testing.expectEqual(3, sections.len);
@@ -969,7 +975,7 @@ test "section headers only recognized after blank lines" {
         \\name test
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
     defer freeParsedSections(sections, allocator);
 
     try std.testing.expectEqual(2, sections.len);
@@ -996,7 +1002,7 @@ test "layout with blank rows and tricky characters preserves all content" {
         \\a.. ..a
     ;
 
-    const sections = try parseConfigFile(raw_text, allocator);
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
     defer freeParsedSections(sections, allocator);
 
     try std.testing.expectEqual(1, sections.len);
@@ -1012,6 +1018,73 @@ test "layout with blank rows and tricky characters preserves all content" {
 
     // Nothing parsed as key-value or entry groups
     try std.testing.expectEqual(0, sections[0].entry_groups.len);
+}
+
+test "parseConfigFile errors on a header-shaped line outside the format's list" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Audio
+        \\music_volume 0.5
+    ;
+    // Audio is a settings header; the level list must reject it at the
+    // parse instead of silently absorbing its lines into Metadata (the
+    // misleading unknown-key warnings failure mode).
+    try std.testing.expectError(
+        error.UnknownSectionHeader,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
+}
+
+test "parseConfigFile errors on a non-conforming line outside a Layout" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\123 not a key-value line
+    ;
+    // Neither key-value (lowercase initial), a header, a comment, nor
+    // blank - silently swallowed as raw content before (no non-Layout
+    // consumer reads raw content).
+    try std.testing.expectError(
+        error.UnknownLine,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
+}
+
+test "comment lines are skipped and do not hide a following header" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\# author note
+        \\Layout
+        \\...!...
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectEqual(2, sections.len);
+    try std.testing.expectEqualStrings("Layout", sections[1].header);
+    try std.testing.expectEqual(1, sections[1].raw_lines.len);
+}
+
+test "comment lines inside a Layout are tile content" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Layout
+        \\#..
+        \\..!
+    ;
+    // '#' is an ordinary layout character (assignable as a character_code)
+    // - only lines OUTSIDE a Layout are comments.
+    const sections = try parseConfigFile(raw_text, allocator, &parser_test_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectEqual(1, sections.len);
+    try std.testing.expectEqualStrings("#..", sections[0].raw_lines[0]);
 }
 
 test "asColor parses hex color codes" {
@@ -1064,7 +1137,7 @@ test "validateKeys: warns on unknown keys in level file sections" {
         \\unknwon_key blah
         \\
     ;
-    const sections = try parseConfigFile(config, allocator);
+    const sections = try parseConfigFile(config, allocator, &level_sections);
     var warnings: std.ArrayList([]const u8) = .empty;
     validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
 
@@ -1108,7 +1181,7 @@ test "validateKeys: no warnings for valid keys" {
         \\max_health 20
         \\
     ;
-    const sections = try parseConfigFile(config, allocator);
+    const sections = try parseConfigFile(config, allocator, &level_sections);
     var warnings: std.ArrayList([]const u8) = .empty;
     validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
@@ -1150,7 +1223,7 @@ test "validateKeys: no warnings for player save with CloneData" {
         \\knowledge 0
         \\turns_to_complete 15
     ;
-    const sections = try parseConfigFile(config, allocator);
+    const sections = try parseConfigFile(config, allocator, &player_save_sections);
     var warnings: std.ArrayList([]const u8) = .empty;
     validateKeys(sections, player_save_key_map, "saves/autosave.txt", allocator, &warnings);
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);

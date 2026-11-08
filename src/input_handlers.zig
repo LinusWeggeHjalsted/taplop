@@ -955,7 +955,7 @@ fn resetSettingsToDefaults(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const bytes = history.file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch return;
     defer allocator.free(bytes);
-    const sections = parser.parseConfigFile(bytes, allocator) catch return;
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.settings_sections) catch return;
     defer parser.freeParsedSections(sections, allocator);
     const fresh = loaders.loadSettings(sections, allocator, null, null) catch return;
     loaders.freeSettings(history.settings, allocator);
@@ -5658,7 +5658,7 @@ test "resetSettingsToDefaults: full reset + flush-then-copy settings backup" {
     {
         const bytes = history.file_source.readEmbeddedFile(std.testing.allocator, "data/default_settings.txt") catch return error.TestUnexpectedError;
         defer std.testing.allocator.free(bytes);
-        const sections = parser.parseConfigFile(bytes, std.testing.allocator) catch return error.TestUnexpectedError;
+        const sections = parser.parseConfigFile(bytes, std.testing.allocator, &parser.settings_sections) catch return error.TestUnexpectedError;
         defer parser.freeParsedSections(sections, std.testing.allocator);
         const defaults = loaders.loadSettings(sections, std.testing.allocator, null, null) catch return error.TestUnexpectedError;
         defer loaders.freeSettings(defaults, std.testing.allocator);

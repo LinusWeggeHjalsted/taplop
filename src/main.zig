@@ -1194,7 +1194,7 @@ test "session log round-trips through reconstruction (forward play == replay)" {
 
     // Serialize -> parse -> load the recorded history.
     const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
-    const sections = try parser.parseConfigFile(body, arena);
+    const sections = try parser.parseConfigFile(body, arena, &parser.session_log_sections);
     const log = try session_log.loadEventLog(sections, arena);
     input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version); // same build -> silent
 
@@ -1521,7 +1521,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
 
     // Serialize → reconstruct into a fresh history.
     const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
-    const sections = try parser.parseConfigFile(body, arena);
+    const sections = try parser.parseConfigFile(body, arena, &parser.session_log_sections);
     const log = try session_log.loadEventLog(sections, arena);
 
     var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);

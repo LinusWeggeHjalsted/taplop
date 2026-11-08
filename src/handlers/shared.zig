@@ -122,7 +122,7 @@ pub fn loadCampaignAndPushHub(
             failReconstructionRead(history, "failed to read campaign file");
             return;
         };
-        break :blk parser.parseConfigFile(bytes, allocator) catch {
+        break :blk parser.parseConfigFile(bytes, allocator, &parser.campaign_sections) catch {
             failReconstructionRead(history, "failed to parse campaign file");
             return;
         };

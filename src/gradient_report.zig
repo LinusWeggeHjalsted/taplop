@@ -95,7 +95,7 @@ pub fn main() !void {
     const cwd = std.Io.Dir.cwd();
 
     const bytes = try cwd.readFileAlloc(io, color_themes_path, allocator, read_limit);
-    const sections = try parser.parseConfigFile(bytes, allocator);
+    const sections = try parser.parseConfigFile(bytes, allocator, &parser.color_theme_sections);
     const definitions = try loaders.loadColorThemeDefinitions(sections, allocator);
     const gradients = definitions.gradients;
 
