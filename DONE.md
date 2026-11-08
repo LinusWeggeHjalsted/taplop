@@ -1587,6 +1587,60 @@ count, and the writer's literal count assertion. Existing legacy-grammar
 tests (blank rows, header termination) unchanged and passing - the two
 grammars coexist by opening-line shape. Full suite PASS.
 
+### Parser grammar slice 3 - layout reader tightening + mandatory markers (DONE)
+
+Design: DESIGN → File System & IO → Config grammar; slices: TODO →
+Parser grammar overhaul. Slice 3 of 5.
+
+**The change.** The layout walks in `loadLevel`/`loadHub` no longer
+silently turn unknown characters into walkable tiles: a char outside the
+specials (`' '`, `'.'`, `'!'`, `'='`) and outside THIS file's own defined
+codes (decoration / entity / item / exit / NPC) is
+`error.UnknownLayoutCharacter` - a typo'd `character_code` is a truthful
+load error. And both markers are now mandatory: a missing `!` (player
+spawn - also the spawn-relative origin) is `error.MissingPlayerSpawn` in
+both formats; a missing `=` (level end) is `error.MissingLevelEnd` in
+levels. Previously a `!`-less level loaded with the normalization
+silently skipped ("left as-is, nothing to anchor on" - that comment is
+gone). Safe for editor content by construction: the planners treat `!`
+and `=` as movable-never-deletable singletons and the fresh-level
+template ships both, so a written level always carries them.
+
+**One leniency distinction (hub NPCs).** A code whose NPC entry exists
+but was warned + dropped (no/unknown `npc_type`) keeps its tile walkable
+(`dropped_npc_codes`, threaded from the entry parse to the walk): the
+entry's own warn+drop policy already fired, and hard-erroring at the walk
+would make the same defect fatal or not depending on whether the broken
+NPC happens to be placed. Level-side definitions have no whole-entry
+drop path, so only the hub needed this.
+
+**errdefer cleanup in both loaders (same class as slice 1's parser fix).**
+The new error returns made reachable a pre-existing leak: error paths
+out of `loadLevel`/`loadHub` never freed the partial build. Both now
+errdefer-free the local lists + the not-yet-moved `level`/`hub` fields
+(safe together: a `toOwnedSlice`d list is empty, an unassigned field is
+an empty slice). The new contract tests run under `testing.allocator`,
+so the cleanup is leak-checked.
+
+**Fixture churn (nine tests + one mechanism change).** Eight loader test
+fixtures omitted `!`/`=` (decoration-machinery tests leaning on the
+permissive fallback); they now carry both markers - markers replace
+existing `'.`s so tile counts are unchanged, and where the spawn-relative
+displacement shifted positions, the assertions were updated (e.g. the
+multi-tile footprint test's decoration now asserts world (-1, 0)). The
+reconstruction-check test "an illegal recorded action rejects at the
+seed" previously made a recorded move illegal by DELETING the `=` tile -
+unrepresentable now; its mechanism is a space at the recorded target
+(the tile stops existing) with the exit moved elsewhere, preserving the
+test's intent (seed-time legality rejection).
+
+Tests: UnknownLayoutCharacter (level + hub), MissingPlayerSpawn (level +
+hub), MissingLevelEnd (level), all under `testing.allocator` (leak-
+checked error paths); the hub dropped-NPC leniency pinned by the
+existing warn+drop test (U in the layout stays walkable). Shipped data
+verified through content_validation_tests (every campaign level + hub
+walks the tightened readers). Full suite PASS.
+
 ## Error Handling
 
 ### Slice 1 - error surface (DONE)

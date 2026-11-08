@@ -2534,10 +2534,15 @@ loads with the legacy grammar, and a CURRENT-version file with a bare
 `Layout` errors (current files are required to carry the count). The
 layout READERS accept only the fixed specials (`' '`, `'.'`, `'!'`,
 `'='`) plus the file's own defined codes - a typo'd `character_code` is
-a truthful load error, not a silent walkable tile - and require the
-markers: `!` (player spawn) in both formats, `=` (level end) in levels;
-a missing marker errors instead of silently skipping the spawn-relative
-normalization.
+a truthful load error (UnknownLayoutCharacter), not a silent walkable
+tile - and require the markers: `!` (player spawn) in both formats, `=`
+(level end) in levels; a missing marker errors instead of silently
+skipping the spawn-relative normalization. One leniency distinction: a
+code whose DEFINITION ENTRY exists but was warned + dropped (a hub NPC
+with an unknown npc_type) keeps its tile walkable - the entry's own
+warn+drop policy already fired, and hard-erroring at the walk would make
+the same defect fatal or not depending on whether the broken NPC happens
+to be placed.
 
 Rejected alternatives: the comptime lockstep guard (guards a duplicate
 instead of deleting it - the global list was the bug); a reserved

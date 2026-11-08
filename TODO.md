@@ -56,7 +56,7 @@ Test by running `zig build run` and clicking through.
         still-parsing round trip). The file_format_version bump for the
         writer change lands with slice 4 (the range policy) - until
         then new saves are v1-with-count, readable by this build.
-  - [ ] 3. Reader tightening rider: loadLevel/loadHub error on layout
+  - [x] 3. Reader tightening rider: loadLevel/loadHub error on layout
         chars outside `{' ', '.', '!', '='}` plus the file's own defined
         codes (a typo'd character_code becomes a truthful error, not a
         silent walkable tile). No character_code value constraint
@@ -64,7 +64,11 @@ Test by running `zig build run` and clicking through.
         adjacent gap this design exposed: the loaders currently TOLERATE
         a missing ! (spawn-relative normalization is skipped, the level
         loads anyway) - error on it instead, and on a missing = in
-        levels (both markers are mandatory).
+        levels (both markers are mandatory) - DONE (see DONE.md,
+        "Parser grammar slice 3"; UnknownLayoutCharacter +
+        MissingPlayerSpawn/MissingLevelEnd, errdefer cleanup in both
+        loaders, the hub dropped-NPC-code leniency distinction, and nine
+        test fixtures upgraded to the mandatory-marker invariant).
   - [ ] 4. Version range policy: level 1 to 2, hub 2 to 3; the hard
         gate becomes a supported range (newer errors, older loads with
         legacy grammar); current-version + bare Layout errors.

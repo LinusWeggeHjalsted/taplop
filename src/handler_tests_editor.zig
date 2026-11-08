@@ -6624,16 +6624,19 @@ test "reconstructFromEventLogChecking: an illegal recorded action rejects at the
     runToIdle(&history);
     try playFixtureRunToCompletion(&history, false);
 
-    // Remove level 1's exit tile entirely: the recorded exit step to (1,0)
-    // is now an unreachable tile - the seed-time legality check (the
-    // validatePlayerAction layer) rejects before any handler runs.
+    // Make (1,0) a non-tile (a space) and move the exit elsewhere: the
+    // recorded exit step to (1,0) is now an unreachable tile - the
+    // seed-time legality check (the validatePlayerAction layer) rejects
+    // before any handler runs. (Both markers must stay in the file - a
+    // missing '=' is a hard load error now, which would fail the
+    // reconstruction READ instead of exercising the legality check.)
     try harness.file_source.writeFile(validation_fixture_path ++ "/level_1.txt",
         \\Metadata
         \\file_format_version 1
         \\name Fixture Level One
         \\
         \\Layout
-        \\!
+        \\! =
         \\
     );
     const result = try readFixtureReplay(&harness, arena);

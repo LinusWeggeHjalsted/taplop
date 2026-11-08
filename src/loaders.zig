@@ -2097,6 +2097,25 @@ pub fn loadLevel(
     var ground_item_list: std.ArrayList(types.GroundItems) = .empty;
     var player_start: ?types.Vector2 = null;
 
+    // Partial-build cleanup on any error return (missing markers, an
+    // unknown layout character, OOM): the local lists own everything
+    // until the tail's toOwnedSlice calls move it into `level`. Both
+    // halves are safe together - a toOwnedSlice'd list is empty (its loop
+    // no-ops) and a not-yet-assigned level field is an empty slice.
+    errdefer {
+        for (entity_list.items) |entity| freeEntity(entity, allocator);
+        entity_list.deinit(allocator);
+        for (decoration_list.items) |decoration| freeDecoration(decoration, allocator);
+        decoration_list.deinit(allocator);
+        for (ground_item_list.items) |stack| {
+            for (stack.items) |item| freeItem(item, allocator);
+            allocator.free(stack.items);
+        }
+        ground_item_list.deinit(allocator);
+        tile_positions.deinit(allocator);
+        freeLevel(level, allocator);
+    }
+
     if (findSection(sections, "Layout")) |section| {
         for (section.raw_lines, 0..) |row, raw_y| {
             const y: i32 = @intCast(raw_y);
@@ -2131,25 +2150,30 @@ pub fn loadLevel(
                             };
                             cloneDecorationOwned(&decoration, allocator);
                             decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
-                        } else {
-                            // Not a decoration - this tile is walkable.
+                        } else if (entity_definitions.get(character)) |definition| {
+                            // An entity's tile is walkable.
                             try tile_positions.append(allocator, position);
-
-                            // Match character to enemy or item definition.
-                            if (entity_definitions.get(character)) |definition| {
-                                var entity = definition;
-                                entity.position = position;
-                                cloneEntityOwned(&entity, allocator);
-                                try entity_list.append(allocator, entity);
-                            } else if (item_definitions.get(character)) |item| {
-                                const items = try allocator.alloc(types.Item, 1);
-                                items[0] = item;
-                                cloneItemOwned(&items[0], allocator);
-                                try ground_item_list.append(allocator, .{
-                                    .position = position,
-                                    .items = items,
-                                });
-                            }
+                            var entity = definition;
+                            entity.position = position;
+                            cloneEntityOwned(&entity, allocator);
+                            try entity_list.append(allocator, entity);
+                        } else if (item_definitions.get(character)) |item| {
+                            // An item's tile is walkable.
+                            try tile_positions.append(allocator, position);
+                            const items = try allocator.alloc(types.Item, 1);
+                            items[0] = item;
+                            cloneItemOwned(&items[0], allocator);
+                            try ground_item_list.append(allocator, .{
+                                .position = position,
+                                .items = items,
+                            });
+                        } else {
+                            // Declared nowhere in THIS file - not a
+                            // decoration, entity, or item code, not a
+                            // special. A typo'd character_code, not a
+                            // walkable tile (the old silent fallback made
+                            // it one).
+                            return error.UnknownLayoutCharacter;
                         }
                     },
                 }
@@ -2157,10 +2181,17 @@ pub fn loadLevel(
         }
     }
 
+    // Both markers are mandatory: '!' is the player spawn (entity 0's
+    // position + the spawn-relative origin), '=' the level end. The
+    // editor's planners treat both as movable-never-deletable singletons
+    // and the fresh-level template ships them, so a written level always
+    // carries both - a missing one is a corrupt or hand-mangled file, not
+    // a level to load with a default-positioned player / no exit.
+    const spawn = player_start orelse return error.MissingPlayerSpawn;
+    if (level.level_end == null) return error.MissingLevelEnd;
+
     // Set player start position (entity index 0)
-    if (player_start) |position| {
-        entity_list.items[0].position = position;
-    }
+    entity_list.items[0].position = spawn;
 
     // Spawn-relative coordinates: displace everything so the player
     // spawn ('!') is the origin (0,0). World positions then stay
@@ -2169,10 +2200,9 @@ pub fn loadLevel(
     // so absolute positions in recorded replays remain valid. The editor
     // load path (buildEditorMission) reuses this loader, so editor
     // coordinates agree; the editor's writer offsets by bbox origin, so
-    // the load→save round trip is idempotent. Levels without a '!' are
-    // left as-is (nothing to anchor on). See DESIGN → Logging & Replay
+    // the load→save round trip is idempotent. See DESIGN → Logging & Replay
     // → Spawn-relative coordinates.
-    if (player_start) |spawn| {
+    {
         const offset = types.Vector2{ .x = -spawn.x, .y = -spawn.y };
         for (tile_positions.items) |*tile| {
             tile.* = .{ .x = tile.x + offset.x, .y = tile.y + offset.y };
@@ -2210,6 +2240,18 @@ pub fn loadLevel(
     level.ground_items = try ground_item_list.toOwnedSlice(allocator);
 
     return level;
+}
+
+/// Linear membership test over the dropped-NPC code list (a tiny list -
+/// one entry per warned + dropped NPC entry, not worth a hash set).
+fn containsCharacter(
+    codes: []const u8,
+    character: u8,
+) bool {
+    for (codes) |code| {
+        if (code == character) return true;
+    }
+    return false;
 }
 
 pub fn loadHub(
@@ -2268,6 +2310,13 @@ pub fn loadHub(
     // drop the entry (the recoverable-problem convention).
     var npc_definitions = std.AutoHashMap(u8, types.NpcType).init(allocator);
     defer npc_definitions.deinit();
+    // Codes whose NPC entry was warned + dropped (no/unknown npc_type).
+    // The layout walk treats these as plain walkable tiles: the entry's
+    // own warn+drop policy already fired, and erroring at the walk would
+    // make the SAME defect fatal or not depending on whether the broken
+    // NPC happens to be placed.
+    var dropped_npc_codes: std.ArrayList(u8) = .empty;
+    defer dropped_npc_codes.deinit(allocator);
     if (findSection(sections, "NPCs")) |section| {
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
@@ -2275,10 +2324,12 @@ pub fn loadHub(
             if (code_string.len != 1) continue;
             const type_value = findValue(pairs, "npc_type") orelse {
                 appendWarning(warnings, allocator, "{s}: NPC entry '{c}' has no npc_type - dropped", .{ file_path, code_string[0] });
+                try dropped_npc_codes.append(allocator, code_string[0]);
                 continue;
             };
             const npc_type = parseEnum(types.NpcType, type_value) orelse {
                 appendWarning(warnings, allocator, "{s}: unknown npc_type '{s}' (NPC entry '{c}') - dropped", .{ file_path, type_value, code_string[0] });
+                try dropped_npc_codes.append(allocator, code_string[0]);
                 continue;
             };
             try npc_definitions.put(code_string[0], npc_type);
@@ -2291,6 +2342,22 @@ pub fn loadHub(
     var npc_list: std.ArrayList(types.NPC) = .empty;
     var exit_list: std.ArrayList(types.MissionExit) = .empty;
     var player_start: ?types.Vector2 = null;
+
+    // Partial-build cleanup on any error return (missing spawn, unknown
+    // layout character, OOM) - same shape as loadLevel's errdefer: the
+    // lists own everything until the tail moves it into `hub`.
+    errdefer {
+        for (decoration_list.items) |decoration| freeDecoration(decoration, allocator);
+        decoration_list.deinit(allocator);
+        for (exit_list.items) |exit| {
+            allocator.free(exit.mission_id);
+            allocator.free(exit.destination_hub);
+        }
+        exit_list.deinit(allocator);
+        npc_list.deinit(allocator);
+        tile_positions.deinit(allocator);
+        freeHub(hub, allocator);
+    }
 
     if (findSection(sections, "Layout")) |section| {
         for (section.raw_lines, 0..) |row, raw_y| {
@@ -2322,18 +2389,29 @@ pub fn loadHub(
                             };
                             cloneDecorationOwned(&decoration, allocator);
                             decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
-                        } else {
+                        } else if (exit_definitions.getPtr(character)) |exit| {
+                            // An exit's tile is walkable.
                             try tile_positions.append(allocator, position);
-
-                            if (exit_definitions.getPtr(character)) |exit| {
-                                exit.position = position;
-                                var exit_copy = exit.*;
-                                exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
-                                exit_copy.destination_hub = dupeString(allocator, exit_copy.destination_hub);
-                                try exit_list.append(allocator, exit_copy);
-                            } else if (npc_definitions.get(character)) |npc_type| {
-                                try npc_list.append(allocator, .{ .npc_type = npc_type, .position = position });
-                            }
+                            exit.position = position;
+                            var exit_copy = exit.*;
+                            exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
+                            exit_copy.destination_hub = dupeString(allocator, exit_copy.destination_hub);
+                            try exit_list.append(allocator, exit_copy);
+                        } else if (npc_definitions.get(character)) |npc_type| {
+                            // An NPC's tile is walkable.
+                            try tile_positions.append(allocator, position);
+                            try npc_list.append(allocator, .{ .npc_type = npc_type, .position = position });
+                        } else if (containsCharacter(dropped_npc_codes.items, character)) {
+                            // A code whose NPC entry was warned + dropped:
+                            // the tile stays walkable, the defect stays
+                            // non-fatal (see the dropped_npc_codes decl).
+                            try tile_positions.append(allocator, position);
+                        } else {
+                            // Declared nowhere in THIS file - not a
+                            // decoration, exit, or NPC code, not a special.
+                            // A typo'd character_code, not a walkable tile
+                            // (the old silent fallback made it one).
+                            return error.UnknownLayoutCharacter;
                         }
                     },
                 }
@@ -2341,12 +2419,16 @@ pub fn loadHub(
         }
     }
 
+    // The '!' player spawn is mandatory in both Layout-bearing formats -
+    // hub.player's position and the spawn-relative origin come from it.
+    const spawn = player_start orelse return error.MissingPlayerSpawn;
+
     // Spawn-relative coordinates - the same normalization as loadLevel
     // ('!' → origin): session-log/crash replay reconstructs through hubs
     // against current files, so hub positions must be bbox-growth-invariant
     // too. See the loadLevel site + DESIGN → Logging & Replay →
     // Spawn-relative coordinates.
-    if (player_start) |spawn| {
+    {
         const offset = types.Vector2{ .x = -spawn.x, .y = -spawn.y };
         for (tile_positions.items) |*tile| {
             tile.* = .{ .x = tile.x + offset.x, .y = tile.y + offset.y };
@@ -3233,7 +3315,7 @@ test "loadLevel decorations do not create tiles" {
         \\name Decoration Test
         \\
         \\Layout
-        \\.!.
+        \\.!=
         \\.A.
         \\...
         \\
@@ -3284,7 +3366,7 @@ test "loadLevel multi-tile decoration footprint" {
         \\name Tree Test
         \\
         \\Layout
-        \\T..
+        \\T!=
         \\...
         \\...
         \\
@@ -3304,15 +3386,16 @@ test "loadLevel multi-tile decoration footprint" {
     const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
-    // T is at row 0, col 0 -> world (0, 0) (natural reading order). The
-    // footprint world tile is (0, 0) - not a level tile (decoration char adds
-    // no tile). The other 8 positions are all '.' -> 8 tiles.
+    // T is at raw (0, 0); the '!' spawn at (1, 0) displaces everything by
+    // (-1, 0), so T is at world (-1, 0). The footprint world tile is
+    // (-1, 0) - not a level tile (decoration char adds no tile). The other
+    // 8 positions are all tiles ('.' / '!' / '=') -> 8 tiles.
     try std.testing.expectEqual(8, level.level_tiles.len);
 
     // 1 decoration with a single footprint tile (the trunk).
     try std.testing.expectEqual(1, level.decorations.len);
     try std.testing.expectEqualStrings("tree_1", level.decorations[0].name);
-    try std.testing.expectEqual(0, level.decorations[0].position.x);
+    try std.testing.expectEqual(-1, level.decorations[0].position.x);
     try std.testing.expectEqual(0, level.decorations[0].position.y);
     try std.testing.expectEqual(1, level.decorations[0].footprint.len);
     try std.testing.expectEqual(@as(i32, 1), level.decorations[0].footprint[0].x);
@@ -3320,6 +3403,107 @@ test "loadLevel multi-tile decoration footprint" {
     // 768x768 pixel dims from the comptime sprite-metadata table.
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.x);
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.y);
+}
+
+test "loadLevel errors on a layout character no entry in the file defines" {
+    const allocator = std.testing.allocator;
+    // 'Z' is neither a special (' ', '.', '!', '=') nor a defined
+    // decoration/entity/item code - the old silent fallback made it a
+    // walkable tile.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Bad Code
+        \\
+        \\Layout
+        \\..!
+        \\.Z.
+        \\
+        \\Entities
+        \\
+        \\Decorations
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.UnknownLayoutCharacter,
+        loadLevel(sections, null, allocator, "level.txt", null),
+    );
+}
+
+test "loadLevel errors on a missing player spawn / level end" {
+    const allocator = std.testing.allocator;
+    {
+        // No '!' anywhere: nothing to anchor the player entity or the
+        // spawn-relative origin on.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 1
+            \\
+            \\Layout
+            \\=..
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.MissingPlayerSpawn,
+            loadLevel(sections, null, allocator, "level.txt", null),
+        );
+    }
+    {
+        // No '=': the level has no exit.
+        const raw_text =
+            \\Metadata
+            \\file_format_version 1
+            \\
+            \\Layout
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.MissingLevelEnd,
+            loadLevel(sections, null, allocator, "level.txt", null),
+        );
+    }
+}
+
+test "loadHub errors on an undefined layout character / missing player spawn" {
+    const allocator = std.testing.allocator;
+    {
+        // 'Z' is declared nowhere (not an exit, NPC, or decoration code).
+        const raw_text =
+            \\Metadata
+            \\file_format_version 2
+            \\
+            \\Layout
+            \\..!
+            \\.Z.
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.UnknownLayoutCharacter,
+            loadHub(sections, null, allocator, "hub.txt", null),
+        );
+    }
+    {
+        const raw_text =
+            \\Metadata
+            \\file_format_version 2
+            \\
+            \\Layout
+            \\...
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        try std.testing.expectError(
+            error.MissingPlayerSpawn,
+            loadHub(sections, null, allocator, "hub.txt", null),
+        );
+    }
 }
 
 test "keep_original_colors: parses for entities + decorations, default false, dedup-distinct" {
@@ -3388,7 +3572,7 @@ test "loadLevel decoration with layers" {
         \\name Layer Test
         \\
         \\Layout
-        \\T..
+        \\T!=
         \\...
         \\...
         \\
@@ -3473,8 +3657,8 @@ test "loadLevel resolves mission-bundled custom decoration stems" {
         \\name Custom Stem Test
         \\
         \\Layout
-        \\D.
-        \\..
+        \\D!
+        \\=.
         \\
         \\Entities
         \\
@@ -3531,7 +3715,7 @@ test "loadLevel clamps invalid decoration footprints (malformed, out-of-bbox, ov
         \\
         \\Layout
         \\A.BD
-        \\.C..
+        \\!C.=
         \\
         \\Entities
         \\
@@ -3626,7 +3810,7 @@ test "loadLevel custom decoration dims: grid floor, 4096 warn, missing fallback"
         \\
         \\Layout
         \\WHTGU
-        \\.....
+        \\!.=..
         \\
         \\Entities
         \\
@@ -3693,7 +3877,7 @@ test "decoration layer dims mismatch vs base: kept + warned (no panic)" {
         \\name Layer Mismatch Test
         \\
         \\Layout
-        \\T..
+        \\T!=
         \\...
         \\...
         \\
@@ -3750,7 +3934,7 @@ test "loadLevel custom entity sprites: 512x640 warn-only" {
         \\
         \\Layout
         \\EFGH
-        \\....
+        \\!.=.
         \\
         \\Entities
         \\character_code E
