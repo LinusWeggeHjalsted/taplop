@@ -16,17 +16,54 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **Section-header lockstep guard (session-reflection rider, campaign-editor
-      slice 1)** - section headers are whitelisted TWICE with no link:
-      `parseConfigFile` recognizes headers against the GLOBAL
-      `valid_section_headers` (parser.zig) while each format has its own
-      `*_sections` list, and adding a section ("Hubs", slice 1d) requires
-      both edits. The failure mode is silent + misleading: an unrecognized
-      header's entry lines parse into the PREVIOUS section and surface as
-      "unknown key" warnings pointing the wrong way (exactly what happened
-      with Hubs). Fix: a comptime assert that every per-format section
-      list is a subset of the global list (the key-table comptime-guard
-      pattern) - cheap, machine-walked, makes the trap impossible.
+- **Parser grammar overhaul (per-format headers + counted layouts)** -
+      design SETTLED (DESIGN → File System & IO → Config grammar);
+      supersedes the section-header lockstep guard idea (the global
+      whitelist is DELETED, not guarded - adding a section becomes one
+      edit to that format's own list). Motivating failure modes: an
+      unknown header silently misparses into the previous section with
+      misleading unknown-key warnings, and a layout row can SPELL a
+      section header (decoration character_codes cover printable ASCII)
+      and truncate the layout - a valid layout the format could not
+      express. Slices:
+  - [ ] 1. Per-format header grammar: `parseConfigFile` takes
+        `expected_headers`; delete `valid_section_headers`; new
+        `session_log_sections` (verify Metadata/EventLog/
+        ReconstructionCache against the bundle manifest writer);
+        salvage_sections moves to parser.zig; `validateSections` folds
+        into the parser (deleted + its call lines); unknown
+        header-shaped line outside a Layout errors naming the line;
+        `#` comment lines skipped; junk lines outside Layouts error.
+        Roughly 18 parseConfigFile callers touched.
+  - [ ] 2. Counted layouts: `Layout <count>` opening line consumes
+        exactly N raw rows (blank lines are rows); bare `Layout` keeps
+        the legacy grammar but terminates only on expected-header lines
+        (fixes the cross-format hub row even for old files);
+        `writeEditorLevel` emits the count (grid_height, already
+        computed); Layout 0 errors (a layout always has at least one
+        row - the ! player spawn is mandatory in both formats, plus =
+        in levels). Tests: the blank-row + Items-spelling-row
+        counterexample, seatown's leading empty row, truncation errors.
+  - [ ] 3. Reader tightening rider: loadLevel/loadHub error on layout
+        chars outside `{' ', '.', '!', '='}` plus the file's own defined
+        codes (a typo'd character_code becomes a truthful error, not a
+        silent walkable tile). No character_code value constraint
+        needed - the count removed the soundness need. Includes the
+        adjacent gap this design exposed: the loaders currently TOLERATE
+        a missing ! (spawn-relative normalization is skipped, the level
+        loads anyway) - error on it instead, and on a missing = in
+        levels (both markers are mandatory).
+  - [ ] 4. Version range policy: level 1 to 2, hub 2 to 3; the hard
+        gate becomes a supported range (newer errors, older loads with
+        legacy grammar); current-version + bare Layout errors.
+        DESIGN → Versioning prose updated when this lands.
+  - [ ] 5. Data sweep: the 13 campaign levels + default_level.txt +
+        camp_at_the_crossroads/hub.txt get `Layout <N>` (N derived from
+        actual rows) + bumped versions; AGENTS → Config File Format
+        gains the count rule. Sweep-script discipline: dry-run ONE
+        file, inspect the full diff, write after each step.
+  - Open: the hub writer does not exist yet (campaign editor) - it
+    emits counts when it lands.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different

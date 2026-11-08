@@ -2497,6 +2497,55 @@ save-to-disk is a **side effect gated on `!replaying`** (same convention as
 `save_game` / `dump_event_log`) → undo never re-writes files. No
 editor-specific undo machinery needed.
 
+### Config grammar (per-format section headers + counted layouts)
+
+`parseConfigFile` takes the file type's expected section headers as a
+parameter - ONE list per format, and it is both the grammar (which lines
+open sections) and the validation (which sections are legal): the same
+set by construction, so they cannot drift. There is no global header
+whitelist. A header-shaped line (uppercase-initial, after a blank line)
+that isn't in the list errors (UnknownSectionHeader) naming the line -
+never the old silent misparse into the previous section with misleading
+unknown-key warnings. Inside a Layout, header-shaped lines are always
+row content. `#`-comment lines are skipped; any other non-conforming
+line outside a Layout (not key-value, not a header) errors too.
+
+Layouts are raw character grids, and their termination must be
+information a row cannot forge: decoration `character_code`s can be any
+printable ASCII char (the writer's 91-code pool), so a row can spell ANY
+section header - no content-matching rule can end a Layout safely, and
+blank-line termination fails the same way (an empty row followed by a
+header-spelling row is textually identical to a section separator - a
+valid layout the format could not express). The grammar that works: the
+OPENING line carries the row count, `Layout 12`, and the parser consumes
+exactly that many raw lines; blank lines are empty rows (row index is
+the y coordinate); nothing a row contains can end the section. The count
+is at least 1: a layout always contains the `!` player spawn (both
+formats), plus `=` in levels - `Layout 0` errors. A bare
+`Layout` line selects the LEGACY grammar (terminate at the next
+recognized header) for pre-count files; the choice is made by the
+opening line's shape, so no version pre-scan is needed. Legacy files
+keep loading forever (old user missions, embedded session-log content
+copies); an editor re-save upgrades them to the counted form.
+
+Version pairing: `file_format_version` becomes a supported RANGE per
+type (levels 1-2, hubs 2-3) - newer-than-current errors as before, older
+loads with the legacy grammar, and a CURRENT-version file with a bare
+`Layout` errors (current files are required to carry the count). The
+layout READERS accept only the fixed specials (`' '`, `'.'`, `'!'`,
+`'='`) plus the file's own defined codes - a typo'd `character_code` is
+a truthful load error, not a silent walkable tile - and require the
+markers: `!` (player spawn) in both formats, `=` (level end) in levels;
+a missing marker errors instead of silently skipping the spawn-relative
+normalization.
+
+Rejected alternatives: the comptime lockstep guard (guards a duplicate
+instead of deleting it - the global list was the bug); a reserved
+terminator symbol (every printable char is assignable, so soundness
+would require shrinking the code pool AND reader tightening);
+declared height in Metadata (needs a cross-section pre-scan; the count
+on the opening line is local).
+
 ## Custom Missions & Online Services
 
 Custom missions are player-authored content that runs through the SAME
