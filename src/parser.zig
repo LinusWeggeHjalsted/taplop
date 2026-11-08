@@ -149,7 +149,7 @@ pub fn parseConfigFile(
     // finishes; a nonzero value at EOF is error.LayoutTruncated.
     var layout_rows_remaining: u32 = 0;
 
-    // A mid-parse error (UnknownSectionHeader/UnknownLine, or OOM) must not
+    // A mid-parse error (UnknownSectionHeader/UnknownLine) must not
     // leak what was already built: completed sections own their slices,
     // and the working lists own their remainders. Safe alongside the tail's
     // success-path deinits - they run only after the lists are emptied by
@@ -187,7 +187,7 @@ pub fn parseConfigFile(
                 // Counted grammar: every line is a raw row - blank lines
                 // are empty rows, header-shaped lines are content. Only
                 // the budget ends the section.
-                try current_raw_lines.append(allocator, line);
+                current_raw_lines.append(allocator, line) catch @panic("failed to append raw line");
                 layout_rows_remaining -= 1;
                 if (layout_rows_remaining == 0) {
                     // Captured before the append: the toOwnedSlice below
@@ -195,12 +195,12 @@ pub fn parseConfigFile(
                     // guaranteed. The counted grammar consumed exactly
                     // this many rows (never blank-stripped).
                     const declared_row_count: u32 = @intCast(current_raw_lines.items.len);
-                    try sections.append(allocator, .{
+                    sections.append(allocator, .{
                         .header = current_header.?,
-                        .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
-                        .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
+                        .entry_groups = current_entry_groups.toOwnedSlice(allocator) catch @panic("failed to own entry groups slice"),
+                        .raw_lines = current_raw_lines.toOwnedSlice(allocator) catch @panic("failed to own raw lines slice"),
                         .layout_row_count = declared_row_count,
-                    });
+                    }) catch @panic("failed to append section");
                     current_entry_groups = .empty;
                     current_raw_lines = .empty;
                     current_header = null;
@@ -209,7 +209,7 @@ pub fn parseConfigFile(
             }
             if (line.len == 0) {
                 // Blank lines in Layout are empty rows - store as raw content
-                try current_raw_lines.append(allocator, line);
+                current_raw_lines.append(allocator, line) catch @panic("failed to append raw line");
                 continue;
             }
             // Check if this line ends the Layout section
@@ -221,11 +221,11 @@ pub fn parseConfigFile(
                     _ = current_raw_lines.pop();
                 }
                 // Finish Layout section
-                try sections.append(allocator, .{
+                sections.append(allocator, .{
                     .header = current_header.?,
-                    .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
-                    .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
-                });
+                    .entry_groups = current_entry_groups.toOwnedSlice(allocator) catch @panic("failed to own entry groups slice"),
+                    .raw_lines = current_raw_lines.toOwnedSlice(allocator) catch @panic("failed to own raw lines slice"),
+                }) catch @panic("failed to append section");
                 current_entry_groups = .empty;
                 current_raw_lines = .empty;
                 current_header = line;
@@ -233,7 +233,7 @@ pub fn parseConfigFile(
                 continue;
             }
             // Otherwise it's layout content
-            try current_raw_lines.append(allocator, line);
+            current_raw_lines.append(allocator, line) catch @panic("failed to append raw line");
             continue;
         }
 
@@ -241,9 +241,9 @@ pub fn parseConfigFile(
         if (line.len == 0) {
             // Finish the current entry group if it has any pairs
             if (current_pairs.items.len > 0) {
-                try current_entry_groups.append(allocator, .{
-                    .pairs = try current_pairs.toOwnedSlice(allocator),
-                });
+                current_entry_groups.append(allocator, .{
+                    .pairs = current_pairs.toOwnedSlice(allocator) catch @panic("failed to own pairs slice"),
+                }) catch @panic("failed to append entry group");
                 current_pairs = .empty;
             }
             after_blank_line = true;
@@ -270,17 +270,17 @@ pub fn parseConfigFile(
             // Finish the current section if one exists.
             if (current_header) |header| {
                 if (current_pairs.items.len > 0) {
-                    try current_entry_groups.append(allocator, .{
-                        .pairs = try current_pairs.toOwnedSlice(allocator),
-                    });
+                    current_entry_groups.append(allocator, .{
+                        .pairs = current_pairs.toOwnedSlice(allocator) catch @panic("failed to own pairs slice"),
+                    }) catch @panic("failed to append entry group");
                     current_pairs = .empty;
                 }
 
-                try sections.append(allocator, .{
+                sections.append(allocator, .{
                     .header = header,
-                    .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
-                    .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
-                });
+                    .entry_groups = current_entry_groups.toOwnedSlice(allocator) catch @panic("failed to own entry groups slice"),
+                    .raw_lines = current_raw_lines.toOwnedSlice(allocator) catch @panic("failed to own raw lines slice"),
+                }) catch @panic("failed to append section");
                 current_entry_groups = .empty;
                 current_raw_lines = .empty;
             }
@@ -298,16 +298,16 @@ pub fn parseConfigFile(
         } else if (is_key_value) {
             // Key-value pair - split on first space
             if (std.mem.indexOfScalar(u8, line, ' ')) |space_index| {
-                try current_pairs.append(allocator, .{
+                current_pairs.append(allocator, .{
                     .key = line[0..space_index],
                     .value = line[space_index + 1 ..],
-                });
+                }) catch @panic("failed to append key-value pair");
             } else {
                 // Key with no value
-                try current_pairs.append(allocator, .{
+                current_pairs.append(allocator, .{
                     .key = line,
                     .value = "",
-                });
+                }) catch @panic("failed to append key-value pair");
             }
         } else if (after_blank_line and line[0] >= 'A' and line[0] <= 'Z') {
             // Header-shaped but not in this format's header list. Error
@@ -332,16 +332,16 @@ pub fn parseConfigFile(
     // Finish the last section
     if (current_header) |header| {
         if (current_pairs.items.len > 0) {
-            try current_entry_groups.append(allocator, .{
-                .pairs = try current_pairs.toOwnedSlice(allocator),
-            });
+            current_entry_groups.append(allocator, .{
+                .pairs = current_pairs.toOwnedSlice(allocator) catch @panic("failed to own pairs slice"),
+            }) catch @panic("failed to append entry group");
         }
 
-        try sections.append(allocator, .{
+        sections.append(allocator, .{
             .header = header,
-            .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
-            .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
-        });
+            .entry_groups = current_entry_groups.toOwnedSlice(allocator) catch @panic("failed to own entry groups slice"),
+            .raw_lines = current_raw_lines.toOwnedSlice(allocator) catch @panic("failed to own raw lines slice"),
+        }) catch @panic("failed to append section");
     }
 
     // Reclaim working-list backing memory for content that never made it
@@ -354,7 +354,7 @@ pub fn parseConfigFile(
     current_entry_groups.deinit(allocator);
     current_raw_lines.deinit(allocator);
 
-    return try sections.toOwnedSlice(allocator);
+    return sections.toOwnedSlice(allocator) catch @panic("failed to own sections slice");
 }
 
 pub const ParsedConfigFile = struct {

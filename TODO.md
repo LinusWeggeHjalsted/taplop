@@ -1286,22 +1286,31 @@ Session-reflection riders (the parser-grammar + tips sessions):
         restructure - success-path remnants + borrowed layer sprites +
         mixed item-id ownership - to be testable at all; freeEditorBuild
         is the per-kind contract)
-  - [ ] self-owned loaders (loadCampaign, loadPlayerSave, loadSettings,
+  - [x] self-owned loaders (loadCampaign, loadPlayerSave, loadSettings,
         loadPlayerLoadout, loadTips): convert the `try`-allocation sites
         to inline panics + errdefers for validation paths
         (loadPlayerSave/loadSettings are OOM-only today - errdefer lands
         as defense; untestable without failure injection, which the
-        convention removes the need for)
-  - [ ] parser.zig + file_source.readFile allocation sites (the
+        convention removes the need for) - DONE, plus loadLevel/loadHub's
+        own drifted try sites (see DONE.md, OOM convention slice 4; the
+        errdefer-as-defense idea dissolved - after conversion those
+        loaders have zero error returns after allocation, so there is
+        nothing to defend; the loadConfigWithFallback debt comment
+        deleted)
+  - [x] parser.zig + file_source.readFile allocation sites (the
         parseConfigFile errdefer stays - it guards validation paths;
-        the grammar-slice tests already cover them)
+        the grammar-slice tests already cover them) - DONE (see DONE.md,
+        OOM convention slice 5; parseConfigFileFromPath's try sites stay -
+        they propagate readFile's IO + parse validation, both input
+        problems; readEmbeddedFile converted alongside readFile)
   - Clean already: loadLevel/loadHub (errdefer + tests), loadMission
         (its error returns before any allocation), loadWeaponTypeDefinition
         (allocates nothing), loadDecorationRegistry (panic-only by
         design), parsePlayerLoadoutFields (no error sites).
-  - writers.zig rides the same convention eventually (its OOM
-        propagation is harmless today - build-buffer-then-write, nothing
-        partial hits disk); not part of this sweep.
+  - writers.zig (harmless OOM propagation today - build-buffer-then-
+        write, nothing partial hits disk) + session_log/session_log_bundle
+        (OOM caught by the best-effort dump paths) ride the same
+        convention decision eventually; not part of this sweep.
 - **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
   `init` has ~20 call sites and every new history-resident config field
   (tips was the latest) mechanically edits all of them (tests pass `&.{}`);

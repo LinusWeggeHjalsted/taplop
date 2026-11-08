@@ -18423,3 +18423,28 @@ loadConfigWithFallback's "a failed load_fn may have left partial
 allocations that cannot be named here" debt comment deleted - every
 load_fn now owns its error path, so the comment described a state that
 no longer exists.
+
+## Config-layer OOM slice 5: parser.zig + file_source readFile
+
+The convention's completion in the format layer: parseConfigFile's ~24
+try-allocation sites (raw-line appends, pair appends, entry-group +
+section appends with nested toOwnedSlices, the tail sections
+toOwnedSlice) became inline catch @panic. Its errdefer stays unchanged -
+it guards the VALIDATION error paths (UnknownSectionHeader, UnknownLine,
+LayoutTruncated, EmptyLayout), which the grammar-slice tests already
+cover leak-checked; "or OOM" dropped from its comment (panics skip
+errdefer). parseConfigFileFromPath's two try sites stay: they propagate
+readFile's IO errors + parse validation - both input problems.
+
+file_source: readFile's three allocation sites (two embedded-map dupes +
+the data/-prefix allocPrint) and readEmbeddedFile's dupe converted - the
+last `catch return error.OutOfMemory` in the file. readFile's error set
+is now pure IO. Out of scope, recorded in TODO: writers.zig (OOM
+propagation harmless - build-buffer-then-write) and
+session_log/session_log_bundle (OOM lands in best-effort catch paths).
+
+THE CONVENTION IS NOW COMPLETE in the config layer: every allocation
+failure in parser.zig / loaders.zig / file_source's config reads panics
+inline; every error return from those files is an input problem with an
+errdefer'd cleanup and (where a malformed fixture can reach it) a
+leak-checked test.

@@ -155,7 +155,7 @@ pub const FileSource = struct {
 
         // 3. embedded map (shipped data/ + assets/).
         if (embedded_assets.map.get(path)) |bytes| {
-            return try allocator.dupe(u8, bytes);
+            return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
         }
 
         // 4. embedded map under the `data/` prefix - campaign-bundled
@@ -163,10 +163,10 @@ pub const FileSource = struct {
         // `data/data/` is never a real key, so already-prefixed paths skip).
         if (!std.mem.startsWith(u8, path, "data/")) {
             const embedded_key = std.fmt.allocPrint(allocator, "data/{s}", .{path}) catch
-                return error.OutOfMemory;
+                @panic("failed to build embedded data/ lookup key");
             defer allocator.free(embedded_key);
             if (embedded_assets.map.get(embedded_key)) |bytes| {
-                return try allocator.dupe(u8, bytes);
+                return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
             }
         }
 
@@ -187,7 +187,7 @@ pub const FileSource = struct {
     ) ![]u8 {
         _ = self; // the embedded map is a comptime-global, no instance state
         if (embedded_assets.map.get(path)) |bytes| {
-            return try allocator.dupe(u8, bytes);
+            return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
         }
         return error.FileNotFound;
     }
