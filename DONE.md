@@ -1541,6 +1541,52 @@ spelling `Items` no longer terminates the layout even under the legacy
 grammar - cross-format collision fixed for old files too). Full suite
 PASS; `unused_pub_report` 0 DEAD / 0 UNUSED; dash sweep clean.
 
+### Parser grammar slice 2 - counted layouts (DONE)
+
+Design: DESIGN → File System & IO → Config grammar; slices: TODO →
+Parser grammar overhaul. Slice 2 of 5.
+
+**The change.** A Layout opening line may carry its row count
+(`Layout 12`): the parser consumes exactly that many raw lines, and no
+line CONTENT can end the section - blank lines are empty rows,
+header-shaped lines are content. This closes the collision class a
+content rule could never close (decoration character_codes cover printable
+ASCII, so a row can spell ANY header): the motivating counterexample - a
+blank row followed by a row whose codes spell `Items` - is a valid layout
+the legacy grammar could not express (textually identical to a section
+separator). Bare `Layout` keeps the legacy grammar, chosen BY THE OPENING
+LINE'S SHAPE - no version pre-scan, old files parse byte-identically
+(their rows never spelled a header, or they'd already been broken).
+
+New errors: `error.LayoutTruncated` (counted Layout ran out of file before
+its row budget - loud instead of a short section), `error.EmptyLayout`
+(`Layout 0` - a layout always has at least one row: the `!` player spawn
+is mandatory in both Layout-bearing formats, plus `=` in levels - the
+author-settled invariant). A malformed count suffix (`Layout x`) falls
+through to `UnknownSectionHeader`. `parseCountedLayoutRows` recognizes the
+form only for formats whose list includes `Layout`, so a `Layout 4` line
+in a settings file is still an unknown header. `session_log_bundle`'s
+explicit error set widened for the two new errors.
+
+**Writer.** `writeEditorLevel` emits `\nLayout {grid_height}\n` - the
+grid_height is already computed for the bbox. The count-emission is
+asserted LITERALLY in the writer test: the parse-level round trip alone
+cannot catch a regression to bare `Layout` (the legacy grammar still
+parses that output fine - the bug would hide).
+
+**Version window (deliberate).** The writer now emits counted layouts at
+`level_file_format_version` 1; the bump to 2 lands with slice 4 (the
+range policy that lets old v1 files keep loading). Until then, new saves
+are v1-with-count - readable by this build; the slice-4 DONE entry closes
+this note.
+
+Tests: the counterexample (blank row + `Items`-spelling row as content,
+followed by a normally-parsed Entities section), seatown's leading-empty-
+row shape at EOF-exactly-at-drain, truncation, `Layout 0`, malformed
+count, and the writer's literal count assertion. Existing legacy-grammar
+tests (blank rows, header termination) unchanged and passing - the two
+grammars coexist by opening-line shape. Full suite PASS.
+
 ## Error Handling
 
 ### Slice 1 - error surface (DONE)

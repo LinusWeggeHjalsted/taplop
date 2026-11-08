@@ -40,7 +40,7 @@ Test by running `zig build run` and clicking through.
         bundle writer - the manifest section appends into the SAME
         session_log.txt, so the one list covers logs, bundles, and
         validation replays).
-  - [ ] 2. Counted layouts: `Layout <count>` opening line consumes
+  - [x] 2. Counted layouts: `Layout <count>` opening line consumes
         exactly N raw rows (blank lines are rows); bare `Layout` keeps
         the legacy grammar but terminates only on expected-header lines
         (fixes the cross-format hub row even for old files);
@@ -48,7 +48,14 @@ Test by running `zig build run` and clicking through.
         computed); Layout 0 errors (a layout always has at least one
         row - the ! player spawn is mandatory in both formats, plus =
         in levels). Tests: the blank-row + Items-spelling-row
-        counterexample, seatown's leading empty row, truncation errors.
+        counterexample, seatown's leading empty row, truncation errors -
+        DONE (see DONE.md, "Parser grammar slice 2"; new errors
+        EmptyLayout/LayoutTruncated, malformed count falls to
+        UnknownSectionHeader, writer emits the count with a literal-text
+        assertion so a regression to bare Layout cannot hide behind the
+        still-parsing round trip). The file_format_version bump for the
+        writer change lands with slice 4 (the range policy) - until
+        then new saves are v1-with-count, readable by this build.
   - [ ] 3. Reader tightening rider: loadLevel/loadHub error on layout
         chars outside `{' ', '.', '!', '='}` plus the file's own defined
         codes (a typo'd character_code becomes a truthful error, not a

@@ -78,6 +78,25 @@ fn isExpectedSectionHeader(
     return false;
 }
 
+/// A Layout opening line may carry its row count (`Layout 12`) - the
+/// counted grammar: the parser then consumes exactly that many raw lines
+/// and no line CONTENT can end the section (a row can spell any header -
+/// character_codes cover printable ASCII). Recognized only for formats
+/// whose list includes "Layout". Returns null for every other line shape:
+/// bare `Layout` selects the legacy grammar (terminate at the next
+/// recognized header); a malformed count falls through to the
+/// unknown-header error.
+fn parseCountedLayoutRows(
+    line: []const u8,
+    expected_headers: []const []const u8,
+) ?u32 {
+    if (!std.mem.startsWith(u8, line, "Layout ")) return null;
+    if (!isExpectedSectionHeader("Layout", expected_headers)) return null;
+    const count_text = line["Layout ".len..];
+    if (count_text.len == 0 or count_text[0] < '0' or count_text[0] > '9') return null;
+    return std.fmt.parseUnsigned(u32, count_text, 10) catch null;
+}
+
 /// Parse a .txt config file into sections with entry groups.
 /// `expected_headers` is THIS file type's section list (the per-format
 /// `*_sections` const): it is the grammar (which lines open sections) and
@@ -85,8 +104,11 @@ fn isExpectedSectionHeader(
 /// with a recognized header name after a blank line. Key-value pairs
 /// within a section are grouped by blank lines. A header-shaped line
 /// (uppercase-initial, after a blank) outside that list, or any other
-/// non-conforming line outside a Layout, errors - see DESIGN → File
-/// System & IO → Config grammar.
+/// non-conforming line outside a Layout, errors. A Layout section may open
+/// with its row count (`Layout 12` - the counted grammar: exactly that
+/// many raw lines, and nothing a row contains can end the section) or bare
+/// (`Layout` - legacy: ends at the next recognized header). See DESIGN →
+/// File System & IO → Config grammar.
 pub fn parseConfigFile(
     raw_text: []const u8,
     allocator: std.mem.Allocator,
@@ -98,6 +120,10 @@ pub fn parseConfigFile(
     var current_raw_lines: std.ArrayList([]const u8) = .empty;
     var current_header: ?[]const u8 = null;
     var after_blank_line = true; // start of file counts as "after blank line"
+    // Rows still to consume in a counted Layout (`Layout <count>`); 0 in
+    // the legacy grammar. Drained to 0 exactly when the counted section
+    // finishes; a nonzero value at EOF is error.LayoutTruncated.
+    var layout_rows_remaining: u32 = 0;
 
     // A mid-parse error (UnknownSectionHeader/UnknownLine, or OOM) must not
     // leak what was already built: completed sections own their slices,
@@ -133,6 +159,24 @@ pub fn parseConfigFile(
             false;
 
         if (in_layout) {
+            if (layout_rows_remaining > 0) {
+                // Counted grammar: every line is a raw row - blank lines
+                // are empty rows, header-shaped lines are content. Only
+                // the budget ends the section.
+                try current_raw_lines.append(allocator, line);
+                layout_rows_remaining -= 1;
+                if (layout_rows_remaining == 0) {
+                    try sections.append(allocator, .{
+                        .header = current_header.?,
+                        .entry_groups = try current_entry_groups.toOwnedSlice(allocator),
+                        .raw_lines = try current_raw_lines.toOwnedSlice(allocator),
+                    });
+                    current_entry_groups = .empty;
+                    current_raw_lines = .empty;
+                    current_header = null;
+                }
+                continue;
+            }
             if (line.len == 0) {
                 // Blank lines in Layout are empty rows - store as raw content
                 try current_raw_lines.append(allocator, line);
@@ -183,8 +227,11 @@ pub fn parseConfigFile(
         if (line[0] == '#') continue;
 
         // Section headers: a recognized header name, only after a blank
-        // line or start of file.
-        const is_header = after_blank_line and isExpectedSectionHeader(line, expected_headers);
+        // line or start of file. A counted Layout opening line
+        // ("Layout <count>") counts as its format's Layout header.
+        const counted_layout_rows = parseCountedLayoutRows(line, expected_headers);
+        const is_header = after_blank_line and
+            (isExpectedSectionHeader(line, expected_headers) or counted_layout_rows != null);
 
         // Key-value pairs: start with a lowercase letter.
         const is_key_value = line[0] >= 'a' and line[0] <= 'z';
@@ -207,7 +254,17 @@ pub fn parseConfigFile(
                 current_entry_groups = .empty;
                 current_raw_lines = .empty;
             }
-            current_header = line;
+            if (counted_layout_rows) |count| {
+                // A layout always has at least one row (the '!' player
+                // spawn is mandatory in both Layout-bearing formats, plus
+                // '=' in levels) - DESIGN → File System & IO → Config
+                // grammar.
+                if (count == 0) return error.EmptyLayout;
+                layout_rows_remaining = count;
+                current_header = "Layout";
+            } else {
+                current_header = line;
+            }
         } else if (is_key_value) {
             // Key-value pair - split on first space
             if (std.mem.indexOfScalar(u8, line, ' ')) |space_index| {
@@ -237,6 +294,10 @@ pub fn parseConfigFile(
 
         after_blank_line = false;
     }
+
+    // A counted Layout that ran out of file before its row budget is a
+    // truncated layout - error instead of returning a short section.
+    if (layout_rows_remaining > 0) return error.LayoutTruncated;
 
     // Finish the last section
     if (current_header) |header| {
@@ -1085,6 +1146,99 @@ test "comment lines inside a Layout are tile content" {
     defer freeParsedSections(sections, allocator);
     try std.testing.expectEqual(1, sections.len);
     try std.testing.expectEqualStrings("#..", sections[0].raw_lines[0]);
+}
+
+test "counted Layout consumes exactly N rows - no row content can end it" {
+    const allocator = std.testing.allocator;
+    // The motivating case: a blank row (an empty band) followed by a row
+    // whose decoration codes spell a same-format header - a valid layout
+    // the legacy grammar cannot express (textually identical to a section
+    // separator).
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Layout 4
+        \\....
+        \\
+        \\Items
+        \\...!
+        \\
+        \\Entities
+        \\character_code I
+        \\name Item Thing
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+    defer freeParsedSections(sections, allocator);
+
+    try std.testing.expectEqual(3, sections.len);
+    try std.testing.expectEqualStrings("Layout", sections[1].header);
+    try std.testing.expectEqual(4, sections[1].raw_lines.len);
+    try std.testing.expectEqualStrings("....", sections[1].raw_lines[0]);
+    try std.testing.expectEqualStrings("", sections[1].raw_lines[1]);
+    try std.testing.expectEqualStrings("Items", sections[1].raw_lines[2]);
+    try std.testing.expectEqualStrings("...!", sections[1].raw_lines[3]);
+    // The section after the layout parses normally.
+    try std.testing.expectEqualStrings("Entities", sections[2].header);
+}
+
+test "counted Layout keeps a leading empty row (row index is the y coordinate)" {
+    const allocator = std.testing.allocator;
+    // seatown level_1's shape: the grid starts at y=1, so row 0 is empty.
+    // EOF exactly at the budget drain finishes the section cleanly.
+    const raw_text =
+        \\Layout 2
+        \\
+        \\       !
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &level_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectEqual(1, sections.len);
+    try std.testing.expectEqual(2, sections[0].raw_lines.len);
+    try std.testing.expectEqualStrings("", sections[0].raw_lines[0]);
+    try std.testing.expectEqualStrings("       !", sections[0].raw_lines[1]);
+}
+
+test "counted Layout truncated before its row budget errors" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Layout 5
+        \\..!
+    ;
+    try std.testing.expectError(
+        error.LayoutTruncated,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
+}
+
+test "Layout 0 errors - a layout always has at least one row" {
+    const allocator = std.testing.allocator;
+    // The '!' player spawn is mandatory in both Layout-bearing formats
+    // (plus '=' in levels), so a zero-row layout is never valid.
+    const raw_text =
+        \\Layout 0
+    ;
+    try std.testing.expectError(
+        error.EmptyLayout,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
+}
+
+test "a malformed Layout count is an unknown header" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Layout x
+    ;
+    try std.testing.expectError(
+        error.UnknownSectionHeader,
+        parseConfigFile(raw_text, allocator, &level_sections),
+    );
 }
 
 test "asColor parses hex color codes" {

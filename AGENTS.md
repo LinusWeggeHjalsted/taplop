@@ -357,7 +357,11 @@ survived many sessions this way).
 - Values separated by space, can contain spaces: `player_name New Player`
 - Blank lines separate entry groups within sections
 - Enum values must match code exactly (lowercase)
-- Layout sections are raw character grids, not key-value
+- Layout sections are raw character grids, not key-value; the opening line
+  carries the row count (`Layout 12` - the editor's level writer emits it;
+  bare `Layout` is the legacy grammar kept for pre-count files, ending at
+  the next recognized header). See DESIGN → File System & IO → Config
+  grammar
 
 ## Zig 0.16 Gotchas
 

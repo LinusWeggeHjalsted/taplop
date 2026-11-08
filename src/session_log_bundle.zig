@@ -76,6 +76,8 @@ pub const SessionLogBundleError = error{
     /// session_log_sections, or any other non-conforming line).
     UnknownSectionHeader,
     UnknownLine,
+    EmptyLayout,
+    LayoutTruncated,
     OutOfMemory,
 } || std.Io.Dir.ReadFileAllocError;
 

@@ -660,8 +660,10 @@ fn writeEditorLevel(
 
     // Layout - each row trimmed to its own last used column (no trailing
     // spaces; interior all-space rows stay as empty lines, which the
-    // parser stores as empty raw rows).
-    try buffer.appendSlice(allocator, "\nLayout\n");
+    // parser stores as empty raw rows). The opening line carries the row
+    // count (the counted grammar) so no row CONTENT can end the section -
+    // a row can spell any section header.
+    try buffer.print(allocator, "\nLayout {d}\n", .{grid_height});
     var row: i32 = 0;
     while (row < grid_height) : (row += 1) {
         const row_start: usize = @intCast(row * grid_width);
@@ -1453,7 +1455,10 @@ test "writeEditorLevel layout is translated + row-trimmed" {
 
     // Level 1 (offset by (4,2)): the grid is the bbox, each row trimmed to
     // its own last used column - interior alignment spaces stay, trailing
-    // spaces never.
+    // spaces never. The opening line carries the row count (the counted
+    // grammar) - asserted literally so a regression to the bare legacy
+    // form cannot hide behind the (still-parsing) round trip.
+    try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "\nLayout 3\n") != null);
     const level_0_layout = parser.findSection(
         try parseConfigFile(written.level_txts[0], arena, &parser.level_sections),
         "Layout",
