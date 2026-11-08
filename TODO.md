@@ -1277,3 +1277,42 @@ Done items in DONE.md. Open:
   entries. Might want a divided history format someday (per-year or
   per-milestone files with a top-level index). Not urgent - revisit
   whenever the file's size starts hurting navigation.
+
+Session-reflection riders (the parser-grammar + tips sessions):
+
+- **`UiSurfaceState.closeAll` is invisible to the exhaustive-switch net.**
+  `toggle`/`isSurfaceOpen`/`surfaceToggleLegal` are switches over
+  `UiSurfaceId`, so adding a surface is compiler-forced there - but
+  `closeAll` is a hand-written list of `x_open = false` statements the
+  compiler cannot flag (found by grep when adding tips; the tips arm was
+  the one site nothing forced). A new surface can silently survive screen
+  transitions. Fix: make `closeAll` switch-driven over the id (or reset
+  via the enum) so the compiler owns the list too.
+- **Error-path-leak sweep on the remaining loaders (the errdefer class).**
+  Three instances fixed across the parser-grammar slices (`parseConfigFile`,
+  `loadLevel`, `loadHub` - error paths never freed the partial build; the
+  new error returns made the class reachable under `testing.allocator`).
+  The same shape plausibly remains in `loadCampaign`/`loadPlayerSave`/
+  `loadEditorDefaults`/`loadDecorationRegistry` etc. One pass adding
+  errdefers + one leak-checked error-path test per loader closes the class
+  (the arena-blind-spot lesson: a leak-checked ERROR path, not just the
+  success path).
+- **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
+  `init` has ~20 call sites and every new history-resident config field
+  (tips was the latest) mechanically edits all of them (tests pass `&.{}`);
+  ~12 `view()` test callers hand-write the same boilerplate render context.
+  Settled direction: an options-struct parameter for the static-data /
+  optional args so the DEFAULT is `.{}` at test call sites (the established
+  Zig answer to no-default-params). Fold into the next field addition or
+  do as its own rider; the handler-tests call-shape item above is the same
+  family for `handleAnytimeInput`.
+- **`AnytimeInput.options_action` rename (meaning drift).** The umbrella
+  field now carries every overlay-surface action (settings, tips, the
+  editor picker clicks), not just the options menu - the name lags the
+  design. Rename to `overlay_action`/`ui_action` in a session that has
+  input.zig open anyway (wide but mechanical: the field, every routing
+  arm, the handler reads).
+- **`validateFileFormatVersion` exact-match discard noise.** The eight
+  exact-format sites read `_ = try validateFileFormatVersion(..., v, v)`.
+  A void wrapper (`validateExactFileFormatVersion`) would read as intent;
+  revisit when a second ranged format lands or the file is open anyway.
