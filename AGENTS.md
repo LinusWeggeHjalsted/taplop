@@ -508,7 +508,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   event processing together, and the round-trip reconstruction test. Config
   loading lives in `session_setup.zig` (raylib-free).
 - `src/session_setup.zig` - session startup: loading all config (settings,
-  color themes, weapon types, salvage tables) + `SessionSetup`/
+  color themes, weapon types, salvage tables, tips) + `SessionSetup`/
   `createSessionSetup`/`fixupPointers`/`freeSessionSetup` (the web re-boot's
   teardown: the tracked startup memory `StartupMemory` + the history deinit)
   + `FrameState`. The entry files (`native.zig`/`web.zig`) call
@@ -669,7 +669,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   entity inspect) + slot-content support
 - `src/ui/screens.zig` - error popup, top bar, mission complete/fail
 - `src/ui/menus.zig` - options/main menu, load-save + editor browsers,
-  credits, settings
+  credits, tips, settings
 - `src/input.zig` - input pipeline, translateInput, bindings
 - `src/combat_log.zig` - combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` - unified file I/O (FileSource: embedded map +

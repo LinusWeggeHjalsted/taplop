@@ -6183,6 +6183,57 @@ in handlers / `view()`), so the replay-purity invariant holds; the field is
 off the undoable GameState, so replay-safe by construction. Visible on all
 screens (main menu / level / hub / overlays), not just where the top bar is.
 
+### Tips UI (DONE)
+
+Design: DESIGN → UI Framework → Tips overlay (+ the z-order ladder's tips
+rung + the surface-classification list). Author request; three commits
+(data + wiring, then UI).
+
+**The data path.** data/tips.txt normalized into the config format
+(Metadata + a `Tips` section, one `tip <prose>` entry group per tip - the
+author's six tips rewritten verbatim, only rewrapped). New
+`parser.tips_sections` / `tips_key_map` / `tips_file_format_version` (v1);
+`loaders.loadTips`/`freeTips` (self-owned strings, ownership-contract
+tested under `testing.allocator` with the parse freed before the
+assertions); loaded at startup via the `loadConfigWithFallback` generic
+(embedded + shadow fallback) into the new `GameStateHistory.tips` field
+(freed by the history deinit). `view()` takes the list as a parameter
+(like `color_theme_definitions`); every `GameStateHistory.init` caller
+gained the argument (tests pass `&.{}`).
+
+**The wiring - zero new event types.** Open/close: `UiSurfaceId.tips` +
+`tips_open` on UiSurfaceState (class-1, the recorded `toggle_ui_surface`
+- the credits pattern), toggled by the payload-less `Action.open_tips`
+(anytime-routed like the top-bar family, legal on every screen, in
+`closeAll`). Cycling: `Action.cycle_tips` + the `tips_direction`
+(`TipsDirection`) payload variant, consumed in the options_action handler
+mutating `UiState.tips_index` DIRECTLY - the `select_settings_tab`
+precedent verbatim (a view affordance off the undo timeline; wraps, and a
+single-tip list no-ops). `actionButtonPayload` classifications + binding
+contexts (open_tips anytime, cycle_tips menu+game) wired; the surface
+switches were compiler-driven; `closeAll` was the one list-style site the
+compiler cannot flag (found by hand).
+
+**The UI.** `buildGlobalTopBar` gained a `?` glyph button flush top-RIGHT
+(mirroring options at top-left): 128x128 `small_button_background` + a
+font-glyph `?` via the new shared `emit.emitGlyphIconButton` (the
+icon-button treatment for controls with no icon sprite - a `ui/icon_tips`
+sprite can replace the glyph later with no plumbing). Hidden when the
+list is empty. `buildTipsPanel` (menus.zig, the credits model): full-
+screen `blocks_input` panel, header, half-width centered wrapped text
+column (wrapRow + the error popup's span-render pattern), `<`/`>` glyph
+nav buttons flanking (carrying the `tips_direction` payloads), Back
+bottom-left re-firing `open_tips`. Emitted between the main-menu overlays
+and mission-fail (under complete/fail - the death-takes-precedence
+precedent). The z-order census gained the tips rung in both frames.
+
+Tests: loadTips ownership + growth-proof content assertions (search, not
+index/count - the file grows by design); surface toggle + undo restore;
+cycle arm (closed-guard, step/wrap both directions, no timeline step, one-
+tip no-op); a three-frame view structure test (? present/absent, panel
+buttons + payloads + painter order, the viewed tip's label, the empty-
+list degradation); census rung. Full suite PASS (884).
+
 ## Escape overlay chain
 
 Escape is now a generic "close the topmost overlay" chain

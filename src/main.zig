@@ -907,6 +907,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.settings,
             history.color_theme_definitions,
             history.weapon_type_definitions,
+            history.tips,
             .{
                 .camera = render_camera,
                 .camera_zoom = camera_zoom,

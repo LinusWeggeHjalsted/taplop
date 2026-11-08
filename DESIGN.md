@@ -4020,15 +4020,18 @@ reachable orderings so neither side can drift silently:
 2. Drag ghost (mid-drag only - no modal is reachable then)
 3. Options menu
 4. Load-save browser + credits (main-menu screen only)
-5. Mission-complete / validation stats
-6. Mission-fail overlay
-7. Settings screen
-8. Editor browser
-9. Error popup (the most-modal surface)
-10. Global top bar (options/undo/redo - clickable above every modal by
-    design)
-11. Hover tooltip (passive, non-blocking)
-12. FPS diagnostic label (non-blocking; spatially below the top bar)
+5. Tips overlay (any screen - opened from the global top bar; under
+   mission-complete/fail, which take precedence over a manually opened
+   panel, the options-menu precedent)
+6. Mission-complete / validation stats
+7. Mission-fail overlay
+8. Settings screen
+9. Editor browser
+10. Error popup (the most-modal surface)
+11. Global top bar (options/undo/redo/tips `?` - clickable above every
+    modal by design)
+12. Hover tooltip (passive, non-blocking)
+13. FPS diagnostic label (non-blocking; spatially below the top bar)
 
 The full-screen overlays (world map, full combat log) have a RESERVED slot
 between the options menu and the base UI (below the options menu -
@@ -5892,7 +5895,8 @@ mutate them; the rule generalizes that precedent to all surface state.)
 1. **Semantic surface state - what's open.** Lives on GameState
    (`types.UiSurfaceState`): the middle panels + full-screen overlays
    (ordered sets - open order IS display order), the modal overlays (options
-   menu, settings, load-save, credits, editor browser), the entity-inspect
+   menu, settings, load-save, credits, tips, editor browser), the entity-
+   inspect
    target, and the editor's centered picker (on `Editor.picker`, the
    `Editor.inspector_open` convention). ALL of it changes via events
    (`toggle_ui_surface` / `inspect_entity` / `editor_open_picker` /
@@ -5999,6 +6003,28 @@ bar, so open panels never cover them).
   Suppressed over blocking UI (same `blockingElementAt` check as the tile
   cursor + pan) so a right-click on a panel never inspects the world behind
   it. Hubs are excluded - inspection is level-only by design.
+
+### Tips overlay
+
+A full-screen modal on any screen (the credits structure: `blocks_input`
+9-slice panel, Back bottom-left) showing ONE tip from data/tips.txt at a
+time: a centered half-width wrapped text column with 128x128 prev/next
+glyph buttons flanking it. Opened from the global top bar's `?` button
+(top-right, mirroring options at top-left - `Action.open_tips`, a toggle
+like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
+sprites). The OPEN state is class-1 (`UiSurfaceId.tips` / `tips_open`,
+the recorded `toggle_ui_surface` event); the VIEWED index is a view
+affordance (`UiState.tips_index`, the settings_tab convention -
+`Action.cycle_tips` + the `tips_direction` payload mutate it directly at
+the input layer, off the undo timeline; wraps, no-ops on a single-tip
+list). The z-order rung: just above the main-menu overlays, under
+mission-complete/fail. The tips file: Metadata + a `Tips` section, one
+`tip <prose>` entry group per tip (`parser.tips_sections` /
+`tips_file_format_version` v1), loaded at startup through
+`loadConfigWithFallback` (embedded + shadow) into the history
+(`GameStateHistory.tips`, self-owned strings, freed by the deinit);
+`view()` threads it as a parameter. A non-empty list gates the `?`
+button; an empty-but-valid file leaves the panel as background + Back.
 
 ### Settings screen
 

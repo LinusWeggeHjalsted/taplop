@@ -17,6 +17,12 @@ tip Damage is calculated in the following way, where weapon_damage is from the c
 
 tip You can right click enemies to inspect their stats and loadout
 
+tip Enemies are entities in the same way the player is - they have gear, skills, they use the same turn structure, and they can pick up items
+
+tip A defeated enemy drops all its inventory and gear as well as a skill tome for each equipped utility skill
+
+tip You can learn new utility skills by activating a skill tome from your inventory
+
 tip In the inventory you can convert items into materials by shift clicking - you can hold shift and drag to salvage a whole region of the inventory grid
 
 tip When completing a mission, a clone is saved that will harvest materials from that mission when completing any later mission, where the harvested materials are determined by the converted material count per turn of items picked up during the clone's mission

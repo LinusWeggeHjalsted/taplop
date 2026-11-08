@@ -75,25 +75,17 @@ Test by running `zig build run` and clicking through.
         in loadLevel/loadHub; the writer's version emission updates
         automatically via the constant bump). Closes slice 2's deliberate
         version-window note: new editor saves are v2 + counted.
-- **Tips UI (data/tips.txt + panel)** - one tip at a time in a
-      fullscreen overlay. Format normalized to the config format (Metadata
-      + Tips, one `tip <prose>` group). The tip index is a view affordance
-      (UiState, the settings_tab precedent); NO new event types -
-      open/close rides the existing toggle_ui_surface via a new open_tips
-      action, cycling is a cycle_tips action + a tips_direction payload
-      consumed at the input layer. Design settled in-session (glyphs not
-      sprites: ? and < >; no counter; button top right mirroring options
-      top left). Slices:
-  - [ ] 1. Data + loader: tips_sections / tips_file_format_version /
-        tips key map (parser.zig), loadTips/freeTips (loaders.zig), the
-        history field + createSessionSetup load + view() threading.
-  - [ ] 2. Surface + actions: UiSurfaceId.tips + tips_open; open_tips +
-        cycle_tips actions + TipsDirection payload variant; consumption
-        arms; ui_state.tips_index.
-  - [ ] 3. UI: top-bar ? button (top right, 128x128 + font glyph),
-        buildTipsPanel (credits model: half-width wrapped text column,
-        < > glyph nav buttons flanking, Back bottom-left), view() draw
-        site, tests + docs sync.
+- **Tips UI (data/tips.txt + panel)** - DONE, all three slices (see
+      DONE.md, "Tips UI"): the format normalized (Metadata + Tips, one
+      `tip <prose>` group per tip), loaded through the standard config
+      path; the panel is the credits model with a top-bar `?` entry point
+      (top-right), `<`/`>` glyph nav cycling `UiState.tips_index` (the
+      settings_tab convention); no new event types (open/close rides
+      toggle_ui_surface via `Action.open_tips`, cycling is
+      `Action.cycle_tips` + the `tips_direction` payload). Design: DESIGN
+      → UI Framework → Tips overlay + the z-order ladder's tips rung.
+      Further tips are authored content - just append `tip <prose>`
+      groups to data/tips.txt.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different

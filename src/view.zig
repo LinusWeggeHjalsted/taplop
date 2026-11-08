@@ -75,6 +75,7 @@ pub fn view(
     settings: types.Settings,
     color_theme_definitions: types.ColorThemeDefinitions,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    tips: []const []const u8,
     render: RenderContext,
 ) types.ViewState {
     // Unpack the render context (local aliases keep the body readable).
@@ -570,6 +571,24 @@ pub fn view(
         }
     }
 
+    // Tips overlay (any screen - opened from the global top bar's `?`
+    // button): a full-screen modal like the credits panel. Emitted after
+    // the options menu + main-menu overlays so it covers them; the error
+    // popup (next) stays the most-modal surface, and the global top bar
+    // (last) stays clickable above it.
+    if (current_state.ui_surfaces.tips_open) {
+        ui.buildTipsPanel(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+            tips,
+            session.ui_state.tips_index,
+            active_theme,
+            button_color,
+        ) catch @panic("failed to build tips panel");
+    }
+
     // Mission-fail overlay: full-screen modal shown when the player is dead
     // (derived from level.entities[0].current_health == 0). Drawn on top of
     // the options menu (death takes precedence over a manually opened menu)
@@ -682,10 +701,12 @@ pub fn view(
     ui.buildGlobalTopBar(
         &ui_elements,
         frame_allocator,
+        font_metrics,
         ui.screenRect(),
         active_theme,
         render.can_undo,
         render.can_redo,
+        tips.len > 0,
     ) catch @panic("failed to build global top bar");
 
     // Hover tooltip: the topmost element under the pointer that carries
@@ -3161,6 +3182,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
                 .{ .input_bindings = &.{} },
                 harness__.color_theme_definitions,
                 &harness__.weapon_type_definitions,
+                &.{},
                 .{
                     .camera = camera_for(state__),
                     .camera_zoom = 1.0,
@@ -3581,6 +3603,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3649,6 +3672,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3682,6 +3706,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3705,6 +3730,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3729,6 +3755,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3788,6 +3815,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -3883,6 +3911,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
                 .{ .input_bindings = &.{} },
                 harness__.color_theme_definitions,
                 &harness__.weapon_type_definitions,
+                &.{},
                 .{
                     .camera = camera__,
                     .camera_zoom = 1.0,
@@ -3988,6 +4017,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = camera,
             .camera_zoom = 1.0,
@@ -4085,6 +4115,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
                 .{ .input_bindings = &.{} },
                 harness__.color_theme_definitions,
                 &harness__.weapon_type_definitions,
+                &.{},
                 .{
                     .camera = camera__,
                     .camera_zoom = 1.0,
@@ -5125,6 +5156,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
             .{ .input_bindings = &.{} },
             harness.color_theme_definitions,
             &harness.weapon_type_definitions,
+            &.{},
             .{
                 .camera = computeCamera(&state_, 1.0, null, null),
                 .camera_zoom = 1.0,
@@ -5169,6 +5201,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = computeCamera(&state_, 1.0, null, null),
             .camera_zoom = 1.0,
@@ -5193,6 +5226,177 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
             },
             else => {},
         }
+    }
+}
+
+test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
+    // The ? button lives in the global top bar (any screen, only when
+    // the tips list is non-empty); the open panel is the credits model:
+    // the wrapped tip's text, Back (the open_tips toggle, payload-less),
+    // and prev/next (cycle_tips, opposite tips_direction payloads).
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const harness = test_harness.Harness.init(arena);
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const main_menu_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    const findButton = struct {
+        fn find(
+            elements: []const ui.UiElement,
+            action: types.Action,
+            /// The expected tips_direction payload, or null for a
+            /// payload-less button.
+            direction: ?types.TipsDirection,
+        ) ?usize {
+            for (elements, 0..) |element, index| {
+                if (element == .button and element.button.action == action) {
+                    const matches = if (direction) |expected| blk: {
+                        const actual = element.button.payload orelse break :blk false;
+                        break :blk std.meta.activeTag(actual) == .tips_direction and
+                            actual.tips_direction == expected;
+                    } else element.button.payload == null;
+                    if (matches) return index;
+                }
+            }
+            return null;
+        }
+    }.find;
+
+    // Closed, tips loaded: exactly the top-bar ? button (no panel).
+    {
+        var session = state.SessionState{};
+        const tips = [_][]const u8{ "alpha", "beta" };
+        const view_state = view(
+            &main_menu_state,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            &tips,
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        const elements = view_state.ui_elements;
+        try std.testing.expect(findButton(elements, .open_tips, null) != null);
+        try std.testing.expect(findButton(elements, .cycle_tips, .previous) == null);
+        try std.testing.expect(findButton(elements, .cycle_tips, .next) == null);
+    }
+
+    // Open at index 1: the second tip's text, both nav buttons with
+    // opposite payloads, and the two payload-less open_tips buttons in
+    // painter order - the panel's Back first (the tips block emits before
+    // the global top bar), the top-bar ? last (the bar is the list's
+    // final layer).
+    {
+        var open_state = main_menu_state;
+        open_state.ui_surfaces.tips_open = true;
+        var session = state.SessionState{};
+        session.ui_state.tips_index = 1;
+        const tips = [_][]const u8{ "alpha", "beta" };
+        const view_state = view(
+            &open_state,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            &tips,
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        const elements = view_state.ui_elements;
+        // Two payload-less open_tips buttons: the panel's Back (emitted
+        // in the tips block) then the top-bar ? (the bar emits last).
+        var open_tips_buttons: usize = 0;
+        var first_index: usize = 0;
+        var last_index: usize = 0;
+        for (elements, 0..) |element, index| {
+            if (element == .button and element.button.action == .open_tips and element.button.payload == null) {
+                if (open_tips_buttons == 0) first_index = index;
+                last_index = index;
+                open_tips_buttons += 1;
+            }
+        }
+        try std.testing.expectEqual(@as(usize, 2), open_tips_buttons);
+        // The viewed tip's text is present as a label.
+        var found_tip_text = false;
+        for (elements) |element| {
+            if (element == .text_label and std.mem.eql(u8, element.text_label.text, "beta")) {
+                found_tip_text = true;
+            }
+        }
+        try std.testing.expect(found_tip_text);
+        // Both nav buttons sit between Back and the top-bar ? (inside the
+        // panel's emission range).
+        const previous = findButton(elements, .cycle_tips, .previous);
+        const next = findButton(elements, .cycle_tips, .next);
+        try std.testing.expect(previous != null and next != null);
+        try std.testing.expect(first_index < previous.? and previous.? < last_index);
+        try std.testing.expect(first_index < next.? and next.? < last_index);
+    }
+
+    // Empty tips list: the ? button hides (a modded-but-valid empty
+    // file), and an open surface renders no panel content.
+    {
+        var open_state = main_menu_state;
+        open_state.ui_surfaces.tips_open = true;
+        var session = state.SessionState{};
+        const view_state = view(
+            &open_state,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            &.{},
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        // Empty list: the top-bar ? hides, and the open panel degrades to
+        // background + header + Back (no nav buttons - nothing to cycle).
+        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) != null);
+        try std.testing.expect(findButton(view_state.ui_elements, .cycle_tips, .next) == null);
     }
 }
 
@@ -5230,6 +5434,7 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
         .{ .input_bindings = &.{} },
         harness.color_theme_definitions,
         &harness.weapon_type_definitions,
+        &.{},
         .{
             .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
             .camera_zoom = 1.0,
@@ -5290,6 +5495,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     const arena = backing.allocator();
     var harness = test_harness.Harness.init(arena);
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    // A non-empty tips list: the tips rung (panel + top-bar `?`) only
+    // exists when tips are loaded (the `?` hides for an empty list).
+    const census_tips = [_][]const u8{"census tip"};
 
     // Marker finders: index of the first/last button carrying `action`
     // (LAST for surfaces whose action also appears in a lower surface -
@@ -5344,9 +5552,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     };
 
     // ── Frame 1: the main menu - every main-menu-reachable surface up.
-    // Ladder: base < options menu < load-save browser < credits <
-    // settings screen < editor browser < error popup < top bar < tooltip
-    // < FPS label.
+    // Ladder: base < options menu < load-save browser < credits < tips
+    // overlay < settings screen < editor browser < error popup < top bar
+    // < tooltip < FPS label.
     {
         var main_menu_state = GameState{
             .screen = .main_menu,
@@ -5364,6 +5572,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         main_menu_state.ui_surfaces.options_menu_open = true;
         main_menu_state.ui_surfaces.load_save_menu_open = true;
         main_menu_state.ui_surfaces.credits_open = true;
+        main_menu_state.ui_surfaces.tips_open = true;
         main_menu_state.ui_surfaces.settings_open = true;
         main_menu_state.ui_surfaces.editor_browser_open = true;
         session.setPendingError(arena, "census frame");
@@ -5375,6 +5584,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
             .{ .input_bindings = &.{}, .show_fps = true },
             harness.color_theme_definitions,
             &harness.weapon_type_definitions,
+            &census_tips,
             .{
                 .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
                 .camera_zoom = 1.0,
@@ -5393,6 +5603,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         const options_menu = firstButton(elements, .exit_game);
         const load_save_browser = lastButton(elements, .toggle_load_save_menu);
         const credits = lastButton(elements, .open_credits);
+        // The tips panel's Back is the FIRST open_tips button (the panel
+        // emits before the global top bar, whose `?` is the last).
+        const tips_back = firstButton(elements, .open_tips);
         const settings_screen = firstButton(elements, .change_setting);
         const editor_browser = lastButton(elements, .toggle_editor_browser);
         const error_popup = firstButton(elements, .dismiss_error);
@@ -5402,7 +5615,8 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         try std.testing.expect(main_menu_base < options_menu);
         try std.testing.expect(options_menu < load_save_browser);
         try std.testing.expect(load_save_browser < credits);
-        try std.testing.expect(credits < settings_screen);
+        try std.testing.expect(credits < tips_back);
+        try std.testing.expect(tips_back < settings_screen);
         try std.testing.expect(settings_screen < editor_browser);
         try std.testing.expect(editor_browser < error_popup);
         try std.testing.expect(error_popup < top_bar);
@@ -5411,9 +5625,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     }
 
     // ── Frame 2: a level, player dead - every level-reachable surface up.
-    // Ladder: bottom bar < options menu < mission-fail < mission-complete
-    // < settings screen < editor browser < error popup < top bar < FPS
-    // label. (complete above fail is the pinned never-co-rendered order;
+    // Ladder: bottom bar < options menu < tips overlay < mission-fail <
+    // mission-complete < settings screen < editor browser < error popup <
+    // top bar < FPS label. (complete above fail is the pinned never-co-rendered order;
     // the load-save browser + credits are main-menu-gated and absent
     // here.)
     {
@@ -5426,6 +5640,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
         var session = state.SessionState{};
         level_state.ui_surfaces.options_menu_open = true;
+        level_state.ui_surfaces.tips_open = true;
         level_state.ui_surfaces.settings_open = true;
         level_state.ui_surfaces.editor_browser_open = true;
         session.setPendingError(arena, "census frame");
@@ -5437,6 +5652,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
             .{ .input_bindings = &.{}, .show_fps = true },
             harness.color_theme_definitions,
             &harness.weapon_type_definitions,
+            &census_tips,
             .{
                 .camera = computeCamera(&level_state, 1.0, null, null),
                 .camera_zoom = 1.0,
@@ -5453,6 +5669,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         const elements = view_state.ui_elements;
         const bottom_bar = firstButton(elements, .skip);
         const options_menu = firstButton(elements, .restart_mission);
+        const tips_back = firstButton(elements, .open_tips);
         const mission_fail = lastButton(elements, .restart_mission);
         const mission_complete = firstButton(elements, .continue_after_mission);
         const settings_screen = firstButton(elements, .change_setting);
@@ -5461,7 +5678,8 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         const top_bar = firstButton(elements, .undo);
         const fps = fpsLabel(elements);
         try std.testing.expect(bottom_bar < options_menu);
-        try std.testing.expect(options_menu < mission_fail);
+        try std.testing.expect(options_menu < tips_back);
+        try std.testing.expect(tips_back < mission_fail);
         try std.testing.expect(mission_fail < mission_complete);
         try std.testing.expect(mission_complete < settings_screen);
         try std.testing.expect(settings_screen < editor_browser);

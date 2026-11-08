@@ -201,5 +201,6 @@ pub const buildMainMenu = ui_menus.buildMainMenu;
 pub const buildLoadSavePanel = ui_menus.buildLoadSavePanel;
 pub const buildEditorBrowser = ui_menus.buildEditorBrowser;
 pub const buildCreditsPanel = ui_menus.buildCreditsPanel;
+pub const buildTipsPanel = ui_menus.buildTipsPanel;
 pub const settings_row_font_size = ui_menus.settings_row_font_size;
 pub const buildSettingsPanel = ui_menus.buildSettingsPanel;

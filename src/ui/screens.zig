@@ -30,6 +30,9 @@ const menu_button_font_size = ui_element.menu_button_font_size;
 const inventory_slot_size = ui_element.inventory_slot_size;
 const top_bar_height = ui_element.top_bar_height;
 const top_bar_slot_size = ui_element.top_bar_slot_size;
+/// The `?` glyph's font size on the top-bar tips button (a visual
+/// constant: half the 128 slot, so the glyph reads icon-sized).
+const tips_glyph_font_size: i32 = 64;
 const lineHeight = ui_element.lineHeight;
 const spanRow = ui_tooltip.spanRow;
 const emitIconButton = emit.emitIconButton;
@@ -278,10 +281,14 @@ pub fn buildErrorPopup(
 pub fn buildGlobalTopBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     screen: Rectangle,
     active_theme: types.ActiveColorTheme,
     can_undo: bool,
     can_redo: bool,
+    /// Whether the tips list is non-empty (drives the `?` button's
+    /// visibility - a modded-but-valid empty tips file hides it).
+    tips_available: bool,
 ) !void {
     const p = active_theme.player_gradient.colors;
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
@@ -359,6 +366,32 @@ pub fn buildGlobalTopBar(
         },
     });
     if (!can_redo) try emitDimWash(elements, allocator, redo_cell, c_dim);
+
+    // Tips button - flush in the top-RIGHT corner, mirroring the options
+    // button at top-left: the same 128x128 background with a font-glyph
+    // `?` (no icon sprite - see emit.emitGlyphIconButton). The tips
+    // overlay is legal on every screen, like the bar it lives in.
+    if (tips_available) {
+        const tips_cell = Rectangle{
+            .x = screen.x + screen.width - top_bar_slot_size,
+            .y = screen.y,
+            .width = top_bar_slot_size,
+            .height = top_bar_slot_size,
+        };
+        try emit.emitGlyphIconButton(
+            elements,
+            allocator,
+            font_metrics,
+            tips_cell,
+            "?",
+            tips_glyph_font_size,
+            .open_tips,
+            null,
+            .{ .header = try spanRow(allocator, text("Tips")) },
+            c_btn_bg,
+            c_btn_icon,
+        );
+    }
 }
 
 /// The unavailable-state wash for a global-bar button: the button

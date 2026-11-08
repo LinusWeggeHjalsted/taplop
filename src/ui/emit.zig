@@ -215,6 +215,50 @@ pub fn emitIconButton(
     });
 }
 
+/// Emit a glyph button: the small-background-sprite button (owning the
+/// action + hit-test + optional payload/tooltip) with a centered FONT
+/// glyph on top - the icon-button treatment for controls that have no
+/// icon sprite (the top bar's tips `?`, the tips panel's `<` / `>`). An
+/// icon sprite can replace the glyph later without plumbing changes.
+pub fn emitGlyphIconButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    glyph: []const u8,
+    glyph_font_size: i32,
+    action: Action,
+    payload: ?types.ButtonPayload,
+    tooltip: ?Tooltip,
+    background_color: Color,
+    glyph_color: Color,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = small_button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = background_color,
+        .action = action,
+        .payload = payload,
+        .tooltip = tooltip,
+    } });
+    // Centered glyph (the emitPanelButton centering convention: the
+    // font_size glyph cell, not lineHeight). Sits on top of the button;
+    // the button wins the hit-test.
+    const glyph_width = font_metrics.measureSpanWidth(text(glyph), glyph_font_size);
+    const glyph_box = cell.placeCenter(glyph_width, glyph_font_size);
+    try elements.append(allocator, .{
+        .text_label = .{
+            .text = glyph,
+            .screen_position = glyph_box.position(),
+            .font_size = glyph_font_size,
+            .color = glyph_color,
+            .blocks_input = false,
+        },
+    });
+}
+
 /// Emit a panel-backed button: a 9-slice panel background, a spriteless
 /// Button over it (owns the action + hit-test + optional tooltip), and a
 /// centered text label on top. Used for text buttons (main menu, settings,

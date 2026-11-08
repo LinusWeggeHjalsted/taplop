@@ -332,7 +332,7 @@ pub fn loadSalvageDefinitionsFromDisk(
 /// parse failure (see DESIGN → Error Handling). Self-owned strings,
 /// retained process-lifetime by the startup tracking; freed by the
 /// history deinit via loaders.freeTips.
-pub fn loadTipsFromDisk(
+fn loadTipsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
     startup: *StartupMemory,
