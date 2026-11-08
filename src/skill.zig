@@ -78,9 +78,23 @@ pub const Skill = struct {
 
     // --- function pointers (the "interface") ---
 
-    /// Returns which tiles are valid targets for this skill, given the caster's position.
-    /// Used for highlighting tiles when the player is targeting, or passed through to selectTarget for enemies.
-    /// should return null if not uses_targeting, or maybe event handler should just skip directly to useSkill in that case without ever calling this function
+    /// Returns which tiles are valid targets for this skill, given the
+    /// caster's position. Used for highlighting tiles when the player is
+    /// targeting, or passed through to selectTarget for enemies.
+    ///
+    /// NULL-VS-EMPTY CONVENTION: null means "push no event" -
+    /// `skill_helpers.highlightTargets` maps it to no event at all, so any
+    /// previously highlighted tiles linger (the typical producer: helpers
+    /// like `hostilesInRange` return null when nothing qualifies). An
+    /// EMPTY non-null slice means "push a zero-tile `highlight_tiles`
+    /// event" - a clearing event. The prepare seam clears the previous
+    /// highlights BEFORE calling `playerPrepareSkill` (the
+    /// `.player_prepare_skill` handler), which defuses the distinction
+    /// there; keep the convention anyway so every consumer (auto-target,
+    /// `skillTargetLegal`, future ones) sees consistent semantics. A skill
+    /// with `uses_targeting == false` is never asked: the input layer
+    /// (`resolveSkillSlotAction`) goes straight to useSkill for those -
+    /// return null.
     get_valid_targets_fn: *const fn (
         caster_index: u32,
         game_state: GameState,

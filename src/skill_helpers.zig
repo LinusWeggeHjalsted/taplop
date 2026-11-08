@@ -71,8 +71,11 @@ pub fn nearestTarget(
     return best;
 }
 
-/// A `highlight_tiles` event covering `targets`, or null if there are none.
-/// The standard `playerPrepareSkill` body for a targeted skill.
+/// A `highlight_tiles` event covering `targets`, or null when `targets`
+/// is null. The null-vs-empty mapping of the interface convention (see
+/// `Skill.get_valid_targets_fn`): null targets push NO event (previous
+/// highlights linger), an EMPTY targets slice pushes a zero-tile clearing
+/// event. The standard `playerPrepareSkill` body for a targeted skill.
 pub fn highlightTargets(targets: ?[]const Vector2) ?Event {
     const positions = targets orelse return null;
     return .{ .level_event = .{ .highlight_tiles = .{ .tile_positions = positions } } };
