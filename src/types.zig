@@ -2859,20 +2859,44 @@ pub const UiSurfaceState = struct {
         }
     }
 
+    /// Close one surface - the counterpart of `toggle`, and the exhaustive
+    /// switch the compiler forces whenever a surface is added. `closeAll`
+    /// below routes every surface through here so the compiler owns that
+    /// list too (a hand-written `x_open = false` list would silently miss
+    /// the newest surface - exactly how the tips surface almost survived
+    /// screen transitions).
+    fn close(self: *UiSurfaceState, surface: UiSurfaceId) void {
+        switch (surface) {
+            .options_menu => self.options_menu_open = false,
+            .settings => self.settings_open = false,
+            .load_save_menu => self.load_save_menu_open = false,
+            .credits => self.credits_open = false,
+            .tips => self.tips_open = false,
+            .editor_browser => self.editor_browser_open = false,
+            .inventory => self.closeMiddlePanel(.inventory),
+            .gear => self.closeMiddlePanel(.gear),
+            .skills => self.closeMiddlePanel(.skills),
+            .entity_inspect => {
+                self.closeMiddlePanel(.entity_inspect);
+                self.inspected_entity_index = null;
+            },
+            .world_map => self.closeFullScreenOverlay(.world_map),
+            .full_combat_log => self.closeFullScreenOverlay(.full_combat_log),
+        }
+    }
+
     /// Close every surface. The screen-transition / world-install reset -
     /// HANDLER-side (`transitionScreen` / the start_* world installs) so
     /// replay reproduces it; the classes-2-4 wholesale reset stays in the
     /// live loop. See DESIGN → UI Framework → UI state classification.
+    /// Iterates every `UiSurfaceId` through `close` (inline for over the
+    /// enum fields), so adding a surface is compiler-caught here the same
+    /// way it already is in `toggle` / `isSurfaceOpen` /
+    /// `surfaceToggleLegal`.
     pub fn closeAll(self: *UiSurfaceState) void {
-        self.open_middle_panels = .{null} ** max_middle_panels;
-        self.open_full_screen_overlays = .{null} ** max_full_screen_overlays;
-        self.options_menu_open = false;
-        self.settings_open = false;
-        self.load_save_menu_open = false;
-        self.credits_open = false;
-        self.tips_open = false;
-        self.editor_browser_open = false;
-        self.inspected_entity_index = null;
+        inline for (@typeInfo(UiSurfaceId).@"enum".fields) |field| {
+            self.close(@field(UiSurfaceId, field.name));
+        }
     }
 
     fn toggleMiddlePanel(self: *UiSurfaceState, panel_id: MiddlePanelId) void {
@@ -3108,12 +3132,12 @@ test "UiSurfaceState.inspectEntity opens, retargets, and closes" {
 
 test "UiSurfaceState.closeAll clears every surface" {
     var surfaces = UiSurfaceState{};
-    surfaces.toggle(.options_menu);
-    surfaces.toggle(.settings);
-    surfaces.toggle(.credits);
-    surfaces.toggle(.inventory);
-    surfaces.toggle(.skills);
-    surfaces.toggle(.world_map);
+    // Open EVERY surface - derived from the enum, so a new surface joins
+    // this test automatically - plus an inspect target, then closeAll
+    // must reset to the zero state.
+    inline for (@typeInfo(UiSurfaceId).@"enum".fields) |field| {
+        surfaces.toggle(@field(UiSurfaceId, field.name));
+    }
     surfaces.inspectEntity(3);
     surfaces.closeAll();
     try std.testing.expectEqual(UiSurfaceState{}, surfaces);

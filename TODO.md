@@ -1258,14 +1258,6 @@ Done items in DONE.md. Open:
 
 Session-reflection riders (the parser-grammar + tips sessions):
 
-- **`UiSurfaceState.closeAll` is invisible to the exhaustive-switch net.**
-  `toggle`/`isSurfaceOpen`/`surfaceToggleLegal` are switches over
-  `UiSurfaceId`, so adding a surface is compiler-forced there - but
-  `closeAll` is a hand-written list of `x_open = false` statements the
-  compiler cannot flag (found by grep when adding tips; the tips arm was
-  the one site nothing forced). A new surface can silently survive screen
-  transitions. Fix: make `closeAll` switch-driven over the id (or reset
-  via the enum) so the compiler owns the list too.
 - **Error-path-leak sweep on the remaining loaders (the errdefer class).**
   Three instances fixed across the parser-grammar slices (`parseConfigFile`,
   `loadLevel`, `loadHub` - error paths never freed the partial build; the

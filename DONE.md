@@ -18268,3 +18268,18 @@ worked-around DESIGN mentions are properly backticked again. Also
 allowlisted `result.term` (the std.process RunResult field in an AGENTS
 gotcha - a stdlib API the source corpus can never back; flagged since
 the spawn removal left the tree without the token).
+
+## UiSurfaceState.closeAll is now compiler-owned
+
+`closeAll` was a hand-written list of `x_open = false` statements - the
+one surface site invisible to the exhaustive-switch net (`toggle` /
+`isSurfaceOpen` / `surfaceToggleLegal` are switches over `UiSurfaceId`,
+so a new surface is compiler-forced there, but nothing forced its
+closeAll arm; the tips surface was found by grep, one site away from
+silently surviving screen transitions). Now: a file-private
+`close(surface: UiSurfaceId)` (the exhaustive counterpart of `toggle`)
++ `closeAll` iterating every enum field through it (inline for over
+@typeInfo fields), so a new surface is compile-caught in `close` the
+same way as in the other three switches. The closeAll test opens every
+surface DERIVED from the enum (a new surface joins the test
+automatically) instead of a hand-picked subset.
