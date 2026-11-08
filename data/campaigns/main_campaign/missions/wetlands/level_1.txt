@@ -1,8 +1,8 @@
 Metadata
-file_format_version 1
+file_format_version 2
 name Wetlands 0
 
-Layout
+Layout 10
            .
 !..       ..
 .....    ...2  F..=

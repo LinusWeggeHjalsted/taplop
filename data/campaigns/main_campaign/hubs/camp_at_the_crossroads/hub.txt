@@ -1,8 +1,8 @@
 Metadata
-file_format_version 2
+file_format_version 3
 name Camp at the Crossroads
 
-Layout
+Layout 9
           1
    A ...F..
    ......B

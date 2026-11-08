@@ -1,5 +1,5 @@
 Metadata
-file_format_version 1
+file_format_version 2
 
 # The editor's new-level template (the add-level "+"): the minimal valid
 # layout - the '!' player start at (0,0) and the '=' level end at (1,0),
@@ -7,5 +7,5 @@ file_format_version 1
 # new level's tab reads "Level N" until the author names it (the metadata
 # sidebar). Parsed by loaders.loadEditorDefaultLevel.
 
-Layout
+Layout 1
 !=

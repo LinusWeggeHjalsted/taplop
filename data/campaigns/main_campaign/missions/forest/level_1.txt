@@ -1,8 +1,8 @@
 Metadata
-file_format_version 1
+file_format_version 2
 name Forest 0
 
-Layout
+Layout 16
                  A
      AA    AA  AA
     AA  AAAAAAA..=FA

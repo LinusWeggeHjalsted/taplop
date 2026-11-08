@@ -1680,6 +1680,39 @@ UnsupportedFileFormatVersion, older-than-floor → same), all under
 end-to-end; every pre-existing v1/v2 fixture loads through its floor.
 Full suite PASS.
 
+### Parser grammar slice 5 - the data sweep (DONE)
+
+Design: DESIGN → File System & IO → Config grammar; slices: TODO →
+Parser grammar overhaul (the item is now fully checked off). Slice 5 of
+5 - the overhaul is COMPLETE.
+
+All fifteen Layout-bearing data files upgraded to the counted grammar +
+current version: the 13 campaign levels + `data/default_level.txt`
+(v1→v2) and `camp_at_the_crossroads/hub.txt` (v2→v3). The row counts are
+MACHINE-DERIVED from the legacy grammar's stored rows (consume until a
+format header, strip the trailing separator blanks) - never hand-
+counted; the sweep script also asserted both markers per file before
+writing. Per the sweep discipline: dry-run on seatown's level_1 (the
+leading-blank-row case) with a full-diff inspection first, then per-file
+writes - an already-upgraded file is skipped idempotently (the first run
+aborted on one, costing nothing). The whole diff is 30 line-changes
+(15× `Layout` → `Layout <N>`, 14× version 1→2, 1× 2→3) - no other byte
+moved; seatown's leading empty row and the hub's space-led rows are
+preserved verbatim. `content_validation_tests` walks every file through
+the tightened loaders with the new grammar - the counts are verified by
+the same parser that will read them, and the full suite PASSes.
+
+The overhaul's ledger, end to end: the global header whitelist and
+`validateSections` deleted (one list per format - grammar = validation);
+unknown headers/junk lines error truthfully; `#` comments skipped
+outside layouts; counted `Layout <N>` with the legacy grammar kept for
+pre-count files (chosen by the opening line's shape); mandatory `!`/`=`
+markers; unknown layout characters error; version ranges with the
+UncountedLayout strictness; three pre-existing leak classes fixed on the
+way (parser errdefer, loadLevel/loadHub errdefer); all shipped data on
+the current grammar. One rider: the hub writer (campaign editor) emits
+`Layout <count>` + the current hub version when it lands.
+
 ## Error Handling
 
 ### Slice 1 - error surface (DONE)

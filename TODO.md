@@ -16,16 +16,12 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **Parser grammar overhaul (per-format headers + counted layouts)** -
-      design SETTLED (DESIGN → File System & IO → Config grammar);
-      supersedes the section-header lockstep guard idea (the global
-      whitelist is DELETED, not guarded - adding a section becomes one
-      edit to that format's own list). Motivating failure modes: an
-      unknown header silently misparses into the previous section with
-      misleading unknown-key warnings, and a layout row can SPELL a
-      section header (decoration character_codes cover printable ASCII)
-      and truncate the layout - a valid layout the format could not
-      express. Slices:
+- [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
+      ALL FIVE SLICES DONE (see DONE.md, "Parser grammar slice 1" through
+      "slice 5"; settled design: DESIGN → File System & IO → Config
+      grammar; the version range policy: DESIGN → Versioning). One rider
+      outstanding: the hub writer does not exist yet (campaign editor) -
+      it emits `Layout <count>` + the current hub version when it lands.
   - [x] 1. Per-format header grammar: `parseConfigFile` takes
         `expected_headers`; delete `valid_section_headers`; new
         `session_log_sections` (verify Metadata/EventLog/
@@ -79,13 +75,6 @@ Test by running `zig build run` and clicking through.
         in loadLevel/loadHub; the writer's version emission updates
         automatically via the constant bump). Closes slice 2's deliberate
         version-window note: new editor saves are v2 + counted.
-  - [ ] 5. Data sweep: the 13 campaign levels + default_level.txt +
-        camp_at_the_crossroads/hub.txt get `Layout <N>` (N derived from
-        actual rows) + bumped versions; AGENTS → Config File Format
-        gains the count rule. Sweep-script discipline: dry-run ONE
-        file, inspect the full diff, write after each step.
-  - Open: the hub writer does not exist yet (campaign editor) - it
-    emits counts when it lands.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different
