@@ -1251,12 +1251,6 @@ Done items in DONE.md. Open:
       occurrences, 156 files; see DONE.md, "the dash sweep"). Rendered
       em-dashes were already rendering correctly by then (the full-coverage
       atlas), so the sweep was uniformity, not bug-fixing.
-- **doc_symbol_check's JS-API blind spot** - backticked JS names read as
-  Zig dot-paths and false-positive (hit twice in the web storage session:
-  navigator.storage.persist, indexedDB.deleteDatabase). Current
-  workaround: un-backtick JS APIs in docs (this note practices it). Future
-  fix: the checker allow-lists the JS namespaces the seams use (FS.,
-  indexedDB., navigator., Object., URL.).
 - **DONE.md's unbounded growth** - past ~17k lines and every session adds
   entries. Might want a divided history format someday (per-year or
   per-milestone files with a top-level index). Not urgent - revisit

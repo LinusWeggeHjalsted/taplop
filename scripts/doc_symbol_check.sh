@@ -25,7 +25,8 @@
 #   symbol that exists only in a (possibly stale) code comment still
 #   flags - code is the truth, comments can drift too.
 # - Deliberate non-symbols are allowlisted below: external APIs (zig
-#   stdlib, raylib_zig, OS interfaces) and meta-placeholders (`ui.X`).
+#   stdlib, raylib_zig, OS interfaces), meta-placeholders (`ui.X`), and
+#   JS API namespaces (window., navigator., ... - first-segment match).
 # - TODO prose naming a NOT-YET-LANDED symbol must use the bare name
 #   (`inspect_cursor`), not the backticked dot-path form - a dot-path is
 #   the checker's signal that the symbol exists today.
@@ -38,8 +39,23 @@ cd "$(dirname "$0")/.."
 docs=(AGENTS.md DESIGN.md TODO.md)
 
 # Deliberate non-symbols: external APIs (zig stdlib / raylib_zig / OS)
-# and the ui.X facade meta-placeholder.
-allowlist="W.STOPSIG std.debug.simple_panic LazyPath.getPath ui.X"
+# and the ui.X facade meta-placeholder. `result.term` names the std.process
+# RunResult field (a stdlib API the corpus can never back).
+allowlist="W.STOPSIG std.debug.simple_panic LazyPath.getPath ui.X result.term"
+
+# JS API namespaces the web seams use (web.zig + the file_source JS
+# snippets): a backticked path whose FIRST segment is one of these is a
+# browser API reference (window.open, navigator.storage.persist), not a
+# Zig symbol - the source tree can't back it, so it would false-flag
+# STALE/MOVED. Docs may keep such names properly backticked.
+js_namespaces="FS indexedDB navigator Object URL window"
+is_js_namespace() {
+    local namespace
+    for namespace in $js_namespaces; do
+        [[ "$1" == "$namespace" ]] && return 0
+    done
+    return 1
+}
 
 # File-extension-like segments: `foo.zig`, `sound_report.sh` are file
 # references, not symbol paths.
@@ -96,12 +112,13 @@ for doc in "${docs[@]}"; do
         [[ -z "$path" ]] && continue
         [[ "$allowlist" == *"$path"* ]] && continue
 
-        # Split into segments; skip file references.
+        # Split into segments; skip file references + JS API paths.
         IFS='.' read -r -a segments <<< "$path"
         skip=0
         for segment in "${segments[@]}"; do
             is_extension_segment "$segment" && skip=1 && break
         done
+        is_js_namespace "${segments[0]}" && skip=1
         [[ $skip -eq 1 ]] && continue
 
         member="${segments[${#segments[@]}-1]}"

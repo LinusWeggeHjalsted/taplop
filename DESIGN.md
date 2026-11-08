@@ -2172,7 +2172,7 @@ script-writable storage for a site the user hasn't visited in 7 days; quota
 failures surface only in the ASYNC syncfs callback (the write "succeeds"
 into the in-memory layer and the flush silently fails - nothing at
 `writeFile` time ever sees the error); users clear site data. None of this
-is fixable client-side: the navigator.storage.persist() JS call only reduces the
+is fixable client-side: the `navigator.storage.persist()` JS call only reduces the
 eviction risk (granted heuristically, no prompt), and nothing defeats the
 Safari cap or manual clearing. The conclusion: the web build doesn't
 MITIGATE browser storage - it never touches it at all.
@@ -2280,7 +2280,7 @@ usage.`.
 share nothing at all (no database, no boot-clear races).
 - **Migration: none.** At the time of the change there were zero web users
 and the dev's own leftover was disposable: a brief interim build carried a
-fire-and-forget indexedDB.deleteDatabase('/ziglop') call that wiped it on
+fire-and-forget `indexedDB.deleteDatabase('/ziglop')` call that wiped it on
 first boot, then the line was removed - nothing touches a database at all
 now, not even to delete one (history in DONE.md).
 

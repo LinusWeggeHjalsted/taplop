@@ -18254,3 +18254,17 @@ no event, empty -> clearing event). The old "or maybe the event handler
 should skip" prose was resolved into settled text (the input layer's
 `resolveSkillSlotAction` does skip straight to useSkill for
 non-targeting skills).
+
+## doc_symbol_check: JS-API namespace allow-list
+
+Backticked JS names (`navigator.storage.persist`,
+`indexedDB.deleteDatabase`) read as Zig dot-paths and false-positived
+STALE/MOVED - the workaround was un-backticking them in docs (bad docs
+to protect a checker). The checker now allow-lists the JS namespaces the
+web seams use (FS, indexedDB, navigator, Object, URL, window - a
+FIRST-segment match, so `window.open` and any nested JS API passes while
+a genuine Zig `window.`-stemmed path would still check). The two
+worked-around DESIGN mentions are properly backticked again. Also
+allowlisted `result.term` (the std.process RunResult field in an AGENTS
+gotcha - a stdlib API the source corpus can never back; flagged since
+the spawn removal left the tree without the token).
