@@ -6234,6 +6234,12 @@ tip no-op); a three-frame view structure test (? present/absent, panel
 buttons + payloads + painter order, the viewed tip's label, the empty-
 list degradation); census rung. Full suite PASS (884).
 
+**Author revisions after first look:** the body font doubled to 96 (the
+first pass at 48 read too small on the half-width column), and the n/N
+ordinal added directly beneath the header at 48 (initially omitted,
+reinstated) - the content's vertical centering now spans from below the
+ordinal to the Back button.
+
 ## Escape overlay chain
 
 Escape is now a generic "close the topmost overlay" chain

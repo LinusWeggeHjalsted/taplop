@@ -5358,6 +5358,14 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
             }
         }
         try std.testing.expect(found_tip_text);
+        // The n/N ordinal under the header (index 1 of 2).
+        var found_count = false;
+        for (elements) |element| {
+            if (element == .text_label and std.mem.eql(u8, element.text_label.text, "2/2")) {
+                found_count = true;
+            }
+        }
+        try std.testing.expect(found_count);
         // Both nav buttons sit between Back and the top-bar ? (inside the
         // panel's emission range).
         const previous = findButton(elements, .cycle_tips, .previous);

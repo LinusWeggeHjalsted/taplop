@@ -1191,7 +1191,9 @@ pub fn buildCreditsPanel(
 
 // --- Tips overlay (full screen, any screen) ---
 
-const tips_body_font_size: i32 = 48;
+const tips_body_font_size: i32 = 96;
+/// The n/N ordinal under the header.
+const tips_count_font_size: i32 = 48;
 /// Gap between the text column and the flanking nav buttons.
 const tips_nav_gap: i32 = 96;
 const tips_glyph_font_size: i32 = 64;
@@ -1267,6 +1269,20 @@ pub fn buildTipsPanel(
     // a stale index beyond a shrunk list renders the last tip, never
     // crashes (the bounds-checked convention of the inspect target).
     const safe_index = @min(viewed_tip_index, tips.len - 1);
+
+    // The viewed tip's ordinal (n/N), centered directly beneath the
+    // header - part of the content (the empty-list degradation shows no
+    // counter).
+    const header_bottom = header_y + lineHeight(credits_header_font_size);
+    const count_text = try std.fmt.allocPrint(allocator, "{d}/{d}", .{ safe_index + 1, tips.len });
+    const count_width = font_metrics.measureSpanWidth(text(count_text), tips_count_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = count_text,
+        .screen_position = .{ .x = screen.x + @divTrunc(screen.width - count_width, 2), .y = header_bottom },
+        .font_size = tips_count_font_size,
+        .blocks_input = false,
+    } });
+
     const column_width = @divTrunc(screen.width, 2);
     const column_x = screen.x + @divTrunc(screen.width - column_width, 2);
     const body_lines = try wrapRow(
@@ -1279,10 +1295,10 @@ pub fn buildTipsPanel(
     const body_line_height = lineHeight(tips_body_font_size);
     const body_height: i32 = @intCast(body_lines.len * @as(usize, @intCast(body_line_height)));
 
-    // Vertically center the text block in the space between the header
+    // Vertically center the text block in the space between the counter
     // and the Back button (the credits block-centering model).
-    const header_bottom = header_y + lineHeight(credits_header_font_size);
-    const content_center_y = header_bottom + @divTrunc(button_y - header_bottom, 2);
+    const count_bottom = header_bottom + lineHeight(tips_count_font_size);
+    const content_center_y = count_bottom + @divTrunc(button_y - count_bottom, 2);
     const body_top = content_center_y - @divTrunc(body_height, 2);
 
     var y = body_top;

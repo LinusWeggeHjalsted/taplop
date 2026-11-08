@@ -10,8 +10,7 @@ tip Equipped weapons determine the first three skills: the main hand weapon type
 
 tip All weapons can be wielded in both hands, and you can swap hands at any time to have access to more skills
 
-tip Moving and using skills increments momentum, and momentum converts to additional outgoing damage 
-calculated as the floor of the base 2 logarithm of the momentum value (so 2 momentum gives +1 damage, 7 gives +2, and 17 gives +4)
+tip Moving and using skills increments momentum, and momentum converts to additional outgoing damage calculated as the floor of the base 2 logarithm of the momentum value (so 2 momentum gives +1 damage, 7 gives +2, and 17 gives +4)
 
 tip Damage is calculated in the following way, where weapon_damage is from the corresponding equipped weapon's damage for weapon skills, or amulet damage for utility skills: (weapon_damage + gloves_damage + converted_momentum) * skill_multiplier - defender_defense
 

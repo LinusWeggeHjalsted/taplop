@@ -6009,7 +6009,8 @@ bar, so open panels never cover them).
 A full-screen modal on any screen (the credits structure: `blocks_input`
 9-slice panel, Back bottom-left) showing ONE tip from data/tips.txt at a
 time: a centered half-width wrapped text column with 128x128 prev/next
-glyph buttons flanking it. Opened from the global top bar's `?` button
+glyph buttons flanking it, and an n/N ordinal directly beneath the
+header. Opened from the global top bar's `?` button
 (top-right, mirroring options at top-left - `Action.open_tips`, a toggle
 like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
 sprites). The OPEN state is class-1 (`UiSurfaceId.tips` / `tips_open`,
