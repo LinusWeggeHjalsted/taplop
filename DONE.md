@@ -18331,3 +18331,27 @@ Slice 2 (salvage chain + themes), all input-reachable leaks closed:
   its own bug on the first run: the first edit batch had failed
   wholesale and the errdefer was silently absent - the fixture flagged
   the leak exactly as designed.
+
+## Config-layer OOM slice 3 (part 1): editor default level + palette defaults
+
+- loadEditorDefaultLevel: errdefer freeLevel for the two template-contract
+  errors (MissingDefaultLevelEnd / DefaultLevelHasEntries fire after the
+  level owns its allocations), PLUS a success-path remnant fix the error
+  path exposed: the EditorLevel moves name (borrows sections) +
+  level_tiles, but the loaded player entity (cloneEntityOwned'd strings)
+  + the entities buffer were dropped on success - now freed before
+  returning. Leak-checked both ways: a DefaultLevelHasEntries fixture
+  (spawn + end + one entity in the layout) and the shipped
+  data/default_level.txt success round-trip (frees level_tiles; name
+  borrows the sections).
+- loadEditorDefaults: two scoped errdefers - the templates' STRING fields
+  borrow the sections (freeParsedSections owns them), only the ARRAY
+  fields are owned (entity layers; decoration footprint + layers, the
+  freeDecorationRegistry ownership shape). The existing error test was
+  arena-wrapped AND its fixtures all errored before any allocation - the
+  exact blind spot; a leak-checked fixture (Entities + Decorations valid,
+  Items missing) now pins the path.
+
+buildEditorMission (the trio's third) deferred to its own decision - its
+error path needs a per-iteration ownership restructure to be testable
+(see the next DONE entry when it lands).

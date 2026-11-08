@@ -1001,11 +1001,20 @@ pub fn loadEditorDefaultLevel(
     // The template contract forbids decorations (the DefaultLevelHasEntries
     // check below enforces it).
     const level = try loadLevel(sections, file_source, allocator, file_path, warnings);
+    // Error-path cleanup: both template-contract errors fire after the
+    // level owns its allocations - freeLevel on the way out. On success
+    // the EditorLevel MOVES name (which borrows the sections) +
+    // level_tiles (owned by the result), and the remnants - the player
+    // entity's cloned strings + the entities buffer - are freed before
+    // returning (decorations / ground items are empty by the contract
+    // check, so their frees are no-ops and are left to freeLevel's shape
+    // on the error path only).
+    errdefer freeLevel(level, allocator);
     if (level.level_end == null) return error.MissingDefaultLevelEnd;
     if (level.entities.len != 1 or level.decorations.len != 0 or level.ground_items.len != 0) {
         return error.DefaultLevelHasEntries;
     }
-    return .{
+    const editor_level = types.EditorLevel{
         .name = level.name,
         .color_wheel_index = level.color_wheel_index,
         .enemy_gradient_index = level.enemy_gradient_index,
@@ -1014,6 +1023,66 @@ pub fn loadEditorDefaultLevel(
         .player_start = level.entities[0].position,
         .level_end = level.level_end,
     };
+    freeEntity(level.entities[0], allocator);
+    allocator.free(level.entities);
+    return editor_level;
+}
+
+test "loadEditorDefaultLevel: DefaultLevelHasEntries after a successful load leaks nothing" {
+    // The leak-checked error path: the error fires AFTER loadLevel
+    // succeeded (a spawn + level end + an entity - the whole level is
+    // owned), so the errdefer must freeLevel it. testing.allocator flags
+    // any leak.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\Layout 1
+        \\!e=
+        \\
+        \\Entities
+        \\character_code e
+        \\name Enemy
+        \\sprite skeleton_1
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser.level_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.DefaultLevelHasEntries,
+        loadEditorDefaultLevel(sections, null, allocator, "test/default_level.txt", null),
+    );
+}
+
+test "loadEditorDefaultLevel: the shipped template loads clean (remnants freed)" {
+    // Success-path ownership: the result owns level_tiles (name borrows
+    // the sections); the player-entity remnants (cloned strings + the
+    // entities buffer) are freed on the way out.
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const parsed = try parseConfigFileFromPath(
+        &file_source,
+        "data/default_level.txt",
+        allocator,
+        &parser.level_sections,
+    );
+    defer allocator.free(parsed.raw_text);
+    defer freeParsedSections(parsed.sections, allocator);
+
+    const editor_level = try loadEditorDefaultLevel(
+        parsed.sections,
+        &file_source,
+        allocator,
+        "data/default_level.txt",
+        null,
+    );
+    try std.testing.expectEqual(@as(i32, 1), editor_level.level_end.?.x);
+    try std.testing.expectEqual(@as(i32, 0), editor_level.level_end.?.y);
+    allocator.free(editor_level.level_tiles);
 }
 
 /// Compare two decoration footprints for palette dedup + the decoration
@@ -1691,6 +1760,11 @@ pub fn loadEditorDefaults(
         return error.MissingDefaultEntry;
     }
     const entity_template = parseEntityDefinition(entity_pairs, 1, "", "", allocator, file_path, warnings);
+    // Error-path cleanup, scoped per parse: the templates' STRING fields
+    // borrow the parsed sections (freed by freeParsedSections); only the
+    // ARRAY fields are owned here. The later MissingDefaultEntry returns
+    // fire after these allocations - the entity's layers first ...
+    errdefer allocator.free(entity_template.layers);
 
     // Decoration: the first Decorations entry, registry shape (a `sprite`
     // key is the entry's identity; footprint/color/layers as authored).
@@ -1699,6 +1773,12 @@ pub fn loadEditorDefaults(
     const decoration_pairs = decorations_section.entry_groups[0].pairs;
     if (findValue(decoration_pairs, "sprite") == null) return error.MissingDefaultEntry;
     const decoration_definition = parseDecorationEntry(decoration_pairs, file_source, allocator, warnings, file_path);
+    // ... then the decoration's footprint + layers arrays (the same
+    // registry-shape ownership - see freeDecorationRegistry).
+    errdefer {
+        allocator.free(decoration_definition.footprint);
+        allocator.free(decoration_definition.layers);
+    }
 
     // Item: the first Items entry (a valid item_type is required).
     const items_section = findSection(sections, "Items") orelse return error.MissingDefaultEntry;
@@ -4367,6 +4447,32 @@ test "loadEditorDefaults rejects missing entries and format drift" {
             , allocator, &parser.editor_defaults_sections),
         );
     }
+}
+
+test "loadEditorDefaults: MissingDefaultEntry after allocations leaks nothing" {
+    // The leak-checked error path (the arena-wrapped test above cannot
+    // see it - its fixtures error before any allocation): Entities +
+    // Decorations parse (entity layers + decoration footprint/layers
+    // allocated), then no Items section.
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Entities
+        \\name New Entity
+        \\sprite skeleton_1
+        \\
+        \\Decorations
+        \\sprite stone_1
+        \\footprint 0 0
+    ;
+    const sections = try parseConfigFile(raw_text, allocator, &parser.editor_defaults_sections);
+    defer freeParsedSections(sections, allocator);
+    try std.testing.expectError(
+        error.MissingDefaultEntry,
+        loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+    );
 }
 
 test "instantiateEditorLevel regroups co-located item placements into one stack" {
