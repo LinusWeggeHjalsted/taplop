@@ -18228,3 +18228,17 @@ passes null); a state unit test covers the optional read's live/replay/
 lazy-disk faces; the bundle round-trip covers the absent marker; the
 scan/hash/loader fixtures moved to the v3 shape. One 0.16 gotcha hit
 again (blockless if in a switch prong - braces).
+
+## Crash-dump stderr noise: the print moved out of dump()
+
+The crash_dump round-trip test printed "wrote crash session log bundle:
+crashes/..." on every PASSING run (the diagnostic print lived inside
+`dump()` itself, so exercising the machinery printed it), which also
+trips the raw `zig build test` runner's "failed command:" advisory line -
+a passing run read like a crash, and confused every new agent session.
+
+Fix: `dump()` returns `?DumpResult` (bundle_dir + event_count,
+transient-allocator-backed - the panic caller prints them immediately,
+nothing else holds them) instead of printing; `panic.call` owns the
+print. The test now asserts the result is non-null instead of relying on
+side effects, and runs silent.

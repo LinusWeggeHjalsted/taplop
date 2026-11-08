@@ -49,16 +49,30 @@ pub fn uninstall() void {
     crash_history = null;
 }
 
+/// A successful `dump`: where the bundle landed + how many events it
+/// carries. Both fields are transient-allocator-backed (valid until the
+/// transient allocator's next use frees them) - the panic caller prints
+/// them immediately, nothing else holds them.
+pub const DumpResult = struct {
+    bundle_dir: []const u8,
+    event_count: usize,
+};
+
 /// Best-effort dump of `event_history` + the reconstruction cache to
 /// `crashes/crash_<timestamp>/` in the persistent dir - a full session-log
 /// BUNDLE (session_log.txt + content/ byte copies; see
-/// session_log_bundle.writeSessionLogBundle). Every failure is swallowed
-/// (returns silently). The output is loadable by
-/// `session_log_bundle.loadSessionLogBundle` and reconstructable via the
-/// existing replay path, with the embedded content making the crash report
-/// exactly reproducible - a crash bundle is a replayable session log, just
-/// named differently. `pub` for testing.
-pub fn dump(history: *GameStateHistory) void {
+/// session_log_bundle.writeSessionLogBundle). Returns the result on
+/// success, null on any failure (every failure is swallowed - we're
+/// already crashing, the dump is a bonus, never a cascade). The output is
+/// loadable by `session_log_bundle.loadSessionLogBundle` and
+/// reconstructable via the existing replay path, with the embedded
+/// content making the crash report exactly reproducible - a crash bundle
+/// is a replayable session log, just named differently. `pub` for testing.
+/// The "wrote crash session log bundle" PRINT lives in the panic caller
+/// (`panic.call`), NOT here - tests exercising this machinery would
+/// otherwise print it on every passing run, which reads like a crash in
+/// the raw test runner's output.
+pub fn dump(history: *GameStateHistory) ?DumpResult {
     const allocator = transient_allocator.allocator;
 
     // Timestamp via the entry-file-owned io handle (not a game arena). A
@@ -69,7 +83,7 @@ pub fn dump(history: *GameStateHistory) void {
         allocator,
         "crashes/crash_{s}",
         .{created},
-    ) catch return;
+    ) catch return null;
 
     session_log_bundle.writeSessionLogBundle(
         history.file_source,
@@ -78,14 +92,9 @@ pub fn dump(history: *GameStateHistory) void {
         bundle_dir,
         created,
         allocator,
-    ) catch return;
+    ) catch return null;
 
-    // Best-effort feedback to stderr (the panic message itself is printed by
-    // `call` before this). On web, stderr goes to the browser console.
-    std.debug.print("wrote crash session log bundle: {s} ({d} events)\n", .{
-        bundle_dir,
-        history.event_history.items.len,
-    });
+    return .{ .bundle_dir = bundle_dir, .event_count = history.event_history.items.len };
 }
 
 /// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" - mirrors
@@ -123,7 +132,16 @@ pub const panic = struct {
         const stderr_writer = &std.debug.lockStderr(&.{}).file_writer.interface;
         stderr_writer.writeAll(msg) catch {};
         stderr_writer.writeAll("\n") catch {};
-        if (crash_history) |history| dump(history);
+        if (crash_history) |history| {
+            // Best-effort feedback to stderr (the panic message itself was
+            // printed above). On web, stderr goes to the browser console.
+            if (dump(history)) |result| {
+                std.debug.print("wrote crash session log bundle: {s} ({d} events)\n", .{
+                    result.bundle_dir,
+                    result.event_count,
+                });
+            }
+        }
         @trap();
     }
 
@@ -272,7 +290,8 @@ test "dump writes a parseable crash session log to crashes/" {
     history.file_source = &scratch_source;
     history.io = io;
 
-    dump(&history);
+    const dump_result = dump(&history);
+    try testing.expect(dump_result != null);
 
     // One crash BUNDLE directory should exist under crashes/. Load it back
     // through the bundle loader and confirm it round-trips: the same event
