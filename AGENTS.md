@@ -174,6 +174,12 @@ session + the ButtonPayload migration):
   produces judgment-call output (its multiline-literal table alignment);
   the escape hatch is restructuring the line (e.g. one element per line),
   not skipping the gate.
+- **Prose-config files (.gitignore and friends) get APPENDED to, never
+  whole-file rewritten.** A careless rewrite shuffles existing lines and
+  mangles comment-to-entry attachment invisibly - .gitignore degenerated
+  exactly this way once (recovered in DONE.md, "Comment-drift cleanup
+  pass" - the .gitignore note); nothing checks these files, so the habit
+  is the only defense.
 - **Commit locally without pushing.** Local commits are free; pushing is a
   separate step. Don't hold uncommitted work across sessions - 27 files of
   uncommitted changes across multiple sessions makes it impossible to tell

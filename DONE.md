@@ -300,6 +300,7 @@ working rules).
 - [The two small dedup helpers (review n-3.4 + n-6.2)](#the-two-small-dedup-helpers-review-n-34--n-62)
 - [Generated section indexes for DESIGN + DONE (scripts/doc_index.sh)](#generated-section-indexes-for-design--done-scriptsdocindexsh)
 - [menus.zig split into per-surface files (review n-8.1)](#menuszig-split-into-per-surface-files-review-n-81)
+- [Session reflection riders: the fmt advisory's file-set hole + two notes](#session-reflection-riders-the-fmt-advisorys-file-set-hole--two-notes)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19189,3 +19190,26 @@ the credits page layout consts ("the credits model") - now explicit
 Files + DESIGN's tab-row-test pointer updated; the fmt gate's
 test.sh advisory caught its first divergence during the split (a
 new-file formatting nit, fixed in-passing).
+
+## Session reflection riders: the fmt advisory's file-set hole + two notes
+
+The pause-and-reflect pass at the session's end caught one real defect
+in the day's own tooling: scripts/test.sh's fmt advisory derived its
+file set from `git ls-files` - an unstaged deletion made the check
+ERROR on a missing file (hit live during the menus split), and the
+inverse hole was worse: a not-yet-tracked NEW file was never checked,
+and untracked new files are exactly where formatting divergence
+starts. Fixed the machine-walked way: the set is walked from the
+filesystem (find, excluding .zig-cache/ + zig-cache/ + zig-out/ +
+vendored zig-pkg/), which also keeps the generated_* files in scope
+(they're fmt-clean - the advisory guards the generators too). All
+three modes verified: clean tree silent, untracked-dirty caught,
+unstaged deletion tolerated.
+
+Two notes landed alongside: (1) TODO → Tech Debt now tracks the
+generated ui.zig facade (the hand-maintained ~200-line re-export list
+is the project's own drift-rule violation - self-checking via the
+compiler, so no urgency, but generation makes the lie structurally
+impossible); (2) AGENTS → Commit policy carries the prose-config rule
+(.gitignore and friends get APPENDED to, never whole-file rewritten -
+the scramble's root cause, recovered earlier this session).

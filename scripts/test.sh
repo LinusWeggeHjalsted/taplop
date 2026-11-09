@@ -75,8 +75,14 @@ fi
 # zig fmt advisory (non-fatal): same posture as the dash sweep - this script
 # is the commit checkpoint, so formatting divergence surfaces here, but a
 # formatting nit never fails a test run. The fix is one command
-# (`zig fmt <file>`); see AGENTS -> Commit policy.
-fmt_dirty="$(zig fmt --check $(git ls-files '*.zig') 2>/dev/null || true)"
+# (`zig fmt <file>`); see AGENTS -> Commit policy. The file set is walked
+# from the FILESYSTEM (not `git ls-files`): a not-yet-tracked new file is
+# exactly where divergence starts, and an unstaged deletion would make an
+# index-derived list error on a missing file. Vendored zig-pkg/, build
+# caches, and test scratch trees are excluded; the generated_* files stay
+# in (machine-generated, but fmt-clean - the advisory guards the
+# generators too).
+fmt_dirty="$(find . -name '*.zig' -not -path './.zig-cache/*' -not -path './zig-cache/*' -not -path './zig-out/*' -not -path './zig-pkg/*' -print0 | xargs -0 zig fmt --check 2>/dev/null || true)"
 if [ -n "$fmt_dirty" ]; then
     fmt_count="$(printf '%s\n' "$fmt_dirty" | wc -l)"
     printf '[zig fmt, advisory] %s file(s) not canonically formatted - run zig fmt before committing\n' "$fmt_count"

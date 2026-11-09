@@ -922,6 +922,18 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **Generated ui.zig facade (the session-reflection catch).** The facade
+      is a ~200-line HAND-maintained re-export list duplicating every ui/
+      file's pub surface - exactly the "hand-maintained duplicate of
+      machine-derivable facts" AGENTS' own rule warns about. The compiler
+      catches both drift directions loudly (missing re-export breaks the
+      consumer; stale one breaks the facade), so it's self-checking, not
+      dangerous - but generation (the generated_test_root.zig pattern: a
+      build.zig step scanning src/ui/*.zig pub declarations and writing
+      the facade) would make the lie structurally impossible. Decide the
+      generation mechanism when touched next (comptime `usingnamespace`
+      re-export vs build-time generated file - the latter matches the
+      established pattern; usingnamespace is discouraged upstream).
 - [x] **Vestigial `!replaying` gates at input-layer sound sites** -
       SETTLED (see DONE.md, "The vestigial !replaying gates: kept as
       defense-in-depth"): confirmed dead, kept; the choke point carries
