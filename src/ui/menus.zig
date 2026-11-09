@@ -1193,7 +1193,7 @@ pub fn buildCreditsPanel(
 
 const tips_body_font_size: i32 = 96;
 /// The n/N ordinal under the header.
-const tips_count_font_size: i32 = 48;
+const tips_count_font_size: i32 = 64;
 /// Gap between the text column and the flanking nav buttons.
 const tips_nav_gap: i32 = 96;
 const tips_glyph_font_size: i32 = 64;
