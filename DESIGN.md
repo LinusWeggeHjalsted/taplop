@@ -2120,9 +2120,15 @@ ALL content + artifact reads go through ONE `FileSource` object living on
 never touched by replay). It exposes:
   - `readFile(allocator, path) -> []const u8` - reads against a normalized
     project-root-relative path (`"data/default_settings.txt"`, `"assets/world/tile.png"`).
+    Hostile path shapes (absolute, `..` traversal, backslash, NUL, empty
+    segment) read as `FileNotFound` - the seam's own path policy, defense
+    in depth against crafted bundles seeding reads outside the content
+    root (a must-have before the server seam).
   - `writeFile(path, bytes)` - writes to the persistent dir ONLY; rejects
     `data/`/`assets/` prefixes with a panic (shipped content is immutable
-    from the game's perspective).
+    from the game's perspective) and rejects the same hostile path shapes
+    the same way (every write caller is a constant or an already-validated
+    import path, so a violation is a programmer error).
 
 Read order (first hit wins):
   1. in-memory VFS - uploaded zips / fetched custom missions (transient; not

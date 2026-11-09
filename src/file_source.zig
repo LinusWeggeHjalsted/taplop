@@ -32,6 +32,29 @@ const loaders = @import("loaders.zig");
 /// is ~70 KB).
 const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 
+/// The content-root path policy, enforced at the readFile/writeFile seam:
+/// a path must be relative (no leading `/`), stay inside the root (no `..`
+/// segment), use `/` separators only (no backslash), contain no NUL, and
+/// have no empty segment (which covers the empty path). Reads treat a
+/// violation as `error.FileNotFound` (a path outside the content root is
+/// not addressable); writes panic (every write caller is a constant or an
+/// already-validated import path - a violation is a programmer error).
+/// Defense in depth against crafted session-log bundles / validation
+/// replays seeding reconstruction reads outside the persistent dir
+/// (PROJECTREVIEW m-5.1 - a must-have before the server seam). Same rule
+/// set as `zip_reader.isUnsafeZipEntryName`, kept separate on purpose:
+/// this is the lower layer and zip_reader stays import-free of it.
+fn isInvalidRelativePath(path: []const u8) bool {
+    if (path.len == 0 or path[0] == '/') return true;
+    if (std.mem.indexOfScalar(u8, path, '\\') != null) return true;
+    if (std.mem.indexOfScalar(u8, path, 0) != null) return true;
+    var iterator = std.mem.splitScalar(u8, path, '/');
+    while (iterator.next()) |segment| {
+        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
+    }
+    return false;
+}
+
 /// The shipped campaign mission-directory paths (e.g.
 /// "data/campaigns/main_campaign/missions/beginnings") - the mission
 /// browser's Official tab. Comptime from the embedded map (shipped content
@@ -137,13 +160,18 @@ pub const FileSource = struct {
     /// `campaigns/<c>/hubs/<h>/<s>.png` addresses the embedded
     /// `data/campaigns/...` bytes). Always returns freshly allocated bytes
     /// owned by the caller (embedded bytes are duped so the caller can free
-    /// uniformly). Returns `error.FileNotFound` if no layer has the path.
+    /// uniformly). Returns `error.FileNotFound` if no layer has the path -
+    /// including for a path rejected by `isInvalidRelativePath` (a path
+    /// outside the content root is not addressable, so it is "not found";
+    /// see that fn for why the gate lives here).
     pub fn readFile(
         self: *const FileSource,
         allocator: std.mem.Allocator,
         path: []const u8,
     ) ![]u8 {
         // 1. in-memory VFS - not wired.
+
+        if (isInvalidRelativePath(path)) return error.FileNotFound;
 
         // 2. persistent dir (player overrides / custom content).
         if (self.persistent_dir.readFileAlloc(self.io, path, allocator, read_limit)) |bytes| {
@@ -300,6 +328,13 @@ pub const FileSource = struct {
     ) !void {
         if (std.mem.startsWith(u8, path, "data/") or std.mem.startsWith(u8, path, "assets/")) {
             @panic("FileSource.writeFile: refused write to shipped path - built-in data/assets are immutable");
+        }
+        // Same class as the shipped-path refusal above: every write caller
+        // is a fixed constant or an already-validated import path, so a
+        // path that escapes the content root is a programmer error, not an
+        // input problem (see isInvalidRelativePath).
+        if (isInvalidRelativePath(path)) {
+            @panic("FileSource.writeFile: refused write outside the content root");
         }
         try self.ensureParentDirs(path);
         try self.persistent_dir.writeFile(self.io, .{
@@ -666,7 +701,6 @@ pub const FileSource = struct {
         return entries.toOwnedSlice(allocator);
     }
 
-
     /// Delete a file from the persistent dir (used to consume the import
     /// marker). Missing file is an error like any other - callers poll with
     /// `fileExists` first.
@@ -733,7 +767,6 @@ pub const FileSource = struct {
             }
         }
     }
-
 };
 
 /// Free a `listPersistentDirFiles` result.
@@ -770,7 +803,6 @@ fn isPersistentDirArtifactName(name: []const u8) bool {
     }
     return false;
 }
-
 
 /// Scan a mission folder for files beyond the known config set
 /// (mission.txt, player.txt, level_<N>.txt) - anything else is a custom
@@ -1408,4 +1440,42 @@ test "readFile: campaign-bundled content resolves through the embedded data/ tie
 
     // A path no tier has still misses cleanly.
     try testing.expectError(error.FileNotFound, file_source.readFile(allocator, "campaigns/nowhere/x.txt"));
+}
+
+test "readFile/writeFile: hostile paths are rejected at the seam" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-path-gate";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Every escape shape reads as FileNotFound - including paths that
+    // WOULD resolve outside the content root if handed to the dir handle.
+    const hostile = [_][]const u8{
+        "",
+        "/absolute.txt",
+        "../escape.txt",
+        "missions/../../escape.txt",
+        "a/../b",
+        "back\\slash.txt",
+        "nul\x00byte.txt",
+        "double//slash",
+        "trailing/",
+    };
+    for (hostile) |path| {
+        try testing.expectError(error.FileNotFound, file_source.readFile(allocator, path));
+    }
+
+    // A path with a "." segment is safe (the dir handle resolves it) -
+    // the gate must not over-reject.
+    try file_source.writeFile("nested/./deeper/file.txt", "content");
+    const round_tripped = try file_source.readFile(allocator, "nested/deeper/file.txt");
+    defer allocator.free(round_tripped);
+    try testing.expectEqualStrings("content", round_tripped);
 }

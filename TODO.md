@@ -33,9 +33,9 @@ commit unit.
       m-4.1)").
 - [x] Mission-zip import: headers-first caps - DONE (see DONE.md,
       "Mission-zip import: the headers-first caps (review m-9.1)").
-- [ ] FileSource: `validateRelativePath` gate at readFile/writeFile
-      (~15 lines; crafted bundles can seed reads outside the persistent
-      dir - see PROJECTREVIEW Part 5, m-5.1).
+- [x] FileSource: `validateRelativePath` gate - DONE (see DONE.md,
+      "FileSource: the relative-path gate at the readFile/writeFile seam
+      (review m-5.1)").
 - [ ] Session-log bundle loader: total-bytes cap (per-file 256 MB limit
       only, today).
 - [ ] Hub `move_player`: legality arm at the replay seam (level moves

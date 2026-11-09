@@ -18569,3 +18569,28 @@ central-record uncompressed sizes (the game_zip pattern - nothing is
 ever decoded), the happy-path test pins the streaming write + rescan
 end to end. DESIGN → Level Editor → the zip import bullet updated.
 Closes review item m-9.1 and TODO → Post-Review → Hardening item 4.
+
+## FileSource: the relative-path gate at the readFile/writeFile seam (review m-5.1)
+
+FileSource passed paths straight to the dir handles - safety rested on
+the zip seams (entry-name validation) and on all live internal paths
+being fixed constants. The residual exposure (the review's
+must-do-before-server-seam flag): a crafted session-log bundle or
+validation replay can seed RECONSTRUCTION reads at paths outside the
+persistent dir (e.g. `start_mission{mission_path = "../../..."}`).
+Landed one `isInvalidRelativePath` gate at the seam - same rule set as
+`zip_reader.isUnsafeZipEntryName` (absolute, `..` segment, backslash,
+NUL, empty segment), kept as a separate fn on purpose: file_source is
+the lower layer and zip_reader stays import-free of it; cross-
+referencing comments on both. Read side rejects as `error.FileNotFound`
+- a path outside the content root is not addressable - which maps to
+the right behavior at every existing caller with zero changes (live
+reconstruction reads → popup + revert; optional reads → graceful
+missing-asset). Write side panics, the same class as the existing
+shipped-path refusal: every write caller is a constant or an
+already-validated import path, so a violation is a programmer error.
+The game import's RAW-dir-handle staging read + shadow-data writes are
+unaffected by design (they bypass the seam). Tests pin every escape
+shape plus a "."-segment non-over-rejection. DESIGN → File System & IO
+→ File source updated. Closes review item m-5.1 and TODO → Post-Review
+→ Hardening item 5.

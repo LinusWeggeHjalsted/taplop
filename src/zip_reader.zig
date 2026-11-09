@@ -275,7 +275,9 @@ pub fn isOsZipJunkEntry(name: []const u8) bool {
 /// a backslash is a malformed or hostile name - a literal filename
 /// character on some platforms), no NUL bytes, no empty segments.
 /// Applied BEFORE the first write by both importers: a hostile or malformed
-/// zip fails whole, never half-imported.
+/// zip fails whole, never half-imported. Same rule set as file_source's
+/// `isInvalidRelativePath`, kept separate on purpose: this file stays
+/// import-free of the IO layer.
 pub fn isUnsafeZipEntryName(name: []const u8) bool {
     if (name.len == 0 or name[0] == '/') return true;
     if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
