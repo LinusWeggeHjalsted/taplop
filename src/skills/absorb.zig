@@ -40,9 +40,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 
 /// AI options: one self-cast - offered only when a hostile can reach and
 /// attack the caster next turn (the threat model, ai_threat.zig).
-/// Rated 2 when threatened, 4 when threatened AND below half health
-/// For Absorb the 4 must outrank Heal's 3 on the idol bar - prevention +
-/// conversion beats a flat 20% when the hit is coming..
+/// Rated 2 when threatened, 4 when threatened AND below half health -
+/// the 4 must outrank Heal's 1 on the idol bar (prevention + conversion
+/// beats a flat 20% when the hit is coming).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -58,7 +58,6 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = rating });
 }
 
-/// Self-cast - no meaningful target.
 /// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

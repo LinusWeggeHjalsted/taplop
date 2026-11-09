@@ -730,9 +730,9 @@ pub fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
-        // Inspector entity-sprite commit: same shape (the sprite id is a
-        // plain text field in v1 - the centered sprite picker replaces it
-        // later; see DESIGN → Level Editor → Editor UI layout).
+        // Inspector entity-sprite commit: closes the centered sprite
+        // picker, then commits the id + keep_original_colors flag (see
+        // DESIGN → Level Editor → Editor UI layout).
         .player_set_editor_entity_sprite => |set| {
             pushEvents(current, &.{ .{ .editor_event = .editor_close_picker }, .{ .editor_event = .{ .editor_set_entity_sprite = .{
                 .target = set.target,
@@ -1010,11 +1010,6 @@ pub fn handlePlayerInputEvent(
         .player_clear_editor_selection => {
             pushEvents(current, &.{.{ .editor_event = .editor_clear_selection }}, allocator);
         },
-        // Select-tool move-drag release: back the selection up as concrete
-        // things at their translated positions, then push [commit link 0,
-        // ...clear plan] - LIFO runs the clear phase first, then the commit
-        // chain places the worklist one entry at a time against the live
-        // post-clear state (see editor_commit_selection_move).
         // Select-tool move drag release: thin over the shared planner (the
         // plan covers the marker-overlap veto - an empty plan is a move
         // that never happened; see

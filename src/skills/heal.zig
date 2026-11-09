@@ -35,7 +35,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-cast at 2 (a 20% heal ≈ one bonus-hit of
+/// AI options: one self-cast at 1 (a 20% heal ≈ one bonus-hit of
 /// value) - offered only below half health (a scratch heal isn't worth a
 /// turn; a flat below-full rating would tie the plain attacks at 1, where
 /// slot order would make Heal win and the caster would heal every turn
@@ -54,7 +54,6 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = 1 });
 }
 
-/// Self-cast - no meaningful target.
 /// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

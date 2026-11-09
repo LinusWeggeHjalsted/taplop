@@ -999,8 +999,10 @@ pub const PlayerInputEvent = union(enum) {
     // = one tile. The handler computes the effect from state - no-op when a
     // tile is already there; every decoration whose footprint covers the
     // position is deleted first (replace, not block - see DESIGN →
-    // Decorations & Footprint → Placement invariant). Erase (right-click)
-    // and drag-painting are deferred; each lands as its own gesture.
+    // Decorations & Footprint → Placement invariant). Erase is the
+    // tool-independent right-click (`player_delete_editor_at`);
+    // drag-painting is `handleEditorTileDrag` (press-drag paints per
+    // tile).
     player_paint_editor_tile: struct {
         position: Vector2,
     },
@@ -1019,16 +1021,6 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         position: Vector2,
     },
-    // Decoration-tool click: place the palette decoration type with its
-    // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
-    // clicked position. The handler computes occupant replacement (see
-    // DESIGN → Level Editor → Active-tool model, placement tools): the
-    // '!' / '=' under ANY footprint tile → no-op; tiles under footprint
-    // tiles are erased along with anything standing on them (entities /
-    // ground items); other decorations whose footprints overlap are
-    // deleted; then the decoration is placed. `type_id` rides in the
-    // payload (handlers can't read UiState - replay doesn't reconstruct
-    // it). The item tools land as their own slice.
     // Decoration-tool click: place the palette decoration type with its
     // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
     // clicked position. The handler computes occupant replacement (see

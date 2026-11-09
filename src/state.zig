@@ -1591,7 +1591,6 @@ pub const GameStateHistory = struct {
     /// always has a live target - a stale focus records nothing at the
     /// would-change gate). Item VALUES are unrestricted (stats are clamped
     /// at the UI; a crafted out-of-range value is a harmless gameplay
-    /// number, same class as an unbalanced base stat).
     /// Shared legality check for the metadata sidebar's level-indexed
     /// commits: the editor screen, an editor present, and the level index
     /// in range (the live path addresses the active tab).
@@ -1613,6 +1612,13 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Structural legality shared by the inspector's entity-edit commits
+    /// (scalars + equipped-slot items): the editor screen with an editor
+    /// present, and the target's palette index in range (a recorded commit
+    /// always has a live target - a stale focus records nothing at the
+    /// would-change gate). Item VALUES are unrestricted (stats are clamped
+    /// at the UI; a crafted out-of-range value is a harmless gameplay
+    /// number, same class as an unbalanced base stat).
     fn validateInspectorEntityEdit(self: *GameStateHistory, target: types.EntityEditTarget) void {
         if (self.current_state.screen != .editor) {
             self.rejectReplay("replay validation: inspector scalar commit outside editor screen");
@@ -1744,6 +1750,27 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Validate that a top-level player-action event was LEGAL at the point
+    /// it was recorded - i.e. the player could actually have done what the
+    /// replay claims. This is the replay anti-cheat seam: `verifyReplayMatch`
+    /// only checks structural equality (the handler would run the same
+    /// event the recording has), and for TOP-LEVEL events that check is
+    /// trivially true because the replay loop seeds them from the recording.
+    /// So a hand-crafted replay can inject `player_use_skill{skill_not_owned}`
+    /// or `player_move_action{tile_20_squares_away}` and the handlers would
+    /// execute it (they trust their inputs; the live input path is the only
+    /// gate, and replay bypasses it). This method closes that gap.
+    ///
+    /// Called in `replayTo` / `replayToWithIdleTracking` right BEFORE seeding
+    /// a top-level event from the recording (the one site where the recording
+    /// becomes authoritative). Handler-pushed children are never seeded, so
+    /// they never reach here (their legality is enforced by the parent
+    /// handler's own logic, and `verifyReplayMatch` checks their structure).
+    ///
+    /// Fail-fast `@panic` for now (malicious replay = reject). A future
+    /// viewer-facing load may soften this to a popup; server-side leaderboard
+    /// validation keeps it hard. See DESIGN → Determinism →
+    /// Replay PLAYER-ACTION LEGALITY.
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
             .player_input_event => |pi| {

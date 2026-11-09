@@ -1,24 +1,33 @@
-
-crashes/
-# Crash session-log dumps (panic handler writes crashes/crash_*.txt via the
-generated_assets.zig
-generated_sprite_metadata.zig
-# here. Kept for safety in case any old dumps linger in the tree.
-# panic drops the file at the repo root. Kept for debugging test crashes.
-saves/
-# Session event-log dumps (ctrl+L) now write to the persistent data dir
-# session FileSource). In production this lands in ~/.ziglop/crashes/; in the
-session_log_*.txt
-src/generated_lookups.zig
-src/generated_test_root.zig
-# test build the test FileSource uses cwd as its persistent dir, so a test
 .zig-cache/
-# (~/.ziglop/logs/), not the working directory - no longer gitignore-relevant
 zig-out/
 zig-pkg/
-sound_report.md
-scratch/
-# Dev scratch data dir (--data-dir ./scratch, README) - untracked by design
 
+# Generated at build time (AGENTS → Build & Test)
+generated_assets.zig
+generated_sprite_metadata.zig
+src/generated_lookups.zig
+src/generated_test_root.zig
+
+# Crash session-log bundles: the panic handler writes
+# crashes/crash_<timestamp>/ bundle dirs via the session FileSource. In
+# production this lands in ~/.ziglop/crashes/; in the test build the test
+# FileSource uses cwd as its persistent dir, so a test panic drops the dir
+# at the repo root (scripts/test.sh cleans it after a passing run).
+crashes/
+
+# Test scratch namespace (the file-source tests write zig-cache/test-*
+# trees into cwd) - distinct from the .zig-cache/ build cache above.
 zig-cache/
-# Test scratch namespace (test_harnesss
+
+# The test FileSource's cwd persistent dir also produces saves/ trees.
+saves/
+
+# Session event-log dumps (ctrl+L) now write to the persistent data dir
+# (~/.ziglop/logs/), not the working directory - no longer gitignore-
+# relevant; kept for safety in case any old dumps linger in the tree.
+session_log_*.txt
+
+sound_report.md
+
+# Dev scratch data dir (--data-dir ./scratch, README) - untracked by design
+scratch/

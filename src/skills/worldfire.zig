@@ -15,7 +15,8 @@ const Skill = skill_mod.Skill;
 /// Entity.getEffectiveSpellDamage). Self-centered - not targeted. The long
 /// cooldown makes it the "save it for clusters" nuke: the AoE bump rating
 /// encodes that posture for the AI for free (a single-target cast ties the
-/// basic attack at 3 and loses to slot order; a cluster rates 4).
+/// plain attacks at 1 and loses to slot order; each additional target in
+/// the cluster adds 1).
 pub const skill = Skill{
     .name = "Worldfire",
     .skill_type = .spell,

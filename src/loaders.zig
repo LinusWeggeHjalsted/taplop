@@ -190,8 +190,6 @@ fn parseDimsString(dims_str: []const u8) types.Vector2 {
 // the author is told). Entity base stats (max_health, defense, speed,
 // aggro_range) are NOT bounded - only gear stats.
 
-/// parse failure (same as `asU32`). See DESIGN → Custom Missions → Balance
-/// bounds.
 /// Append a formatted warning; no-op when `warnings` is null or the
 /// allocation fails (a missing warning never blocks a load).
 fn appendWarning(
@@ -206,6 +204,11 @@ fn appendWarning(
     }
 }
 
+/// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
+/// append a warning to `warnings` (when non-null) naming the field, value,
+/// file, and max - then return `max` so the game stays playable. Returns 0 on
+/// parse failure (same as `asU32`). See DESIGN → Custom Missions & Online
+/// Services → Balance bounds.
 fn boundedU32(
     value_str: []const u8,
     max: u32,

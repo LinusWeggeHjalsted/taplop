@@ -95,7 +95,9 @@ pub const PlatformInput = struct {
 // ============================================================
 
 /// Tracks which keys/buttons are currently held and pointer positions.
-/// Lives on GameState so it persists across ticks.
+/// Lives on SessionState - never snapshotted, never reconstructed by
+/// replay (held-key state must stay off the undo timeline; see DESIGN →
+/// Replay & Side Effects).
 pub const InputState = struct {
     keys_held: [max_held_keys]?[]const u8 = .{null} ** max_held_keys,
     mouse_buttons_held: [max_held_mouse]?[]const u8 = .{null} ** max_held_mouse,

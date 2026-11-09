@@ -3,11 +3,13 @@
 //! The native and web entry files install this module as their `panic`
 //! namespace so that any `@panic` (invariant failure, OOM panic, replay-
 //! verification mismatch, force-unwrap, safety check) dumps the live
-//! `event_history` to `crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent
-//! dir before trapping. `event_history` is always a complete real-time log
+//! session as a session-log BUNDLE to `crashes/crash_YYYYMMDD_HHMMSS/` in
+//! the persistent dir (the event log plus byte copies of every
+//! reconstruction read - `session_log_bundle.writeSessionLogBundle`)
+//! before trapping. `event_history` is always a complete real-time log
 //! (B-simple per-dispatch recording - see DESIGN → Error Handling), so a
-//! crash dump carries every event up to the crash, enough to reconstruct the
-//! session via the existing replay machinery.
+//! crash dump carries every event up to the crash, enough to reconstruct
+//! the session on any machine via the existing replay machinery.
 //!
 //! Scope: Zig panics ONLY. A raw segfault (wild pointer) bypasses this and
 //! goes straight to the OS - the arena/integer-only model makes that rare;

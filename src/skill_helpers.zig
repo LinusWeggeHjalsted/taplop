@@ -176,7 +176,6 @@ fn spiralTilesInRadius(
 }
 
 /// A resolved valid-target for the selection scans. `preferred` is the
-/// A resolved valid-target for the selection scans. `preferred` is the
 /// leading key of the keyed selections (knockback: the push collides;
 /// stun: the target is not already stunned).
 const TargetCandidate = struct {
@@ -414,12 +413,6 @@ pub fn collidingTargetCount(
     return count;
 }
 
-/// The value-unit rating for AoE knockback skills: one hit's worth per
-/// target (`base` for the first - 1 for a plain per-target hit), +1 per
-/// target whose push would collide (the collision adds ~a hit of damage
-/// to that target). "Per colliding target" is honest for an AoE - the
-/// cast has no target choice (contrast the single-target skills, whose
-/// collision bump rides their pick). 0 when nothing would be hit.
 /// 1.5x damage, integer math (base + base/2). Damage multipliers apply
 /// LAST - to the fully-modified damage (gear + effects + momentum + any
 /// skill-specific additive bonus), never to the raw weapon/spell number.
@@ -428,6 +421,12 @@ pub fn damageTimesOneAndAHalf(base_damage: u32) u32 {
     return base_damage + base_damage / 2;
 }
 
+/// The value-unit rating for AoE knockback skills: one hit's worth per
+/// target (`base` for the first - 1 for a plain per-target hit), +1 per
+/// target whose push would collide (the collision adds ~a hit of damage
+/// to that target). "Per colliding target" is honest for an AoE - the
+/// cast has no target choice (contrast the single-target skills, whose
+/// collision bump rides their pick). 0 when nothing would be hit.
 pub fn aoeKnockbackPriority(target_count: u32, colliding_count: u32, base_priority: u32) u32 {
     if (target_count == 0) return 0;
     return base_priority + target_count - 1 + colliding_count;

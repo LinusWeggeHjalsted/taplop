@@ -74,7 +74,6 @@ fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
     };
 }
 
-/// Whether an inventory item can be equipped into the given gear slot.
 /// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
 /// machinery here and the input-side drag no-op gate (input_gestures.zig)
 /// so "fits" has one definition and the two can't drift.

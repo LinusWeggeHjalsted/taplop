@@ -656,10 +656,6 @@ pub const SettingRef = struct {
     choice_value: ?u32 = null,
 };
 
-/// The context-specific sound an action plays on button release, if any.
-/// Actions without a specific sound use the generic `button_click_up`.
-/// Press-down is always `button_click_down` regardless of action. See
-/// DESIGN → Audio.
 /// The base layer of a skill cue, by skill type. The dedicated
 /// cantrip/enchantment/curse base FILES may not have shipped yet - the
 /// backend's `soundFallback` chain plays `spell` in their place until they
@@ -3312,10 +3308,6 @@ pub const Campaign = struct {
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for
-/// the mission-complete overlay (mission name + path). Lives on GameState
-/// (on the undo timeline) so undo/redo handles the overlay naturally - undo
-/// to before completion clears it, redo re-shows it. See DESIGN → Architecture.
-/// Info carried through the end_level → end_mission → start_hub cascade for
 /// the mission-complete overlay. Lives on GameState (on the undo timeline) so
 /// undo/redo handles the overlay naturally - undo to before completion clears
 /// it, redo re-shows it. The `uuid` is the clone key (see DESIGN → Custom
@@ -3919,10 +3911,6 @@ pub const FloatingIconDrawable = struct {
     color: Color,
 };
 
-/// An INNER outline of an occluded ground thing (entity / ground items /
-/// flag pole), drawn over a decoration that renders in front of it so the
-/// silhouette reads through. Drawn over the FULL sprite rect (no scissor):
-/// the unoccluded portion merges into the art's own black outline; the
 /// One sprite layer in a composited silhouette stack (see
 /// `OcclusionInsetDrawable`). The renderer ORs each layer's alpha into a
 /// frame-sized opaque mask, then dilates the union - so a weapon overlapping

@@ -409,9 +409,6 @@ pub fn asU32(value: []const u8) ?u32 {
     return std.fmt.parseInt(u32, value, 10) catch null;
 }
 
-/// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
-/// append a warning to `warnings` (when non-null) naming the field, value,
-/// file, and max - then return `max` so the game stays playable. Returns 0 on
 pub fn asI32(value: []const u8) ?i32 {
     return std.fmt.parseInt(i32, value, 10) catch null;
 }

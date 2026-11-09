@@ -52,7 +52,6 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
 }
 
-/// Self-cast - no meaningful target.
 /// Self-cast - fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

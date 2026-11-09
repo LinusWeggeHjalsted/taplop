@@ -18673,3 +18673,68 @@ it protects. Any binary that runs reconstruction/validation over
 untrusted logs (the future server, or a client build acting as one)
 is built ReleaseSafe or Debug, never ReleaseFast. With this, all nine
 Post-Review → Hardening items are closed.
+
+## Comment-drift cleanup pass - the full catalog swept (review m-2.2 / m-3.2 / m-4.2 / m-4.3 / m-5.3 / m-6.1)
+
+The review's comment-drift register, swept in one pass (comment-only:
+every changed line outside .gitignore is a comment - verified over the
+full diff). The two semantically-misleading classes first, per TODO:
+
+- m-6.1, the worst: input.zig's InputState doc claimed "Lives on
+  GameState" - backwards (it lives on SessionState, and the whole
+  replay-safety architecture depends on that placement). Now states
+  the real home + the rule it implements (never snapshotted, never
+  replay-reconstructed; DESIGN → Replay & Side Effects).
+- m-4.2, the rating-scale numbers: heal ("self-cast at 2" vs code 1),
+  absorb ("outrank Heal's 3" vs Heal's actual 1 - the whole fused doc
+  block also rewritten coherent), worldfire's Skill-struct doc ("ties
+  at 3 / cluster rates 4" vs the 1-per-target aoePriority scale, fixed
+  to match its own aiOptions doc).
+
+The mechanical class, each verified against current code:
+
+- m-2.2 (kernel, six): the orphaned action-sound doc above
+  skillTypeBaseSound (naming dead button_click_* SoundIds); the
+  doubled MissionCompleteInfo doc; the truncated old
+  OcclusionInsetDrawable fragment above StackSprite; the
+  verbatim-doubled player_place_editor_decoration comment (kept the
+  copy without the stale "item tools land as their own slice" line -
+  they landed); player_paint_editor_tile's "erase + drag-paint are
+  deferred" (both landed - now names player_delete_editor_at +
+  handleEditorTileDrag); validatePlayerAction's three fused docs -
+  its own doc RESTORED from git history (4539fbc, DESIGN pointer
+  updated to the section's current name) plus the orphaned docs
+  returned to validateEditorLevelMetadataCommit (kept) and
+  validateInspectorEntityEdit (recovered from 57f40cd).
+- m-3.2 (four + .gitignore): itemFitsGearSlot's doubled doc line;
+  player_move_editor_selection's old inline-design comment (the arm
+  is a thin planner forward); player_set_editor_entity_sprite's
+  "plain text field in v1 - picker replaces it later" (the picker
+  landed - the arm itself pushes editor_close_picker);
+  crash_dump.zig's //! header now describes the BUNDLE dir artifact,
+  not the stale .txt file.
+- m-4.3: the fused "Self-cast - no meaningful target / fires
+  immediately" template pair collapsed to the clean siblings' single
+  line in six skill files (absorb, focus, heal, reflect, replenish,
+  stone_form - the deleted lines verified one-line-per-file over the
+  diff); the doubled TargetCandidate doc; the
+  damageTimesOneAndAHalf / aoeKnockbackPriority fused doc split back
+  to their own functions.
+- m-5.3: boundedU32's doc - orphaned-and-truncated in parser.zig
+  when the fn moved to loaders.zig, with a stray tail fragment before
+  loaders' appendWarning - deleted from parser.zig, the full doc
+  restored on loaders.boundedU32 (pointer updated: the design lives
+  in DESIGN → Custom Missions → Balance bounds now).
+
+Beyond the catalog: .gitignore was found actively SCRAMBLED (comment
+lines from different entries interleaved with wrong patterns, plus a
+truncated mid-word last line - degenerated from a careless whole-file
+rewrite in 9c1119b). Untangled with every entry's intent recovered
+from git history: all 13 patterns kept, each comment attached to its
+own pattern, crashes/ updated for the bundle-dir reality
+(crash_<timestamp>/, not crash_*.txt). sound_report.md's bare entry
+left as-is (the track-vs-ignore asymmetry is review m-1.2, an open
+Optional-polish item).
+
+Closes review items m-2.2, m-3.2, m-4.2, m-4.3, m-5.3, m-6.1 and
+TODO → Post-Review → Hygiene item 1.
