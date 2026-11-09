@@ -18821,3 +18821,15 @@ official release" (review n-1.6 - the old line undersold the state:
 end-to-end core loop natively + on web, 44 skills, a working mission
 editor, replay + crash-dump machinery). The fuller rewrite still
 waits for the demo milestone alongside the planned taplop rename.
+
+## shared_metadata_keys (the borrowed name fixed)
+
+Review n-5.4: parser.zig's `level_metadata_keys` const - the Metadata
+identity trio (file_format_version, name, color_wheel_index) - was
+named for LEVELS but used by seven key maps (hubs, missions,
+campaigns, player saves, the decoration registry, settings, levels);
+the use-site comments said "shared" while the name said "level".
+Renamed to `shared_metadata_keys` with a doc comment stating exactly
+which formats share it and pointing at `level_file_metadata_keys`
+(the level-only superset that keeps its honest name). Comment-only
+rationale sites updated; no behavior change.

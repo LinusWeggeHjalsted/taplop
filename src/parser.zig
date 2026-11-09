@@ -563,10 +563,14 @@ pub const tips_sections = [_][]const u8{ "Metadata", "Tips" };
 // entries use sprite/footprint/layer keys. Metadata carries level metadata.
 // Layout is a raw char grid (no key-value pairs) so it has no key whitelist.
 
-const level_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
+/// The Metadata key set SHARED by the formats whose Metadata carries only
+/// the identity trio (level files add the gradient-override keys - see
+/// `level_file_metadata_keys`; hubs, missions, campaigns, player saves,
+/// the decoration registry, and settings all use exactly this set).
+const shared_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
 
 // A LEVEL file's Metadata adds the optional per-role gradient overrides
-// (hubs + the other file types sharing `level_metadata_keys` don't carry
+// (the formats sharing `shared_metadata_keys` don't carry
 // them). See DESIGN → Level Editor → Level theme.
 const level_file_metadata_keys = [_][]const u8{
     "file_format_version",  "name",                  "color_wheel_index",
@@ -662,7 +666,7 @@ pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.
 /// minus `character_code` (registry entries are prefabs, not placed by
 /// layout char). See DESIGN → Decorations & Footprint.
 pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &shared_metadata_keys },
     .{ "Decorations", &decoration_registry_decorations_keys },
 });
 
@@ -728,7 +732,7 @@ const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_comb
 const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "context", "ctrl", "shift", "alt" };
 
 pub const settings_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys }, // Metadata keys are shared (file_format_version + name)
+    .{ "Metadata", &shared_metadata_keys }, // the shared identity trio - see shared_metadata_keys
     .{ "Audio", &settings_audio_keys },
     .{ "Display", &settings_display_keys },
     .{ "Gameplay", &settings_gameplay_keys },
@@ -752,7 +756,7 @@ const color_theme_gradient_keys = [_][]const u8{
 };
 
 pub const color_theme_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &shared_metadata_keys },
     .{ "GlobalColors", &color_theme_global_keys },
     .{ "Gradients", &color_theme_gradient_keys },
 });
@@ -800,7 +804,7 @@ pub const salvage_key_map = std.StaticStringMap([]const []const u8).initComptime
 const tips_tip_keys = [_][]const u8{"tip"};
 
 pub const tips_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &shared_metadata_keys },
     .{ "Tips", &tips_tip_keys },
 });
 
@@ -842,7 +846,7 @@ const save_clone_data_keys = [_][]const u8{
 const save_discovered_hubs_keys = [_][]const u8{"name"};
 
 pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &shared_metadata_keys },
     .{ "Info", &save_info_keys },
     .{ "DiscoveredHubs", &save_discovered_hubs_keys },
     .{ "UnlockedSkills", &save_unlocked_skills_keys },
@@ -864,7 +868,7 @@ pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComp
 // same per-section keys the save carries.
 
 pub const player_loadout_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &shared_metadata_keys },
     .{ "MainHandWeapon", &save_weapon_keys },
     .{ "OffHandWeapon", &save_weapon_keys },
     .{ "Amulet", &save_amulet_keys },
