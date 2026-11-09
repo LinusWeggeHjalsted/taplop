@@ -22,7 +22,7 @@ const Diagnostics = diagnostics_mod.Diagnostics;
 /// flag ORs in on top of this (any build, release included); web has no
 /// flag and stays off.
 pub const default_enabled = @import("build_info").dev_mode and
-    @import("builtin").os.tag != .emscripten;
+    @import("builtin").target.os.tag != .emscripten;
 
 // GL context identity, for the boot section. raylib links GL on every
 // native target (framework on mac, libGL on Linux, opengl32 on Windows), so

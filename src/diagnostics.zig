@@ -167,7 +167,7 @@ pub const Diagnostics = struct {
         self.appendUnchecked("ziglop diagnostics\n", .{});
         self.appendUnchecked("game_version {s}\n", .{@import("build_info").game_version});
         self.appendUnchecked("target {s}-{s}\n", .{
-            @tagName(@import("builtin").os.tag),
+            @tagName(@import("builtin").target.os.tag),
             @tagName(@import("builtin").cpu.arch),
         });
         self.appendUnchecked("window {d}x{d} points, framebuffer {d}x{d} pixels\n", .{

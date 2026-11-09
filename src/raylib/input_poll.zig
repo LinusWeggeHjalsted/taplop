@@ -226,7 +226,7 @@ const mac_key_mappings = [_]KeyMapping{
 /// the Command-as-Control entries. `max_events_per_frame` sizes the event
 /// buffer off this length.
 const key_mappings = shared_key_mappings ++
-    if (@import("builtin").os.tag == .macos) mac_key_mappings else &[_]KeyMapping{};
+    if (@import("builtin").target.os.tag == .macos) mac_key_mappings else &[_]KeyMapping{};
 
 const MouseMapping = struct {
     button: rl.MouseButton,

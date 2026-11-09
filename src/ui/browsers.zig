@@ -185,7 +185,7 @@ pub fn buildLoadSavePanel(
         button_color,
         null,
     );
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         try emitPanelButton(
             elements,
             allocator,
@@ -390,7 +390,7 @@ pub fn buildEditorBrowser(
     // bottom, between the Back and New buttons. Native has no button -
     // drop the extracted folder (or a STORE zip) into the persistent
     // missions/ dir by hand.
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         try emitPanelButton(
             elements,
             allocator,

@@ -456,7 +456,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // mid-frame re-boot would be a use-after-free of the old history, which
     // this frame holds references into. See game_zip.zig + DESIGN → File
     // System & IO → Web storage model.
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         game_zip.pollGameImportMarker(history);
     }
 

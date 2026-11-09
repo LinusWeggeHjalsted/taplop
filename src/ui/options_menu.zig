@@ -227,7 +227,7 @@ pub fn buildOptionsMenu(
     if (current_screen == .main_menu) {
         buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
         button_count += 1;
-        if (@import("builtin").os.tag != .emscripten) {
+        if (@import("builtin").target.os.tag != .emscripten) {
             buttons[button_count] = .{ .label = "Exit Game", .action = .exit_game };
             button_count += 1;
         }

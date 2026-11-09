@@ -276,7 +276,7 @@ fn buildSettingsControls(
     // applies at window creation, hence the restart note.
     {
         const row = settingsControlRowRect(content_x, content_width, rows_y_start, row_index);
-        const vsync_label = if (@import("builtin").os.tag == .emscripten)
+        const vsync_label = if (@import("builtin").target.os.tag == .emscripten)
             "VSync (always on in browser)"
         else
             "VSync (change requires restart)";

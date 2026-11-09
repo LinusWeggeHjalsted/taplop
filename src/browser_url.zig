@@ -24,7 +24,7 @@ const state = @import("state.zig");
 /// repo URL (the button is not emitted then either).
 pub fn handleRepoLinkClick(history: *state.GameStateHistory) void {
     if (build_info.repo_url.len == 0) return;
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         // '_blank' is spec-defined to create a NEW browsing context - it
         // can never navigate the game tab (which would kill the in-memory
         // session; the unsafe forms are `location = url` and '_self').

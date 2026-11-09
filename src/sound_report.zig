@@ -294,7 +294,7 @@ fn resolvePersistentPath(allocator: std.mem.Allocator) ![]u8 {
     }
     const home = std.c.getenv("HOME") orelse return error.HomeNotSet;
     const home_slice = std.mem.sliceTo(home, 0);
-    return switch (@import("builtin").os.tag) {
+    return switch (@import("builtin").target.os.tag) {
         .macos => try std.fmt.allocPrint(
             allocator,
             "{s}/Library/Application Support/ziglop",

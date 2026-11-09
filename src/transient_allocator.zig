@@ -18,7 +18,7 @@ const std = @import("std");
 /// The transient allocator. Native: page_allocator (no DebugAllocator
 /// tracking - these buffers are deliberately untracked and short-lived).
 /// Emscripten: c_allocator (emmalloc - see the file-level comment).
-pub const allocator: std.mem.Allocator = if (@import("builtin").os.tag == .emscripten)
+pub const allocator: std.mem.Allocator = if (@import("builtin").target.os.tag == .emscripten)
     std.heap.c_allocator
 else
     std.heap.page_allocator;

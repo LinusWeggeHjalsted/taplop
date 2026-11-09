@@ -957,7 +957,7 @@ pub const game_import_marker_path = ".game_import_marker";
 /// branch), so the extern is never linked outside web builds. `allocator`
 /// only backs the script-string formatting.
 pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, download_name: []const u8) void {
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         const script_body = std.fmt.allocPrint(
             allocator,
             "(function() {{" ++
@@ -988,7 +988,7 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, do
 /// is sanitized in JS (path-traversal + quote safety) - barebones allowlist.
 /// Static script (no per-call formatting), so no allocator needed.
 pub fn triggerBrowserUpload() void {
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         const script =
             "(function() {" ++
             "var input = document.createElement('input');" ++
@@ -1024,7 +1024,7 @@ pub fn triggerBrowserUpload() void {
 /// the editor browser never emits the button there, and the ctrl+I
 /// binding parses but no-ops (the skip_level discipline).
 pub fn triggerBrowserMissionUpload() void {
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         const script =
             "(function() {" ++
             "var input = document.createElement('input');" ++
@@ -1063,7 +1063,7 @@ pub fn triggerBrowserMissionUpload() void {
 /// no-op (comptime-dead branch) - the main-menu button that triggers this is
 /// web-only (the persistent-dir-path-null signal, the Export Game discipline).
 pub fn triggerBrowserGameUpload() void {
-    if (@import("builtin").os.tag == .emscripten) {
+    if (@import("builtin").target.os.tag == .emscripten) {
         const script =
             "(function() {" ++
             "var input = document.createElement('input');" ++

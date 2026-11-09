@@ -615,7 +615,7 @@ pub const RaylibBackend = struct {
         _: *RaylibBackend,
         settings: @import("../types.zig").Settings,
     ) u64 {
-        if (@import("builtin").os.tag == .emscripten) {
+        if (@import("builtin").target.os.tag == .emscripten) {
             // The browser paces rAF to the display refresh; render every call.
             if (settings.vsync) return 0;
             if (settings.render_fps_cap == 0) return 0;

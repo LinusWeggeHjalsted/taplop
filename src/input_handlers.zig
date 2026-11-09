@@ -1316,7 +1316,7 @@ pub fn handleAnytimeInput(
             // effect, the reset-to-defaults class: input handling never
             // replays, so no replay gate).
             .export_game => {
-                if (@import("builtin").os.tag != .emscripten) return;
+                if (@import("builtin").target.os.tag != .emscripten) return;
                 pushPlayerActionAndDrain(history, .export_game);
                 game_zip.exportGameFolder(history);
             },
@@ -1395,7 +1395,7 @@ pub fn handleAnytimeInput(
             // The comptime os gate is the defensive half for a future
             // keybind; the button half lives in the view.
             .exit_game => {
-                if (@import("builtin").os.tag != .emscripten) {
+                if (@import("builtin").target.os.tag != .emscripten) {
                     history.session.quit_requested = true;
                 }
             },
