@@ -27,6 +27,12 @@ saves/
 # relevant; kept for safety in case any old dumps linger in the tree.
 session_log_*.txt
 
+# Machine-derived asset-inventory reports (art/gradient/sound): all three
+# are local shopping lists, regenerated on demand by their scripts - none
+# tracked (the symmetric policy; the reports churn exactly when assets
+# land, which is noise in history, and regenerate cleanly anyway).
+art_report.md
+gradient_report.md
 sound_report.md
 
 # Dev scratch data dir (--data-dir ./scratch, README) - untracked by design

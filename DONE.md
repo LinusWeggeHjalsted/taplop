@@ -18803,3 +18803,13 @@ overrule:
 
 Closes the Post-Review → "Settled by the review" group; TODO items
 updated at their homes.
+
+## Report tracking settled: all three asset-inventory reports untracked
+
+Review m-1.2's asymmetry (sound_report.md ignored while art_report.md
++ gradient_report.md were tracked) settled by the owner: ALL THREE
+ignored. The reports are local shopping lists - machine-derived,
+regenerated on demand by their scripts, and they churn exactly when
+assets land, which is noise in history. art_report.md +
+gradient_report.md removed from the index; .gitignore now carries all
+three under one comment stating the symmetric policy.
