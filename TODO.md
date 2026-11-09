@@ -18,10 +18,10 @@ Test by running `zig build run` and clicking through.
 
 The 15-part review of the whole tree (docs, architecture, code, tests) is
 done: 0 Critical, 1 Major, 13 Minor, 11 Nit, 67 Highlights. Nothing was
-fixed in passing - every item below is dispositioned in PROJECTREVIEW.md
-(Part 15 has the registers + the full TODO-delta rationale). Sort these
-next session; one item each from the first two groups is a coherent
-commit unit.
+fixed in passing - every item is dispositioned in PROJECTREVIEW.md
+(Part 15 has the registers + the full TODO-delta rationale). ALL groups
+below are CLOSED (the review-response session(s) - DONE.md has each
+entry); only the campaign-editor riders remain, folded into that work.
 
 **Hardening (bugs + server-seam security; ~100 lines total):**
 - [x] Saturating `Materials.add` - DONE (see DONE.md, "Saturating
@@ -71,13 +71,19 @@ commit unit.
 - Settle the `start_hub` path shape (`data/campaigns/...` vs
       `campaigns/...`) in slice 2's design (PROJECTREVIEW Part 5 note).
 
-**Optional polish (nits, no urgency):** the DONE.md generated header
-index (the one archiving improvement), a DESIGN section index, the
-settings key-map naming (`level_metadata_keys` borrowed for settings),
-the menus.zig five-surface split, the small dedup helpers (tile-set
-construction ×4, drag-threshold compare ×6), the report-tracking
-asymmetry (sound_report.md ignored vs siblings tracked), README's
-"early stages" line (demo-milestone rewrite).
+**Optional polish (all seven DONE - the review-response sessions):**
+- [x] DONE.md generated header index + DESIGN section index - DONE
+      (scripts/doc_index.sh - see DONE.md, "Generated section indexes").
+- [x] Settings key-map naming - DONE (shared_metadata_keys - see DONE.md,
+      "shared_metadata_keys").
+- [x] menus.zig five-surface split - DONE (see DONE.md, "menus.zig split
+      into per-surface files").
+- [x] Small dedup helpers - DONE (pointerBeyondThreshold +
+      buildCollisionSets - see DONE.md, "The two small dedup helpers").
+- [x] Report-tracking asymmetry - DONE: all three reports untracked (see
+      DONE.md, "Report tracking settled").
+- [x] README status line - DONE ("working towards full official release";
+      the fuller rewrite waits for the demo milestone).
 
 ## NEXT UP (not ordered - pick what progresses)
 
