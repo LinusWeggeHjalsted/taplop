@@ -214,7 +214,8 @@ pub fn build(b: *std.Build) void {
     // step (so it runs before linking).
     if (target.result.os.tag == .linux) {
         const strip_so = b.addSystemCommand(&.{
-            "sh", "-c",
+            "sh",
+            "-c",
             "ar t \"$1\" | grep '\\.so$' | while read f; do \"$0\" ar d \"$1\" \"$f\"; done",
         });
         strip_so.addArg(b.graph.zig_exe); // $0 - zig executable (for `zig ar d`)
@@ -279,20 +280,20 @@ pub fn build(b: *std.Build) void {
         // render batch; we drive swapScreenBuffer + pollInputEvents ourselves
         // from the emscripten main-loop callback (no asyncify).
         .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL " ++
-        // Web audio onset latency (the measured diagnosis - see DESIGN →
-        // Platform Seam → Web audio onset latency): raylib's default device
-        // period (0) is overridden by miniaudio's webaudio backend to 33ms ->
-        // a 2048-frame (~43ms @ 48kHz) ScriptProcessorNode buffer, doubling
-        // the node's inherent ~1-2-buffer fill-ahead lead on every sound's
-        // onset. 1024 frames (~21ms) halves that inherent lead and was
-        // measured serviceable at 60fps (AudioContext clock ratio 1.000 -
-        // the main thread services a fill every ~21ms against ~16.7ms frame
-        // gaps; 512/~10.7ms would chronically starve). The DOMINANT web
-        // onset delay - the queue BANKED by long main-thread blocks - is
-        // handled by web.zig's queue watchdog, not by this knob. Native
-        // keeps raylib's default (a real audio thread, 10ms period, instant
-        // by the same measurement).
-        "-DAUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024",
+            // Web audio onset latency (the measured diagnosis - see DESIGN →
+            // Platform Seam → Web audio onset latency): raylib's default device
+            // period (0) is overridden by miniaudio's webaudio backend to 33ms ->
+            // a 2048-frame (~43ms @ 48kHz) ScriptProcessorNode buffer, doubling
+            // the node's inherent ~1-2-buffer fill-ahead lead on every sound's
+            // onset. 1024 frames (~21ms) halves that inherent lead and was
+            // measured serviceable at 60fps (AudioContext clock ratio 1.000 -
+            // the main thread services a fill every ~21ms against ~16.7ms frame
+            // gaps; 512/~10.7ms would chronically starve). The DOMINANT web
+            // onset delay - the queue BANKED by long main-thread blocks - is
+            // handled by web.zig's queue watchdog, not by this knob. Native
+            // keeps raylib's default (a real audio thread, 10ms period, instant
+            // by the same measurement).
+            "-DAUDIO_DEVICE_PERIOD_SIZE_IN_FRAMES=1024",
     });
     const raylib_web = raylib_web_dep.module("raylib");
     const raylib_web_artifact = raylib_web_dep.artifact("raylib");
@@ -545,34 +546,35 @@ fn stripGitSuffix(url: []const u8) []const u8 {
 /// builds against (aarch64 needs macOS 11), and NSHighResolutionCapable so
 /// retina rendering isn't forced to 1x. No icon yet (no suitable art).
 fn appBundleInfoPlist() []const u8 {
-    return \\<?xml version="1.0" encoding="UTF-8"?>
-\\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-\\<plist version="1.0">
-\\<dict>
-\\    <key>CFBundleDevelopmentRegion</key>
-\\    <string>en</string>
-\\    <key>CFBundleExecutable</key>
-\\    <string>ziglop</string>
-\\    <key>CFBundleIdentifier</key>
-\\    <string>com.linusweggehjalsted.ziglop</string>
-\\    <key>CFBundleInfoDictionaryVersion</key>
-\\    <string>6.0</string>
-\\    <key>CFBundleName</key>
-\\    <string>Ziglop</string>
-\\    <key>CFBundlePackageType</key>
-\\    <string>APPL</string>
-\\    <key>CFBundleShortVersionString</key>
-\\    <string>0.0.0</string>
-\\    <key>CFBundleVersion</key>
-\\    <string>0.0.0</string>
-\\    <key>LSMinimumSystemVersion</key>
-\\    <string>11.0</string>
-\\    <key>NSHighResolutionCapable</key>
-\\    <true/>
-\\    <key>NSPrincipalClass</key>
-\\    <string>NSApplication</string>
-\\</dict>
-\\</plist>
+    return
+    \\<?xml version="1.0" encoding="UTF-8"?>
+    \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    \\<plist version="1.0">
+    \\<dict>
+    \\    <key>CFBundleDevelopmentRegion</key>
+    \\    <string>en</string>
+    \\    <key>CFBundleExecutable</key>
+    \\    <string>ziglop</string>
+    \\    <key>CFBundleIdentifier</key>
+    \\    <string>com.linusweggehjalsted.ziglop</string>
+    \\    <key>CFBundleInfoDictionaryVersion</key>
+    \\    <string>6.0</string>
+    \\    <key>CFBundleName</key>
+    \\    <string>Ziglop</string>
+    \\    <key>CFBundlePackageType</key>
+    \\    <string>APPL</string>
+    \\    <key>CFBundleShortVersionString</key>
+    \\    <string>0.0.0</string>
+    \\    <key>CFBundleVersion</key>
+    \\    <string>0.0.0</string>
+    \\    <key>LSMinimumSystemVersion</key>
+    \\    <string>11.0</string>
+    \\    <key>NSHighResolutionCapable</key>
+    \\    <true/>
+    \\    <key>NSPrincipalClass</key>
+    \\    <string>NSApplication</string>
+    \\</dict>
+    \\</plist>
     ;
 }
 
@@ -687,10 +689,12 @@ fn generateTestRootFile(b: *std.Build) void {
     }.lessThan);
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
-    appendStr(b, &content,
+    appendStr(
+        b,
+        &content,
         "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
-        "// Imports every src/*.zig so their tests are discovered automatically.\n" ++
-        "test {\n",
+            "// Imports every src/*.zig so their tests are discovered automatically.\n" ++
+            "test {\n",
     );
     for (paths.items) |path| {
         appendStr(b, &content, b.fmt("    _ = @import(\"{s}\");\n", .{path}));
@@ -790,8 +794,7 @@ fn generateAssetsFile(b: *std.Build) *std.Build.Module {
     }.lessThan);
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
-    appendStr(b, &content,
-        "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
+    appendStr(b, &content, "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
         "// Embeds every file under data/ and assets/ (plus the root\n" ++
         "// LICENSE-*.txt files) as @embedFile bytes, keyed by\n" ++
         "// project-root-relative path. See DESIGN → File System & IO.\n" ++
@@ -867,8 +870,7 @@ fn generateSpriteMetadataFile(b: *std.Build) *std.Build.Module {
     }.lessThan);
 
     var content: std.ArrayListUnmanaged(u8) = .empty;
-    appendStr(b, &content,
-        "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
+    appendStr(b, &content, "// AUTO-GENERATED by build.zig - do not edit manually.\n" ++
         "// Pixel dimensions (from each PNG's IHDR) for every assets/**/*.png,\n" ++
         "// keyed by sprite id (asset path minus `assets/` prefix and `.png`\n" ++
         "// suffix). Values are `\"w h\"` strings. See DESIGN → Decorations &\n" ++

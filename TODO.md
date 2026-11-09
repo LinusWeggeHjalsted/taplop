@@ -50,9 +50,7 @@ commit unit.
 - [x] Comment-drift cleanup pass - DONE (see DONE.md, "Comment-drift
       cleanup pass - the full catalog swept (review m-2.2/m-3.2/m-4.2/
       m-4.3/m-5.3/m-6.1)").
-- [ ] The fmt decision: adopt `zig fmt --check` as a commit checkpoint
-      (10 files currently fail it; the fix is one command) or record
-      not-a-gate in AGENTS.
+- [x] The fmt decision - DONE: adopted (see DONE.md, "fmt gate adopted").
 - [ ] Optional AGENTS line: "when moving/renaming a fn, its /// moves
       with it" - the one-sentence version of the drift lesson.
 

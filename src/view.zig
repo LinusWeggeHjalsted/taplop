@@ -5321,7 +5321,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
             // One level: a real editor always has at least one (open_editor
             // requires a level_1; the tabs row underflows on zero levels -
             // buildEditorLevelTabs' `levels.len - 1`).
-            .editor = types.Editor{ .levels = &.{types.EditorLevel{ .level_end = .{ .x = 1, .y = 0 } } } },
+            .editor = types.Editor{ .levels = &.{types.EditorLevel{ .level_end = .{ .x = 1, .y = 0 } }} },
             .replay_viewer = null,
             .campaign = null,
             .mission = null,

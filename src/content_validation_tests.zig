@@ -66,7 +66,7 @@ fn validateConfigFile(
         // files through the same file source - a shipped campaign with a
         // dangling edge or unplaced start hub fails HERE (the integrity
         // contract over real content).
-        const campaign_dir = path[0 .. std.mem.lastIndexOfScalar(u8, path, '/').?];
+        const campaign_dir = path[0..std.mem.lastIndexOfScalar(u8, path, '/').?];
         const campaign = try loaders.loadCampaign(sections, campaign_dir, allocator, warnings);
         loaders.checkCampaignGraph(campaign, campaign_dir, file_source, allocator, warnings);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);

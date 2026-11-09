@@ -4948,9 +4948,9 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
             .definitions = definitions,
         };
         try census.expectContentReachable(arena.allocator(), panel, &.{
-            "Metadata", "- Mission", "Name", "- Current level", "Name",
-            "World colors", "0", "Enemy colors", "1", "Auto",
-            "Player colors", "2", "Auto",
+            "Metadata",      "- Mission", "Name",         "- Current level", "Name",
+            "World colors",  "0",         "Enemy colors", "1",               "Auto",
+            "Player colors", "2",         "Auto",
         });
         const max_scroll = try census.maxScroll(panel);
         try std.testing.expect(max_scroll > 0);

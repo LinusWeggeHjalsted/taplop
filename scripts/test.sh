@@ -72,6 +72,16 @@ if [ -n "$dash_summary" ]; then
     printf '[dash sweep, advisory] %s - run scripts/dash_sweep.sh before committing\n' "$dash_summary"
 fi
 
+# zig fmt advisory (non-fatal): same posture as the dash sweep - this script
+# is the commit checkpoint, so formatting divergence surfaces here, but a
+# formatting nit never fails a test run. The fix is one command
+# (`zig fmt <file>`); see AGENTS -> Commit policy.
+fmt_dirty="$(zig fmt --check $(git ls-files '*.zig') 2>/dev/null || true)"
+if [ -n "$fmt_dirty" ]; then
+    fmt_count="$(printf '%s\n' "$fmt_dirty" | wc -l)"
+    printf '[zig fmt, advisory] %s file(s) not canonically formatted - run zig fmt before committing\n' "$fmt_count"
+fi
+
 if [ -n "$failures" ]; then
     printf '%s\n' "--- failures ---"
     printf '%s\n' "$failures"

@@ -160,6 +160,14 @@ session + the ButtonPayload migration):
   The checkoff commit also COLLAPSES the slice's TODO block to its one-
   liner - the DONE entry is the detailed record (see Documentation,
   the lifecycle rule).
+- **`zig fmt --check` is the formatting commit checkpoint.** Run it before
+  committing (the fix is one command: `zig fmt <file>`); `scripts/test.sh`
+  surfaces findings as a non-fatal advisory, same posture as the dash
+  sweep. Adopted at the Post-Review hygiene session (10 files had diverged
+  by then - see DONE.md, "fmt gate adopted"). The formatter occasionally
+  produces judgment-call output (its multiline-literal table alignment);
+  the escape hatch is restructuring the line (e.g. one element per line),
+  not skipping the gate.
 - **Commit locally without pushing.** Local commits are free; pushing is a
   separate step. Don't hold uncommitted work across sessions - 27 files of
   uncommitted changes across multiple sessions makes it impossible to tell

@@ -595,4 +595,3 @@ test "pollGameImportMarker: consumes the marker + staging zip, sets the re-boot 
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
     try std.testing.expect(history.session.pending_import_reboot);
 }
-

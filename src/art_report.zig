@@ -58,7 +58,7 @@ const manual_notes = [_][]const u8{
     \\flipped); a future `ui/icon_redo` replaces it, at which point this note
     \\and the code alias both retire. Until then `ui/icon_redo` correctly does
     \\not appear as consumed.
-,
+    ,
 };
 
 pub fn main() !void {

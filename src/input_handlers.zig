@@ -5309,7 +5309,9 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
 
         var ridden: ?[]const u8 = null;
         for (history.event_history.items) |event| switch (event) {
-            .meta_event => |meta| if (meta == .start_mission) { ridden = meta.start_mission.end_hub_id; },
+            .meta_event => |meta| if (meta == .start_mission) {
+                ridden = meta.start_mission.end_hub_id;
+            },
             else => {},
         };
         try std.testing.expect(ridden != null);
@@ -5343,7 +5345,9 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
 
         var passed: ?[]const u8 = "sentinel";
         for (history.event_history.items) |event| switch (event) {
-            .meta_event => |meta| if (meta == .start_mission) { passed = meta.start_mission.end_hub_id; },
+            .meta_event => |meta| if (meta == .start_mission) {
+                passed = meta.start_mission.end_hub_id;
+            },
             else => {},
         };
         try std.testing.expect(passed == null);

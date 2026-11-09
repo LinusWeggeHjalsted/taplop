@@ -730,25 +730,29 @@ pub fn handleMetaEvent(
                                     };
                                 }
                             }
-                            pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
-                                // The override (the exit's destination) or
-                                // the entering hub - the campaign edge or
-                                // the dream fallback.
-                                .hub_id = mission.end_hub orelse current.player_data.current_hub,
-                                .completed_mission = .{
-                                    .uuid = mission.uuid,
-                                    .name = mission.name,
-                                    .path = mission.path,
-                                    .turns_spent = turns,
-                                    .converted_materials = converted,
-                                    .harvested_materials = harvested,
-                                    .tiles_moved = mission.tiles_moved,
-                                    .damage_dealt = mission.damage_dealt,
-                                    .damage_taken = mission.damage_taken,
-                                    .skills_used = mission.skills_used,
-                                    .overwrite_offered = overwrite_offered,
+                            pushEvents(current, &.{.{
+                                .meta_event = .{
+                                    .end_mission = .{
+                                        // The override (the exit's destination) or
+                                        // the entering hub - the campaign edge or
+                                        // the dream fallback.
+                                        .hub_id = mission.end_hub orelse current.player_data.current_hub,
+                                        .completed_mission = .{
+                                            .uuid = mission.uuid,
+                                            .name = mission.name,
+                                            .path = mission.path,
+                                            .turns_spent = turns,
+                                            .converted_materials = converted,
+                                            .harvested_materials = harvested,
+                                            .tiles_moved = mission.tiles_moved,
+                                            .damage_dealt = mission.damage_dealt,
+                                            .damage_taken = mission.damage_taken,
+                                            .skills_used = mission.skills_used,
+                                            .overwrite_offered = overwrite_offered,
+                                        },
+                                    },
                                 },
-                            } } }}, allocator);
+                            }}, allocator);
                         }
                     }
                 },
@@ -758,13 +762,17 @@ pub fn handleMetaEvent(
                 // progress resets.
                 .restart_mission => {
                     if (current.mission) |mission| {
-                        pushEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
-                            .mission_path = mission.path,
-                            // Carry the return destination through the
-                            // restart (a re-completed campaign mission
-                            // still ends at its edge's destination).
-                            .end_hub_id = mission.end_hub,
-                        } } }}, allocator);
+                        pushEvents(current, &.{.{
+                            .meta_event = .{
+                                .start_mission = .{
+                                    .mission_path = mission.path,
+                                    // Carry the return destination through the
+                                    // restart (a re-completed campaign mission
+                                    // still ends at its edge's destination).
+                                    .end_hub_id = mission.end_hub,
+                                },
+                            },
+                        }}, allocator);
                     }
                 },
                 // Abandon the mission: return to the hub the player

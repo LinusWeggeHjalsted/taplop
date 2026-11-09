@@ -18738,3 +18738,25 @@ Optional-polish item).
 
 Closes review items m-2.2, m-3.2, m-4.2, m-4.3, m-5.3, m-6.1 and
 TODO → Post-Review → Hygiene item 1.
+
+## fmt gate adopted
+
+Decision settled (TODO → Post-Review → Hygiene): `zig fmt --check` is
+the formatting commit checkpoint. AGENTS → Commit policy carries the
+rule; `scripts/test.sh` surfaces divergence as a non-fatal advisory,
+the same posture as the dash sweep (this script is the canonical
+pre-commit verification, but a formatting nit never fails a test run).
+Adopting meant normalizing the tree's accumulated divergence - 10
+files at review time (8 by this session's end, two fixed incidentally
+by its own edits): token spacing (`path[0 .. x]` → `path[0..x]`), a
+stray column-0 comma re-indented, a trailing blank line, brace reflow
+of long one-line literals (view.zig), the meta.zig triple-`.{`
+opening lines reflowed one-per-line (~58 lines, mostly re-indent),
+four single-line `if` bodies in switch prongs expanded (the AGENTS
+compile-gotcha's formatting cousin), and the multiline-literal table
+alignments (editor_inspector's label/value table - genuinely nicer).
+The one judgment call: fmt's table-alignment heuristic PADDED
+build.zig's `"sh", "-c",` tuple ~77 columns apart (it mistakes a
+3-element tuple for a table) - resolved by restructuring the line to
+one element per line, which fmt respects; the recorded escape hatch
+for silly fmt output is restructuring, never skipping the gate.
