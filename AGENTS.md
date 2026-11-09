@@ -53,6 +53,12 @@ Two hygiene rules that keep the above true in practice:
   `art_report.zig`, and `gradient_report.zig` are the pattern: new content appears automatically and
   a lie is structurally impossible. Hand-maintained duplicates of
   machine-derivable facts are drift by definition.
+- **DESIGN.md + DONE.md carry generated section indexes** (the doc-side
+  instance of the rule above): `scripts/doc_index.sh` regenerates the
+  marker-bounded index block at the top of each (DESIGN: sections +
+  subsections nested; DONE: flat, one line per archive unit; anchors, no
+  line numbers - nothing goes stale). Run it in the SAME commit that
+  adds, renames, or removes a `##`/`###` heading in either file.
 
 > **Collaboration style** (small steps, pause at checkpoints, surface
 > tradeoffs, clarifying questions, stay inside the cwd) lives in
