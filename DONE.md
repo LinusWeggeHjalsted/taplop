@@ -18813,3 +18813,11 @@ regenerated on demand by their scripts, and they churn exactly when
 assets land, which is noise in history. art_report.md +
 gradient_report.md removed from the index; .gitignore now carries all
 three under one comment stating the symmetric policy.
+
+## README status line
+
+"in early stages of development" replaced with "working towards full
+official release" (review n-1.6 - the old line undersold the state:
+end-to-end core loop natively + on web, 44 skills, a working mission
+editor, replay + crash-dump machinery). The fuller rewrite still
+waits for the demo milestone alongside the planned taplop rename.

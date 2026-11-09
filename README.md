@@ -1,4 +1,4 @@
-taplop is a tactical turnbased gridbased rpg in early stages of development
+taplop is a tactical turnbased gridbased rpg working towards full official release
 
 Zig 0.16 rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop
 
