@@ -2603,11 +2603,11 @@ test "text field focus-on-click: press + release over a field focuses it; click 
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // The previous frame's view: the inspector with its two text fields.
     var elements: ui.UiElementList = .empty;

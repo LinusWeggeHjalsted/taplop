@@ -642,7 +642,7 @@ fn getSalvageDefinition(
     salvage_definitions: SalvageDefinitions,
 ) SalvageDefinition {
     return switch (item) {
-        .weapon => |weapon| salvage_definitions.weapon[@intFromEnum(weapon.weapon_type)],
+        .weapon => |weapon| salvage_definitions.weapon[@backingInt(weapon.weapon_type)],
         .amulet => salvage_definitions.amulet,
         .coat => salvage_definitions.coat,
         .gloves => salvage_definitions.gloves,
@@ -711,7 +711,7 @@ test "computeSalvageValue sword" {
         .weapon = blk: {
             var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
             for (&weapon_definitions) |*entry| entry.* = .{ .splits = &.{} };
-            weapon_definitions[@intFromEnum(types.WeaponType.sword)] = .{
+            weapon_definitions[@backingInt(types.WeaponType.sword)] = .{
                 .splits = &.{
                     .{ .material = .wood, .parts = 1 },
                     .{ .material = .metal, .parts = 3 },

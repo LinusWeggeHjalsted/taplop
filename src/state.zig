@@ -38,7 +38,7 @@ const Settings = types.Settings;
 const WeaponType = types.WeaponType;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 
-const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(WeaponType).@"enum".field_names.len;
 const PlayerData = types.PlayerData;
 const Camera = types.Camera;
 const ColorThemeDefinitions = types.ColorThemeDefinitions;
@@ -349,7 +349,7 @@ pub const SessionState = struct {
     /// enqueueing a second write). Fired by `frame()` when the deadline
     /// elapses (gated `!replaying` - but `frame()` is the live path, so the
     /// gate is automatic). See DESIGN → Input.
-    pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
+    pending_writes: [max_pending_writes]?PendingWrite = @splat(null),
 
     /// Pending sound cues (base + optional layer) queued by event
     /// handlers (gated `!replaying`) and input handlers during a frame.
@@ -1013,12 +1013,12 @@ pub const GameStateHistory = struct {
             .history_arena = std.heap.ArenaAllocator.init(allocator),
             .initial_state = initial_state,
             .initial_arena = std.heap.ArenaAllocator.init(allocator),
-            .event_history = .{ .items = &.{}, .capacity = 0 },
-            .checkpoints = .{null} ** checkpoint_count,
+            .event_history = .empty,
+            .checkpoints = @splat(null),
             .checkpoint_ring_index = 0,
-            .snapshots = .{null} ** (snapshot_count * 2),
+            .snapshots = @splat(null),
             .snapshot_ring_index = 0,
-            .idle_points = .{ .items = &.{}, .capacity = 0 },
+            .idle_points = .empty,
             .current_idle_index = 0,
             .current_event_index = 0,
             .current_state = initial_state,
@@ -3133,11 +3133,11 @@ fn historyForTimelineTest(allocator: std.mem.Allocator) GameStateHistory {
     var history: GameStateHistory = undefined;
     history.backing_allocator = allocator;
     history.history_arena = std.heap.ArenaAllocator.init(allocator);
-    history.event_history = .{ .items = &.{}, .capacity = 0 };
-    history.idle_points = .{ .items = &.{}, .capacity = 0 };
+    history.event_history = .empty;
+    history.idle_points = .empty;
     history.reconstruction_cache = .empty;
-    history.snapshots = .{null} ** (snapshot_count * 2);
-    history.checkpoints = .{null} ** checkpoint_count;
+    history.snapshots = @splat(null);
+    history.checkpoints = @splat(null);
     history.snapshot_ring_index = 0;
     history.checkpoint_ring_index = 0;
 

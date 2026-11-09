@@ -1183,11 +1183,11 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const levels = [_]types.EditorLevel{
         .{ .name = "The Crossing" },
@@ -1315,9 +1315,9 @@ test "buildEditorPrimaryActions: Test + Validate icon buttons flush top-right" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
 
     var elements: UiElementList = .empty;
@@ -1356,11 +1356,11 @@ test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the 
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Eight levels with very long names: each tab is far wider than a
     // third of the region, so the window shows exactly ONE tab and the
@@ -1468,7 +1468,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         .enemy_gradient = .{ .colors = .{ black, black, enemy_two, black, black, black } },
         .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     var entity_template: types.Entity = .{};
     entity_template.sprite = "skeleton";
@@ -1682,7 +1682,7 @@ test "buildEditorBottomBar: entity + decoration cells render the full scene comp
         .enemy_gradient = .{ .colors = .{ black, enemy_one, enemy_two, black, enemy_four, black } },
         .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // A layered, dual-wielding enemy - the composed case.
     var skeleton: types.Entity = .{};
@@ -1888,11 +1888,11 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton" }};
     const editor: types.Editor = .{ .entity_types = &entity_types };
@@ -2046,11 +2046,11 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // 12 decorations → window of 8, max offset 4. All others sized 1.
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton" }};
@@ -2206,16 +2206,16 @@ test "buildEditorBottomBar: a team-0 entity tool cell tints with the player grad
 
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
     const player_two: types.Color = .{ .r = 22, .g = 22, .b = 22 };
-    var player_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    var player_gradient: [types.gradient_color_count]types.Color = @splat(black);
     player_gradient[2] = player_two;
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = player_gradient },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // A player-team HELPER: team 0 with its own color_index (2) - the cell
     // graphic tints player-gradient[2], not the enemy gradient (DESIGN →

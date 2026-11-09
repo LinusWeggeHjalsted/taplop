@@ -20,7 +20,7 @@ const Entity = types.Entity;
 
 const SkillId = types.SkillId;
 const utility_skill_count = types.utility_skill_count;
-const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 
 const pushEvents = event_push.pushEvents;
 const cancelPreparedSkill = shared.cancelPreparedSkill;
@@ -150,11 +150,11 @@ fn transferWeaponCooldowns(
     weapon_type_definitions: *const [weapon_type_count]types.WeaponTypeDefinition,
 ) void {
     const new_w = new_weapon orelse return;
-    const new_def = &weapon_type_definitions[@intFromEnum(new_w.weapon_type)];
+    const new_def = &weapon_type_definitions[@backingInt(new_w.weapon_type)];
     const new_skills = [_]types.SkillId{ new_def.skill_1, new_def.skill_2, new_def.skill_3 };
 
     const old_skills: [3]?types.SkillId = if (old_weapon) |old_w| blk: {
-        const old_def = &weapon_type_definitions[@intFromEnum(old_w.weapon_type)];
+        const old_def = &weapon_type_definitions[@backingInt(old_w.weapon_type)];
         break :blk .{ old_def.skill_1, old_def.skill_2, old_def.skill_3 };
     } else .{ null, null, null };
 

@@ -261,7 +261,7 @@ test "measurement seam: non-ASCII glyphs measure via their real advances" {
     };
     const metrics = FontMetrics{
         .base_size = 100,
-        .advances = [_]i32{50} ** 95,
+        .advances = @as([95]i32, @splat(50)),
         .non_ascii = &non_ascii,
     };
     const font_size: i32 = 100;
@@ -282,7 +282,7 @@ test "measurement seam: non-ASCII glyphs measure via their real advances" {
         metrics.measureSpanWidth(text("\u{2013}"), font_size),
     );
     // Empty non_ascii (the default-font fallback) keeps the 0.5em behavior.
-    const ascii_only = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const ascii_only = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     try std.testing.expectEqual(
         @as(i32, 55),
         ascii_only.measureSpanWidth(text("\u{2014}"), font_size),
@@ -306,7 +306,7 @@ test "measurement seam: row width sums spans, bold equals plain" {
     // With the shared per-glyph spacing (font_size/20 = 5px), each glyph
     // measures 50 + 5 = 55px - reproduces raylib's DrawTextEx cursor advance
     // so the wrapping/layout tests below stay deterministic and font-agnostic.
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const font_size: i32 = 100;
     // Plain: 4 glyphs * (50 advance + 5 spacing) = 220.
     try std.testing.expectEqual(@as(i32, 220), metrics.measureSpanWidth(text("abcd"), font_size));
@@ -1376,7 +1376,7 @@ pub const WrappedRow = struct {
 
 test "wrapRow breaks at spaces and drops the break space" {
     const font_size: i32 = 100; // 1 char = 55px (50 advance + 5 spacing)
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const row: TooltipRow = &.{text("aa bb cc")};
 
     // content_width 310 fits "aa bb" (110+55+110=275) but not a third word.
@@ -1403,7 +1403,7 @@ test "wrapRow: newline is a hard line break, the character dropped" {
     // hard break and never emit it inside a span; '\r' (Windows line
     // endings) is handled the same way.
     const font_size: i32 = 100; // 1 char = 55px (50 advance + 5 spacing)
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const row: TooltipRow = &.{text("aa bb\ncc dd\r\n\nee")};
 
     // content_width wide enough that no WIDTH-based break ever fires -
@@ -1437,7 +1437,7 @@ test "wrapRow breaks on '/' for paths" {
     // 380 fits "aa/bb/" (6 glyphs = 330) but not a third segment, so it
     // wraps at a '/' and the first line keeps the trailing slash.
     const font_size: i32 = 100;
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const row: TooltipRow = &.{text("aa/bb/cc")};
 
     const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 380);
@@ -1458,7 +1458,7 @@ test "wrapRow character-wraps a token wider than the content width" {
     // font_size 100 → 1 char = 55px. content_width 240 fits 4 chars.
     // "abcdefgh" is 8 chars = 440px > 240, no spaces or slashes → char-wrap.
     const font_size: i32 = 100;
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const row: TooltipRow = &.{text("abcdefgh")};
 
     const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 240);
@@ -1480,7 +1480,7 @@ test "wrapRow character-wraps a token wider than the content width" {
 test "wrapRow: normal space wrapping still works" {
     // Regression: the existing space-based wrapping behavior is unchanged.
     const font_size: i32 = 100;
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const row: TooltipRow = &.{text("aa bb cc")};
 
     const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 310);

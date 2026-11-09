@@ -58,7 +58,7 @@ pub fn optionsFor(
     allocator: std.mem.Allocator,
 ) []const AiOption {
     if (frame.in_progress.contains(skill_id)) return &.{};
-    if (frame.results[@intFromEnum(skill_id)]) |options| return options;
+    if (frame.results[@backingInt(skill_id)]) |options| return options;
     const skill = lookups.getSkillDefinition(skill_id) orelse return &.{};
 
     frame.in_progress.insert(skill_id);
@@ -70,7 +70,7 @@ pub fn optionsFor(
         frame,
     );
     frame.in_progress.remove(skill_id);
-    frame.results[@intFromEnum(skill_id)] = options;
+    frame.results[@backingInt(skill_id)] = options;
     return options;
 }
 

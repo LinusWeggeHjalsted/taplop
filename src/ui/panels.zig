@@ -21,7 +21,7 @@ const Entity = types.Entity;
 const SkillId = types.SkillId;
 const GearSlot = types.GearSlot;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
-const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 const GameState = state.GameState;
 const Tooltip = ui_element.Tooltip;
 const TooltipRow = ui_element.TooltipRow;
@@ -939,11 +939,11 @@ test "buildInventoryPanel: item stat numbers in the icon corners, colored by the
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const bounds = Rectangle{
         .x = 0,
         .y = 0,
@@ -1193,11 +1193,11 @@ test "buildGearPanel: equipped items wear plain-lightest stat numbers, suppresse
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // The player's equipped gear: main-hand weapon (damage 5) + coat
     // (health 4, defense 2).
@@ -1332,11 +1332,11 @@ test "buildEntityInspectPanel: item stat numbers colored against the player's eq
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const weapon_types = testWeaponTypeDefinitions();
 
     // An enemy with a weapon (damage 6) and a coat (health 2, defense 3).
@@ -1490,11 +1490,11 @@ test "buildSkillsPanel: few skills - one row, slots + icons, no scrollbar" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     var scroll_offset: i32 = 5; // clamped to 0 (no overflow)
 
@@ -1535,11 +1535,11 @@ test "buildSkillsPanel: overflow - scrollbar present, only visible rows emitted,
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     var scroll_offset: i32 = 100; // over-scrolled: clamps to the max row
 
@@ -1599,11 +1599,11 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     var scroll_offset: i32 = 0;
     const bounds = Rectangle{
@@ -1658,11 +1658,11 @@ test "buildEntityInspectPanel: player entity emits skill + gear slots, read-only
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{enemy_color} ** 6 },
-        .player_gradient = .{ .colors = .{player_color} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(enemy_color) },
+        .player_gradient = .{ .colors = @splat(player_color) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const weapon_types = testWeaponTypeDefinitions();
 
     var entity: Entity = .{};
@@ -1740,11 +1740,11 @@ test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{enemy_color} ** 6 },
-        .player_gradient = .{ .colors = .{player_color} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(enemy_color) },
+        .player_gradient = .{ .colors = @splat(player_color) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const weapon_types = testWeaponTypeDefinitions();
 
     var entity: Entity = .{};
@@ -1814,11 +1814,11 @@ test "buildEntityInspectPanel: cooldown overlay + number when skill on cooldown"
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const weapon_types = testWeaponTypeDefinitions();
 
     var entity: Entity = .{};
@@ -1856,11 +1856,11 @@ test "buildEntityInspectPanel: active effects emit 128px icons" {
     const theme: types.ActiveColorTheme = .{
         .lightest = black,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const weapon_types = testWeaponTypeDefinitions();
 
     var entity: Entity = .{};

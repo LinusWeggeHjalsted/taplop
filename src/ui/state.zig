@@ -31,7 +31,7 @@ const TextEditState = text_input.TextEditState;
 pub const editor_footprint_grid_cell_limit: usize = 64;
 
 pub const editor_inspector_section_count: usize =
-    @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len;
+    @typeInfo(types.EditorInspectorSectionId).@"enum".field_names.len;
 
 pub const UiState = struct {
     /// Which content tab the open settings screen shows (Settings /
@@ -152,7 +152,7 @@ pub const UiState = struct {
     /// is the event; the draft is transient view state like a text
     /// buffer.
     editor_footprint_draft: [editor_footprint_grid_cell_limit]bool =
-        .{false} ** editor_footprint_grid_cell_limit,
+        @splat(false),
 
     /// Editor palette group collapse state: false = expanded, true =
     /// collapsed (header + "+" only, no type cells). Collapsed by DEFAULT
@@ -171,7 +171,7 @@ pub const UiState = struct {
     /// `editor_palette_collapsed`). Keyed by `EditorInspectorSectionId` -
     /// shared across the enemy + player contents.
     editor_inspector_section_expanded: [editor_inspector_section_count]bool =
-        .{false} ** editor_inspector_section_count,
+        @splat(false),
 
     /// Editor inspector: the player loadout inventory's selected slot (the
     /// Inventory section's detail rows insert below this slot's row).

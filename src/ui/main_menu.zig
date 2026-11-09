@@ -250,7 +250,7 @@ test "buildMainMenu: session verbs + mode entries only; Settings/Credits live in
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -354,7 +354,7 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -368,7 +368,7 @@ test "buildMainMenu: Import Game + the web storage disclaimer are web only (the 
         try buildMainMenu(&elements, allocator, metrics, screen, true, null, button_color);
         var import_button: ?Button = null;
         var found_outlined_title = false;
-        var found_disclaimer_lines = [_]bool{false} ** disclaimer_lines.len;
+        var found_disclaimer_lines = @as([disclaimer_lines.len]bool, @splat(false));
         for (elements.items) |element| switch (element) {
             .button => |b| {
                 if (b.action == .import_game) import_button = b;

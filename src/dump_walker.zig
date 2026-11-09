@@ -149,13 +149,13 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             switch (steps[0]) {
                 .index => dumpError(output, "{s} is a struct - address a field by name, not an index", .{@typeName(T)}),
                 .field => |name| {
-                    inline for (@typeInfo(T).@"struct".fields) |field| {
-                        if (std.mem.eql(u8, name, field.name)) {
-                            if (comptime isEmptyUnion(field.type)) {
-                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field.type)});
+                    inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+                        if (std.mem.eql(u8, name, field_name)) {
+                            if (comptime isEmptyUnion(field_type)) {
+                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field_type)});
                                 return;
                             }
-                            walk(output, indent, @field(value, field.name), steps[1..]);
+                            walk(output, indent, @field(value, field_name), steps[1..]);
                             return;
                         }
                     }
@@ -171,17 +171,17 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
             switch (steps[0]) {
                 .index => dumpError(output, "{s} is a union - address a tag by name, not an index", .{@typeName(T)}),
                 .field => |name| {
-                    inline for (@typeInfo(T).@"union".fields) |field| {
-                        if (std.mem.eql(u8, name, field.name)) {
-                            if (comptime isEmptyUnion(field.type)) {
-                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field.type)});
+                    inline for (@typeInfo(T).@"union".field_names, @typeInfo(T).@"union".field_types) |field_name, field_type| {
+                        if (std.mem.eql(u8, name, field_name)) {
+                            if (comptime isEmptyUnion(field_type)) {
+                                dumpError(output, "{s} is a union with no variants - nothing to address", .{@typeName(field_type)});
                                 return;
                             }
                             // The active-tag check MUST precede the payload
                             // read: accessing an inactive union field is
                             // undefined behavior (the compiler's own safety
                             // check would panic - the dump errors instead).
-                            if (!std.mem.eql(u8, @tagName(value), field.name)) {
+                            if (!std.mem.eql(u8, @tagName(value), field_name)) {
                                 dumpError(
                                     output,
                                     "{s} is .{s}, not .{s} - address the active tag",
@@ -189,14 +189,14 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
                                 );
                                 return;
                             }
-                            if (comptime field.type == void) {
+                            if (comptime field_type == void) {
                                 // A void variant: the tag IS the value -
                                 // addressing it echoes the tag.
                                 writeIndentation(output, indent);
                                 output.print(".{s}\n", .{name}) catch return;
                                 return;
                             }
-                            walk(output, indent, @field(value, field.name), steps[1..]);
+                            walk(output, indent, @field(value, field_name), steps[1..]);
                             return;
                         }
                     }
@@ -314,7 +314,7 @@ fn walk(output: *std.Io.Writer, indent: usize, value: anytype, steps: []const St
 /// recursion site guards with this before touching the value.
 fn isEmptyUnion(comptime T: type) bool {
     const info = @typeInfo(T);
-    return info == .@"union" and info.@"union".fields.len == 0;
+    return info == .@"union" and info.@"union".field_names.len == 0;
 }
 
 /// Render the value the path ADDRESSED (the path is exhausted): full
@@ -333,13 +333,13 @@ fn writeAddressed(output: *std.Io.Writer, indent: usize, value: anytype) void {
             // One level: each field as `name: <one-line summary>`. Nested
             // non-compact values appear as their type name - descend by
             // path for their contents.
-            inline for (@typeInfo(T).@"struct".fields) |field| {
+            inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
                 writeIndentation(output, indent);
-                output.print("{s}: ", .{field.name}) catch return;
-                if (comptime isEmptyUnion(field.type)) {
+                output.print("{s}: ", .{field_name}) catch return;
+                if (comptime isEmptyUnion(field_type)) {
                     output.writeAll("<uninhabited>") catch return;
                 } else {
-                    writeSummaryInline(output, @field(value, field.name));
+                    writeSummaryInline(output, @field(value, field_name));
                 }
                 output.writeAll("\n") catch return;
             }
@@ -485,13 +485,13 @@ fn writeCompactForm(output: *std.Io.Writer, value: anytype) void {
         },
         .@"struct" => {
             output.writeAll("{ ") catch return;
-            inline for (@typeInfo(T).@"struct".fields, 0..) |field, field_index| {
+            inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types, 0..) |field_name, field_type, field_index| {
                 if (field_index > 0) output.writeAll(", ") catch return;
-                output.print("{s}: ", .{field.name}) catch return;
-                if (comptime isEmptyUnion(field.type)) {
+                output.print("{s}: ", .{field_name}) catch return;
+                if (comptime isEmptyUnion(field_type)) {
                     output.writeAll("<uninhabited>") catch return;
                 } else {
-                    writeCompactForm(output, @field(value, field.name));
+                    writeCompactForm(output, @field(value, field_name));
                 }
             }
             output.writeAll(" }") catch return;
@@ -535,9 +535,9 @@ fn valueIsCompact(value: anytype) bool {
             },
         },
         .@"struct" => all_fields_compact: {
-            inline for (@typeInfo(T).@"struct".fields) |field| {
-                if (comptime isEmptyUnion(field.type)) continue;
-                if (!valueIsCompact(@field(value, field.name))) break :all_fields_compact false;
+            inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {
+                if (comptime isEmptyUnion(field_type)) continue;
+                if (!valueIsCompact(@field(value, field_name))) break :all_fields_compact false;
             }
             break :all_fields_compact true;
         },
@@ -562,18 +562,18 @@ fn dumpError(output: *std.Io.Writer, comptime format: []const u8, args: anytype)
 
 fn dumpErrorNoField(output: *std.Io.Writer, comptime T: type, wanted: []const u8) void {
     output.print("dump error: no field '{s}' on {s} - fields: ", .{ wanted, @typeName(T) }) catch return;
-    inline for (@typeInfo(T).@"struct".fields, 0..) |field, field_index| {
+    inline for (@typeInfo(T).@"struct".field_names, 0..) |field_name, field_index| {
         if (field_index > 0) output.writeAll(", ") catch return;
-        output.print("{s}", .{field.name}) catch return;
+        output.print("{s}", .{field_name}) catch return;
     }
     output.writeAll("\n") catch return;
 }
 
 fn dumpErrorNoTag(output: *std.Io.Writer, comptime T: type, wanted: []const u8) void {
     output.print("dump error: no tag '{s}' on {s} - tags: ", .{ wanted, @typeName(T) }) catch return;
-    inline for (@typeInfo(T).@"union".fields, 0..) |field, field_index| {
+    inline for (@typeInfo(T).@"union".field_names, 0..) |field_name, field_index| {
         if (field_index > 0) output.writeAll(", ") catch return;
-        output.print("{s}", .{field.name}) catch return;
+        output.print("{s}", .{field_name}) catch return;
     }
     output.writeAll("\n") catch return;
 }
@@ -615,7 +615,7 @@ const TestRoot = struct {
 
 fn testRoot() TestRoot {
     const few = [_]TestLeaf{ .{ .x = 1, .y = 2 }, .{ .x = 3, .y = 4 } };
-    const many = [_]TestLeaf{.{ .x = 0, .y = 0 }} ** 12;
+    const many = @as([12]TestLeaf, @splat(.{ .x = 0, .y = 0 }));
     return .{
         .title = "hello world",
         .mode = .on,
@@ -732,7 +732,7 @@ test "dump walker: unions descend by active tag; wrong tags error, not panic" {
 
 test "dump walker: slices render element-per-line with the cap + note" {
     var buffer: [8192]u8 = undefined;
-    const many = [_]TestLeaf{.{ .x = 0, .y = 0 }} ** 150;
+    const many = @as([150]TestLeaf, @splat(.{ .x = 0, .y = 0 }));
     const root = struct {
         many: []const TestLeaf = &many,
         empty: []const TestLeaf = &.{},

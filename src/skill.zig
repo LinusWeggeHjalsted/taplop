@@ -10,7 +10,7 @@ const Entity = types.Entity;
 const SkillId = types.SkillId;
 const SkillType = types.SkillType;
 
-const skill_id_count = @typeInfo(types.SkillId).@"enum".fields.len;
+const skill_id_count = @typeInfo(types.SkillId).@"enum".field_names.len;
 
 /// The pass-scoped AI evaluation frame - the ONE mechanism behind
 /// consultation-safe rating and its performance: within one
@@ -30,8 +30,8 @@ pub const EvalFrame = struct {
 
     pub fn empty() EvalFrame {
         return .{
-            .in_progress = std.enums.EnumSet(types.SkillId).initEmpty(),
-            .results = [_]?[]const AiOption{null} ** skill_id_count,
+            .in_progress = std.enums.EnumSet(types.SkillId).empty,
+            .results = @as([skill_id_count]?[]const AiOption, @splat(null)),
         };
     }
 };

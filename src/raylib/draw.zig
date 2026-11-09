@@ -336,7 +336,7 @@ pub fn drawWorldOverlay(
             // target mid-pass). See AGENTS → Animation.
             const drawn_font_size: f32 = @as(f32, @floatFromInt(ftext.font_size)) * world_scale;
             const spacing: f32 = drawn_font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
-            const text_z = backend.frame_arena.allocator().dupeZ(u8, ftext.text) catch return;
+            const text_z = backend.frame_arena.allocator().dupeSentinel(u8, ftext.text, 0) catch return;
             backend.text.drawOutlinedText(
                 text_z,
                 .{ .x = @floatFromInt(ftext.screen_position.x), .y = @floatFromInt(ftext.screen_position.y) },

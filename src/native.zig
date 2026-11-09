@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     // deinit would only report false positives.
     // Design: DESIGN → Memory & Budget → Session allocator.
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe)
+    const allocator = if (builtin.mode == .debug or builtin.mode == .safe)
         debug_allocator.allocator()
     else
         std.heap.c_allocator;

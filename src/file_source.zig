@@ -974,7 +974,7 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8, do
             .{ persistent_mount_path, path, download_name },
         ) catch @panic("failed to format download script");
         defer allocator.free(script_body);
-        const script = allocator.dupeZ(u8, script_body) catch @panic("failed to null-terminate download script");
+        const script = allocator.dupeSentinel(u8, script_body, 0) catch @panic("failed to null-terminate download script");
         defer allocator.free(script);
         emscripten_run_script(script);
     }

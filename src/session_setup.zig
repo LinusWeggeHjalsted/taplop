@@ -24,7 +24,7 @@ const WeaponType = types.WeaponType;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const ColorThemeDefinitions = types.ColorThemeDefinitions;
 
-pub const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+pub const weapon_type_count = @typeInfo(WeaponType).@"enum".field_names.len;
 
 /// Per-session mutable state that lives across frames, held by the platform
 /// driver. `history` is the undo/replay timeline; `previous_view_state` is the
@@ -302,10 +302,8 @@ pub fn loadWeaponTypeDefinitions(
     startup: *StartupMemory,
 ) [weapon_type_count]WeaponTypeDefinition {
     var definitions: [weapon_type_count]WeaponTypeDefinition = undefined;
-    const fields = @typeInfo(WeaponType).@"enum".fields;
-
-    inline for (fields, 0..) |field, index| {
-        const file_path = "data/weapon_types/" ++ field.name ++ ".txt";
+    inline for (@typeInfo(WeaponType).@"enum".field_names, 0..) |field_name, index| {
+        const file_path = "data/weapon_types/" ++ field_name ++ ".txt";
         definitions[index] = loadConfigWithFallback(
             WeaponTypeDefinition,
             file_source,

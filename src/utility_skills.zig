@@ -23,8 +23,8 @@ pub fn isUtilitySkill(skill_id: types.SkillId) bool {
 /// skill definitions are comptime-known, so new skills join automatically.
 pub const utility_skill_ids: []const types.SkillId = build: {
     var ids: []const types.SkillId = &.{};
-    for (std.meta.fields(types.SkillId)) |field| {
-        const skill_id: types.SkillId = @enumFromInt(field.value);
+    for (@typeInfo(types.SkillId).@"enum".field_names) |field_name| {
+        const skill_id: types.SkillId = @field(types.SkillId, field_name);
         if (isUtilitySkill(skill_id)) {
             ids = ids ++ [_]types.SkillId{skill_id};
         }

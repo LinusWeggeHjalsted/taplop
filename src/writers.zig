@@ -916,7 +916,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
         }},
         .inventory = .{
             .slots = blk: {
-                var slots: [types.inventory_slot_count]?types.Item = .{null} ** types.inventory_slot_count;
+                var slots: [types.inventory_slot_count]?types.Item = @splat(null);
                 slots[0] = .{ .weapon = .{
                     .name = "Inventory Dagger",
                     .weapon_type = .dagger,
@@ -1152,7 +1152,7 @@ const editor_write_fixture: types.Editor = .{
             .main_hand_weapon = .{ .name = "Arc Sword", .weapon_type = .sword, .weapon_damage = 3 },
             .coat = .{ .name = "Arc Coat", .defense_bonus = 1, .health_bonus = 2 },
             .equipped_utility_skills = blk: {
-                var slots: [types.utility_skill_count]?types.SkillId = .{null} ** types.utility_skill_count;
+                var slots: [types.utility_skill_count]?types.SkillId = @splat(null);
                 slots[0] = .blink;
                 break :blk slots;
             },
@@ -1196,13 +1196,13 @@ const editor_write_fixture: types.Editor = .{
         .amulet = .{ .name = "Charm", .spell_damage = 2 },
         .inventory = .{
             .slots = blk: {
-                var slots: [types.inventory_slot_count]?types.Item = .{null} ** types.inventory_slot_count;
+                var slots: [types.inventory_slot_count]?types.Item = @splat(null);
                 slots[0] = .{ .weapon = .{ .name = "Bag Sword", .weapon_type = .sword, .weapon_damage = 1 } };
                 break :blk slots;
             },
         },
         .equipped_utility_skills = blk: {
-            var slots: [types.utility_skill_count]?types.SkillId = .{null} ** types.utility_skill_count;
+            var slots: [types.utility_skill_count]?types.SkillId = @splat(null);
             slots[0] = .blink;
             break :blk slots;
         },

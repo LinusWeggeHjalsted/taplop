@@ -273,11 +273,11 @@ test "death: non-player entity drops equipped gear + inventory + skill tomes" {
         &.{
             .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
             .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .max_health = 10, .current_health = 0, .main_hand_weapon = .{ .weapon_damage = 4 }, .inventory = .{ .slots = blk: {
-                var slots: [types.inventory_slot_count]?types.Item = .{null} ** types.inventory_slot_count;
+                var slots: [types.inventory_slot_count]?types.Item = @splat(null);
                 slots[0] = .{ .amulet = .{ .spell_damage = 2 } };
                 break :blk slots;
             } }, .equipped_utility_skills = blk: {
-                var skills: [types.utility_skill_count]?SkillId = .{null} ** types.utility_skill_count;
+                var skills: [types.utility_skill_count]?SkillId = @splat(null);
                 skills[0] = .replenish;
                 break :blk skills;
             } },
@@ -386,7 +386,7 @@ test "pickup_items: first-empty-slot placement" {
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     // Slot 0 filled, slot 1 empty → pickup lands in slot 1.
-    var slots: [types.inventory_slot_count]?types.Item = .{null} ** types.inventory_slot_count;
+    var slots: [types.inventory_slot_count]?types.Item = @splat(null);
     slots[0] = .{ .amulet = .{ .spell_damage = 1 } };
     const items = try backing.allocator().dupe(types.Item, &.{.{ .weapon = .{ .weapon_damage = 5 } }});
     const ground = try backing.allocator().dupe(types.GroundItems, &.{

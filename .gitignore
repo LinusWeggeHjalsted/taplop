@@ -37,3 +37,6 @@ sound_report.md
 
 # Dev scratch data dir (--data-dir ./scratch, README) - untracked by design
 scratch/
+
+# Python one-shot sweep tooling
+__pycache__/

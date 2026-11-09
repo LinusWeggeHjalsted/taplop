@@ -404,7 +404,7 @@ pub const TextRenderer = struct {
         const font = self.activeFont();
         var metrics = ui.FontMetrics{
             .base_size = @intCast(font.baseSize),
-            .advances = [_]i32{0} ** 95,
+            .advances = @as([95]i32, @splat(0)),
             .non_ascii = self.non_ascii_advances,
         };
         const count: usize = @intCast(font.glyphCount);
@@ -506,7 +506,7 @@ pub const TextRenderer = struct {
         // spans pass a non-`default_tint` color and are unaffected. Sprite
         // tints (Button/Slot/Image) keep `default_tint` meaning "no tint" -
         // this substitution is text-only.
-        const text = scratch.dupeZ(u8, label.text) catch return;
+        const text = scratch.dupeSentinel(u8, label.text, 0) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
         const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
         const color = if (std.meta.eql(label.color, ui.default_tint)) theme_lightest else label.color;

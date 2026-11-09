@@ -33,9 +33,9 @@ fn onOpponentDeath(
     var effect_events: std.ArrayList(Event) = .empty;
     // Every int in 0..count is a valid SkillId tag (the generated enum is
     // hole-free), so a plain runtime loop covers the full map.
-    const skill_id_count = std.meta.fields(types.SkillId).len;
+    const skill_id_count = @typeInfo(types.SkillId).@"enum".field_names.len;
     for (0..skill_id_count) |int_skill_id| {
-        const skill_id: types.SkillId = @enumFromInt(int_skill_id);
+        const skill_id: types.SkillId = @fromBackingInt(@intCast(int_skill_id));
         const current_cooldown = holder.skill_cooldowns.get(skill_id);
         if (current_cooldown == 0) continue;
         effect_events.append(allocator, .{ .sub_level_event = .{ .change_cooldown = .{

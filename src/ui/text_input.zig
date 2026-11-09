@@ -357,15 +357,15 @@ test "TextField: loadValue seeds caret-at-end, insert appends, capacity truncate
 
     // loadValue truncates to capacity.
     var long: TextField = .{};
-    long.loadValue("x" ** 200);
+    long.loadValue(&@as([200]u8, @splat('x')));
     try std.testing.expectEqual(@as(usize, text_field_capacity), long.length);
-    try std.testing.expectEqualStrings("x" ** text_field_capacity, long.currentText());
+    try std.testing.expectEqualStrings(&@as([text_field_capacity]u8, @splat('x')), long.currentText());
 
     // Insert past capacity truncates the INSERTED text (keeps the buffer
     // full rather than dropping the tail).
     long.insertText("abc");
     try std.testing.expectEqual(@as(usize, text_field_capacity), long.length);
-    try std.testing.expectEqualStrings("x" ** text_field_capacity, long.currentText());
+    try std.testing.expectEqualStrings(&@as([text_field_capacity]u8, @splat('x')), long.currentText());
 }
 
 test "TextField: deleteBackward and deleteForward, with and without selection" {
@@ -495,7 +495,7 @@ test "TextField: caret navigation is codepoint-aware (UTF-8)" {
 test "TextField: caretIndexAtX maps a click x to a boundary" {
     // Synthetic metrics (the measurement-seam convention above): each
     // ASCII glyph measures 55px at font_size 100.
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const field_text = "abcd";
 
     // Clicking inside the first glyph (x < 55) positions before it; each
@@ -569,7 +569,7 @@ test "routeTextInput: chars insert, edit keys apply, Enter/Escape resolve, repea
 test "placeCaretFromClick: click x maps through the field's text origin" {
     var ui_state: UiState = .{};
     beginTextEdit(&ui_state, .{ .id = .entity_name, .target = .{ .entity = .{ .entity_type = 0 } } }, "abcd");
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const field: TextFieldUi = .{
         .screen_position = .{ .x = 0, .y = 0 },
         .width = 512,

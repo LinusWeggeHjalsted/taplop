@@ -343,7 +343,7 @@ pub fn buildEditorMetadataSidebar(
                 allocator,
                 cell,
                 section_id,
-                ui_state.editor_inspector_section_expanded[@intFromEnum(section_id)],
+                ui_state.editor_inspector_section_expanded[@backingInt(section_id)],
                 button_color,
                 active_theme,
             ),
@@ -460,13 +460,13 @@ fn editorMetadataEntries(
     var entries: std.ArrayList(EditorMetadataEntry) = .empty;
 
     try entries.append(allocator, .{ .section = .mission });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.mission)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.mission)]) {
         try entries.append(allocator, .mission_name);
         try entries.append(allocator, .spacer);
     }
 
     try entries.append(allocator, .{ .section = .current_level });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.current_level)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.current_level)]) {
         try entries.appendSlice(allocator, &.{
             .level_name,
             .{ .gradient = .{
@@ -1076,16 +1076,16 @@ fn appendInspectorGearSections(
     expanded: *const [editor_inspector_section_count]bool,
 ) !void {
     try entries.append(allocator, .{ .section = .weapons });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.weapons)]) {
         for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
             try appendInspectorSlotEntries(allocator, template, entries, .{ .weapon_slot = hand }, hand);
         }
     }
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.weapons)]) {
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .gear });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.gear)]) {
         for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
             try appendInspectorSlotEntries(allocator, template, entries, .{ .gear_slot = slot }, slot);
         }
@@ -1109,7 +1109,7 @@ fn editorInspectorEntityEntries(
 
     // Identity + Stats: fixed.
     try entries.append(allocator, .{ .section = .identity });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.identity)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.identity)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
             .{ .field = .{ .label = "Team", .control = .{ .text = .{ .entity_stat = .team } } } },
@@ -1135,7 +1135,7 @@ fn editorInspectorEntityEntries(
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .stats });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.stats)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.stats)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Max health", .control = .{ .text = .{ .entity_stat = .max_health } } } },
             .{ .field = .{ .label = "Defense", .control = .{ .text = .{ .entity_stat = .defense } } } },
@@ -1149,22 +1149,22 @@ fn editorInspectorEntityEntries(
 
     // Utility skills: ONE row of five skill slots (the entity-inspect
     // look), each slot opening the centered picker.
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.gear)]) {
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .utility_skills });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .{ .utility_skill_row = {} });
     }
 
     // Layers: per layer a slot row (sprite re-pick + delete) + a color
     // row, then the add button. The LAST section - the spacer above it
     // belongs to utility_skills.
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .layers });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.layers)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.layers)]) {
         for (0..template.layers.len) |layer_index| {
             try entries.appendSlice(allocator, &.{
                 .{ .entity_layer = @intCast(layer_index) },
@@ -1198,7 +1198,7 @@ fn editorInspectorPlayerEntries(
     var entries: std.ArrayList(EditorInspectorEntry) = .empty;
 
     try entries.append(allocator, .{ .section = .player });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.player)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.player)]) {
         try entries.appendSlice(allocator, &.{
             .{ .player_name_line = {} },
             .{ .import_player = {} },
@@ -1209,19 +1209,19 @@ fn editorInspectorPlayerEntries(
     }
     try appendInspectorGearSections(allocator, template, &entries, expanded);
 
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.gear)]) {
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .utility_skills });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .{ .utility_skill_row = {} });
     }
 
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .inventory });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.inventory)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.inventory)]) {
         const selected = if (selected_slot) |slot| blk: {
             if (slot >= types.inventory_slot_count) break :blk null;
             break :blk slot;
@@ -1267,7 +1267,7 @@ fn editorInspectorDecorationEntries(
     var entries: std.ArrayList(EditorInspectorEntry) = .empty;
 
     try entries.append(allocator, .{ .section = .identity });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.identity)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.identity)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Sprite", .control = .decoration_sprite_button } },
             // Above the swatches; the Color row is hidden while the flag
@@ -1284,7 +1284,7 @@ fn editorInspectorDecorationEntries(
         try entries.append(allocator, .spacer);
     }
     try entries.append(allocator, .{ .section = .footprint });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.footprint)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.footprint)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Footprint", .control = .footprint_button } },
         });
@@ -1295,7 +1295,7 @@ fn editorInspectorDecorationEntries(
     // row, then the add button. The LAST section - the spacer above it
     // belongs to footprint.
     try entries.append(allocator, .{ .section = .layers });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.layers)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.layers)]) {
         for (0..definition.layers.len) |layer_index| {
             try entries.appendSlice(allocator, &.{
                 .{ .decoration_layer = @intCast(layer_index) },
@@ -1323,7 +1323,7 @@ fn editorInspectorItemEntries(
     var entries: std.ArrayList(EditorInspectorEntry) = .empty;
 
     try entries.append(allocator, .{ .section = .item });
-    if (expanded[@intFromEnum(types.EditorInspectorSectionId.item)]) {
+    if (expanded[@backingInt(types.EditorInspectorSectionId.item)]) {
         try entries.append(allocator, .{ .item_type_rows = {} });
         // A skill tome has no name (it IS its skill) - no name row.
         if (std.meta.activeTag(item) != .skill_tome) {
@@ -1567,7 +1567,7 @@ fn buildEditorInspectorContent(
                 allocator,
                 cell,
                 section_id,
-                ui_state.editor_inspector_section_expanded[@intFromEnum(section_id)],
+                ui_state.editor_inspector_section_expanded[@backingInt(section_id)],
                 button_color,
                 active_theme,
             ),
@@ -2527,8 +2527,8 @@ fn emitInspectorWeaponSlot(
 
     const cell_size = control_rect.height;
     const cell_pitch = cell_size + ui_gap;
-    inline for (std.meta.fields(types.WeaponType), 0..) |field, loop_index| {
-        const weapon_type: types.WeaponType = @enumFromInt(field.value);
+    inline for (@typeInfo(types.WeaponType).@"enum".field_names, 0..) |field_name, loop_index| {
+        const weapon_type: types.WeaponType = @field(types.WeaponType, field_name);
         const index: i32 = @intCast(loop_index);
         const cell: Rectangle = .{
             .x = control_rect.x + index * cell_pitch,
@@ -2553,7 +2553,7 @@ fn emitInspectorWeaponSlot(
         const sprite_id = try std.fmt.allocPrint(
             allocator,
             "items/{s}",
-            .{field.name},
+            .{field_name},
         );
         const fitted = scaleToFit(cell, inventory_slot_size, inventory_slot_size);
         try elements.append(allocator, .{ .image = .{
@@ -2568,7 +2568,7 @@ fn emitInspectorWeaponSlot(
 
     // Delete (while equipped): the row's remaining width after the cells.
     if (equipped_weapon != null) {
-        const type_row_width = @as(i32, @intCast(std.meta.fields(types.WeaponType).len)) * cell_pitch - ui_gap;
+        const type_row_width = @as(i32, @intCast(@typeInfo(types.WeaponType).@"enum".field_names.len)) * cell_pitch - ui_gap;
         const delete_rect: Rectangle = .{
             .x = control_rect.x + type_row_width + ui_gap,
             .y = control_rect.y,
@@ -2612,8 +2612,8 @@ fn emitInspectorItemTypeRows(
 
     // Row 1: the weapon types (highlighted while the item is a weapon of
     // that type).
-    inline for (std.meta.fields(types.WeaponType), 0..) |field, loop_index| {
-        const weapon_type: types.WeaponType = @enumFromInt(field.value);
+    inline for (@typeInfo(types.WeaponType).@"enum".field_names, 0..) |field_name, loop_index| {
+        const weapon_type: types.WeaponType = @field(types.WeaponType, field_name);
         const highlighted = switch (item) {
             .weapon => |weapon| weapon.weapon_type == weapon_type,
             else => false,
@@ -2625,7 +2625,7 @@ fn emitInspectorItemTypeRows(
             @intCast(loop_index),
             .weapon,
             weapon_type,
-            try std.fmt.allocPrint(allocator, "items/{s}", .{field.name}),
+            try std.fmt.allocPrint(allocator, "items/{s}", .{field_name}),
             types.weaponTypeLabel(weapon_type),
             highlighted,
             button_color,
@@ -3087,7 +3087,7 @@ pub fn textEditPressProceeds(
 /// `UiState.editor_inspector_section_expanded`). Pub for the main.zig
 /// focus-on-click test, which builds the inspector through the real view.
 pub fn allInspectorSectionsExpanded() [editor_inspector_section_count]bool {
-    return .{true} ** editor_inspector_section_count;
+    return @splat(true);
 }
 
 /// Census panel driver for `buildEditorInspectorPanel` (the shared census
@@ -3109,7 +3109,7 @@ const InspectorPanel = struct {
             .editor_inspector_section_expanded = if (self.sections_expanded)
                 allInspectorSectionsExpanded()
             else
-                .{false} ** editor_inspector_section_count,
+                @splat(false),
             .editor_inventory_selected_slot = self.selected_inventory_slot,
         };
         try buildEditorInspectorPanel(
@@ -3142,7 +3142,7 @@ const MetadataSidebarPanel = struct {
             .editor_inspector_section_expanded = if (self.sections_expanded)
                 allInspectorSectionsExpanded()
             else
-                .{false} ** editor_inspector_section_count,
+                @splat(false),
         };
         try buildEditorMetadataSidebar(
             elements,
@@ -3209,11 +3209,11 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Skeleton",
@@ -3297,11 +3297,11 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
         .enemy_gradient = .{ .colors = .{ black, black, enemy_two, black, black, black } },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Defaults: max_health 20, defense 0, speed 1, aggro_range 3,
     // displays_weapons true; color_index SET TO 2 (the highlighted swatch).
@@ -3422,11 +3422,11 @@ test "inspector sprite rows display custom namespaced stems as their file name" 
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
-        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
-        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const entity_layers = [_]types.EntityLayer{.{
         .sprite = "custom/artists_den/hood",
@@ -3543,10 +3543,10 @@ test "decoration inspector content: identity + footprint rows, world-gradient sw
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
         .world_gradient = .{ .colors = .{ black, black, black, world_three, black, black } },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const decoration_types = [_]types.DecorationTypeDef{.{
@@ -3626,11 +3626,11 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Main hand: an equipped sword. Coat: equipped. Everything else empty.
     const entity_types = [_]types.EntityTypeDef{.{
@@ -3647,7 +3647,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         .active_tool = .{ .entity_type = 0 },
     };
 
-    const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+    const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 
     const panel = InspectorPanel{
         .arena = arena.allocator(),
@@ -4062,11 +4062,11 @@ test "inspector item content: type rows, name + stat fields, ref targets" {
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const item_types = [_]types.ItemTypeDef{.{
         .id = "Iron Sword",
@@ -4081,8 +4081,8 @@ test "inspector item content: type rows, name + stat fields, ref targets" {
         .active_tool = .{ .item_type = 0 },
     };
 
-    const type_cell_count = @typeInfo(types.WeaponType).@"enum".fields.len +
-        @typeInfo(types.ItemKind).@"enum".fields.len - 1;
+    const type_cell_count = @typeInfo(types.WeaponType).@"enum".field_names.len +
+        @typeInfo(types.ItemKind).@"enum".field_names.len - 1;
 
     const panel = InspectorPanel{
         .arena = arena.allocator(),
@@ -4165,11 +4165,11 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // A coat (two stats) - the field set follows the kind; a stat the
     // kind doesn't carry is never offered at any offset.
@@ -4230,8 +4230,8 @@ test "inspector item content: per-kind stat fields; a skill tome renders bare ro
             .item_types = &item_types,
             .active_tool = .{ .item_type = 0 },
         };
-        const type_cell_count = @typeInfo(types.WeaponType).@"enum".fields.len +
-            @typeInfo(types.ItemKind).@"enum".fields.len - 1;
+        const type_cell_count = @typeInfo(types.WeaponType).@"enum".field_names.len +
+            @typeInfo(types.ItemKind).@"enum".field_names.len - 1;
         const panel = InspectorPanel{
             .arena = arena.allocator(),
             .metrics = metrics,
@@ -4305,11 +4305,11 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     // Select tool, empty selection: the open panel carries the PLAYER
     // content (the fallback target) - ALL SECTIONS COLLAPSED by default:
     // five headers (+ markers) + spacers, everything fits, no scrollbar.
@@ -4385,11 +4385,11 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
@@ -4494,7 +4494,7 @@ test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, sc
         };
         const stale_max = try census.maxScroll(stale_panel);
         try std.testing.expect(stale_max > 0);
-        var slot_seen = [_]bool{false} ** types.inventory_slot_count;
+        var slot_seen = @as([types.inventory_slot_count]bool, @splat(false));
         var scroll: i32 = 0;
         while (scroll <= stale_max) : (scroll += 1) {
             var elements: UiElementList = .empty;
@@ -4518,11 +4518,11 @@ test "inspector utility-skill row: occupied slots show the skill, empty the diam
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Slot 1 carries blink, the rest are empty.
     const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{
@@ -4598,11 +4598,11 @@ test "inspector player content: gear + skills + inventory over player_def, commi
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // An equipped loadout: a main-hand weapon, an amulet, blink in slot 0,
     // two inventory items.
@@ -4723,11 +4723,11 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // ENEMY content with one layer: the layer row (sprite re-pick +
     // delete, both carrying the layer index) + the color row's swatches
@@ -4860,24 +4860,24 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
     const theme: types.ActiveColorTheme = .{
         .lightest = lightest,
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 5 ++ .{player_five} },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @as([5]types.Color, @splat(black)) ++ .{player_five} },
     };
     // The definitions the gradient rows' derived indices come from: 3
     // gradients, the active level's wheel index 0 - world 0, enemy
     // AUTO-derives to 1 (0 + 3/3), player is MANUAL at 2.
     const gradients = [_]types.ColorGradient{
-        .{ .colors = .{black} ** 6 },
-        .{ .colors = .{black} ** 6 },
-        .{ .colors = .{black} ** 6 },
+        .{ .colors = @splat(black) },
+        .{ .colors = @splat(black) },
+        .{ .colors = @splat(black) },
     };
     const definitions: types.ColorThemeDefinitions = .{
         .lightest = lightest,
         .darkest = black,
         .gradients = &gradients,
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const levels = [_]types.EditorLevel{
         .{ .name = "First" },
         // Player colors on MANUAL (an explicit override) so the scrolled
@@ -5097,11 +5097,11 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     var inventory: types.Inventory = .{};
     inventory.slots[4] = .{ .amulet = .{ .name = "Starter Amulet", .spell_damage = 3 } };
@@ -5259,11 +5259,11 @@ test "inspector team gradient: a team-0 entity type tints with the player gradie
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Same type shape, differing only in team: 0 = helper (player
     // gradient), 2 = enemy team (enemy gradient). The Identity section

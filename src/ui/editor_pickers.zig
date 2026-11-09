@@ -1279,11 +1279,11 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
         .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Slot 1 (Slot 5) already carries blink - its cell is highlighted,
     // the None cell is not.
@@ -1394,11 +1394,11 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Bear",
@@ -1512,10 +1512,10 @@ test "buildEditorSpritePicker: decoration target - registry official cells, name
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
         .world_gradient = .{ .colors = .{ black, black, world_two, world_three, world_four, black } },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const tree_footprint = [_]types.Vector2{.{ .x = 1, .y = 2 }};
     const tree_layers = [_]types.DecorationLayer{.{
@@ -1653,11 +1653,11 @@ test "buildEditorSpritePicker: layer modes - entity stems, dims-filtered decorat
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // ENTITY layer mode (editing layer 0, sprite "bear"): the Official
     // tab lists the shipped entity sprites (player excluded) with the
@@ -1758,11 +1758,11 @@ test "buildEditorSpritePicker: mission-local tab filters non-conforming sprites 
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // The hidden note (the ONLY text label mentioning "sprites hidden").
     const hiddenNote = struct {
@@ -1952,11 +1952,11 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** 6 },
-        .enemy_gradient = .{ .colors = .{black} ** 6 },
-        .player_gradient = .{ .colors = .{black} ** 6 },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const decoration_types = [_]types.DecorationTypeDef{.{
@@ -2117,7 +2117,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
     var gradients: [3]types.ColorGradient = undefined;
     for (&gradients, 0..) |*gradient, index| {
         const value: u8 = @intCast(index * 40 + 10);
-        gradient.* = .{ .colors = .{types.Color{ .r = value, .g = value, .b = value }} ** types.gradient_color_count };
+        gradient.* = .{ .colors = @splat(types.Color{ .r = value, .g = value, .b = value }) };
     }
     const definitions: types.ColorThemeDefinitions = .{
         .lightest = lightest,
@@ -2131,7 +2131,7 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         .enemy_gradient = gradients[1],
         .player_gradient = gradients[2],
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const levels = [_]types.EditorLevel{.{ .color_wheel_index = 2 }};
     const editor: types.Editor = .{ .levels = &levels };
 
@@ -2260,7 +2260,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
     const gradients = try arena.allocator().alloc(types.ColorGradient, gradient_count);
     for (gradients, 0..) |*gradient, index| {
         const value: u8 = @intCast(index * 8 + 10);
-        gradient.* = .{ .colors = .{types.Color{ .r = value, .g = value, .b = value }} ** types.gradient_color_count };
+        gradient.* = .{ .colors = @splat(types.Color{ .r = value, .g = value, .b = value }) };
     }
     const definitions: types.ColorThemeDefinitions = .{
         .lightest = lightest,
@@ -2274,7 +2274,7 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
         .enemy_gradient = gradients[1],
         .player_gradient = gradients[2],
     };
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     // The current gradient is the LAST one - only a scrolled-to-bottom
     // window shows it.
     const levels = [_]types.EditorLevel{.{ .color_wheel_index = gradient_count - 1 }};

@@ -99,11 +99,11 @@ pub const PlatformInput = struct {
 /// replay (held-key state must stay off the undo timeline; see DESIGN →
 /// Replay & Side Effects).
 pub const InputState = struct {
-    keys_held: [max_held_keys]?[]const u8 = .{null} ** max_held_keys,
-    mouse_buttons_held: [max_held_mouse]?[]const u8 = .{null} ** max_held_mouse,
-    gamepad_buttons_held: [max_held_gamepad]?[]const u8 = .{null} ** max_held_gamepad,
+    keys_held: [max_held_keys]?[]const u8 = @splat(null),
+    mouse_buttons_held: [max_held_mouse]?[]const u8 = @splat(null),
+    gamepad_buttons_held: [max_held_gamepad]?[]const u8 = @splat(null),
     mouse_screen_position: PointerPosition = .{ .x = 0, .y = 0 },
-    active_touches: [max_touch_points]?ActiveTouch = .{null} ** max_touch_points,
+    active_touches: [max_touch_points]?ActiveTouch = @splat(null),
     /// Per-key hold timer for synthetic key repeat (see DESIGN → Input).
     /// Parallel to `keys_held`: an entry is created on a key_down edge and
     /// removed on key_up. Advanced by `advanceKeyRepeats` each tick; when a
@@ -112,7 +112,7 @@ pub const InputState = struct {
     /// repeat whitelist (movement cursors, undo/redo, skip, error-scroll)
     /// pass `keys_repeated` to `checkAction`, so non-whitelisted bindings
     /// (skill slots, toggles, confirm/cancel) never repeat.
-    key_repeat_state: [max_held_keys]?KeyRepeatEntry = .{null} ** max_held_keys,
+    key_repeat_state: [max_held_keys]?KeyRepeatEntry = @splat(null),
 
     pub const max_held_keys = 16;
     pub const max_held_mouse = 5;
@@ -268,7 +268,7 @@ pub const PlayerInput = struct {
     /// sound (input_handlers.dispatchFiredActionSounds) and future
     /// per-action policy/analytics read THIS, not the per-flag consumption
     /// sites. See DESIGN → Input → Dispatch convergence.
-    fired_actions: std.EnumSet(types.Action) = .initEmpty(),
+    fired_actions: std.EnumSet(types.Action) = .empty,
 };
 
 /// Synthetic key-repeat cadence (see `InputState.KeyRepeatEntry`). A held
@@ -888,11 +888,11 @@ pub fn translateInput(
     active_contexts: types.BindingContextSet,
 ) PlayerInput {
     // Track which inputs were just pressed this tick (edge detection)
-    var keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
-    var keys_repeated: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
-    var mouse_pressed: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
-    var mouse_released: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
-    var gamepad_pressed: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
+    var keys_pressed: [InputState.max_held_keys]?[]const u8 = @splat(null);
+    var keys_repeated: [InputState.max_held_keys]?[]const u8 = @splat(null);
+    var mouse_pressed: [InputState.max_held_mouse]?[]const u8 = @splat(null);
+    var mouse_released: [InputState.max_held_mouse]?[]const u8 = @splat(null);
+    var gamepad_pressed: [InputState.max_held_gamepad]?[]const u8 = @splat(null);
 
     // Accumulate scroll delta across all events this tick
     var scroll_delta: f32 = 0;
@@ -1153,8 +1153,8 @@ fn pointerFacts(
 // modifiers, all held) on the same key suppresses a less-specific
 // binding; equal-specificity ties co-fire.
 
-const empty_mouse: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
-const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
+const empty_mouse: [InputState.max_held_mouse]?[]const u8 = @splat(null);
+const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = @splat(null);
 const no_repeat_keys: [0]?[]const u8 = .{};
 const no_keys: [0]?[]const u8 = .{};
 
@@ -1212,7 +1212,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
 }
 
 fn keysPressedOne(comptime id: []const u8) [InputState.max_held_keys]?[]const u8 {
-    var arr: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
+    var arr: [InputState.max_held_keys]?[]const u8 = @splat(null);
     arr[0] = id;
     return arr;
 }
@@ -1359,7 +1359,7 @@ test "bindingFires: synthetic repeat edges fire only repeat-whitelisted actions"
         .{ .input = .{ .key = "KeyZ" }, .action = .undo },
         .{ .input = .{ .key = "Escape" }, .action = .escape },
     };
-    const no_keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
+    const no_keys_pressed: [InputState.max_held_keys]?[]const u8 = @splat(null);
     const repeated_undo = keysPressedOne("KeyZ");
     const repeated_escape = keysPressedOne("Escape");
     const mods = Modifiers{};

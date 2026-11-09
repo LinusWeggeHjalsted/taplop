@@ -343,7 +343,7 @@ fn buildSettingsControls(
                 },
                 resolution.label(),
                 settings_row_font_size,
-                .{ .id = .render_resolution, .choice_value = @intFromEnum(resolution) },
+                .{ .id = .render_resolution, .choice_value = @backingInt(resolution) },
                 settings.render_resolution == resolution,
                 button_color,
             );
@@ -665,14 +665,14 @@ fn makePrettifiedLabel(comptime name: []const u8) []const u8 {
 fn actionDisplayLabel(action: types.Action) []const u8 {
     const labels = comptime blk: {
         @setEvalBranchQuota(20_000);
-        const fields = @typeInfo(types.Action).@"enum".fields;
-        var table: [fields.len][]const u8 = undefined;
-        for (fields, 0..) |field, index| {
-            table[index] = makePrettifiedLabel(field.name);
+        const field_names = @typeInfo(types.Action).@"enum".field_names;
+        var table: [field_names.len][]const u8 = undefined;
+        for (field_names, 0..) |field_name, index| {
+            table[index] = makePrettifiedLabel(field_name);
         }
         break :blk table;
     };
-    return labels[@intFromEnum(action)];
+    return labels[@backingInt(action)];
 }
 
 /// A context set's display label ("Anytime", "Editor + Menu") -
@@ -728,7 +728,7 @@ const keybind_min_panel_width: i32 = 160;
 /// escape, ...), stable so an action's multiple combos keep their file
 /// order. The file's order is load order, not a display order.
 fn bindingActionLessThan(_: void, left: types.InputBinding, right: types.InputBinding) bool {
-    return @intFromEnum(left.action) < @intFromEnum(right.action);
+    return @backingInt(left.action) < @backingInt(right.action);
 }
 
 /// The Keybinds tab's list + editing UI. READ side: one row per binding -
@@ -1069,7 +1069,7 @@ fn bindingIndexActionLessThan(
     left: usize,
     right: usize,
 ) bool {
-    return @intFromEnum(bindings[left].action) < @intFromEnum(bindings[right].action);
+    return @backingInt(bindings[left].action) < @backingInt(bindings[right].action);
 }
 
 /// "Action - Contexts" (the derived context set) - the action panel + picker
@@ -1263,7 +1263,7 @@ test "buildSettingsPanel: tab row on both tabs; settings tab keeps control rows"
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const bindings = [_]types.InputBinding{
         .{ .input = .{ .key = "KeyZ" }, .modifiers = .{ .ctrl = true }, .action = .undo },
@@ -1364,7 +1364,7 @@ test "buildSettingsPanel: keybinds tab - rows, key panels, action labels + conte
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     // Two combos on ONE action (undo: ctrl+Z and U - adjacent rows, no
     // group headers), plus cross-context same-combo-style rows with their
@@ -1479,7 +1479,7 @@ test "buildSettingsPanel: keybinds tab add proposal - below its action's group, 
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const row_stride = settings_row_height + settings_row_gap;
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
@@ -1594,7 +1594,7 @@ test "buildSettingsPanel: keybinds tab scroll window + clamp" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     // 60 distinct actions - enough rows (headers + combos) to overflow any
@@ -1665,7 +1665,7 @@ test "buildSettingsPanel: keybinds tab scrollbars - track + thumb per overflowin
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     // 60 distinct actions - enough rows to overflow either column's window

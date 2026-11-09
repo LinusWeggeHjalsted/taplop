@@ -44,7 +44,7 @@ const EquippedGear = ui_tooltip.EquippedGear;
 const positive_color = ui_tooltip.positive_color;
 const negative_color = ui_tooltip.negative_color;
 const isSkillLearnedIn = ui_tooltip.isSkillLearnedIn;
-const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 
 /// Font size of the material-count corner label on item icons (bottom bar,
@@ -447,14 +447,14 @@ pub fn emitSkillButton(
 /// drag ghosts borrow it across frames.
 pub fn skillIconSpriteId(skill_id: SkillId) []const u8 {
     const table = comptime blk: {
-        const fields = @typeInfo(SkillId).@"enum".fields;
-        var t: [fields.len][]const u8 = undefined;
-        for (fields, 0..) |field, i| {
-            t[i] = "skills/" ++ field.name;
+        const field_names = @typeInfo(SkillId).@"enum".field_names;
+        var t: [field_names.len][]const u8 = undefined;
+        for (field_names, 0..) |field_name, i| {
+            t[i] = "skills/" ++ field_name;
         }
         break :blk t;
     };
-    return table[@intFromEnum(skill_id)];
+    return table[@backingInt(skill_id)];
 }
 
 /// One entry in the inventory sidebar's material stack.

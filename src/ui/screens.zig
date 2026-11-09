@@ -14,7 +14,7 @@ const validation_replay = @import("../validation_replay.zig");
 const Action = types.Action;
 const Rectangle = types.Rectangle;
 const Color = types.Color;
-const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 const GameState = state.GameState;
 const text = ui_element.text;
 const FontMetrics = ui_element.FontMetrics;
@@ -760,7 +760,7 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
 
     var session: state.SessionState = .{};
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section", .{ .r = 50, .g = 50, .b = 50 });
 
@@ -790,7 +790,7 @@ test "buildErrorPopup: short message - no scrollbar, scroll offset clamped to 0"
     var session: state.SessionState = .{};
     session.error_scroll_offset = 500; // should be clamped to 0 (content fits)
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "short error", .{ .r = 50, .g = 50, .b = 50 });
 
@@ -819,7 +819,7 @@ test "buildErrorPopup: long message - scrollbar present, only visible lines emit
         msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
     }
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
@@ -860,7 +860,7 @@ test "buildErrorPopup: scrolled window renders at the body top" {
         msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
     }
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
@@ -924,7 +924,7 @@ test "buildErrorPopup: newline-separated warnings render as distinct lines" {
     // Two warnings, each short enough to be one visual line (no width wrap).
     const message = "InputBindings entry for 'skill_slot_1' is missing a valid context\nInputBindings entry for 'skill_slot_2' is missing a valid context";
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, message, .{ .r = 50, .g = 50, .b = 50 });
 
@@ -972,7 +972,7 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
         msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
     }
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
@@ -989,9 +989,9 @@ fn missionCompleteDummyTheme() types.ActiveColorTheme {
     return .{
         .lightest = .{ .r = 255, .g = 255, .b = 255 },
         .darkest = .{ .r = 0, .g = 0, .b = 0 },
-        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .world_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .enemy_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .player_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
     };
 }
 
@@ -1043,7 +1043,7 @@ test "buildMissionComplete: the validation variant swaps the clone content for m
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildMissionComplete(
         &elements,
@@ -1087,7 +1087,7 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
     try buildMissionComplete(
         &elements,

@@ -236,9 +236,9 @@ fn fixtureTtf(allocator: std.mem.Allocator, cmap_bytes: []const u8) []u8 {
     var ttf: std.ArrayListUnmanaged(u8) = .empty;
     ttf.appendSlice(allocator, &.{ 0x00, 0x01, 0x00, 0x00 }) catch unreachable; // sfnt version
     ttf.appendSlice(allocator, &.{ 0x00, 0x01 }) catch unreachable; // numTables = 1
-    ttf.appendSlice(allocator, &([_]u8{0} ** 6)) catch unreachable; // search fields (unused)
+    ttf.appendSlice(allocator, &(@as([6]u8, @splat(0)))) catch unreachable; // search fields (unused)
     ttf.appendSlice(allocator, "cmap") catch unreachable;
-    ttf.appendSlice(allocator, &([_]u8{0} ** 4)) catch unreachable; // checksum
+    ttf.appendSlice(allocator, &(@as([4]u8, @splat(0)))) catch unreachable; // checksum
     ttf.appendSlice(allocator, &.{ 0x00, 0x00, 0x00, 0x1C }) catch unreachable; // offset = 28
     const length: u32 = @intCast(cmap_bytes.len);
     ttf.append(allocator, @truncate(length >> 24)) catch unreachable;
@@ -275,10 +275,10 @@ fn fixtureFormat4(allocator: std.mem.Allocator, segments: []const Segment, glyph
     const length: u16 = @intCast(16 + all * 8 + glyph_ids.len * 2);
     sub.append(allocator, @truncate(length >> 8)) catch unreachable;
     sub.append(allocator, @truncate(length)) catch unreachable;
-    sub.appendSlice(allocator, &([_]u8{0} ** 2)) catch unreachable; // language
+    sub.appendSlice(allocator, &(@as([2]u8, @splat(0)))) catch unreachable; // language
     sub.append(allocator, @truncate((all * 2) >> 8)) catch unreachable; // segCountX2
     sub.append(allocator, @truncate(all * 2)) catch unreachable;
-    sub.appendSlice(allocator, &([_]u8{0} ** 6)) catch unreachable; // search fields
+    sub.appendSlice(allocator, &(@as([6]u8, @splat(0)))) catch unreachable; // search fields
 
     for (segments) |segment| {
         sub.append(allocator, @truncate(segment.end >> 8)) catch unreachable;
@@ -314,9 +314,9 @@ const Group = struct { start: u32, end: u32, start_glyph: u32 };
 fn fixtureFormat12(allocator: std.mem.Allocator, groups: []const Group) []u8 {
     var sub: std.ArrayListUnmanaged(u8) = .empty;
     sub.appendSlice(allocator, &.{ 0x00, 0x0C }) catch unreachable; // format
-    sub.appendSlice(allocator, &([_]u8{0} ** 2)) catch unreachable; // reserved
-    sub.appendSlice(allocator, &([_]u8{0} ** 4)) catch unreachable; // length (unused by parser)
-    sub.appendSlice(allocator, &([_]u8{0} ** 4)) catch unreachable; // language
+    sub.appendSlice(allocator, &(@as([2]u8, @splat(0)))) catch unreachable; // reserved
+    sub.appendSlice(allocator, &(@as([4]u8, @splat(0)))) catch unreachable; // length (unused by parser)
+    sub.appendSlice(allocator, &(@as([4]u8, @splat(0)))) catch unreachable; // language
     const count: u32 = @intCast(groups.len);
     sub.append(allocator, @truncate(count >> 24)) catch unreachable;
     sub.append(allocator, @truncate(count >> 16)) catch unreachable;
@@ -421,16 +421,16 @@ test "malformed inputs are errors, never panics" {
         defer bytes.deinit(allocator);
         bytes.appendSlice(allocator, &.{ 0x00, 0x01, 0x00, 0x00 }) catch unreachable;
         bytes.appendSlice(allocator, &.{ 0x00, 0x01 }) catch unreachable;
-        bytes.appendSlice(allocator, &([_]u8{0} ** 6)) catch unreachable;
+        bytes.appendSlice(allocator, &(@as([6]u8, @splat(0)))) catch unreachable;
         bytes.appendSlice(allocator, "glyf") catch unreachable;
-        bytes.appendSlice(allocator, &([_]u8{0} ** 12)) catch unreachable;
+        bytes.appendSlice(allocator, &(@as([12]u8, @splat(0)))) catch unreachable;
         break :blk bytes.toOwnedSlice(allocator) catch unreachable;
     };
     defer allocator.free(no_cmap);
 
     // A cmap whose only subtable is an unsupported format (6).
     const unsupported_format = blk: {
-        const subtable = [_]u8{ 0x00, 0x06 } ++ [_]u8{0} ** 10;
+        const subtable = [_]u8{ 0x00, 0x06 } ++ @as([10]u8, @splat(0));
         const cmap = fixtureCmap(allocator, &subtable);
         defer allocator.free(cmap);
         break :blk fixtureTtf(allocator, cmap);

@@ -79,7 +79,7 @@ const Level = types.Level;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const Settings = types.Settings;
 const utility_skill_count = types.utility_skill_count;
-const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(WeaponType).@"enum".field_names.len;
 const WeaponType = types.WeaponType;
 
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
@@ -1128,11 +1128,12 @@ fn PayloadAsType(comptime tag: types.ButtonPayloadTag) type {
     // The inline field walk with comptime name compares crosses the default
     // eval-branch quota once payloadAs is instantiated for many variants.
     @setEvalBranchQuota(10_000);
-    inline for (@typeInfo(types.ButtonPayload).@"union".fields) |field| {
-        if (comptime std.mem.eql(u8, field.name, @tagName(tag))) {
-            return switch (@typeInfo(field.type)) {
-                .optional => field.type,
-                else => ?field.type,
+    const info = @typeInfo(types.ButtonPayload).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (comptime std.mem.eql(u8, field_name, @tagName(tag))) {
+            return switch (@typeInfo(field_type)) {
+                .optional => field_type,
+                else => ?field_type,
             };
         }
     }
@@ -1516,7 +1517,7 @@ pub fn handleAnytimeInput(
                     .player_color_index => settings.player_color_index = sref.choice_value orelse return,
                     // Choice buttons carry the preset's int tag; the live
                     // apply (frame diff-and-apply) swaps the render target.
-                    .render_resolution => settings.render_resolution = @enumFromInt(sref.choice_value orelse return),
+                    .render_resolution => settings.render_resolution = @fromBackingInt(@intCast(sref.choice_value orelse return)),
                     // Sliders are handled by the drag handler (slice 3b),
                     // not by this click path. A click on a slider label
                     // area without a choice_value is a no-op here.
@@ -1667,7 +1668,7 @@ pub fn handleAnytimeInput(
             // (e.g. Weapons + Gear).
             .toggle_editor_inspector_section => {
                 const section = payloadAs(.editor_section, clicked_payload) orelse return;
-                const section_index: usize = @intFromEnum(section);
+                const section_index: usize = @backingInt(section);
                 history.session.ui_state.editor_inspector_section_expanded[section_index] =
                     !history.session.ui_state.editor_inspector_section_expanded[section_index];
             },
@@ -1738,7 +1739,7 @@ pub fn handleAnytimeInput(
                 if (grid_width <= 0 or grid_height <= 0) return;
                 if (@as(usize, @intCast(grid_width * grid_height)) > ui.editor_footprint_grid_cell_limit) return;
                 history.session.ui_state.editor_footprint_draft =
-                    .{false} ** ui.editor_footprint_grid_cell_limit;
+                    @splat(false);
                 for (definition.footprint) |tile| {
                     if (tile.x < 0 or tile.y < 0 or tile.x >= grid_width or tile.y >= grid_height) continue;
                     history.session.ui_state.editor_footprint_draft[

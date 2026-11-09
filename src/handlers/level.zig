@@ -26,7 +26,7 @@ const Vector2 = types.Vector2;
 const Entity = types.Entity;
 const SkillId = types.SkillId;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
-const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".field_names.len;
 
 const pushEvents = event_push.pushEvents;
 const getLevelEntity = shared.getLevelEntity;
@@ -284,8 +284,8 @@ pub fn handleLevelEvent(
             }
 
             // 1. Reduce all skill cooldowns by 1
-            inline for (@typeInfo(SkillId).@"enum".fields) |field| {
-                const skill_id: SkillId = @as(SkillId, @enumFromInt(field.value));
+            inline for (@typeInfo(SkillId).@"enum".field_names) |field_name| {
+                const skill_id: SkillId = @field(SkillId, field_name);
                 const current_cooldown = entity.skill_cooldowns.get(skill_id);
                 if (current_cooldown > 0) {
                     entity.skill_cooldowns.set(skill_id, current_cooldown - 1);

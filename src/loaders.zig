@@ -3296,7 +3296,7 @@ pub fn loadColorThemeDefinitions(
             if (gradient_index != gradient_list.items.len) return error.InvalidData;
 
             var gradient: ColorGradient = .{
-                .colors = .{Color{ .r = 0, .g = 0, .b = 0 }} ** types.gradient_color_count,
+                .colors = @splat(Color{ .r = 0, .g = 0, .b = 0 }),
             };
 
             inline for (0..types.gradient_color_count) |color_index| {
@@ -3380,9 +3380,9 @@ pub fn deriveActiveColorTheme(
         return .{
             .lightest = color_theme_definitions.lightest,
             .darkest = color_theme_definitions.darkest,
-            .world_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
-            .enemy_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
-            .player_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
+            .world_gradient = .{ .colors = @splat(Color{ .r = 128, .g = 128, .b = 128 }) },
+            .enemy_gradient = .{ .colors = @splat(Color{ .r = 128, .g = 128, .b = 128 }) },
+            .player_gradient = .{ .colors = @splat(Color{ .r = 128, .g = 128, .b = 128 }) },
         };
     }
 
@@ -5411,7 +5411,7 @@ test "deriveActiveColorTheme picks evenly spaced gradients" {
     for (&gradients, 0..) |*gradient, index| {
         const value: u8 = @intCast(index * 20 + 10);
         gradient.* = .{
-            .colors = .{Color{ .r = value, .g = value, .b = value }} ** types.gradient_color_count,
+            .colors = @splat(Color{ .r = value, .g = value, .b = value }),
         };
     }
 
@@ -5535,20 +5535,20 @@ pub fn loadSalvageDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !SalvageDefinitions {
-    const weapon_type_fields = @typeInfo(WeaponType).@"enum".fields;
+    const weapon_type_field_names = @typeInfo(WeaponType).@"enum".field_names;
     // Empty-split defaults: an unfilled slot's free is a no-op, so the
     // errdefer can sweep the whole array even when an error fires
     // partway through the fill.
     var weapon_definitions: [types.weapon_type_count]SalvageDefinition =
-        [_]SalvageDefinition{.{ .splits = &.{} }} ** types.weapon_type_count;
+        @as([types.weapon_type_count]SalvageDefinition, @splat(.{ .splits = &.{} }));
     errdefer {
         for (weapon_definitions) |definition| allocator.free(definition.splits);
     }
 
-    inline for (weapon_type_fields, 0..) |field, index| {
+    inline for (weapon_type_field_names, 0..) |field_name, index| {
         const capitalized = comptime blk: {
-            var name: [field.name.len]u8 = undefined;
-            @memcpy(&name, field.name);
+            var name: [field_name.len]u8 = undefined;
+            @memcpy(&name, field_name);
             name[0] = std.ascii.toUpper(name[0]);
             break :blk name;
         };
@@ -5561,7 +5561,7 @@ pub fn loadSalvageDefinitions(
     // partial gear fill).
     const gear_headers = .{ "Amulet", "Coat", "Gloves", "Pants", "Boots", "SkillTome" };
     var gear_definitions: [gear_headers.len]SalvageDefinition =
-        [_]SalvageDefinition{.{ .splits = &.{} }} ** gear_headers.len;
+        @as([gear_headers.len]SalvageDefinition, @splat(.{ .splits = &.{} }));
     errdefer {
         for (gear_definitions) |definition| allocator.free(definition.splits);
     }
@@ -6309,7 +6309,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     try std.testing.expectEqual(types.max_pickup_radius, player_data.pants.?.pickup_radius_bonus);
     try std.testing.expectEqual(types.max_boots_speed, player_data.boots.?.speed_bonus);
     // Two of each weapon type in the inventory, all at max damage.
-    var weapon_counts: [std.meta.fields(types.WeaponType).len]u32 = .{0} ** std.meta.fields(types.WeaponType).len;
+    var weapon_counts: [@typeInfo(types.WeaponType).@"enum".field_names.len]u32 = @splat(0);
     var inventory_items: u32 = 0;
     for (player_data.inventory.slots) |maybe_item| {
         const item = maybe_item orelse continue;
@@ -6317,7 +6317,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
         switch (item) {
             .weapon => |weapon| {
                 try std.testing.expectEqual(types.max_weapon_damage, weapon.weapon_damage);
-                weapon_counts[@intCast(@intFromEnum(weapon.weapon_type))] += 1;
+                weapon_counts[@intCast(@backingInt(weapon.weapon_type))] += 1;
             },
             else => return error.TestUnexpectedItem,
         }

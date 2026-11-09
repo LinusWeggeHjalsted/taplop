@@ -474,7 +474,7 @@ test "player_use_skill: non-turn-ending skill omits turn_end" {
         backing.allocator(),
         &.{
             .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .equipped_utility_skills = blk: {
-                var skills: [types.utility_skill_count]?SkillId = .{null} ** types.utility_skill_count;
+                var skills: [types.utility_skill_count]?SkillId = @splat(null);
                 skills[0] = .blink;
                 break :blk skills;
             } },

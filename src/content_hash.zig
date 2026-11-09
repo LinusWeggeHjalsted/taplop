@@ -249,7 +249,12 @@ test "computeMissionHash: missing required file errors" {
 }
 
 test "hashToHex: encodes 32 bytes as 64 lowercase hex chars" {
-    const hash: ContentHash = .{ 0x00, 0x01, 0x02, 0x03 } ** 8;
+    const hash: ContentHash = blk: {
+        const pattern = [4]u8{ 0x00, 0x01, 0x02, 0x03 };
+        var bytes: ContentHash = undefined;
+        for (&bytes, 0..) |*byte, index| byte.* = pattern[index % pattern.len];
+        break :blk bytes;
+    };
     const hex = hashToHex(hash);
     try testing.expectEqual(@as(usize, 64), hex.len);
     try testing.expectEqualStrings("00010203", hex[0..8]);

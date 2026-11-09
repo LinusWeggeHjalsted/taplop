@@ -159,12 +159,12 @@ fn writeEvent(
                     });
                     const Payload = @TypeOf(variant_payload);
                     if (Payload != void) {
-                        inline for (@typeInfo(Payload).@"struct".fields) |field| {
+                        inline for (@typeInfo(Payload).@"struct".field_names) |field_name| {
                             try writeEventField(
                                 buffer,
                                 allocator,
-                                field.name,
-                                @field(variant_payload, field.name),
+                                field_name,
+                                @field(variant_payload, field_name),
                             );
                         }
                     }
@@ -226,8 +226,8 @@ fn typeContainsString(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |pointer| pointer.size == .slice and pointer.child == u8,
         .@"struct" => |info| blk: {
-            for (info.fields) |field| {
-                if (typeContainsString(field.type)) break :blk true;
+            for (info.field_types) |field_type| {
+                if (typeContainsString(field_type)) break :blk true;
             }
             break :blk false;
         },
@@ -250,16 +250,16 @@ fn writeIndexedSliceField(
     value: anytype,
 ) !void {
     const Element = @typeInfo(@TypeOf(value)).pointer.child;
-    inline for (@typeInfo(Element).@"struct".fields) |field| {
-        if (comptime !isIndexedSliceFieldLineValue(field.type)) {
-            @compileError("indexed slice field element too deep: " ++ @typeName(field.type));
+    inline for (@typeInfo(Element).@"struct".field_types) |field_type| {
+        if (comptime !isIndexedSliceFieldLineValue(field_type)) {
+            @compileError("indexed slice field element too deep: " ++ @typeName(field_type));
         }
     }
     try buffer.print(allocator, "{s}_count {d}\n", .{ name, value.len });
     for (value, 0..) |element, index| {
-        inline for (@typeInfo(Element).@"struct".fields) |field| {
-            try buffer.print(allocator, "{s}_{d}_{s} ", .{ name, index, field.name });
-            try appendEventScalar(buffer, allocator, @field(element, field.name));
+        inline for (@typeInfo(Element).@"struct".field_names) |field_name| {
+            try buffer.print(allocator, "{s}_{d}_{s} ", .{ name, index, field_name });
+            try appendEventScalar(buffer, allocator, @field(element, field_name));
             try buffer.appendSlice(allocator, "\n");
         }
     }
@@ -319,9 +319,9 @@ fn appendEventScalar(
             }
         },
         .@"struct" => |info| {
-            inline for (info.fields, 0..) |field, index| {
+            inline for (info.field_names, 0..) |field_name, index| {
                 if (index != 0) try buffer.appendSlice(allocator, " ");
-                try appendEventScalar(buffer, allocator, @field(value, field.name));
+                try appendEventScalar(buffer, allocator, @field(value, field_name));
             }
         },
         .@"union" => |union_info| {
@@ -334,17 +334,17 @@ fn appendEventScalar(
                 switch (value) {
                     inline else => |payload, tag| {
                         // `tag` is a comptime-known enum value, so indexing
-                        // union_info.fields (a comptime tuple) works. A void
-                        // payload (e.g. EntityEditTarget.player_def) writes
-                        // just the tag - no payload fields appended. An
-                        // OPTIONAL payload (e.g. EditorPickerTarget
+                        // field_names/field_types (comptime slices) works. A
+                        // void payload (e.g. EntityEditTarget.player_def)
+                        // writes just the tag - no payload fields appended.
+                        // An OPTIONAL payload (e.g. EditorPickerTarget
                         // .entity_layer, null = add-new) writes just the tag
                         // when null - absence encodes null, the same
                         // convention writeEventField uses for struct fields.
-                        const field_info = union_info.fields[@intFromEnum(tag)];
-                        if (field_info.type == void) {
+                        const field_type = union_info.field_types[@backingInt(tag)];
+                        if (field_type == void) {
                             // void payload: just the tag.
-                        } else if (comptime @typeInfo(field_info.type) == .optional) {
+                        } else if (comptime @typeInfo(field_type) == .optional) {
                             if (payload) |inner| {
                                 try buffer.appendSlice(allocator, " ");
                                 try appendEventScalar(buffer, allocator, inner);
@@ -451,38 +451,47 @@ fn parseEvent(
     const category = tokens.next() orelse return error.MalformedSessionLog;
     const variant = tokens.next() orelse return error.MalformedSessionLog;
 
-    inline for (@typeInfo(Event).@"union".fields) |category_field| {
-        if (std.mem.eql(u8, category, category_field.name)) {
-            const Inner = category_field.type;
-            inline for (@typeInfo(Inner).@"union".fields) |variant_field| {
-                if (std.mem.eql(u8, variant, variant_field.name)) {
-                    const Payload = variant_field.type;
+    inline for (
+        @typeInfo(Event).@"union".field_names,
+        @typeInfo(Event).@"union".field_types,
+    ) |category_field_name, category_field_type| {
+        if (std.mem.eql(u8, category, category_field_name)) {
+            const Inner = category_field_type;
+            inline for (
+                @typeInfo(Inner).@"union".field_names,
+                @typeInfo(Inner).@"union".field_types,
+            ) |variant_field_name, variant_field_type| {
+                if (std.mem.eql(u8, variant, variant_field_name)) {
+                    const Payload = variant_field_type;
                     const inner_value = if (Payload == void)
-                        @unionInit(Inner, variant_field.name, {})
+                        @unionInit(Inner, variant_field_name, {})
                     else inner: {
                         var payload: Payload = undefined;
-                        inline for (@typeInfo(Payload).@"struct".fields) |payload_field| {
+                        inline for (
+                            @typeInfo(Payload).@"struct".field_names,
+                            @typeInfo(Payload).@"struct".field_types,
+                        ) |payload_field_name, payload_field_type| {
                             // A string-bearing struct slice reads back its
                             // indexed lines (the writer's mirror - see
                             // writeIndexedSliceField).
-                            @field(payload, payload_field.name) =
-                                if (comptime isStringBearingStructSlice(payload_field.type))
+                            @field(payload, payload_field_name) =
+                                if (comptime isStringBearingStructSlice(payload_field_type))
                                     try parseIndexedSliceField(
-                                        payload_field.type,
-                                        payload_field.name,
+                                        payload_field_type,
+                                        payload_field_name,
                                         pairs,
                                         allocator,
                                     )
                                 else
                                     try parseEventFieldValue(
-                                        payload_field.type,
-                                        findValue(pairs, payload_field.name),
+                                        payload_field_type,
+                                        findValue(pairs, payload_field_name),
                                         allocator,
                                     );
                         }
-                        break :inner @unionInit(Inner, variant_field.name, payload);
+                        break :inner @unionInit(Inner, variant_field_name, payload);
                     };
-                    return @unionInit(Event, category_field.name, inner_value);
+                    return @unionInit(Event, category_field_name, inner_value);
                 }
             }
             return error.MalformedSessionLog; // unknown variant for this category
@@ -509,15 +518,15 @@ fn parseIndexedSliceField(
     var elements: std.ArrayList(Element) = .empty;
     for (0..count) |index| {
         var element: Element = undefined;
-        inline for (@typeInfo(Element).@"struct".fields) |field| {
+        inline for (@typeInfo(Element).@"struct".field_names, @typeInfo(Element).@"struct".field_types) |field_name, field_type| {
             const key = std.fmt.allocPrint(
                 allocator,
                 "{s}_{d}_{s}",
-                .{ name, index, field.name },
+                .{ name, index, field_name },
             ) catch return error.OutOfMemory;
             const value = findValue(pairs, key) orelse
                 return error.MalformedSessionLog;
-            @field(element, field.name) = try parseEventScalar(field.type, value, allocator);
+            @field(element, field_name) = try parseEventScalar(field_type, value, allocator);
         }
         try elements.append(allocator, element);
     }
@@ -613,8 +622,8 @@ fn parseScalarTokens(
         },
         .@"struct" => |info| {
             var result: T = undefined;
-            inline for (info.fields) |field| {
-                @field(result, field.name) = try parseScalarTokens(field.type, tokens, allocator);
+            inline for (info.field_names, info.field_types) |field_name, field_type| {
+                @field(result, field_name) = try parseScalarTokens(field_type, tokens, allocator);
             }
             return result;
         },
@@ -624,25 +633,25 @@ fn parseScalarTokens(
             // EntityEditTarget.player_def) the tag alone suffices.
             if (union_info.tag_type) |_| {
                 const tag_token = tokens.next() orelse return error.MalformedSessionLog;
-                inline for (union_info.fields) |field| {
-                    if (std.mem.eql(u8, tag_token, field.name)) {
-                        if (field.type == void) {
-                            return @unionInit(T, field.name, {});
-                        } else if (comptime @typeInfo(field.type) == .optional) {
+                inline for (union_info.field_names, union_info.field_types) |field_name, field_type| {
+                    if (std.mem.eql(u8, tag_token, field_name)) {
+                        if (field_type == void) {
+                            return @unionInit(T, field_name, {});
+                        } else if (comptime @typeInfo(field_type) == .optional) {
                             // OPTIONAL payload (e.g. EditorPickerTarget
                             // .entity_layer, null = add-new): the tag alone
                             // (no remaining token) is null - absence encodes
                             // null, mirroring appendEventScalar's union branch
                             // + writeEventField's struct-field convention.
                             if (tokens.peek() == null) {
-                                return @unionInit(T, field.name, null);
+                                return @unionInit(T, field_name, null);
                             }
-                            const optional_info = @typeInfo(field.type).optional;
+                            const optional_info = @typeInfo(field_type).optional;
                             const payload = try parseScalarTokens(optional_info.child, tokens, allocator);
-                            return @unionInit(T, field.name, payload);
+                            return @unionInit(T, field_name, payload);
                         } else {
-                            const payload = try parseScalarTokens(field.type, tokens, allocator);
-                            return @unionInit(T, field.name, payload);
+                            const payload = try parseScalarTokens(field_type, tokens, allocator);
+                            return @unionInit(T, field_name, payload);
                         }
                     }
                 }

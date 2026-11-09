@@ -203,6 +203,11 @@ pub const panic = struct {
         call("invalid error code", null);
     }
 
+    pub fn unexpectedErrorCode(err: anyerror) noreturn {
+        _ = &err;
+        call("unexpected error code", null);
+    }
+
     pub fn integerOutOfBounds() noreturn {
         call("integer does not fit in destination type", null);
     }
@@ -257,6 +262,10 @@ pub const panic = struct {
 
     pub fn noreturnReturned() noreturn {
         call("'noreturn' function returned", null);
+    }
+
+    pub fn loadUninstantiableType() noreturn {
+        call("attempt to load uninstantiable type", null);
     }
 };
 

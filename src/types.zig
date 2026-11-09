@@ -1101,10 +1101,10 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
 /// inside `isSuppressed`, so the switch was the most-executed line of the
 /// input path. A new Action variant still fails compilation until the
 /// switch classifies it.
-const action_binding_contexts_lut: [@typeInfo(Action).@"enum".fields.len]BindingContextSet = blk: {
-    var table: [@typeInfo(Action).@"enum".fields.len]BindingContextSet = undefined;
+const action_binding_contexts_lut: [@typeInfo(Action).@"enum".field_names.len]BindingContextSet = blk: {
+    var table: [@typeInfo(Action).@"enum".field_names.len]BindingContextSet = undefined;
     for (&table, 0..) |*slot, index| {
-        slot.* = actionBindingContextsSwitch(@enumFromInt(index));
+        slot.* = actionBindingContextsSwitch(@fromBackingInt(@intCast(index)));
     }
     break :blk table;
 };
@@ -1121,7 +1121,7 @@ const action_binding_contexts_lut: [@typeInfo(Action).@"enum".fields.len]Binding
 /// editor's). Reads the comptime-materialized table above (one array read
 /// per call).
 pub fn actionBindingContexts(action: Action) BindingContextSet {
-    return action_binding_contexts_lut[@intFromEnum(action)];
+    return action_binding_contexts_lut[@backingInt(action)];
 }
 
 /// The settings screen's content tabs (the Keybinds tab is the in-game
@@ -1413,15 +1413,15 @@ pub const ButtonPayloadTag = std.meta.Tag(ButtonPayload);
 // error instead of dead scaffolding. Runs at comptime over the table
 // itself, so it can never drift from the switch above.
 comptime {
-    var carried: [@typeInfo(ButtonPayloadTag).@"enum".fields.len]bool =
-        .{false} ** @typeInfo(ButtonPayloadTag).@"enum".fields.len;
-    for (0..@typeInfo(Action).@"enum".fields.len) |action_index| {
-        if (actionButtonPayload(@enumFromInt(action_index))) |payload_tag| {
-            carried[@intFromEnum(payload_tag)] = true;
+    var carried: [@typeInfo(ButtonPayloadTag).@"enum".field_names.len]bool =
+        @splat(false);
+    for (0..@typeInfo(Action).@"enum".field_names.len) |action_index| {
+        if (actionButtonPayload(@fromBackingInt(@intCast(action_index)))) |payload_tag| {
+            carried[@backingInt(payload_tag)] = true;
         }
     }
     for (std.meta.tags(ButtonPayloadTag)) |payload_tag| {
-        if (!carried[@intFromEnum(payload_tag)]) {
+        if (!carried[@backingInt(payload_tag)]) {
             @compileError(
                 "ButtonPayload variant ." ++ @tagName(payload_tag) ++
                     " is carried by no action - dead variant, or actionButtonPayload is stale",
@@ -2054,7 +2054,7 @@ pub const Entity = struct {
     pants: ?Pants = null,
     boots: ?Boots = null,
 
-    equipped_utility_skills: [utility_skill_count]?SkillId = .{null} ** utility_skill_count,
+    equipped_utility_skills: [utility_skill_count]?SkillId = @splat(null),
     inventory: Inventory = .{},
     skill_cooldowns: std.EnumArray(SkillId, u32) = std.EnumArray(SkillId, u32).initFill(0),
     active_effects: []const Effect = &.{},
@@ -2239,9 +2239,9 @@ pub const Entity = struct {
         weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
     ) ?SkillId {
         return switch (slot) {
-            1 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_1 else null,
-            2 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_2 else null,
-            3 => if (self.off_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3 else null,
+            1 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@backingInt(weapon.weapon_type)].skill_1 else null,
+            2 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@backingInt(weapon.weapon_type)].skill_2 else null,
+            3 => if (self.off_hand_weapon) |weapon| weapon_type_definitions[@backingInt(weapon.weapon_type)].skill_3 else null,
             4, 5, 6, 7, 8 => self.equipped_utility_skills[slot - 4],
             else => null,
         };
@@ -2270,13 +2270,13 @@ pub const Entity = struct {
         self: Entity,
         weapon_type_definitions: WeaponTypeDefinitions,
     ) [on_bar_skill_count]?SkillId {
-        var result: [on_bar_skill_count]?SkillId = .{null} ** on_bar_skill_count;
+        var result: [on_bar_skill_count]?SkillId = @splat(null);
         var length: usize = 0;
 
         const hands = [2]?Weapon{ self.main_hand_weapon, self.off_hand_weapon };
         for (hands) |maybe_weapon| {
             const weapon = maybe_weapon orelse continue;
-            const definition = weapon_type_definitions[@intFromEnum(weapon.weapon_type)];
+            const definition = weapon_type_definitions[@backingInt(weapon.weapon_type)];
             const type_skills = [weapon_skills_per_type]SkillId{
                 definition.skill_1,
                 definition.skill_2,
@@ -2371,8 +2371,8 @@ pub const SalvageDefinition = struct {
     splits: []const SalvageSplit,
 };
 
-pub const item_type_count = @typeInfo(ItemType).@"union".fields.len;
-pub const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+pub const item_type_count = @typeInfo(ItemType).@"union".field_names.len;
+pub const weapon_type_count = @typeInfo(WeaponType).@"enum".field_names.len;
 
 /// Skills per weapon type (skill_1..skill_3 in WeaponTypeDefinition).
 const weapon_skills_per_type: usize = 3;
@@ -2399,7 +2399,7 @@ pub const inventory_rows = 12;
 pub const inventory_slot_count = inventory_columns * inventory_rows;
 
 pub const Inventory = struct {
-    slots: [inventory_slot_count]?Item = .{null} ** inventory_slot_count,
+    slots: [inventory_slot_count]?Item = @splat(null),
 };
 
 pub const Clone = struct {
@@ -2434,7 +2434,7 @@ pub const PlayerData = struct {
     pants: ?Pants = null,
     boots: ?Boots = null,
     inventory: Inventory = .{},
-    equipped_utility_skills: [utility_skill_count]?SkillId = .{null} ** utility_skill_count,
+    equipped_utility_skills: [utility_skill_count]?SkillId = @splat(null),
 };
 
 // A palette entry: a reusable entity definition (the "prefab"). Placements
@@ -2794,11 +2794,11 @@ pub const UiSurfaceState = struct {
     /// reopened panel lands rightmost instead of recalling its pre-close
     /// slot.
     open_middle_panels: [max_middle_panels]?MiddlePanelId =
-        .{null} ** max_middle_panels,
+        @splat(null),
 
     /// Full-screen overlays that can stack (world map, full combat log).
     open_full_screen_overlays: [max_full_screen_overlays]?FullScreenOverlayId =
-        .{null} ** max_full_screen_overlays,
+        @splat(null),
 
     /// Options menu - always-on-top modal, locks input + pauses the world.
     options_menu_open: bool = false,
@@ -2916,8 +2916,8 @@ pub const UiSurfaceState = struct {
     /// way it already is in `toggle` / `isSurfaceOpen` /
     /// `surfaceToggleLegal`.
     pub fn closeAll(self: *UiSurfaceState) void {
-        inline for (@typeInfo(UiSurfaceId).@"enum".fields) |field| {
-            self.close(@field(UiSurfaceId, field.name));
+        inline for (@typeInfo(UiSurfaceId).@"enum".field_names) |field_name| {
+            self.close(@field(UiSurfaceId, field_name));
         }
     }
 
@@ -3157,8 +3157,8 @@ test "UiSurfaceState.closeAll clears every surface" {
     // Open EVERY surface - derived from the enum, so a new surface joins
     // this test automatically - plus an inspect target, then closeAll
     // must reset to the zero state.
-    inline for (@typeInfo(UiSurfaceId).@"enum".fields) |field| {
-        surfaces.toggle(@field(UiSurfaceId, field.name));
+    inline for (@typeInfo(UiSurfaceId).@"enum".field_names) |field_name| {
+        surfaces.toggle(@field(UiSurfaceId, field_name));
     }
     surfaces.inspectEntity(3);
     surfaces.closeAll();

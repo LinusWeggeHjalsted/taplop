@@ -33,7 +33,7 @@ const Level = types.Level;
 const Editor = types.Editor;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const ColorThemeDefinitions = types.ColorThemeDefinitions;
-const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+const weapon_type_count = @typeInfo(WeaponType).@"enum".field_names.len;
 const WeaponType = types.WeaponType;
 
 /// Per-frame render context: the camera, timing, event log view, and
@@ -3116,9 +3116,9 @@ test "flag banner: frame advances with the animation clock and wraps" {
     const dummy_theme = types.ActiveColorTheme{
         .lightest = .{ .r = 255, .g = 255, .b = 255 },
         .darkest = .{ .r = 0, .g = 0, .b = 0 },
-        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .world_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .enemy_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .player_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
     };
 
     const d0 = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 0, 8, true);
@@ -3192,7 +3192,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
                     .level_start_index = null,
                     .current_event_index = 0,
                     .frame_allocator = arena__,
-                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
                     .sprite_bounds = .{},
                     .can_undo = false,
                     .can_redo = false,
@@ -3279,9 +3279,9 @@ test "skill range outline: range/radius/none/drag" {
     const dummy_theme = types.ActiveColorTheme{
         .lightest = .{ .r = 255, .g = 255, .b = 255 },
         .darkest = .{ .r = 0, .g = 0, .b = 0 },
-        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .world_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .enemy_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .player_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
     };
     const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
 
@@ -3382,9 +3382,9 @@ test "prepared skill radius outline: follows cursor while targeting" {
     const dummy_theme = types.ActiveColorTheme{
         .lightest = .{ .r = 255, .g = 255, .b = 255 },
         .darkest = .{ .r = 0, .g = 0, .b = 0 },
-        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .world_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .enemy_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .player_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
     };
     const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
 
@@ -3449,9 +3449,9 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
     const dummy_theme = types.ActiveColorTheme{
         .lightest = .{ .r = 255, .g = 255, .b = 255 },
         .darkest = .{ .r = 0, .g = 0, .b = 0 },
-        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
-        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .world_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .enemy_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
+        .player_gradient = .{ .colors = @as([6]types.Color, @splat(.{ .r = 0, .g = 0, .b = 0 })) },
     };
     const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
 
@@ -3613,7 +3613,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3682,7 +3682,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3716,7 +3716,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3740,7 +3740,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3765,7 +3765,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3825,7 +3825,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -3921,7 +3921,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
                     .level_start_index = null,
                     .current_event_index = 0,
                     .frame_allocator = arena__,
-                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
                     .sprite_bounds = .{},
                     .can_undo = false,
                     .can_redo = false,
@@ -4027,7 +4027,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -4125,7 +4125,7 @@ test "editor move-drag preview: unselected claim translates the grabbed group, s
                     .level_start_index = null,
                     .current_event_index = 0,
                     .frame_allocator = arena__,
-                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
                     .sprite_bounds = .{},
                     .can_undo = false,
                     .can_redo = false,
@@ -4257,10 +4257,10 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     const enemy_one: types.Color = .{ .r = 66, .g = 66, .b = 66 };
     const player_two: types.Color = .{ .r = 22, .g = 22, .b = 22 };
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
-    var player_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    var player_gradient: [types.gradient_color_count]types.Color = @splat(black);
     player_gradient[2] = player_two;
     player_gradient[4] = player_four;
-    var enemy_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    var enemy_gradient: [types.gradient_color_count]types.Color = @splat(black);
     enemy_gradient[4] = enemy_four;
     // The weapon color (gradient index 1) - needed by the
     // keep_original_colors block below; set BEFORE the theme copy.
@@ -4268,7 +4268,7 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .world_gradient = .{ .colors = @splat(black) },
         .enemy_gradient = .{ .colors = enemy_gradient },
         .player_gradient = .{ .colors = player_gradient },
     };
@@ -4320,14 +4320,14 @@ test "decoration pieces: keep_original_colors untints base + layers" {
 
     const world_four: types.Color = .{ .r = 77, .g = 77, .b = 77 };
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
-    var world_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    var world_gradient: [types.gradient_color_count]types.Color = @splat(black);
     world_gradient[4] = world_four;
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
         .world_gradient = .{ .colors = world_gradient },
-        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
-        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
@@ -4375,9 +4375,9 @@ test "decoration pieces: behind layers split into back_layers, config order kept
     const theme: types.ActiveColorTheme = .{
         .lightest = .{ .r = 1, .g = 1, .b = 1 },
         .darkest = black,
-        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
-        .enemy_gradient = .{ .colors = .{black} ** types.gradient_color_count },
-        .player_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
     };
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
     const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
@@ -4417,7 +4417,7 @@ test "decoration pieces: behind layers split into back_layers, config order kept
 // ============================================================
 
 test "middle panel width: inspect panel renders only for a live in-range target" {
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
     const level = types.Level{ .entities = &entities };
     var level_state = GameState{
@@ -4481,7 +4481,7 @@ test "middle panel width: inspect panel renders only for a live in-range target"
 }
 
 test "middle panels occupied width: gaps only between rendered panels" {
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
     const level = types.Level{ .entities = &entities };
     var level_state = GameState{
@@ -4522,7 +4522,7 @@ test "middle panels occupied width: gaps only between rendered panels" {
 }
 
 test "camera view region: bars bound vertically, panels bound horizontally" {
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var level_state = GameState{
         .screen = .level,
         .event_stack = &.{},
@@ -4589,7 +4589,7 @@ test "camera view region: fully covered screen acts as if no panels open" {
 }
 
 test "camera view region: null outside levels, hubs, and the editor" {
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const editor_state = GameState{
         .screen = .editor,
         .event_stack = &.{},
@@ -5136,7 +5136,7 @@ test "global top bar: hovering options/undo/redo spawns their tooltips" {
 
     const state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
     var session = state.SessionState{};
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     // Button centers: a row of `top_bar_slot_size` cells flush top-left,
     // separated by `ui_gap` (options, undo, redo).
@@ -5240,7 +5240,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const harness = test_harness.Harness.init(arena);
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
 
     const main_menu_state = GameState{
         .screen = .main_menu,
@@ -5496,7 +5496,7 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
             .level_start_index = null,
             .current_event_index = 0,
             .frame_allocator = arena,
-            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .font_metrics = .{ .base_size = 100, .advances = @as([95]i32, @splat(50)) },
             .sprite_bounds = .{},
             .can_undo = false,
             .can_redo = false,
@@ -5548,7 +5548,7 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
     defer backing.deinit();
     const arena = backing.allocator();
     var harness = test_harness.Harness.init(arena);
-    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     // A non-empty tips list: the tips rung (panel + top-bar `?`) only
     // exists when tips are loaded (the `?` hides for an empty list).
     const census_tips = [_][]const u8{"census tip"};

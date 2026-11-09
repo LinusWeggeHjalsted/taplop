@@ -44,11 +44,12 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
                 // Tagged union: switch on the active field and deep-copy its payload
                 return switch (value) {
                     inline else => |payload, tag| {
-                        const field_info = union_info.fields[@intFromEnum(tag)];
-                        if (field_info.type == void) {
-                            return @unionInit(T, field_info.name, {});
+                        const field_name = union_info.field_names[@backingInt(tag)];
+                        const field_type = union_info.field_types[@backingInt(tag)];
+                        if (field_type == void) {
+                            return @unionInit(T, field_name, {});
                         } else {
-                            return @unionInit(T, field_info.name, deepCopy(field_info.type, payload, allocator));
+                            return @unionInit(T, field_name, deepCopy(field_type, payload, allocator));
                         }
                     },
                 };
@@ -58,8 +59,8 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
         },
         .@"struct" => |struct_info| {
             var result: T = undefined;
-            inline for (struct_info.fields) |field| {
-                @field(result, field.name) = deepCopy(field.type, @field(value, field.name), allocator);
+            inline for (struct_info.field_names, struct_info.field_types) |field_name, field_type| {
+                @field(result, field_name) = deepCopy(field_type, @field(value, field_name), allocator);
             }
             return result;
         },
@@ -112,9 +113,10 @@ pub fn deepEqual(comptime T: type, a: T, b: T) bool {
                 if (a_tag != b_tag) return false;
                 return switch (a) {
                     inline else => |payload, tag| blk: {
-                        const field_info = union_info.fields[@intFromEnum(tag)];
-                        if (field_info.type == void) break :blk true;
-                        break :blk deepEqual(field_info.type, payload, @field(b, field_info.name));
+                        const field_name = union_info.field_names[@backingInt(tag)];
+                        const field_type = union_info.field_types[@backingInt(tag)];
+                        if (field_type == void) break :blk true;
+                        break :blk deepEqual(field_type, payload, @field(b, field_name));
                     },
                 };
             } else {
@@ -122,8 +124,8 @@ pub fn deepEqual(comptime T: type, a: T, b: T) bool {
             }
         },
         .@"struct" => |struct_info| {
-            inline for (struct_info.fields) |field| {
-                if (!deepEqual(field.type, @field(a, field.name), @field(b, field.name))) return false;
+            inline for (struct_info.field_names, struct_info.field_types) |field_name, field_type| {
+                if (!deepEqual(field_type, @field(a, field_name), @field(b, field_name))) return false;
             }
             return true;
         },
@@ -152,9 +154,9 @@ pub fn firstDiffField(comptime T: type, a: T, b: T) ?[:0]const u8 {
     const info = @typeInfo(T);
     switch (info) {
         .@"struct" => |struct_info| {
-            inline for (struct_info.fields) |field| {
-                if (!deepEqual(field.type, @field(a, field.name), @field(b, field.name))) {
-                    return field.name;
+            inline for (struct_info.field_names, struct_info.field_types) |field_name, field_type| {
+                if (!deepEqual(field_type, @field(a, field_name), @field(b, field_name))) {
+                    return field_name;
                 }
             }
             return null;
@@ -166,9 +168,10 @@ pub fn firstDiffField(comptime T: type, a: T, b: T) ?[:0]const u8 {
                 if (a_tag != b_tag) return null;
                 return switch (a) {
                     inline else => |payload, tag| blk: {
-                        const field_info = union_info.fields[@intFromEnum(tag)];
-                        if (field_info.type == void) break :blk null;
-                        break :blk firstDiffField(field_info.type, payload, @field(b, field_info.name));
+                        const field_name = union_info.field_names[@backingInt(tag)];
+                        const field_type = union_info.field_types[@backingInt(tag)];
+                        if (field_type == void) break :blk null;
+                        break :blk firstDiffField(field_type, payload, @field(b, field_name));
                     },
                 };
             } else {

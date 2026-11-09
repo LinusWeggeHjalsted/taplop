@@ -216,11 +216,11 @@ const EditorBrowserKindSpec = struct {
     kind: types.EditorKind,
     label: []const u8,
 };
-const editor_kind_count = @typeInfo(types.EditorKind).@"enum".fields.len;
+const editor_kind_count = @typeInfo(types.EditorKind).@"enum".field_names.len;
 const editor_browser_kind_specs: [editor_kind_count]EditorBrowserKindSpec = blk: {
     var specs: [editor_kind_count]EditorBrowserKindSpec = undefined;
-    for (@typeInfo(types.EditorKind).@"enum".fields, 0..) |field, index| {
-        const kind: types.EditorKind = @enumFromInt(field.value);
+    for (@typeInfo(types.EditorKind).@"enum".field_names, 0..) |field_name, index| {
+        const kind: types.EditorKind = @field(types.EditorKind, field_name);
         specs[index] = .{ .kind = kind, .label = editorBrowserKindLabel(kind) };
     }
     break :blk specs;
@@ -568,7 +568,7 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     // Enough rows to overflow the visible window (rows region is roughly
@@ -630,7 +630,7 @@ test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     var scroll: i32 = 0;
@@ -657,7 +657,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const MissionEntry = @import("../file_source.zig").FileSource.MissionEntry;
 
@@ -773,7 +773,7 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     for ([_]types.EditorMissionBrowserTab{ .local, .official }) |tab| {
@@ -817,7 +817,7 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     var scroll: i32 = 0;

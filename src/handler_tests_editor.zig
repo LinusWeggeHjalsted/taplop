@@ -4310,7 +4310,7 @@ test "decoration sprite picker: mission-local pick derives dims + bottom-left de
     // footprint reserves the bottom-left tile (0, 2).
     const banner_png = [_]u8{
         0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
-    } ++ [_]u8{0} ** 8 ++ [_]u8{
+    } ++ @as([8]u8, @splat(0)) ++ [_]u8{
         0, 0, 2, 0, // width 512
         0, 0, 3, 0, // height 768
     };
@@ -7191,7 +7191,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // DEFAULT: every section collapsed - the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        [_]bool{false} ** @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len,
+        @as([@typeInfo(types.EditorInspectorSectionId).@"enum".field_names.len]bool, @splat(false)),
         history.session.ui_state.editor_inspector_section_expanded,
     );
 
@@ -7199,17 +7199,17 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector_section,
     }, .{ .editor_section = .weapons }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
+    try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.weapons)]);
     // Independent: nothing else expanded, no event recorded (view state,
     // off the undo timeline).
-    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]);
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.gear)]);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Collapse it back.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector_section,
     }, .{ .editor_section = .weapons }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.weapons)]);
 }
 
 test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op, delete, color swap" {
@@ -7306,7 +7306,7 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
         fn make(width: u32, height: u32) [24]u8 {
             var bytes = [_]u8{
                 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
-            } ++ [_]u8{0} ** 8 ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
+            } ++ @as([8]u8, @splat(0)) ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
             std.mem.writeInt(u32, bytes[16..20], width, .big);
             std.mem.writeInt(u32, bytes[20..24], height, .big);
             return bytes;

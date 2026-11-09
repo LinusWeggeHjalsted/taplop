@@ -1449,17 +1449,17 @@ test "verb table: every example parses; every command variant is covered" {
     // variant is produced by at least one example - a new variant is a
     // test failure until the help table covers it.
     const CommandTag = std.meta.Tag(ConsoleCommand);
-    var covered: [@typeInfo(CommandTag).@"enum".fields.len]bool =
-        .{false} ** @typeInfo(CommandTag).@"enum".fields.len;
+    var covered: [@typeInfo(CommandTag).@"enum".field_names.len]bool =
+        @splat(false);
     for (verb_table) |entry| {
         for (entry.examples) |example| {
             const outcome = parseCommandLine(example);
             try std_testing.expect(outcome == .command);
-            covered[@intFromEnum(std.meta.activeTag(outcome.command))] = true;
+            covered[@backingInt(std.meta.activeTag(outcome.command))] = true;
         }
     }
     for (std.meta.tags(CommandTag)) |variant_tag| {
-        try std_testing.expect(covered[@intFromEnum(variant_tag)]);
+        try std_testing.expect(covered[@backingInt(variant_tag)]);
     }
 }
 

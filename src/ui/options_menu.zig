@@ -267,7 +267,7 @@ test "buildOptionsMenu: Revalidate Mission is editor-only" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -304,7 +304,7 @@ test "buildOptionsMenu: the main-menu variant carries the meta entries, not the 
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -341,7 +341,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -430,7 +430,7 @@ test "buildOptionsMenu: Export Game on every variant, web only (null persistent 
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
@@ -477,7 +477,7 @@ test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no E
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
     const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
 
