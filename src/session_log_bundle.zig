@@ -38,6 +38,16 @@ const Sha256 = std.crypto.hash.sha2.Sha256;
 /// game could have read in the first place.
 const bundle_read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 
+/// Aggregate cap on the content copies: a hostile bundle with many
+/// distinct-hash copies would otherwise drive unbounded total allocation
+/// during load (each copy's read is per-file limited, the running total
+/// was not). Checked on each copy's size BEFORE it is read, so a bomb
+/// bundle fails without allocating a byte of content. 1 GB is far past
+/// any legit bundle (a session's reconstruction reads: KB-scale configs
+/// + ~100 KB art) while still covering the game's own 256 MB per-file
+/// read limit plus a whole campaign's worth of content.
+const bundle_max_total_content_bytes: u64 = 1024 * 1024 * 1024;
+
 /// One manifest entry group in the `ReconstructionCache` section: the file
 /// bytes one reconstruction-read event applied, and where the copy lives.
 /// The section's entry groups preserve cache order (monotonic
@@ -68,6 +78,9 @@ pub const SessionLogBundleError = error{
     /// A referenced content copy is missing or its bytes don't match the
     /// recorded hash.
     ContentMismatch,
+    /// The content copies' total size exceeds the aggregate bundle cap
+    /// (`bundle_max_total_content_bytes`).
+    BundleTooLarge,
     /// Propagated from session_log.loadEventLog.
     MalformedSessionLog,
     UnsupportedFileFormatVersion,
@@ -245,6 +258,7 @@ pub fn loadSessionLogBundle(
     const ContentBytes = struct { hash_hex: []const u8, bytes: []const u8 };
     var copies: std.ArrayList(ContentBytes) = .empty;
     defer copies.deinit(allocator);
+    var total_content_bytes: u64 = 0;
     var cache_entries: std.ArrayList(ReconstructionCacheEntry) = .empty;
     errdefer cache_entries.deinit(allocator);
     for (manifest) |entry| {
@@ -261,6 +275,18 @@ pub fn loadSessionLogBundle(
             const content_sub_path = std.fmt.allocPrint(allocator, "content/{s}", .{entry.file_name}) catch
                 return error.OutOfMemory;
             defer allocator.free(content_sub_path);
+            // The aggregate cap fires on the copy's size BEFORE the read
+            // (see bundle_max_total_content_bytes).
+            const full_content_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/{s}",
+                .{ bundle_path, content_sub_path },
+            ) catch return error.OutOfMemory;
+            defer allocator.free(full_content_path);
+            if (dir.statFile(io, full_content_path, .{})) |stat| {
+                total_content_bytes += stat.size;
+                if (total_content_bytes > bundle_max_total_content_bytes) return error.BundleTooLarge;
+            } else |_| {} // unstatable: the read below surfaces the proper error
             const bytes = readBundleFile(dir, io, bundle_path, content_sub_path, allocator) catch
                 return error.ContentMismatch;
             if (!std.mem.eql(u8, &hashBytesToHex(bytes), entry.hash_hex)) {
@@ -586,5 +612,59 @@ test "non-monotonic manifest event_index rejects with MalformedManifest" {
     try std.testing.expectError(
         error.MalformedManifest,
         loadSessionLogBundle(persistent_dir, "logs/merged", io, arena.allocator()),
+    );
+}
+
+test "bundle content aggregate cap: a bomb bundle fails before any copy is read" {
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch_path = "zig-cache/test-session-log-bundle-bomb";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch_path, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch_path) catch {};
+
+    // A loadable log body plus a one-entry manifest (dummy hex hash -
+    // never verified: the cap fires on the stat size before any read).
+    // The copy is a SPARSE 1.1 GB file (setLength - no bytes on disk, no
+    // allocation): its size alone crosses the 1 GB aggregate cap, so the
+    // load must fail WITHOUT reading a byte of it. (Many distinct-hash
+    // copies summing past the cap hit the same accumulate line; a single
+    // over-cap copy is the cheap shape that proves the read never fires.)
+    const log_body = try session_log.writeEventLog(
+        &.{.{ .meta_event = .open_main_menu }},
+        "20260815_143022",
+        allocator,
+    );
+    defer allocator.free(log_body);
+    var session_log_txt: std.ArrayList(u8) = .empty;
+    defer session_log_txt.deinit(allocator);
+    try session_log_txt.appendSlice(allocator, log_body);
+    try session_log_txt.appendSlice(allocator, "\nReconstructionCache\n");
+    try session_log_txt.appendSlice(allocator, "\nevent_index 0\n");
+    try session_log_txt.appendSlice(allocator, "path missions/bomb/mission.txt\n");
+    try session_log_txt.print(allocator, "hash {x:0>64}\n", .{@as(u64, 1)});
+    try session_log_txt.appendSlice(allocator, "file bomb.dat\n");
+    _ = dir.createDirPath(io, "bombbundle/content") catch
+        @panic("failed to create bundle content dir");
+    dir.writeFile(io, .{
+        .sub_path = "bombbundle/session_log.txt",
+        .data = session_log_txt.items,
+    }) catch @panic("failed to write bundle session log");
+
+    var file = dir.createFile(io, "bombbundle/content/bomb.dat", .{}) catch
+        @panic("failed to create sparse content file");
+    file.setLength(io, 1024 * 1024 * 1024 + 64 * 1024 * 1024) catch
+        @panic("failed to extend sparse content file");
+    file.close(io);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    try std.testing.expectError(
+        error.BundleTooLarge,
+        loadSessionLogBundle(dir, "bombbundle", io, arena.allocator()),
     );
 }

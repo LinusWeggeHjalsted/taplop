@@ -18594,3 +18594,23 @@ unaffected by design (they bypass the seam). Tests pin every escape
 shape plus a "."-segment non-over-rejection. DESIGN → File System & IO
 → File source updated. Closes review item m-5.1 and TODO → Post-Review
 → Hardening item 5.
+
+## Session-log bundle: the aggregate content cap (review m-5.2)
+
+`loadSessionLogBundle` bounded each content-copy read (256 MB, matching
+FileSource's read limit) but not the RUNNING TOTAL - a hostile bundle
+with many distinct-hash copies (dedup can't collapse them, and every
+copy is retained for replay) drove unbounded aggregate allocation
+during load. Harmless locally (the attacker owns the disk); a
+hardening must for the future server-side bundle consumer. Landed
+`bundle_max_total_content_bytes` (1 GB - far past any legit bundle of
+KB-scale configs + ~100 KB art, while covering a single 256 MB
+per-file round-trip plus a whole campaign's worth of content): each
+distinct copy is stat'd BEFORE it is read, the running total crossing
+the cap returns the new `error.BundleTooLarge` (both callers print
+@errorName generically - no caller changes). The test builds a bomb
+bundle with a SPARSE 1.1 GB content copy (setLength - no bytes on
+disk): the load fails on the stat size alone, proving the read never
+fires. DESIGN → Logging & Replay → Session-log bundle updated with the
+two-layer bound. Closes review item m-5.2 and TODO → Post-Review →
+Hardening item 6.

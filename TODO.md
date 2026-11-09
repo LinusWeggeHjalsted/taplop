@@ -36,8 +36,8 @@ commit unit.
 - [x] FileSource: `validateRelativePath` gate - DONE (see DONE.md,
       "FileSource: the relative-path gate at the readFile/writeFile seam
       (review m-5.1)").
-- [ ] Session-log bundle loader: total-bytes cap (per-file 256 MB limit
-      only, today).
+- [x] Session-log bundle loader: total-bytes cap - DONE (see DONE.md,
+      "Session-log bundle: the aggregate content cap (review m-5.2)").
 - [ ] Hub `move_player`: legality arm at the replay seam (level moves
       get full BFS validation; hub moves none).
 - [ ] World draw paths: magenta fallback on missing textures (UI paths

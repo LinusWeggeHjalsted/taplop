@@ -1161,7 +1161,12 @@ that true (`src/session_log_bundle.zig`):
   content copy is verified against its recorded hash; a missing or tampered
   copy is an error, never a silent fallback to some other file on disk. A
   non-monotonic `event_index` (a hand-merged manifest) rejects - the
-  replay-side binary search depends on cache order.
+  replay-side binary search depends on cache order. Reads are bounded
+  twice: per copy (256 MB, matching FileSource's read limit) and in the
+  AGGREGATE (1 GB over all content copies, checked on each copy's size
+  BEFORE it is read - a hostile many-distinct-copies bundle fails without
+  allocating a byte of content; a hardening must for the future
+  server-side bundle consumer).
 - Replay path: `GameStateHistory.loadReconstructionCache` pre-populates
   the cache from the manifest (order preserved), then
   `reconstructFromEventLog(.authoritative)` - a cache miss is a broken or
