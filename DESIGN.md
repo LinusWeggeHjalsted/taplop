@@ -121,6 +121,11 @@ next session meets it as a surprise instead of a known.
   Textures are lazy-loaded from `assets/<sprite_id>.png` and cached; MISSING art
   draws a magenta box (dev-friendly) instead of failing fast - the one place we
   deliberately don't panic, since absent art is a normal in-progress state.
+  The UI paths draw the box at the element's rect; the world paths
+  (drawWorldSprite / drawSpriteDrawable / floating icons) draw it at the
+  drawable's own rect - source-rect or icon dims when known, else the
+  one-tile `types.sprite_grid_tile_pixels` fallback (the same dims the
+  loaders' unresolvable-art warnings describe).
 - The reference↔window letterbox transform lives in one place
   (`viewTransform()`): render() uses it to blit, pollInput() inverts it to map
   the pointer back into reference space. Keep them in sync via that helper.

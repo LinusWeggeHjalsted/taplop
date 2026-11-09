@@ -91,10 +91,9 @@ fn parsePngDimensions(bytes: []const u8) ?types.Vector2 {
     return .{ .x = width, .y = height };
 }
 
-/// The sprite-grid tile size: decoration art must be whole multiples of this
-/// in both dimensions - the view math chunks a decoration sprite into one
-/// 256px piece per bbox tile (see DESIGN → Decorations & Footprint).
-const sprite_grid_tile_pixels: i32 = 256;
+/// The sprite-grid tile size, as a file-local alias for the shared fact's
+/// home in types.zig (single source).
+const sprite_grid_tile_pixels: i32 = types.sprite_grid_tile_pixels;
 
 /// The soft ceiling for custom sprite dimensions (either axis): WebGL2's
 /// guaranteed minimum max texture size is 2048 (ES 3.0 baseline), but 4096+
@@ -5533,7 +5532,6 @@ pub fn loadSalvageDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !SalvageDefinitions {
-
     const weapon_type_fields = @typeInfo(WeaponType).@"enum".fields;
     // Empty-split defaults: an unfilled slot's free is a no-op, so the
     // errdefer can sweep the whole array even when an error fires

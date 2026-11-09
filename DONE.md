@@ -18635,3 +18635,27 @@ hygiene, not a legality rule). The bool helper is tested directly
 (convention: no expectPanics in 0.16 - the validate wrapper is thin
 policy); DESIGN → Determinism → Replay PLAYER-ACTION LEGALITY updated.
 Closes review item m-3.1 and TODO → Post-Review → Hardening item 7.
+
+## World draw paths: the missing-art magenta fallback (review m-7.1 + n-7.2)
+
+The magenta fallback existed only in the UI draw paths; the WORLD paths
+(drawWorldSprite, drawSpriteDrawable, floating-icon overlays) did
+`getTexture(...) orelse return` - a custom mission with unresolvable
+entity art rendered INVISIBLE entities, while DESIGN, the textures.zig
+header, the loaders' warnings, and the art report's premise all
+promised magenta universally. The doc promise is now the code: the
+three world null-arms draw the magenta box through one shared
+drawMissingWorldSpriteBox helper (folding n-7.2's "same orelse-return
+shape three times"), at the drawable's own rect - source-rect dims
+when the drawable carries one, the icon's own size for floating
+icons, else the one-tile 256px fallback dims. That 256px fact was
+promoted to types.sprite_grid_tile_pixels (pub, the loaders' private
+const now aliases it - single source; it was already the documented
+unresolvable-art fallback dims in the loaders' warn-degrade path).
+Verified beyond compile per the platform-seam rule: web build + a
+browser smoke (menu renders, 656 distinct colors, no abort text) -
+the canvas readback trap noted en route (WebGL drawImage without
+preserveDrawingBuffer reads black; the page screenshot is the honest
+probe). DESIGN → Platform Seam's magenta line extended with the world
+paths' dims convention. Closes review items m-7.1 + n-7.2 and TODO →
+Post-Review → Hardening item 8.

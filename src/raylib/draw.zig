@@ -28,6 +28,30 @@ const caret_width: i32 = types.outline_thickness;
 
 // -- World drawing --
 
+/// The world draw paths' missing-art fallback: a magenta box at `x`/`y`
+/// (reference space, top-left) sized `native_width`/`native_height`
+/// sprite pixels scaled by `world_scale` - the same promise the UI draw
+/// paths make (see drawSprite) and the docs + art report state
+/// universally: absent art is OBVIOUS, never invisible (an author
+/// debugging a custom mission by eye).
+fn drawMissingWorldSpriteBox(
+    x: i32,
+    y: i32,
+    native_width: i32,
+    native_height: i32,
+    world_scale: f32,
+) void {
+    // Pre-selected plain values, one conversion call - the aarch64
+    // by-value extern-struct shape (AGENTS → Zig 0.16 Gotchas).
+    const destination = rl.Rectangle{
+        .x = @floatFromInt(x),
+        .y = @floatFromInt(y),
+        .width = @as(f32, @floatFromInt(native_width)) * world_scale,
+        .height = @as(f32, @floatFromInt(native_height)) * world_scale,
+    };
+    rl.drawRectangleRec(destination, rl.Color.magenta);
+}
+
 /// Draw a tile overlay as an outline-class primitive (no overlay art):
 /// the clickable-tile highlight (an inset square outline), the cursor /
 /// range / radius / aggro square outlines, and the region-edge bars. The
@@ -131,7 +155,18 @@ pub fn drawWorldSprite(
     world_scale: f32,
     tint: types.Color,
 ) void {
-    const texture = backend.textures.getTexture(sprite_id) orelse return;
+    const texture = backend.textures.getTexture(sprite_id) orelse {
+        // Native dims are unknown without the texture - the one-tile
+        // fallback dims (the loaders' unresolvable-art convention).
+        drawMissingWorldSpriteBox(
+            screen_position.x,
+            screen_position.y,
+            types.sprite_grid_tile_pixels,
+            types.sprite_grid_tile_pixels,
+            world_scale,
+        );
+        return;
+    };
     const width: f32 = @as(f32, @floatFromInt(texture.width)) * world_scale;
     const height: f32 = @as(f32, @floatFromInt(texture.height)) * world_scale;
     const destination = rl.Rectangle{
@@ -158,7 +193,26 @@ fn drawSpriteDrawable(
     sprite: types.SpriteDrawable,
     world_scale: f32,
 ) void {
-    const texture = backend.textures.getTexture(sprite.sprite_id) orelse return;
+    const texture = backend.textures.getTexture(sprite.sprite_id) orelse {
+        // Missing world art draws the promised magenta box: at the source
+        // rectangle's dims when the drawable carries one, else the
+        // one-tile fallback dims (the loaders' unresolvable-art
+        // convention).
+        const fallback = sprite.source_rectangle orelse types.Rectangle{
+            .x = 0,
+            .y = 0,
+            .width = types.sprite_grid_tile_pixels,
+            .height = types.sprite_grid_tile_pixels,
+        };
+        drawMissingWorldSpriteBox(
+            sprite.screen_position.x + sprite.draw_offset.x,
+            sprite.screen_position.y + sprite.draw_offset.y,
+            fallback.width,
+            fallback.height,
+            world_scale,
+        );
+        return;
+    };
     var source = if (sprite.source_rectangle) |rectangle| rl.Rectangle{
         .x = @floatFromInt(rectangle.x),
         .y = @floatFromInt(rectangle.y),
@@ -247,7 +301,18 @@ pub fn drawWorldOverlay(
 ) void {
     switch (overlay) {
         .floating_icon => |icon| {
-            const texture = backend.textures.getTexture(icon.sprite_id) orelse return;
+            const texture = backend.textures.getTexture(icon.sprite_id) orelse {
+                // The icon's own size is carried on the drawable - the
+                // magenta box draws at exactly the intended footprint.
+                drawMissingWorldSpriteBox(
+                    icon.screen_position.x,
+                    icon.screen_position.y,
+                    icon.size,
+                    icon.size,
+                    world_scale,
+                );
+                return;
+            };
             const drawn_size: f32 = @as(f32, @floatFromInt(icon.size)) * world_scale;
             const destination = rl.Rectangle{
                 .x = @floatFromInt(icon.screen_position.x),

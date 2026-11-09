@@ -104,6 +104,15 @@ pub const Vector2 = struct {
 pub const entity_sprite_frame_width: i32 = 512;
 pub const entity_sprite_frame_height: i32 = 640;
 
+/// The sprite-grid tile size: one tile is 256px (decoration art is whole
+/// multiples of it - the view math chunks one 256px piece per bbox tile;
+/// see DESIGN → Decorations & Footprint). Also the dims assumed when a
+/// sprite is UNRESOLVABLE: the loaders' warn-degrade path falls
+/// unresolvable decoration art back to one tile, and the world draw
+/// paths' missing-texture magenta box draws at these dims when nothing
+/// better is known (source rect / icon size).
+pub const sprite_grid_tile_pixels: i32 = 256;
+
 /// Entity art spec: exactly the fixed 512x640 frame.
 pub fn entitySpriteDimsConform(dims: Vector2) bool {
     return dims.x == entity_sprite_frame_width and dims.y == entity_sprite_frame_height;

@@ -40,9 +40,8 @@ commit unit.
       "Session-log bundle: the aggregate content cap (review m-5.2)").
 - [x] Hub `move_player`: legality arm - DONE (see DONE.md, "Hub
       move_player: the replay-seam legality arm (review m-3.1)").
-- [ ] World draw paths: magenta fallback on missing textures (UI paths
-      draw it; world paths draw nothing - DESIGN + the loaders' warnings
-      promise magenta universally).
+- [x] World draw paths: magenta fallback - DONE (see DONE.md, "World
+      draw paths: the missing-art magenta fallback (review m-7.1 + n-7.2)").
 - [ ] Record in the online-services design: server-revalidation builds
       MUST be safe-mode (ReleaseSafe+) - the validation machinery is
       panic-based, and ReleaseFast makes those panics UB.
