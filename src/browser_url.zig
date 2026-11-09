@@ -29,13 +29,14 @@ pub fn handleRepoLinkClick(history: *state.GameStateHistory) void {
         // can never navigate the game tab (which would kill the in-memory
         // session; the unsafe forms are `location = url` and '_self').
         // 'noopener' is opener hygiene; a popup-blocked call no-ops in the
-        // safe direction. Runtime-formatted (bufPrintZ gives the NUL the C
-        // extern needs) - the file_source JS-seam pattern.
+        // safe direction. Runtime-formatted (mem.printSentinel gives the NUL
+        // the C extern needs) - the file_source JS-seam pattern.
         var script_buffer: [512]u8 = undefined;
-        const script = std.fmt.bufPrintZ(
+        const script = std.mem.printSentinel(
             &script_buffer,
             "window.open('{s}', '_blank', 'noopener')",
             .{build_info.repo_url},
+            0,
         ) catch return;
         emscripten_run_script(script.ptr);
         return;

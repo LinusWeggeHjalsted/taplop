@@ -336,13 +336,14 @@ pub fn build(b: *std.Build) !void {
     // maps. The Zig compiler debug checks + allocator debug mode catch the
     // same classes of bug; these emscripten features are opt-in via
     // -Dweb-debug-runtime for browser-devtools work. -fsanitize=undefined
-    // stays (raylib C objects reference UBSan symbols).
+    // stays (raylib C objects reference UBSan symbols). USE_OFFSET_CONVERTER
+    // (also tied to source maps in old emscripten) no longer exists as a
+    // setting in emsdk 4.0.19 - nothing to strip there.
     if (optimize == .debug and !web_debug_runtime) {
         _ = emcc_flags.remove("-gsource-map");
         emcc_settings.put("ASSERTIONS", "0") catch @panic("emcc settings OOM");
         emcc_settings.put("SAFE_HEAP", "0") catch @panic("emcc settings OOM");
         emcc_settings.put("STACK_OVERFLOW_CHECK", "0") catch @panic("emcc settings OOM");
-        emcc_settings.put("USE_OFFSET_CONVERTER", "0") catch @panic("emcc settings OOM");
     }
     // The game uses the emscripten filesystem: an in-memory (MEMFS) mount at
     // /ziglop for the persistent dir (web.zig - the session-scoped storage
@@ -381,7 +382,7 @@ pub fn build(b: *std.Build) !void {
         .settings = emcc_settings,
         .shell_file_path = shell_path,
         .install_dir = web_install_dir,
-        .out_file_name = "ziglop",
+        .out_file_name = "ziglop.html",
     });
     // No explicit activateEmsdkStep here: the raylib C library's own build
     // script makes its emscripten artifact depend on the emsdk activate step,

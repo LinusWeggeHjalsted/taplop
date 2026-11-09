@@ -8,9 +8,10 @@
 # emsdk noise and surfaces only the build summary + real errors, then prints a
 # final WEB OK / WEB FAIL line (trust the exit code).
 #
-# The web build needs a one-line-patched stdlib (Zig 0.16.0's std/os/emscripten.zig
-# STOPSIG bug - see AGENTS → Build & Test). The patched copy lives at
-# ~/.local/zig-patched-lib; native + tests use the normal zig (no env var).
+# The web build once needed a one-line-patched stdlib (Zig 0.16.0's
+# std/os/emscripten.zig STOPSIG bug); the fix is in 0.17.x upstream, so the
+# patched-copy ZIG_LIB_DIR override is retired and the normal zig is used
+# (same as native + tests).
 #
 # Usage:
 #   scripts/web.sh            # zig build web  -> zig-out/web/ziglop.html
@@ -40,7 +41,7 @@ done
 # Suppress emsdk_env.sh noise if anything in the build sources it.
 export EMSDK_QUIET=1
 
-output="$(ZIG_LIB_DIR="${ZIG_LIB_DIR:-$HOME/.local/zig-patched-lib}" zig build "$target" "${zig_args[@]}" 2>&1)"
+output="$(zig build "$target" "${zig_args[@]}" 2>&1)"
 status=$?
 
 if [ "$raw" -eq 1 ]; then
