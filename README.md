@@ -1,6 +1,6 @@
 taplop is a tactical turnbased gridbased rpg working towards full official release
 
-Zig 0.16 rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop
+Zig rewrite of the Unity original at https://github.com/LinusWeggeHjalsted/taplop
 
 ## Licenses
 this game is multi-licensed:
@@ -12,7 +12,7 @@ this game is multi-licensed:
 
 ## Build & run
 
-requires [Zig 0.16.0](https://ziglang.org/download/)
+requires [Zig 0.17.1](https://ziglang.org/download/)
 
 ```sh
 zig build run                    # debug build + run (includes dev tools - see below)
@@ -23,7 +23,7 @@ scripts/test.sh                  # run the test suite (headless, PASS/FAIL summa
 
 ### Dev mode
 
-debug builds (`zig build run`, or any build with `optimize == .Debug`)
+debug builds (`zig build run`, or any build with `optimize == .debug`)
 ship with dev-only keybinds gated by the `-Ddev-mode` build option. today
 the only one is:
 
@@ -55,14 +55,10 @@ zig build run -- --data-dir ./scratch
 ## Web build
 
 the web build targets `wasm32-emscripten` and needs the
-[emscripten SDK](https://emscripten.org/). Zig 0.16.0's stdlib has a bug in
-`std/os/emscripten.zig` (fixed upstream on the 0.16.x branch) that breaks
-emscripten compilation, so the web build needs a one-line-patched stdlib copy:
+[emscripten SDK](https://emscripten.org/) (fetched automatically as a
+build dependency - no manual install):
 
 ```sh
-# once: copy your Zig install and apply the fix (STOPSIG -> SIG in std/os/emscripten.zig)
-cp -r <your-zig-install> ~/.local/zig-patched-lib
-# then:
 scripts/web.sh            # zig build web  -> zig-out/web/ziglop.html (clean output)
 scripts/web.sh emrun      # serve + open it in a browser
 # (raw: scripts/web.sh --raw passes through unfiltered)
@@ -77,5 +73,3 @@ scripts/web.sh --release=fast      # ReleaseFast web build
 scripts/web.sh --release=safe      # ReleaseSafe
 scripts/web.sh emrun --release=fast # serve a release build
 ```
-
-this workaround goes away once Zig 0.16.1 ships and your distro packages it.
