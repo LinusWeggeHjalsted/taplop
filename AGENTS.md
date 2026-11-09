@@ -324,7 +324,9 @@ never propagates as a config-layer error.
 Comments describe the code AS IT IS - never an imagined future state. This
 is the rule that prevents drift: a comment written as "lands later" / "wired
 later" / "for now" rots the moment the work lands, because nothing points
-back at the comment to update it.
+back at the comment to update it. When moving or renaming a fn, its `///`
+moves with it - an orphaned doc at the old site misleads exactly like a
+stale one (the review's drift catalog was full of both).
 
 - **TODO.md owns all forward-looking notes.** No `TODO`/`FIXME`/`HACK`
   markers, no "will eventually"/"lands when"/"revisit" prose in code. If a

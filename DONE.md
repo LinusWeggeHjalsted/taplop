@@ -18760,3 +18760,13 @@ build.zig's `"sh", "-c",` tuple ~77 columns apart (it mistakes a
 3-element tuple for a table) - resolved by restructuring the line to
 one element per line, which fmt respects; the recorded escape hatch
 for silly fmt output is restructuring, never skipping the gate.
+
+## The moved-fn /// rule (one AGENTS line)
+
+The drift cleanup's one-sentence lesson, added to AGENTS → Code
+Comments' lead paragraph: "When moving or renaming a fn, its `///`
+moves with it - an orphaned doc at the old site misleads exactly like
+a stale one (the review's drift catalog was full of both)." The
+session's own evidence: boundedU32's doc was orphaned in parser.zig
+by its move to loaders.zig, and validatePlayerAction's doc was lost
+in a rename - both recovered via git history.

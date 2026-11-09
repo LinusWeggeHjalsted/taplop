@@ -51,8 +51,8 @@ commit unit.
       cleanup pass - the full catalog swept (review m-2.2/m-3.2/m-4.2/
       m-4.3/m-5.3/m-6.1)").
 - [x] The fmt decision - DONE: adopted (see DONE.md, "fmt gate adopted").
-- [ ] Optional AGENTS line: "when moving/renaming a fn, its /// moves
-      with it" - the one-sentence version of the drift lesson.
+- [x] Optional AGENTS line - DONE: "when moving/renaming a fn, its `///`
+      moves with it" added to AGENTS → Code Comments (the lead paragraph).
 
 **Settled by the review (decisions to ratify or overrule):**
 - Style-wrap item: quantified 785 lines >120 / 109 >160 chars - recommend
