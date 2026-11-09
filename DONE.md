@@ -18614,3 +18614,24 @@ disk): the load fails on the stat size alone, proving the read never
 fires. DESIGN → Logging & Replay → Session-log bundle updated with the
 two-layer bound. Closes review item m-5.2 and TODO → Post-Review →
 Hardening item 6.
+
+## Hub move_player: the replay-seam legality arm (review m-3.1)
+
+Level movement was rigorously validated at the replay seam (full BFS
+via isPlayerMoveLegal) but hub movement sat in validatePlayerAction's
+"no payload to validate" group - a crafted log could teleport the hub
+player to any tile. Impact was low (hub position gates nothing except
+mission-exit landing, itself legal from that hub) but it was a
+consistency gap in the anti-cheat surface. Landed the arm as the exact
+mirror of the live hub click gate: isHubMoveLegal (destination must be
+a walkable hub tile no NPC occupies) + the validatePlayerAction arm
+(also rejecting a move outside a hub - nothing live produces it).
+NOTABLE DESIGN POINT: no adjacency/BFS - hub movement is free-form
+(any walkable tile in one click), so an adjacency check would be
+STRICTER than reality and false-reject legal logs; tile-membership +
+NPC-occupancy is the whole live rule. The player's own tile is legal
+(a recorded no-op; the input layer's own-tile gate is recording
+hygiene, not a legality rule). The bool helper is tested directly
+(convention: no expectPanics in 0.16 - the validate wrapper is thin
+policy); DESIGN → Determinism → Replay PLAYER-ACTION LEGALITY updated.
+Closes review item m-3.1 and TODO → Post-Review → Hardening item 7.

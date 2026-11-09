@@ -38,8 +38,8 @@ commit unit.
       (review m-5.1)").
 - [x] Session-log bundle loader: total-bytes cap - DONE (see DONE.md,
       "Session-log bundle: the aggregate content cap (review m-5.2)").
-- [ ] Hub `move_player`: legality arm at the replay seam (level moves
-      get full BFS validation; hub moves none).
+- [x] Hub `move_player`: legality arm - DONE (see DONE.md, "Hub
+      move_player: the replay-seam legality arm (review m-3.1)").
 - [ ] World draw paths: magenta fallback on missing textures (UI paths
       draw it; world paths draw nothing - DESIGN + the loaders' warnings
       promise magenta universally).

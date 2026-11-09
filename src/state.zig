@@ -2488,9 +2488,28 @@ pub const GameStateHistory = struct {
                     .export_game,
                     .dismiss_mission_complete,
                     .swap_hands,
-                    .move_player,
                     .interact_with_npc,
                     => {},
+                    // Hub movement: the tile-membership + NPC-occupancy
+                    // mirror of the live hub click gate (see
+                    // isHubMoveLegal). Outside a hub the handler no-ops -
+                    // nothing live can produce that shape, so reject.
+                    .move_player => |move| {
+                        const hub = self.current_state.hub orelse {
+                            self.rejectReplay("replay validation: hub move_player outside a hub");
+                            return;
+                        };
+                        if (!isHubMoveLegal(hub, move.destination)) {
+                            var buf: [160]u8 = undefined;
+                            const msg = std.fmt.bufPrint(
+                                &buf,
+                                "replay validation: hub move to ({d},{d}) which is not a walkable hub tile or is NPC-occupied",
+                                .{ move.destination.x, move.destination.y },
+                            ) catch "replay validation: hub move to a non-walkable or NPC-occupied tile";
+                            self.rejectReplay(msg);
+                            return;
+                        }
+                    },
                     // Inventory/gear/skill click + drag orchestrators: screen
                     // must be level/hub (panels only show there) and slot indices
                     // in range. The item-type → machinery resolution lives in the
@@ -2701,6 +2720,27 @@ pub const GameStateHistory = struct {
             if (tile.x == destination.x and tile.y == destination.y) return true;
         }
         return false;
+    }
+
+    /// A legal hub `move_player` destination: a walkable hub tile that no
+    /// NPC occupies - the legality mirror of the live hub click gate. Hub
+    /// movement is free-form (any walkable tile in one click - no adjacency
+    /// or speed budget, unlike the level arm's BFS above). The player's
+    /// own tile is legal: a recorded no-op, state-consistent (the input
+    /// layer's own-tile gate is recording hygiene, not a legality rule).
+    fn isHubMoveLegal(hub: types.Hub, destination: types.Vector2) bool {
+        var on_walkable_tile = false;
+        for (hub.hub_tiles) |tile| {
+            if (tile.x == destination.x and tile.y == destination.y) {
+                on_walkable_tile = true;
+                break;
+            }
+        }
+        if (!on_walkable_tile) return false;
+        for (hub.npcs) |npc| {
+            if (npc.position.x == destination.x and npc.position.y == destination.y) return false;
+        }
+        return true;
     }
 
     /// Replay events up to target_event_index, starting from the best available
@@ -3579,4 +3619,24 @@ test "isPlayerAction: whitelist rejects machinery events" {
 
     // super/editor/sub_level/replay_viewer - all machinery
     try std.testing.expect(!history.isPlayerAction(.{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } }));
+}
+
+test "replay validation: hub movement legality (tile membership + NPC occupancy)" {
+    // The hub click gate's mirror: any walkable tile is legal (free-form
+    // movement, no adjacency), an NPC tile is not, an off-map teleport is
+    // not, and the player's own tile is legal (a recorded no-op).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const npcs = [_]types.NPC{
+        .{ .npc_type = .gear_upgrader, .position = .{ .x = 2, .y = 0 } },
+    };
+    const hub: types.Hub = .{
+        .hub_tiles = &tiles,
+        .player = .{ .position = .{ .x = 0, .y = 0 } },
+        .npcs = &npcs,
+    };
+
+    try std.testing.expect(GameStateHistory.isHubMoveLegal(hub, .{ .x = 1, .y = 0 }));
+    try std.testing.expect(GameStateHistory.isHubMoveLegal(hub, .{ .x = 0, .y = 0 }));
+    try std.testing.expect(!GameStateHistory.isHubMoveLegal(hub, .{ .x = 2, .y = 0 }));
+    try std.testing.expect(!GameStateHistory.isHubMoveLegal(hub, .{ .x = 5, .y = 5 }));
 }

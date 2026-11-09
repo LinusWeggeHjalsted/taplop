@@ -1263,7 +1263,12 @@ that true (`src/session_log_bundle.zig`):
   2. **Context legality (`validatePlayerAction`)** - the INNER gate. Rejects
   player actions that were illegal at the recorded point: `player_move_action`
   (destination must be in `reachableTiles(...)` - full BFS, matches live);
-  `player_use_skill` / `player_skip_move_to_skill` / `player_prepare_skill`
+  hub `move_player` (destination must be a walkable hub tile no NPC
+  occupies - `isHubMoveLegal`, the mirror of the live hub click gate; hub
+  movement is free-form, so tile-membership + NPC-occupancy is the whole
+  rule, no adjacency/BFS - and a move outside a hub rejects: nothing live
+  produces it); `player_use_skill` / `player_skip_move_to_skill` /
+  `player_prepare_skill`
   (skill on bar + off cooldown + valid target); and the meta exit/skip
   orchestrators (screen must match - e.g. `player_restart_mission` only legal
   at `.level`, `player_exit_to_menu` at `.level`/`.hub`, `player_replay_mission`
@@ -1293,6 +1298,7 @@ that true (`src/session_log_bundle.zig`):
   replay = reject); a future viewer-facing load may soften this to the error
   popup, while server-side leaderboard validation keeps it hard. The legality
   LOGIC lives in bool-returning helpers (`isPlayerAction`, `isPlayerMoveLegal`,
+  `isHubMoveLegal`,
   `skillOnBarAndOffCooldown`, `skillTargetLegal`) so it's testable without
   panic-catching infrastructure (Zig 0.16 has no `expectPanics`); the
   `validate*` wrappers are a thin panic-policy layer over them. This is the
