@@ -27,7 +27,11 @@ Lifecycle of a fact:
   - **Settles** → move the design prose into DESIGN.md; in TODO.md drop to a
     pointer (`see DESIGN → <section>`) and check off the task.
   - **Task completes** → move its prose to DONE.md; in TODO.md leave a `[x]`
-    one-liner (or just delete the line) so TODO stays scannable.
+    one-liner (or just delete the line) so TODO stays scannable. A `[x]`
+    item still carrying its full slice prose (or its sub-slice checklist)
+    is drift by definition: DONE.md is the record, the one-liner is the
+    index. The collapse happens in the SAME commit that adds the DONE
+    entry - never deferred to a later cleanup pass.
 
 Read AGENTS.md + TODO.md at the start of a session. Reach for DESIGN.md when
 a task touches a subsystem's settled design; reach for DONE.md only when you
@@ -153,6 +157,9 @@ session + the ButtonPayload migration):
   natural commit units - each `[x]` is a unit that's done + tested + has a
   DONE.md entry. Committing at checkoff gives a clean, reversible baseline
   before the next slice starts (so breakages can be compared against it).
+  The checkoff commit also COLLAPSES the slice's TODO block to its one-
+  liner - the DONE entry is the detailed record (see Documentation,
+  the lifecycle rule).
 - **Commit locally without pushing.** Local commits are free; pushing is a
   separate step. Don't hold uncommitted work across sessions - 27 files of
   uncommitted changes across multiple sessions makes it impossible to tell

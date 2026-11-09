@@ -18476,3 +18476,23 @@ Session reflection riders (both small):
   it, freeEditorBuild and the default-level test free it. The build
   test now reads the level name AFTER the sections are freed - the
   ownership is pinned, not just documented.
+
+## TODO prune: done-slice prose collapsed (+ the rule made explicit)
+
+The session reflection caught TODO.md carrying ~330 lines of completed-
+slice prose (the parser-grammar slice checklist, Tips UI, keybind
+editor, console input, input dispatch convergence, web storage model,
+campaign-editor slice 1's five steps, the OOM sweep's slice findings,
+and assorted [x] riders) - every word of it duplicated in DONE.md.
+All collapsed to `[x]` one-liners pointing at their DONE entries;
+genuinely open riders kept (the hub-writer emission rule, the dispatch-
+split revisit-when condition, the console-harness hardening, the web
+import unverified edges, the writers/session_log OOM remainder). Also
+fixed a duplicated "Revalidate Mission follow-ups" header line and
+dropped a stale "Session-reflection riders" sub-header. 1332 -> 997
+lines.
+
+The rule is now explicit in AGENTS (Documentation lifecycle + the
+commit policy): a `[x]` item still carrying its full slice prose is
+drift by definition, and the collapse happens in the SAME commit that
+adds the DONE entry - never deferred to a later cleanup pass.

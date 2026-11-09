@@ -17,73 +17,12 @@ Test by running `zig build run` and clicking through.
 ## NEXT UP (not ordered - pick what progresses)
 
 - [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
-      ALL FIVE SLICES DONE (see DONE.md, "Parser grammar slice 1" through
-      "slice 5"; settled design: DESIGN → File System & IO → Config
-      grammar; the version range policy: DESIGN → Versioning). One rider
-      outstanding: the hub writer does not exist yet (campaign editor) -
-      it emits `Layout <count>` + the current hub version when it lands.
-  - [x] 1. Per-format header grammar: `parseConfigFile` takes
-        `expected_headers`; delete `valid_section_headers`; new
-        `session_log_sections` (verify Metadata/EventLog/
-        ReconstructionCache against the bundle manifest writer);
-        salvage_sections moves to parser.zig; `validateSections` folds
-        into the parser (deleted + its call lines); unknown
-        header-shaped line outside a Layout errors naming the line;
-        `#` comment lines skipped; junk lines outside Layouts error.
-        Roughly 18 parseConfigFile callers touched - DONE (see DONE.md,
-        "Parser grammar slice 1"; ~30 prod + ~65 test call sites, the
-        errdefer leak fix, and the session-log list verified against the
-        bundle writer - the manifest section appends into the SAME
-        session_log.txt, so the one list covers logs, bundles, and
-        validation replays).
-  - [x] 2. Counted layouts: `Layout <count>` opening line consumes
-        exactly N raw rows (blank lines are rows); bare `Layout` keeps
-        the legacy grammar but terminates only on expected-header lines
-        (fixes the cross-format hub row even for old files);
-        `writeEditorLevel` emits the count (grid_height, already
-        computed); Layout 0 errors (a layout always has at least one
-        row - the ! player spawn is mandatory in both formats, plus =
-        in levels). Tests: the blank-row + Items-spelling-row
-        counterexample, seatown's leading empty row, truncation errors -
-        DONE (see DONE.md, "Parser grammar slice 2"; new errors
-        EmptyLayout/LayoutTruncated, malformed count falls to
-        UnknownSectionHeader, writer emits the count with a literal-text
-        assertion so a regression to bare Layout cannot hide behind the
-        still-parsing round trip). The file_format_version bump for the
-        writer change lands with slice 4 (the range policy) - until
-        then new saves are v1-with-count, readable by this build.
-  - [x] 3. Reader tightening rider: loadLevel/loadHub error on layout
-        chars outside `{' ', '.', '!', '='}` plus the file's own defined
-        codes (a typo'd character_code becomes a truthful error, not a
-        silent walkable tile). No character_code value constraint
-        needed - the count removed the soundness need. Includes the
-        adjacent gap this design exposed: the loaders currently TOLERATE
-        a missing ! (spawn-relative normalization is skipped, the level
-        loads anyway) - error on it instead, and on a missing = in
-        levels (both markers are mandatory) - DONE (see DONE.md,
-        "Parser grammar slice 3"; UnknownLayoutCharacter +
-        MissingPlayerSpawn/MissingLevelEnd, errdefer cleanup in both
-        loaders, the hub dropped-NPC-code leniency distinction, and nine
-        test fixtures upgraded to the mandatory-marker invariant).
-  - [x] 4. Version range policy: level 1 to 2, hub 2 to 3; the hard
-        gate becomes a supported range (newer errors, older loads with
-        legacy grammar); current-version + bare Layout errors.
-        DESIGN → Versioning prose updated when this lands - DONE (see
-        DONE.md, "Parser grammar slice 4"; validateFileFormatVersion takes
-        (minimum, current) and returns the file's version;
-        Section.layout_row_count is the grammar signal; UncountedLayout
-        in loadLevel/loadHub; the writer's version emission updates
-        automatically via the constant bump). Closes slice 2's deliberate
-        version-window note: new editor saves are v2 + counted.
-- **Tips UI (data/tips.txt + panel)** - DONE, all three slices (see
-      DONE.md, "Tips UI"): the format normalized (Metadata + Tips, one
-      `tip <prose>` group per tip), loaded through the standard config
-      path; the panel is the credits model with a top-bar `?` entry point
-      (top-right), `<`/`>` glyph nav cycling `UiState.tips_index` (the
-      settings_tab convention); no new event types (open/close rides
-      toggle_ui_surface via `Action.open_tips`, cycling is
-      `Action.cycle_tips` + the `tips_direction` payload). Design: DESIGN
-      → UI Framework → Tips overlay + the z-order ladder's tips rung.
+      ALL FIVE SLICES DONE (DONE.md, "Parser grammar slice 1" through
+      "slice 5"; design: DESIGN → File System & IO → Config grammar +
+      DESIGN → Versioning). Rider for the campaign editor's hub writer
+      (slice 5): it emits `Layout <count>` + the current hub version.
+- [x] **Tips UI (data/tips.txt + panel)** - DONE, all three slices (see
+      DONE.md, "Tips UI"; design: DESIGN → UI Framework → Tips overlay).
       Further tips are authored content - just append `tip <prose>`
       groups to data/tips.txt.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
@@ -109,16 +48,12 @@ Test by running `zig build run` and clicking through.
 - [x] `toggle_options_menu` rename - DONE: the action is `escape` now (see
       DONE.md; existing installs self-heal via the warn+drop at load).
 - [x] **Art report (machine-derived asset inventory)** - DONE:
-      `scripts/art_report.sh` (the sound_report.sh pattern) writes
-      `art_report.md` - every consumable sprite id + status + orphans; the
-      MISSING section is the artist's self-updating shopping list (see
-      DONE.md, "Art report").
-- [x] **Unused-pub report (session reflection rider)** - DONE, first
-      cleanup sweep included: `scripts/unused_pub_report.sh` (see DONE.md,
-      "Unused-pub report" + "Minimize-pub sweep"). Tree now reports
-      0 DEAD / 0 UNUSED; the 3 TEST-ONLY pubs carry why-notes. Forward-
-      looking de-pubs (the loaders `free*` family) re-pub when
-      campaign-editor slice 1 lands.
+      `scripts/art_report.sh` writes `art_report.md`; the MISSING section
+      is the artist's self-updating shopping list (see DONE.md, "Art
+      report").
+- [x] **Unused-pub report (session reflection rider)** - DONE:
+      `scripts/unused_pub_report.sh` (see DONE.md, "Unused-pub report" +
+      "Minimize-pub sweep").
 - **World overlay stripe scopes batch-flush per tile (session reflection
   rider, unmeasured)** - each highlighted tile opens its own stripe scope
   (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
@@ -136,15 +71,9 @@ Test by running `zig build run` and clicking through.
 - **Gear sprites** - the last unlanded entity sub-layer (effect overlays,
   sprite animation, ground items, decorations all DONE - history in
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
-- [x] **`clicked_*` payload consolidation** - DONE: ONE tagged union
-      (`types.ButtonPayload`) riding `PlayerInput.clicked_payload`, the
-      28 per-field splits + ~25 relay lines collapsed to one relay line
-      with a fail-fast `actionButtonPayload` check + a comptime no-orphan
-      walk; `SlotRef` back to pure drag domains (save rows ride
-      `.save_row`). The placement rule (data rides the frame, behavior
-      rides its classification) + the two documented near-misses:
-      DESIGN → Input (Button payloads + the PlayerInput placement
-      rule); history in DONE.md.
+- [x] **`clicked_*` payload consolidation** - DONE (see DONE.md;
+      the placement rule + the near-misses: DESIGN → Input, Button
+      payloads + the PlayerInput placement rule).
 - **Input/camera leftovers** - tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new
@@ -162,149 +91,49 @@ Test by running `zig build run` and clicking through.
   rollover swallow (intermittent, either key - that one is DONE, see
   DONE.md "Arrow-key cursor rollover"); only worth touching if random
   eaten taps are ever observed with a hand resting on the mouse.
-- **Keybind editor (settings → Keybinds tab)** - in-game rebinding UI.
-  Settled design: contexts are DERIVED from `actionBindingContexts` (the
-  binding `context` file line becomes informational - loader ignores it,
-  writer emits the derived value; the load-time action↔context validity
-  layer is deleted; the accidental editor-actions-{editor, menu}
-  classification fallthrough was fixed - every editor action is editor-only
-  for keys, the browser still opens from the main menu via its buttons).
-  Conflict rule: one combo (input +
-  required modifiers) → one action per context; UI prevents, load-time
-  warn + drop the later entry + the repair write cleans the file, engine
-  first-match-wins replaces equal-specificity co-fire. UI: the settings
-  screen gains Settings/Keybinds tabs; left column = bindings one row
-  per binding, sorted by action (9-slice key panels + action panel with
-  derived context tag, NO group headers - the action name rides in every
-  row + scroll); right column = full scrollable action picker. Edits go through
-  an obvious listening state → a pending state with Confirm/Cancel + a
-  steal warning ("Enter currently fires Confirm (game) - confirming will
-  remove it") when the combo would remove an existing binding; steal
-  applies on confirm. Slices:
-  - [x] 1. Full key table in `input_poll` (the full W3C id set - retires
-        the backend-edit wiring site; unmapped-id startup warn stays open
-        under New-keybind pipeline friction) - DONE
-  - [x] 2. Context derivation + conflict rule (engine gating, loader
-        ignores the context line, load-time conflict warn+drop + repair
-        write, first-match-wins tiebreak, delete the validity layer) - DONE
-        (see DONE.md, keybind editor slice 2)
-  - [x] 3. Keybinds tab read-only (tabs, grouped rows, key/action panels,
-        context tags, scroll) - DONE (see DONE.md, keybind editor slice 3;
-        the Settings tab's 12 rows went two-column to fit)
-  - [x] 4. Editing flows (listening state, pending confirm/cancel +
-        steal warning, right-column action picker, add/remove/reset) - DONE
-        (see DONE.md, keybind editor slice 4; the rebuild-ownership
-        follow-up test is DONE too - DONE.md, keybind rebuild-ownership
-        test).
-- **Console input (stdin - a scripted/TAS input channel)** - the game
-  reads stdin while it runs: always-on, native only; piped scripts drive
-  the game, launching from a terminal gives terminal control. Mirrors the
-  engine's own synthetic-input model: one command per frame merged into
-  the frame's PlatformInput (raw inputs - press/release/move/scroll/type
-  through the identical pipeline); actions via applyAction (the button
-  path). Console sessions produce ordinary session logs → valid
-  `--replay` fixtures. Full settled design: DESIGN → Input → Console
-  input. Slices:
-  - [x] 1. `src/console.zig` (raylib-free): command parser, queue (SPSC
-        ring - no Io-free mutex in 0.16 std), merge helper, applyAction
-        injection, dump projections + unit tests (`src/input_tests_console.zig`
-        holds the handler-level regression pins: press Escape end-to-end;
-        scroll with the options menu open moves the keybind offset) - DONE
-        (see DONE.md, console input slice 1).
-  - [x] 2. Native wiring: the reader thread (spawns + reads stdin lines,
-        EOF-safe, detached), the stdout dump writer on the queue, always-on
-        (no flag) - DONE (see DONE.md, console input slice 2; includes the
-        wasm32 u32-atomic counter fix). Console input is COMPLETE.
-  - [x] 3. `dump <path>` reflection (dump_walker.zig - paths are Zig
-        member-access expressions against the FrameState root; the
-        hand-written state/settings/bindings/history mirrors deleted;
-        safety invariants + rendering rules: DESIGN → Input → Console
-        input → dump paths) - DONE (see DONE.md, dump-path walker).
-  - [x] 4. Per-frame observability stash - DONE: FrameState's
-        `previous_player_input` / `previous_delta_microseconds` (written
-        in `frame()` after the fold) + `console_queue.last_taken_command`
-        (recorded at pop). The string-payload constraint dissolved at
-        the source: mission sprite ids are now MINTED AT THE SCAN
-        (MissionSprite.stored_id - see DONE.md, mission sprite ids
-        minted at the scan), so the stash is a plain wholesale copy with
-        nothing to dangle.
-  - [x] 5. `report ui` / `report level` verb split - DONE: `dump` is
-        purely the path mirror; the curated projections are the
-        `report` verb; the pre-split spellings resolve as paths and
-        error truthfully (the redirect teaches the new verb). Included
-        restoring the reports' trailing newline (dropped by accident
-        in the walker landing). See DONE.md, dump-path walker.
-  - **Console test-harness hardening (session-reflection rider)** -
-        two footguns found while driving the channel hard: (1)
-        `runConsoleScript` never RESETS its arena per frame, so its
-        scripts don't exercise the live loop's per-frame reset cadence
-        - the exact condition the id-lifetime bug class hides behind
-        (the new e2e tests reset manually; the helper should, so every
-        script gets it for free). (2) The path-dump tests build
-        `WalkerTestRoot{ .history = history }` copies refreshed BY HAND
-        per frame - a forgotten refresh silently reads stale state; a
-        shared live-root helper (test_harness) would remove the trap.
-        Nothing dangles today (ids are static, mission ids
-        scan-minted); this is keeping the next transient-lifetime bug
-        VISIBLE to exactly the tests that should catch it (see DESIGN
-        → Architecture → the transient-lifetime invariant).
+- [x] **Keybind editor (settings → Keybinds tab)** - DONE, all four
+      slices + the rebuild-ownership test (DONE.md, "keybind editor
+      slice 1"-"4" + "keybind rebuild-ownership test"; settled design:
+      DESIGN → Input → Binding contexts + DESIGN → UI Framework →
+      Settings screen).
+- **Console input (stdin - a scripted/TAS input channel)** - COMPLETE,
+      all five slices (DONE.md, "console input slice 1"-"2" + "dump-path
+      walker"; settled design: DESIGN → Input → Console input). Console
+      sessions produce ordinary session logs → valid `--replay` fixtures.
+- **Console test-harness hardening (session-reflection rider)** - two
+      footguns found while driving the channel hard: (1)
+      `runConsoleScript` never RESETS its arena per frame, so its
+      scripts don't exercise the live loop's per-frame reset cadence
+      - the exact condition the id-lifetime bug class hides behind
+      (the new e2e tests reset manually; the helper should, so every
+      script gets it for free). (2) The path-dump tests build
+      `WalkerTestRoot{ .history = history }` copies refreshed BY HAND
+      per frame - a forgotten refresh silently reads stale state; a
+      shared live-root helper (test_harness) would remove the trap.
+      Nothing dangles today (ids are static, mission ids
+      scan-minted); this is keeping the next transient-lifetime bug
+      VISIBLE to exactly the tests that should catch it (see DESIGN
+      → Architecture → the transient-lifetime invariant).
 - [x] **UI surface state unification** - DONE (all six slices; see DONE.md,
       "UI surface state unification", + DESIGN → UI Framework → UI state
       classification).
-- **Input dispatch convergence.** Design DONE (see DESIGN → Input →
-  Dispatch convergence + New keybind wiring sites): `translateInput` is
-  one pass over the bindings - a binding that passes `bindingFires`'
-  gates folds through `applyAction`, the one action→PlayerInput mapping
-  shared by button releases + console commands; every action is uniformly
-  keybindable (menu commands included - dead bindings became live);
-  same-frame degeneracies resolve first-listed-wins. Remaining slices:
-  - [x] 1. The dispatch pass (bindingFires + actionRepeats + the
-        skill-slot guard + the applyAction bridge arms + the comptime
-        context table) - DONE (see DONE.md, input dispatch convergence
-        slice 1).
-  - [x] 2. `fired_actions` record + the per-action sound choke point
-        (`dispatchFiredActionSounds`; the ~25 per-flag sound sites
-        collapsed, the `.change_setting`-class double-play FIXED; the
-        unwired + outcome-gated exclusions documented at the choke point
-        - DONE, see DONE.md, input dispatch convergence slice 2).
-  - [x] 3. The no-op-proof count assertions in `handler_tests_editor.zig`
-        → assert WHAT recorded - DONE (see DONE.md, input dispatch
-        convergence slice 3: `expectLastEvents` + the open/close pair
-        consts; the six GROWING deltas converted, the == no-op gates keep
-        their count equality - they assert nothing was recorded).
-  - [x] 4. EVALUATE only - DECIDED: no split now (see DONE.md, input
-        dispatch convergence slice 4). The dispatcher switches are
-        intrinsically large (they enumerate the actions' consumption);
-        splitting switch arms is mechanical churn; the per-topic helper
-        blocks (keybinds / text edit / editor item) are cohesive +
-        heavily cross-referenced via file-private helpers. REVISIT WHEN
-        the hub/campaign editor arms land - if the file crosses ~7k
-        lines or the arms stop fitting one scan, the hub/campaign arms
-        split out alongside the editor arms (a real seam, not a chore
-        split).
-- [x] **New-keybind pipeline friction** - DONE. The wiring-site map
-      shrank (four sites - DESIGN → Input → New keybind wiring sites; the
-      backend key table + the derived `context` line are no longer sites),
-      and the dead-binding startup warn landed after the missing-Escape
-      regression exposed the class (a binding naming an id no platform
-      table can produce warns + is kept; a comptime lockstep guard pins
-      the tables to `types.producible_key_ids` - see DONE.md, dead-binding
-      advisory).
+- [x] **Input dispatch convergence** - DONE, all four slices (DONE.md,
+      "input dispatch convergence slice 1"-"4"; settled design: DESIGN →
+      Input → Dispatch convergence + New keybind wiring sites). Slice 4's
+      decision: no dispatcher split now - REVISIT WHEN the hub/campaign
+      editor arms land: if input_handlers crosses ~7k lines or the arms
+      stop fitting one scan, the hub/campaign arms split out alongside
+      the editor arms (a real seam, not a chore split).
+- [x] **New-keybind pipeline friction** - DONE (see DONE.md,
+      "New-keybind pipeline friction" + "dead-binding advisory";
+      the wiring-site map: DESIGN → Input → New keybind wiring sites).
 - [x] **UI outline readability (shader animation)** - DONE (see DONE.md,
-      "Outline stripe shader"; design: DESIGN → Platform Seam → Outline
-      stripe shader). Marching 45° stripes flipping between the outline
-      tint and the theme's darkest, stepped off the animation clock - the
-      world tile outlines, the UI icon halo masks, and the spriteless
-      panel-button hover rect; the SDF text outline pass is untouched.
-      Tuning knobs (band size, steps per cycle, duty) live in the DONE entry.
+      "Outline stripe shader" - the tuning knobs live there; design:
+      DESIGN → Platform Seam → Outline stripe shader).
 - [x] **Enemy pathing straightness** - DONE, both halves (see DONE.md,
       "Enemy AI movement: the straightness tiebreak" + "Pathfinding:
       Chebyshev heuristic + straightness f-cost tiebreak"; design: DESIGN →
-      Determinism & Tiebreaking). The observed same-row bug was the
-      movement-DESTINATION selection's `(x, y)` tiebreak (slice 1), not
-      pathfinding; the pathfinding half (Manhattan overestimating →
-      non-shortest paths around obstacles, pinned by fuzz-found
-      counterexample tests) was the latent half (slice 2).
+      Determinism & Tiebreaking).
 - **Cross-cutting polish** - 9-slice edge/center TILING (corners are
   aspect-true - DONE.md; `highlighted` edge outlines DONE), missing art
   (the `art_report.md` MISSING list - `scripts/art_report.sh` - is the
@@ -597,55 +426,14 @@ work:
   data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
   replace freely, the format is a bare stem + any size, center-anchored).
   Slices (rough, re-cut at implementation):
-  - [x] 1a. `loadHub` + `loadCampaign` become SELF-OWNED (the
-        arena-blind-spots policy - AGENTS → Build & Test) so the new
-        format tests run leak-checked from the start, not arena-wrapped
-        with the blind spot inherited - DONE (see DONE.md, campaign-editor
-        slice 1 step 1).
-  - [x] 1b. hub.txt v2: exits gain `destination_hub` (empty = dangling
-        forward reference, legal by design), NPCs become `character_code` +
-        `npc_type` (position from the layout; the NPC entity-ness removed -
-        types.zig, loadHub, view, main, console report, the hub-click path;
-        the sprite derives from the type, `NpcType.spriteId`) - DONE (see
-        DONE.md, campaign-editor slice 1 step 2).
-  - [x] 1c. Custom-asset paths unified (the prerequisite the hub art
-        rider exposed): custom ids are CONTENT-ADDRESSED - the chain after
-        `custom/` IS the file's location (`custom/missions/<dir>/<stem>` for
-        dreams, `custom/campaigns/<campaign>/missions|hubs/<dir>/<stem>` for
-        campaign-bundled art) - one resolution rule
-        (`file_source.customAssetTail` + readFile's persistent/embedded-
-        `data/` tiers) shared by the loader's dims read and the texture
-        store's byte read; the old load-vs-render root split (render
-        hardcoded a `missions/` root) is gone, and hub art resolves by the
-        same rule with zero hub-specific plumbing. Minting via
-        `customStemForContentPath`; the editor scan + save normalization
-        mint the new shape. DONE (see DONE.md, campaign-editor slice 1
-        step 3).
-  - [x] 1d. campaign.txt v2 DONE (see DONE.md, campaign-editor slice 1
-        step 4): `background` (bare stem, PNG in the campaign dir, minted
-        to the content-addressed id at load) + the `Hubs` section
-        (`hub_id` + `position` - center-offset integers, unbounded; the
-        coordinate model: DESIGN → Campaigns & the Campaign Editor → The
-        map coordinate model, incl. the 3840x2160 view-only default
-        framing + zoom-like-in-game) + load-time graph INTEGRITY checks
-        (`loaders.checkCampaignGraph` from `loadCampaignAndPushHub`:
-        unplaced start hub, missing hub.txt, dangling destination, missing
-        mission, unreachable hub - warn-only) + a procedural placeholder
-        map for the official campaign.
-  - [x] 1e. mission.txt v3 DONE (see DONE.md, campaign-editor slice 1
-        step 5): drops `start_hub`/`end_hub`/`level_count` (version 3);
-        `Mission.end_hub` is a pure runtime channel (the start_mission
-        override - exit-click passes the exit's destination_hub,
-        restart passes the live value, the overlay re-run derives it from
-        the hub's exit; null = entering-hub fallback); the level count
-        DERIVES at start_mission/start_validation/open-editor via a
-        reconstruction-sound probe (countMissionLevelsCached over
-        readReconstructionFileOptional - absent files cache a known-absent
-        marker so replay re-derives identically), and inside
-        computeMissionHash + the browser scans (file_source listings; the
-        official tab comptime from the embedded map); `loadMission` is
-        self-owned; `start_mission` dropped the dead `start_hub_id`
-        payload. SLICE 1 COMPLETE.
+  - [x] 1. The formats + model slice (1a-1e: loadHub/loadCampaign/
+        loadMission self-owned; hub.txt v2 with destination_hub +
+        npc_type; custom-asset paths content-addressed + unified;
+        campaign.txt v2 with the map layer + graph integrity checks;
+        mission.txt v3 with the derived level count) - SLICE 1 COMPLETE
+        (DONE.md, "campaign-editor slice 1, step 1" through "step 5"; the
+        formats + the coordinate model: DESIGN → Campaigns & the
+        Campaign Editor → File formats + The map coordinate model).
   - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
         new_game, discovered on arrival), world-map travel (backtrack to
         discovered) + mission starts (edge clickable when the start hub
@@ -664,20 +452,16 @@ work:
   - [ ] 5. The mission-editor hand-off (campaign context) + campaign
         save/export bundling (the STORE-zip pattern).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
-- **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
   next to Test/Validate; the success message currently rides the error
   popup - a real notification/toast surface would be the proper home.
-- **Custom-sprite dims verification** - DONE across all layers (load
-  warn+degrade, render magenta gate, picker filter, pick-commit backstops,
-  Revalidate report - see DESIGN → Custom Missions & Online Services →
-  Custom-asset dimensions; history in DONE.md).
-- [x] **Mission metadata cleanup - SETTLED + LANDED** (see DESIGN →
-      Campaigns & the Campaign Editor → The graph model + File formats):
-      mission.txt v3 drops `start_hub`/`end_hub`/`level_count`; the level
-      count derives (the reconstruction-sound probe - DESIGN → File
-      formats). Landed as campaign-editor slice 1 step 1e.
+- [x] **Custom-sprite dims verification** - DONE across all layers (see
+      DESIGN → Custom Missions & Online Services → Custom-asset
+      dimensions; history in DONE.md).
+- [x] **Mission metadata cleanup** - SETTLED + LANDED as campaign-editor
+      slice 1 step 1e (see DESIGN → Campaigns & the Campaign Editor →
+      The graph model + File formats).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
 - **Editor browser polish** (the browser itself - kind tabs + New
@@ -706,11 +490,9 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
       the dims read through `readReconstructionFile` so art bytes become
       reconstruction reads and bundles capture them automatically.
 
-- [x] file_format_version now rides every config file's Metadata section
-      (wiring DONE, DONE.md). Policy: bump the relevant per-type constant
-      in parser.zig whenever a serialized format changes shape. The session
-      log's v2 (ReconstructionCache manifest + `content/` copies - the
-      session-log BUNDLE) is DONE - see DONE.md, "session-log bundle".
+- [x] file_format_version rides every config file's Metadata section;
+      the session-log v2 BUNDLE is DONE (DONE.md, "session-log bundle").
+      The bump policy lives in DESIGN → Versioning.
 - Pre-release replay-compat policy: handler changes that push new child
   events (e.g. the `damage`-event split, effect pacing) break strict
   verification of OLD session logs / validation replays - re-record rather
@@ -719,13 +501,10 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   reconstructFromEventLog/restoreTo at successive targets. Steps = the
   combat-log filter (derived, not idle_points). Needs the projection (DONE) +
   replay-viewer UI.
-- [x] Replay verification cross-session: natural-stack verification
-      (`verifyReplayMatch`) runs on cross-session `reconstructFromEventLog`
-      reconstructions too, and the replay CHECKING mode
-      (`reconstructFromEventLogChecking`) makes the same check catchable for
-      revalidate / server validation (DONE.md). The custom-mission
-      cross-session gap is CLOSED - session-log bundles embed the content
-      (see DONE.md, "session-log bundle").
+- [x] Replay verification cross-session + the custom-mission gap CLOSED
+      (session-log bundles embed the content; the checking mode makes the
+      verification catchable for revalidate / server validation) - see
+      DONE.md, "session-log bundle" + "replay verification cross-session".
 - Exhaustive comptime round-trip test for the session-log writer/reader:
   inline-for over every Event category/variant, synthesize a payload (0 /
   false / first enum / "" / empty slice / null optional / recurse structs),
@@ -860,70 +639,13 @@ Open:
   → Asset memory levers matter more for web than native); emrun polish.
   (The WebGL1/WebGL2 build option is DONE - the web build is WebGL2-only;
   see DESIGN → Platform Seam → WebGL 2.)
-- **Web storage model refactor** - design SETTLED: DESIGN → File System &
-  IO → Web storage model (the persistent dir is an IN-MEMORY mount -
-  browser storage is never touched, nothing persists between sessions by
-  design; Import Game = full game-folder ziglop.zip overlay upload, Export
-  Game = full game-folder zip download). Slices:
-  1. [x] The in-memory mount - IDBFS deleted wholesale: plain MEMFS at
-     /ziglop, ALL syncfs dropped (per-write flush, upload seams, unload),
-     the two-phase boot gate deleted (main runs the full session setup
-     inline), -lidbfs.js dropped from the build. DONE - DONE.md; design:
-     DESIGN → Web storage model.
-  2. [x] Export Game - options menu (EVERY variant), web only: the
-     autosave write FIRST when a game is in progress (the `export_game`
-     orchestrator arm - mid-level progress is in the export), then the
-     FULL persistent dir zipped as ziglop.zip (the mission STORE zip
-     writer) → `triggerBrowserDownload`. DONE - DONE.md; design: DESIGN
-     → Web storage model.
-  3. Import Game - main menu, web only. The settled rules (Zip-Slip
-     validation, junk skip, caps, streaming, staging + marker, the
-     every-frame poll + the ASAP re-boot) live in DESIGN → Web storage
-     model (updated with the landed shape). Sub-slices:
-  - [x] 3a. The machinery - DONE (see DONE.md, "web storage model slice
-        3a"): `zip_reader`'s split API (headers pass + one-entry extract,
-        the shared junk/name-safety policy), `game_zip`'s overlay +
-        caps + dry-run passes + the poll, the frame-path comptime-gated
-        poll wiring, the artifact-name listing exclusion set, and the
-        headless tests. The upload JS (`triggerBrowserGameUpload`) is
-        DEAD until 3c wires its caller (the button's action arm).
-  - [x] 3b. SessionSetup teardown + the web re-boot driver - DONE (see
-        DONE.md, "web storage model slice 3b"): `GameStateHistory.deinit`
-        + `freeSessionSetup` + the tracked startup memory (`StartupMemory`)
-        + `bootSession`/`rebootSession` in web.zig + `deinitAudio` + the
-        leak-check round-trip test.
-  - [x] 3c. Button + action wiring - DONE (see DONE.md, "web storage
-        model slice 3c"): the main-menu Import Game button (web-only via
-        the `persistent_dir_path == null` signal, threaded as
-        `import_available`), `.import_game` action + the three exhaustive
-        map classifications + the idle menu-action arm
-        (`triggerBrowserGameUpload`'s caller - no DEAD pubs left).
-  4. [x] Disclaimer - DONE: the chosen wording (DESIGN → Web storage
-     model), two centered lines above the title, riding the same
-     `persistent_dir_path` web signal (see DONE.md, "web storage model
-     slice 4").
-  5. [x] Cleanup sweep - DONE (see DONE.md, "web storage model slice
-     5"): the `file_source.zig` platform-split directory listings deleted
-     (all four: the save scan, the mission folder names, the per-mission
-     folder scan, the export tree walk) + their JS machinery (three
-     listing temp files, the shared JS enumerator, the JS artifact filter)
-     + the IDBFS-era prose. Browser verification: the load-save browser
-     + the mission browser + an export on web (the three listing
-     surfaces) - plain MEMFS readdir through `Dir.iterate` everywhere.
-     If a listing surface turns up empty or errors on web, the splits
-     restore from git.
-  - Browser pass DONE (the emrun pass across slices 2-4, with the user
-    driving): export + import round-trip verified - the download lands
-    with the full tree, importing loads the content, Continue appears for
-    the imported autosave, the re-boot completes. The pass caught four
-    real bugs on the way (each its own commit): the export walk's
-    unquoted mount path (a JS injection crash), its path-strip
-    off-by-one (absolute paths), the download seam's NUL truncation
-    (5-byte zips), and the Audio.deinit undefined-fill crash at the
-    re-boot. Remaining unverified edges: the hostile/garbage-zip abort
-    (popup, nothing written) + a refresh-residue check (IndexedDB stays
-    empty) - fine to fold into the next pass.
-
+- [x] **Web storage model refactor** - DONE, all five slices + the
+      emrun browser pass (DONE.md, "web storage model slice 1" through
+      "slice 5" + the browser-pass bug history; settled design: DESIGN →
+      File System & IO → Web storage model). Remaining unverified edges:
+      the hostile/garbage-zip abort (popup, nothing written) + a
+      refresh-residue check (IndexedDB stays empty) - fold into the next
+      browser pass.
 - **Load-save browser polish** (the browser itself is DONE - DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player
   name / hub / timestamp formatting), richer row visuals, keyboard
@@ -1041,14 +763,12 @@ looking:
   fully populate the source ("loading mission...") before emitting
   start_mission.
 - [x] Cross-session replay reproducibility: session-log bundles embed the
-      exact bytes the session read (manifest + `content/` copies; see
-      DESIGN → Logging & Replay → Session-log bundle) - DONE. The sharing/
-      download packaging lands with the database.
-- **Custom-asset dimension validation** - DONE, all layers (load
-  warn+degrade, render magenta gate, picker filter + commit backstops,
-  Revalidate art report). Settled design + the layer inventory: DESIGN →
-  Custom Missions & Online Services → Custom-asset dimensions; history in
-  DONE.md.
+      exact bytes the session read - DONE (see DESIGN → Logging & Replay →
+      Session-log bundle). The sharing/download packaging lands with the
+      database.
+- [x] **Custom-asset dimension validation** - DONE, all layers (see
+      DESIGN → Custom Missions & Online Services → Custom-asset
+      dimensions; history in DONE.md).
 
 ## Online Services
 
@@ -1140,11 +860,9 @@ Done items in DONE.md. Open:
       kept its gate for convention) so the gate isn't cargo-culted onto new
       sites. Do NOT churn the per-site gates on their own - fold into the
       next touch of each site.
-- [x] **Doc-symbol staleness checker (machine-walked truth for doc prose)**
-      - DONE: `scripts/doc_symbol_check.sh` (see DONE.md, "Doc-symbol
-      staleness checker"). First run caught real drift (DESIGN's
-      `parser.load*`/`parser.free*` qualifiers - all in loaders.zig) and
-      settled the future-symbol convention (bare names in TODO prose).
+- [x] **Doc-symbol staleness checker** - DONE: `scripts/doc_symbol_check.sh`
+      (see DONE.md, "Doc-symbol staleness checker" - which also settled
+      the future-symbol convention: bare names in TODO prose).
 - **Style pass over the Tier A session's lines - DEFERRED (owner
       undecided).** Scope discovery (cleanup session): the "~95-char wrap
       convention" isn't an enforced convention - it's in no doc, ~2,000+
@@ -1222,11 +940,9 @@ Done items in DONE.md. Open:
   is read-only. If the skill-button or gear-slot visuals change, both sites
   need updating. Refactor to a shared core taking an entity + a read-only
   flag - deferred (a deliberate cleanup slice, not urgent).
-- **Awkward-values convention - settled** (the "nice values hide boundary
-  bugs" note from the gear session: divisible harvest ratios, `warnings:
-  null`, the untested `on_end_turn`, zero-coverage
-  `resolveInventoryClick`). The convention + examples live in DESIGN →
-  Testing → Assertion patterns; the bug history is in DONE.md.
+- **Awkward-values convention - settled** - the convention + examples
+  live in DESIGN → Testing → Assertion patterns (the bug history is in
+  DONE.md).
 - Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
   size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
   leaving holes the marching ring_index won't preferentially reuse - so
@@ -1244,73 +960,24 @@ Done items in DONE.md. Open:
   assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
   guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
   with a descriptive @panic. See DESIGN → Architecture note.
-- [x] **The dash sweep** - DONE: `scripts/dash_sweep.sh` (the git-grep
-      walker: tracked files only, binaries skipped via `-I`, LICENSE files
-      excluded, byte-escape patterns so the script never sweeps itself;
-      `--check` is the pre-commit gate) + the one-time tree sweep (8684
-      occurrences, 156 files; see DONE.md, "the dash sweep"). Rendered
-      em-dashes were already rendering correctly by then (the full-coverage
-      atlas), so the sweep was uniformity, not bug-fixing.
+- [x] **The dash sweep** - DONE: `scripts/dash_sweep.sh` + the one-time
+      tree sweep (see DONE.md, "the dash sweep").
 - **DONE.md's unbounded growth** - past ~17k lines and every session adds
   entries. Might want a divided history format someday (per-year or
   per-milestone files with a top-level index). Not urgent - revisit
   whenever the file's size starts hurting navigation.
 
-Session-reflection riders (the parser-grammar + tips sessions):
-
-- **Config-layer OOM + error-path cleanup (settled: DESIGN → Error
-  Handling → OOM never propagates; convention + full survey from the
-  cleanup session).** Allocation failure at parser/loader/file-source
-  sites panics inline - never an error return (the fallback-swallow
-  hazard: an OOM in loadSettings falling through loadConfigWithFallback
-  to default settings, whose debounced write could clobber the player's
-  file). Loader errors carry INPUT problems only; every error return
-  needs its errdefer + a leak-checked malformed-fixture test. Slices
-  (the survey's findings - all input-reachable except where noted):
-  - [x] salvage chain + themes: parseSalvageSplits (partial list leaks on
-        InvalidData mid-list), loadSalvageDefinitions (earlier weapon
-        splits leak when a later gear section is missing),
-        loadColorThemeDefinitions (gradient list leaks on a
-        gradient_index mismatch) - convert + errdefer + tests - DONE (see
-        DONE.md, config-layer OOM convention slice 2; loadTips' one OOM
-        site rode along; loadSalvageDefinitions also had a SECOND leak
-        shape - each gear try-arm dropped its own result when a LATER arm
-        failed)
-  - [x] editor trio: loadEditorDefaultLevel (the whole level leaks on
-        MissingDefaultLevelEnd / DefaultLevelHasEntries), loadEditorDefaults
-        (entity/decoration layers leak on a later MissingDefaultEntry),
-        buildEditorMission (palette lists + duped footprints/layers leak
-        when a level section fails loadLevel - reachable via open_editor
-        on hand-edited content) - DONE (see DONE.md, OOM convention
-        slice 3 parts 1+2; buildEditorMission needed the full ownership
-        restructure - success-path remnants + borrowed layer sprites +
-        mixed item-id ownership - to be testable at all; freeEditorBuild
-        is the per-kind contract)
-  - [x] self-owned loaders (loadCampaign, loadPlayerSave, loadSettings,
-        loadPlayerLoadout, loadTips): convert the `try`-allocation sites
-        to inline panics + errdefers for validation paths
-        (loadPlayerSave/loadSettings are OOM-only today - errdefer lands
-        as defense; untestable without failure injection, which the
-        convention removes the need for) - DONE, plus loadLevel/loadHub's
-        own drifted try sites (see DONE.md, OOM convention slice 4; the
-        errdefer-as-defense idea dissolved - after conversion those
-        loaders have zero error returns after allocation, so there is
-        nothing to defend; the loadConfigWithFallback debt comment
-        deleted)
-  - [x] parser.zig + file_source.readFile allocation sites (the
-        parseConfigFile errdefer stays - it guards validation paths;
-        the grammar-slice tests already cover them) - DONE (see DONE.md,
-        OOM convention slice 5; parseConfigFileFromPath's try sites stay -
-        they propagate readFile's IO + parse validation, both input
-        problems; readEmbeddedFile converted alongside readFile)
-  - Clean already: loadLevel/loadHub (errdefer + tests), loadMission
-        (its error returns before any allocation), loadWeaponTypeDefinition
-        (allocates nothing), loadDecorationRegistry (panic-only by
-        design), parsePlayerLoadoutFields (no error sites).
-  - writers.zig (harmless OOM propagation today - build-buffer-then-
-        write, nothing partial hits disk) + session_log/session_log_bundle
-        (OOM caught by the best-effort dump paths) ride the same
-        convention decision eventually; not part of this sweep.
+- [x] **Config-layer OOM + error-path cleanup** - COMPLETE, all five
+      slices (DONE.md, "config-layer OOM convention" slice 1 through
+      slice 5; the settled convention + the fallback-swallow rationale:
+      DESIGN → Error Handling → OOM never propagates as a config-layer
+      error). EditorLevel.name is owned everywhere now (the last
+      sections-borrowing field - DONE.md, "session cleanup: de-pub crash
+      dump internals").
+  - Open remainder: writers.zig (harmless OOM propagation today -
+        build-buffer-then-write, nothing partial hits disk) +
+        session_log/session_log_bundle (OOM caught by the best-effort
+        dump paths) ride the same convention decision eventually.
 - **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
   `init` has ~20 call sites and every new history-resident config field
   (tips was the latest) mechanically edits all of them (tests pass `&.{}`);
