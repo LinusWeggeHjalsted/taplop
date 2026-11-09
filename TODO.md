@@ -14,6 +14,79 @@ full sound design, a web database for leaderboards and custom content, and
 everything else that entails. A lot is still missing - but it's reachable.
 Test by running `zig build run` and clicking through.
 
+## Post-Review (the full-project review's findings - PROJECTREVIEW.md is the record)
+
+The 15-part review of the whole tree (docs, architecture, code, tests) is
+done: 0 Critical, 1 Major, 13 Minor, 11 Nit, 67 Highlights. Nothing was
+fixed in passing - every item below is dispositioned in PROJECTREVIEW.md
+(Part 15 has the registers + the full TODO-delta rationale). Sort these
+next session; one item each from the first two groups is a coherent
+commit unit.
+
+**Hardening (bugs + server-seam security; ~100 lines total):**
+- [ ] Saturating `Materials.add` at its three call sites (harvest_clones,
+      salvage_item, the pickup accumulator) - closes review M-1.1 (the
+      DESIGN → Clones "clamps at u32 max" line is presently a doc lie +
+      a ReleaseFast wrap risk); update the DESIGN line with the code.
+- [ ] `markWriteDirty` overflow fallback: `@panic` instead of
+      `write_fn(undefined)` (state.zig:642 - UB where fail-fast belongs).
+- [ ] `that_which_lingers.playerPrepareSkill`: `return null` (dead today
+      - non-targeting skills never prepare - but armed: any future caller
+      double-applies a stacking-duration effect).
+- [ ] Mission-zip import: headers-first caps mirroring `importGameFolder`
+      (readZipArchive fully extracts before the count check; a hostile
+      declared uncompressed_size allocates up to ~4 GB - Minor today,
+      Major at the online-services milestone).
+- [ ] FileSource: `validateRelativePath` gate at readFile/writeFile
+      (~15 lines; crafted bundles can seed reads outside the persistent
+      dir - see PROJECTREVIEW Part 5, m-5.1).
+- [ ] Session-log bundle loader: total-bytes cap (per-file 256 MB limit
+      only, today).
+- [ ] Hub `move_player`: legality arm at the replay seam (level moves
+      get full BFS validation; hub moves none).
+- [ ] World draw paths: magenta fallback on missing textures (UI paths
+      draw it; world paths draw nothing - DESIGN + the loaders' warnings
+      promise magenta universally).
+- [ ] Record in the online-services design: server-revalidation builds
+      MUST be safe-mode (ReleaseSafe+) - the validation machinery is
+      panic-based, and ReleaseFast makes those panics UB.
+
+**Hygiene (one session, zero risk):**
+- [ ] Comment-drift cleanup pass (~18 catalogued locations in
+      PROJECTREVIEW Parts 2-7; the two semantically-misleading first:
+      input.zig's InputState "lives on GameState" - backwards - and the
+      three skills' rating-doc numbers).
+- [ ] The fmt decision: adopt `zig fmt --check` as a commit checkpoint
+      (10 files currently fail it; the fix is one command) or record
+      not-a-gate in AGENTS.
+- [ ] Optional AGENTS line: "when moving/renaming a fn, its /// moves
+      with it" - the one-sentence version of the drift lesson.
+
+**Settled by the review (decisions to ratify or overrule):**
+- Style-wrap item: quantified 785 lines >120 / 109 >160 chars - recommend
+      DROP the item (or going-forward-only wrap); no retroactive churn.
+- Marquee-crosses-marker trap: when it bites, SURFACE the loss in the
+      drag preview (a "will be deleted" cue) rather than vetoing the
+      move - the warn-over-reject posture (PROJECTREVIEW Part 9).
+- Vestigial `!replaying` input-layer gates: confirmed dead - keep as
+      defense-in-depth + one documenting comment at
+      dispatchFiredActionSounds; no churn.
+
+**Campaign-editor riders (fold into that work, not standalone):**
+- Re-type `PlayerData.discovered_hubs` to a name set before slice 2
+      (stores full Hub structs for names today; also carries the tree's
+      only two comment-rule violations).
+- Settle the `start_hub` path shape (`data/campaigns/...` vs
+      `campaigns/...`) in slice 2's design (PROJECTREVIEW Part 5 note).
+
+**Optional polish (nits, no urgency):** the DONE.md generated header
+index (the one archiving improvement), a DESIGN section index, the
+settings key-map naming (`level_metadata_keys` borrowed for settings),
+the menus.zig five-surface split, the small dedup helpers (tile-set
+construction ×4, drag-threshold compare ×6), the report-tracking
+asymmetry (sound_report.md ignored vs siblings tracked), README's
+"early stages" line (demo-milestone rewrite).
+
 ## NEXT UP (not ordered - pick what progresses)
 
 - [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
