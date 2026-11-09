@@ -42,9 +42,9 @@ commit unit.
       move_player: the replay-seam legality arm (review m-3.1)").
 - [x] World draw paths: magenta fallback - DONE (see DONE.md, "World
       draw paths: the missing-art magenta fallback (review m-7.1 + n-7.2)").
-- [ ] Record in the online-services design: server-revalidation builds
-      MUST be safe-mode (ReleaseSafe+) - the validation machinery is
-      panic-based, and ReleaseFast makes those panics UB.
+- [x] Record in the online-services design: server-revalidation builds
+      MUST be safe-mode - DONE (DESIGN → Custom Missions & Online Services
+      → Auth & the server seam).
 
 **Hygiene (one session, zero risk):**
 - [ ] Comment-drift cleanup pass (~18 catalogued locations in

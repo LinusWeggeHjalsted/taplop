@@ -18659,3 +18659,17 @@ preserveDrawingBuffer reads black; the page screenshot is the honest
 probe). DESIGN → Platform Seam's magenta line extended with the world
 paths' dims convention. Closes review items m-7.1 + n-7.2 and TODO →
 Post-Review → Hardening item 8.
+
+## Server-revalidation builds must be safe-mode (the review's security-posture headline)
+
+Doc-only rider closing the Post-Review hardening set: the review's
+Part 15 headline recommendation - the validation machinery is
+panic-based (rejectReplay → @panic, the fail-fast unwrap policy), and
+ReleaseFast turns panics into UB, which on hostile input is not a
+rejection - is now recorded where the server seam will be designed:
+DESIGN → Custom Missions & Online Services → Auth & the server seam,
+as a dedicated bullet next to the leaderboard-integrity replay rule
+it protects. Any binary that runs reconstruction/validation over
+untrusted logs (the future server, or a client build acting as one)
+is built ReleaseSafe or Debug, never ReleaseFast. With this, all nine
+Post-Review → Hardening items are closed.

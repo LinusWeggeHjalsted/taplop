@@ -2980,6 +2980,14 @@ PASSES - violations degrade at runtime).
   prototype of this check), which gates each event on
   `validatePlayerAction` legality + natural-stack verification, and
   DERIVES the turns itself. Client-claimed times are never read.
+- **Server-revalidation builds MUST be safe-mode (ReleaseSafe or
+  tighter).** The whole validation machinery is panic-based
+  (`rejectReplay` → `@panic`, the fail-fast unwrap policy); ReleaseFast
+  turns those panics into UB, and undefined behavior on hostile input is
+  not a rejection. Any binary that runs reconstruction/validation over
+  untrusted logs - the future server, or any client build acting as one -
+  is built ReleaseSafe or Debug, never ReleaseFast (PROJECTREVIEW Part 15,
+  the security-posture headline).
 - **TAS is valid BY DESIGN - no anti-TAS work, ever.** The game is
   turn-based, so any legal event log is in principle reproducible by a
   human player, one decision at a time. The leaderboard certifies
