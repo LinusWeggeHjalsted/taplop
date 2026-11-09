@@ -26,8 +26,8 @@ commit unit.
 **Hardening (bugs + server-seam security; ~100 lines total):**
 - [x] Saturating `Materials.add` - DONE (see DONE.md, "Saturating
       Materials.add (review M-1.1)").
-- [ ] `markWriteDirty` overflow fallback: `@panic` instead of
-      `write_fn(undefined)` (state.zig:642 - UB where fail-fast belongs).
+- [x] `markWriteDirty` overflow fallback - DONE (see DONE.md, "The
+      markWriteDirty overflow fallback is a panic now (review m-2.1)").
 - [ ] `that_which_lingers.playerPrepareSkill`: `return null` (dead today
       - non-targeting skills never prepare - but armed: any future caller
       double-applies a stacking-duration effect).

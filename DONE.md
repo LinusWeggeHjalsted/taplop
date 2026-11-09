@@ -18513,3 +18513,18 @@ the others add normally). DESIGN → Post-game Rewards & Cosmetics →
 Overflow guard updated to name the implementation site; the DESIGN →
 Clones pointer line became true as written, unchanged. Closes review
 item M-1.1 and TODO → Post-Review → Hardening item 1.
+
+## The markWriteDirty overflow fallback is a panic now (review m-2.1)
+
+When the 4-slot `pending_writes` array fills, the old fallback was
+`write_fn(undefined)` - calling the settings writer on an undefined
+`GameStateHistory`, i.e. dereferencing garbage, potentially corrupting
+settings.txt before crashing. The comment already called the condition
+"a real bug" but the response was UB, not fail-fast. Now a `@panic`
+with a diagnostic message naming the invariant (max_pending_writes
+must cover all tags). Unreachable in practice: one tag exists today
+(`settings`), four slots. Panic wrappers aren't unit-tested by
+convention (AGENTS → Testing discipline - no expectPanics in Zig
+0.16); the surrounding enqueue/debounce logic is covered by the
+existing settings-persistence tests. Closes review item m-2.1 and
+TODO → Post-Review → Hardening item 2.

@@ -638,8 +638,9 @@ pub const SessionState = struct {
             }
         }
         // No room - the array is too small (a real bug; max_pending_writes
-        // should cover all tags). Fire immediately as a fallback.
-        write_fn(undefined);
+        // should cover all tags). Fail fast rather than firing a writer on
+        // an undefined history pointer (UB).
+        @panic("pending_writes overflow: max_pending_writes too small for the tag set");
     }
 
     /// Fire any pending writes whose deadline has elapsed. Called by `frame()`
