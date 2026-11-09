@@ -18528,3 +18528,20 @@ convention (AGENTS → Testing discipline - no expectPanics in Zig
 0.16); the surrounding enqueue/debounce logic is covered by the
 existing settings-persistence tests. Closes review item m-2.1 and
 TODO → Post-Review → Hardening item 2.
+
+## that_which_lingers: the armed prepare landmine defused (review m-4.1)
+
+Every skill's `playerPrepareSkill` is a pure UI step (highlights or
+null); lingers' prepare returned the exact create_effect its useSkill
+also returns - dead code today (the input layer goes straight to
+useSkill for non-targeting skills), but armed: any future caller would
+double-apply the effect, and create_effect STACKS durations on
+re-application (+4 turns instead of +2). Defused by the interface
+contract's own rule (skill.zig: `uses_targeting == false` skills
+return null): the dead body deleted, `return null` in its place, the
+stale doubled doc comment replaced with one accurate line. Secondary
+inconsistency from the same review item fixed alongside: aiOptions
+passed `.target = caster.position` where every other self-cast
+(including sibling enchantments bull_form + promise_of_death) passes
+`null` - aligned. No behavior change today; all tests pass. Closes
+review item m-4.1 and TODO → Post-Review → Hardening item 3.

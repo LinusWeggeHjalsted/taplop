@@ -28,9 +28,9 @@ commit unit.
       Materials.add (review M-1.1)").
 - [x] `markWriteDirty` overflow fallback - DONE (see DONE.md, "The
       markWriteDirty overflow fallback is a panic now (review m-2.1)").
-- [ ] `that_which_lingers.playerPrepareSkill`: `return null` (dead today
-      - non-targeting skills never prepare - but armed: any future caller
-      double-applies a stacking-duration effect).
+- [x] `that_which_lingers.playerPrepareSkill` - DONE (see DONE.md,
+      "that_which_lingers: the armed prepare landmine defused (review
+      m-4.1)").
 - [ ] Mission-zip import: headers-first caps mirroring `importGameFolder`
       (readZipArchive fully extracts before the count check; a hostile
       declared uncompressed_size allocates up to ~4 GB - Minor today,

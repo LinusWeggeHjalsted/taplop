@@ -97,26 +97,14 @@ fn aiOptions(
     }
 
     if (best_beneficiary == 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = caster.position, .priority = best_beneficiary + 1 });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = best_beneficiary + 1 });
 }
 
-/// Self-cast - target is the caster's own position.
-/// Self-cast enchantment - no tile highlighting, just push the effect creation.
-fn playerPrepareSkill(
-    caster_index: u32,
-    game_state: GameState,
-    allocator: std.mem.Allocator,
-) ?Event {
-    _ = allocator;
-    const level = game_state.level orelse return null;
-    const caster = level.entities[caster_index];
-
-    return .{ .sub_level_event = .{ .create_effect = .{
-        .caster_index = caster_index,
-        .receiver_index = caster_index,
-        .effect_id = .that_which_lingers,
-        .duration = caster.getEffectiveOutgoingSkillDuration(skill.skill_duration.?),
-    } } };
+/// Non-targeting skill - prepare is never asked for (the interface
+/// contract: `uses_targeting == false` skills return null here). The
+/// gameplay effect lands in useSkill only.
+fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
+    return null;
 }
 
 /// Push the create_effect event on the caster.
