@@ -54,15 +54,15 @@ commit unit.
 - [x] Optional AGENTS line - DONE: "when moving/renaming a fn, its `///`
       moves with it" added to AGENTS → Code Comments (the lead paragraph).
 
-**Settled by the review (decisions to ratify or overrule):**
-- Style-wrap item: quantified 785 lines >120 / 109 >160 chars - recommend
-      DROP the item (or going-forward-only wrap); no retroactive churn.
-- Marquee-crosses-marker trap: when it bites, SURFACE the loss in the
-      drag preview (a "will be deleted" cue) rather than vetoing the
-      move - the warn-over-reject posture (PROJECTREVIEW Part 9).
-- Vestigial `!replaying` input-layer gates: confirmed dead - keep as
-      defense-in-depth + one documenting comment at
-      dispatchFiredActionSounds; no churn.
+**Settled by the review (ratified - each applied at its home):**
+- [x] Style-wrap item - DROPPED (see DONE.md, "The style-wrap item
+      dropped").
+- [x] Marquee-crosses-marker trap - posture recorded on the OPEN
+      playtest-watch item (Level Editor below): warn-over-reject, never
+      veto, when it bites.
+- [x] Vestigial `!replaying` input-layer gates - kept as defense-in-
+      depth, the documenting comment landed at `dispatchFiredActionSounds`
+      (see DONE.md, "The vestigial !replaying gates").
 
 **Campaign-editor riders (fold into that work, not standalone):**
 - Re-type `PlayerData.discovered_hubs` to a name set before slice 2
@@ -454,12 +454,13 @@ work:
       is the '!' / '=' cell plans empty and is removed by the move
       (documented, intended - DESIGN → Level Editor → the commit chain's
       per-entry re-planning). But dragging a large marquee selection ACROSS
-      a marker silently eats its members - a UX trap. Options when it
-      bites: veto the whole move (the marker-overlap veto's shape -
-      planning.editorSelectionMoveVetoed), or make the drag ghost surface
-      the loss (the view already draws the translated outlines). The
-      marker-on-marker case is already vetoed; this is the non-marker
-      members' case. Decide from playtest texture.
+      a marker silently eats its members - a UX trap. POSTURE SETTLED
+      (PROJECTREVIEW Part 9): when it bites, SURFACE the loss in the drag
+      preview (a "will be deleted" cue - the view already draws the
+      translated outlines) rather than vetoing the move - the
+      warn-over-reject posture. The marker-on-marker case stays vetoed
+      (planning.editorSelectionMoveVetoed); this is the non-marker
+      members' case.
 - **Campaign editor (hub editing inside) - design SETTLED, build not
   started.** TWO editors, not three (see DESIGN → Campaigns & the
   Campaign Editor for the full model): the mission editor (built) + the
@@ -915,28 +916,19 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
-- **Vestigial `!replaying` gates at input-layer sound sites.** The
-      `queueActionSound`/`queueSound` call sites gate on
-      `!history.replaying`, but the input handlers (`handleAnytimeInput` /
-      `handleIdleInput`) appear to run ONLY in the live path (replay drives
-      `processEvent` directly on recorded events) - making the gates dead
-      defense. Confirm once, then either drop them or record WHY the
-      convention stands at the choke point (`dispatchFiredActionSounds`
-      kept its gate for convention) so the gate isn't cargo-culted onto new
-      sites. Do NOT churn the per-site gates on their own - fold into the
-      next touch of each site.
+- [x] **Vestigial `!replaying` gates at input-layer sound sites** -
+      SETTLED (see DONE.md, "The vestigial !replaying gates: kept as
+      defense-in-depth"): confirmed dead, kept; the choke point carries
+      the documenting comment. Per-site gates fold into the next touch of
+      each site, never churned on their own.
 - [x] **Doc-symbol staleness checker** - DONE: `scripts/doc_symbol_check.sh`
       (see DONE.md, "Doc-symbol staleness checker" - which also settled
       the future-symbol convention: bare names in TODO prose).
-- **Style pass over the Tier A session's lines - DEFERRED (owner
-      undecided).** Scope discovery (cleanup session): the "~95-char wrap
-      convention" isn't an enforced convention - it's in no doc, ~2,000+
-      lines exceed 95 tree-wide (handler_tests_editor 344, input_handlers
-      192, state.zig 183...), the skills tree (~134 long lines) isn't the
-      densest offender, and zig fmt doesn't check line length so any
-      one-time wrap rots immediately. Options when revisiting: (a) drop the
-      item, (b) settle a going-forward wrap rule in AGENTS (no retroactive
-      churn), (c) fix only egregious >120-char lines. Decide then.
+- [x] **Style pass over the Tier A session's lines** - DROPPED (the
+      review's quantification settled it: 785 lines >120 / 109 >160
+      tree-wide, zig fmt doesn't check line length so any wrap rots -
+      see DONE.md, "The style-wrap item dropped"). No retroactive churn;
+      no going-forward rule (fmt owns formatting, nothing owns width).
 - **handler_tests_editor call-shape boilerplate (polish).** The file is
   the tree's biggest (8.8k lines) and every test hand-writes the same
   `input_handlers.handleAnytimeInput(&history, .{ .options_action = X },

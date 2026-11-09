@@ -18770,3 +18770,36 @@ a stale one (the review's drift catalog was full of both)." The
 session's own evidence: boundedU32's doc was orphaned in parser.zig
 by its move to loaders.zig, and validatePlayerAction's doc was lost
 in a rename - both recovered via git history.
+
+## The Post-Review "settled by the review" group - all three ratified
+
+The review's three recommended dispositions, ratified without
+overrule:
+
+- **The style-wrap item dropped.** The "style pass over the Tier A
+  session's lines" Tech Debt item is removed: the review quantified
+  the non-convention (785 lines >120 / 109 >160 chars tree-wide; the
+  "~95-char wrap convention" was in no doc and zig fmt doesn't check
+  line length, so any one-time wrap rots immediately). No retroactive
+  churn, no going-forward width rule - fmt owns formatting, nothing
+  owns width.
+- **Marquee-crosses-marker: warn-over-reject, settled.** The OPEN
+  playtest-watch item (Level Editor - a selection move dragged across
+  a marker silently deletes the crossing members) had two candidate
+  fixes; the posture is now recorded on the item: when it bites,
+  surface the loss in the drag preview (a "will be deleted" cue - the
+  view already draws the translated outlines) rather than vetoing the
+  move. The marker-on-marker case stays vetoed
+  (planning.editorSelectionMoveVetoed).
+- **The vestigial !replaying gates: kept as defense-in-depth.** The
+  review confirmed the input-layer sound gates dead (input handlers
+  run only in the live path; replay drives processEvent directly).
+  Settled disposition: keep the gates, document the convention once at
+  the choke point - dispatchFiredActionSounds now carries the comment
+  (vestigial but kept; side-effect seams keep an explicit !replaying
+  gate even when the current call graph makes it redundant; don't
+  cargo-cult new gates onto provably live-path-only sites, don't drop
+  this one). Per-site gates fold into the next touch of each site.
+
+Closes the Post-Review → "Settled by the review" group; TODO items
+updated at their homes.
