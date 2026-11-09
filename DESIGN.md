@@ -18,9 +18,9 @@ make the reader re-derive the tradeoff. A limitation that later becomes
 unacceptable is the seed of the next slice; leaving it unrecorded means the
 next session meets it as a surprise instead of a known.
 
+<!-- doc index: begin -->
 ## Index
 
-<!-- doc index: begin -->
 - [Platform Seam (raylib)](#platform-seam-raylib)
   - [SDF text outline (ALL text - plain and outlined)](#sdf-text-outline-all-text---plain-and-outlined)
   - [Outline stripe shader (marching outlines)](#outline-stripe-shader-marching-outlines)

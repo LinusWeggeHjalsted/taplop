@@ -11,9 +11,9 @@ working rules).
 
 ---
 
+<!-- doc index: begin -->
 ## Index
 
-<!-- doc index: begin -->
 - [Logging & Replay](#logging--replay)
 - [Foundation (done)](#foundation-done)
 - [Error Handling](#error-handling)
@@ -301,6 +301,7 @@ working rules).
 - [Generated section indexes for DESIGN + DONE (scripts/doc_index.sh)](#generated-section-indexes-for-design--done-scriptsdocindexsh)
 - [menus.zig split into per-surface files (review n-8.1)](#menuszig-split-into-per-surface-files-review-n-81)
 - [Session reflection riders: the fmt advisory's file-set hole + two notes](#session-reflection-riders-the-fmt-advisorys-file-set-hole--two-notes)
+- [doc_index.sh: the marker block owns its container heading](#docindexsh-the-marker-block-owns-its-container-heading)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19213,3 +19214,17 @@ compiler, so no urgency, but generation makes the lie structurally
 impossible); (2) AGENTS → Commit policy carries the prose-config rule
 (.gitignore and friends get APPENDED to, never whole-file rewritten -
 the scramble's root cause, recovered earlier this session).
+
+## doc_index.sh: the marker block owns its container heading
+
+The index tool's skip rule was name-based magic (skip any heading
+titled exactly "Index" - the container would otherwise list itself),
+meaning a future body section genuinely titled "Index" would silently
+vanish from the index. Restructured: the `## Index` container heading
+moved INSIDE the begin/end markers (generated output, like the links),
+and the scanner skips the marker REGION - "the generated block is
+never input to itself," a structural rule with no name coupling.
+Probe-verified: a body section titled "Index" now indexes normally
+(#index anchor, no suppression). Anchor links kept - the repo's
+migration target is GitHub, where the slug rules the script mirrors
+are the ones that make the links land.

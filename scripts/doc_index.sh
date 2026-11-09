@@ -2,7 +2,8 @@
 # Regenerate the machine-derived section index in DESIGN.md / DONE.md.
 #
 # The index lives between the `<!-- doc index: begin -->` and
-# `<!-- doc index: end -->` markers: one anchor link per heading
+# `<!-- doc index: end -->` markers (the block carries its own `## Index`
+# container heading): one anchor link per heading
 # (DESIGN: `##` sections + `###` subsections nested under them; DONE:
 # `##` only - its sections ARE the archive units). GitHub-compatible
 # anchors, no line numbers - the index cannot go stale, only
@@ -35,15 +36,21 @@ to_anchor() {
 # duplicate-anchor numbering (-1, -2, ... for repeated titles). The
 # index's own container heading ("Index") is skipped. `levels` selects
 # the depth: "2 3" = sections + nested subsections (DESIGN), "2" = flat
-# (DONE - its `##` entries ARE the archive units).
+# (DONE - its `##` entries ARE the archive units). The generated block
+# includes its own `## Index` container heading (between the markers),
+# and the scanner skips the marker REGION - the generated block is never
+# input to itself, so no name-based special-casing (a body section titled
+# "Index" is indexed like any other).
 generate_index() {
     local file=$1
     local levels=$2
-    awk -v levels="$levels" '
+    awk -v levels="$levels" -v begin="$begin_marker" -v end="$end_marker" '
         function wanted(level) { return index(levels, level) != 0 }
+        $0 == begin { in_block = 1; next }
+        $0 == end { in_block = 0; next }
+        in_block { next }
         /^```/ { in_fence = !in_fence; next }
         in_fence { next }
-        /^## Index$/ { next }
         /^## / { if (!wanted(2)) next; sub(/^## /, ""); print "2\t" $0; next }
         /^### / { if (!wanted(3)) next; sub(/^### /, ""); print "3\t" $0 }
     ' "$file" | {
@@ -73,7 +80,11 @@ refresh_file() {
 
     local index_tmp
     index_tmp="$(mktemp)"
-    generate_index "$file" "$levels" > "$index_tmp"
+    {
+        echo '## Index'
+        echo
+        generate_index "$file" "$levels"
+    } > "$index_tmp"
 
     # Splice: keep everything outside the marker block, replace the
     # block's contents with the freshly generated index.
