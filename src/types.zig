@@ -2331,14 +2331,31 @@ pub const Materials = struct {
     cloth: u32 = 0,
     knowledge: u32 = 0,
 
+    /// Saturating add: each material clamps at u32 max rather than wrapping
+    /// (silent wraparound would destroy wealth - DESIGN → Post-game Rewards &
+    /// Cosmetics → Overflow guard). All wallet adds go through this.
     pub fn add(self: *Materials, other: Materials) void {
-        self.wood += other.wood;
-        self.metal += other.metal;
-        self.leather += other.leather;
-        self.cloth += other.cloth;
-        self.knowledge += other.knowledge;
+        self.wood +|= other.wood;
+        self.metal +|= other.metal;
+        self.leather +|= other.leather;
+        self.cloth +|= other.cloth;
+        self.knowledge +|= other.knowledge;
     }
 };
+
+test "Materials.add saturates at u32 max" {
+    var materials: Materials = .{
+        .wood = std.math.maxInt(u32) - 5,
+        .metal = 10,
+    };
+    materials.add(.{ .wood = 20, .metal = 7, .leather = 3 });
+
+    try std.testing.expectEqual(@as(u32, std.math.maxInt(u32)), materials.wood);
+    try std.testing.expectEqual(@as(u32, 17), materials.metal);
+    try std.testing.expectEqual(@as(u32, 3), materials.leather);
+    try std.testing.expectEqual(@as(u32, 0), materials.cloth);
+    try std.testing.expectEqual(@as(u32, 0), materials.knowledge);
+}
 
 pub const SalvageSplit = struct {
     material: MaterialType,

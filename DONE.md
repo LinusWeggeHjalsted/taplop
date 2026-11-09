@@ -18496,3 +18496,20 @@ The rule is now explicit in AGENTS (Documentation lifecycle + the
 commit policy): a `[x]` item still carrying its full slice prose is
 drift by definition, and the collapse happens in the SAME commit that
 adds the DONE entry - never deferred to a later cleanup pass.
+
+## Saturating Materials.add (review M-1.1)
+
+The full-project review's one Major: DESIGN → Clones claimed a
+saturation guard that did not exist - `Materials.add` was five plain
+`+=` lines, so a cumulative wallet overflow panicked in Debug (fine,
+fail-fast) but WRAPPED silently in ReleaseFast, exactly the failure
+the doc said never happens. Fixed by making the clamp live in the
+method itself: every field add is `+|` (saturating), so all wallet-add
+sites (clone harvest, salvage, the pickup accumulator) clamp at u32
+max by construction, and no future site can forget it. A repo-wide
+grep confirmed no wallet add bypasses the method with a raw `+=`.
+Unit test in types.zig pins the behavior (one field saturating while
+the others add normally). DESIGN → Post-game Rewards & Cosmetics →
+Overflow guard updated to name the implementation site; the DESIGN →
+Clones pointer line became true as written, unchanged. Closes review
+item M-1.1 and TODO → Post-Review → Hardening item 1.

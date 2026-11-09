@@ -3483,8 +3483,10 @@ official portfolio, to hit u32 max cumulatively), but custom content has
 no bound on clone count or pickup density, so a crafted "farm" mission
 is the real worst case (~10×, still thousands of completions). The
 failure mode is silent wraparound destroying wealth, so the rule:
-**material adds saturate** (the harvest + salvage add sites clamp at u32
-max rather than wrap). The shop ladder's top tier (below) doubles as
+**material adds saturate** - the clamp lives in `Materials.add`
+itself (`+|` per material), so every wallet-add site (the clone
+harvest, salvage, and the pickup accumulator) clamps at u32 max rather
+than wraps. The shop ladder's top tier (below) doubles as
 the drain valve toward that ceiling. Save size is a non-issue
 (~100-200 bytes per clone).
 

@@ -24,10 +24,8 @@ next session; one item each from the first two groups is a coherent
 commit unit.
 
 **Hardening (bugs + server-seam security; ~100 lines total):**
-- [ ] Saturating `Materials.add` at its three call sites (harvest_clones,
-      salvage_item, the pickup accumulator) - closes review M-1.1 (the
-      DESIGN → Clones "clamps at u32 max" line is presently a doc lie +
-      a ReleaseFast wrap risk); update the DESIGN line with the code.
+- [x] Saturating `Materials.add` - DONE (see DONE.md, "Saturating
+      Materials.add (review M-1.1)").
 - [ ] `markWriteDirty` overflow fallback: `@panic` instead of
       `write_fn(undefined)` (state.zig:642 - UB where fail-fast belongs).
 - [ ] `that_which_lingers.playerPrepareSkill`: `return null` (dead today
