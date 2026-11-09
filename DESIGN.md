@@ -232,8 +232,8 @@ next session meets it as a surprise instead of a known.
   the IN-MEMORY persistent dir (MEMFS at /ziglop - browser storage is
   never touched; see File System & IO → Web storage model) and drives
   `frame()` via `emscripten_set_main_loop_arg` (the browser schedules rAFs;
-  no sleep/yield, no asyncify). The patched-stdlib web-build workflow lives
-  in AGENTS → Build & Test.
+  no sleep/yield, no asyncify). The web build itself lives in
+  build.zig + `scripts/web.sh` (AGENTS → Build & Test).
 - **WebGL 2 (GL ES 3.0), not WebGL 1** - the web raylib dependency sets
   `opengl_version = .gles_3` in build.zig (raylib-zig's auto-default for
   emscripten is WebGL 1). Two reasons, both settled:
@@ -1401,7 +1401,7 @@ that true (`src/session_log_bundle.zig`):
   LOGIC lives in bool-returning helpers (`isPlayerAction`, `isPlayerMoveLegal`,
   `isHubMoveLegal`,
   `skillOnBarAndOffCooldown`, `skillTargetLegal`) so it's testable without
-  panic-catching infrastructure (Zig 0.16 has no `expectPanics`); the
+  panic-catching infrastructure (Zig has no `expectPanics`); the
   `validate*` wrappers are a thin panic-policy layer over them. This is the
   other primitive the Online Services TODO wants for server-side replay
   validation.
@@ -1821,7 +1821,7 @@ the reader thread exits, zero cost.
   its events into that frame's `PlatformInput` - the same per-frame,
   per-event cadence the synthetic key-repeat machinery uses. The queue is
   a single-producer single-consumer ring with atomic counters, not a
-  mutex: Zig 0.16's std locks need an `Io` handle on BOTH threads and the
+  mutex: Zig's std locks need an `Io` handle on BOTH threads and the
   game thread has none to give inside `frame()`; a SPSC ring needs none,
   and a full queue blocks the reader (yield-spin backpressure - a piped
   script faster than the drain can never drop or reorder commands).

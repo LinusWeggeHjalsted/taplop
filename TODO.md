@@ -640,22 +640,15 @@ Open:
   capture or the show_fps overlay while reproducing), and whether native
   release shows the same dips. The audio watchdog caps the damage this
   causes to sound; the dips themselves are a smoothness item.
-- **Zig toolchain policy (settled): stay on 0.16.0** for the
-  foreseeable future; migrate to 0.17.0 ONLY when it RELEASES and
-  raylib_zig/zemscripten ship 0.17-compatible versions (today's
-  master cannot build the project - deps fail on the removed
-  `LazyPath.getPath` + the pointer-deref language change). Migrate as
-  a deliberate session (the 0.16 migration shape), with the friend as
-  mac runtime validator. Built-in acceptance test for that day:
-  `../ziglop-mac-bisect/repro/repro2.zig` (the miscompile repro) +
-  the PRE-fix tint pattern - verify the emitted IR stores the tint
-  (or just that panels render) on 0.17.0. Watch for **0.16.1**: the
-  STOPSIG fix (`2eda0ef8`) is on the 0.16.x branch, so 0.16.1 retires
-  the web patched-stdlib hack with zero work; the aarch64 ABI fix
-  (`fa3a9fcd`) is NOT on 0.16.x, but our source restructure handles
-  it permanently. Rationale (two 0.16.0 bugs, both settled, both at
-  platform edges): DONE.md "mac 9-slice panels - ROOT CAUSE FOUND" +
-  AGENTS → Build & Test (patched stdlib).
+- [x] **Zig 0.17 migration** - DONE (branch `zig-0.17-migration`, see
+      DONE.md, "zig 0.17 migration"). The old toolchain policy's gate
+      (0.17.0 released + raylib_zig 0.17-compatible) was met: raylib-zig
+      devel requires 0.17.0 minimum, absorbed the emcc shims from the
+      dropped zemscripten, and pins raylib 6.2; the 0.16.0 STOPSIG bug is
+      fixed in 0.17.1's own stdlib (web patched-stdlib hack retired). The
+      aarch64 miscompile fix (fa3a9fcd) ships in the 0.17.0 release, so
+      the upstream-report question below is MOOT; mac runtime validation
+      on real hardware remains the open item (macOS native port below).
 - [x] **Diagnostics redesign** - DONE (history in DONE.md; settled design:
       DESIGN → Platform Seam → Diagnostics).
 - **macOS native port** - cross-build + persistent dir + .app bundle landed
@@ -671,14 +664,15 @@ Open:
         into `~/Library/Application Support/ziglop/` (spaces in the path!);
         crash-dump write works; `--data-dir` flag + `$ZIGLOP_DATA` override
         still work.
-  - **Upstream zig report for the 0.16.0 aarch64 miscompile - DECISION
-        PENDING** - repro project + report kit in
+  - [x] **Upstream zig report for the 0.16.0 aarch64 miscompile** -
+        CLOSED, MOOT: the fix (fa3a9fcd / PR #35711) ships in the
+        0.17.0 release and we are on 0.17.x - nothing left to report
+        against a released line. Repro kit stays archived in
         `../ziglop-mac-bisect/repro/` (UPSTREAM_REPORT.md; repro.zig +
         repro2.zig + per-version IR evidence). The bug itself is
         root-caused + fixed + friend-confirmed (DONE.md, "mac 9-slice
-        panels - ROOT CAUSE FOUND"); the 0.16.0 avoidance rule lives in
-        AGENTS → Zig 0.16 Gotchas; fixed upstream on zig master
-        (fa3a9fcd / PR #35711), not in any 0.16.x release.
+        panels - ROOT CAUSE FOUND"); the historical 0.16.0 avoidance
+        rule + its retirement live in AGENTS → Zig Gotchas.
   - **CI candidate** - post-GitHub-migration, GitHub Actions macOS runners
         (free for public repos) give build + runtime validation without
         owning a Mac; web runtime probing in CI via node (the headless

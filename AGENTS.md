@@ -1,6 +1,6 @@
 # Ziglop
 
-Zig 0.16.0 rewrite of a Unity tactical grid game (original at https://github.com/LinusWeggeHjalsted/taplop).
+Zig rewrite of a Unity tactical grid game (original at https://github.com/LinusWeggeHjalsted/taplop).
 
 ## Documentation
 
@@ -99,7 +99,7 @@ freed at once on deinit). Arena-wrapping MASKS two classes of bug:
   silently). `testing.allocator` reclaims freed memory and may reuse it, but
   doesn't deterministically detect reads of freed memory.
 
-**No `expectPanics` in Zig 0.16.** A fail-fast validation site (e.g.
+**No `expectPanics` in Zig.** A fail-fast validation site (e.g.
 `verifyReplayMatch`, `validatePlayerAction`) can't be unit-tested at the
 panic path - `std.testing` has no `expectPanics`/`expectError` for panics
 (only for `error` unions). The convention: split the legality **logic**
@@ -223,14 +223,6 @@ session + the ButtonPayload migration):
   emsdk-noise filtering (like `scripts/test.sh` does for tests) - prefer it
   over the raw commands. The old `wasm32-freestanding` + JS-renderer target
   was removed - do not reintroduce it.
-- WEB BUILD NEEDS A PATCHED STDLIB: Zig 0.16.0's std/os/emscripten.zig has a
-  bug (W.STOPSIG declared to return u32 but body returns the SIG enum) that
-  breaks emscripten compilation. The fix is upstream on the 0.16.x branch
-  (STOPSIG -> SIG). We carry it locally by copying /usr/lib/zig to
-  ~/.local/zig-patched-lib, applying the one-line fix, and running the web
-  build with `ZIG_LIB_DIR=~/.local/zig-patched-lib zig build web`. Native +
-  tests use the normal zig (no env var). When 0.16.1 ships and Arch packages
-  it, the patched copy becomes unnecessary.
 - WEB COMPILES ≠ WEB RUNS: `scripts/web.sh` only compiles. Runtime breakage
   (GLSL shaders, allocator traps, init-order) is invisible until someone
   opens the page - the web build once sat broken for 136 commits this way
@@ -404,25 +396,17 @@ survived many sessions this way).
   the next recognized header). See DESIGN → File System & IO → Config
   grammar
 
-## Zig 0.16 Gotchas
+## Zig Gotchas
 
-- A switch prong with a RESULT TYPE needs a labeled block to yield its
-  value: `.a => { stmt; value },` fails ("expected ';' after statement" -
-  the trailing value parses as a statement, not the block's yield);
-  `.a => blk: { stmt; break :blk value; },` works. Verified by minimal
-  repro; harmless in void-context switches (statement bodies are fine).
-- A switch prong whose body is a bare `if (cond) thing = value,` also
-  fails ("invalid left-hand side to assignment") - the blockless `if` in
-  prong position parses as an expression. Same fix as above: give it a
-  body, `if (cond) { thing = value; },`. Hit twice in one session
-  (a scrollbar test, an Export Game label check) - same shape class as
-  the result-type prongs, different trigger.
-- ArrayList is unmanaged: `.empty`, pass allocator to each call
+- ArrayList is unmanaged: `.empty`, pass allocator to each call. The struct
+  now also carries a `pointer_stability` SafetyLock field (leak/alias
+  tracking), so a manual `.{ .items = ..., .capacity = ... }` literal misses
+  it - initialize lists with `.empty` (or add `.pointer_stability = .{}`).
 - ArrayList has no `.writer()` - use `.print(allocator, fmt, args)` and `.appendSlice(allocator, items)` directly
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`
 - Dir.writeFile takes an options struct: `.{ .sub_path = path, .data = data }`
 - File I/O needs Io handle: `std.Io.Threaded.init(allocator, .{})`, `std.Io.Dir.cwd()`
-- No `std.enums.count()` - use `@typeInfo(MyEnum)."@"enum".fields.len`
+- No `std.enums.count()` - use `@typeInfo(MyEnum)."@"enum".field_names.len`
 - No default parameter values - `fn f(x: i32 = 0)` is a compile error. Use
   a required param + callers pass the default, or an optional `?T` the
   caller fills with `null`.
@@ -430,22 +414,35 @@ survived many sessions this way).
   fns, types, fields). Inside a function body it's always `//` - a `///`
   there is "expected statement, found a document comment".
 - `opaque` is a reserved keyword (opaque types) - don't name a variable it.
-- **By-value extern-struct arguments on aarch64 - a 0.16.0 compiler
-  bug; avoid the triggering pattern until the 0.17 migration:** Zig
-  0.16.0 lowers the caller side of a by-value extern-struct parameter
-  (raylib's `Color`, `Rectangle`, ...) to an out-of-bounds 8-byte load
-  from the 4-byte object - IR-level poison, which licensed LLVM to
-  DELETE the stores building the value, silently passing uninitialized
-  (or `undef`) memory to the C call. The trigger shape is an if/else
-  EXPRESSION whose branches are calls returning the extern struct by
-  value, with the extern call as the value's only consumer. RULE:
-  pre-select the plain source value, then convert once - the
-  `drawNineSlice`/`drawTextLabel` tint shape. Affects ALL aarch64
-  targets, optimized builds only (Debug is fine; ReleaseSafe breaks
-  SILENTLY - no panic). Fixed on zig master (fa3a9fcd / PR #35711);
-  NOT in any 0.16.x release. History: DONE → "mac 9-slice panels -
-  ROOT CAUSE FOUND"; repro + report kit:
-  `../ziglop-mac-bisect/repro/` (UPSTREAM_REPORT.md).
+- **`@typeInfo` is struct-of-arrays since 0.17**: `.fields` is gone -
+  struct/union/enum info exposes `field_names` / `field_types` /
+  `field_values` as parallel slices, so loops zip them
+  (`inline for (info.field_names, info.field_types) |name, type|`),
+  indexed access picks the slice you need. std.meta.fields was removed;
+  std.meta.fieldNames/fieldTypes remain but are deprecated AND their
+  result is not comptime-resolvable as an `inline for` condition - use
+  `@typeInfo(T)."@"enum".field_names` directly.
+- **Array multiplication (`[1]u8{0} ** 8`) is removed since 0.17** - use
+  `@splat`. @splat takes its result type from the result location (field
+  init, typed const, fn arg); in an `++` chain there is none, so spell it
+  `@as([8]u8, @splat(0))`. String repetition (`"x" ** 200`) has no
+  replacement - `&@as([200]u8, @splat('x'))`.
+- **allocator.dupeZ / fmt.bufPrintZ are gone** - `dupeSentinel(u8, s, 0)`
+  and `mem.printSentinel(&buf, fmt, args, 0)`.
+- **By-value extern-struct arguments on aarch64 - a 0.16.0 compiler bug,
+  fixed in the 0.17.0 release:** Zig 0.16.0 lowered the caller side of a
+  by-value extern-struct parameter (raylib's `Color`, `Rectangle`, ...) to
+  an out-of-bounds 8-byte load from the 4-byte object - IR-level poison,
+  which licensed LLVM to DELETE the stores building the value, silently
+  passing uninitialized (or `undef`) memory to the C call. The trigger shape
+  was an if/else EXPRESSION whose branches are calls returning the extern
+  struct by value, with the extern call as the value's only consumer. The
+  source-level avoidance (pre-select the plain source value, then convert
+  once - the `drawNineSlice`/`drawTextLabel` tint shape) stays as harmless
+  style; mac runtime validation on real aarch64 hardware is still pending
+  (TODO → macOS native port). History: DONE → "mac 9-slice panels - ROOT
+  CAUSE FOUND"; repro + report kit: `../ziglop-mac-bisect/repro/`
+  (UPSTREAM_REPORT.md).
 - **`std.Io.Threaded.init(allocator, .{})` spawns children with an EMPTY
   environment** - the options' `environ` field defaults to `.empty`, so a
   child process (e.g. `xdg-open`) gets no PATH/DISPLAY/DBUS and fails
@@ -473,7 +470,7 @@ Dev-only keybinds (skip level, future debug tools) are gated by a build
 option, not a runtime flag:
 
 - `-Ddev-mode` build option (in `build.zig`), defaulted to
-  `optimize == .Debug`. So `zig build run` (debug) gets dev tools for free;
+  `optimize == .debug`. So `zig build run` (debug) gets dev tools for free;
   `-Ddev-mode=true -Doptimize=ReleaseFast` opts in for a near-release build.
   Dev mode follows the optimize level, so the web build (which defaults to
   Debug like every `zig build` target) has it ON unless you pass

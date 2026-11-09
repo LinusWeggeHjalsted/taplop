@@ -302,6 +302,7 @@ working rules).
 - [menus.zig split into per-surface files (review n-8.1)](#menuszig-split-into-per-surface-files-review-n-81)
 - [Session reflection riders: the fmt advisory's file-set hole + two notes](#session-reflection-riders-the-fmt-advisorys-file-set-hole--two-notes)
 - [doc_index.sh: the marker block owns its container heading](#docindexsh-the-marker-block-owns-its-container-heading)
+- [zig 0.17 migration](#zig-017-migration)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19228,3 +19229,87 @@ Probe-verified: a body section titled "Index" now indexes normally
 (#index anchor, no suppression). Anchor links kept - the repo's
 migration target is GitHub, where the slug rules the script mirrors
 are the ones that make the links land.
+
+## zig 0.17 migration
+
+**What:** the deliberate toolchain migration to Zig 0.17.1 (branch
+`zig-0.17-migration`), forced into motion by Arch shipping zig 0.17.1
+over the system zig the 0.16.0-era tree was built against - and enabled
+by the old toolchain policy's gate finally being met: raylib-zig devel
+(6.2 bindings, `minimum_zig_version = 0.17.0`) absorbed zemscripten's
+emcc shims (raylib C library's own build script now ships them, and it
+wires emsdk activation itself for the emscripten target - consumers
+must NOT call `activateEmsdkStep` again, it's a named top-level step
+now and a second call panics).
+
+**Research:** no dedicated migration guide exists - the canonical doc
+is the 0.17.0 release notes (ziglang.org/download/0.17.0/
+release-notes.html; 0.17.1 is a patch with no separate notes). Sizing
+came from grepping the tree against the notes + probing the installed
+0.17.1 stdlib + one `zig build` attempt to capture the true failure
+surface. Estimated ~1-2 sessions; took one.
+
+**Slices (commits on the branch):**
+
+- **deps + build system** - build.zig.zon: raylib_zig bumped to devel
+  (28bbe30, raylib C 6.2), zemscripten dropped, `minimum_zig_version`
+  0.17.1. build.zig: `lang.Optimize` tags lowercased (`.Debug` ->
+  `.debug`), `b.args` -> `addPassthruArgs`, `b.getInstallPath` ->
+  `b.graph.path(.install_prefix, ...)`, the web block rewritten onto
+  the raylib emsdk shims (emccStep now takes src paths + compile steps
+  and REQUIRES `out_file_name` - which must carry `.html`, emcc derives
+  the output form from the extension; a bare name emits JS with no
+  HTML shell page), `asyncify = false` made explicit (the shim defaults
+  it ON), `STACK_OVERFLOW_CHECK=0` joins the debug-runtime strip set,
+  `USE_OFFSET_CONVERTER` dropped entirely (the setting no longer
+  exists in emsdk 4.0.19).
+- **source sweep** - `scripts/migration_splat_sweep.py`: ~300
+  `[_]T{x} ** N` -> `@as([N]T, @splat(x))` and `.{x} ** N` ->
+  `@splat(x)` sites, plus 5 manual ones (string fills ->
+  `&@as([N]u8, @splat('x'))`, the content_hash 4-byte block repeat ->
+  an index-modulo loop). The dry-run-one-file discipline EARNED its
+  keep twice: the first regex over-matched the count token (parens
+  weren't balanced-aware) and corrupted two shapes
+  (`@as([6])]u8, ...` from trailing `))`, `@splat(null) * 2` from a
+  leading parenthesized count); both were caught by dry-run diff
+  inspection + fmt's parser, fixed with a balanced-paren count scanner
+  (scan_count), re-run from a clean checkout. The `@typeInfo`
+  struct-of-arrays rework (~60 sites): mechanical `.fields.len` ->
+  `.field_names.len` sed, then hand migration of the reflection-heavy
+  trio (deep_copy, session_log, dump_walker - union index access
+  became field_names/field_types index picks, loops zip the slices).
+  Also: EnumSet `initEmpty` -> `empty`, `dupeZ` -> `dupeSentinel`,
+  ArrayList literal inits -> `.empty` (new `pointer_stability`
+  SafetyLock field), the panic namespace gained the new
+  `unexpectedErrorCode` + `loadUninstantiableType` helpers, and
+  `zig fmt`'s automatic `@intFromEnum` -> `@backingInt` upgrade rode
+  along (61 sites).
+- **web build** - `bufPrintZ` -> `mem.printSentinel` (browser_url);
+  scripts/web.sh retired the `~/.local/zig-patched-lib` ZIG_LIB_DIR
+  override - Zig 0.16.0's std/os/emscripten.zig STOPSIG bug is fixed
+  in 0.17.1's own stdlib, so the patched copy is dead weight (the
+  0.16-era workaround documented in AGENTS is removed).
+- **deprecation riders** - `@import("builtin").os.tag` ->
+  `.target.os.tag` (20 sites; removed in 0.18), so the tree is clean
+  for the next cycle minus the still-compiling `fmt.allocPrint`
+  deprecation (272 sites - deferred; harmless until 0.18).
+
+**Gotchas the migration surfaced** (AGENTS → Zig Gotchas): the two
+switch-prong parsing quirks are GONE (0.17's grammar rework accepts
+statement-then-yield prong bodies - verified by scratch repros);
+`std.meta.fieldNames` still exists but its result is not
+comptime-resolvable as an `inline for` condition, so reflection loops
+must use `@typeInfo(T).@"enum".field_names` directly; `@splat` in an
+`++` chain needs an explicit `@as` (no result location).
+
+**Validation** (the COMPILES != RUNS discipline, all four surfaces):
+`scripts/test.sh` PASS (full headless suite); web loaded in a real
+headless Firefox served over http - the wasm boots, the main menu
+renders (pixel-sampled a full-page screenshot through PIL: the yellow
+menu gradient dominates, 368 distinct colors - NOT a black screen),
+60fps rAF, zero console errors; console channel piped + pty smokes
+pass (help text, gated prompt behavior intact); native binary boots
+clean (10s, no stderr); aarch64-macos cross-build produces exe +
+.ziglop.app bundle. STILL PENDING: mac runtime validation on the
+friend's hardware (TODO → macOS native port - unchanged by this
+migration), and an interactive native click-through.
