@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -63,12 +63,12 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/sdf_atlas_generator.zig"),
             .target = b.resolveTargetQuery(.{}), // always the build host
-            .optimize = .Debug, // fast to compile; the SDF run is a few seconds slower but only runs once per clean build
+            .optimize = .debug, // fast to compile; the SDF run is a few seconds slower but only runs once per clean build
         }),
     });
     const raylib_generator_dep = b.dependency("raylib_zig", .{
         .target = b.resolveTargetQuery(.{}),
-        .optimize = .Debug,
+        .optimize = .debug,
         // The FONT_SDF_* defines ARE load-bearing here (they set the SDF
         // encoding range raylib bakes into the glyphs); see the comment on
         // raylib_sdf_config_flags above.
@@ -117,12 +117,12 @@ pub fn build(b: *std.Build) void {
     // the repo (sr.ht -> GitHub) retargets the link with zero code edits.
     build_info.addOption([]const u8, "repo_url", computeRepoUrl(b));
     // Dev mode gates dev-only keybinds (e.g. skip_level on ctrl+Enter). A
-    // `-Ddev-mode` build option, defaulted to `optimize == .Debug` so
+    // `-Ddev-mode` build option, defaulted to `optimize == .debug` so
     // `zig build run` (debug) gets dev tools for free while release/web
     // builds stay clean. The gate is read at the handler site via
     // `@import("build_info").dev_mode` (comptime-constant per build).
     const dev_mode = b.option(bool, "dev-mode", "Enable dev-only tools (skip level, etc.)") orelse
-        (optimize == .Debug);
+        (optimize == .debug);
     build_info.addOption(bool, "dev_mode", dev_mode);
     // Opt-in emscripten runtime debug features (ASSERTIONS, SAFE_HEAP, source
     // maps) for browser-devtools work. Off by default for faster web links.
@@ -253,16 +253,17 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     // === Web target (emscripten + raylib) ===
     // The web build reuses the SAME raylib backend + gameLoop as native (route
     // B). Built as a wasm32-emscripten library, then packaged into HTML via
-    // emcc (zemscripten). Opt-in: `zig build web` produces zig-out/web/ziglop.html.
-    // See DESIGN → Platform Seam (raylib) + File System & IO.
-    const zemscripten = @import("zemscripten");
+    // emcc (the emcc shims the raylib C library's build script ships and
+    // raylib-zig re-exports - zemscripten was dropped upstream when raylib
+    // absorbed the shims). Opt-in: `zig build web` produces
+    // zig-out/web/ziglop.html. See DESIGN → Platform Seam (raylib) + File
+    // System & IO.
+    const emsdk = @import("raylib_zig").emsdk;
 
     const web_target = b.resolveTargetQuery(.{ .os_tag = .emscripten, .cpu_arch = .wasm32 });
     const raylib_web_dep = b.dependency("raylib_zig", .{
@@ -314,11 +315,17 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.addImport("generated_sdf_font", sdf_font_module);
     wasm.root_module.linkLibrary(raylib_web_artifact);
 
-    var emcc_flags = zemscripten.emccDefaultFlags(b.allocator, .{
+    var emcc_flags = emsdk.emccDefaultFlags(b.allocator, .{
         .optimize = optimize,
+        // No ASYNCIFY: we drive swapScreenBuffer + pollInputEvents ourselves
+        // from the emscripten main-loop callback (see the config flag comment
+        // above) - whole-program asyncify instrumentation would bloat the
+        // wasm for nothing. The shim's default is asyncify=true, so the
+        // override is load-bearing.
+        .asyncify = false,
         .fsanitize = true,
     });
-    var emcc_settings = zemscripten.emccDefaultSettings(b.allocator, .{
+    var emcc_settings = emsdk.emccDefaultSettings(b.allocator, .{
         .optimize = optimize,
         .emsdk_allocator = .emmalloc,
     });
@@ -330,10 +337,11 @@ pub fn build(b: *std.Build) void {
     // same classes of bug; these emscripten features are opt-in via
     // -Dweb-debug-runtime for browser-devtools work. -fsanitize=undefined
     // stays (raylib C objects reference UBSan symbols).
-    if (optimize == .Debug and !web_debug_runtime) {
+    if (optimize == .debug and !web_debug_runtime) {
         _ = emcc_flags.remove("-gsource-map");
         emcc_settings.put("ASSERTIONS", "0") catch @panic("emcc settings OOM");
         emcc_settings.put("SAFE_HEAP", "0") catch @panic("emcc settings OOM");
+        emcc_settings.put("STACK_OVERFLOW_CHECK", "0") catch @panic("emcc settings OOM");
         emcc_settings.put("USE_OFFSET_CONVERTER", "0") catch @panic("emcc settings OOM");
     }
     // The game uses the emscripten filesystem: an in-memory (MEMFS) mount at
@@ -367,22 +375,27 @@ pub fn build(b: *std.Build) void {
     const shell_path = b.path("web/shell.html");
 
     const web_install_dir: std.Build.InstallDir = .{ .custom = "web" };
-    const emcc_step = zemscripten.emccStep(b, wasm, .{
+    const emcc_step = try emsdk.emccStep(b, &.{}, &.{ raylib_web_artifact, wasm }, .{
         .optimize = optimize,
         .flags = emcc_flags,
         .settings = emcc_settings,
         .shell_file_path = shell_path,
         .install_dir = web_install_dir,
+        .out_file_name = "ziglop",
     });
-    emcc_step.dependOn(zemscripten.activateEmsdkStep(b));
+    // No explicit activateEmsdkStep here: the raylib C library's own build
+    // script makes its emscripten artifact depend on the emsdk activate step,
+    // and emcc_step consumes that artifact - activation rides the dependency
+    // edge (and the shim's activateEmsdkStep declares a named top-level step,
+    // so calling it here too would panic on the duplicate).
 
     const web_step = b.step("web", "Build the web (emscripten) client");
     web_step.dependOn(emcc_step);
 
     // `zig build emrun` - serve the web build locally and open it in a browser.
-    const emrun_step = zemscripten.emrunStep(
+    const emrun_step = try emsdk.emrunStep(
         b,
-        b.getInstallPath(web_install_dir, "ziglop.html"),
+        b.graph.path(.install_prefix, "ziglop.html"),
         &.{},
     );
     emrun_step.dependOn(emcc_step);
@@ -418,7 +431,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/sound_report.zig"),
             .target = b.resolveTargetQuery(.{}), // always the build host
-            .optimize = .Debug,
+            .optimize = .debug,
             // libc for std.c.getenv (the native.zig resolvePersistentPath
             // discipline - the tool mirrors it without raylib).
             .link_libc = true,
@@ -448,7 +461,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/art_report.zig"),
             .target = b.resolveTargetQuery(.{}), // always the build host
-            .optimize = .Debug,
+            .optimize = .debug,
             // libc for std.c.getenv (the resolvePersistentPath discipline).
             .link_libc = true,
         }),
@@ -471,7 +484,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/gradient_report.zig"),
             .target = b.resolveTargetQuery(.{}), // always the build host
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     gradient_report_exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
