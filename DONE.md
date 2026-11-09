@@ -18461,3 +18461,18 @@ open_tips button (the main-menu case pinning the positive). Found on
 the way: buildEditorLevelTabs' `levels.len - 1` underflows on a
 zero-level editor - unreachable in production (open_editor requires a
 level_1), left as-is with the test fixture carrying one level.
+
+## Session-end cleanup: crash-dump de-pub + EditorLevel.name owned
+
+Session reflection riders (both small):
+- crash_dump's `dump` + `DumpResult` de-pubbed (file-private): external
+  files use only panic/install/uninstall; same-file tests see
+  file-private symbols, so the "pub for testing" doc rationale was wrong
+  by the minimize-pub convention. Found by manual verification - the
+  unused-pub report's blind spots missed it (in-file references read as
+  usage).
+- EditorLevel.name is now OWNED everywhere (the last field that borrowed
+  the parsed sections): buildEditorMission + loadEditorDefaultLevel dupe
+  it, freeEditorBuild and the default-level test free it. The build
+  test now reads the level name AFTER the sections are freed - the
+  ownership is pinned, not just documented.

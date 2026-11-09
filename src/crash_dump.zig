@@ -52,8 +52,10 @@ pub fn uninstall() void {
 /// A successful `dump`: where the bundle landed + how many events it
 /// carries. Both fields are transient-allocator-backed (valid until the
 /// transient allocator's next use frees them) - the panic caller prints
-/// them immediately, nothing else holds them.
-pub const DumpResult = struct {
+/// them immediately, nothing else holds them. File-private: only `dump`
+/// and `panic.call` (same file) use it; the test blocks below see
+/// file-private symbols.
+const DumpResult = struct {
     bundle_dir: []const u8,
     event_count: usize,
 };
@@ -67,12 +69,14 @@ pub const DumpResult = struct {
 /// loadable by `session_log_bundle.loadSessionLogBundle` and
 /// reconstructable via the existing replay path, with the embedded
 /// content making the crash report exactly reproducible - a crash bundle
-/// is a replayable session log, just named differently. `pub` for testing.
+/// is a replayable session log, just named differently. File-private
+/// (used by `panic.call` + the tests below, both same-file; external
+/// callers reach it through the installed panic namespace).
 /// The "wrote crash session log bundle" PRINT lives in the panic caller
 /// (`panic.call`), NOT here - tests exercising this machinery would
 /// otherwise print it on every passing run, which reads like a crash in
 /// the raw test runner's output.
-pub fn dump(history: *GameStateHistory) ?DumpResult {
+fn dump(history: *GameStateHistory) ?DumpResult {
     const allocator = transient_allocator.allocator;
 
     // Timestamp via the entry-file-owned io handle (not a game arena). A

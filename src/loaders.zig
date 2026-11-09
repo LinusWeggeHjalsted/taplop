@@ -862,8 +862,9 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
 ///     by construction (duped - `itemDisplayName` allocates for skill
 ///     tomes and borrows for everything else, so every id frees the
 ///     same way).
-///   - editor levels: `level_tiles` + the three placements buffers are
-///     MOVED (owned); `name` borrows the parsed sections.
+///   - editor levels: `name` + `level_tiles` + the three placements
+///     buffers are MOVED or duped (owned - nothing borrows the parsed
+///     sections).
 /// Takes EXACT slices (toOwnedSlice-shaped) - a bare ArrayList .items
 /// slice can be shorter than its buffer's capacity, and freeing it
 /// would be a size-mismatch free.
@@ -890,6 +891,7 @@ fn freeEditorBuild(
     }
     allocator.free(item_types);
     for (levels) |editor_level| {
+        allocator.free(editor_level.name);
         allocator.free(editor_level.level_tiles);
         allocator.free(editor_level.entity_placements);
         allocator.free(editor_level.decoration_placements);
@@ -909,7 +911,8 @@ fn freeEditorBuild(
 /// editor close (accepted). See DESIGN → Architecture → Level Editor.
 ///
 /// OWNERSHIP: the palette + editor levels own everything they keep
-/// (moved wholesale or deep-copied); each level's remnants are freed at
+/// (moved wholesale, deep-copied, or duped - NOTHING borrows the parsed
+/// sections); each level's remnants are freed at
 /// the end of its iteration, and a later level failing loadLevel frees
 /// the accumulated palette via the errdefer - `freeEditorBuild`'s doc is
 /// the per-kind contract. `mission` + `player_def` are moved in from the
@@ -1089,7 +1092,10 @@ pub fn buildEditorMission(
         }
 
         editor_levels.append(allocator, .{
-            .name = level.name,
+            // OWNED (duped) - the one field that used to borrow the parsed
+            // sections; uniform with the rest of the editor level now
+            // (freeEditorBuild frees it).
+            .name = dupeString(allocator, level.name),
             .color_wheel_index = level.color_wheel_index,
             .enemy_gradient_index = level.enemy_gradient_index,
             .player_gradient_index = level.player_gradient_index,
@@ -1151,19 +1157,21 @@ pub fn loadEditorDefaultLevel(
     const level = try loadLevel(sections, file_source, allocator, file_path, warnings);
     // Error-path cleanup: both template-contract errors fire after the
     // level owns its allocations - freeLevel on the way out. On success
-    // the EditorLevel MOVES name (which borrows the sections) +
-    // level_tiles (owned by the result), and the remnants - the player
-    // entity's cloned strings + the entities buffer - are freed before
-    // returning (decorations / ground items are empty by the contract
-    // check, so their frees are no-ops and are left to freeLevel's shape
-    // on the error path only).
+    // the EditorLevel owns name (duped - nothing borrows the sections)
+    // + level_tiles (moved), and the remnants - the player entity's
+    // cloned strings + the entities buffer - are freed before returning
+    // (decorations / ground items are empty by the contract check, so
+    // their frees are no-ops and are left to freeLevel's shape on the
+    // error path only).
     errdefer freeLevel(level, allocator);
     if (level.level_end == null) return error.MissingDefaultLevelEnd;
     if (level.entities.len != 1 or level.decorations.len != 0 or level.ground_items.len != 0) {
         return error.DefaultLevelHasEntries;
     }
     const editor_level = types.EditorLevel{
-        .name = level.name,
+        // OWNED (duped) - uniform with buildEditorMission's editor levels
+        // (freeEditorBuild's contract: nothing borrows the sections).
+        .name = dupeString(allocator, level.name),
         .color_wheel_index = level.color_wheel_index,
         .enemy_gradient_index = level.enemy_gradient_index,
         .player_gradient_index = level.player_gradient_index,
@@ -1230,6 +1238,9 @@ test "loadEditorDefaultLevel: the shipped template loads clean (remnants freed)"
     );
     try std.testing.expectEqual(@as(i32, 1), editor_level.level_end.?.x);
     try std.testing.expectEqual(@as(i32, 0), editor_level.level_end.?.y);
+    // The result owns name + level_tiles; both freed here (the sections
+    // are freed by the defers above).
+    allocator.free(editor_level.name);
     allocator.free(editor_level.level_tiles);
 }
 
@@ -4563,9 +4574,9 @@ test "buildEditorMission: the palette owns its data; a full build frees clean" {
         "",
         null,
     );
-    // Ownership contract: the parse bytes go FIRST (nothing in the
-    // editor borrows them anymore except EditorLevel.name, which is
-    // only read, never freed).
+    // Ownership contract: the parse bytes go FIRST - NOTHING in the
+    // editor borrows them (level names are duped; every other field is
+    // moved or deep-copied).
     freeParsedSections(sections, allocator);
 
     // Content: the two same-definition entities dedup into one palette
@@ -4577,6 +4588,8 @@ test "buildEditorMission: the palette owns its data; a full build frees clean" {
     try std.testing.expectEqual(@as(usize, 1), editor.item_types.len);
     // The item id is OWNED (duped) - uniform with the skill-tome case.
     try std.testing.expectEqualStrings("Test Sword", editor.item_types[0].id);
+    // The level name too - readable AFTER the sections freed.
+    try std.testing.expectEqualStrings("Build Test", editor.levels[0].name);
 
     freeEditorBuild(
         editor.levels,
