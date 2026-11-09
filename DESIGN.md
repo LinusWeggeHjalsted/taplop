@@ -4328,12 +4328,20 @@ points:
   directory walk accepting STORE (our exports) + DEFLATE (any OS
   "compress" default - inflate via std.compress.flate), CRC-verified;
   zip64/encryption/other methods rejected with descriptive errors.
-- **Extraction is validation-before-write**: junk entries (directory
+- **Extraction is validation-before-write, headers-first**: every cap
+  + every name is checked over the central-directory headers BEFORE any
+  entry is decoded - the count (1,024), per-entry (64 MB), and total
+  (256 MB, coherent with the zip-bytes read limit) caps close the
+  hostile-declared-uncompressed-size memory bomb (extraction allocates
+  the declared size upfront, so a cap that runs after it is too late;
+  the pass structure mirrors `importGameFolder`). Junk entries (directory
   markers, `__MACOSX/`, `._*`, `.DS_Store`) are skipped, a single common
   root folder is stripped (the OS-compress shape), and every remaining
   name is checked (no absolute paths, no `..` traversal, no backslashes,
   no empty segments) BEFORE the first file is written - a hostile or
-  malformed zip fails whole with the popup, never half-imported.
+  malformed zip fails whole with the popup, never half-imported. Entries
+  decode one at a time through a per-entry reset arena (memory stays at
+  one entry through the whole import).
 - **The target dir is the save convention** `missions/<uuid>_<sanitized
   name>/` (uuid + name parsed from the zip's mission.txt; no uuid →
   `missions/<sanitized name>/`) - re-importing the same zip overwrites

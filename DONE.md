@@ -18545,3 +18545,27 @@ passed `.target = caster.position` where every other self-cast
 (including sibling enchantments bull_form + promise_of_death) passes
 `null` - aligned. No behavior change today; all tests pass. Closes
 review item m-4.1 and TODO → Post-Review → Hardening item 3.
+
+## Mission-zip import: the headers-first caps (review m-9.1)
+
+The review's "Minor today, Major at the online-services milestone"
+security item: `importMissionFromZip` used `readZipArchive` - the JOINED
+api that fully extracts every entry - and only THEN checked the entry
+count, so a hostile small zip declaring a ~4 GB uncompressed_size made
+extraction allocate that upfront, before any cap saw it (the future
+mission-database download-and-import flow is the real attack vector).
+Restructured to mirror `importGameFolder`'s pass shape over the existing
+zip_reader split api: (1) central-directory headers only, (2) caps from
+the headers alone - count 1,024 (existing), per-entry 64 MB (new, ~600x
+past the largest legit custom-art PNG), total 256 MB (new, coherent
+with the zip-bytes read's own 256 MB limit), (3) junk filter + root
+strip over headers, (4) name validation over headers (moved earlier -
+nothing decodes at all on a hostile name), (5) mission.txt extracted
+alone, parsed, (6) the write pass streams one entry at a time through a
+per-entry reset arena. missionImportRootStrip's parameter became
+[]ZipEntryHeader (names are borrowed either way). Caps + happy path
+both tested in mission_io.zig's first test blocks: the cap test patches
+central-record uncompressed sizes (the game_zip pattern - nothing is
+ever decoded), the happy-path test pins the streaming write + rescan
+end to end. DESIGN → Level Editor → the zip import bullet updated.
+Closes review item m-9.1 and TODO → Post-Review → Hardening item 4.

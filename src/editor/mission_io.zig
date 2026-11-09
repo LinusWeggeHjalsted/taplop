@@ -673,7 +673,19 @@ pub fn pollMissionImportMarker(history: *GameStateHistory) void {
 /// A safety cap on imported archive size: a mission dir is a handful of
 /// config files + sprites; four orders of magnitude past that is a hostile
 /// or mis-picked archive, not content. Keeps the scratch arena bounded.
+/// The caps are checked over the central-directory HEADERS before any
+/// entry is decoded - a hostile declared `uncompressed_size` would
+/// otherwise be allocated upfront by the extraction (see importGameFolder,
+/// whose pass structure this mirrors).
 const mission_import_max_entries: usize = 1024;
+
+/// Per-entry cap. The largest legit mission content is a custom-art PNG
+/// (~100 KB in practice); 64 MB is ~600x headroom past that.
+const mission_import_max_entry_bytes: usize = 64 * 1024 * 1024;
+
+/// Total cap. Coherent with the zip-bytes read itself (readFile's 256 MB
+/// limit) - a legit mission archive can't exceed it anyway.
+const mission_import_max_total_bytes: usize = 256 * 1024 * 1024;
 
 /// The set of junk a macOS "Compress" zip carries alongside the real
 /// content - skipped so an OS-made mission zip imports clean. The shared
@@ -687,20 +699,21 @@ fn isMissionImportJunk(name: []const u8) bool {
 /// `<folder>/...`, while our own exports are flat at the archive root.
 /// Mixed shapes (some entries at the root, some under a folder, or two
 /// different folders) strip nothing - the mission.txt lookup then fails and
-/// the popup explains. Mutates `entries` in place (the caller's scratch-
-/// arena copy of the filtered list).
-fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
-    if (entries.len == 0) return;
-    const first_slash = std.mem.indexOfScalar(u8, entries[0].name, '/') orelse return;
-    const root = entries[0].name[0..first_slash];
+/// the popup explains. Mutates `headers` in place (the caller's scratch-
+/// arena copy of the filtered list - names are borrowed from the archive
+/// bytes either way).
+fn missionImportRootStrip(headers: []zip_reader.ZipEntryHeader) void {
+    if (headers.len == 0) return;
+    const first_slash = std.mem.indexOfScalar(u8, headers[0].name, '/') orelse return;
+    const root = headers[0].name[0..first_slash];
     if (root.len == 0) return;
-    for (entries) |entry| {
-        if (!std.mem.startsWith(u8, entry.name, root) or
-            entry.name.len <= root.len or
-            entry.name[root.len] != '/') return;
+    for (headers) |header| {
+        if (!std.mem.startsWith(u8, header.name, root) or
+            header.name.len <= root.len or
+            header.name[root.len] != '/') return;
     }
-    for (entries) |*entry| {
-        entry.name = entry.name[root.len + 1 ..];
+    for (headers) |*header| {
+        header.name = header.name[root.len + 1 ..];
     }
 }
 
@@ -715,8 +728,10 @@ fn isUnsafeMissionImportName(name: []const u8) bool {
 /// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the
 /// editor save's dir convention - a re-import of the same zip overwrites
 /// the same dir, idempotent; a mission without a uuid lands under
-/// `missions/<sanitized name>/`). All names are validated BEFORE the first
-/// write: a hostile or malformed zip fails whole, never half-imported.
+/// `missions/<sanitized name>/`). Every cap + every name is validated
+/// over the central-directory headers BEFORE the first decode or write:
+/// a hostile or malformed zip fails whole, never half-imported (the
+/// pass structure mirrors importGameFolder - see game_zip.zig).
 fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
     const scratch = history.current_arena.allocator();
     const fail = struct {
@@ -732,32 +747,77 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         fail.note(history, "failed to import: could not read the uploaded zip");
         return;
     };
-    const all_entries = zip_reader.readZipArchive(zip_bytes, scratch) catch {
+
+    // Pass one: every central-directory header (all names + sizes, no
+    // data). The caps are checked from these alone, BEFORE any entry is
+    // decoded - extraction allocates the declared uncompressed size
+    // upfront, so a cap that runs after it is too late.
+    const headers = zip_reader.readZipEntryHeaders(zip_bytes, scratch) catch {
         fail.note(history, "failed to import: the zip is corrupt or uses an unsupported format");
         return;
     };
-    if (all_entries.len > mission_import_max_entries) {
+    if (headers.len > mission_import_max_entries) {
         fail.note(history, "failed to import: the zip has too many files");
+        return;
+    }
+    var total_bytes: usize = 0;
+    for (headers) |header| {
+        if (header.uncompressed_size > mission_import_max_entry_bytes) {
+            fail.note(history, "failed to import: a file in the zip is too large");
+            return;
+        }
+        total_bytes += header.uncompressed_size;
+    }
+    if (total_bytes > mission_import_max_total_bytes) {
+        fail.note(history, "failed to import: the zip is too large to import");
         return;
     }
 
     // Filter OS junk, then strip a single common root folder.
-    var file_entries: std.ArrayList(zip_reader.ZipEntry) = .empty;
-    for (all_entries) |entry| {
-        if (!isMissionImportJunk(entry.name)) file_entries.append(scratch, entry) catch
+    var file_headers: std.ArrayList(zip_reader.ZipEntryHeader) = .empty;
+    for (headers) |header| {
+        if (!isMissionImportJunk(header.name)) file_headers.append(scratch, header) catch
             @panic("failed to collect zip entries");
     }
-    missionImportRootStrip(file_entries.items);
-    const stripped = file_entries.items;
+    missionImportRootStrip(file_headers.items);
+    const stripped = file_headers.items;
+
+    // Validate every name up front (nothing decoded, nothing written on
+    // any bad entry).
+    for (stripped) |header| {
+        if (isUnsafeMissionImportName(header.name)) {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: unsafe file name in the zip ({s})",
+                .{header.name},
+            ) catch "failed to import: unsafe file name in the zip";
+            fail.note(history, message);
+            return;
+        }
+    }
 
     // The mission's identity: mission.txt at the (stripped) archive root.
-    const mission_txt = blk: for (stripped) |entry| {
-        if (std.mem.eql(u8, entry.name, "mission.txt")) break :blk entry.bytes;
+    // Entries are decoded one at a time from here on (the per-entry reset
+    // arena keeps memory at one entry through the whole import).
+    const mission_txt_header = blk: for (stripped) |header| {
+        if (std.mem.eql(u8, header.name, "mission.txt")) break :blk header;
     } else {
         fail.note(history, "failed to import: the zip has no mission.txt at its root");
         return;
     };
-    const sections = parser.parseConfigFile(mission_txt, scratch, &parser.mission_sections) catch {
+    var entry_arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer entry_arena.deinit();
+    const mission_txt = zip_reader.extractZipEntry(
+        zip_bytes,
+        entry_arena.allocator(),
+        mission_txt_header,
+    ) catch {
+        fail.note(history, "failed to import: could not read mission.txt from the zip (it may be corrupt)");
+        return;
+    };
+    _ = entry_arena.reset(.retain_capacity);
+
+    const sections = parser.parseConfigFile(mission_txt.bytes, scratch, &parser.mission_sections) catch {
         fail.note(history, "failed to import: the zip's mission.txt is not valid");
         return;
     };
@@ -765,19 +825,6 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         fail.note(history, "failed to import: the zip's mission.txt is not valid");
         return;
     };
-
-    // Validate every name up front (nothing written on any bad entry).
-    for (stripped) |entry| {
-        if (isUnsafeMissionImportName(entry.name)) {
-            const message = std.fmt.allocPrint(
-                history.history_arena.allocator(),
-                "failed to import: unsafe file name in the zip ({s})",
-                .{entry.name},
-            ) catch "failed to import: unsafe file name in the zip";
-            fail.note(history, message);
-            return;
-        }
-    }
 
     // The target dir, derived exactly like the editor save's.
     const sanitized_name = sanitizeMissionNameForPath(mission.name, scratch);
@@ -795,7 +842,16 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
         .{name_prefix},
     ) catch @panic("failed to allocate imported mission dir path");
 
-    for (stripped) |entry| {
+    for (stripped) |header| {
+        const entry = zip_reader.extractZipEntry(zip_bytes, entry_arena.allocator(), header) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: could not read {s} from the zip (it may be corrupt)",
+                .{header.name},
+            ) catch "failed to import: could not read a file from the zip (it may be corrupt)";
+            fail.note(history, message);
+            return;
+        };
         const file_path = std.fmt.allocPrint(scratch, "{s}/{s}", .{ dir_path, entry.name }) catch
             @panic("failed to allocate imported mission file path");
         history.file_source.writeFile(file_path, entry.bytes) catch {
@@ -807,6 +863,7 @@ fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
             fail.note(history, message);
             return;
         };
+        _ = entry_arena.reset(.retain_capacity);
     }
 
     // Success: the zip has served its purpose (delete it - the extracted
@@ -844,4 +901,114 @@ pub fn rescanEditorMissionsNow(history: *GameStateHistory) void {
             history.session.editor_official_missions_scanned = true;
         } else |_| {} // one-time scan failed: retry on the next open
     }
+}
+
+test "importMissionFromZip: the size caps abort before any decode or write" {
+    const Harness = @import("../test_harness.zig").Harness;
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    const scratch = history.current_arena.allocator();
+
+    // Uniform 6-char names ("f0.txt".."f4.txt"), so each central-directory
+    // record occupies 46 + 6 = 52 bytes at a constant stride. The caps are
+    // checked from the central records alone (pass one), so only the
+    // recorded uncompressed size needs patching - nothing is ever decoded
+    // (no mission.txt is needed: the caps fire before the identity lookup).
+    const entries = [_]zip_writer.ZipEntry{
+        .{ .name = "f0.txt", .bytes = "" },
+        .{ .name = "f1.txt", .bytes = "" },
+        .{ .name = "f2.txt", .bytes = "" },
+        .{ .name = "f3.txt", .bytes = "" },
+        .{ .name = "f4.txt", .bytes = "" },
+    };
+    const archive = try zip_writer.writeZipArchive(&entries, scratch);
+
+    const central_directory_offset: usize = std.mem.readInt(
+        u32,
+        archive[archive.len - 22 ..][16..20],
+        .little,
+    );
+    const record_stride = 46 + 6;
+
+    // Patch one record's recorded uncompressed size past the per-entry cap.
+    const per_entry = try scratch.dupe(u8, archive);
+    std.mem.writeInt(
+        u32,
+        per_entry[central_directory_offset + 0 * record_stride + 24 ..][0..4],
+        @intCast(mission_import_max_entry_bytes + 1),
+        .little,
+    );
+    try harness.file_source.writeFile("mission.zip", per_entry);
+    importMissionFromZip(&history, "mission.zip");
+
+    try std.testing.expect(std.mem.indexOf(u8, history.session.pending_error orelse
+        @panic("the per-entry cap did not surface the popup"), "too large") != null);
+
+    // Five records each under the per-entry cap but summing past the total
+    // cap (5 x 60 MB = 300 MB > 256 MB).
+    const oversize_total: u32 = 60 * 1024 * 1024;
+    const total = try scratch.dupe(u8, archive);
+    for (0..entries.len) |record_index| {
+        std.mem.writeInt(
+            u32,
+            total[central_directory_offset + record_index * record_stride + 24 ..][0..4],
+            oversize_total,
+            .little,
+        );
+    }
+    try harness.file_source.writeFile("mission.zip", total);
+    importMissionFromZip(&history, "mission.zip");
+
+    try std.testing.expect(std.mem.indexOf(u8, history.session.pending_error orelse
+        @panic("the total cap did not surface the popup"), "too large to import") != null);
+
+    // Nothing was extracted into the persistent dir on either failure -
+    // only the staged zip itself (not under missions/).
+    const written = try history.file_source.listPersistentDirFiles(scratch);
+    for (written) |path| {
+        try std.testing.expect(!std.mem.startsWith(u8, path, "missions/"));
+    }
+}
+
+test "importMissionFromZip: a valid mission zip lands whole (headers-first streaming)" {
+    const Harness = @import("../test_harness.zig").Harness;
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    const scratch = history.current_arena.allocator();
+
+    const mission_txt =
+        \\Metadata
+        \\file_format_version 3
+        \\mission_uuid 11111111-1111-1111-1111-111111111111
+        \\name First Mission
+    ;
+    const entries = [_]zip_writer.ZipEntry{
+        .{ .name = "mission.txt", .bytes = mission_txt },
+        .{ .name = "level_1.txt", .bytes = "level one" },
+    };
+    const archive = try zip_writer.writeZipArchive(&entries, scratch);
+    try harness.file_source.writeFile("mission.zip", archive);
+
+    importMissionFromZip(&history, "mission.zip");
+
+    // Success: no error, the zip is deleted, the browser list rescans.
+    try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
+    try std.testing.expect(!history.file_source.fileExists("mission.zip"));
+    try std.testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
+
+    // The files landed under the imported dir (id derived from the same
+    // rescan the import triggered, not hand-computed), contents verbatim.
+    const mission_id = history.session.editor_local_missions[0].id;
+    try std.testing.expectEqualStrings(
+        "First Mission",
+        history.session.editor_local_missions[0].name,
+    );
+    const mission_path = try std.fmt.allocPrint(scratch, "missions/{s}/mission.txt", .{mission_id});
+    const level_path = try std.fmt.allocPrint(scratch, "missions/{s}/level_1.txt", .{mission_id});
+    try std.testing.expectEqualStrings(mission_txt, try history.file_source.readFile(scratch, mission_path));
+    try std.testing.expectEqualStrings("level one", try history.file_source.readFile(scratch, level_path));
 }

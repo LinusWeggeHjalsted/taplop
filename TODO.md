@@ -31,10 +31,8 @@ commit unit.
 - [x] `that_which_lingers.playerPrepareSkill` - DONE (see DONE.md,
       "that_which_lingers: the armed prepare landmine defused (review
       m-4.1)").
-- [ ] Mission-zip import: headers-first caps mirroring `importGameFolder`
-      (readZipArchive fully extracts before the count check; a hostile
-      declared uncompressed_size allocates up to ~4 GB - Minor today,
-      Major at the online-services milestone).
+- [x] Mission-zip import: headers-first caps - DONE (see DONE.md,
+      "Mission-zip import: the headers-first caps (review m-9.1)").
 - [ ] FileSource: `validateRelativePath` gate at readFile/writeFile
       (~15 lines; crafted bundles can seed reads outside the persistent
       dir - see PROJECTREVIEW Part 5, m-5.1).
