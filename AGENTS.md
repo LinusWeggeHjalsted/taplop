@@ -703,8 +703,16 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/ui/panels.zig` - in-game middle panels (inventory/gear/skills/
   entity inspect) + slot-content support
 - `src/ui/screens.zig` - error popup, top bar, mission complete/fail
-- `src/ui/menus.zig` - options/main menu, load-save + editor browsers,
-  credits, tips, settings
+- `src/ui/options_menu.zig` + `src/ui/main_menu.zig` - the options-menu
+  overlay + the title screen (one surface per file, the siblings'
+  granularity - the old six-surface menus.zig was split)
+- `src/ui/browsers.zig` - the load-save browser + the editor browser
+  (mission list tab): one row/scrollback machinery, two surfaces; the
+  shared scrollbar emitter lives in emit.zig
+- `src/ui/credits.zig` + `src/ui/tips.zig` - the credits screen + the
+  tips overlay
+- `src/ui/settings.zig` - the settings screen (two tabs: controls + the
+  keybinds tab's rebinding list - see keybind_edit.zig)
 - `src/input.zig` - input pipeline, translateInput, bindings
 - `src/combat_log.zig` - combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` - unified file I/O (FileSource: embedded map +

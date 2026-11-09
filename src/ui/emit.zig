@@ -887,3 +887,44 @@ pub fn effectIconSpriteId(effect_id: types.EffectId, definition: Effect) []const
     if (definition.effect_sprite) |sprite| return sprite;
     return definition.name;
 }
+
+/// One scrollbar: fixed-gray track + thumb (the shared scrollbar
+/// constants) sized PROPORTIONALLY to the visible slice of the total
+/// content and positioned by the row scroll offset - the shape every
+/// row list on these surfaces uses (load-save browser, editor browser,
+/// the settings keybinds columns). The track spans the full rows region;
+/// the thumb is `track_height × visible / total` (min
+/// `scrollbar_thumb_min_height`) sliding through the remaining travel.
+pub fn emitScrollbar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    track_x: i32,
+    track_y: i32,
+    track_height: i32,
+    visible_rows: usize,
+    total_rows: usize,
+    scroll_offset: i32,
+) !void {
+    try elements.append(allocator, .{ .solid_rect = .{
+        .screen_position = .{ .x = track_x, .y = track_y },
+        .width = element.scrollbar_width,
+        .height = track_height,
+        .color = element.scrollbar_track_color,
+    } });
+    const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
+    const max_scroll_row: i32 = @intCast(total_rows - @min(total_rows, visible_rows));
+    const thumb_height = @max(
+        element.scrollbar_thumb_min_height,
+        @divTrunc(track_height * visible_span_rows, @as(i32, @intCast(total_rows))),
+    );
+    const thumb_y = track_y + if (max_scroll_row == 0)
+        0
+    else
+        @divTrunc(scroll_offset * (track_height - thumb_height), max_scroll_row);
+    try elements.append(allocator, .{ .solid_rect = .{
+        .screen_position = .{ .x = track_x, .y = thumb_y },
+        .width = element.scrollbar_width,
+        .height = thumb_height,
+        .color = element.scrollbar_thumb_color,
+    } });
+}

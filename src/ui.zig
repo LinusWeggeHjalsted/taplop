@@ -4,7 +4,8 @@
 //! types), text_input.zig (the text-field widget), tooltip.zig
 //! (placement + content builders), emit.zig (shared builder primitives),
 //! editor_shell/editor_inspector/editor_pickers.zig (the editor UI),
-//! bottom_bar/panels/screens/menus.zig (the in-game surfaces). The
+//! bottom_bar/panels/screens.zig + options_menu/main_menu/browsers/
+//! credits/tips/settings.zig (the in-game surfaces, one per file). The
 //! re-exports below keep `ui.X` working for every consumer. See DESIGN →
 //! UI Framework.
 
@@ -21,7 +22,12 @@ const ui_editor_pickers = @import("ui/editor_pickers.zig");
 const ui_bottom_bar = @import("ui/bottom_bar.zig");
 const ui_panels = @import("ui/panels.zig");
 const ui_screens = @import("ui/screens.zig");
-const ui_menus = @import("ui/menus.zig");
+const ui_options_menu = @import("ui/options_menu.zig");
+const ui_main_menu = @import("ui/main_menu.zig");
+const ui_browsers = @import("ui/browsers.zig");
+const ui_credits = @import("ui/credits.zig");
+const ui_tips = @import("ui/tips.zig");
+const ui_settings = @import("ui/settings.zig");
 
 pub const SlotRef = ui_element.SlotRef;
 pub const Span = ui_element.Span;
@@ -141,6 +147,7 @@ pub const small_button_background_sprite_id = ui_emit.small_button_background_sp
 pub const emitPanelHeader = ui_emit.emitPanelHeader;
 pub const emitIconButton = ui_emit.emitIconButton;
 pub const emitPanelButton = ui_emit.emitPanelButton;
+pub const emitScrollbar = ui_emit.emitScrollbar;
 pub const skillSlotAction = ui_emit.skillSlotAction;
 pub const actionSkillSlot = ui_emit.actionSkillSlot;
 pub const emitSkillButton = ui_emit.emitSkillButton;
@@ -196,11 +203,11 @@ pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;
 pub const ValidationCompleteContext = ui_screens.ValidationCompleteContext;
 pub const buildMissionFail = ui_screens.buildMissionFail;
-pub const buildOptionsMenu = ui_menus.buildOptionsMenu;
-pub const buildMainMenu = ui_menus.buildMainMenu;
-pub const buildLoadSavePanel = ui_menus.buildLoadSavePanel;
-pub const buildEditorBrowser = ui_menus.buildEditorBrowser;
-pub const buildCreditsPanel = ui_menus.buildCreditsPanel;
-pub const buildTipsPanel = ui_menus.buildTipsPanel;
-pub const settings_row_font_size = ui_menus.settings_row_font_size;
-pub const buildSettingsPanel = ui_menus.buildSettingsPanel;
+pub const buildOptionsMenu = ui_options_menu.buildOptionsMenu;
+pub const buildMainMenu = ui_main_menu.buildMainMenu;
+pub const buildLoadSavePanel = ui_browsers.buildLoadSavePanel;
+pub const buildEditorBrowser = ui_browsers.buildEditorBrowser;
+pub const buildCreditsPanel = ui_credits.buildCreditsPanel;
+pub const buildTipsPanel = ui_tips.buildTipsPanel;
+pub const settings_row_font_size = ui_settings.settings_row_font_size;
+pub const buildSettingsPanel = ui_settings.buildSettingsPanel;

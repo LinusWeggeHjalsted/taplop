@@ -6199,7 +6199,7 @@ left, 6-11 right): a single 12-row column needs 1792px where the region
 between the tab row and the Back button has ~1610, and did even before the
 tab row existed (the last row kissed the Back button); two columns also
 fit the wide reference screen better. The control column must clear the
-Back button - pinned by the tab-row test in menus.zig.
+Back button - pinned by the tab-row test in settings.zig.
 
 **The Keybinds tab** is the in-game rebinding UI (editing flows landed):
 

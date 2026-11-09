@@ -299,6 +299,7 @@ working rules).
 - [shared_metadata_keys (the borrowed name fixed)](#sharedmetadatakeys-the-borrowed-name-fixed)
 - [The two small dedup helpers (review n-3.4 + n-6.2)](#the-two-small-dedup-helpers-review-n-34--n-62)
 - [Generated section indexes for DESIGN + DONE (scripts/doc_index.sh)](#generated-section-indexes-for-design--done-scriptsdocindexsh)
+- [menus.zig split into per-surface files (review n-8.1)](#menuszig-split-into-per-surface-files-review-n-81)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19166,3 +19167,25 @@ changes nothing). AGENTS → Documentation carries the rule: run it in
 the same commit that adds/renames/removes a heading. This entry and
 the README one above it are the index's first post-generation
 additions - the regeneration ran in this commit.
+
+## menus.zig split into per-surface files (review n-8.1)
+
+The 3,893-line six-surface menus.zig split into one-surface-per-file
+granularity, matching the siblings (screens/panels/bottom_bar):
+options_menu.zig (535 - the options overlay + its tests incl.
+expectMenuButtonLabel), main_menu.zig (422 - title screen), browsers.zig
+(887 - load-save + editor browser sharing the row/scrollback
+machinery), credits.zig (137), tips.zig (198), settings.zig (1,787 -
+the two-tab settings screen incl. the whole keybinds tab). The shared
+emitScrollbar emitter moved to emit.zig (pub - its fourth consumer
+class; consumed by browsers + settings, re-exported by the facade).
+Faithfulness verified by declaration-set diff: every fn/const/test in
+the old file exists in the new set (emitScrollbar's fn->pub promotion
+the only delta); all 898 tests pass unchanged; the ui.zig facade keeps
+every ui.X re-export stable (consumers untouched). The split surfaced
+one previously-INVISIBLE cross-surface borrow: the tips overlay reused
+the credits page layout consts ("the credits model") - now explicit
+(three pub consts in credits.zig, tips imports them). AGENTS Key
+Files + DESIGN's tab-row-test pointer updated; the fmt gate's
+test.sh advisory caught its first divergence during the split (a
+new-file formatting nit, fixed in-passing).
