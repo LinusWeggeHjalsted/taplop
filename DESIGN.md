@@ -6028,7 +6028,9 @@ glyph buttons flanking it, and an n/N ordinal directly beneath the
 header. Opened from the global top bar's `?` button
 (top-right, mirroring options at top-left - `Action.open_tips`, a toggle
 like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
-sprites). The OPEN state is class-1 (`UiSurfaceId.tips` / `tips_open`,
+sprites). The `?` hides in the EDITOR - that corner is the Test/Validate
+row, the one screen with UI already occupying the top-right (the
+overlay itself stays legal there). The OPEN state is class-1 (`UiSurfaceId.tips` / `tips_open`,
 the recorded `toggle_ui_surface` event); the VIEWED index is a view
 affordance (`UiState.tips_index`, the settings_tab convention -
 `Action.cycle_tips` + the `tips_direction` payload mutate it directly at

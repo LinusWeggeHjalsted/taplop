@@ -18448,3 +18448,16 @@ failure in parser.zig / loaders.zig / file_source's config reads panics
 inline; every error return from those files is an input problem with an
 errdefer'd cleanup and (where a malformed fixture can reach it) a
 leak-checked test.
+
+## Tips: the top-bar `?` hides in the editor
+
+The tips button's top-right corner is the editor's Test/Validate row -
+the one screen with UI already occupying that corner (everywhere else -
+main menu, levels, hubs, over any options/menu overlay - the corner is
+free). view() gates it at the buildGlobalTopBar call site
+(`tips.len > 0 and screen != .editor`); the overlay itself stays legal
+on every screen. Structure test: an editor-screen view() emits NO
+open_tips button (the main-menu case pinning the positive). Found on
+the way: buildEditorLevelTabs' `levels.len - 1` underflows on a
+zero-level editor - unreachable in production (open_editor requires a
+level_1), left as-is with the test fixture carrying one level.

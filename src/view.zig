@@ -696,8 +696,10 @@ pub fn view(
     // click priority. Undo/redo stay reachable from any screen, including
     // over the mission-complete overlay (undoing the completing move
     // dismisses it - it's on the timeline). The editor's level tabs are NOT
-    // part of this layer (they sit under overlays by design). See DESIGN →
-    // UI Framework (global top bar).
+    // part of this layer (they sit under overlays by design). The tips `?`
+    // hides on the editor screen - its top-right corner is the Test/
+    // Validate row, the one screen with UI already occupying it. See DESIGN
+    // → UI Framework (global top bar).
     ui.buildGlobalTopBar(
         &ui_elements,
         frame_allocator,
@@ -706,7 +708,7 @@ pub fn view(
         active_theme,
         render.can_undo,
         render.can_redo,
-        tips.len > 0,
+        tips.len > 0 and current_state.screen != .editor,
     ) catch @panic("failed to build global top bar");
 
     // Hover tooltip: the topmost element under the pointer that carries
@@ -5303,6 +5305,50 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
         try std.testing.expect(findButton(elements, .open_tips, null) != null);
         try std.testing.expect(findButton(elements, .cycle_tips, .previous) == null);
         try std.testing.expect(findButton(elements, .cycle_tips, .next) == null);
+    }
+
+    // Editor screen: the top-bar ? HIDES - the top-right corner is the
+    // editor's Test/Validate row, the one screen with UI already
+    // occupying it (the tips overlay itself stays legal there).
+    {
+        var session = state.SessionState{};
+        const tips = [_][]const u8{ "alpha", "beta" };
+        const editor_state = GameState{
+            .screen = .editor,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            // One level: a real editor always has at least one (open_editor
+            // requires a level_1; the tabs row underflows on zero levels -
+            // buildEditorLevelTabs' `levels.len - 1`).
+            .editor = types.Editor{ .levels = &.{types.EditorLevel{ .level_end = .{ .x = 1, .y = 0 } } } },
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        };
+        const view_state = view(
+            &editor_state,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            &tips,
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) == null);
     }
 
     // Open at index 1: the second tip's text, both nav buttons with

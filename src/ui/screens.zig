@@ -286,8 +286,11 @@ pub fn buildGlobalTopBar(
     active_theme: types.ActiveColorTheme,
     can_undo: bool,
     can_redo: bool,
-    /// Whether the tips list is non-empty (drives the `?` button's
-    /// visibility - a modded-but-valid empty tips file hides it).
+    /// Whether the tips `?` button should show: a non-empty tips list
+    /// (a modded-but-valid empty tips file hides it) AND a screen whose
+    /// top-right corner isn't already occupied - the editor's is
+    /// (Test/Validate). view() owns the rule; the bar draws what it's
+    /// told.
     tips_available: bool,
 ) !void {
     const p = active_theme.player_gradient.colors;
@@ -370,7 +373,9 @@ pub fn buildGlobalTopBar(
     // Tips button - flush in the top-RIGHT corner, mirroring the options
     // button at top-left: the same 128x128 background with a font-glyph
     // `?` (no icon sprite - see emit.emitGlyphIconButton). The tips
-    // overlay is legal on every screen, like the bar it lives in.
+    // OVERLAY is legal on every screen, like the bar it lives in; the
+    // BUTTON hides in the editor (the corner is Test/Validate's -
+    // view() gates it via tips_available).
     if (tips_available) {
         const tips_cell = Rectangle{
             .x = screen.x + screen.width - top_bar_slot_size,
