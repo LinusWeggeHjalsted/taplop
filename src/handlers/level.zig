@@ -897,18 +897,16 @@ pub fn handleSubLevelEvent(
             const direction_x: i32 = if (raw_delta_x > 0) 1 else if (raw_delta_x < 0) @as(i32, -1) else 0;
             const direction_y: i32 = if (raw_delta_y > 0) 1 else if (raw_delta_y < 0) @as(i32, -1) else 0;
 
-            // Build tile and occupied sets for collision checking
-            var tile_set = std.AutoHashMap(Vector2, void).init(allocator);
-            for (level.level_tiles) |tile| {
-                tile_set.put(tile, {}) catch @panic("failed to build tile set");
-            }
-
-            var occupied = std.AutoHashMap(Vector2, void).init(allocator);
-            for (level.entities, 0..) |entity, entity_index| {
-                if (entity_index == knockback.defender_index) continue;
-                if (entity.current_health == 0) continue;
-                occupied.put(entity.position, {}) catch @panic("failed to build occupied set");
-            }
+            // Collision substrate (the mover - the defender - never blocks
+            // its own forced move; see functions.buildCollisionSets).
+            var sets = functions.buildCollisionSets(
+                level.*,
+                knockback.defender_index,
+                null,
+                allocator,
+            ) catch @panic("failed to build collision sets");
+            const tile_set = &sets.tile_set;
+            const occupied = &sets.occupied;
 
             // Step incrementally in the knockback direction
             var destination = defender.position;
@@ -1377,18 +1375,16 @@ pub fn handleSubLevelEvent(
             const direction_x: i32 = if (raw_delta_x > 0) 1 else if (raw_delta_x < 0) @as(i32, -1) else 0;
             const direction_y: i32 = if (raw_delta_y > 0) 1 else if (raw_delta_y < 0) @as(i32, -1) else 0;
 
-            // Build tile and occupied sets for collision checking
-            var tile_set = std.AutoHashMap(Vector2, void).init(allocator);
-            for (level.level_tiles) |tile| {
-                tile_set.put(tile, {}) catch @panic("failed to build tile set");
-            }
-
-            var occupied = std.AutoHashMap(Vector2, void).init(allocator);
-            for (level.entities, 0..) |other_entity, entity_index| {
-                if (entity_index == retreat.entity_index) continue;
-                if (other_entity.current_health == 0) continue;
-                occupied.put(other_entity.position, {}) catch @panic("failed to build occupied set");
-            }
+            // Collision substrate (the mover never blocks its own forced
+            // move; see functions.buildCollisionSets).
+            var sets = functions.buildCollisionSets(
+                level.*,
+                retreat.entity_index,
+                null,
+                allocator,
+            ) catch @panic("failed to build collision sets");
+            const tile_set = &sets.tile_set;
+            const occupied = &sets.occupied;
 
             // Step incrementally away from target
             var destination = entity.position;

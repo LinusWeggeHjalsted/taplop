@@ -12,6 +12,53 @@ const types = @import("types.zig");
 const Vector2 = types.Vector2;
 const Level = types.Level;
 
+/// The collision-check substrate shared by pathfinding (`shortestPath`,
+/// `reachableTiles`) and the forced-move arms (knockback + retreat in
+/// handlers/level.zig): the walkable-tile set + the occupied-position set.
+/// Occupied = every LIVE entity except the mover (dead entities don't
+/// block - the tile they died on is traversable); the mover is identified
+/// by index (the forced-move arms) or by position (pathfinding, which
+/// knows only the start tile) - pass the one known, null for the other.
+/// The caller owns both maps: `deinit` them, or hand an arena and let it
+/// absorb. OOM is an error return - the pathfinding fns fold it into
+/// their null/empty contracts, the handler arms panic on it (their file's
+/// convention).
+pub const CollisionSets = struct {
+    tile_set: std.AutoHashMap(Vector2, void),
+    occupied: std.AutoHashMap(Vector2, void),
+
+    pub fn deinit(self: *CollisionSets) void {
+        self.tile_set.deinit();
+        self.occupied.deinit();
+    }
+};
+
+pub fn buildCollisionSets(
+    level: Level,
+    mover_index: ?u32,
+    mover_position: ?Vector2,
+    allocator: std.mem.Allocator,
+) std.mem.Allocator.Error!CollisionSets {
+    var sets = CollisionSets{
+        .tile_set = std.AutoHashMap(Vector2, void).init(allocator),
+        .occupied = std.AutoHashMap(Vector2, void).init(allocator),
+    };
+    for (level.level_tiles) |tile| {
+        try sets.tile_set.put(tile, {});
+    }
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity.current_health == 0) continue;
+        if (mover_index) |index| {
+            if (index == entity_index) continue;
+        }
+        if (mover_position) |position| {
+            if (entity.position.x == position.x and entity.position.y == position.y) continue;
+        }
+        try sets.occupied.put(entity.position, {});
+    }
+    return sets;
+}
+
 /// The A* heuristic: Chebyshev distance to the destination - the EXACT
 /// remaining cost on open ground (every step, diagonal included, costs 1),
 /// so it never overestimates. The old Manhattan heuristic overestimated up
@@ -85,25 +132,10 @@ pub fn shortestPath(
     end_position: Vector2,
     allocator: std.mem.Allocator,
 ) ?[]const Vector2 {
-    // Build a set of walkable tiles for fast lookup
-    var tile_set = std.AutoHashMap(Vector2, void).init(allocator);
-    defer tile_set.deinit();
-    for (level.level_tiles) |tile| {
-        tile_set.put(tile, {}) catch return null;
-    }
-
-    // Build a set of occupied positions (all live entities except the
-    // mover). Dead entities (current_health == 0) don't block movement - a
-    // tile they died on is traversable.
-    var occupied = std.AutoHashMap(Vector2, void).init(allocator);
-    defer occupied.deinit();
-    for (level.entities) |entity| {
-        if (entity.current_health == 0) continue;
-        // Skip the entity standing at start_position (the mover)
-        if (entity.position.x == start_position.x and
-            entity.position.y == start_position.y) continue;
-        occupied.put(entity.position, {}) catch return null;
-    }
+    var sets = buildCollisionSets(level, null, start_position, allocator) catch return null;
+    defer sets.deinit();
+    const tile_set = &sets.tile_set;
+    const occupied = &sets.occupied;
 
     // A* search
     var open_set: std.PriorityQueue(PathNode, void, comparePathNodes) = .empty;
@@ -293,24 +325,10 @@ pub fn reachableTiles(
     max_steps: u32,
     allocator: std.mem.Allocator,
 ) []const Vector2 {
-    // Build a set of walkable tiles for fast lookup
-    var tile_set = std.AutoHashMap(Vector2, void).init(allocator);
-    defer tile_set.deinit();
-    for (level.level_tiles) |tile| {
-        tile_set.put(tile, {}) catch return &.{};
-    }
-
-    // Build a set of occupied positions (all live entities except the
-    // mover). Dead entities (current_health == 0) don't block movement - a
-    // tile they died on is traversable.
-    var occupied = std.AutoHashMap(Vector2, void).init(allocator);
-    defer occupied.deinit();
-    for (level.entities) |entity| {
-        if (entity.current_health == 0) continue;
-        if (entity.position.x == start_position.x and
-            entity.position.y == start_position.y) continue;
-        occupied.put(entity.position, {}) catch return &.{};
-    }
+    var sets = buildCollisionSets(level, null, start_position, allocator) catch return &.{};
+    defer sets.deinit();
+    const tile_set = &sets.tile_set;
+    const occupied = &sets.occupied;
 
     // BFS
     const QueueEntry = struct {

@@ -44,6 +44,35 @@ pub fn skillsSlotUnderPointer(
     };
 }
 
+/// Whether the pointer has moved beyond the drag-promotion threshold -
+/// the ONE compare shared by every gesture site (drag promote, camera
+/// pan, marquee promote, right-click cancel, editor move-drag). Squared
+/// distance (no sqrt); STRICT `>` on purpose: a no-movement
+/// press+release stays a click (the unified threshold convention - see
+/// DONE.md, "Unified drag threshold (2px)"). Two coordinate flavors:
+/// gesture state carries i32 screen positions; the camera pan compares
+/// full-precision f32 reference-space positions (its threshold converts
+/// once, in the f32 flavor).
+fn screenPositionsBeyondThreshold(
+    press_position: types.ScreenPosition,
+    current_position: types.ScreenPosition,
+) bool {
+    const dx = current_position.x - press_position.x;
+    const dy = current_position.y - press_position.y;
+    return dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels;
+}
+
+/// The f32 flavor - same convention (see screenPositionsBeyondThreshold).
+fn referencePositionsBeyondThreshold(
+    press_position: input.PointerPosition,
+    current_position: input.PointerPosition,
+) bool {
+    const threshold: f32 = @floatFromInt(ui.drag_threshold_pixels);
+    const dx = current_position.x - press_position.x;
+    const dy = current_position.y - press_position.y;
+    return dx * dx + dy * dy > threshold * threshold;
+}
+
 /// Map a drag (source slot ref → target slot ref) to the orchestrator
 /// `PlayerInputEvent` that the handler will resolve, or null for a
 /// nonsensical / unsupported drop. Replaces the old `dragToEvent` which
@@ -205,9 +234,7 @@ pub fn handleDrag(
     // See `handleRightClickInspect` for the same `>` convention.
     if (ui_state.pending_slot_press) |press| {
         if (press.button == .left) {
-            const dx = pointer.position.toScreenPosition().x - press.press_position.x;
-            const dy = pointer.position.toScreenPosition().y - press.press_position.y;
-            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+            if (screenPositionsBeyondThreshold(press.press_position, pointer.position.toScreenPosition())) {
                 if (press.shift_held and press.source == .inventory) {
                     ui_state.salvage_region = .{
                         .start_slot = press.source.inventory,
@@ -518,12 +545,7 @@ pub fn handleCameraPan(
         // latching the pan engaged: a later wiggle back near the press point
         // keeps panning. Strict `>` matches the other drag gestures.
         if (session.camera_pan_press) |press| {
-            // Full-precision pointer math (press + cursor both f32) - the
-            // threshold compare runs in float against the i32 threshold.
-            const dx = pointer.position.x - press.x;
-            const dy = pointer.position.y - press.y;
-            const threshold: f32 = @floatFromInt(ui.drag_threshold_pixels);
-            if (dx * dx + dy * dy <= threshold * threshold) return;
+            if (!referencePositionsBeyondThreshold(press, pointer.position)) return;
             session.camera_pan_press = null;
         }
         const tile_pixels = input.tile_size_pixels * camera_zoom;
@@ -701,9 +723,7 @@ pub fn handleRightClickInspect(
         switch (press) {
             .inspect => |pending| {
                 if (pointer.right_held) {
-                    const dx = pointer.position.toScreenPosition().x - pending.press_position.x;
-                    const dy = pointer.position.toScreenPosition().y - pending.press_position.y;
-                    if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+                    if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
                         ui_state.pending_right_click = null;
                     }
                 }
@@ -813,9 +833,7 @@ pub fn handleRightClickEditorDelete(
         switch (press) {
             .editor_delete => |pending| {
                 if (pointer.right_held) {
-                    const dx = pointer.position.toScreenPosition().x - pending.press_position.x;
-                    const dy = pointer.position.toScreenPosition().y - pending.press_position.y;
-                    if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+                    if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
                         ui_state.pending_right_click = null;
                     }
                 }
@@ -907,9 +925,7 @@ pub fn handleEditorMarquee(
         // release as a click; same convention as the inventory drag +
         // right-click cancel).
         if (pointer.held) {
-            const dx = pointer.position.toScreenPosition().x - marquee.press_position.x;
-            const dy = pointer.position.toScreenPosition().y - marquee.press_position.y;
-            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+            if (screenPositionsBeyondThreshold(marquee.press_position, pointer.position.toScreenPosition())) {
                 marquee.promoted = true;
             }
         }
@@ -1058,9 +1074,7 @@ pub fn handleEditorMoveDrag(
         // Promotion: movement beyond the threshold (strict `>`, the house
         // convention - a no-movement press+release stays a click).
         if (pointer.held) {
-            const dx = pointer.position.toScreenPosition().x - move_drag.press_position.x;
-            const dy = pointer.position.toScreenPosition().y - move_drag.press_position.y;
-            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+            if (screenPositionsBeyondThreshold(move_drag.press_position, pointer.position.toScreenPosition())) {
                 move_drag.promoted = true;
             }
         }

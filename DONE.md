@@ -18833,3 +18833,29 @@ Renamed to `shared_metadata_keys` with a doc comment stating exactly
 which formats share it and pointing at `level_file_metadata_keys`
 (the level-only superset that keeps its honest name). Comment-only
 rationale sites updated; no behavior change.
+
+## The two small dedup helpers (review n-3.4 + n-6.2)
+
+- **pointerBeyondThreshold (n-6.2):** the drag-promotion threshold
+  compare (`dx*dx + dy*dy > threshold*threshold`) was hand-written at
+  six gesture sites in input_gestures.zig. Collapsed into two
+  one-doc-block helpers sharing the convention (squared distance, no
+  sqrt; STRICT `>` - a no-movement press+release stays a click):
+  screenPositionsBeyondThreshold (the five i32 gesture-state sites -
+  drag promote, right-click inspect cancel, editor delete cancel,
+  marquee promote, editor move-drag) and referencePositionsBeyondThreshold
+  (the camera pan's full-precision f32 flavor - its threshold converts
+  once, inside).
+- **buildCollisionSets (n-3.4):** the build-tile-set/build-occupied-set
+  block was duplicated 4x (knockback + retreat arms in
+  handlers/level.zig, shortestPath + reachableTiles in functions.zig)
+  with slightly different exclusion rules. One shared helper in
+  functions.zig (the math home): occupied = every live entity except
+  the mover, mover identified by index (forced-move arms) or position
+  (pathfinding) - the two real variants as optional params. OOM stays
+  each caller's own policy (pathfinding folds it into null/empty
+  contracts, the handler arms panic - their file's convention); the
+  caller owns the maps (pathfinding deinits, the handler arms hand the
+  frame arena). Behavior identical at all four sites - the existing
+  pathfinding, knockback-collision, retreat, and drag-threshold tests
+  all pass unchanged.
