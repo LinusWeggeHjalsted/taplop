@@ -1837,6 +1837,41 @@ pub const GameStateHistory = struct {
                             return;
                         }
                     },
+                    // World-map acting (hub travel + mission entry): the
+                    // map must be open, the screen must be level/hub (the
+                    // map toggle's screens), and the acting target must be
+                    // discovered-or-start (backtrack-only travel; an edge
+                    // is clickable exactly when its start hub is - see
+                    // mapHubActingLegal + DESIGN → Campaigns & the
+                    // Campaign Editor → Discovery + travel).
+                    .player_travel_to_hub => |travel| {
+                        if (!self.current_state.ui_surfaces.isSurfaceOpen(.world_map)) {
+                            self.rejectReplay("replay validation: map travel without the world map open");
+                            return;
+                        }
+                        if (self.current_state.screen != .level and self.current_state.screen != .hub) {
+                            self.rejectReplay("replay validation: map travel outside level/hub screen");
+                            return;
+                        }
+                        if (!mapHubActingLegal(&self.current_state, travel.hub_uuid)) {
+                            self.rejectReplay("replay validation: map travel to an undiscovered hub");
+                            return;
+                        }
+                    },
+                    .player_start_mission_from_map => |entry| {
+                        if (!self.current_state.ui_surfaces.isSurfaceOpen(.world_map)) {
+                            self.rejectReplay("replay validation: map mission entry without the world map open");
+                            return;
+                        }
+                        if (self.current_state.screen != .level and self.current_state.screen != .hub) {
+                            self.rejectReplay("replay validation: map mission entry outside level/hub screen");
+                            return;
+                        }
+                        if (!mapHubActingLegal(&self.current_state, entry.start_hub_id)) {
+                            self.rejectReplay("replay validation: map mission entry from an undiscovered hub");
+                            return;
+                        }
+                    },
                     // Editor Test button: only from the editor's edit mode -
                     // the button exists only there, so anything else in a
                     // crafted log is rejected.
@@ -2675,6 +2710,25 @@ pub const GameStateHistory = struct {
     /// core under the hoisted gate in `validatePlayerAction` (the
     /// no-expectPanics convention - tested directly). See DESIGN →
     /// Determinism → Replay PLAYER-ACTION LEGALITY.
+    /// Whether `hub_uuid` is legal to ACT on from the world map in the
+    /// active campaign: discovered, or the campaign's start hub
+    /// (discovered-or-start - the same rule the map view lights hubs by;
+    /// see DESIGN → Campaigns & the Campaign Editor → Discovery + travel).
+    /// The bool core behind validatePlayerAction's map-acting arms (the
+    /// no-expectPanics convention - tested directly, the panic wrappers
+    /// are thin policy over it).
+    fn mapHubActingLegal(current: *const GameState, hub_uuid: []const u8) bool {
+        const campaign = current.campaign orelse return false;
+        if (std.mem.eql(u8, hub_uuid, campaign.start_hub)) return true;
+        for (current.player_data.discovered_hubs) |group| {
+            if (!std.mem.eql(u8, group.campaign_uuid, campaign.uuid)) continue;
+            for (group.hub_uuids) |discovered| {
+                if (std.mem.eql(u8, discovered, hub_uuid)) return true;
+            }
+        }
+        return false;
+    }
+
     fn actionTriggerSurfaceOpen(current: *const GameState, action: events.PlayerInputEvent) bool {
         const surfaces = &current.ui_surfaces;
         return switch (action) {
@@ -3702,4 +3756,72 @@ test "replay validation: hub movement legality (tile membership + NPC occupancy)
     try std.testing.expect(GameStateHistory.isHubMoveLegal(hub, .{ .x = 0, .y = 0 }));
     try std.testing.expect(!GameStateHistory.isHubMoveLegal(hub, .{ .x = 2, .y = 0 }));
     try std.testing.expect(!GameStateHistory.isHubMoveLegal(hub, .{ .x = 5, .y = 5 }));
+}
+
+test "map acting legality: discovered-or-start (the backtrack rule)" {
+    // The bool core behind validatePlayerAction's map-acting arms: a hub
+    // is travel/click legal when discovered OR the campaign's start hub
+    // (the same rule the map view lights hubs by - see DESIGN → Campaigns
+    // & the Campaign Editor → Discovery + travel).
+    const current = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{
+            .discovered_hubs = &.{.{
+                .campaign_uuid = "camp-uuid",
+                .hub_uuids = &.{"discovered-hub"},
+            }},
+        },
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = .{
+            .uuid = "camp-uuid",
+            .start_hub = "start-hub",
+        },
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    try std.testing.expect(GameStateHistory.mapHubActingLegal(&current, "discovered-hub"));
+    try std.testing.expect(GameStateHistory.mapHubActingLegal(&current, "start-hub"));
+    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&current, "undiscovered-hub"));
+    // A hub discovered in ANOTHER campaign does not count (the groups
+    // scope by campaign uuid).
+    const other_campaign = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{
+            .discovered_hubs = &.{.{
+                .campaign_uuid = "other-camp",
+                .hub_uuids = &.{"discovered-hub"},
+            }},
+        },
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = .{
+            .uuid = "camp-uuid",
+            .start_hub = "start-hub",
+        },
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&other_campaign, "discovered-hub"));
+    // No campaign loaded (the main menu): nothing is map-acting legal.
+    const no_campaign = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&no_campaign, "start-hub"));
 }

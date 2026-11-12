@@ -510,6 +510,76 @@ pub fn handlePlayerInputEvent(
                 .continuation = .exit_mission,
             } } }}, allocator);
         },
+        // World-map travel (a hub click): jump to a DISCOVERED hub. The
+        // hub uuid rides the event; the arrival resolves through the
+        // loaded campaign's table inside start_hub (state, never the
+        // filesystem). From a hub: the exit-tile shape (end_hub syncs +
+        // autosaves below the arrival). Mid-level: the abandon ride -
+        // the arrival is queued BENEATH end_level{.exit_mission} with the
+        // exit's own return suppressed (the return's transitionScreen
+        // would clear the stack and eat the queued arrival - the
+        // state.transitionScreen contract). Pickups preserved by the
+        // end_level sync invariant; no clone (the run is not completed).
+        // See DESIGN → Campaigns & the Campaign Editor → Discovery +
+        // travel.
+        .player_travel_to_hub => |travel| {
+            const hub_id = allocator.dupe(u8, travel.hub_uuid) catch
+                @panic("failed to allocate travel hub id");
+            if (current.screen == .level) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .start_hub = .{ .hub_id = hub_id } } },
+                    .{ .meta_event = .{ .end_level = .{
+                        .continuation = .exit_mission,
+                        .suppress_return_hub = true,
+                    } } },
+                }, allocator);
+            } else if (current.screen == .hub) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .start_hub = .{ .hub_id = hub_id } } },
+                    .{ .meta_event = .end_hub },
+                }, allocator);
+            }
+        },
+        // World-map mission entry (an edge click): equivalent to standing
+        // on the exit in the edge's start hub - the mission is entered
+        // FROM the edge's start hub (start_mission's enter_hub_id sets
+        // current_hub on the way in, so abandoning the mission returns
+        // there). The payload is the click-time resolved edge (the
+        // mission-browser-row precedent). Mid-level, the abandon ride
+        // runs beneath: end_level{.exit_mission} with the return
+        // suppressed, the entry queued beneath it.
+        .player_start_mission_from_map => |entry| {
+            const mission_path = allocator.dupe(u8, entry.mission_path) catch
+                @panic("failed to allocate map mission path");
+            const end_hub_id = if (entry.end_hub_id) |hub|
+                (allocator.dupe(u8, hub) catch @panic("failed to allocate map mission end hub"))
+            else
+                null;
+            const start_hub_id = allocator.dupe(u8, entry.start_hub_id) catch
+                @panic("failed to allocate map mission start hub");
+            if (current.screen == .level) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .start_mission = .{
+                        .mission_path = mission_path,
+                        .end_hub_id = end_hub_id,
+                        .enter_hub_id = start_hub_id,
+                    } } },
+                    .{ .meta_event = .{ .end_level = .{
+                        .continuation = .exit_mission,
+                        .suppress_return_hub = true,
+                    } } },
+                }, allocator);
+            } else if (current.screen == .hub) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .start_mission = .{
+                        .mission_path = mission_path,
+                        .end_hub_id = end_hub_id,
+                        .enter_hub_id = start_hub_id,
+                    } } },
+                    .{ .meta_event = .end_hub },
+                }, allocator);
+            }
+        },
         .player_exit_to_menu => {
             if (current.screen == .level) {
                 pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{

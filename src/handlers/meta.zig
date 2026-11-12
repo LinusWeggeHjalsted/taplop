@@ -485,6 +485,16 @@ pub fn handleMetaEvent(
                 current.mission.?.end_hub = hub_id;
             }
 
+            // The world-map entry's hub of origin: the edge's start hub
+            // becomes current_hub on the way in (abandoning the mission
+            // returns there). A pure PlayerData write, no transition -
+            // the exit-tile + restart paths pass null (they stand in the
+            // hub already). See DESIGN → Campaigns & the Campaign
+            // Editor → Discovery + travel.
+            if (start.enter_hub_id) |hub_id| {
+                current.player_data.current_hub = hub_id;
+            }
+
             // Push the first level
             pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                 .mission_path = start.mission_path,
@@ -802,9 +812,13 @@ pub fn handleMetaEvent(
                 // Abandon the mission: return to the hub the player
                 // was at before entering it. player_data.current_hub
                 // still names the entering hub during a mission (only
-                // start_hub's handler changes it).
+                // start_hub's handler changes it). The map-acting
+                // cascades suppress the return and queue their own
+                // arrival beneath this end_level (the return's
+                // transitionScreen would eat it - see
+                // player_travel_to_hub / player_start_mission_from_map).
                 .exit_mission => {
-                    if (current.mission != null) {
+                    if (current.mission != null and !end.suppress_return_hub) {
                         const hub_id = current.player_data.current_hub;
                         pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                             .hub_id = hub_id,

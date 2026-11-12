@@ -1,0 +1,208 @@
+//! Handler-drain tests for ACTING FROM THE WORLD MAP (campaign-editor
+//! slice 2d, same-campaign): `player_travel_to_hub` (backtrack to a
+//! discovered hub) + `player_start_mission_from_map` (the exit-tile
+//! equivalence - arrive at the edge's start hub, then enter), each from a
+//! hub and mid-level (the abandon ride: end_level{.exit_mission} with the
+//! destination override - pickups kept, no clone). See DESIGN → Campaigns
+//! & the Campaign Editor → Discovery + travel. Tier B (the harness): the
+//! fixture campaign is written into the scratch persistent dir, entered
+//! via player_continue (the load reads it through the reconstruction
+//! cache), and the orchestrators are pushed as recorded player actions.
+
+const std = @import("std");
+const testing = std.testing;
+const types = @import("types.zig");
+const state = @import("state.zig");
+const events = @import("events.zig");
+const event_push = @import("event_push.zig");
+const event_handlers = @import("event_handlers.zig");
+const test_harness = @import("test_harness.zig");
+
+const Harness = test_harness.Harness;
+const runToIdle = test_harness.runToIdle;
+
+/// The fixture campaign's identity + graph, mirrored in the files the
+/// helper writes below. Two hubs (A = start, B = a mission destination)
+/// + one mission with an A->B edge - the minimum that exercises
+/// hub-to-hub travel (the official campaign is a single hub).
+const hub_a_uuid = "aaaaaaaa-0000-0000-0000-000000000001";
+const hub_b_uuid = "bbbbbbbb-0000-0000-0000-000000000002";
+const campaign_uuid = "cccccccc-0000-0000-0000-000000000003";
+const mission_uuid = "dddddddd-0000-0000-0000-000000000004";
+const mission_path = "campaigns/test_campaign/missions/m1";
+
+/// Write the fixture campaign into the history's scratch persistent dir
+/// (readFile resolves persistent-first, so it shadows nothing embedded)
+/// and enter it: player_continue with the campaign identity populated
+/// runs loadCampaignAndPushHub -> start_hub{A} -> discovered A. Returns
+/// with the session in hub A.
+fn enterFixtureCampaign(history: *state.GameStateHistory) void {
+    const fs = history.file_source;
+    fs.writeFile(
+        "campaigns/test_campaign/campaign.txt",
+        "Metadata\nfile_format_version 3\nname Test Campaign\ncampaign_uuid " ++ campaign_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_a_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_b_uuid ++ "\nposition 900 0\n",
+    ) catch @panic("write fixture campaign");
+    fs.writeFile(
+        "campaigns/test_campaign/hubs/hub_a/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!.\n...\n",
+    ) catch @panic("write fixture hub a");
+    fs.writeFile(
+        "campaigns/test_campaign/hubs/hub_b/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_b_uuid ++ "\nname Hub B\n\nLayout 3\n...\n.!.\n...\n",
+    ) catch @panic("write fixture hub b");
+    fs.writeFile(
+        "campaigns/test_campaign/missions/m1/mission.txt",
+        "Metadata\nfile_format_version 3\nmission_uuid " ++ mission_uuid ++ "\nname Map Mission\n",
+    ) catch @panic("write fixture mission");
+    fs.writeFile(
+        "campaigns/test_campaign/missions/m1/level_1.txt",
+        "Metadata\nfile_format_version 2\n\nLayout 1\n!=\n",
+    ) catch @panic("write fixture level");
+
+    history.current_state.player_data.current_campaign = "test_campaign";
+    history.current_state.player_data.current_campaign_uuid = campaign_uuid;
+    history.current_state.player_data.current_hub = hub_a_uuid;
+    event_push.pushPlayerAction(
+        &history.current_state,
+        .player_continue,
+        history.current_arena.allocator(),
+    );
+    runToIdle(history);
+}
+
+/// The discovery route for hub B in tests: the machinery start_hub (what
+/// mission completion pushes - arrival IS discovery). Tests push it
+/// directly to stand in for a completed A->B edge.
+fn discoverHubB(history: *state.GameStateHistory) void {
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .start_hub = .{
+            .hub_id = hub_b_uuid,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(history);
+}
+
+/// Push one map-acting orchestrator as the recorded player action (the
+/// live click path's shape) + drain.
+fn pushMapAction(
+    history: *state.GameStateHistory,
+    action: events.PlayerInputEvent,
+) void {
+    event_push.pushPlayerAction(&history.current_state, action, history.current_arena.allocator());
+    runToIdle(history);
+}
+
+test "map travel: backtrack to a discovered hub from a hub" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+
+    // Standing at B (discovered via the mission-completion route), the
+    // map opens over the hub; travel back to A (discovered - backtrack
+    // legal) lands the session in A's hub content.
+    discoverHubB(&history);
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pushMapAction(&history, .{ .player_travel_to_hub = .{
+        .hub_uuid = hub_a_uuid,
+    } });
+
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
+    // The arrival is on the undo timeline (one click = one undo step
+    // back to hub B).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings(hub_b_uuid, history.current_state.player_data.current_hub);
+}
+
+test "map travel mid-level rides the abandon cascade to the target hub" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    discoverHubB(&history);
+
+    // Mid-level (entered from the map at B - the mission-entry arm under
+    // test below): travel to A abandons the run and lands at A. No clone
+    // (the clone is the record of COMPLETED runs) + the start hub's
+    // discovery survives (arrival is idempotent).
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission_path,
+        .end_hub_id = hub_a_uuid,
+        .start_hub_id = hub_b_uuid,
+    } });
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expect(history.current_state.mission != null);
+
+    pushMapAction(&history, .{ .player_travel_to_hub = .{
+        .hub_uuid = hub_a_uuid,
+    } });
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.clones.len);
+}
+
+test "map mission entry from a hub: arrive at the edge's start hub, then enter" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    discoverHubB(&history);
+
+    // Standing at B, clicking the A->B edge (start hub A): the handler
+    // arrives at A first (current_hub on the way in - abandoning the
+    // entered mission returns there), then enters the mission with the
+    // edge's destination as its end hub.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission_path,
+        .end_hub_id = hub_b_uuid,
+        .start_hub_id = hub_a_uuid,
+    } });
+
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expectEqualStrings(mission_path, history.current_state.mission.?.path);
+    try testing.expectEqualStrings(hub_b_uuid, history.current_state.mission.?.end_hub.?);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+}
+
+test "map mission entry mid-level: abandon + re-enter with a new edge" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+
+    // Mid-level of the mission entered at A (a dangling edge's null end
+    // hub the first time), re-entering from the map with the A->B edge:
+    // the old run is abandoned (end_level{exit_mission} with the start
+    // hub as the arrival), the new entry carries the new edge's
+    // destination, and current_hub stays the edge's start hub throughout.
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission_path,
+        .end_hub_id = null,
+        .start_hub_id = hub_a_uuid,
+    } });
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expect(history.current_state.mission.?.end_hub == null);
+
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission_path,
+        .end_hub_id = hub_b_uuid,
+        .start_hub_id = hub_a_uuid,
+    } });
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expectEqualStrings(mission_path, history.current_state.mission.?.path);
+    try testing.expectEqualStrings(hub_b_uuid, history.current_state.mission.?.end_hub.?);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.clones.len);
+}

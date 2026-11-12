@@ -91,6 +91,13 @@ pub const MetaEvent = union(enum) {
         // replay-safe record of the edge. See DESIGN → Campaigns & the
         // Campaign Editor → The graph model.
         end_hub_id: ?[]const u8,
+        // The hub the mission is ENTERED FROM (the world-map entry path:
+        // the edge's start hub - current_hub on the way in, so abandoning
+        // the mission returns there; DESIGN → Campaigns & the Campaign
+        // Editor → Discovery + travel). Null = unchanged (the exit-tile
+        // + restart paths stand in the hub already; current_hub is
+        // already the entering hub).
+        enter_hub_id: ?[]const u8 = null,
     },
     end_mission: struct {
         hub_id: ?[]const u8,
@@ -110,6 +117,14 @@ pub const MetaEvent = union(enum) {
     // DESIGN → Architecture.
     end_level: struct {
         continuation: LevelExitContinuation = .default,
+        // The map-acting override for `.exit_mission`: suppress the exit's
+        // own hub return (end_mission -> start_hub) - the world-map
+        // travel / mission-entry cascades queue their REAL arrival
+        // (start_hub / start_mission) beneath the end_level, and the
+        // return's transitionScreen would clear the stack and eat it
+        // (the state.transitionScreen contract). Null/normal = the
+        // entering-hub return, the options-menu Exit Mission shape.
+        suppress_return_hub: bool = false,
     },
     start_hub: struct {
         hub_id: []const u8,
@@ -1248,6 +1263,29 @@ pub const PlayerInputEvent = union(enum) {
     // Options-menu "exit mission" button. Handler pushes
     // end_level{.exit_mission}.
     player_exit_mission: void,
+    // World-map travel (a hub click on the map): jump to a DISCOVERED
+    // hub (backtrack-only - see DESIGN → Campaigns & the Campaign
+    // Editor → Discovery + travel). From a hub: start_hub + end_hub
+    // (the exit-tile shape); mid-level: end_level{.exit_mission} with
+    // the destination override (the abandon ride - pickups kept, no
+    // clone). The hub uuid rides the event; the handler resolves the
+    // dir through the loaded campaign's table (state, never the
+    // filesystem - replay-safe).
+    player_travel_to_hub: struct {
+        hub_uuid: []const u8,
+    },
+    // World-map mission entry (an edge click on the map): equivalent to
+    // standing on the exit in the edge's start hub. The payload is the
+    // click-time RESOLVED edge (the mission-browser-row precedent):
+    // the mission path + the campaign edge's to-end destination (null =
+    // dangling, the entering-hub fallback) + the edge's start hub (the
+    // mission's enter hub - current_hub on the way in, DESIGN → Campaigns
+    // & the Campaign Editor → Discovery + travel).
+    player_start_mission_from_map: struct {
+        mission_path: []const u8,
+        end_hub_id: ?[]const u8,
+        start_hub_id: []const u8,
+    },
     // Options-menu "exit to menu" button. Handler branches on screen:
     // level → end_level{.exit_to_menu}; hub → end_hub + open_main_menu.
     player_exit_to_menu: void,
