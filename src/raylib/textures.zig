@@ -40,31 +40,20 @@ const DiskOffset = struct { dx: i32, dy: i32 };
 /// panic - the same class as the arena OOM it replaces.
 const path_buffer_size = 512;
 
-/// The file-source path for a sprite id. Shipped ids read
-/// `assets/{id}.png`; custom mission-bundled ids -
-/// `entities/custom/<mission-dir>/<file-stem>` /
-/// `decorations/custom/<mission-dir>/<file-stem>` - resolve to the
-/// mission directory in the persistent dir (the stem EMBEDS the mission
-/// dir name, so the path is derivable from the id alone - see DESIGN →
-/// Custom Missions & Online Services → the sprite id convention). The
-/// returned slice borrows `path_buffer`.
 /// Map a sprite id to its file path. Shipped art is `assets/{id}.png`.
-/// Custom ids (`entities/custom/...`, `decorations/custom/...`) are
-/// content-addressed: the segment chain after `custom/` IS the content
-/// path (file_source.customAssetTail - the same rule the loader's dims
-/// resolution uses), so the tail + `.png` is the read path and
-/// FileSource.readFile's tiers resolve it (persistent root, then
-/// embedded `data/` content - dreams vs campaign-bundled art). See
-/// DESIGN → Custom Missions & Online Services → Custom-asset paths.
+/// Custom ids are content-addressed by the ONE rule: the segment chain
+/// after `custom/` IS the content path (file_source.customAssetTail - the
+/// same rule the loader's dims resolution uses), so the tail + `.png` is
+/// the read path and FileSource.readFile's tiers resolve it (persistent
+/// root, then embedded `data/` content - dream vs campaign-bundled art).
+/// Both id shapes ride it: bare `custom/<path>/<stem>` (campaign
+/// backgrounds, mission-scanned art) and kind-prefixed
+/// `entities|decorations/custom/<path>/<stem>`. See DESIGN → Custom
+/// Missions & Online Services → Custom-asset paths.
 fn assetPathFor(sprite_id: []const u8, path_buffer: []u8) []const u8 {
-    const custom_kinds = [_][]const u8{ "entities/custom/", "decorations/custom/" };
-    for (custom_kinds) |custom_kind| {
-        if (std.mem.startsWith(u8, sprite_id, custom_kind)) {
-            const tail = file_source.customAssetTail(sprite_id) orelse
-                @panic("degenerate custom sprite id");
-            return std.fmt.bufPrint(path_buffer, "{s}.png", .{tail}) catch
-                @panic("failed to build custom asset path");
-        }
+    if (file_source.customAssetTail(sprite_id)) |tail| {
+        return std.fmt.bufPrint(path_buffer, "{s}.png", .{tail}) catch
+            @panic("failed to build custom asset path");
     }
     return std.fmt.bufPrint(path_buffer, "assets/{s}.png", .{sprite_id}) catch
         @panic("failed to build asset path");
