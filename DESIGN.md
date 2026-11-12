@@ -4500,6 +4500,15 @@ GameState field, or `pending_error`), the full-screen 9-slice panel is
 buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
 `update()` gate) so they work while the world is paused.
 
+**What the options menu blocks - and what it doesn't.** The menu is a
+pause, not an input vacuum: GAMEPLAY input (skill slots, swap weapons,
+drag/camera/idle input) is gated, but UI navigation stays live - the
+menu's own buttons via `options_action`, and the SURFACE toggles
+(inventory/gear/skills/inspect/world-map keybinds) via their dispatch
+hoisted above the modal gate in `handleAnytimeInput`. Any overlay can
+open on top of the menu (the stack model); Escape pops the map first,
+the menu second. The gate is the pause rule, not a z-order rule.
+
 **Two rules, learned the hard way:**
 
 1. **Don't gate `update()` before `processEvent` when the trigger is set

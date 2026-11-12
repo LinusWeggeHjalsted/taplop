@@ -319,6 +319,7 @@ working rules).
 - [overlay stack: dynamic z-order (any overlay on top of any other)](#overlay-stack-dynamic-z-order-any-overlay-on-top-of-any-other)
 - [overlay stack: toggle is raise-or-close (the covered-overlay wart)](#overlay-stack-toggle-is-raise-or-close-the-covered-overlay-wart)
 - [campaign browser: viewing other campaigns (2c remainder)](#campaign-browser-viewing-other-campaigns-2c-remainder)
+- [surface toggles dispatch above the options-menu gate (the map from the menu)](#surface-toggles-dispatch-above-the-options-menu-gate-the-map-from-the-menu)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20097,3 +20098,27 @@ background blocks input), the world-map button assertions (label +
 action), and the end-to-end handler test (open from the map, official
 pick = the active campaign clears the cache, local pick derives the
 graph with hub names, exactly the four open/close toggles recorded).
+
+## surface toggles dispatch above the options-menu gate (the map from the menu)
+
+The world map could not be opened while the options menu was up: its
+keybind's consumption sat below handleAnytimeInput's "options menu open:
+block all other input" return, while the surfaces that DO work from the
+menu (settings, tips, credits) all route through options_action, which
+dispatches before that gate. The gate's real job is the PAUSE - blocking
+gameplay input - not z-order; with the overlay stack, opening the map on
+top of the menu is exactly the intended shape.
+
+Fix: the five in-game surface toggles (inventory/gear/skills/
+entity_inspect/world_map, all `player_toggle_ui_surface` pushes) moved
+to their own screen-gated dispatch ABOVE the modal gate; everything else
+in the in-game block (swap_weapons + the idle/skill paths it precedes)
+stays below it. The menu now blocks gameplay only - UI navigation is
+live, the same class as the menu's own buttons. The comment on the gate
+names the split.
+
+Test: the end-to-end pair in handler_tests_ui_surfaces (menu open on a
+level: the map keybind opens the map ON TOP with Escape popping the map
+first, then the menu; swap_weapons with an equipped weapon records
+nothing - the fixture weapon means the arm's own no-op gate cannot mask
+the block).

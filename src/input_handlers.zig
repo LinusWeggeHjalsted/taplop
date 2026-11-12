@@ -2962,7 +2962,55 @@ pub fn handleAnytimeInput(
         }
     }
 
-    // When options menu is open, block all other input
+    // Surface toggles (the middle panels + the world map): UI navigation,
+    // not gameplay - they dispatch BEFORE the options-menu gate below so
+    // any overlay can open on top of the menu (the stack model; the
+    // options menu's own buttons work the same way via options_action
+    // above). Screen-gated to level/hub, their surfaceToggleLegal screens;
+    // one `player_toggle_ui_surface` per key (the surface state rides
+    // GameState - see DESIGN → UI Framework → UI state classification).
+    // The push+drain is the swap_weapons interjection shape: processed
+    // inside this update call, so this frame's own gates below see the
+    // flipped state.
+    if (history.current_state.screen == .level or history.current_state.screen == .hub) {
+        const in_game = anytime.in_game;
+        if (in_game.toggle_inventory) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .inventory,
+            } });
+        }
+
+        if (in_game.toggle_gear) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .gear,
+            } });
+        }
+
+        if (in_game.toggle_skills) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .skills,
+            } });
+        }
+
+        if (in_game.toggle_entity_inspect) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .entity_inspect,
+            } });
+        }
+
+        // Entity inspect is also right-click driven (handleRightClickInspect,
+        // run later in update); a keyboard binding for it is not wired.
+
+        if (in_game.toggle_world_map) {
+            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                .surface = .world_map,
+            } });
+        }
+    }
+
+    // When options menu is open, block all other input (gameplay stays
+    // paused while the menu is up - the surface toggles above already
+    // dispatched).
     if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu)) return;
 
     if (anytime.scroll_delta != 0) {
@@ -3113,49 +3161,12 @@ pub fn handleAnytimeInput(
         }
     }
 
-    // In-game inputs only apply when in a hub or level
+    // In-game GAMEPLAY inputs only apply when in a hub or level (the
+    // surface toggles already dispatched above the options-menu gate).
     const current = &history.current_state;
     const allocator = history.current_arena.allocator();
     if (current.screen == .hub or current.screen == .level) {
         const in_game = anytime.in_game;
-
-        // Middle-panel + overlay toggles: one `player_toggle_ui_surface`
-        // per key (the surface state rides GameState - see DESIGN → UI
-        // Framework → UI state classification). The push+drain is the
-        // swap_weapons interjection shape: processed inside this update
-        // call, so the frame's own gates below see the flipped state.
-        if (in_game.toggle_inventory) {
-            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                .surface = .inventory,
-            } });
-        }
-
-        if (in_game.toggle_gear) {
-            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                .surface = .gear,
-            } });
-        }
-
-        if (in_game.toggle_skills) {
-            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                .surface = .skills,
-            } });
-        }
-
-        if (in_game.toggle_entity_inspect) {
-            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                .surface = .entity_inspect,
-            } });
-        }
-
-        // Entity inspect is also right-click driven (handleRightClickInspect,
-        // run later in update); a keyboard binding for it is not wired.
-
-        if (in_game.toggle_world_map) {
-            pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                .surface = .world_map,
-            } });
-        }
 
         // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
         // dedicated step in update(), after UI arbitration - it needs

@@ -317,3 +317,45 @@ test "campaign browser: opens from the map, picks view (cache), the active pick 
     // closes = 4 events; the picks themselves are session-side).
     try testing.expectEqual(events_before + 4, history.event_history.items.len);
 }
+
+test "options menu open: surface toggles dispatch (map opens on top), gameplay stays paused" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .main_hand_weapon = .{
+            .name = "sword",
+            .weapon_type = .sword,
+        } }},
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+    ));
+    runToIdle(&history);
+
+    // The menu open over the level. The map keybind is a surface toggle -
+    // UI navigation, not gameplay - so it dispatches before the modal gate
+    // and the map opens ON TOP of the menu (the stack model; the menu's
+    // own buttons work the same way via options_action).
+    history.current_state.ui_surfaces.openSurface(.options_menu);
+    var anytime: @import("input.zig").AnytimeInput = .{};
+    anytime.in_game.toggle_world_map = true;
+    input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    try testing.expectEqual(types.UiSurfaceId.world_map, history.current_state.ui_surfaces.topOverlay());
+
+    // GAMEPLAY stays paused under the menu: swap_weapons (the fixture's
+    // weapon means the no-op gate cannot mask the block) records nothing.
+    var gameplay_anytime: @import("input.zig").AnytimeInput = .{};
+    gameplay_anytime.in_game.swap_weapons = true;
+    const events_before = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, gameplay_anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expectEqual(events_before, history.event_history.items.len);
+
+    // Escape pops the map first, then the menu (the layered close).
+    input_handlers.handleAnytimeInput(&history, .{ .escape = true }, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    input_handlers.handleAnytimeInput(&history, .{ .escape = true }, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+}
