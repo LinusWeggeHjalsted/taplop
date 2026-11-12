@@ -231,6 +231,43 @@ test "options menu on the main menu: credits toggles via options_action; exit ga
     try testing.expect(history.session.quit_requested);
 }
 
+test "toggling a covered overlay raises it (the map behind tips)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // The scenario that motivated the raise semantics, end to end through
+    // the recorded path: open the map (keybind/top-bar button), open tips
+    // (the top-bar `?`), then fire the map toggle AGAIN - the icon reads
+    // as "bring to front", so the covered map RAISES to the top instead
+    // of closing invisibly behind tips.
+    var open_map: input.AnytimeInput = .{};
+    open_map.in_game.toggle_world_map = true;
+    input_handlers.handleAnytimeInput(&history, open_map, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+
+    var open_tips: input.AnytimeInput = .{};
+    open_tips.options_action = .open_tips;
+    input_handlers.handleAnytimeInput(&history, open_tips, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
+
+    input_handlers.handleAnytimeInput(&history, open_map, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
+    try testing.expectEqual(types.UiSurfaceId.world_map, history.current_state.ui_surfaces.topOverlay());
+
+    // Escape pops the raised map first; tips survives beneath it.
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
+}
+
 test "escape: closes the topmost full-screen overlay only" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

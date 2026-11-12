@@ -4471,6 +4471,17 @@ The full combat log has no view yet (and no open path); when it lands it
 joins the stack like every other overlay - the dispatch loop in view() is
 the seam.
 
+**The toggle verb is raise-or-close** (taskbar-button semantics): a
+surface's toggle (keybind, top-bar button, menu button - all the
+`player_toggle_ui_surface` paths) OPENS it on top when closed, RAISES it
+to the top when open but covered (remove + re-append), and closes it
+only when it is the topmost. The top bar stays clickable above every
+overlay, so a covered surface's icon reads as "bring to front" and must
+behave like it - toggling the hidden copy closed invisibly behind
+whatever covers it was the wart that motivated the semantics. Back
+buttons + Escape are close paths and never raise (`close` / the
+stack-pop rung).
+
 Full-screen modal overlays - the options menu, the error popup, the
 mission-fail overlay, the mission-complete overlay - share a structure:
 `view()` builds them when a condition is true (a SessionState flag, a

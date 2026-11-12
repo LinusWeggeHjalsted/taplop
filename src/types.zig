@@ -2819,7 +2819,8 @@ pub const UiSurfaceState = struct {
     /// compacts), so slot order IS z-order - the last occupied slot draws
     /// on top and Escape closes it first. A reopened surface lands on top
     /// instead of recalling its pre-close slot (the middle-panel
-    /// precedent). The middle panels are not stack members (they are
+    /// precedent), and TOGGLING a covered surface raises it to the top
+    /// (see `toggle`). The middle panels are not stack members (they are
     /// side-by-side layout, not z-order).
     open_overlays: [max_open_overlays]?UiSurfaceId =
         @splat(null),
@@ -2833,12 +2834,19 @@ pub const UiSurfaceState = struct {
     /// keyboard / menu-button semantics). The entity-inspect toggle also
     /// drops the panel's target (opens untargeted, like the keybind
     /// always did).
+    ///
+    /// The overlay arm is raise-or-close (the taskbar-button semantics):
+    /// a covered overlay's toggle RAISES it to the top instead of closing
+    /// the hidden copy behind whatever covers it - the top-bar buttons
+    /// stay clickable above every overlay, so the icon reads as "bring to
+    /// front" and must behave like it. Toggling the TOPMOST overlay (or
+    /// the only one) closes it.
     pub fn toggle(self: *UiSurfaceState, surface: UiSurfaceId) void {
         switch (surface) {
             // The stackable overlays share one arm (append on open,
-            // remove on close - slot order is z-order). Listed explicitly
-            // so a NEW surface id still fails this switch until its
-            // treatment is decided.
+            // raise-or-close on toggle - slot order is z-order). Listed
+            // explicitly so a NEW surface id still fails this switch until
+            // its treatment is decided.
             .options_menu,
             .settings,
             .load_save_menu,
@@ -2849,7 +2857,12 @@ pub const UiSurfaceState = struct {
             .full_combat_log,
             => {
                 if (self.isOverlaySurfaceOpen(surface)) {
-                    self.closeOverlaySurface(surface);
+                    if (self.topOverlay() == surface) {
+                        self.closeOverlaySurface(surface);
+                    } else {
+                        self.closeOverlaySurface(surface);
+                        self.openSurface(surface);
+                    }
                 } else {
                     self.openSurface(surface);
                 }
@@ -3031,6 +3044,16 @@ pub const UiSurfaceState = struct {
         }
     }
 
+    /// The topmost open overlay (the last opened - the one that draws on
+    /// top and that Escape pops first), or null when the stack is empty.
+    pub fn topOverlay(self: *const UiSurfaceState) ?UiSurfaceId {
+        var top: ?UiSurfaceId = null;
+        for (self.open_overlays) |maybe_surface| {
+            if (maybe_surface) |open| top = open;
+        }
+        return top;
+    }
+
     fn isOverlaySurfaceOpen(self: *const UiSurfaceState, surface: UiSurfaceId) bool {
         for (self.open_overlays) |maybe_surface| {
             if (maybe_surface) |open| {
@@ -3136,12 +3159,14 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     try std.testing.expect(surfaces.isSurfaceOpen(.settings));
     try std.testing.expect(surfaces.isSurfaceOpen(.inventory));
     try std.testing.expect(surfaces.isSurfaceOpen(.world_map));
-    // Toggle flips back; closing compacts, so the rest keep their order.
-    surfaces.toggle(.options_menu);
-    try std.testing.expect(!surfaces.isSurfaceOpen(.options_menu));
+    // Toggle flips back - the TOPMOST one (the combat log, opened
+    // last): closing compacts, so the rest keep their order. (Toggling a
+    // covered surface would RAISE it - the dedicated raise test below.)
+    surfaces.toggle(.full_combat_log);
+    try std.testing.expect(!surfaces.isSurfaceOpen(.full_combat_log));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .settings, .load_save_menu, .credits, .editor_browser, .world_map, .full_combat_log, null, null },
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .world_map, null, null },
         &surfaces.open_overlays,
     );
 }
@@ -3151,8 +3176,10 @@ test "UiSurfaceState: closing a mid-stack overlay compacts; reopen lands on top"
     surfaces.openSurface(.options_menu);
     surfaces.openSurface(.tips);
     surfaces.openSurface(.world_map);
-    // Close the BOTTOM-most entry: the rest shift down in order.
-    surfaces.toggle(.options_menu);
+    // Close the BOTTOM-most entry via the stack primitive (toggle would
+    // RAISE a covered surface - the raise test above): the rest shift
+    // down in order.
+    surfaces.closeOverlaySurface(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
         &.{ .tips, .world_map, null, null, null, null, null, null },
@@ -3172,6 +3199,48 @@ test "UiSurfaceState: closing a mid-stack overlay compacts; reopen lands on top"
         &.{ .tips, .world_map, .options_menu, null, null, null, null, null },
         &surfaces.open_overlays,
     );
+}
+
+test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
+    var surfaces = UiSurfaceState{};
+    surfaces.openSurface(.world_map);
+    surfaces.openSurface(.tips);
+
+    // Toggling the COVERED world map raises it to the top - it does not
+    // close the hidden copy behind tips (the taskbar-button semantics:
+    // the top-bar icon reads as "bring to front").
+    surfaces.toggle(.world_map);
+    try std.testing.expect(surfaces.isSurfaceOpen(.world_map));
+    try std.testing.expect(surfaces.isSurfaceOpen(.tips));
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, .world_map, null, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
+
+    // Toggling the (now) topmost surface closes it - the raise branch
+    // must not turn every toggle into a raise.
+    surfaces.toggle(.world_map);
+    try std.testing.expect(!surfaces.isSurfaceOpen(.world_map));
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, null, null, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
+
+    // A raise from mid-stack preserves the relative order of the rest
+    // (the closeOverlaySurface compaction + openSurface append).
+    surfaces.openSurface(.options_menu);
+    surfaces.openSurface(.settings); // stack: tips, options_menu, settings
+    surfaces.toggle(.options_menu);
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, .settings, .options_menu, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
+
+    // topOverlay agrees throughout (the raise decision's read).
+    try std.testing.expectEqual(UiSurfaceId.options_menu, surfaces.topOverlay().?);
 }
 
 test "UiSurfaceState.toggle entity_inspect drops the target (the keyboard shape)" {

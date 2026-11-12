@@ -317,6 +317,7 @@ working rules).
 - [world map: edge rendering polish (2c step 3 riders)](#world-map-edge-rendering-polish-2c-step-3-riders)
 - [Session reflection: 2c steps 1-3 + the build-bug fix + the docs change](#session-reflection-2c-steps-1-3--the-build-bug-fix--the-docs-change)
 - [overlay stack: dynamic z-order (any overlay on top of any other)](#overlay-stack-dynamic-z-order-any-overlay-on-top-of-any-other)
+- [overlay stack: toggle is raise-or-close (the covered-overlay wart)](#overlay-stack-toggle-is-raise-or-close-the-covered-overlay-wart)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20006,3 +20007,30 @@ was behavior-neutral; the two slice-3 test edits were the editor-browser
 escape test opening menu/browser in the intended order - it had them
 backwards, which the fixed ladder used to paper over - and the derived
 walk skipping world_map as under-test, since it is one of the riders).
+
+## overlay stack: toggle is raise-or-close (the covered-overlay wart)
+
+Rider on the overlay-stack rework above, found hands-on immediately after:
+with the map open and tips opened over it, firing the map toggle again
+CLOSED the map invisibly behind tips - the top-bar icon reads as "bring
+to front" (the bar is clickable above every overlay by design), so it
+must behave like it. `toggle`'s overlay arm is now three-way: closed ->
+open on top; open but covered -> RAISE to top (remove + re-append,
+compaction preserving the rest's order); topmost -> close. `close` (Back
+buttons), `closeAll`, and the Escape stack-pop are close paths and never
+raise. The decision read is the new `topOverlay()` (the last occupied
+slot - the same read the escape rung and the view's emission order use,
+so all three agree by construction).
+
+Tests: a dedicated types.zig raise test (raise from covered, close when
+topmost, raise from mid-stack preserves the rest's order), an
+end-to-end recorded-path test (map -> tips -> map toggle again raises
+the map; Escape then pops the raised map first), and the two older
+tests that toggled COVERED surfaces expecting a close were updated to
+match the new semantics (one closes the topmost instead, one uses the
+`closeOverlaySurface` primitive directly - its intent is pure
+compaction, not the toggle verb).
+
+Replay note: a handler-behavior change - old session logs containing a
+toggle-while-covered replay differently and fail strict verification at
+that event (the settled pre-release posture: re-record, don't migrate).
