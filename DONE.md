@@ -316,6 +316,7 @@ working rules).
 - [campaign-editor slice 2c, step 3: the world-map overlay renders](#campaign-editor-slice-2c-step-3-the-world-map-overlay-renders)
 - [world map: edge rendering polish (2c step 3 riders)](#world-map-edge-rendering-polish-2c-step-3-riders)
 - [Session reflection: 2c steps 1-3 + the build-bug fix + the docs change](#session-reflection-2c-steps-1-3--the-build-bug-fix--the-docs-change)
+- [overlay stack: dynamic z-order (any overlay on top of any other)](#overlay-stack-dynamic-z-order-any-overlay-on-top-of-any-other)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19934,3 +19935,74 @@ Points surfaced, and where each went:
   classes the headless suite cannot see. The assetPathFor fix is
   the belong-don't-fit lesson again: the rule now lives in ONE
   place and the raylib seam delegates to it.
+
+## overlay stack: dynamic z-order (any overlay on top of any other)
+
+The overlay ordering rework, prompted by a UX wart the world map surfaced:
+opening tips from the map's top bar rendered tips BEHIND the map, because
+view()'s emission order was a hardcoded ladder (a historical artifact of
+each surface being its own bool - bools cannot remember open order) and
+tips' rung sat below the map's. Rather than patch the one pair, the
+ordering model was generalized: any overlay can now open on top of any
+other, and Escape closes from the top. Three slices, each a clean
+behavioral baseline:
+
+- **Slice 1 - representation.** The six per-surface bools
+  (`options_menu_open`, ...) + the two-slot `open_full_screen_overlays`
+  mini-stack collapsed into ONE stack on UiSurfaceState:
+  `open_overlays: [8]?UiSurfaceId`, ordered by open time with the
+  middle-panels' contiguous-prefix + compaction + reopen-lands-on-top
+  semantics. `FullScreenOverlayId` retired (world_map / full_combat_log
+  are ordinary UiSurfaceIds). The event vocabulary is untouched
+  (`toggle_ui_surface` still the only verb), so old session logs replay
+  identically and undo/redo needed nothing. Direct-write sites (console
+  `dump ui`, tests) route through the new `openSurface`. Zero behavior
+  change: view() + escape still walked their fixed ladders, reading
+  isSurfaceOpen.
+- **Slice 2 - dynamic emission.** view()'s seven stackable if-blocks
+  became one loop over the stack (bottom-up = painter order) dispatching
+  to the builders; the mission complete/fail announcements moved to a
+  fixed position ABOVE the stack (death/completion take precedence over
+  anything the player had open - a deliberate edge-case change: settings
+  no longer covers the fail overlay). The z-order census was rewritten
+  from pinning one canonical order to pinning the DYNAMIC property:
+  forced frames in deliberately non-canonical open orders (neither
+  matches the old ladder), asserting emission order == open order, with
+  the announcements + error popup + top bar + tooltip + FPS fixed above.
+  Frame 2 opens the world map LAST (top of stack, over the options
+  menu) - the exact pairing the deleted 2c z-order rider asked for, so
+  that rider is subsumed and its TODO text removed.
+- **Slice 3 - escape pops the top.** The escape ladder collapsed from
+  nine rungs to three: mission complete, mission fail, pop-the-stack-top
+  (the topmost open overlay, whatever kind - the same slot the view
+  draws on top, so the two cannot disagree). The per-surface coverage
+  gate (`escapeCoverageCheck`) retired with its job: every stackable
+  surface is popped automatically, and the one remaining decision
+  (stack member vs middle panel) is pinned by a bidirectional comptime
+  check that `escape_excluded_surfaces` mirrors the `MiddlePanelId` set
+  exactly (plus the compiler-forced bucketing switches in
+  UiSurfaceState). The derived escape test now walks the UiSurfaceId
+  enum (via the pub `escapeExcluded`) instead of the ladder, so a new
+  stackable surface gets layered-close coverage for free; a dedicated
+  test pins the headline behavior (map opened after the menu -> Escape
+  closes the MAP first; reverse order flips it).
+
+Behavior changes beyond the mechanism (all intended): the
+tips-behind-map wart (any stacking order now renders intuitively);
+mission complete/fail cover everything (see above); Escape now closes
+the true topmost overlay regardless of kind (previously a fixed
+kind-priority, e.g. the options menu always closed before the map even
+when the map was on top); the unreachable load-save-vs-credits fixed
+order became open order. The console `dump ui` output changed shape
+(five per-surface bool lines -> one `open_overlays:` line listing the
+stack bottom-first, which carries the order information the old lines
+couldn't).
+
+Tests: the census (2 dynamic frames), the derived enum walk, the
+map-over-menu pop test, the compaction/reopen tests in types.zig, and
+the whole existing suite unchanged-but-passing per slice (the slice-1
+suite passing unmodified was the proof the representation swap alone
+was behavior-neutral; the two slice-3 test edits were the editor-browser
+escape test opening menu/browser in the intended order - it had them
+backwards, which the fixed ladder used to paper over - and the derived
+walk skipping world_map as under-test, since it is one of the riders).

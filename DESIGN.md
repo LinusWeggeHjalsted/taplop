@@ -6456,8 +6456,8 @@ overlay itself stays legal there). The OPEN state is class-1 (`UiSurfaceId.tips`
 affordance (`UiState.tips_index`, the settings_tab convention -
 `Action.cycle_tips` + the `tips_direction` payload mutate it directly at
 the input layer, off the undo timeline; wraps, no-ops on a single-tip
-list). The z-order rung: just above the main-menu overlays, under
-mission-complete/fail. The tips file: Metadata + a `Tips` section, one
+list). It is an overlay-stack member like any other (opens on top of
+whatever is up; Escape pops it when topmost). The tips file: Metadata + a `Tips` section, one
 `tip <prose>` entry group per tip (`parser.tips_sections` /
 `tips_file_format_version` v1), loaded at startup through
 `loadConfigWithFallback` (embedded + shadow) into the history

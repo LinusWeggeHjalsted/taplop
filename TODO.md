@@ -393,15 +393,10 @@ work:
           uuid-deduped, persistent-wins - the listMissions pattern) +
           the picker UI in the map overlay. The map surface itself
           (buildWorldMap + curve element + edge table + top-bar button)
-          is DONE - DONE.md, "campaign-editor slice 2c, step 3".
-          Rider (from the session reflection): a view()-level Z-ORDER
-          contract test - when the world map + options menu are both
-          open, the map's elements must emit AFTER the menu's in the
-          flat list (the painter-order bug class the hands-on pass
-          caught: the map rendered under the full-screen menu, green
-          through every structure test). Covers the overlay stack
-          generally (world_map, full_combat_log) - view() is pure, so
-          it is headless-testable.
+          is DONE - DONE.md, "campaign-editor slice 2c, step 3". (The
+          z-order contract-test rider is DONE too - subsumed by the
+          overlay-stack rework's dynamic census; DONE.md, "overlay stack:
+          dynamic z-order".)
     - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
           backtrack-to-discovered legality) + mission start
           (player_start_mission_from_map; start-hub-discovered
