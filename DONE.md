@@ -321,6 +321,7 @@ working rules).
 - [campaign browser: viewing other campaigns (2c remainder)](#campaign-browser-viewing-other-campaigns-2c-remainder)
 - [surface toggles dispatch above the options-menu gate (the map from the menu)](#surface-toggles-dispatch-above-the-options-menu-gate-the-map-from-the-menu)
 - [map acting: travel + mission entry from the world map (2d)](#map-acting-travel--mission-entry-from-the-world-map-2d)
+- [world map: tooltip + hover highlight track the full arrow](#world-map-tooltip--hover-highlight-track-the-full-arrow)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20191,3 +20192,28 @@ swallowed the click - the exact interaction the test exists to catch),
 fixed by giving hub A the A->B exit from the start; and the edge
 mission_dir addressing is the FULL content path (the consumption arm
 uses it as-is, not the exit-tile path's basename rebuild).
+
+## world map: tooltip + hover highlight track the full arrow
+
+Two polish riders from the hands-on pass, both rooted in the same cause:
+the edge button's rect was a 0x0 box at the curve's start point, so the
+tooltip anchored its CORNER on the arrow tip (a self-loop's start = its
+arrowhead tip) and the spriteless-hover branch drew its stroked-rect
+outline around nothing (the tiny mark at the anchor).
+
+The fix made the button's `hit_curve` the ONE representation of the
+drawn arrow, carrying its outline-inclusive width (black outline + inner
+stroke, 24px) + the dashed/arrowhead flags, and everything derives from
+it: the hit region (sampled polyline, unchanged semantics - now covering
+the drawn arrow's full footprint), the tooltip bounds (the new
+`element.curveBounds` - the sampled bbox incl. the chevron arms, padded
+by width/2, so `placeTooltip`'s quadrant logic frames the whole arrow),
+and the hover highlight (draw.zig's curve-geometry draw factored into
+`drawCurveGeometry`, shared by the `.curve` arm; the hovered hit-curve
+button draws the same geometry widened by one outline_thickness per
+side, inside the outline-stripe scope - a marching-stripe rim around
+the FULL arrow, sitting OUTSIDE the black outline per the settled rule
+that black outlines are part of the art). The button emits BEFORE the
+stroke pair so the wider rim renders beneath the black outline +
+lightest stroke (the curves are hit-test-transparent, so emission order
+only affects paint).

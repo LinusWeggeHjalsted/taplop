@@ -3545,9 +3545,17 @@ action + payload + tooltip. Hubs: `travel_to_map_hub` + the hub index
 (`map_hub` payload), emitted only for LIT hubs (discovered-or-start =
 travel legality - what the map lights is what is clickable). Edges:
 `start_mission_from_map_edge` + the edge index (`map_edge` payload),
-emitted only for LIT edges with a resolvable mission, with the
-button's `hit_curve` carrying the drawn stroke's geometry (the
-sampled-polyline hit region). No new element contract for input.
+emitted only for LIT edges with a resolvable mission, BEFORE the stroke
+pair (painter order - the hover rim renders beneath the art). The
+button's `hit_curve` carries the DRAWN ARROW's geometry at its
+outline-inclusive width (black outline + inner stroke + dashed/
+arrowhead flags): the hit region (sampled polyline), the tooltip
+bounds (`curveBounds` - the bbox incl. the chevron, so the tooltip
+frames the whole arrow), and the hover highlight (the same geometry
+widened by one `outline_thickness` per side, stripe-treated - the rim
+sits OUTSIDE the black outline, which is part of the arrow art, the
+sprite-backed convention) all derive from the one curve, so they cannot
+disagree. No new element contract for input.
 - **One sampling function for the curve.** `sampleCurve` in
 element.zig is the single deterministic bezier sampler (fixed
 segment count in v1): the backend draws the sampled line strip and
