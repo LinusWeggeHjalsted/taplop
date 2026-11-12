@@ -3411,14 +3411,24 @@ Only one campaign is ACTIVE at a time (the one whose world the player is
 in - `current_campaign_uuid` on PlayerData), but the player can VIEW any
 installed campaign's map at any time and SWITCH by acting on it:
 
-- **Viewing ≠ state.** The map overlay's campaign picker lists
-  `listCampaigns` (the `listMissions` pattern: embedded official scan +
-  persistent scan, deduped by uuid with persistent winning). Picking a
-  campaign loads ITS graph into a session-scoped cache (the
-  `editor_local_missions` pattern: idle-input acquisition, SessionState-
-  held, replay-irrelevant). Recorded clicks carry fully resolved payloads
-  (campaign uuid + dir, hub uuid + dir, mission path, end destination) -
-  the mission-browser-row precedent; legality never reads the cache.
+- **Viewing ≠ state.** The world map's top-left campaign button (the
+  viewed campaign's name, no prefix) opens the CAMPAIGN BROWSER - a
+  full-screen stackable overlay (`UiSurfaceId.campaign_browser`) with
+  the editor browser's split (Your Campaigns / Official tabs, the
+  shared list-browser body in browsers.zig). The tabs list
+  `listCampaigns` (the persistent `campaigns/` scan) +
+  `listOfficialCampaigns` (the embedded scan) - the `listMissions`
+  pattern, scan-on-open, SessionState-held. Picking a row derives that
+  campaign's graph (`shared.loadCampaignGraph` - the same loader chain
+  as the active campaign's load, through plain reads) into the
+  session-scoped cache (`SessionState.viewed_campaign`; picking the
+  ACTIVE campaign clears it - the map falls back to the live GameState
+  campaign) and closes the browser via the recorded surface toggle;
+  the pick itself is never recorded (replay-irrelevant, the
+  `editor_local_missions` pattern). Recorded clicks (2d acting) carry
+  fully resolved payloads (campaign uuid + dir, hub uuid + dir,
+  mission path, end destination) - the mission-browser-row precedent;
+  legality never reads the cache.
 - **The active campaign switches as a side effect of ARRIVAL.** The
   `start_hub` event carries campaign identity (`campaign_uuid` + resolved
   `campaign_dir`); its handler updates `current_campaign_uuid` + installs
@@ -3491,14 +3501,14 @@ names is an extension of an existing read, not a new one. The map view,
 the dim-undiscovered mirror, and (2d) acting legality + resolved event
 payloads read STATE; `view()` stays file-free.
 - **Viewing another campaign goes through the session-scoped graph
-cache** (the `editor_local_missions` pattern: idle-input acquisition,
-SessionState-held, replay-irrelevant): picking a campaign in the
-overlay's picker derives ITS graph with the same derive function into
-the cache. The picker lists `listCampaigns` (embedded + persistent,
-uuid-deduped, persistent-wins - the `listMissions` pattern), which
-lands WITH the picker (the 2e fold): a picker that cannot see
-persistent custom campaigns is a lie. Legality never reads the cache
-(see Campaign switching).
+  cache** (`SessionState.viewed_campaign`; the `editor_local_missions`
+  pattern: idle-input acquisition, SessionState-held, replay-irrelevant):
+  picking a campaign in the browser derives ITS graph with the same
+  loader chain into the cache. The browser's tabs list `listCampaigns`
+  (the persistent scan) + `listOfficialCampaigns` (the embedded scan -
+  the `listMissions` pattern); a picker that cannot see persistent
+custom campaigns is a lie, so both shipped with the browser. Legality
+  never reads the cache (see Campaign switching).
 - **Clickability rides the spriteless-Button seam.** The visual
 elements - hub icons (`image` or a filled shape) + `curve` edges -
 are decorative (`blocks_input = false`); a spriteless `button`

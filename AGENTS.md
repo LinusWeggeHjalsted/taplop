@@ -744,9 +744,13 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/ui/options_menu.zig` + `src/ui/main_menu.zig` - the options-menu
   overlay + the title screen (one surface per file, the siblings'
   granularity - the old six-surface menus.zig was split)
-- `src/ui/browsers.zig` - the load-save browser + the editor browser
-  (mission list tab): one row/scrollback machinery, two surfaces; the
-  shared scrollbar emitter lives in emit.zig
+- `src/ui/browsers.zig` - the load-save browser, the editor browser
+  (mission list tab), + the campaign browser (the world map's picker):
+  one row/scrollback machinery (the generic `buildListBrowserContent`),
+  N surfaces; the shared scrollbar emitter lives in emit.zig
+- `src/ui/world_map.zig` - the world-map overlay's surface (the
+  campaign graph's read-side mirror: background, hub icons, bezier
+  edges, the top-left campaign button that opens the campaign browser)
 - `src/ui/credits.zig` + `src/ui/tips.zig` - the credits screen + the
   tips overlay
 - `src/ui/settings.zig` - the settings screen (two tabs: controls + the

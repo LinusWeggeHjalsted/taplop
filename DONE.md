@@ -318,6 +318,7 @@ working rules).
 - [Session reflection: 2c steps 1-3 + the build-bug fix + the docs change](#session-reflection-2c-steps-1-3--the-build-bug-fix--the-docs-change)
 - [overlay stack: dynamic z-order (any overlay on top of any other)](#overlay-stack-dynamic-z-order-any-overlay-on-top-of-any-other)
 - [overlay stack: toggle is raise-or-close (the covered-overlay wart)](#overlay-stack-toggle-is-raise-or-close-the-covered-overlay-wart)
+- [campaign browser: viewing other campaigns (2c remainder)](#campaign-browser-viewing-other-campaigns-2c-remainder)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20034,3 +20035,65 @@ compaction, not the toggle verb).
 Replay note: a handler-behavior change - old session logs containing a
 toggle-while-covered replay differently and fail strict verification at
 that event (the settled pre-release posture: re-record, don't migrate).
+
+## campaign browser: viewing other campaigns (2c remainder)
+
+The campaign picker for VIEWING (the last 2c piece; acting from the map
+is 2d). Shape, per the session's design settle: the world map's top-left
+corner (immediately below the top bar) carries a button labeled with the
+VIEWED campaign's name (no prefix) - it opens the campaign browser, a
+full-screen stackable overlay (`UiSurfaceId.campaign_browser`) with the
+editor browser's split: Your Campaigns / Official tabs, rows, scrollbar,
+Back. No kind row / New / Import - campaign creation rides the campaign
+editor (slice 3).
+
+- **Scans** (file_source.zig, the listMissions pattern): `listCampaigns`
+  (persistent `campaigns/` - `listRootSubfolders`, the parameterized
+  mission-folder scan) + `listOfficialCampaigns` (embedded key scan -
+  `isOfficialCampaignKey`, the runtime-scan comptime-trap avoidance).
+  `CampaignEntry` is minimal (uuid, dir, name) - the picker rows show
+  the name alone; no mtime/level-count machinery (a short list of
+  worlds, not a browsable collection). Name fallback = the dir stem.
+  The near-clone duplication with the mission scans is ACCEPTED
+  (settled: the campaign probe is much simpler; forcing it through a
+  mission-shaped helper would fit, not belong - TODO keeps the line).
+- **The view cache** (`SessionState.viewed_campaign`): picking a row
+  derives the campaign's graph with `shared.loadCampaignGraph` - the
+  SAME loader chain as the active campaign's load (loadCampaign →
+  resolve hubs/missions → derive edges → background dims → integrity
+  checks) but through plain reads (no reconstruction cache: viewing is
+  replay-irrelevant). Picking the ACTIVE campaign (uuid match against
+  `player_data.current_campaign_uuid`) clears the slot - the map falls
+  back to the live GameState campaign. view() passes
+  `viewed_campaign orelse current.campaign`; the discovered groups
+  scope by uuid inside buildWorldMap, so the player's own progress
+  lights a viewed campaign's hubs when applicable.
+- **Input**: three options_action-routed actions (button-only, no
+  bindings ship): toggle (scan-on-open + fresh tab/scroll, the editor
+  browser's reset pattern; gated to map-or-browser open), tab switch
+  (direct UiState write), row pick (cache mutation + the recorded
+  browser-close toggle - Back ≡ pick on the undo timeline; the pick
+  itself records nothing). The browser joins main.zig's pause gate +
+  has its own wheel-scroll block.
+- **UI**: browsers.zig's mission-list body was extracted into the
+  generic `buildListBrowserContent` (comptime ListBrowserConfig: entry
+  type, tab type, actions, payload variants, labels) - one machinery,
+  three surfaces, so the campaign browser is a thin wrapper + Back.
+  The whole thing rode the overlay-stack rework: the browser is an
+  ordinary stack member (opens over the map, Escape pops it first,
+  raise-or-close applies).
+
+Riders fixed en route: `loaders.freeCampaign` did not free the missions
+table (invisible while arena-backed; the view cache's repick path would
+have leaked it on the backing allocator) - fixed, and the
+deriveCampaignEdges test's compensating pre-free removed. `max_open_overlays`
+8 → 9 with the new surface (capacity = the stackable count, by
+construction).
+
+Tests: the scan fixtures (local campaigns with skip + name-fallback,
+empty, the shipped official one with its exact uuid), the browsers
+structure test (rows carry view payloads, Back fires the toggle, the
+background blocks input), the world-map button assertions (label +
+action), and the end-to-end handler test (open from the map, official
+pick = the active campaign clears the cache, local pick derives the
+graph with hub names, exactly the four open/close toggles recorded).

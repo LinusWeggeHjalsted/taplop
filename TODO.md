@@ -21,8 +21,13 @@ Test by running `zig build run` and clicking through.
       near-clones (the same mission.txt-parse-in-arena dance, different
       roots; each new metadata field grows both) and now each carries its
       own level-count derivation (the persistent folder scan vs the
-      comptime embedded-map count). A shared scan helper would freeze the
-      duplication. Not urgent - a line to keep it visible.
+      comptime embedded-map count). The campaign scans
+      (`listCampaigns`/`listOfficialCampaigns`) joined the family with a
+      deliberately ACCEPTED third copy (settled: the campaign probe is
+      much simpler - one campaign.txt read, no counts - so forcing it
+      through a mission-shaped helper would fit, not belong; revisit if a
+      fourth scanner appears). A shared scan helper would freeze the rest.
+      Not urgent - a line to keep it visible.
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
@@ -386,17 +391,6 @@ work:
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] 2c remainder: the campaign picker for viewing other campaigns
-          - the session-scoped graph cache (the editor_local_missions
-          pattern: idle-input acquisition, SessionState-held, the same
-          derive fns) + listCampaigns (embedded + persistent,
-          uuid-deduped, persistent-wins - the listMissions pattern) +
-          the picker UI in the map overlay. The map surface itself
-          (buildWorldMap + curve element + edge table + top-bar button)
-          is DONE - DONE.md, "campaign-editor slice 2c, step 3". (The
-          z-order contract-test rider is DONE too - subsumed by the
-          overlay-stack rework's dynamic census; DONE.md, "overlay stack:
-          dynamic z-order".)
     - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
           backtrack-to-discovered legality) + mission start
           (player_start_mission_from_map; start-hub-discovered
