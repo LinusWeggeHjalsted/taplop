@@ -106,10 +106,14 @@ pub fn loadCampaignAndPushHub(
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
 ) void {
-    // Build campaign file path: data/campaigns/{campaign_id}/campaign.txt
+    // Build campaign file path: campaigns/{campaign_id}/campaign.txt -
+    // content-root-relative (the official campaign resolves through the
+    // embedded `data/`-prefix bridge; custom campaigns live in the
+    // persistent dir at the same shape). See DESIGN → Campaigns & the
+    // Campaign Editor → Campaign content paths.
     const campaign_path = std.fmt.allocPrint(
         allocator,
-        "data/campaigns/{s}/campaign.txt",
+        "campaigns/{s}/campaign.txt",
         .{current.player_data.current_campaign},
     ) catch @panic("failed to allocate campaign path");
     // The campaign's content dir (the background mint + the integrity

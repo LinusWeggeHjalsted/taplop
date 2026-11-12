@@ -3373,9 +3373,9 @@ test "SessionState pending error: set, read, clear" {
     var session: SessionState = .{};
     try std.testing.expectEqual(@as(?[]const u8, null), session.pendingError());
 
-    session.setPendingError(arena.allocator(), "failed to parse data/campaigns/act_one.txt");
+    session.setPendingError(arena.allocator(), "failed to parse campaigns/act_one/campaign.txt");
     try std.testing.expectEqualStrings(
-        "failed to parse data/campaigns/act_one.txt",
+        "failed to parse campaigns/act_one/campaign.txt",
         session.pendingError().?,
     );
 
@@ -3592,7 +3592,7 @@ test "readReconstructionFileOptional: live read + absent marker, replay serve, l
 
     // LIVE: an existing file serves bytes; a missing file returns null and
     // caches the known-absent (empty) marker.
-    const existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    const existing = try history.readReconstructionFileOptional("campaigns/main_campaign/campaign.txt");
     try std.testing.expect(existing != null);
     try std.testing.expect(existing.?.len > 0);
     const missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
@@ -3603,7 +3603,7 @@ test "readReconstructionFileOptional: live read + absent marker, replay serve, l
     // absent deterministically even though the disk state is unchanged
     // (the point is replay never consults the disk here).
     history.replaying = true;
-    const replayed_existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    const replayed_existing = try history.readReconstructionFileOptional("campaigns/main_campaign/campaign.txt");
     try std.testing.expect(replayed_existing != null);
     const replayed_missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
     try std.testing.expect(replayed_missing == null);
@@ -3615,7 +3615,7 @@ test "readReconstructionFileOptional: live read + absent marker, replay serve, l
     // one returns null (caching its marker).
     history.reconstruction_disk_fallback = true;
     history.current_event_index += 1;
-    const fallback_existing = try history.readReconstructionFileOptional("data/campaigns/main_campaign/campaign.txt");
+    const fallback_existing = try history.readReconstructionFileOptional("campaigns/main_campaign/campaign.txt");
     try std.testing.expect(fallback_existing != null);
     const fallback_missing = try history.readReconstructionFileOptional("missions/nowhere/level_9.txt");
     try std.testing.expect(fallback_missing == null);

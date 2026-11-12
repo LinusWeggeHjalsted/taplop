@@ -73,6 +73,7 @@ next session meets it as a surprise instead of a known.
 - [Campaigns & the Campaign Editor](#campaigns--the-campaign-editor)
   - [The graph model](#the-graph-model)
   - [File formats (each change bumps its per-type file_format_version)](#file-formats-each-change-bumps-its-per-type-fileformatversion)
+  - [Campaign content paths (content-root-relative, one shape)](#campaign-content-paths-content-root-relative-one-shape)
   - [The map coordinate model](#the-map-coordinate-model)
   - [Discovery + travel (the world map's gameplay)](#discovery--travel-the-world-maps-gameplay)
   - [The campaign editor](#the-campaign-editor)
@@ -3220,6 +3221,28 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   (mission browser scan, content hash) derive the same rule from
   file_source listings directly; the count rule everywhere: the largest
   N with level_1..level_N all present (a gap truncates).
+
+### Campaign content paths (content-root-relative, one shape)
+
+Every campaign-content path - built at the three handler sites
+(`loadCampaignAndPushHub`'s campaign.txt, `start_hub`'s hub.txt, the
+exit-click mission path) and carried in events (`start_mission.
+mission_path`, `open_editor.mission_path`, the browser's
+`MissionEntry.path`) - is **content-root-relative**:
+`campaigns/<campaign>/...`, never `data/campaigns/...`. The `data/`
+prefix is EMBEDDED-MAP
+ADDRESSING, not part of a content path: the official campaign's files
+are embedded under `data/campaigns/...` keys, and `FileSource.readFile`
+bridges the two (persistent `campaigns/...` first - custom campaigns live
+there at the same shape - then embedded as-is, then embedded under the
+`data/` prefix; `readEmbeddedFile` mirrors the same two embedded tiers).
+One shape means official and custom campaigns address identically
+(reported as a review rider, PROJECTREVIEW Part 5: the hardcoded
+`data/campaigns/...` builds would never have resolved a custom campaign).
+Compat: a `data/`-prefixed path still resolves through the embedded
+as-is tier, so session logs recorded before the re-shape reconstruct
+unchanged. Related: Custom-asset paths (the `custom/campaigns/<c>/...`
+stem rule) is the same convention on the sprite-id side.
 
 ### The map coordinate model
 

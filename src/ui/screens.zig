@@ -762,7 +762,7 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
 
     const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section", .{ .r = 50, .g = 50, .b = 50 });
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse campaigns/act_one/campaign.txt: missing Campaign section", .{ .r = 50, .g = 50, .b = 50 });
 
     // Panel + header label(s) + body label(s) + (panel + button + label) from emitPanelButton.
     // At minimum: 1 nine_slice (popup) + 1 header text + N body texts + 1 nine_slice (button) + 1 button + 1 label.

@@ -304,6 +304,7 @@ working rules).
 - [doc_index.sh: the marker block owns its container heading](#docindexsh-the-marker-block-owns-its-container-heading)
 - [zig 0.17 migration](#zig-017-migration)
 - [discovered_hubs re-typed to a name set (review m-2.3)](#discoveredhubs-re-typed-to-a-name-set-review-m-23)
+- [campaign content paths re-shaped to content-root-relative (review Part 5 rider)](#campaign-content-paths-re-shaped-to-content-root-relative-review-part-5-rider)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19386,3 +19387,40 @@ just deleted:
   discovered set when a player switches campaigns) is now an inline open
   question on campaign-editor slice 2 in TODO, where discovery semantics
   are implemented.
+
+## campaign content paths re-shaped to content-root-relative (review Part 5 rider)
+
+The `start_hub` path-shape settle (the last campaign-editor prerequisite
+besides the slice-3 design spike): every campaign-content path is now
+content-root-relative - `campaigns/<campaign>/...` - never
+`data/campaigns/...`. The `data/` prefix is EMBEDDED-MAP ADDRESSING (the
+official campaign's bytes live under `data/`-prefixed keys in the embedded
+map), bridged by `FileSource.readFile`'s tier-4 `data/`-prefix lookup:
+persistent `campaigns/...` first (where custom campaigns live at the same
+shape), then embedded as-is, then embedded under `data/`. The review
+flagged the hardcoded `data/campaigns/{campaign}/...` builds
+(PROJECTREVIEW Part 5) because they would never have resolved a custom
+campaign in the persistent dir.
+
+Code: the three path-BUILD sites (`loadCampaignAndPushHub`'s campaign.txt,
+`start_hub`'s hub.txt, the exit-click mission path in
+player_input.zig) + the comptime `official_mission_dir_paths` scan (its
+OUTPUT strips the prefix, so the mission browser's `MissionEntry.path` -
+and the `open_editor` events it feeds - carries the content shape; the
+level-count probe re-adds the prefix against the raw embedded keys).
+`readEmbeddedFile` gained the same two embedded tiers as `readFile` minus
+the persistent dir, so a content-root-relative path addresses its embedded
+copy there too (`listOfficialMissions` reads mission.txt through it; the
+startup-fallback callers pass explicit `data/...` paths that hit as-is, so
+they are unaffected). `customStemForContentPath`'s leading-`data/` strip
+stays as a defensive accept (its callers now pass the unprefixed shape).
+Test fixtures updated across main.zig / input_tests_escape / state.zig /
+loaders.zig / file_source.zig; `loadCampaign`'s + `computeMissionHash`'s
+doc examples re-shaped.
+
+Compat: a `data/`-prefixed path still resolves through readFile's
+embedded-as-is tier, so session logs / validation replays recorded before
+the re-shape reconstruct unchanged - no re-record needed (the
+reconstruction-cache keys are the event-carried path strings, and old
+events carry old paths that hit the same bytes). Design record: DESIGN →
+Campaigns & the Campaign Editor → Campaign content paths.

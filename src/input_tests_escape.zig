@@ -241,7 +241,7 @@ test "escape: mission fail exits the mission" {
     history.current_state.player_data.current_hub = "camp_at_the_crossroads";
     history.current_state.mission = .{
         .name = "beginnings",
-        .path = "data/campaigns/main_campaign/missions/beginnings",
+        .path = "campaigns/main_campaign/missions/beginnings",
         .level_count = 1,
         .current_level_index = 1,
     };
@@ -283,7 +283,7 @@ test "escape: mission complete continues (dismisses the overlay)" {
     // and clears the field.
     history.current_state.last_completed_mission = .{
         .name = "beginnings",
-        .path = "data/campaigns/main_campaign/missions/beginnings",
+        .path = "campaigns/main_campaign/missions/beginnings",
     };
     pressEscape(&history);
     try testing.expect(history.current_state.last_completed_mission == null);

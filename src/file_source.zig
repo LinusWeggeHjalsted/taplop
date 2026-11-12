@@ -55,11 +55,16 @@ fn isInvalidRelativePath(path: []const u8) bool {
     return false;
 }
 
-/// The shipped campaign mission-directory paths (e.g.
-/// "data/campaigns/main_campaign/missions/beginnings") - the mission
-/// browser's Official tab. Comptime from the embedded map (shipped content
-/// is immutable per build); sorted for a stable browser order. Mirrors
-/// ui/editor_pickers.zig's `official_entity_sprite_stems` comptime scan.
+/// The shipped campaign mission-directory paths, content-root-relative
+/// (e.g. "campaigns/main_campaign/missions/beginnings") - the mission
+/// browser's Official tab, and the shape every campaign-content path uses
+/// (the official campaign's bytes resolve through readFile's embedded
+/// `data/`-prefix bridge; see DESIGN → Campaigns & the Campaign Editor →
+/// Campaign content paths). Comptime from the embedded map (shipped
+/// content is immutable per build; the map KEYS are `data/`-prefixed, so
+/// the scan strips the prefix at the boundary). Sorted for a stable
+/// browser order. Mirrors ui/editor_pickers.zig's
+/// `official_entity_sprite_stems` comptime scan.
 /// The OFFICIAL missions' level counts, comptime from the embedded map:
 /// dir path -> the largest N with level_1..level_N embedded. Shipped
 /// content is immutable per build, so this is machine-walked truth with
@@ -71,8 +76,8 @@ const official_mission_level_counts: []const u32 = build: {
     for (official_mission_dir_paths) |dir_path| {
         var count: u32 = 0;
         probe: while (true) {
-            const level_key = "level_" ++ std.fmt.comptimePrint("{d}", .{count + 1}) ++ ".txt";
-            const probe_path = dir_path ++ "/" ++ level_key;
+            const probe_path = "data/" ++ dir_path ++ "/level_" ++
+                std.fmt.comptimePrint("{d}", .{count + 1}) ++ ".txt";
             for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
                 if (std.mem.eql(u8, key, probe_path)) {
                     count += 1;
@@ -99,7 +104,10 @@ const official_mission_dir_paths: []const []const u8 = build: {
         if (campaign.len == 0 or std.mem.indexOfScalar(u8, campaign, '/') != null) continue;
         const stem = key[missions_index + "/missions/".len .. key.len - "/mission.txt".len];
         if (stem.len == 0 or std.mem.indexOfScalar(u8, stem, '/') != null) continue;
-        const dir_path = key[0 .. key.len - "/mission.txt".len];
+        // Strip the embedded map's `data/` addressing prefix: the dir path
+        // is a CONTENT path from here on (readFile/readEmbeddedFile re-add
+        // the prefix when they need the embedded key).
+        const dir_path = key["data/".len .. key.len - "/mission.txt".len];
         // Insert in sorted position (comptime slices have const elements -
         // no in-place sort).
         var insert_index: usize = 0;
@@ -131,9 +139,10 @@ pub fn customAssetTail(sprite: []const u8) ?[]const u8 {
 
 /// Mint a custom sprite stem for art living at `content_path` (a
 /// content-root-relative dir, e.g. `missions/<dir>` or
-/// `data/campaigns/<c>/hubs/<h>` - a leading `data/` is stripped since
-/// embedded content addresses as `data/<tail>` inside readFile's tiers).
-/// The inverse of `customAssetTail`: the minted stem's tail IS the dir.
+/// `campaigns/<c>/hubs/<h>`; a leading `data/` is also accepted and
+/// stripped - embedded content addresses as `data/<tail>` inside
+/// readFile's tiers). The inverse of `customAssetTail`: the minted
+/// stem's tail IS the dir.
 pub fn customStemForContentPath(content_path: []const u8, file_stem: []const u8, allocator: std.mem.Allocator) []const u8 {
     const path = if (std.mem.startsWith(u8, content_path, "data/"))
         content_path["data/".len..]
@@ -205,9 +214,12 @@ pub const FileSource = struct {
     /// dir. Used by the startup-config fallback (see DESIGN → Error
     /// Handling): when a persistent-dir shadow of a shipped config file
     /// fails to parse, the loader retries against the embedded copy so a
-    /// broken override can't crash the game. Returns `error.FileNotFound`
-    /// if the path isn't in the embedded map. Always returns freshly
-    /// allocated bytes (the caller owns them).
+    /// broken override can't crash the game. Same lookup tiers as
+    /// `readFile` minus the persistent dir: embedded as-is, then embedded
+    /// under a `data/` prefix (so a content-root-relative campaign path
+    /// like `campaigns/<c>/campaign.txt` addresses its embedded copy).
+    /// Returns `error.FileNotFound` if the path isn't in the embedded map.
+    /// Always returns freshly allocated bytes (the caller owns them).
     pub fn readEmbeddedFile(
         self: *const FileSource,
         allocator: std.mem.Allocator,
@@ -216,6 +228,14 @@ pub const FileSource = struct {
         _ = self; // the embedded map is a comptime-global, no instance state
         if (embedded_assets.map.get(path)) |bytes| {
             return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
+        }
+        if (!std.mem.startsWith(u8, path, "data/")) {
+            const embedded_key = std.fmt.allocPrint(allocator, "data/{s}", .{path}) catch
+                @panic("failed to build embedded data/ lookup key");
+            defer allocator.free(embedded_key);
+            if (embedded_assets.map.get(embedded_key)) |bytes| {
+                return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
+            }
         }
         return error.FileNotFound;
     }
@@ -1243,7 +1263,7 @@ test "listOfficialMissions: the shipped campaign missions with paths + metadata"
         try testing.expect(std.mem.startsWith(
             u8,
             entry.path,
-            "data/campaigns/main_campaign/missions/",
+            "campaigns/main_campaign/missions/",
         ));
         try testing.expect(std.mem.endsWith(u8, entry.path, stem));
         try testing.expect(entry.name.len > 0);

@@ -153,10 +153,12 @@ pub fn handleMetaEvent(
         },
         .start_hub => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
-            // Build hub file path: data/campaigns/{campaign}/hubs/{hub_id}/hub.txt
+            // Build hub file path: campaigns/{campaign}/hubs/{hub_id}/hub.txt
+            // (content-root-relative - see DESIGN → Campaigns & the
+            // Campaign Editor → Campaign content paths).
             const hub_path = std.fmt.allocPrint(
                 allocator,
-                "data/campaigns/{s}/hubs/{s}/hub.txt",
+                "campaigns/{s}/hubs/{s}/hub.txt",
                 .{ current.player_data.current_campaign, start.hub_id },
             ) catch @panic("failed to allocate hub path");
 

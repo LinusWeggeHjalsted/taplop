@@ -68,8 +68,12 @@ entry); only the campaign-editor riders remain, folded into that work.
 - [x] Re-type `PlayerData.discovered_hubs` to a name set - DONE (see
       DONE.md, "discovered_hubs re-typed to a name set (review m-2.3)");
       the per-campaign scoping question moved to slice 2 below.
-- Settle the `start_hub` path shape (`data/campaigns/...` vs
-      `campaigns/...`) in slice 2's design (PROJECTREVIEW Part 5 note).
+- [x] Settle the `start_hub` path shape - DONE: campaign-content paths
+      are content-root-relative `campaigns/...` everywhere; the `data/`
+      prefix is embedded-map addressing bridged by FileSource (see
+      DONE.md, "campaign content paths re-shaped to content-root-relative
+      (review Part 5 rider)"; design: DESIGN → Campaigns & the Campaign
+      Editor → Campaign content paths).
 
 **Optional polish (all seven DONE - the review-response sessions):**
 - [x] DONE.md generated header index + DESIGN section index - DONE

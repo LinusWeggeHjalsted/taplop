@@ -1275,7 +1275,7 @@ pub fn wrapRow(
                 while (index < span.text.len and span.text[index] == ' ') index += 1;
             } else if (is_slash) {
                 // A '/' is a break opportunity. Keep it with the preceding
-                // text as one token (so "data/campaigns/" is one piece), then
+                // text as one token (so "campaigns/" is one piece), then
                 // the next segment starts after the '/'. This keeps paths
                 // readable while allowing them to wrap at separators.
                 index += 1; // include the '/'

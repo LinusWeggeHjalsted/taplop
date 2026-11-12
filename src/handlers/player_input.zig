@@ -1095,7 +1095,7 @@ pub fn handlePlayerInputEvent(
                     {
                         const mission_path = std.fmt.allocPrint(
                             allocator,
-                            "data/campaigns/{s}/missions/{s}",
+                            "campaigns/{s}/missions/{s}",
                             .{ current.player_data.current_campaign, exit.mission_id },
                         ) catch @panic("failed to allocate mission path");
                         // The campaign edge's to-end: the exit's

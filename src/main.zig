@@ -1664,10 +1664,10 @@ test "ported campaign missions load through the event path" {
     };
 
     const missions = [_]struct { path: []const u8, min_entities: usize }{
-        .{ .path = "data/campaigns/main_campaign/missions/beginnings", .min_entities = 2 },
-        .{ .path = "data/campaigns/main_campaign/missions/forest", .min_entities = 2 },
-        .{ .path = "data/campaigns/main_campaign/missions/wetlands", .min_entities = 2 },
-        .{ .path = "data/campaigns/main_campaign/missions/seatown", .min_entities = 2 },
+        .{ .path = "campaigns/main_campaign/missions/beginnings", .min_entities = 2 },
+        .{ .path = "campaigns/main_campaign/missions/forest", .min_entities = 2 },
+        .{ .path = "campaigns/main_campaign/missions/wetlands", .min_entities = 2 },
+        .{ .path = "campaigns/main_campaign/missions/seatown", .min_entities = 2 },
     };
     for (missions) |mission| {
         // Fresh history per mission so each load is independent.
@@ -1780,7 +1780,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
 
     // Open the editor on the shipped beginnings mission.
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
-        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+        .mission_path = "campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
 
@@ -1988,7 +1988,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
 
     // Open editor + start playtest on beginnings level 0.
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
-        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+        .mission_path = "campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
@@ -2086,7 +2086,7 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
     const generation_before = history.current_state.world_generation;
 
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
-        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+        .mission_path = "campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
 
@@ -2125,10 +2125,10 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
 
     // Write a broken mission.txt at the beginnings path (shadows the
     // embedded copy). Invalid content → parseConfigFile fails.
-    dir.createDirPath(io, "data/campaigns/main_campaign/missions/beginnings") catch
+    dir.createDirPath(io, "campaigns/main_campaign/missions/beginnings") catch
         @panic("failed to create mission dir");
     dir.writeFile(io, .{
-        .sub_path = "data/campaigns/main_campaign/missions/beginnings/mission.txt",
+        .sub_path = "campaigns/main_campaign/missions/beginnings/mission.txt",
         .data = "this is not valid config",
     }) catch @panic("failed to write broken mission");
 
@@ -2162,7 +2162,7 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
 
     // Push start_mission pointing at the broken mission.
     event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
-        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+        .mission_path = "campaigns/main_campaign/missions/beginnings",
         .end_hub_id = null,
     } } }}, history.current_arena.allocator());
 

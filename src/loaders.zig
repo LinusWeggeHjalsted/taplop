@@ -2725,8 +2725,8 @@ pub fn loadHub(
 /// content-addressed sprite id (customStemForContentPath +
 /// `campaign_content_path`) so the render side resolves it through the
 /// standard custom-asset rule. `campaign_content_path` is the campaign
-/// dir (e.g. `data/campaigns/main_campaign` - the mint strips a leading
-/// `data/`). Hubs entries: hub_id is the identity (missing → silent
+/// dir, content-root-relative (e.g. `campaigns/main_campaign`; a leading
+/// `data/` is also accepted and stripped by the mint). Hubs entries: hub_id is the identity (missing → silent
 /// skip); position is the payload (missing/unparsable → warn + drop, the
 /// NPC-entry convention).
 pub fn loadCampaign(
@@ -4999,7 +4999,7 @@ test "loadCampaign parses metadata, background mint, + the Hubs section" {
 
     const sections = try parseConfigFile(raw_text, allocator, &campaign_sections);
 
-    const campaign = try loadCampaign(sections, "data/campaigns/main_campaign", allocator, null);
+    const campaign = try loadCampaign(sections, "campaigns/main_campaign", allocator, null);
     // Ownership contract: free the parse bytes BEFORE reading the campaign
     // (see the loadHub test above).
     freeParsedSections(sections, allocator);
@@ -6352,7 +6352,7 @@ test "the shipped beginnings player.txt loads in the save-shaped format" {
 
     const parsed = try parseConfigFileFromPath(
         &file_source,
-        "data/campaigns/main_campaign/missions/beginnings/player.txt",
+        "campaigns/main_campaign/missions/beginnings/player.txt",
         allocator,
         &player_loadout_sections,
     );
