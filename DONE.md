@@ -314,6 +314,7 @@ working rules).
 - [campaign-editor slice 2c, step 1: the curve UiElement](#campaign-editor-slice-2c-step-1-the-curve-uielement)
 - [campaign-editor slice 2c, step 2: the derived campaign edge table](#campaign-editor-slice-2c-step-2-the-derived-campaign-edge-table)
 - [campaign-editor slice 2c, step 3: the world-map overlay renders](#campaign-editor-slice-2c-step-3-the-world-map-overlay-renders)
+- [world map: edge rendering polish (2c step 3 riders)](#world-map-edge-rendering-polish-2c-step-3-riders)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19844,3 +19845,44 @@ Console smoke (piped boot + quit + help against the fresh binary)
 clean. Steps 1-3 of 2c done; the 2c TODO item is collapsed to the
 remainder (the campaign picker + listCampaigns + the session-scoped
 graph cache).
+
+## world map: edge rendering polish (2c step 3 riders)
+
+Three fixes from the first hands-on session with the map:
+
+- **Stroke gaps at curvature - ROOT CAUSE: raylib's `drawSplineLinear`
+  has no joins by default.** Its miter-join path sits behind
+  `SUPPORT_SPLINE_MITERS` (off in the default build), so each sampled
+  segment is a bare quad with butt ends - sharp curvature (the
+  self-loop teardrops) shows notches between segments. Fix: the
+  backend draws solid strokes itself - `drawLineEx` per sampled
+  segment + a filled `drawCircleV` at every sample (round joins +
+  round caps, structurally gap-free, same samples as hit-testing).
+  Dashed stubs keep alternating segments.
+- **Edge endpoints anchor at the hub's boundary** (64px = half the
+  128px icon, from the hub CENTER): self-loops + dangling stubs along
+  the exit's configured direction; straight edges along the
+  hub-position difference (well-defined per the session decision).
+  The teardrop/stub geometry now extends from the displaced anchor.
+- **Arrowheads** (directionality): `Curve.arrowhead` +
+  `element.arrowheadArms` (the shared, headless-testable geometry -
+  two arms from the END sample, 15 degrees off the reversed end
+  tangent, 48px long, computed from the SAME samples the stroke +
+  hit region use). The backend draws the arms at the curve's own
+  width, so an outline+stroke edge pair renders an outlined chevron.
+  The chevron is visual only - not part of the hit region.
+
+Also: a TODO Tech Debt item records the deferred question about the
+`custom/` id-space marker vs plain content paths (flagged while
+reviewing the background fix; the file layout is already plain - the
+marker is the id-space discriminator; dropping it needs a collision
+story + a saved-content stem migration).
+
+Tests: arrowheadArms' symmetric chevron + the end-tangent property
+(caught a degenerate fixture - control_end == end has a zero end
+tangent, which falls back to east); the world-map structure tests
+assert the 64px displacement contracts (distance checks, the
+anchor-on-bearing positions) + arrowhead flags. Full suite PASS,
+web OK (the web gate caught the missing facade export the headless
+build cannot - raylib/ is excluded from the test scan), boot smoke
+clean.
