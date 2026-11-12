@@ -349,7 +349,7 @@ work:
   slice-2 identity model (uuids everywhere, scan loading, rename-in-place,
   the viewing model - see DESIGN → Campaigns & the Campaign Editor, esp.
   Content identity / Uuid→dir resolution / Rename + Save As Copy /
-  Campaign switching / Edge geometry), build not
+  Campaign switching / Edge geometry / The map surface), build not
   started.** TWO editors, not three (see DESIGN → Campaigns & the
   Campaign Editor for the full model): the mission editor (built) + the
   campaign editor - the campaign view (background, freely-placed
@@ -386,20 +386,19 @@ work:
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] 2c. The map surface: buildWorldMap (background, hubs, bezier
-          edges incl. self-loops via direction, dim undiscovered) + the
-          `curve` UiElement + backend draw + hit-testing; the
-          session-scoped graph cache + the campaign picker (viewing ≠
-          state); structure tests.
+    - [ ] 2c. The map surface (design: DESIGN → Campaigns & the
+          Campaign Editor → The map surface): buildWorldMap (background,
+          hubs, bezier edges incl. self-loops via direction, dim
+          undiscovered) + the `curve` UiElement (shared deterministic
+          `sampleCurve`) + backend draw + hit-testing; the derived edge
+          table + hub names on Campaign (the load-scan side); the
+          session-scoped graph cache + the campaign picker incl.
+          listCampaigns (the 2e fold); structure tests.
     - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
           backtrack-to-discovered legality) + mission start
           (player_start_mission_from_map; start-hub-discovered
           legality) incl. the mid-level abandon ride on the .exit_mission
           cascade (pickups preserved by the end_level sync invariant).
-    - [ ] 2e. The switcher polish: listCampaigns (embedded + persistent,
-          uuid-deduped, persistent-wins) shared with the future
-          new-game picker; deferrable past 2d (one official campaign
-          today).
     - [ ] later. New-game campaign picker + the speedrun seed
           (all-hubs-discovered start option, runtime-derived) - main-menu
           work, rides the same machinery.

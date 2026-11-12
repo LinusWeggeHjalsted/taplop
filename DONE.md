@@ -310,6 +310,7 @@ working rules).
 - [Session reflection: campaign-editor slice 2 (post-2a/2b debrief)](#session-reflection-campaign-editor-slice-2-post-2a2b-debrief)
 - [build: configure-cache deps for generated files](#build-configure-cache-deps-for-generated-files)
 - [docs: finished tasks fully deleted from TODO](#docs-finished-tasks-fully-deleted-from-todo)
+- [campaign slice 2c design settle](#campaign-slice-2c-design-settle)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19682,3 +19683,39 @@ Verification: every deleted block's record lives in DONE.md, DESIGN.md,
 or AGENTS.md (checked item by item before deletion); the file's one
 pre-existing double blank was inside a swept region, so no untouched
 formatting changed (diff audited hunk by hunk).
+
+## campaign slice 2c design settle
+
+Pre-implementation settle for the map surface (slice 2c), decided
+against the real code (the `Campaign` type, the load scan, the UiElement
+union - which already has a `world_map` full-screen overlay id +
+`toggle_world_map` action wired, predating any view):
+
+- **Edges + hub names live in state (option a over a cache-only
+  derive).** The load scan already reads every hub.txt for uuid
+  resolution, so deriving the campaign's EDGE TABLE (from, destination,
+  mission uuid + resolved dir + name, the effective direction incl.
+  auto-spread defaults) + hub display names into `Campaign` is an
+  extension of an existing read. Forced by 2d anyway: map-acting
+  legality + resolved event payloads must be state reads (DESIGN:
+  legality never reads the cache). The session-scoped graph cache
+  (editor_local_missions pattern) serves only VIEWING other campaigns,
+  via the same derive function.
+- **Clickability = spriteless Button overlays** (`sprite_id = null`
+  over decorative image/curve visuals, carrying action + payload +
+  tooltip) - the existing seam in element.zig, no new element contract
+  for input.
+- **One deterministic `sampleCurve`** (element.zig, fixed segment count
+  in v1) feeds both the backend's line-strip draw and hit-testing
+  (distance to the SAME polyline) - the drawn edge and its hit region
+  cannot disagree; headless-testable.
+- **2e folded into 2c**: listCampaigns (embedded + persistent,
+  uuid-deduped, persistent-wins) + the campaign picker land WITH the
+  map surface - a picker that cannot see persistent custom campaigns
+  is a lie. The TODO slice list re-cut (2e deleted, later items keep
+  their names).
+
+Design recorded in DESIGN → Campaigns & the Campaign Editor → The map
+surface (new section; the Edge geometry curve bullet amended for the
+shared sampler). The Editor-state split spike stays AFTER 2c/2d, before
+slice 3, as before.

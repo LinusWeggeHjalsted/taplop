@@ -81,6 +81,7 @@ next session meets it as a surprise instead of a known.
   - [Discovery + travel (the world map's gameplay)](#discovery--travel-the-world-maps-gameplay)
   - [Campaign switching (the viewing model)](#campaign-switching-the-viewing-model)
   - [Edge geometry (loops, dangling stubs, parallels)](#edge-geometry-loops-dangling-stubs-parallels)
+  - [The map surface (the world-map overlay's build)](#the-map-surface-the-world-map-overlays-build)
   - [The campaign editor](#the-campaign-editor)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
@@ -3473,9 +3474,11 @@ missing information:
   consistency; an authored length override is a later dial) - a narrow
   elliptical teardrop. Straight edges are the degenerate bezier (all
   controls on the segment). One `curve` UiElement variant (two endpoints
-  + two control points + width + color; the backend samples it to a line
-  strip - portable to web); hit-testing = distance to the sampled
-  polyline.
+  + two control points + width + color; ONE deterministic sampling
+  helper - `sampleCurve` in element.zig - feeds both the backend's
+  line-strip draw (portable to web) and hit-testing, which is distance
+  to the SAME sampled polyline, so the drawn edge and its hit region
+  cannot disagree - see The map surface);
 - **Defaults when unauthored: auto-spread.** The exits sharing a hub
   space their directions evenly by index (four unauthored camp loops land
   at 90° spacing); parallel straight edges between the same hub pair
@@ -3485,6 +3488,54 @@ missing information:
 - **The map view is FIXED in v1**: the 3840×2160 default framing (a view
   constant - see The map coordinate model) with no zoom/pan; the builder
   keeps one transform slot so zoom can land later without a rewrite.
+
+### The map surface (the world-map overlay's build)
+
+The world-map overlay (a full-screen overlay, `toggle_world_map` - the
+surface plumbing predates the view) renders `buildWorldMap`; the campaign
+editor's view (slice 3) renders the same graph geometry through its own
+builder - one data model, two renderers (see Discovery + travel).
+
+- **The active campaign's map is a PURE STATE read.** The load scan
+derives the campaign's EDGE TABLE into `Campaign` - every hub's exits
+(from-uuid, destination-uuid, mission uuid + the scan-resolved dir +
+name, the EFFECTIVE direction: authored, else the auto-spread default
+by exit index - see Edge geometry) - plus each hub's DISPLAY NAME
+(denormalized from hub.txt, the mission-table precedent). The scan
+already reads every hub.txt for uuid resolution, so capturing exits +
+names is an extension of an existing read, not a new one. The map view,
+the dim-undiscovered mirror, and (2d) acting legality + resolved event
+payloads read STATE; `view()` stays file-free.
+- **Viewing another campaign goes through the session-scoped graph
+cache** (the `editor_local_missions` pattern: idle-input acquisition,
+SessionState-held, replay-irrelevant): picking a campaign in the
+overlay's picker derives ITS graph with the same derive function into
+the cache. The picker lists `listCampaigns` (embedded + persistent,
+uuid-deduped, persistent-wins - the `listMissions` pattern), which
+lands WITH the picker (the 2e fold): a picker that cannot see
+persistent custom campaigns is a lie. Legality never reads the cache
+(see Campaign switching).
+- **Clickability rides the spriteless-Button seam.** The visual
+elements - hub icons (`image` or a filled shape) + `curve` edges -
+are decorative (`blocks_input = false`); a spriteless `button`
+(`sprite_id = null`) overlays each clickable target carrying the
+action + payload + tooltip. No new element contract for input.
+- **One sampling function for the curve.** `sampleCurve` in
+element.zig is the single deterministic bezier sampler (fixed
+segment count in v1): the backend draws the sampled line strip and
+hit-testing is distance-to-polyline against the SAME samples, so the
+drawn edge and its hit region cannot disagree. Headless-testable.
+- **Dimming**: undiscovered hubs dim + edges whose start hub is
+undiscovered dim (the clickable rule is exactly start-hub
+discovered); a never-entered campaign's view shows the start hub +
+its edges lit (discovered-or-start covers the view too - no
+seeding). See Discovery + travel.
+- **Framing**: the fixed 3840x2160 view constant, letterbox-fit to
+the screen (The map coordinate model). One transform slot for later
+zoom.
+- **Hub icon art**: none exists yet - the magenta missing-art
+fallback + an art_report line (the map-background placeholder
+posture).
 
 ### The campaign editor
 
