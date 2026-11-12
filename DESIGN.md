@@ -1564,7 +1564,10 @@ that true (`src/session_log_bundle.zig`):
   button carries them) BRIDGE onto the click paths' options_action +
   payload pairs inside `applyAction` (the payload is the keyboard
   action's own identity), so keybind, click, and console all share the
-  consumption sites.
+  consumption sites. The handler arms stay in one file: no dispatcher
+  split now - if input_handlers crosses ~7k lines or the hub/campaign
+  arms stop fitting one scan, the hub/campaign arms split out alongside
+  the editor arms (a real seam, not a chore split).
 - **Button payloads - one union, riding the frame.** A clicked button's
   identity BEYOND its action (which row, which tab, which cell) is ONE
   tagged union, `types.ButtonPayload`, riding `PlayerInput.clicked_payload`

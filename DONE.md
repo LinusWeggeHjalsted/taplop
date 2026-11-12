@@ -309,6 +309,7 @@ working rules).
 - [campaign-editor slice 2a+2b: uuid identity + scan resolution + the arrival rule](#campaign-editor-slice-2a2b-uuid-identity--scan-resolution--the-arrival-rule)
 - [Session reflection: campaign-editor slice 2 (post-2a/2b debrief)](#session-reflection-campaign-editor-slice-2-post-2a2b-debrief)
 - [build: configure-cache deps for generated files](#build-configure-cache-deps-for-generated-files)
+- [docs: finished tasks fully deleted from TODO](#docs-finished-tasks-fully-deleted-from-todo)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19647,3 +19648,37 @@ workaround); `--cache-poison=disallowed` panics if anything poisons
 it; `findProgram`-style env observation calls `poisonCache()`
 automatically. AGENTS → Build & Test now names the dep registrations
 as load-bearing for any future walk or generator.
+
+## docs: finished tasks fully deleted from TODO
+
+Convention change (session decision): a completed task is removed from
+TODO.md ENTIRELY - no `[x]` one-liner, no pointer. Previously the
+lifecycle left a checked one-liner behind as an "index" into DONE.md;
+in practice the checked lines accumulated (56 at the time of the
+change) and added scan noise without adding information DONE.md didn't
+already carry. TODO now shows only work that is not done. The deletion
+happens in the same commit that adds the DONE entry, as before; done
+sub-slices delete the same way, with remaining slices keeping their
+numbering so DONE.md cross-references stay stable (the campaign-editor
+slice list now starts at 2c - 1, 2a, 2b are in DONE).
+
+The one-time sweep (same commit):
+- The all-done Post-Review section went wholesale (23 items; the
+  record is PROJECTREVIEW.md + the per-item DONE entries).
+- 31 further `[x]` blocks deleted across NEXT UP, Decoration
+  Footprint, Level Editor, Logging & Replay, Platform Layer, Content
+  Loading, and Tech Debt.
+- Three open remainders that rode finished items were extracted, not
+  lost: web-storage unverified edges (hostile-zip abort +
+  refresh-residue check) and the writers.zig/session-log OOM
+  convention remainder became standalone open items; the
+  input-dispatch "no split now, revisit at ~7k lines" trigger moved to
+  DESIGN → Input → Dispatch convergence (it wasn't recorded anywhere
+  else).
+- AGENTS → Documentation (lifecycle) + Commit policy updated to the
+  new rule.
+
+Verification: every deleted block's record lives in DONE.md, DESIGN.md,
+or AGENTS.md (checked item by item before deletion); the file's one
+pre-existing double blank was inside a swept region, so no untouched
+formatting changed (diff audited hunk by hunk).

@@ -14,95 +14,8 @@ full sound design, a web database for leaderboards and custom content, and
 everything else that entails. A lot is still missing - but it's reachable.
 Test by running `zig build run` and clicking through.
 
-## Post-Review (the full-project review's findings - PROJECTREVIEW.md is the record)
-
-The 15-part review of the whole tree (docs, architecture, code, tests) is
-done: 0 Critical, 1 Major, 13 Minor, 11 Nit, 67 Highlights. Nothing was
-fixed in passing - every item is dispositioned in PROJECTREVIEW.md
-(Part 15 has the registers + the full TODO-delta rationale). ALL groups
-below are CLOSED (the review-response session(s) - DONE.md has each
-entry); only the campaign-editor riders remain, folded into that work.
-
-**Hardening (bugs + server-seam security; ~100 lines total):**
-- [x] Saturating `Materials.add` - DONE (see DONE.md, "Saturating
-      Materials.add (review M-1.1)").
-- [x] `markWriteDirty` overflow fallback - DONE (see DONE.md, "The
-      markWriteDirty overflow fallback is a panic now (review m-2.1)").
-- [x] `that_which_lingers.playerPrepareSkill` - DONE (see DONE.md,
-      "that_which_lingers: the armed prepare landmine defused (review
-      m-4.1)").
-- [x] Mission-zip import: headers-first caps - DONE (see DONE.md,
-      "Mission-zip import: the headers-first caps (review m-9.1)").
-- [x] FileSource: `validateRelativePath` gate - DONE (see DONE.md,
-      "FileSource: the relative-path gate at the readFile/writeFile seam
-      (review m-5.1)").
-- [x] Session-log bundle loader: total-bytes cap - DONE (see DONE.md,
-      "Session-log bundle: the aggregate content cap (review m-5.2)").
-- [x] Hub `move_player`: legality arm - DONE (see DONE.md, "Hub
-      move_player: the replay-seam legality arm (review m-3.1)").
-- [x] World draw paths: magenta fallback - DONE (see DONE.md, "World
-      draw paths: the missing-art magenta fallback (review m-7.1 + n-7.2)").
-- [x] Record in the online-services design: server-revalidation builds
-      MUST be safe-mode - DONE (DESIGN → Custom Missions & Online Services
-      → Auth & the server seam).
-
-**Hygiene (one session, zero risk):**
-- [x] Comment-drift cleanup pass - DONE (see DONE.md, "Comment-drift
-      cleanup pass - the full catalog swept (review m-2.2/m-3.2/m-4.2/
-      m-4.3/m-5.3/m-6.1)").
-- [x] The fmt decision - DONE: adopted (see DONE.md, "fmt gate adopted").
-- [x] Optional AGENTS line - DONE: "when moving/renaming a fn, its `///`
-      moves with it" added to AGENTS → Code Comments (the lead paragraph).
-
-**Settled by the review (ratified - each applied at its home):**
-- [x] Style-wrap item - DROPPED (see DONE.md, "The style-wrap item
-      dropped").
-- [x] Marquee-crosses-marker trap - posture recorded on the OPEN
-      playtest-watch item (Level Editor below): warn-over-reject, never
-      veto, when it bites.
-- [x] Vestigial `!replaying` input-layer gates - kept as defense-in-
-      depth, the documenting comment landed at `dispatchFiredActionSounds`
-      (see DONE.md, "The vestigial !replaying gates").
-
-**Campaign-editor riders (fold into that work, not standalone):**
-- [x] Re-type `PlayerData.discovered_hubs` to a name set - DONE (see
-      DONE.md, "discovered_hubs re-typed to a name set (review m-2.3)");
-      the per-campaign scoping question moved to slice 2 below.
-- [x] Settle the `start_hub` path shape - DONE: campaign-content paths
-      are content-root-relative `campaigns/...` everywhere; the `data/`
-      prefix is embedded-map addressing bridged by FileSource (see
-      DONE.md, "campaign content paths re-shaped to content-root-relative
-      (review Part 5 rider)"; design: DESIGN → Campaigns & the Campaign
-      Editor → Campaign content paths).
-
-**Optional polish (all seven DONE - the review-response sessions):**
-- [x] DONE.md generated header index + DESIGN section index - DONE
-      (scripts/doc_index.sh - see DONE.md, "Generated section indexes").
-- [x] Settings key-map naming - DONE (shared_metadata_keys - see DONE.md,
-      "shared_metadata_keys").
-- [x] menus.zig five-surface split - DONE (see DONE.md, "menus.zig split
-      into per-surface files").
-- [x] Small dedup helpers - DONE (pointerBeyondThreshold +
-      buildCollisionSets - see DONE.md, "The two small dedup helpers").
-- [x] Report-tracking asymmetry - DONE: all three reports untracked (see
-      DONE.md, "Report tracking settled").
-- [x] README status line - DONE ("working towards full official release";
-      the fuller rewrite waits for the demo milestone).
-
 ## NEXT UP (not ordered - pick what progresses)
 
-- [x] Configure-cache staleness for generated files - DONE (see DONE.md,
-      "build: configure-cache deps for generated files").
-
-- [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
-      ALL FIVE SLICES DONE (DONE.md, "Parser grammar slice 1" through
-      "slice 5"; design: DESIGN → File System & IO → Config grammar +
-      DESIGN → Versioning). Rider for the campaign editor's hub writer
-      (slice 5): it emits `Layout <count>` + the current hub version.
-- [x] **Tips UI (data/tips.txt + panel)** - DONE, all three slices (see
-      DONE.md, "Tips UI"; design: DESIGN → UI Framework → Tips overlay).
-      Further tips are authored content - just append `tip <prose>`
-      groups to data/tips.txt.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different
@@ -123,15 +36,6 @@ entry); only the campaign-editor riders remain, folded into that work.
   Import/Export Game (design settled: DESIGN → File System & IO → Web
   storage model; slices + open questions in Platform Layer → web storage
   model below).
-- [x] `toggle_options_menu` rename - DONE: the action is `escape` now (see
-      DONE.md; existing installs self-heal via the warn+drop at load).
-- [x] **Art report (machine-derived asset inventory)** - DONE:
-      `scripts/art_report.sh` writes `art_report.md`; the MISSING section
-      is the artist's self-updating shopping list (see DONE.md, "Art
-      report").
-- [x] **Unused-pub report (session reflection rider)** - DONE:
-      `scripts/unused_pub_report.sh` (see DONE.md, "Unused-pub report" +
-      "Minimize-pub sweep").
 - **World overlay stripe scopes batch-flush per tile (session reflection
   rider, unmeasured)** - each highlighted tile opens its own stripe scope
   (~2 batch flushes per tile; a 20-tile move range ≈ 40 flushes/frame).
@@ -149,9 +53,6 @@ entry); only the campaign-editor riders remain, folded into that work.
 - **Gear sprites** - the last unlanded entity sub-layer (effect overlays,
   sprite animation, ground items, decorations all DONE - history in
   DONE.md): needs both the `gear_sprites` wiring in view() and the gear art.
-- [x] **`clicked_*` payload consolidation** - DONE (see DONE.md;
-      the placement rule + the near-misses: DESIGN → Input, Button
-      payloads + the PlayerInput placement rule).
 - **Input/camera leftovers** - tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution) + keyboard inspect binding (e.g.
   alt+Enter opens inspect on the tile-cursor entity; lands as a new
@@ -169,11 +70,6 @@ entry); only the campaign-editor riders remain, folded into that work.
   rollover swallow (intermittent, either key - that one is DONE, see
   DONE.md "Arrow-key cursor rollover"); only worth touching if random
   eaten taps are ever observed with a hand resting on the mouse.
-- [x] **Keybind editor (settings → Keybinds tab)** - DONE, all four
-      slices + the rebuild-ownership test (DONE.md, "keybind editor
-      slice 1"-"4" + "keybind rebuild-ownership test"; settled design:
-      DESIGN → Input → Binding contexts + DESIGN → UI Framework →
-      Settings screen).
 - **Console input (stdin - a scripted/TAS input channel)** - COMPLETE,
       all five slices (DONE.md, "console input slice 1"-"2" + "dump-path
       walker"; settled design: DESIGN → Input → Console input). Console
@@ -192,26 +88,6 @@ entry); only the campaign-editor riders remain, folded into that work.
       scan-minted); this is keeping the next transient-lifetime bug
       VISIBLE to exactly the tests that should catch it (see DESIGN
       → Architecture → the transient-lifetime invariant).
-- [x] **UI surface state unification** - DONE (all six slices; see DONE.md,
-      "UI surface state unification", + DESIGN → UI Framework → UI state
-      classification).
-- [x] **Input dispatch convergence** - DONE, all four slices (DONE.md,
-      "input dispatch convergence slice 1"-"4"; settled design: DESIGN →
-      Input → Dispatch convergence + New keybind wiring sites). Slice 4's
-      decision: no dispatcher split now - REVISIT WHEN the hub/campaign
-      editor arms land: if input_handlers crosses ~7k lines or the arms
-      stop fitting one scan, the hub/campaign arms split out alongside
-      the editor arms (a real seam, not a chore split).
-- [x] **New-keybind pipeline friction** - DONE (see DONE.md,
-      "New-keybind pipeline friction" + "dead-binding advisory";
-      the wiring-site map: DESIGN → Input → New keybind wiring sites).
-- [x] **UI outline readability (shader animation)** - DONE (see DONE.md,
-      "Outline stripe shader" - the tuning knobs live there; design:
-      DESIGN → Platform Seam → Outline stripe shader).
-- [x] **Enemy pathing straightness** - DONE, both halves (see DONE.md,
-      "Enemy AI movement: the straightness tiebreak" + "Pathfinding:
-      Chebyshev heuristic + straightness f-cost tiebreak"; design: DESIGN →
-      Determinism & Tiebreaking).
 - **Cross-cutting polish** - 9-slice edge/center TILING (corners are
   aspect-true - DONE.md; `highlighted` edge outlines DONE), missing art
   (the `art_report.md` MISSING list - `scripts/art_report.sh` - is the
@@ -362,11 +238,6 @@ Settled + wired - see DESIGN → Decorations & Footprint (history in
 DONE.md). Open:
 - [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
       resolve dims → `editor_add_decoration_type` event).
-- [x] Tree + tent prefab registration - DONE (see DONE.md, art delivery
-      2026-09-29): footprints + layer composition in `data/decorations.txt`.
-- [x] `grass_back` behind-the-base rendering - DONE: the `behind`
-      decoration-layer flag (config key + the back-layer render slot; see
-      DESIGN → Decorations & Footprint + DONE.md).
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 
@@ -512,39 +383,9 @@ work:
   data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
   replace freely, the format is a bare stem + any size, center-anchored).
   Slices (rough, re-cut at implementation):
-  - [x] 1. The formats + model slice (1a-1e: loadHub/loadCampaign/
-        loadMission self-owned; hub.txt v2 with destination_hub +
-        npc_type; custom-asset paths content-addressed + unified;
-        campaign.txt v2 with the map layer + graph integrity checks;
-        mission.txt v3 with the derived level count) - SLICE 1 COMPLETE
-        (DONE.md, "campaign-editor slice 1, step 1" through "step 5"; the
-        formats + the coordinate model: DESIGN → Campaigns & the
-        Campaign Editor → File formats + The map coordinate model).
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [x] 2a. The identity + graph slice: the uuid sweep across
-          campaign.txt (v3: campaign_uuid, uuid start_hub + Hubs
-          entries) / hub.txt (v4: hub_uuid, uuid Exits: mission_uuid +
-          destination_hub + direction) / the player save
-          (current_campaign_uuid, uuid current_hub, uuid-keyed grouped
-          DiscoveredHubs); the scan-based uuid→dir resolution + the
-          campaign GRAPH derivation (edges + display names, through
-          reconstruction reads); latest-mtime duplicate resolution +
-          warnings; resolved-payload event fields (start_hub carries
-          campaign + hub uuids + dirs); official-data migration (mint
-          campaign + hub uuids; exits switch to mission_uuids);
-          max_player/new_player fixture updates. - LANDED (see DONE.md,
-          "campaign-editor slice 2a+2b"); note: start_hub resolves
-          uuid→dir through the loaded campaign's table in STATE
-          (the approved cleaner option), not fat event fields.
-    - [x] 2b. The arrival rule (rides 2a's commit if it fits): the
-          start_hub handler discovers the arrived hub idempotently
-          into the active campaign's group; campaign identity fields
-          update on arrival; one rule covers new_game, completion,
-          travel, cross-campaign entry, mission-from-map. - LANDED
-          (same DONE entry; verified live: new game → discovered group
-          with the start hub's uuid).
     - [ ] 2c. The map surface: buildWorldMap (background, hubs, bezier
           edges incl. self-loops via direction, dim undiscovered) + the
           `curve` UiElement + backend draw + hit-testing; the
@@ -580,12 +421,6 @@ work:
   Revalidate): consider promoting it from the options menu to the top bar
   next to Test/Validate; the success message currently rides the error
   popup - a real notification/toast surface would be the proper home.
-- [x] **Custom-sprite dims verification** - DONE across all layers (see
-      DESIGN → Custom Missions & Online Services → Custom-asset
-      dimensions; history in DONE.md).
-- [x] **Mission metadata cleanup** - SETTLED + LANDED as campaign-editor
-      slice 1 step 1e (see DESIGN → Campaigns & the Campaign Editor →
-      The graph model + File formats).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 
 - **Editor browser polish** (the browser itself - kind tabs + New
@@ -614,9 +449,6 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
       the dims read through `readReconstructionFile` so art bytes become
       reconstruction reads and bundles capture them automatically.
 
-- [x] file_format_version rides every config file's Metadata section;
-      the session-log v2 BUNDLE is DONE (DONE.md, "session-log bundle").
-      The bump policy lives in DESIGN → Versioning.
 - Pre-release replay-compat policy: handler changes that push new child
   events (e.g. the `damage`-event split, effect pacing) break strict
   verification of OLD session logs / validation replays - re-record rather
@@ -625,10 +457,6 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   reconstructFromEventLog/restoreTo at successive targets. Steps = the
   combat-log filter (derived, not idle_points). Needs the projection (DONE) +
   replay-viewer UI.
-- [x] Replay verification cross-session + the custom-mission gap CLOSED
-      (session-log bundles embed the content; the checking mode makes the
-      verification catchable for revalidate / server validation) - see
-      DONE.md, "session-log bundle" + "replay verification cross-session".
 - Exhaustive comptime round-trip test for the session-log writer/reader:
   inline-for over every Event category/variant, synthesize a payload (0 /
   false / first enum / "" / empty slice / null optional / recurse structs),
@@ -692,17 +520,6 @@ Open:
   capture or the show_fps overlay while reproducing), and whether native
   release shows the same dips. The audio watchdog caps the damage this
   causes to sound; the dips themselves are a smoothness item.
-- [x] **Zig 0.17 migration** - DONE (branch `zig-0.17-migration`, see
-      DONE.md, "zig 0.17 migration"). The old toolchain policy's gate
-      (0.17.0 released + raylib_zig 0.17-compatible) was met: raylib-zig
-      devel requires 0.17.0 minimum, absorbed the emcc shims from the
-      dropped zemscripten, and pins raylib 6.2; the 0.16.0 STOPSIG bug is
-      fixed in 0.17.1's own stdlib (web patched-stdlib hack retired). The
-      aarch64 miscompile fix (fa3a9fcd) ships in the 0.17.0 release, so
-      the upstream-report question below is MOOT; mac runtime validation
-      on real hardware remains the open item (macOS native port below).
-- [x] **Diagnostics redesign** - DONE (history in DONE.md; settled design:
-      DESIGN → Platform Seam → Diagnostics).
 - **macOS native port** - cross-build + persistent dir + .app bundle landed
   (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
   Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
@@ -716,15 +533,6 @@ Open:
         into `~/Library/Application Support/ziglop/` (spaces in the path!);
         crash-dump write works; `--data-dir` flag + `$ZIGLOP_DATA` override
         still work.
-  - [x] **Upstream zig report for the 0.16.0 aarch64 miscompile** -
-        CLOSED, MOOT: the fix (fa3a9fcd / PR #35711) ships in the
-        0.17.0 release and we are on 0.17.x - nothing left to report
-        against a released line. Repro kit stays archived in
-        `../ziglop-mac-bisect/repro/` (UPSTREAM_REPORT.md; repro.zig +
-        repro2.zig + per-version IR evidence). The bug itself is
-        root-caused + fixed + friend-confirmed (DONE.md, "mac 9-slice
-        panels - ROOT CAUSE FOUND"); the historical 0.16.0 avoidance
-        rule + its retirement live in AGENTS → Zig Gotchas.
   - **CI candidate** - post-GitHub-migration, GitHub Actions macOS runners
         (free for public repos) give build + runtime validation without
         owning a Mac; web runtime probing in CI via node (the headless
@@ -757,13 +565,9 @@ Open:
   → Asset memory levers matter more for web than native); emrun polish.
   (The WebGL1/WebGL2 build option is DONE - the web build is WebGL2-only;
   see DESIGN → Platform Seam → WebGL 2.)
-- [x] **Web storage model refactor** - DONE, all five slices + the
-      emrun browser pass (DONE.md, "web storage model slice 1" through
-      "slice 5" + the browser-pass bug history; settled design: DESIGN →
-      File System & IO → Web storage model). Remaining unverified edges:
-      the hostile/garbage-zip abort (popup, nothing written) + a
-      refresh-residue check (IndexedDB stays empty) - fold into the next
-      browser pass.
+- **Web storage unverified edges** (ride the next browser pass): the
+      hostile/garbage-zip abort (popup, nothing written) + a
+      refresh-residue check (IndexedDB stays empty).
 - **Load-save browser polish** (the browser itself is DONE - DONE.md;
   design: DESIGN → File System & IO → Load-save browser): columns (player
   name / hub / timestamp formatting), richer row visuals, keyboard
@@ -880,13 +684,6 @@ looking:
 - Async wrinkle: online fetch / zip read is async on web. Acquisition must
   fully populate the source ("loading mission...") before emitting
   start_mission.
-- [x] Cross-session replay reproducibility: session-log bundles embed the
-      exact bytes the session read - DONE (see DESIGN → Logging & Replay →
-      Session-log bundle). The sharing/download packaging lands with the
-      database.
-- [x] **Custom-asset dimension validation** - DONE, all layers (see
-      DESIGN → Custom Missions & Online Services → Custom-asset
-      dimensions; history in DONE.md).
 
 ## Online Services
 
@@ -980,19 +777,6 @@ Done items in DONE.md. Open:
       generation mechanism when touched next (comptime `usingnamespace`
       re-export vs build-time generated file - the latter matches the
       established pattern; usingnamespace is discouraged upstream).
-- [x] **Vestigial `!replaying` gates at input-layer sound sites** -
-      SETTLED (see DONE.md, "The vestigial !replaying gates: kept as
-      defense-in-depth"): confirmed dead, kept; the choke point carries
-      the documenting comment. Per-site gates fold into the next touch of
-      each site, never churned on their own.
-- [x] **Doc-symbol staleness checker** - DONE: `scripts/doc_symbol_check.sh`
-      (see DONE.md, "Doc-symbol staleness checker" - which also settled
-      the future-symbol convention: bare names in TODO prose).
-- [x] **Style pass over the Tier A session's lines** - DROPPED (the
-      review's quantification settled it: 785 lines >120 / 109 >160
-      tree-wide, zig fmt doesn't check line length so any wrap rots -
-      see DONE.md, "The style-wrap item dropped"). No retroactive churn;
-      no going-forward rule (fmt owns formatting, nothing owns width).
 - **handler_tests_editor call-shape boilerplate (polish).** The file is
   the tree's biggest (8.8k lines) and every test hand-writes the same
   `input_handlers.handleAnytimeInput(&history, .{ .options_action = X },
@@ -1019,7 +803,6 @@ Done items in DONE.md. Open:
   maybeRecordIdlePoint) so the idle-point step can't be forgotten - and
   treat any new frame-level action with suspicion: it must PROVE it can't
   run inside update().
-
 
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
@@ -1081,24 +864,18 @@ Done items in DONE.md. Open:
   assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
   guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
   with a descriptive @panic. See DESIGN → Architecture note.
-- [x] **The dash sweep** - DONE: `scripts/dash_sweep.sh` + the one-time
-      tree sweep (see DONE.md, "the dash sweep").
 - **DONE.md's unbounded growth** - past ~17k lines and every session adds
   entries. Might want a divided history format someday (per-year or
   per-milestone files with a top-level index). Not urgent - revisit
   whenever the file's size starts hurting navigation.
 
-- [x] **Config-layer OOM + error-path cleanup** - COMPLETE, all five
-      slices (DONE.md, "config-layer OOM convention" slice 1 through
-      slice 5; the settled convention + the fallback-swallow rationale:
-      DESIGN → Error Handling → OOM never propagates as a config-layer
-      error). EditorLevel.name is owned everywhere now (the last
-      sections-borrowing field - DONE.md, "session cleanup: de-pub crash
-      dump internals").
-  - Open remainder: writers.zig (harmless OOM propagation today -
-        build-buffer-then-write, nothing partial hits disk) +
-        session_log/session_log_bundle (OOM caught by the best-effort
-        dump paths) ride the same convention decision eventually.
+- **writers.zig + session-log OOM paths (config-layer OOM convention
+      remainder).** writers.zig propagates OOM harmlessly today
+      (build-buffer-then-write, nothing partial hits disk);
+      session_log/session_log_bundle OOM is caught by the best-effort
+      dump paths. Both ride the same convention decision eventually
+      (DESIGN → Error Handling → OOM never propagates as a config-layer
+      error).
 - **`GameStateHistory.init` + `view()` call-site ripple (options struct).**
   `init` has ~20 call sites and every new history-resident config field
   (tips was the latest) mechanically edits all of them (tests pass `&.{}`);
