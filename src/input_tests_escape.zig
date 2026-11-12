@@ -1,8 +1,11 @@
 //! Tests for the Escape overlay chain (`handleEscapeKey`, reached via
 //! `handleAnytimeInput`'s `escape` arm): Escape closes the
-//! topmost open overlay (settings, load-save browser, credits, world map /
-//! full combat log, options menu) or fires the mission fail/complete
-//! overlay's primary button; with nothing open it opens the options menu
+//! topmost open overlay - a walk down `escape_ladder`, which mirrors the
+//! view's z-order (settings, tips, load-save browser, credits, world map /
+//! full combat log, options menu) and fires the mission fail/complete
+//! overlay's primary button; a derived test walks the ladder itself, so a
+//! new toggle rung gets its layered-close coverage automatically. With
+//! nothing open, Escape opens the options menu
 //! on ANY screen (the main-menu variant carries its own entries). See
 //! DESIGN → Input → Escape overlay chain.
 
@@ -53,6 +56,77 @@ test "escape: settings closes alone, options menu beneath stays open" {
     // ...and a second Escape steps back out of the options menu.
     pressEscape(&history);
     try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
+}
+
+test "escape: every toggle rung closes alone, derived from the ladder" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // Derived expectations: the test walks escape_ladder itself, so a new
+    // toggle rung is exercised the moment it's added - no per-rung test to
+    // remember. The options menu + a full-screen overlay ride open UNDER
+    // every rung: each close must be layered (the rung's own bit flips,
+    // nothing beneath it does). The options menu is skipped as a rung
+    // because closing it is the whole-walk behavior the dedicated tests
+    // below already pin.
+    for (input_handlers.escape_ladder) |rung| {
+        const surface = switch (rung) {
+            .toggle_surface => |rung_surface| rung_surface,
+            else => continue,
+        };
+        if (surface == .options_menu) continue;
+
+        history.current_state.ui_surfaces.open_full_screen_overlays[0] = .world_map;
+        history.current_state.ui_surfaces.options_menu_open = true;
+        history.current_state.ui_surfaces.toggle(surface);
+        pressEscape(&history);
+
+        try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(surface));
+        try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+        try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[0] == .world_map);
+
+        // Reset for the next rung (direct bit flips, same as the forcing
+        // above - the forced state never went through the timeline).
+        history.current_state.ui_surfaces.closeAll();
+    }
+}
+
+test "escape: tips closes alone, above the options menu and the main-menu overlays" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // The tips rung is the one tips shipped without (the chain-mirror drift
+    // that turned escape_ladder into a table). Tips opens on top of the
+    // options menu on any screen: Escape closes only the tips layer.
+    history.current_state.ui_surfaces.options_menu_open = true;
+    history.current_state.ui_surfaces.tips_open = true;
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.tips_open);
+    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+
+    // On the main menu, tips also sits above the main-menu overlays (its
+    // view rung: just above them, under mission fail/complete): with both
+    // up, tips closes first.
+    history.current_state.screen = .main_menu;
+    history.current_state.ui_surfaces.credits_open = true;
+    history.current_state.ui_surfaces.tips_open = true;
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.tips_open);
+    try testing.expect(history.current_state.ui_surfaces.credits_open);
 }
 
 test "escape: with nothing open, opens the options menu (level)" {

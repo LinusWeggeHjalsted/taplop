@@ -1012,97 +1012,140 @@ fn backUpSettingsFile(history: *GameStateHistory) void {
     };
 }
 
+/// One rung of `escape_ladder`: what Escape closes when this rung is the
+/// topmost thing open.
+const EscapeRung = union(enum) {
+    /// A surface that closes via the recorded `player_toggle_ui_surface`
+    /// (the same event the surface's own buttons push) when open.
+    toggle_surface: types.UiSurfaceId,
+    /// The full-screen overlay stack: closes the topmost occupied slot
+    /// of `open_full_screen_overlays` (the last draws on top).
+    full_screen_overlay_stack,
+    /// View-derived from `last_completed_mission`: Escape equals the
+    /// Continue button's `dismiss_mission_complete`.
+    mission_complete,
+    /// View-derived from `playerDead`: Escape equals the Exit Mission
+    /// button's `player_exit_mission`.
+    mission_fail,
+};
+
+/// The Escape chain: which overlay closes, topmost-first. The order
+/// mirrors the view's z-order (painter order in `view`), which the
+/// z-order census test in view.zig pins; `handleEscapeKey` walks it from
+/// the top down and closes the first open rung. `escapeCoverageCheck`
+/// below forces every `UiSurfaceId` to have a rung here (or an explicit
+/// exclusion), so a new surface fails the build until its Escape behavior
+/// is decided - instead of shipping silently without one, the way tips
+/// did when the chain was a hand-maintained mirror of the z-order.
+/// `pub` for input_tests_escape.zig, which derives its layered-close test
+/// by walking this list.
+pub const escape_ladder = [_]EscapeRung{
+    .{ .toggle_surface = .editor_browser },
+    .{ .toggle_surface = .settings },
+    .mission_complete,
+    .mission_fail,
+    .{ .toggle_surface = .tips },
+    .{ .toggle_surface = .load_save_menu },
+    .{ .toggle_surface = .credits },
+    .{ .toggle_surface = .options_menu },
+    .full_screen_overlay_stack,
+};
+
+/// Surfaces deliberately NOT in the chain: the middle panels close via
+/// their own toggle keys (I/G/S); revisit if playtesting asks for Escape
+/// to close them too (DESIGN → Input → Escape overlay chain).
+const escape_excluded_surfaces = [_]types.UiSurfaceId{
+    .inventory,
+    .gear,
+    .skills,
+    .entity_inspect,
+};
+
+/// The new-overlay gate: every `UiSurfaceId` must be Escape-closable - a
+/// `toggle_surface` rung in `escape_ladder`, a full-screen overlay id (the
+/// stack rung closes the topmost of them, name-matched via
+/// `fullScreenOverlaySurfaceId`), or in `escape_excluded_surfaces`.
+/// Anything else fails the build naming the two lists, so the newest
+/// surface can never silently lack an Escape rung.
+fn escapeCoverageCheck(
+    comptime surface: types.UiSurfaceId,
+    comptime field_name: []const u8,
+) void {
+    for (escape_ladder) |rung| {
+        if (rung == .toggle_surface and rung.toggle_surface == surface) return;
+    }
+    for (escape_excluded_surfaces) |excluded| {
+        if (excluded == surface) return;
+    }
+    if (@hasField(types.FullScreenOverlayId, field_name)) return;
+    @compileError(std.fmt.comptimePrint(
+        "UiSurfaceId '{s}' has no Escape-chain treatment; add it to escape_ladder or escape_excluded_surfaces in input_handlers.zig (see DESIGN → Input → Escape overlay chain)",
+        .{field_name},
+    ));
+}
+
+comptime {
+    @setEvalBranchQuota(10_000);
+    for (@typeInfo(types.UiSurfaceId).@"enum".field_names) |field_name| {
+        escapeCoverageCheck(@field(types.UiSurfaceId, field_name), field_name);
+    }
+}
+
 fn handleEscapeKey(history: *GameStateHistory) void {
     const current = &history.current_state;
     const surfaces = &current.ui_surfaces;
 
-    // The chain is ordered to mirror the view's z-order (topmost first);
-    // the census test in view.zig pins the emission ladder this mirrors.
     // Every close/open is a `player_toggle_ui_surface` push + drain (the
     // class-1 surface state rides the undo timeline - see DESIGN → UI
     // Framework → UI state classification); the immediate drain is what
     // lets this frame's own options-menu gate below see the flipped state
     // (the swap_weapons interjection discipline).
-
-    // Editor browser (opens over the editor, on top of the options menu,
-    // or over the main menu): Escape steps back one layer - only the
-    // browser closes. Above the settings screen in the ladder (the
-    // browser block emits after it in view()).
-    if (surfaces.editor_browser_open) {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = .editor_browser,
-        } });
-        return;
+    for (escape_ladder) |rung| {
+        switch (rung) {
+            .toggle_surface => |surface| {
+                if (!surfaces.isSurfaceOpen(surface)) continue;
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = surface,
+                } });
+                return;
+            },
+            // Escape equals the overlay's own primary button, never a bare
+            // surface flip: the dismissal records on the undo timeline
+            // (undo re-shows, redo dismisses). Never co-rendered with
+            // mission fail (complete shows in the hub/editor, fail on a
+            // level; the order between them is cosmetic and pinned by the
+            // census).
+            .mission_complete => {
+                if (current.last_completed_mission == null) continue;
+                pushPlayerActionAndDrain(history, .dismiss_mission_complete);
+                return;
+            },
+            // Dead outside a level screen (where playerDead can be set
+            // without a closable overlay) absorbs Escape outright - the
+            // chain must not fall through to opening the options menu.
+            // Undo (processed earlier in handleAnytimeInput) remains the
+            // other escape from the fail state.
+            .mission_fail => {
+                if (!view_mod.playerDead(current)) continue;
+                if (current.screen != .level) return;
+                pushPlayerActionAndDrain(history, .player_exit_mission);
+                return;
+            },
+            .full_screen_overlay_stack => {
+                var topmost_overlay: ?types.FullScreenOverlayId = null;
+                for (surfaces.open_full_screen_overlays) |maybe_overlay| {
+                    if (maybe_overlay) |overlay| topmost_overlay = overlay;
+                }
+                const overlay_id = topmost_overlay orelse continue;
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = fullScreenOverlaySurfaceId(overlay_id),
+                } });
+                return;
+            },
+        }
     }
 
-    // Settings overlay. In-game
-    // it opens on top of the options menu, so Escape steps back to the menu
-    // underneath - only the settings layer closes.
-    if (surfaces.settings_open) {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = .settings,
-        } });
-        return;
-    }
-
-    // Mission-complete overlay: Escape fires the Continue button's
-    // dismiss_mission_complete (on the undo timeline - undo re-shows, redo
-    // dismisses). Above the mission-fail overlay in the ladder (never
-    // co-rendered - complete shows in the hub/editor, fail on a level).
-    if (current.last_completed_mission != null) {
-        pushPlayerActionAndDrain(history, .dismiss_mission_complete);
-        return;
-    }
-
-    // Mission-fail overlay: Escape fires the same orchestrator its Exit
-    // Mission button does (end_level routes PlayerData persistence + the
-    // return to the hub). Undo (processed earlier in handleAnytimeInput)
-    // remains the other escape from the fail state.
-    if (view_mod.playerDead(current)) {
-        if (current.screen != .level) return;
-        pushPlayerActionAndDrain(history, .player_exit_mission);
-        return;
-    }
-
-    // Main-menu overlays (load-save browser, credits - both reachable
-    // from the main menu's own stack/options menu; they open on top of
-    // the options menu, so they sit topmost whenever they're up).
-    if (surfaces.load_save_menu_open) {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = .load_save_menu,
-        } });
-        return;
-    }
-    if (surfaces.credits_open) {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = .credits,
-        } });
-        return;
-    }
-
-    // Options menu (always-on-top modal): close it, leaving any full-screen
-    // overlay beneath it open.
-    if (surfaces.options_menu_open) {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = .options_menu,
-        } });
-        return;
-    }
-
-    // Full-screen overlays (world map, full combat log): close the topmost
-    // open one (the last occupied slot draws on top).
-    var topmost_overlay: ?types.FullScreenOverlayId = null;
-    for (surfaces.open_full_screen_overlays) |maybe_overlay| {
-        if (maybe_overlay) |overlay| topmost_overlay = overlay;
-    }
-    if (topmost_overlay) |overlay_id| {
-        pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-            .surface = fullScreenOverlaySurfaceId(overlay_id),
-        } });
-        return;
-    }
-
-    // Nothing to close: open the options menu. Every screen has a variant
+    // Every rung empty: open the options menu. Every screen has a variant
     // - the main menu's carries Settings/Credits/Exit Game instead of the
     // session verbs (see buildOptionsMenu).
     pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{

@@ -1768,41 +1768,69 @@ Escape is one anytime action (`Action.escape`, previously
 `toggle_options_menu` - renamed once the binding self-heal landed: an
 install whose user settings.txt names the old action warns + drops it at
 load and picks up the renamed action's default binding).
-`handleEscapeKey` (input_handlers.zig) consumes it as a
-generic "close the topmost overlay" chain, ordered to mirror the view's
-z-order (topmost surface first - the emission ladder view() pins via its
-z-order census test):
+`handleEscapeKey` (input_handlers.zig) consumes it as a generic
+"close the topmost overlay" chain: not a hand-maintained ladder of
+if/returns but a walk down `escape_ladder`, a topmost-first ordered
+array of `EscapeRung` values that mirrors the view's z-order (the
+emission ladder view() pins via its z-order census test). Most rungs
+are `toggle_surface` (a `UiSurfaceId` that closes via the recorded
+`player_toggle_ui_surface` when open, the same event the surface's own
+buttons push); three carry custom close semantics. The walk closes the
+first open rung; every rung empty opens the options menu on ANY screen
+(the main-menu variant carries its own entries - see below).
 
-1. **Editor browser** (over the editor, on top of the options menu it
-   opened from, or over the main menu) - closes only the browser, stepping
-   back one layer.
-2. **Settings overlay** - closes ONLY it. In-game it opens on top of the
-   options menu, so Escape steps back to the menu underneath (layered close,
-   not a cascade).
-3. **Mission complete** (view-derived `last_completed_mission`) - fires the
-   Continue button's `dismiss_mission_complete` + drain. (Never co-rendered
-   with mission fail - complete shows in the hub/editor, fail on a level;
-   the order between them is cosmetic and pinned by the census.)
-4. **Mission fail** (view-derived `playerDead`) - fires the overlay's Exit
-   Mission button's orchestrator (`player_exit_mission` + drain).
-5. **Load-save browser / credits** (reachable from the main menu's own
-   stack and its options-menu variant; they open on top of the options
-   menu, so they sit topmost whenever they're up).
-6. **Options menu** - closes it, leaving any full-screen overlay beneath
-   it open.
-7. **Full-screen overlays** (world map, full combat log) - closes the
-   topmost open one (last occupied slot draws on top).
-8. Nothing open → opens the options menu on ANY screen (the main-menu
-   variant carries its own entries - see below).
+Ladder, topmost-first:
+
+1. **Editor browser** (`toggle_surface`) - closes only it, stepping
+   back one layer (it opens over the editor, on top of the options
+   menu, or over the main menu).
+2. **Settings overlay** (`toggle_surface`) - closes ONLY it. In-game it
+   opens on top of the options menu, so Escape steps back to the menu
+   underneath (layered close, not a cascade).
+3. **Mission complete** (custom, view-derived `last_completed_mission`)
+   - fires the overlay's Continue button's `dismiss_mission_complete` +
+   drain. (Never co-rendered with mission fail - complete shows in the
+   hub/editor, fail on a level; the order between them is cosmetic and
+   pinned by the census.)
+4. **Mission fail** (custom, view-derived `playerDead`) - fires the
+   overlay's Exit Mission button's orchestrator (`player_exit_mission`
+   + drain). Dead outside a level screen absorbs Escape outright (the
+   chain must not fall through to opening the options menu).
+5. **Tips overlay** (`toggle_surface`) - between mission fail and the
+   main-menu overlays, its view rung ("just above the main-menu
+   overlays, under mission-complete/fail"). The rung tips shipped
+   without - the hand-maintained-mirror drift that turned the chain
+   into this table.
+6. **Load-save browser / credits** (`toggle_surface`) - reachable from
+   the main menu's own stack and its options-menu variant; they open on
+   top of the options menu, so they sit topmost whenever they're up.
+7. **Options menu** (`toggle_surface`) - closes it, leaving any
+   full-screen overlay beneath it open.
+8. **Full-screen overlay stack** (custom) - closes the topmost occupied
+   slot of `open_full_screen_overlays` (world map, full combat log; the
+   last slot draws on top).
+
+**The new-overlay gate.** A comptime check (`escapeCoverageCheck`, run
+over every `UiSurfaceId` at file scope) fails the build if a surface
+has no Escape treatment: it must be a `toggle_surface` rung in
+`escape_ladder`, carry a `FullScreenOverlayId` name (the stack rung
+closes the topmost of them), or sit in `escape_excluded_surfaces` -
+the deliberate exclusions (the middle panels inventory/gear/skills/
+entity_inspect, whose per-panel toggles I/G/S are the close path;
+revisit if playtesting asks). A new surface therefore decides its rung
+at the moment it is added, and the derived ladder test in
+input_tests_escape.zig picks up its layered-close coverage
+automatically. This is the machine-walked-truth rule (AGENTS → Build &
+Test) applied to the chain: the census pins the view side, the gate
+pins the escape side, and the z-order mirror can no longer drift
+silently.
 
 The error popup is more-modal still but never reaches the chain: the
 `pending_error` gate at the top of `handleAnytimeInput` consumes
 `dismiss_error` first. Mission fail/complete reuse the exact orchestrator
 events their overlay buttons push (both routed through
 `pushPlayerActionAndDrain`), so Escape ≡ clicking the button - recorded
-player actions on the undo timeline. Middle panels (inventory/gear/skills/
-entity inspect) are deliberately NOT in the chain: their per-panel toggles
-(I/G/S) are the close path; revisit if playtesting asks for it.
+player actions on the undo timeline.
 
 ### Console input (stdin - a scripted input channel, TAS-shaped)
 

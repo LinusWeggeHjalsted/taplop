@@ -6573,6 +6573,47 @@ Supporting changes:
   recorded `player_exit_mission`), mission-complete dismiss (recorded on
   the timeline).
 
+### The ladder table + coverage gate (the tips drift fix)
+
+Tips shipped full-screen and clickable, but Escape fell through the
+chain and opened the options menu ON TOP of it: the hand-maintained
+if/return ladder in `handleEscapeKey` had no tips rung, and nothing
+forced one. View-side + census + DESIGN's Tips overlay section all
+recorded the rung - the escape chain was the fourth copy of the same
+z-order fact, and only the first three got updated (the hand-maintained-
+list drift class, AGENTS → Build & Test).
+
+Restructured the chain as DATA: `escape_ladder` (input_handlers.zig),
+a topmost-first array of `EscapeRung` values. Most rungs close via the
+generic `toggle_surface` arm (recorded `player_toggle_ui_surface`, the
+same event the surface's own buttons push); the three custom rungs
+(mission complete, mission fail, the full-screen overlay stack) keep
+their button-equivalent semantics verbatim. `handleEscapeKey` is now a
+walk that closes the first open rung.
+
+The future-overlay mechanism: `escapeCoverageCheck`, a comptime gate
+run over every `UiSurfaceId` at file scope, fails the build for any
+surface that is not a ladder `toggle_surface` rung, a full-screen
+overlay id (the stack rung closes the topmost of them, name-matched),
+or a member of `escape_excluded_surfaces` (the middle panels,
+deliberately out - their I/G/S toggles are the close path). A new
+surface now decides its Escape rung at the moment it's added; the
+compile error names both lists. Probe-verified by temporarily adding a
+scratch surface with all its state-machine switch arms satisfied -
+the build still fails on the gate's message.
+
+Tests (input_tests_escape.zig): the new layered-close test is DERIVED
+from `escape_ladder` (pub for exactly that walk - the
+unused-pub-report convention, noted in the declaration) - every
+non-bottom toggle rung is forced open above the options menu + a
+world-map overlay and asserted to close alone, so a new rung gets its
+coverage the moment it lands, no per-rung test to remember. Plus the
+tips regression pair: tips above the options menu (level screen), tips
+above the main-menu overlays (main menu). Design: DESIGN → Input →
+Escape overlay chain (rewritten to the table + gate; the tips rung
+sits between mission fail and the main-menu overlays, its census
+position).
+
 ## UI rendering
 
 ### 9-slice corner aspect fix (square corners on short panels)
