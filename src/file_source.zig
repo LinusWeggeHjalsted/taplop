@@ -597,6 +597,86 @@ pub const FileSource = struct {
         mtime_ns: i128 = 0,
     };
 
+    /// One campaign in the player's local collection (the campaign
+    /// browser's Local tab - the MissionEntry pattern). `dir` is the
+    /// campaign's content-root-relative dir ("campaigns/<id>") as the
+    /// graph-derivation loader consumes it; `uuid` + `name` come from its
+    /// campaign.txt Metadata. No mtime/custom-asset/level-count fields:
+    /// campaigns are a short list of worlds, not a browsable collection
+    /// (the picker rows show the name alone - add fields when a surface
+    /// needs them).
+    pub const CampaignEntry = struct {
+        uuid: []const u8,
+        dir: []const u8,
+        name: []const u8,
+    };
+
+    /// Enumerate the player's local campaigns under `campaigns/` in the
+    /// persistent dir (the listMissions pattern). Returns one entry per
+    /// subdirectory with a readable campaign.txt (name + campaign_uuid
+    /// parsed in a throwaway arena; folders without one are SKIPPED - a
+    /// half-installed campaign is not viewable). Sorted by name ascending
+    /// (deterministic; no recency sort - the mtime machinery is mission
+    /// browsing's affordance). The caller owns the returned slice + all
+    /// strings (free via `freeCampaigns`).
+    pub fn listCampaigns(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+    ) ![]CampaignEntry {
+        const campaign_ids = try self.listRootSubfolders(allocator, "campaigns");
+        defer {
+            for (campaign_ids) |id| allocator.free(id);
+            allocator.free(campaign_ids);
+        }
+
+        var entries: std.ArrayList(CampaignEntry) = .empty;
+        errdefer {
+            for (entries.items) |entry| freeCampaignEntry(allocator, entry);
+            entries.deinit(allocator);
+        }
+
+        for (campaign_ids) |campaign_id| {
+            const entry = probeCampaignDir(self, allocator, "campaigns", campaign_id) orelse continue;
+            errdefer freeCampaignEntry(allocator, entry);
+            try entries.append(allocator, entry);
+        }
+
+        std.mem.sort(CampaignEntry, entries.items, {}, campaignEntryOrder);
+        return entries.toOwnedSlice(allocator);
+    }
+
+    /// Enumerate the OFFICIAL campaigns (shipped embedded content) for the
+    /// campaign browser's Official tab: every `data/campaigns/<campaign>/
+    /// campaign.txt` in the embedded map (the runtime key scan -
+    /// `officialMissionDirPaths`'s comptime-array avoidance), name + uuid
+    /// parsed from the embedded bytes. The caller owns the returned slice +
+    /// strings (free via `freeCampaigns`). A campaign whose campaign.txt is
+    /// unreadable or unparseable is SKIPPED (shouldn't happen for shipped
+    /// content - an absent row means a broken build).
+    pub fn listOfficialCampaigns(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+    ) ![]CampaignEntry {
+        var entries: std.ArrayList(CampaignEntry) = .empty;
+        errdefer {
+            for (entries.items) |entry| freeCampaignEntry(allocator, entry);
+            entries.deinit(allocator);
+        }
+
+        for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
+            if (!isOfficialCampaignKey(key)) continue;
+            const content_dir = key["data/".len .. key.len - "/campaign.txt".len];
+            const campaign_bytes = self.readEmbeddedFile(allocator, key) catch continue;
+            defer allocator.free(campaign_bytes);
+            const entry = parseCampaignEntry(allocator, campaign_bytes, content_dir) orelse continue;
+            errdefer freeCampaignEntry(allocator, entry);
+            try entries.append(allocator, entry);
+        }
+
+        std.mem.sort(CampaignEntry, entries.items, {}, campaignEntryOrder);
+        return entries.toOwnedSlice(allocator);
+    }
+
     /// Enumerate the player's local mission collection under `missions/`
     /// in the persistent dir (editor saves land in `missions/<uuid>_<slug>/`;
     /// hand-placed and imported folders of any name are accepted too - the
@@ -623,7 +703,7 @@ pub const FileSource = struct {
         self: *const FileSource,
         allocator: std.mem.Allocator,
     ) ![]MissionEntry {
-        const mission_ids = try self.listMissionFolderNames(allocator);
+        const mission_ids = try self.listRootSubfolders(allocator, "missions");
         defer {
             for (mission_ids) |id| allocator.free(id);
             allocator.free(mission_ids);
@@ -716,19 +796,21 @@ pub const FileSource = struct {
         return entries.toOwnedSlice(allocator);
     }
 
-    /// The mission FOLDER names under `missions/` (directories only, no
-    /// files). A missing missions/ (fresh install) is an empty list, not an
-    /// error. The caller owns the returned names + slice.
-    fn listMissionFolderNames(
+    /// The subfolder names under a persistent root (`missions/`,
+    /// `campaigns/` - directories only, no files). A missing root (fresh
+    /// install) is an empty list, not an error. The caller owns the
+    /// returned names + slice.
+    fn listRootSubfolders(
         self: *const FileSource,
         allocator: std.mem.Allocator,
+        root_name: []const u8,
     ) ![][]const u8 {
         var names: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (names.items) |name| allocator.free(name);
             names.deinit(allocator);
         }
-        const missions_dir = self.persistent_dir.openDir(self.io, "missions", .{
+        const missions_dir = self.persistent_dir.openDir(self.io, root_name, .{
             .access_sub_paths = true,
             .iterate = true,
         }) catch |err| switch (err) {
@@ -1091,6 +1173,100 @@ pub fn freeMissions(allocator: std.mem.Allocator, missions: []const FileSource.M
 fn missionOrder(_: void, a: FileSource.MissionEntry, b: FileSource.MissionEntry) bool {
     if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
     return std.mem.lessThan(u8, a.name, b.name);
+}
+
+/// Free one `FileSource.CampaignEntry`'s strings (not the entry itself).
+fn freeCampaignEntry(allocator: std.mem.Allocator, entry: FileSource.CampaignEntry) void {
+    allocator.free(entry.uuid);
+    allocator.free(entry.dir);
+    allocator.free(entry.name);
+}
+
+/// Free a slice returned by `FileSource.listCampaigns` or
+/// `FileSource.listOfficialCampaigns` (entries + strings). A zero-length
+/// slice is a no-op (the freeMissions rule).
+pub fn freeCampaigns(allocator: std.mem.Allocator, campaigns: []const FileSource.CampaignEntry) void {
+    if (campaigns.len == 0) return;
+    for (campaigns) |entry| freeCampaignEntry(allocator, entry);
+    allocator.free(campaigns);
+}
+
+/// Name-ascending order for the campaign browser's tabs, dir ascending as
+/// the deterministic tiebreak.
+fn campaignEntryOrder(_: void, a: FileSource.CampaignEntry, b: FileSource.CampaignEntry) bool {
+    if (!std.mem.eql(u8, a.name, b.name)) return std.mem.lessThan(u8, a.name, b.name);
+    return std.mem.lessThan(u8, a.dir, b.dir);
+}
+
+/// One embedded-map key is an official campaign's campaign.txt
+/// (data/campaigns/<campaign>/campaign.txt with a single plain campaign
+/// segment - missions live deeper, under /missions/).
+fn isOfficialCampaignKey(key: []const u8) bool {
+    if (!std.mem.startsWith(u8, key, "data/campaigns/")) return false;
+    if (!std.mem.endsWith(u8, key, "/campaign.txt")) return false;
+    const campaign = key["data/campaigns/".len .. key.len - "/campaign.txt".len];
+    return campaign.len > 0 and std.mem.indexOfScalar(u8, campaign, '/') == null;
+}
+
+/// Parse one campaign.txt into a browser entry: name + campaign_uuid from
+/// its Metadata (a missing name falls back to the dir stem - the row needs
+/// SOMETHING to show; a missing uuid stays empty - viewing scopes the
+/// discovered groups by uuid, and an empty one simply matches nothing). A
+/// campaign.txt that doesn't parse as the campaign format is NOT a
+/// viewable campaign: null. `content_dir` is borrowed (duped into the
+/// entry); `campaign_bytes` is borrowed (parsed in a throwaway arena).
+fn parseCampaignEntry(
+    allocator: std.mem.Allocator,
+    campaign_bytes: []const u8,
+    content_dir: []const u8,
+) ?FileSource.CampaignEntry {
+    var parse_arena = std.heap.ArenaAllocator.init(allocator);
+    defer parse_arena.deinit();
+    const pa = parse_arena.allocator();
+    const sections = parser.parseConfigFile(campaign_bytes, pa, &parser.campaign_sections) catch return null;
+
+    var name: []const u8 = std.fs.path.basename(content_dir);
+    var uuid: []const u8 = "";
+    if (parser.findSection(sections, "Metadata")) |section| {
+        if (section.entry_groups.len > 0) {
+            const pairs = section.entry_groups[0].pairs;
+            if (parser.findValue(pairs, "name")) |value| {
+                if (value.len > 0) name = value;
+            }
+            if (parser.findValue(pairs, "campaign_uuid")) |value| uuid = value;
+        }
+    }
+
+    return .{
+        .uuid = allocator.dupe(u8, uuid) catch @panic("failed to dupe campaign uuid"),
+        .dir = allocator.dupe(u8, content_dir) catch @panic("failed to dupe campaign dir"),
+        .name = allocator.dupe(u8, name) catch @panic("failed to dupe campaign name"),
+    };
+}
+
+/// Probe one persistent-root subfolder for a viewable campaign: reads
+/// `<root>/<id>/campaign.txt` (readFile - persistent-first, so the entry
+/// reflects the LOCAL copy even when an embedded campaign shares the
+/// path) and parses it. No campaign.txt (or an unparseable one) is not a
+/// viewable campaign: null. The entry OWNS its `dir`
+/// ("<root>/<id>", content-root-relative - the graph-derivation
+/// loader's addressing).
+fn probeCampaignDir(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+    root: []const u8,
+    id: []const u8,
+) ?FileSource.CampaignEntry {
+    const campaign_txt_path = std.fmt.allocPrint(allocator, "{s}/{s}/campaign.txt", .{ root, id }) catch
+        @panic("failed to allocate campaign.txt path");
+    defer allocator.free(campaign_txt_path);
+    const campaign_bytes = self.readFile(allocator, campaign_txt_path) catch return null;
+    defer allocator.free(campaign_bytes);
+
+    const content_dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, id }) catch
+        @panic("failed to allocate campaign dir path");
+    defer allocator.free(content_dir);
+    return parseCampaignEntry(allocator, campaign_bytes, content_dir);
 }
 
 /// One mission folder's scan results (`FileSource.scanMissionFolder`):
@@ -1493,6 +1669,78 @@ test "listOfficialMissions: the shipped campaign missions with paths + metadata"
 }
 
 // --- tests for listSaveFiles ---
+
+// --- tests for listCampaigns / listOfficialCampaigns ---
+
+test "listCampaigns: local campaigns with metadata; skips + name fallbacks" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-campaigns";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    file_source.writeFile("campaigns/zeta_lands/campaign.txt", "Metadata\nfile_format_version 3\ncampaign_uuid 33333333-3333-3333-3333-333333333333\nname Zeta Lands\n") catch @panic("w1");
+    // No name key: the entry falls back to the dir stem.
+    file_source.writeFile("campaigns/unnamed/campaign.txt", "Metadata\nfile_format_version 3\ncampaign_uuid 44444444-4444-4444-4444-444444444444\n") catch @panic("w2");
+    // Missing campaign.txt - SKIPPED (not viewable).
+    file_source.writeFile("campaigns/broken/hub_a.txt", "Metadata\nfile_format_version 1\n") catch @panic("w3");
+
+    const list = try file_source.listCampaigns(allocator);
+    defer freeCampaigns(allocator, list);
+
+    // Name-ascending (bytewise - 'Z' sorts before lowercase 'u'):
+    // "Zeta Lands" before "unnamed" (the stem fallback).
+    try testing.expectEqual(@as(usize, 2), list.len);
+    try testing.expectEqualStrings("campaigns/zeta_lands", list[0].dir);
+    try testing.expectEqualStrings("Zeta Lands", list[0].name);
+    try testing.expectEqualStrings("33333333-3333-3333-3333-333333333333", list[0].uuid);
+    try testing.expectEqualStrings("campaigns/unnamed", list[1].dir);
+    try testing.expectEqualStrings("unnamed", list[1].name);
+    try testing.expectEqualStrings("44444444-4444-4444-4444-444444444444", list[1].uuid);
+}
+
+test "listCampaigns: empty when campaigns/ absent" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-campaigns-empty";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    const list = try file_source.listCampaigns(allocator);
+    defer freeCampaigns(allocator, list);
+    try testing.expectEqual(@as(usize, 0), list.len);
+}
+
+test "listOfficialCampaigns: the shipped campaign with uuid + metadata" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, undefined);
+
+    const list = try file_source.listOfficialCampaigns(allocator);
+    defer freeCampaigns(allocator, list);
+
+    // The one shipped campaign (fixed shipped content - a missing entry
+    // means a broken build). The uuid is asserted against the shipped
+    // campaign.txt exactly (the discovered-group scoping depends on it).
+    try testing.expectEqual(@as(usize, 1), list.len);
+    try testing.expectEqualStrings("campaigns/main_campaign", list[0].dir);
+    try testing.expectEqualStrings("Main Campaign", list[0].name);
+    try testing.expectEqualStrings("8ecb3f44-9a3d-497c-95a9-a000b8517b7d", list[0].uuid);
+}
 
 test "listSaveFiles: empty when saves/ absent" {
     const allocator = testing.allocator;
