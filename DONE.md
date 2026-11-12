@@ -312,6 +312,7 @@ working rules).
 - [docs: finished tasks fully deleted from TODO](#docs-finished-tasks-fully-deleted-from-todo)
 - [campaign slice 2c design settle](#campaign-slice-2c-design-settle)
 - [campaign-editor slice 2c, step 1: the curve UiElement](#campaign-editor-slice-2c-step-1-the-curve-uielement)
+- [campaign-editor slice 2c, step 2: the derived campaign edge table](#campaign-editor-slice-2c-step-2-the-derived-campaign-edge-table)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19755,3 +19756,46 @@ builder exists:
 
 Facade: Curve/curve_sample_count/sampleCurve re-exported through ui.zig.
 Full suite PASS, web build OK, dash sweep clean.
+
+## campaign-editor slice 2c, step 2: the derived campaign edge table
+
+The load-scan side of The map surface settle: the active campaign's
+graph now lives in state.
+
+- **`CampaignEdgeEntry`** (types.zig) + `Campaign.edges`: one entry per
+  resolvable exit across all placed hubs - from, destination (empty =
+  the dangling forward reference), mission uuid + scan-resolved dir +
+  name (through the mission table), the EFFECTIVE direction (authored,
+  else auto-spread 360*exit_index/exit_count; unparsable warns + falls
+  back), exit_index (the parallel-spread input). `CampaignHub.name`:
+  display name denormalized from hub.txt Metadata (the mission-table
+  precedent).
+- **`deriveCampaignEdges`** (loaders.zig): ONE walk over the placed
+  hubs' hub.txt - the same files resolveCampaignHubs resolved - filling
+  names + the edge table. Campaign.hubs is a const slice, so the name
+  fill rides a REBUILT hubs slice (the resolveCampaignHubs ownership
+  handoff pattern: dupe all, free old, swap). Read/parse failures warn
+  with the texts the integrity checks used to emit.
+- **checkCampaignGraph became PURE over the table** - no file reads,
+  no per-edge mission re-scan: dangling destinations + unresolvable
+  missions read `mission_dir == empty` from the table; the BFS walks
+  campaign.edges. This dissolved THREE former hub.txt readers at load
+  (check's own walk + its per-edge resolveCampaignMissionDir scans +
+  the new derive would have been a fourth) into one, and fixed a
+  pre-existing DOUBLE warning (resolveCampaignHubs + check both warned
+  "no resolvable directory" for the same hub). `resolveCampaignMissionDir`
+  deleted (table membership is the resolution now).
+- **Call sites**: loadCampaignAndPushHub (missions -> hubs -> derive ->
+  check) + content_validation_tests (the shipped campaign now derives
+  its table at validation: 4 authored self-loop directions + the hub
+  name, asserted clean).
+- **Test restructured** into the pipeline shape (resolveMissions ->
+  derive -> check per run, fresh heap-owned campaigns): the derived
+  table asserted field-by-field (names, resolution, the dangling-empty
+  destination), plus the direction trio (unauthored default 0,
+  authored 42, unparsable -> warn + default 240) and the old defect
+  runs (unplaced start, ghost hub, dangling, missing mission) with
+  the derive-first warning order.
+
+Full suite PASS, doc-symbol check CLEAN (resolveCampaignMissionDir
+had no doc references), dash sweep clean.
