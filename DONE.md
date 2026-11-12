@@ -305,6 +305,7 @@ working rules).
 - [zig 0.17 migration](#zig-017-migration)
 - [discovered_hubs re-typed to a name set (review m-2.3)](#discoveredhubs-re-typed-to-a-name-set-review-m-23)
 - [campaign content paths re-shaped to content-root-relative (review Part 5 rider)](#campaign-content-paths-re-shaped-to-content-root-relative-review-part-5-rider)
+- [Campaign slice-2 design settle: uuid identity + the viewing model](#campaign-slice-2-design-settle-uuid-identity--the-viewing-model)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19424,3 +19425,48 @@ the re-shape reconstruct unchanged - no re-record needed (the
 reconstruction-cache keys are the event-carried path strings, and old
 events carry old paths that hit the same bytes). Design record: DESIGN →
 Campaigns & the Campaign Editor → Campaign content paths.
+
+## Campaign slice-2 design settle: uuid identity + the viewing model
+
+The pre-slice-2 design session (spanning the discovered_hubs re-type, the
+content-path re-shape, and the slice-2 discussion). What settled, and the
+why - recorded in full in DESIGN → Campaigns & the Campaign Editor (the
+new subsections: Content identity, Uuid→dir resolution, Rename + Save As
+Copy, Campaign switching, Edge geometry):
+
+- **Uuids everywhere.** Every content kind (mission, hub, campaign) is
+  identified by a random v4 uuid authored in its file content; every
+  reference between content files is a uuid. SUPERSEDES slice 1's
+  "references are NAMES" settle - the reversal rationale (name collisions
+  legal everywhere, player data surviving renames, user-content-first)
+  is recorded alongside the supersession. The uuid/content-hash split
+  made explicit: uuid = cross-version identity (random, minted
+  write-only at birth); hash = exact-version identity (server seam;
+  campaign hashing deferred). Also fixed on the way: the clones-keying
+  line in DESIGN wrongly called mission uuids "content-identity hashes"
+  - they are random v4 ids, globally unique by construction.
+- **Scan-based loading + latest-mtime duplicate resolution.** Any dir
+  name loads; duplicates resolve max-folder-mtime, name-ascending
+  tiebreak (the mission browser's existing recency convention); embedded
+  = mtime 0 so uuid resolution can never disagree with FileSource's
+  persistent-first read order; warning names both dirs; Save As Copy is
+  the sanctioned split.
+- **Rename-in-place + Save As Copy.** Name is just a field; save targets
+  the content's existing dir; a cosmetic dir tidy follows when the
+  `<uuid>_<name>` target is free. Dissolves the deferred hub-rename
+  question and ends the rename-creates-duplicate-dirs behavior.
+- **The viewing model.** Campaign switching = viewing another graph
+  (session-scoped cache, the editor-browser-row resolved-payload
+  pattern); the ACTIVE campaign switches only on arrival (start_hub
+  carries campaign identity, discovers, and sets current_hub - which IS
+  the last-visited hub; no extra resume bookkeeping). The map is always
+  navigable; mid-mission acting rides the .exit_mission abandon cascade
+  (pickups preserved by the end_level build_data_from_player invariant -
+  verified in code during the discussion, no fix needed).
+- **Edge geometry.** Per-exit authored `direction` (degrees) anchors
+  self-loops + dangling stubs; bezier rendering (one `curve` UiElement);
+  auto-spread defaults; fixed 3840x2160 map in v1 with a transform slot.
+
+TODO's slice 2 re-cut into 2a-2e (+ the later new-game picker/speedrun
+seed) with the identity work concentrated in 2a; the editor-side
+rename/save-as machinery folded into slice 3.

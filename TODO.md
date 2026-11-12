@@ -471,7 +471,11 @@ work:
       warn-over-reject posture. The marker-on-marker case stays vetoed
       (planning.editorSelectionMoveVetoed); this is the non-marker
       members' case.
-- **Campaign editor (hub editing inside) - design SETTLED, build not
+- **Campaign editor (hub editing inside) - design SETTLED including the
+  slice-2 identity model (uuids everywhere, scan loading, rename-in-place,
+  the viewing model - see DESIGN → Campaigns & the Campaign Editor, esp.
+  Content identity / Uuid→dir resolution / Rename + Save As Copy /
+  Campaign switching / Edge geometry), build not
   started.** TWO editors, not three (see DESIGN → Campaigns & the
   Campaign Editor for the full model): the mission editor (built) + the
   campaign editor - the campaign view (background, freely-placed
@@ -482,9 +486,6 @@ work:
   READ-side mirror of the same view (discovery + travel semantics
   settled in DESIGN). OPEN questions (inline, decide at the
   corresponding slices):
-  - hub rename - rewrite references (destination_hub values +
-    start_hub; the mission editor's stem-normalization precedent; the
-    lean) vs no rename in v1;
   - the Editor-state split - `Editor` + content union (mission /
     campaign payloads on the shared spine; the lean) vs a parallel
     CampaignEditor state; UNDECIDED - settle with a dedicated design
@@ -492,11 +493,17 @@ work:
     slices 3-5; cheap to revisit on paper, expensive in code);
   - what the mission editor's campaign context changes beyond the
     options-menu return (the "slightly different setup" - e.g. no
-    standalone-dream export surface while campaign-owned).
+    standalone-dream export surface while campaign-owned);
+  - mint-on-fork for campaign copy-at-pick imports (the slice-3
+    decision; see DESIGN → Rename + Save As Copy).
+  (The hub-rename question DISSOLVED - rename is free under uuid
+  references: see DESIGN → Rename + Save As Copy.)
   Future surfaces riding this work: the pre-mission briefing overlay
   (leaderboards, clone info + medal - before ANY mission start, map
   edge / exit tile / re-run alike); fog-of-war hiding as a possible
-  refinement of the dim-undiscovered mirror.
+  refinement of the dim-undiscovered mirror; the new-game campaign
+  picker + speedrun seed (all-hubs-discovered start option,
+  runtime-derived - see DESIGN → Campaign switching).
   Artist dependency: the official campaign's real world-map background -
   a procedural PLACEHOLDER ships at
   data/campaigns/main_campaign/map.png (the ui/panel.png precedent;
@@ -510,25 +517,54 @@ work:
         (DONE.md, "campaign-editor slice 1, step 1" through "step 5"; the
         formats + the coordinate model: DESIGN → Campaigns & the
         Campaign Editor → File formats + The map coordinate model).
-  - [ ] 2. Runtime: discovery (PlayerData discovered-hub set, seeded at
-        new_game, discovered on arrival), world-map travel (backtrack to
-        discovered) + mission starts (edge clickable when the start hub
-        is discovered) - the exit-click end_hub_id population landed
-        early with slice 1e -
-        buildWorldMap renders the mirror (dim undiscovered hubs /
-        unavailable missions). OPEN (inline, decide here): the discovered
-        set's per-campaign scoping - hub names are only unique WITHIN a
-        campaign, so a player switching campaigns needs the set cleared
-        or keyed by campaign (new_game is the natural clear point; the
-        lean).
+  - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
+        DESIGN → Campaigns & the Campaign Editor - Content identity,
+        Uuid→dir resolution, Campaign switching, Edge geometry):
+    - [ ] 2a. The identity + graph slice: the uuid sweep across
+          campaign.txt (v3: campaign_uuid, uuid start_hub + Hubs
+          entries) / hub.txt (v4: hub_uuid, uuid Exits: mission_uuid +
+          destination_hub + direction) / the player save
+          (current_campaign_uuid, uuid current_hub, uuid-keyed grouped
+          DiscoveredHubs); the scan-based uuid→dir resolution + the
+          campaign GRAPH derivation (edges + display names, through
+          reconstruction reads); latest-mtime duplicate resolution +
+          warnings; resolved-payload event fields (start_hub carries
+          campaign + hub uuids + dirs); official-data migration (mint
+          campaign + hub uuids; exits switch to mission_uuids);
+          max_player/new_player fixture updates.
+    - [ ] 2b. The arrival rule (rides 2a's commit if it fits): the
+          start_hub handler discovers the arrived hub idempotently
+          into the active campaign's group; campaign identity fields
+          update on arrival; one rule covers new_game, completion,
+          travel, cross-campaign entry, mission-from-map.
+    - [ ] 2c. The map surface: buildWorldMap (background, hubs, bezier
+          edges incl. self-loops via direction, dim undiscovered) + the
+          `curve` UiElement + backend draw + hit-testing; the
+          session-scoped graph cache + the campaign picker (viewing ≠
+          state); structure tests.
+    - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
+          backtrack-to-discovered legality) + mission start
+          (player_start_mission_from_map; start-hub-discovered
+          legality) incl. the mid-level abandon ride on the .exit_mission
+          cascade (pickups preserved by the end_level sync invariant).
+    - [ ] 2e. The switcher polish: listCampaigns (embedded + persistent,
+          uuid-deduped, persistent-wins) shared with the future
+          new-game picker; deferrable past 2d (one official campaign
+          today).
+    - [ ] later. New-game campaign picker + the speedrun seed
+          (all-hubs-discovered start option, runtime-derived) - main-menu
+          work, rides the same machinery.
   - [ ] 3. The campaign editor state + framing + the editor browser's
         Campaign tab (scan `campaigns/`, New Campaign) + the campaign
         view (background, hub place/free-move/drag, edge rendering,
-        dangling rendering).
+        dangling rendering). Includes the editor-side identity model:
+        rename-in-place + cosmetic dir tidy + Save As Copy + the
+        FileSource renameDir seam (DESIGN → Rename + Save As Copy);
+        decide mint-on-fork here.
   - [ ] 4. The hub editor drill-in: the reused viewport machinery +
         exit + NPC tools with inspector fields (mission pick / import
         COPY-AT-PICK / new blank mission; destination picks placed hubs
-        or a free-typed name).
+        by list or a free-typed forward reference; direction field).
   - [ ] 5. The mission-editor hand-off (campaign context) + campaign
         save/export bundling (the STORE-zip pattern).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;

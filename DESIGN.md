@@ -72,10 +72,15 @@ next session meets it as a surprise instead of a known.
   - [Auth & the server seam (deferred)](#auth--the-server-seam-deferred)
 - [Campaigns & the Campaign Editor](#campaigns--the-campaign-editor)
   - [The graph model](#the-graph-model)
+  - [Content identity (uuids everywhere; SUPERSEDES the names-as-references settle)](#content-identity-uuids-everywhere-supersedes-the-names-as-references-settle)
+  - [Uuid→dir resolution (scan-based loading)](#uuiddir-resolution-scan-based-loading)
+  - [Rename + Save As Copy (in-place identity; the editor save model)](#rename--save-as-copy-in-place-identity-the-editor-save-model)
   - [File formats (each change bumps its per-type file_format_version)](#file-formats-each-change-bumps-its-per-type-fileformatversion)
   - [Campaign content paths (content-root-relative, one shape)](#campaign-content-paths-content-root-relative-one-shape)
   - [The map coordinate model](#the-map-coordinate-model)
   - [Discovery + travel (the world map's gameplay)](#discovery--travel-the-world-maps-gameplay)
+  - [Campaign switching (the viewing model)](#campaign-switching-the-viewing-model)
+  - [Edge geometry (loops, dangling stubs, parallels)](#edge-geometry-loops-dangling-stubs-parallels)
   - [The campaign editor](#the-campaign-editor)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
@@ -3154,15 +3159,110 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   lookup, is the replay-safe record of the edge. `level_count` is DERIVED
   (count the mission dir's `level_N.txt` files) - all three drift-prone
   authored duplicates die.
-- **References are NAMES (hub dir names), never indices.** Names
-  forward-reference (an end hub not placed yet is a plain string - an exit
-  is authored before its destination exists), dangle LOUDLY (a vanished hub
-  is a visibly dangling edge + a validation catch - an index would
-  silently RETARGET on reorder/delete, the worst failure class in a
-  deliberately hand-editable format), stay hand-readable, and match
-  `mission_id` (the mission dir name) + every runtime identifier
-  (`player_data.current_hub`, the `start_hub` event's hub id, saves,
-  session logs).
+
+### Content identity (uuids everywhere; SUPERSEDES the names-as-references settle)
+
+The slice-1 settle "references are NAMES, never indices" is REVERSED by
+this one. Same two hard requirements (forward-reference; dangle LOUDLY,
+never silently retarget), different answer: **every content kind -
+mission, hub, campaign - is identified by a random v4 UUID authored in
+its file content, and every reference between content files is a uuid.**
+
+Why the reversal: the user-content-first model needs name collisions
+legal everywhere (two campaigns can both have a "Village" hub; a custom
+campaign can be named like the official one), and the player's own data
+(clone records, discovered hubs, save positions) must survive author
+renames. Names cannot carry that; uuids do it for free. What the names
+settle loses - hand-readability of references, typing a name into a
+hand-edited file - is accepted: copy-pasting a uuid is the authoring
+cost, validation warnings pair uuids with display names for humans, and
+the campaign editor (the primary authoring surface) picks from lists,
+never asks for a uuid by hand.
+
+- **The uuid and the content hash are DIFFERENT axes** (the mission
+  convention, extended): the uuid is the CROSS-VERSION identity - random
+  v4, minted WRITE-ONLY at the file's birth (the save path; never into
+  GameState - `generateMissionUuid`'s replay rule), persistent across
+  edits and renames; the content hash (SHA-256 over the config files,
+  `computeMissionHash`) is the EXACT-VERSION identity for the server seam
+  (leaderboards, revalidation). Campaign content hashing is deferred
+  until that seam needs it (full campaign validation + server-side
+  versioning are the known consumers).
+- **Three attributes, cleanly separated**: uuid = identity (authored,
+  immutable); dir name = storage (arbitrary, never referenced); display
+  name = label (just a field, freely editable, may collide).
+- **Minting policy**: rename-in-place NEVER re-mints (the uuid is the
+  identity); an explicit Save As Copy DOES mint a fresh uuid (an
+  intentional fork is a new work). Copy-at-pick campaign imports keep
+  the uuid today (the mission precedent); mint-on-fork for campaigns is
+  an OPEN slice-3 question.
+
+### Uuid→dir resolution (scan-based loading)
+
+Loading resolves uuids to directories by SCANNING, never by convention:
+
+- campaign load lists `campaigns/` (persistent) + the embedded official
+  campaign, reads each `campaign.txt`'s `campaign_uuid`, and matches
+  against the requested uuid; the winning campaign's `hubs/` +
+  `missions/` scans build the hub + mission resolution tables the same
+  way (uuid read from each hub.txt / mission.txt).
+- **Any dir name loads** - the `<uuid>_<name>` convention is a
+  save-side naming scheme for human browsability, never a load
+  requirement. The official campaign's `main_campaign` dir (and any
+  hand-named dir) loads by its uuid.
+- **Duplicate uuids across dirs** (manual file copying, hand edits, or
+  the CURRENT pre-rename save behavior that leaves `<uuid>_<oldname>/`
+  behind on a renamed re-save - the class shrinks to zero once
+  rename-in-place lands): resolve **latest-updated wins** - the MAX mtime across the
+  folder's files (the mission browser's recency convention,
+  `scanMissionFolder.max_mtime_ns`), name-ascending breaking exact ties
+  (copied folders carry identical mtimes - deterministic under all
+  inputs). Embedded counts as mtime 0, so a persistent copy always
+  beats the embedded original - uuid resolution and FileSource's
+  persistent-first read order can never disagree. A WARNING names both
+  dirs and which one loaded; identity-keyed records stay coherent by
+  definition (same uuid = same identity: either copy's completion
+  updates the same clone). A lazy content-hash comparison (missions;
+  campaigns when hashing lands) distinguishes redundant copies (same
+  hash - silent-ish) from diverged versions (different hash - the
+  warning says so) in the warning text. **Save As Copy is the sanctioned
+  split**; the editor never creates duplicates itself.
+- **Replay purity**: scans are LISTINGS, not reconstruction reads, so
+  the recorded events carry RESOLVED payloads (the mission-browser
+  pattern): push sites resolve live (scan at click / new-game time) and
+  events carry both the uuid and the resolved dir (`start_hub` gains
+  `campaign_dir` + `campaign_uuid` + `hub_dir` + `hub_uuid`);
+  replay reads the recorded paths through the cache and never
+  re-scans. `PlayerData` references identity only (`current_campaign_uuid`,
+  `current_hub` as uuid) - never storage.
+
+### Rename + Save As Copy (in-place identity; the editor save model)
+
+Name is just a field: the editor's metadata sidebar edits it, save
+persists it into the content file, and nothing else happens - no
+reference rewrites (references are uuids), no new dir, no re-mint. This
+dissolves the deferred hub-rename question ("rewrite references vs
+no rename in v1"): rename is free, for all three content kinds.
+
+- **The save target is the content's existing dir** when the identity
+  exists (opened-from-disk / saved-this-session): a rename-save writes
+  the same files with a new `name` field, same dir, same uuid. A NEW
+  dir is created only when identity is genuinely new - a fresh
+  mission/hub/campaign's first save (mint) or an explicit Save As Copy
+  (fresh uuid, `<uuid>_<name>` dir).
+- **Cosmetic dir tidy on save**: if the dir's name doesn't match
+  `<uuid>_<current_name>` and the target name is free, the dir is
+  renamed in passing (after the config writes succeed - content is the
+  truth, the rename is cosmetics). If the target is taken - including
+  by a duplicate-uuid sibling - keep the old dir name and warn with
+  the duplicate warning shape. Keeps `missions/` / `campaigns/`
+  self-describing without ever creating identical-uuid dirs.
+- **Custom-art stems ride the dir**: `custom/...` ids embed the content
+  dir, so a dir rename rewrites the stems in the content's own files
+  (the mission writer's existing stem-rewrite machinery; it now fixes
+  in-place too). Campaign-level references are uuids - unaffected.
+- **FileSource gains a `renameDir` seam** (native: rename; web's
+  in-memory mount: the same operation). Shared by all three kinds.
 
 ### File formats (each change bumps its per-type file_format_version)
 
@@ -3171,7 +3271,7 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   custom campaigns author it identically; the loader mints it into the
   content-addressed sprite id at load, so the render side resolves it
   through the standard custom-asset rule) + a `Hubs` section, one group
-  per hub (`hub_id` + `position`). Positions live HERE, not in hub.txt -
+  per hub (`hub_uuid` + `position`). Positions live HERE, not in hub.txt -
   the map is campaign-level data: moving a hub edits one file, and the
   world map loads the whole graph geometry in one read without touching
   every hub file. The coordinate model: see The map coordinate model
@@ -3187,7 +3287,9 @@ to reference + its hubs as destinations), and the exit entry IS the edge
   files through `file_source` directly, NOT the reconstruction cache:
   warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
   advisory-only), so replay purity is unaffected.
-- **hub.txt**: `Exits` entries gain `destination_hub`; the `NPCs` section
+- **hub.txt** (v3 landed; v4 adds the uuid sweep): `Exits` entries carry
+  `destination_hub` (a uuid), `mission_uuid`, + `direction` (see Edge
+  geometry below); the `NPCs` section
   becomes `character_code` + `npc_type`. Hubs bundle their own custom
   decoration art - `hubs/<hub>/` gains the art folder, custom stems
   content-addressed as `custom/campaigns/<campaign>/hubs/<hub>/<stem>`
@@ -3272,10 +3374,21 @@ whenever the real map lands.
 
 ### Discovery + travel (the world map's gameplay)
 
-- **Discovered = visited, seeded with the start hub.** `new_game` discovers
-  the campaign's start hub (the official campaign for now - the only one);
-  arriving in a hub (the exit_mission → start_hub cascade) discovers it.
-  The discovered set rides PlayerData (persisted in saves).
+- **Discovered = visited, discovered ON ARRIVAL.** The `start_hub`
+  handler appends the arrived hub's uuid to the active campaign's group
+  (idempotent) - ONE rule composes everything: new game (arrival at the
+  start hub - no seeding code anywhere), mission completion (the
+  destination hub), backtrack travel, cross-campaign entry, mission-
+  from-map (the edge's start hub). Undo to before an arrival
+  un-discovers - correct timeline semantics.
+- **The discovered set is GROUPED BY CAMPAIGN on PlayerData** (uuid-keyed
+  groups: `{campaign_uuid, hub_uuids}`): hubs are only a thing inside
+  campaigns, a scoped lookup is exactly what the map render needs, and
+  groups for uninstalled campaigns are KEPT (the player may switch
+  back). Persisted in saves. A fresh campaign needs no seeding - a
+  campaign's start hub is ALWAYS travel-legal (discovered-or-start),
+  which is also what makes the fresh view show one live hub and its
+  edges with everything else dimmed.
 - **Map travel is BACKTRACKING only** - jump to any DISCOVERED hub; forward
   movement is playing edges (the core loop: missions are the connections,
   and the map must not skip them).
@@ -3283,6 +3396,13 @@ whenever the real map lands.
   edge is clickable when its start hub is discovered, and starting it is
   the same as standing on the exit in the start hub. The world map is a
   navigation shortcut for players who want it - never a requirement.
+- **The map is ALWAYS navigable** - from a hub or mid-mission alike.
+  Acting on it mid-mission rides the existing abandon cascade
+  (`end_level{.exit_mission}` → `end_mission` → the pushed arrival):
+  pickups are kept (the `end_level` sync invariant -
+  `build_data_from_player` before any level discard; tested in
+  `handler_tests_autosave`), the run earns no clone (the clone is the
+  record of COMPLETED runs).
 - **Rendering: the simple mirror first** - the world map renders ALL hubs
   + edges (the exact campaign-editor view) with undiscovered hubs /
   unavailable missions DIMMED. Fog-of-war hiding is a future refinement
@@ -3294,6 +3414,72 @@ whenever the real map lands.
 - Future surface (see TODO): a pre-mission briefing overlay (leaderboards,
   current clone info + medal achieved) before ANY mission start - map
   edge, exit tile, re-run alike.
+
+### Campaign switching (the viewing model)
+
+Only one campaign is ACTIVE at a time (the one whose world the player is
+in - `current_campaign_uuid` on PlayerData), but the player can VIEW any
+installed campaign's map at any time and SWITCH by acting on it:
+
+- **Viewing ≠ state.** The map overlay's campaign picker lists
+  `listCampaigns` (the `listMissions` pattern: embedded official scan +
+  persistent scan, deduped by uuid with persistent winning). Picking a
+  campaign loads ITS graph into a session-scoped cache (the
+  `editor_local_missions` pattern: idle-input acquisition, SessionState-
+  held, replay-irrelevant). Recorded clicks carry fully resolved payloads
+  (campaign uuid + dir, hub uuid + dir, mission path, end destination) -
+  the mission-browser-row precedent; legality never reads the cache.
+- **The active campaign switches as a side effect of ARRIVAL.** The
+  `start_hub` event carries campaign identity (`campaign_uuid` + resolved
+  `campaign_dir`); its handler updates `current_campaign_uuid` + installs
+  the hub + sets `current_hub` (which IS the last-visited hub - the
+  handler already writes it) + discovers. Entering a mission from the
+  map of another campaign puts that edge's start hub as `current_hub` on
+  the way in. No separate resume bookkeeping: ONE `last_hub` =
+  `current_hub`, exactly one per player.
+- **Cross-campaign arrival loads the target campaign's graph inside the
+  handler** through reconstruction reads (the `load_save` / `start_level`
+  precedent - handlers already do recorded reads).
+- PlayerData (gear, materials, clones) travels across switches - the
+  player IS the save; campaigns are worlds they enter. The save file is
+  untouched by switching (no autosave backup needed - nothing is
+  overwritten).
+- The future new-game campaign picker (choose a start campaign) and the
+  speedrun seed (a start option that marks ALL of the just-loaded
+  campaign's placed hubs discovered - RUNTIME-derived from the graph,
+  never an authored maxed save) share `listCampaigns` and this machinery.
+
+### Edge geometry (loops, dangling stubs, parallels)
+
+Edges have no position of their own - they derive geometry from anchors.
+A two-hub edge interpolates them (well-defined). A SELF-LOOP and a
+DANGLING edge (destination not placed yet) are the two degenerate
+one-anchor cases, and that is exactly when the author supplies the
+missing information:
+
+- **`direction <degrees>`** on the exit entry in hub.txt - compass
+  convention (0 = north, clockwise), integer, PER-EXIT (a hub's four
+  self-loops need four distinct click targets, so collision control is
+  per-edge granularity). It positions both degenerate cases: the
+  self-loop's departure angle AND the dangling stub's bearing.
+- **Rendering: cubic beziers.** Self-loop = the four points
+  `{hub, hub + d·L + n·w, hub + d·L - n·w, hub}` (d = direction unit
+  vector, n = perpendicular; L, w = fixed view constants in v1 - style
+  consistency; an authored length override is a later dial) - a narrow
+  elliptical teardrop. Straight edges are the degenerate bezier (all
+  controls on the segment). One `curve` UiElement variant (two endpoints
+  + two control points + width + color; the backend samples it to a line
+  strip - portable to web); hit-testing = distance to the sampled
+  polyline.
+- **Defaults when unauthored: auto-spread.** The exits sharing a hub
+  space their directions evenly by index (four unauthored camp loops land
+  at 90° spacing); parallel straight edges between the same hub pair
+  spread perpendicular by exit index. Cosmetic default, no warning (the
+  warn surface is for correctness, not style); the author overrides
+  per-exit for expression.
+- **The map view is FIXED in v1**: the 3840×2160 default framing (a view
+  constant - see The map coordinate model) with no zoom/pan; the builder
+  keeps one transform slot so zoom can land later without a rewrite.
 
 ### The campaign editor
 
@@ -3316,8 +3502,12 @@ whenever the real map lands.
   `missions/` - COPY AT PICK (the campaign owns a snapshot; the campaign
   dir is always the source of truth - later edits to the original do not
   propagate), (c) create a new blank/default mission (the
-  editor_defaults pattern - edit after). The destination picks placed
-  hubs OR a free-typed name (the forward reference).
+  editor_defaults pattern - edit after). All picks are by LIST (never a
+  uuid by hand); an import is a copy with the uuid kept - mint-on-fork
+  is the OPEN slice-3 question (see Rename + Save As Copy). The
+  destination picks placed hubs (by list) or a free-typed
+  forward reference (the dangling stub; the author picks the real hub
+  once placed).
 - **Saving keeps the campaign dir self-contained**: campaign.txt + map +
   `hubs/` (+ bundled art) + `missions/` (+ their art). The mission
   STORE-zip pattern extends to campaign export at the online-services
@@ -3347,6 +3537,9 @@ whenever the real map lands.
   integrity checks (slice 1: dangling destinations, exits naming missing
   missions, no placed start hub, unreachable hubs) + the eventual editor
   validation are the catch, not the save.
+- Duplicate-uuid dirs resolve latest-mtime-wins + warning (see
+  Uuid→dir resolution) - a deliberate tolerance of hand-edited installs,
+  not a state the editor ever creates.
 
 ## Clones (clone system)
 
@@ -3367,8 +3560,8 @@ So a clone is a permanent, compounding material factory keyed by mission.
   UI that renders without re-reading mission files. Consequence: `clones` IS
   the completed-missions record - the presence of a clone with a mission's
   uuid means the mission was completed (the world map / campaign view read
-  completion state from it; no side channel, no per-campaign scoping needed -
-  uuids are content-identity hashes, globally unique).
+  completion state from it; no side channel, no per-campaign scoping needed
+  - the uuids are random v4 ids, globally unique by construction).
 
 - **Pickup accumulator.** `pickup_items` adds `computeSalvageValue(item,` 
   `salvage_definitions)` to `Mission.converted_materials_collected` for each item
