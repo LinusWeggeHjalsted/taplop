@@ -485,6 +485,36 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 backend.endOutlineStripeScope(backend.renderScale());
             }
         },
+        .curve => |curve| {
+            // The SAME sampler hit-testing uses (element.sampleCurve), so
+            // the drawn stroke and the click region cannot disagree. Solid
+            // strokes go through drawSplineLinear (a thick polyline with
+            // proper joints); dashed (the dangling-stub class) draws
+            // alternating segments via drawLineEx.
+            var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
+            var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
+            ui.sampleCurve(curve, &screen_samples);
+            for (screen_samples, 0..) |sample, index| {
+                samples[index] = .{
+                    .x = @floatFromInt(sample.x),
+                    .y = @floatFromInt(sample.y),
+                };
+            }
+            if (curve.dashed) {
+                var index: usize = 0;
+                while (index + 1 < samples.len) : (index += 1) {
+                    if (index % 2 == 1) continue;
+                    rl.drawLineEx(
+                        samples[index],
+                        samples[index + 1],
+                        @floatFromInt(curve.width),
+                        toRaylibColor(curve.color, curve.alpha),
+                    );
+                }
+            } else {
+                rl.drawSplineLinear(&samples, @floatFromInt(curve.width), toRaylibColor(curve.color, curve.alpha));
+            }
+        },
         .slider => |slider| {
             // Integer slider: track (dark) + fill (lightest, proportional)
             // + thumb (lightest square at the fill end). The value label

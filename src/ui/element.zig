@@ -807,6 +807,12 @@ pub const Button = struct {
     /// Input → Button payloads). Null for action-only buttons; the
     /// variant must be the one `actionButtonPayload(action)` names.
     payload: ?types.ButtonPayload = null,
+    /// Optional non-rect hit region: when set, the button is clickable
+    /// along this curve's SAMPLED STROKE (distance to the polyline, not
+    /// the bounds rect) - the world map's edge buttons (the visual
+    /// `curve` element stays decorative; see Curve). The button's
+    /// rect remains its bounds/extents identity.
+    hit_curve: ?Curve = null,
     blocks_input: bool = true,
 };
 
@@ -902,9 +908,107 @@ pub const UiElement = union(enum) {
     fill_sprite: FillSprite,
     image: Image,
     solid_rect: SolidRect,
+    curve: Curve,
     slider: Slider,
     text_field: TextFieldUi,
 };
+
+// ============================================================
+// Curve (the world map's mission edges)
+// ============================================================
+
+/// Number of bezier segments `sampleCurve` emits (endpoints inclusive,
+/// `curve_sample_count + 1` points). Fixed, not length-derived: draw and
+/// hit-testing must agree on the SAME samples (the drawn edge and its hit
+/// region cannot disagree - DESIGN → Campaigns & the Campaign Editor →
+/// The map surface), and one count keeps that agreement trivial.
+pub const curve_sample_count: usize = 48;
+
+/// Extra hit tolerance around a curve's stroke, in reference pixels - a
+/// thin edge would be near-impossible to click at exactly `width / 2`.
+const curve_hit_tolerance: i32 = 12;
+
+/// A cubic bezier stroke - the world map's mission-edge rendering (see
+/// DESIGN → Campaigns & the Campaign Editor → Edge geometry): straight
+/// edges are the degenerate case (all controls on the segment), self-loops
+/// the teardrop control placement, dangling stubs render `dashed`. Purely
+/// decorative by default (`blocks_input = false`): the clickable edge is a
+/// spriteless Button whose `hit_curve` carries THIS curve's geometry, so
+/// the hit region is the drawn stroke.
+pub const Curve = struct {
+    start: ScreenPosition,
+    control_start: ScreenPosition,
+    control_end: ScreenPosition,
+    end: ScreenPosition,
+    width: i32,
+    color: Color = default_tint,
+    alpha: u8 = 255,
+    /// Dashed stroke - the dangling-stub rendering class (destination hub
+    /// not placed; the map mirror and the campaign editor both render it).
+    dashed: bool = false,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = false,
+};
+
+/// Sample a cubic bezier into `curve_sample_count + 1` reference-space
+/// points (segment endpoints, `t = i / curve_sample_count`). The ONE
+/// sampler: the backend's draw and `buttonAt`'s hit-testing both call it,
+/// so the drawn edge and its hit region agree by construction. The output
+/// buffer is caller-provided (a fixed-size array, no allocator) because
+/// both call sites sample per query.
+pub fn sampleCurve(curve: Curve, samples: *[curve_sample_count + 1]ScreenPosition) void {
+    const p0 = floatVec(curve.start);
+    const p1 = floatVec(curve.control_start);
+    const p2 = floatVec(curve.control_end);
+    const p3 = floatVec(curve.end);
+    for (samples, 0..) |*sample, index| {
+        const t = @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(curve_sample_count));
+        const one_minus = 1.0 - t;
+        const a = one_minus * one_minus * one_minus;
+        const b = 3.0 * one_minus * one_minus * t;
+        const c = 3.0 * one_minus * t * t;
+        const d = t * t * t;
+        sample.* = .{
+            .x = @intFromFloat(@round(a * p0.x + b * p1.x + c * p2.x + d * p3.x)),
+            .y = @intFromFloat(@round(a * p0.y + b * p1.y + c * p2.y + d * p3.y)),
+        };
+    }
+}
+
+fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
+    return .{ .x = @floatFromInt(position.x), .y = @floatFromInt(position.y) };
+}
+
+/// Whether `position` lies within the curve's stroke: distance to the
+/// sampled polyline <= `width / 2 + curve_hit_tolerance`. The hit region
+/// of a Button whose `hit_curve` is this curve.
+fn curveContains(curve: Curve, position: ScreenPosition) bool {
+    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
+    sampleCurve(curve, &samples);
+    const threshold = @as(f32, @floatFromInt(@divTrunc(curve.width, 2) + curve_hit_tolerance));
+    const point = floatVec(position);
+    var index: usize = 0;
+    while (index + 1 < samples.len) : (index += 1) {
+        if (distanceToSegment(point, floatVec(samples[index]), floatVec(samples[index + 1])) <= threshold)
+            return true;
+    }
+    return false;
+}
+
+fn distanceToSegment(point: anytype, segment_start: anytype, segment_end: anytype) f32 {
+    const dx = segment_end.x - segment_start.x;
+    const dy = segment_end.y - segment_start.y;
+    const length_squared = dx * dx + dy * dy;
+    var t: f32 = 0;
+    if (length_squared > 0)
+        t = ((point.x - segment_start.x) * dx + (point.y - segment_start.y) * dy) / length_squared;
+    t = std.math.clamp(t, 0, 1);
+    const projected_x = segment_start.x + t * dx;
+    const projected_y = segment_start.y + t * dy;
+    const ex = point.x - projected_x;
+    const ey = point.y - projected_y;
+    return @sqrt(ex * ex + ey * ey);
+}
 
 /// An editable text field (the text-input widget's UI surface - see
 /// DESIGN → UI Framework → Text input widget). The builder computes ALL
@@ -980,6 +1084,16 @@ pub fn boundsOf(element: UiElement) Rectangle {
         .fill_sprite => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .solid_rect => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .curve => |e| .{
+            // The control-point hull's AABB - a superset of the actual
+            // curve, which is the right direction for an extent.
+            .x = @min(@min(e.start.x, e.control_start.x), @min(e.control_end.x, e.end.x)),
+            .y = @min(@min(e.start.y, e.control_start.y), @min(e.control_end.y, e.end.y)),
+            .width = @max(@max(e.start.x, e.control_start.x), @max(e.control_end.x, e.end.x)) -
+                @min(@min(e.start.x, e.control_start.x), @min(e.control_end.x, e.end.x)),
+            .height = @max(@max(e.start.y, e.control_start.y), @max(e.control_end.y, e.end.y)) -
+                @min(@min(e.start.y, e.control_start.y), @min(e.control_end.y, e.end.y)),
+        },
         .slider => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .text_field => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
     };
@@ -1010,6 +1124,19 @@ fn blocksInputOf(element: UiElement) bool {
 /// satisfies `matches`, provided it is reached before any blocker - so an
 /// opaque element on top both captures its own input and shields whatever it
 /// covers.
+/// Whether `position` lies inside the element's hit region: the bounds
+/// rect, EXCEPT a Button with a `hit_curve`, whose region is the curve's
+/// sampled stroke (see Curve).
+fn containsPoint(element: UiElement, position: ScreenPosition) bool {
+    return switch (element) {
+        .button => |button| if (button.hit_curve) |curve|
+            curveContains(curve, position)
+        else
+            boundsOf(element).contains(position),
+        else => boundsOf(element).contains(position),
+    };
+}
+
 fn hitTest(
     ui_elements: []const UiElement,
     position: ScreenPosition,
@@ -1019,7 +1146,7 @@ fn hitTest(
     while (index > 0) {
         index -= 1;
         const element = ui_elements[index];
-        if (!boundsOf(element).contains(position)) continue;
+        if (!containsPoint(element, position)) continue;
         if (matches(element)) return index;
         if (blocksInputOf(element)) return null;
     }
@@ -1499,3 +1626,118 @@ test "wrapRow: normal space wrapping still works" {
 // ============================================================
 // Tooltip placement (placeTooltip) - pure geometry over (source, screen, size)
 // ============================================================
+
+// ============================================================
+// Curve (sample + hit-test)
+// ============================================================
+
+test "sampleCurve: endpoints exact, straight-line degenerate interpolates linearly" {
+    // All four points on one horizontal line: the bezier degenerates to
+    // the segment, so every sample interpolates linearly (the straight
+    // mission edge - see Curve). Span 480 divides evenly by
+    // curve_sample_count (48), so exact integer steps avoid rounding.
+    const curve: Curve = .{
+        .start = .{ .x = 0, .y = 100 },
+        .control_start = .{ .x = 160, .y = 100 },
+        .control_end = .{ .x = 320, .y = 100 },
+        .end = .{ .x = 480, .y = 100 },
+        .width = 8,
+    };
+    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
+    sampleCurve(curve, &samples);
+    try std.testing.expectEqual(ScreenPosition{ .x = 0, .y = 100 }, samples[0]);
+    try std.testing.expectEqual(ScreenPosition{ .x = 480, .y = 100 }, samples[samples.len - 1]);
+    for (samples, 0..) |sample, index| {
+        const expected_x = @divTrunc(480 * @as(i32, @intCast(index)), @as(i32, @intCast(curve_sample_count)));
+        try std.testing.expectEqual(expected_x, sample.x);
+        try std.testing.expectEqual(@as(i32, 100), sample.y);
+    }
+}
+
+test "sampleCurve: a bent curve leaves the chord" {
+    // Control points pulled off-axis must bend the samples away from the
+    // start-end chord (guards against a sampler that silently ignores the
+    // controls).
+    const curve: Curve = .{
+        .start = .{ .x = 0, .y = 0 },
+        .control_start = .{ .x = 150, .y = 400 },
+        .control_end = .{ .x = 150, .y = 400 },
+        .end = .{ .x = 300, .y = 0 },
+        .width = 8,
+    };
+    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
+    sampleCurve(curve, &samples);
+    // Symmetric tent: the midpoint sits at 3/4 of the control height
+    // (bezier basis at t=1/2: 3/4 of the control offset).
+    try std.testing.expectEqual(@as(i32, 300), samples[curve_sample_count / 2].y);
+    var any_off_chord = false;
+    for (samples) |sample| {
+        if (sample.y != 0) any_off_chord = true;
+    }
+    try std.testing.expect(any_off_chord);
+}
+
+test "buttonAt over a hit_curve button: the stroke is the hit region" {
+    // An edge button (drawn ON TOP) whose curve passes over a plain button
+    // (drawn BEHIND, filling the curve's AABB). The stroke clicks hit the
+    // edge button; clicks inside the AABB but off the stroke fall through
+    // to the button behind.
+    const behind: UiElement = .{ .button = .{
+        .screen_position = .{ .x = 0, .y = 0 },
+        .width = 400,
+        .height = 200,
+        .action = .confirm,
+    } };
+    const edge: UiElement = .{ .button = .{
+        .screen_position = .{ .x = 0, .y = 0 },
+        .width = 400,
+        .height = 200,
+        .action = .cancel,
+        .hit_curve = .{
+            .start = .{ .x = 0, .y = 100 },
+            .control_start = .{ .x = 133, .y = 100 },
+            .control_end = .{ .x = 266, .y = 100 },
+            .end = .{ .x = 400, .y = 100 },
+            .width = 8,
+        },
+    } };
+    const elements = [_]UiElement{ behind, edge };
+
+    // On the stroke: the edge button (topmost) wins.
+    const on_stroke = buttonAt(&elements, .{ .x = 200, .y = 100 }).?;
+    try std.testing.expectEqual(Action.cancel, on_stroke.action);
+
+    // Inside the AABB, off the stroke (well beyond width/2 + tolerance):
+    // falls through to the button behind.
+    const off_stroke = buttonAt(&elements, .{ .x = 200, .y = 20 }).?;
+    try std.testing.expectEqual(Action.confirm, off_stroke.action);
+
+    // Just past the stroke's edge: width/2 + tolerance = 4 + 12 = 16, so
+    // 17 above the centerline misses the edge button but still hits the
+    // button behind; 16 hits the edge.
+    const near_miss = buttonAt(&elements, .{ .x = 200, .y = 100 - 17 }).?;
+    try std.testing.expectEqual(Action.confirm, near_miss.action);
+    const near_hit = buttonAt(&elements, .{ .x = 200, .y = 100 - 16 }).?;
+    try std.testing.expectEqual(Action.cancel, near_hit.action);
+}
+
+test "buttonAt: a decorative curve never occludes" {
+    // The visual curve element (blocks_input = false) drawn OVER a button:
+    // clicks pass through it to the button.
+    const button: UiElement = .{ .button = .{
+        .screen_position = .{ .x = 0, .y = 0 },
+        .width = 100,
+        .height = 100,
+        .action = .confirm,
+    } };
+    const overlay: UiElement = .{ .curve = .{
+        .start = .{ .x = 0, .y = 50 },
+        .control_start = .{ .x = 33, .y = 50 },
+        .control_end = .{ .x = 66, .y = 50 },
+        .end = .{ .x = 100, .y = 50 },
+        .width = 20,
+    } };
+    const elements = [_]UiElement{ button, overlay };
+    const clicked = buttonAt(&elements, .{ .x = 50, .y = 50 }).?;
+    try std.testing.expectEqual(Action.confirm, clicked.action);
+}
