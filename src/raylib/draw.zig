@@ -487,10 +487,16 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
         },
         .curve => |curve| {
             // The SAME sampler hit-testing uses (element.sampleCurve), so
-            // the drawn stroke and the click region cannot disagree. Solid
-            // strokes go through drawSplineLinear (a thick polyline with
-            // proper joints); dashed (the dangling-stub class) draws
-            // alternating segments via drawLineEx.
+            // the drawn stroke and the click region cannot disagree. The
+            // stroke is drawn per segment (drawLineEx) with a filled
+            // circle at every sample (drawCircleV) - round joins + round
+            // caps, structurally gap-free. raylib's drawSplineLinear
+            // would be the obvious call, but its miter joins sit behind
+            // SUPPORT_SPLINE_MITERS (off by default): without it each
+            // segment is a bare quad, and sharp curvature (the map's
+            // self-loop teardrops) shows notches between segments.
+            // Dashed (the dangling-stub class) draws alternating segments
+            // via drawLineEx only.
             var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
             var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
             ui.sampleCurve(curve, &screen_samples);
@@ -500,19 +506,37 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                     .y = @floatFromInt(sample.y),
                 };
             }
-            if (curve.dashed) {
-                var index: usize = 0;
-                while (index + 1 < samples.len) : (index += 1) {
-                    if (index % 2 == 1) continue;
-                    rl.drawLineEx(
-                        samples[index],
-                        samples[index + 1],
-                        @floatFromInt(curve.width),
-                        toRaylibColor(curve.color, curve.alpha),
-                    );
+            const raylib_color = toRaylibColor(curve.color, curve.alpha);
+            const thickness: f32 = @floatFromInt(curve.width);
+            var index: usize = 0;
+            while (index + 1 < samples.len) : (index += 1) {
+                const draw_segment = !curve.dashed or index % 2 == 0;
+                if (draw_segment) {
+                    rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
                 }
-            } else {
-                rl.drawSplineLinear(&samples, @floatFromInt(curve.width), toRaylibColor(curve.color, curve.alpha));
+                if (!curve.dashed) {
+                    // The join circle - covers the corner notch between
+                    // consecutive segments.
+                    rl.drawCircleV(samples[index], thickness / 2, raylib_color);
+                }
+            }
+            if (!curve.dashed) {
+                rl.drawCircleV(samples[samples.len - 1], thickness / 2, raylib_color);
+            }
+            if (curve.arrowhead) {
+                // The directionality chevron: two arms from the end point
+                // (element.arrowheadArms - same samples) drawn at the
+                // curve's own width, so an outline+stroke pair renders an
+                // outlined chevron.
+                const arms = ui.arrowheadArms(curve);
+                const end = samples[samples.len - 1];
+                const arm_vectors = [2]rl.Vector2{
+                    .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },
+                    .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
+                };
+                for (arm_vectors) |arm| {
+                    rl.drawLineEx(end, arm, thickness, raylib_color);
+                }
             }
         },
         .slider => |slider| {

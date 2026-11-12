@@ -928,6 +928,13 @@ pub const curve_sample_count: usize = 48;
 /// thin edge would be near-impossible to click at exactly `width / 2`.
 const curve_hit_tolerance: i32 = 12;
 
+/// The arrowhead chevron's arm length + half-angle (reference px /
+/// degrees off the REVERSED end tangent - the chevron opens backward
+/// into the curve). Directionality affordance on mission edges; drawn by
+/// the backend from the same samples hit-testing uses.
+pub const arrowhead_arm_length: i32 = 48;
+pub const arrowhead_arm_angle_degrees: i32 = 15;
+
 /// A cubic bezier stroke - the world map's mission-edge rendering (see
 /// DESIGN → Campaigns & the Campaign Editor → Edge geometry): straight
 /// edges are the degenerate case (all controls on the segment), self-loops
@@ -946,6 +953,13 @@ pub const Curve = struct {
     /// Dashed stroke - the dangling-stub rendering class (destination hub
     /// not placed; the map mirror and the campaign editor both render it).
     dashed: bool = false,
+    /// Draw a directionality chevron at the curve's END: two short arms
+    /// from the end point, `arrowhead_arm_angle_degrees` off the reversed
+    /// end tangent, `arrowhead_arm_length` long (see `arrowheadArms` - the
+    /// backend draws them at the curve's own width, so an outlined edge
+    /// pair renders an outlined chevron). The chevron is NOT part of the
+    /// hit region (it hugs the stroke's end).
+    arrowhead: bool = false,
     tooltip: ?Tooltip = null,
     blocks_input: bool = false,
 };
@@ -975,8 +989,54 @@ pub fn sampleCurve(curve: Curve, samples: *[curve_sample_count + 1]ScreenPositio
     }
 }
 
+fn screenPoint(x: f32, y: f32) ScreenPosition {
+    return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
+}
+
 fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
     return .{ .x = @floatFromInt(position.x), .y = @floatFromInt(position.y) };
+}
+
+/// The arrowhead chevron's two arm endpoints for `curve`: from the END
+/// sample, along the REVERSED end tangent rotated +/-
+/// `arrowhead_arm_angle_degrees`, at `arrowhead_arm_length`. The end
+/// tangent is the last sampled segment's direction (the same samples the
+/// stroke draw + hit-testing use, so the chevron hugs the drawn curve).
+pub fn arrowheadArms(curve: Curve) [2]ScreenPosition {
+    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
+    sampleCurve(curve, &samples);
+    const end = floatVec(samples[samples.len - 1]);
+    const previous = floatVec(samples[samples.len - 2]);
+
+    // The travel direction into the end; degenerate (zero-length closing
+    // segment) falls back to east.
+    var travel_x = end.x - previous.x;
+    var travel_y = end.y - previous.y;
+    const length = @sqrt(travel_x * travel_x + travel_y * travel_y);
+    if (length > 0) {
+        travel_x /= length;
+        travel_y /= length;
+    } else {
+        travel_x = 1;
+        travel_y = 0;
+    }
+    const backward_x = -travel_x;
+    const backward_y = -travel_y;
+
+    const radians = std.math.degreesToRadians(@as(f32, @floatFromInt(arrowhead_arm_angle_degrees)));
+    const cos = @cos(radians);
+    const sin = @sin(radians);
+    const arm_length: f32 = @floatFromInt(arrowhead_arm_length);
+    return .{
+        screenPoint(
+            end.x + (backward_x * cos - backward_y * sin) * arm_length,
+            end.y + (backward_x * sin + backward_y * cos) * arm_length,
+        ),
+        screenPoint(
+            end.x + (backward_x * cos + backward_y * sin) * arm_length,
+            end.y + (-backward_x * sin + backward_y * cos) * arm_length,
+        ),
+    };
 }
 
 /// Whether `position` lies within the curve's stroke: distance to the
@@ -1675,6 +1735,44 @@ test "sampleCurve: a bent curve leaves the chord" {
         if (sample.y != 0) any_off_chord = true;
     }
     try std.testing.expect(any_off_chord);
+}
+
+test "arrowheadArms: symmetric chevron opening backward from the end" {
+    // A straight curve traveling east: the chevron arms sit WEST of the
+    // end point, mirrored across the travel axis, at arm_length and
+    // arm_angle off the reversed tangent. 48*cos(15) = 46.4 -> 46,
+    // 48*sin(15) = 12.4 -> 12.
+    const curve: Curve = .{
+        .start = .{ .x = 0, .y = 0 },
+        .control_start = .{ .x = 160, .y = 0 },
+        .control_end = .{ .x = 320, .y = 0 },
+        .end = .{ .x = 480, .y = 0 },
+        .width = 8,
+        .arrowhead = true,
+    };
+    const arms = arrowheadArms(curve);
+    try std.testing.expectEqual(@as(i32, 480 - 46), arms[0].x);
+    try std.testing.expectEqual(@as(i32, 480 - 46), arms[1].x);
+    try std.testing.expectEqual(@as(i32, -12), arms[0].y);
+    try std.testing.expectEqual(@as(i32, 12), arms[1].y);
+
+    // A bent curve: the chevron follows the END tangent (the last sampled
+    // segment), not the start-end chord. Curve heading east then bending
+    // down to south at the end (control_end distinct from end, so the
+    // end tangent is well-defined): arms open back up-and-sideways from
+    // the end (the reversed south tangent rotated +/- 15 degrees).
+    const bent: Curve = .{
+        .start = .{ .x = 0, .y = 0 },
+        .control_start = .{ .x = 300, .y = 0 },
+        .control_end = .{ .x = 300, .y = 150 },
+        .end = .{ .x = 300, .y = 300 },
+        .width = 8,
+    };
+    const bent_arms = arrowheadArms(bent);
+    // Travel into the end is (roughly) south (0, +1); reversed = north.
+    // Both arms sit above the end point (smaller y), mirrored in x.
+    try std.testing.expect(bent_arms[0].y < 300 and bent_arms[1].y < 300);
+    try std.testing.expect(bent_arms[0].x != bent_arms[1].x);
 }
 
 test "buttonAt over a hit_curve button: the stroke is the hit region" {

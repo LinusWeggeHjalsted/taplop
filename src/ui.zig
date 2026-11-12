@@ -90,6 +90,7 @@ pub const SolidRect = ui_element.SolidRect;
 pub const Curve = ui_element.Curve;
 pub const curve_sample_count = ui_element.curve_sample_count;
 pub const sampleCurve = ui_element.sampleCurve;
+pub const arrowheadArms = ui_element.arrowheadArms;
 pub const boundsOf = ui_element.boundsOf;
 pub const tooltipOf = ui_element.tooltipOf;
 pub const tooltipAt = ui_element.tooltipAt;

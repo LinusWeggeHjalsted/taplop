@@ -51,6 +51,12 @@ const self_loop_half_width: i32 = 120;
 /// The dangling-stub reach along the exit direction.
 const stub_length: i32 = 300;
 
+/// Edge endpoints anchor this far from the hub's CENTER (64 = half the
+/// hub icon, so edges start at the icon's boundary): self-loops + stubs
+/// along the exit's configured direction, straight edges along the
+/// hub-position difference.
+const hub_edge_anchor_radius: i32 = 64;
+
 /// Perpendicular spacing between PARALLEL straight edges connecting the
 /// same hub pair (spread by exit index - see DESIGN → Edge geometry).
 const parallel_edge_spacing: i32 = 64;
@@ -181,35 +187,60 @@ pub fn buildWorldMap(
         }
         const origin = from_hub orelse continue;
 
-        const start = mapToScreen(origin.position);
+        var start = mapToScreen(origin.position);
         var control_start: ScreenPosition = start;
         var control_end: ScreenPosition = start;
         var end: ScreenPosition = start;
         var dashed = false;
 
         if (edge.destination.len > 0 and std.mem.eql(u8, edge.destination, edge.from)) {
-            // Self-loop: {hub, hub + d*L + n*w, hub + d*L - n*w, hub}.
+            // Self-loop: the anchor sits on the exit's direction bearing
+            // at the hub's edge; the teardrop extends from it -
+            // {a, a + d*L + n*w, a + d*L - n*w, a} with a = hub + d*R.
             const direction = directionUnitVector(edge.direction_degrees);
             const px = -direction.y;
             const py = direction.x;
+            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
             const hub_x: f32 = @floatFromInt(start.x);
             const hub_y: f32 = @floatFromInt(start.y);
+            const anchor_x: f32 = hub_x + direction.x * radius;
+            const anchor_y: f32 = hub_y + direction.y * radius;
             const length: f32 = @floatFromInt(self_loop_length);
             const half_width: f32 = @floatFromInt(self_loop_half_width);
+            start = screenPoint(anchor_x, anchor_y);
             control_start = screenPoint(
-                hub_x + direction.x * length + px * half_width,
-                hub_y + direction.y * length + py * half_width,
+                anchor_x + direction.x * length + px * half_width,
+                anchor_y + direction.y * length + py * half_width,
             );
             control_end = screenPoint(
-                hub_x + direction.x * length - px * half_width,
-                hub_y + direction.y * length - py * half_width,
+                anchor_x + direction.x * length - px * half_width,
+                anchor_y + direction.y * length - py * half_width,
             );
             end = start;
         } else if (to_hub) |destination| {
-            // Straight edge: controls on the segment at 1/3 + 2/3, slid
-            // perpendicular by the parallel-spread offset for same-pair
-            // edges (the exit's index among its pair).
-            end = mapToScreen(destination.position);
+            // Straight edge: the direction is the HUB-POSITION difference
+            // (well-defined), the endpoints displaced to each hub's
+            // boundary along it. Controls on the segment at 1/3 + 2/3,
+            // slid perpendicular by the parallel-spread offset for
+            // same-pair edges (the exit's index among its pair).
+            const hub_start = start;
+            const hub_end = mapToScreen(destination.position);
+            const hub_dx: f32 = @floatFromInt(hub_end.x - hub_start.x);
+            const hub_dy: f32 = @floatFromInt(hub_end.y - hub_start.y);
+            const hub_length = @sqrt(hub_dx * hub_dx + hub_dy * hub_dy);
+            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
+            const unit_x = if (hub_length > 0) hub_dx / hub_length else 1;
+            const unit_y = if (hub_length > 0) hub_dy / hub_length else 0;
+            const from_x: f32 = @floatFromInt(hub_start.x);
+            const from_y: f32 = @floatFromInt(hub_start.y);
+            const to_x: f32 = @floatFromInt(hub_end.x);
+            const to_y: f32 = @floatFromInt(hub_end.y);
+            const start_x: f32 = from_x + unit_x * radius;
+            const start_y: f32 = from_y + unit_y * radius;
+            const end_x: f32 = to_x - unit_x * radius;
+            const end_y: f32 = to_y - unit_y * radius;
+            start = screenPoint(start_x, start_y);
+            end = screenPoint(end_x, end_y);
             var parallel_index: i32 = 0;
             var parallel_count: i32 = 0;
             for (campaign.edges) |other| {
@@ -219,35 +250,34 @@ pub fn buildWorldMap(
                 if (other.exit_index <= edge.exit_index) parallel_index += 1;
                 parallel_count += 1;
             }
-            const dx: f32 = @floatFromInt(end.x - start.x);
-            const dy: f32 = @floatFromInt(end.y - start.y);
+            const dx: f32 = end_x - start_x;
+            const dy: f32 = end_y - start_y;
             const offset: f32 = @as(f32, @floatFromInt(parallel_edge_spacing)) *
                 (@as(f32, @floatFromInt(parallel_index)) -
                     (@as(f32, @floatFromInt(parallel_count)) + 1.0) / 2.0);
             const ox = (-dy / @max(@sqrt(dx * dx + dy * dy), 1.0)) * offset;
             const oy = (dx / @max(@sqrt(dx * dx + dy * dy), 1.0)) * offset;
-            control_start = screenPoint(
-                @as(f32, @floatFromInt(start.x)) + dx / 3.0 + ox,
-                @as(f32, @floatFromInt(start.y)) + dy / 3.0 + oy,
-            );
-            control_end = screenPoint(
-                @as(f32, @floatFromInt(start.x)) + 2.0 * dx / 3.0 + ox,
-                @as(f32, @floatFromInt(start.y)) + 2.0 * dy / 3.0 + oy,
-            );
+            control_start = screenPoint(start_x + dx / 3.0 + ox, start_y + dy / 3.0 + oy);
+            control_end = screenPoint(start_x + 2.0 * dx / 3.0 + ox, start_y + 2.0 * dy / 3.0 + oy);
         } else {
-            // Dangling stub: along the direction bearing, dashed.
+            // Dangling stub: along the direction bearing from the hub's
+            // boundary, dashed.
             const direction = directionUnitVector(edge.direction_degrees);
+            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
             const length: f32 = @floatFromInt(stub_length);
             const hub_x: f32 = @floatFromInt(start.x);
             const hub_y: f32 = @floatFromInt(start.y);
-            end = screenPoint(hub_x + direction.x * length, hub_y + direction.y * length);
+            const anchor_x: f32 = hub_x + direction.x * radius;
+            const anchor_y: f32 = hub_y + direction.y * radius;
+            start = screenPoint(anchor_x, anchor_y);
+            end = screenPoint(anchor_x + direction.x * length, anchor_y + direction.y * length);
             control_start = screenPoint(
-                hub_x + direction.x * length / 3.0,
-                hub_y + direction.y * length / 3.0,
+                anchor_x + direction.x * length / 3.0,
+                anchor_y + direction.y * length / 3.0,
             );
             control_end = screenPoint(
-                hub_x + 2.0 * direction.x * length / 3.0,
-                hub_y + 2.0 * direction.y * length / 3.0,
+                anchor_x + 2.0 * direction.x * length / 3.0,
+                anchor_y + 2.0 * direction.y * length / 3.0,
             );
             dashed = true;
         }
@@ -269,6 +299,7 @@ pub fn buildWorldMap(
             .width = edge_width + 2 * edge_outline_width,
             .color = black,
             .dashed = dashed,
+            .arrowhead = true,
             .blocks_input = false,
         } });
         try elements.append(allocator, .{ .curve = .{
@@ -280,6 +311,7 @@ pub fn buildWorldMap(
             .color = lightest,
             .alpha = if (lit) 255 else dimmed_alpha,
             .dashed = dashed,
+            .arrowhead = true,
             .blocks_input = false,
             .tooltip = tooltip,
         } });
@@ -299,6 +331,14 @@ const test_theme = types.ActiveColorTheme{
     .enemy_gradient = undefined,
     .player_gradient = undefined,
 };
+
+/// Euclidean distance between two screen positions, rounded to an i32
+/// (test helper for displacement contracts).
+fn screenDistance(a: ScreenPosition, b: ScreenPosition) i32 {
+    const dx: f32 = @floatFromInt(a.x - b.x);
+    const dy: f32 = @floatFromInt(a.y - b.y);
+    return @intFromFloat(@round(@sqrt(dx * dx + dy * dy)));
+}
 
 fn buildFixtureCampaign() types.Campaign {
     return .{
@@ -379,41 +419,61 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expectEqual(@as(u8, 255), beta_icon.alpha);
 
     // Edge curves arrive as pairs (black outline, then lightest stroke).
-    // Pair 0: the self-loop - start == end == hub a's screen center, and
-    // the controls sit NORTH of it (direction 0) at the teardrop offsets.
+    // Pair 0: the self-loop - start == end == the anchor 64px NORTH of
+    // hub a's screen center (direction 0, the hub icon's boundary), the
+    // controls at the teardrop offsets beyond the anchor.
     const loop_black = elements.items[4].curve;
     const loop_light = elements.items[5].curve;
     const loop_center = mapToScreen(.{ .x = -200, .y = 0 });
-    try std.testing.expectEqual(loop_center, loop_black.start);
-    try std.testing.expectEqual(loop_center, loop_black.end);
+    const loop_anchor: ScreenPosition = .{
+        .x = loop_center.x,
+        .y = loop_center.y - hub_edge_anchor_radius,
+    };
+    try std.testing.expectEqual(loop_anchor, loop_black.start);
+    try std.testing.expectEqual(loop_anchor, loop_black.end);
     try std.testing.expectEqual(black, loop_black.color);
     try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_black.width);
+    try std.testing.expect(loop_black.arrowhead);
     try std.testing.expectEqual(test_theme.lightest, loop_light.color);
     try std.testing.expectEqual(edge_width, loop_light.width);
+    try std.testing.expect(loop_light.arrowhead);
     try std.testing.expectEqualStrings("Loop", loop_light.tooltip.?.header.?[0].text);
-    try std.testing.expect(loop_light.control_start.y < loop_center.y);
-    try std.testing.expect(loop_light.control_end.y < loop_center.y);
+    try std.testing.expect(loop_light.control_start.y < loop_anchor.y);
+    try std.testing.expect(loop_light.control_end.y < loop_anchor.y);
     // The teardrop is symmetric about the direction axis (north): both
     // controls at the same reach along the axis, mirrored across it.
     try std.testing.expectEqual(loop_light.control_start.y, loop_light.control_end.y);
-    try std.testing.expectEqual(loop_center.x + self_loop_half_width, loop_light.control_start.x);
-    try std.testing.expectEqual(loop_center.x - self_loop_half_width, loop_light.control_end.x);
-    try std.testing.expectEqual(loop_center.y - self_loop_length, loop_light.control_start.y);
+    try std.testing.expectEqual(loop_anchor.x + self_loop_half_width, loop_light.control_start.x);
+    try std.testing.expectEqual(loop_anchor.x - self_loop_half_width, loop_light.control_end.x);
+    try std.testing.expectEqual(loop_anchor.y - self_loop_length, loop_light.control_start.y);
 
-    // Pair 1: the straight edge a -> b - endpoints at the two hub centers,
-    // solid, lit (its start hub 'a' is the start hub).
+    // Pair 1: the straight edge a -> b - endpoints displaced to each
+    // hub's boundary along the hub-position difference (64px from each
+    // center), solid, lit (its start hub 'a' is the start hub).
     const straight_light = elements.items[7].curve;
-    try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }), straight_light.start);
-    try std.testing.expectEqual(mapToScreen(.{ .x = 400, .y = 300 }), straight_light.end);
+    const a_center = mapToScreen(.{ .x = -200, .y = 0 });
+    const b_center = mapToScreen(.{ .x = 400, .y = 300 });
+    try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.start, a_center));
+    try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.end, b_center));
+    // The displacement is ALONG the hub line: start sits between the two
+    // centers (positive scalar projection onto a->b, less than the full
+    // distance).
+    try std.testing.expect(straight_light.start.x > a_center.x and straight_light.start.y > a_center.y);
+    try std.testing.expect(straight_light.end.x < b_center.x and straight_light.end.y < b_center.y);
     try std.testing.expect(!straight_light.dashed);
+    try std.testing.expect(straight_light.arrowhead);
     try std.testing.expectEqual(@as(u8, 255), straight_light.alpha);
 
     // Pair 2: the dangling stub from b - dashed, pointing south
-    // (direction 180), lit ('b' is in the discovered set, so its start
-    // hub is lit; the dimming case is asserted in the dedicated test
-    // below).
+    // (direction 180) from the hub's boundary anchor, lit ('b' is in the
+    // discovered set, so its start hub is lit; the dimming case is
+    // asserted in the dedicated test below).
     const stub_light = elements.items[9].curve;
     try std.testing.expect(stub_light.dashed);
+    try std.testing.expect(stub_light.arrowhead);
+    try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius, stub_light.start.y);
+    try std.testing.expectEqual(b_center.x, stub_light.start.x);
+    try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius + stub_length, stub_light.end.y);
     try std.testing.expect(stub_light.control_start.y > stub_light.start.y);
 }
 

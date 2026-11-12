@@ -764,6 +764,22 @@ or GitHub's redirect gets shadowed.
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+- **Custom sprite-id prefix vs plain content paths (deferred question,
+      flagged in review of the world-map background fix).** The `custom/`
+      segment is the id-space discriminator between the two resolution
+      rules (shipped `assets/{id}.png` vs content-addressed
+      `custom/<content-path>/<stem>`), while the FILE layout is already
+      plain (`missions/`, `campaigns/` directly in the persistent dir -
+      no `custom/` directory anywhere). Question worth a look someday:
+      could ids just BE the content paths, resolution trying the content
+      tiers before `assets/`? The marker exists because the texture
+      cache keys ids globally with no context, so ids must be
+      unambiguous; dropping it needs a collision story (a shipped
+      `assets/missions/...` id would shadow custom content) + a
+      migration for saved mission files that bake `custom/` stems
+      (normalizedCustomStem + the editor save path are the rewrite
+      machinery). Defer until the VFS / online-acquisition seam or the
+      campaign editor save path is open anyway.
 - **Generated ui.zig facade (the session-reflection catch).** The facade
       is a ~200-line HAND-maintained re-export list duplicating every ui/
       file's pub surface - exactly the "hand-maintained duplicate of
