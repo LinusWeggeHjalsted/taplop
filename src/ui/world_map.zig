@@ -28,7 +28,7 @@ const spanRow = ui_tooltip.spanRow;
 /// position). A dedicated icon ships eventually; until then the id is
 /// MISSING and draws the magenta placeholder (the art_report shopping list
 /// carries it automatically).
-pub const hub_icon_size: i32 = 128;
+pub const hub_icon_size: i32 = 64;
 
 /// The placeholder sprite id for the hub icon + its art_report home.
 const hub_icon_sprite_id = "world/hub_icon";
@@ -51,10 +51,10 @@ const self_loop_half_width: i32 = 120;
 /// The dangling-stub reach along the exit direction.
 const stub_length: i32 = 300;
 
-/// Edge endpoints anchor this far from the hub's CENTER (64 = half the
-/// hub icon, so edges start at the icon's boundary): self-loops + stubs
-/// along the exit's configured direction, straight edges along the
-/// hub-position difference.
+/// Edge endpoints anchor this far from the hub's CENTER - deliberately
+/// decoupled from `hub_icon_size` (the icon can shrink without dragging
+/// edge geometry along): self-loops + stubs along the exit's configured
+/// direction, straight edges along the hub-position difference.
 const hub_edge_anchor_radius: i32 = 64;
 
 /// Perpendicular spacing between PARALLEL straight edges connecting the
@@ -412,7 +412,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // rides the tooltip, not a label.
     const alpha_icon = elements.items[2].image;
     try std.testing.expectEqualStrings("world/hub_icon", alpha_icon.sprite_id);
-    try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }).x - 64, alpha_icon.screen_position.x);
+    try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }).x - @divTrunc(hub_icon_size, 2), alpha_icon.screen_position.x);
     try std.testing.expectEqual(@as(u8, 255), alpha_icon.alpha);
     try std.testing.expectEqualStrings("Alpha", alpha_icon.tooltip.?.header.?[0].text);
     const beta_icon = elements.items[3].image;
