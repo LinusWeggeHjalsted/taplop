@@ -394,6 +394,14 @@ work:
           the picker UI in the map overlay. The map surface itself
           (buildWorldMap + curve element + edge table + top-bar button)
           is DONE - DONE.md, "campaign-editor slice 2c, step 3".
+          Rider (from the session reflection): a view()-level Z-ORDER
+          contract test - when the world map + options menu are both
+          open, the map's elements must emit AFTER the menu's in the
+          flat list (the painter-order bug class the hands-on pass
+          caught: the map rendered under the full-screen menu, green
+          through every structure test). Covers the overlay stack
+          generally (world_map, full_combat_log) - view() is pure, so
+          it is headless-testable.
     - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
           backtrack-to-discovered legality) + mission start
           (player_start_mission_from_map; start-hub-discovered
@@ -405,7 +413,15 @@ work:
   - [ ] 3. The campaign editor state + framing + the editor browser's
         Campaign tab (scan `campaigns/`, New Campaign) + the campaign
         view (background, hub place/free-move/drag, edge rendering,
-        dangling rendering). Includes the editor-side identity model:
+        dangling rendering). The edge GEOMETRY derivation (the
+        hub-boundary anchors, self-loop teardrop, parallel spread,
+        dangling stub) is inline in buildWorldMap's loop today -
+        extract it into a shared helper here so the editor view and the
+        map mirror render through one implementation (the "one data
+        model, two renderers" rule; the constants ride with it). Also:
+        replace the world-map structure tests' hardcoded flat-list
+        indices with predicate scans (find the curve by endpoints) as
+        part of the extraction. Includes the editor-side identity model:
         rename-in-place + cosmetic dir tidy + Save As Copy + the
         FileSource renameDir seam (DESIGN → Rename + Save As Copy);
         decide mint-on-fork here.

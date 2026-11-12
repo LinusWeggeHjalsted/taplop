@@ -315,6 +315,7 @@ working rules).
 - [campaign-editor slice 2c, step 2: the derived campaign edge table](#campaign-editor-slice-2c-step-2-the-derived-campaign-edge-table)
 - [campaign-editor slice 2c, step 3: the world-map overlay renders](#campaign-editor-slice-2c-step-3-the-world-map-overlay-renders)
 - [world map: edge rendering polish (2c step 3 riders)](#world-map-edge-rendering-polish-2c-step-3-riders)
+- [Session reflection: 2c steps 1-3 + the build-bug fix + the docs change](#session-reflection-2c-steps-1-3--the-build-bug-fix--the-docs-change)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19886,3 +19887,50 @@ anchor-on-bearing positions) + arrowhead flags. Full suite PASS,
 web OK (the web gate caught the missing facade export the headless
 build cannot - raylib/ is excluded from the test scan), boot smoke
 clean.
+
+## Session reflection: 2c steps 1-3 + the build-bug fix + the docs change
+
+Points surfaced, and where each went:
+
+- **The web gate caught a real bug the suite structurally cannot**:
+  `arrowheadArms` missing from the hand-maintained ui.zig facade
+  passed 908 headless tests (the test scan excludes src/raylib/,
+  where the consumer lives) and failed only `scripts/web.sh`. This
+  is the SECOND live instance of the existing TODO item (generated
+  ui.zig facade - the first was its original catch). No new item;
+  the existing one is now twice-validated. Also a process drift
+  caught in the act: this session landed every slice as a PAIR of
+  commits (code, then docs) instead of the convention's one commit
+  per slice checkoff with the DONE entry riding it. The pairs stand
+  (retroactive merging costs more than it buys); next session
+  returns to single commits.
+- **Painter order (z-order) is untested by construction**: the
+  map-under-options-menu bug shipped green through every structure
+  test - they assert presence + geometry, never emission ORDER
+  across surfaces. view() is pure, so the contract is
+  headless-testable (world-map elements must index after the
+  options-menu elements when both are open); a TODO rider on the 2c
+  remainder owns it, generalized to the overlay stack.
+- **The world-map structure tests hardcode flat-list indices**
+  (elements.items[4], [7], [9]): an inserted element shifts
+  everything and the failure misreads as wrong geometry. The fix
+  (predicate scans - find the curve by endpoints) is folded into
+  the slice-3 TODO bullet, which touches the same tests for the
+  geometry extraction anyway (next point).
+- **Edge geometry is not factored for the second renderer**: the
+  anchor-displacement / teardrop / parallel-spread math is inline in
+  buildWorldMap's loop, and slice 3's editor view renders the same
+  geometry - a TODO note on the slice-3 item now owns the
+  extraction (constants ride with it).
+- **Curve draw cost is unmeasured**: ~100 immediate-mode primitives
+  per curve per frame (48 lines + 49 circles, x2 per edge). Fine at
+  the official campaign's 4 edges; a large custom campaign could
+  make it a frame-time item. Watch-item posture (the stripe-scope
+  precedent); no TODO line until it is observed.
+- **The hands-on boundary held where predicted**: the three visual
+  bugs the user caught (magenta background = the stale prefix list
+  in assetPathFor, a hand-maintained duplicate of customAssetTail's
+  one rule; z-order; raylib's unsupported miter joins) are all
+  classes the headless suite cannot see. The assetPathFor fix is
+  the belong-don't-fit lesson again: the rule now lives in ONE
+  place and the raylib seam delegates to it.
