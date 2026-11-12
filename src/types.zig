@@ -1077,7 +1077,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         => .{ .menu = true, .game = true },
         // The tips panel overlays any screen (opened from the global top
         // bar); cycling only fires while it is open (the consumption arm
-        // guards on tips_open).
+        // guards on isSurfaceOpen(.tips)).
         .cycle_tips,
         => .{ .menu = true, .game = true },
         // Exit to Main Menu: the level/hub options menu and the editor's
@@ -2767,15 +2767,13 @@ pub const MiddlePanelId = enum {
     entity_inspect,
 };
 
-/// The stackable full-screen overlays (drawn over the world + panels;
-/// the last occupied slot draws on top).
-pub const FullScreenOverlayId = enum {
-    world_map,
-    full_combat_log,
-};
-
 pub const max_middle_panels: usize = 4;
-pub const max_full_screen_overlays: usize = 2;
+
+/// Capacity of the overlay stack below: exactly the stackable surface
+/// count (every modal in `UiSurfaceId` minus the middle panels), so the
+/// stack can hold every overlay at once - duplicates are impossible
+/// (`openSurface` is idempotent), so no headroom is needed.
+pub const max_open_overlays: usize = 8;
 
 /// One semantic UI surface the player can open/close - the event
 /// vocabulary for `toggle_ui_surface`. The enum names the surface;
@@ -2814,30 +2812,17 @@ pub const UiSurfaceState = struct {
     open_middle_panels: [max_middle_panels]?MiddlePanelId =
         @splat(null),
 
-    /// Full-screen overlays that can stack (world map, full combat log).
-    open_full_screen_overlays: [max_full_screen_overlays]?FullScreenOverlayId =
+    /// The stackable full-screen modal overlays (options menu, settings,
+    /// load-save browser, credits, tips, editor browser, world map, full
+    /// combat log), ordered by open time: first opened = bottom. The open
+    /// overlays always occupy a contiguous prefix of the slots (closing
+    /// compacts), so slot order IS z-order - the last occupied slot draws
+    /// on top and Escape closes it first. A reopened surface lands on top
+    /// instead of recalling its pre-close slot (the middle-panel
+    /// precedent). The middle panels are not stack members (they are
+    /// side-by-side layout, not z-order).
+    open_overlays: [max_open_overlays]?UiSurfaceId =
         @splat(null),
-
-    /// Options menu - always-on-top modal, locks input + pauses the world.
-    options_menu_open: bool = false,
-
-    /// Settings screen - modal overlay; opens on top of the options menu
-    /// (in-game) or over the main menu.
-    settings_open: bool = false,
-
-    /// Load-save browser (main menu, full screen).
-    load_save_menu_open: bool = false,
-
-    /// Credits screen (main menu, full screen).
-    credits_open: bool = false,
-
-    /// Tips overlay (any screen, full screen) - opened from the global
-    /// top bar's `?` button. The VIEWED tip index is a view affordance on
-    /// `SessionState.ui_state` (it does not ride the timeline).
-    tips_open: bool = false,
-
-    /// Editor browser (main menu or editor, full screen).
-    editor_browser_open: bool = false,
 
     /// The entity-inspect panel's target (null = no target). Bounds-
     /// checked at every read - a stale index (the entity died and the
@@ -2850,12 +2835,25 @@ pub const UiSurfaceState = struct {
     /// always did).
     pub fn toggle(self: *UiSurfaceState, surface: UiSurfaceId) void {
         switch (surface) {
-            .options_menu => self.options_menu_open = !self.options_menu_open,
-            .settings => self.settings_open = !self.settings_open,
-            .load_save_menu => self.load_save_menu_open = !self.load_save_menu_open,
-            .credits => self.credits_open = !self.credits_open,
-            .tips => self.tips_open = !self.tips_open,
-            .editor_browser => self.editor_browser_open = !self.editor_browser_open,
+            // The stackable overlays share one arm (append on open,
+            // remove on close - slot order is z-order). Listed explicitly
+            // so a NEW surface id still fails this switch until its
+            // treatment is decided.
+            .options_menu,
+            .settings,
+            .load_save_menu,
+            .credits,
+            .tips,
+            .editor_browser,
+            .world_map,
+            .full_combat_log,
+            => {
+                if (self.isOverlaySurfaceOpen(surface)) {
+                    self.closeOverlaySurface(surface);
+                } else {
+                    self.openSurface(surface);
+                }
+            },
             .inventory => self.toggleMiddlePanel(.inventory),
             .gear => self.toggleMiddlePanel(.gear),
             .skills => self.toggleMiddlePanel(.skills),
@@ -2863,25 +2861,24 @@ pub const UiSurfaceState = struct {
                 self.toggleMiddlePanel(.entity_inspect);
                 self.inspected_entity_index = null;
             },
-            .world_map => self.toggleFullScreenOverlay(.world_map),
-            .full_combat_log => self.toggleFullScreenOverlay(.full_combat_log),
         }
     }
 
     pub fn isSurfaceOpen(self: *const UiSurfaceState, surface: UiSurfaceId) bool {
         return switch (surface) {
-            .options_menu => self.options_menu_open,
-            .settings => self.settings_open,
-            .load_save_menu => self.load_save_menu_open,
-            .credits => self.credits_open,
-            .tips => self.tips_open,
-            .editor_browser => self.editor_browser_open,
+            .options_menu,
+            .settings,
+            .load_save_menu,
+            .credits,
+            .tips,
+            .editor_browser,
+            .world_map,
+            .full_combat_log,
+            => self.isOverlaySurfaceOpen(surface),
             .inventory => self.isMiddlePanelOpen(.inventory),
             .gear => self.isMiddlePanelOpen(.gear),
             .skills => self.isMiddlePanelOpen(.skills),
             .entity_inspect => self.isMiddlePanelOpen(.entity_inspect),
-            .world_map => self.isFullScreenOverlayOpen(.world_map),
-            .full_combat_log => self.isFullScreenOverlayOpen(.full_combat_log),
         };
     }
 
@@ -2907,12 +2904,15 @@ pub const UiSurfaceState = struct {
     /// screen transitions).
     fn close(self: *UiSurfaceState, surface: UiSurfaceId) void {
         switch (surface) {
-            .options_menu => self.options_menu_open = false,
-            .settings => self.settings_open = false,
-            .load_save_menu => self.load_save_menu_open = false,
-            .credits => self.credits_open = false,
-            .tips => self.tips_open = false,
-            .editor_browser => self.editor_browser_open = false,
+            .options_menu,
+            .settings,
+            .load_save_menu,
+            .credits,
+            .tips,
+            .editor_browser,
+            .world_map,
+            .full_combat_log,
+            => self.closeOverlaySurface(surface),
             .inventory => self.closeMiddlePanel(.inventory),
             .gear => self.closeMiddlePanel(.gear),
             .skills => self.closeMiddlePanel(.skills),
@@ -2920,8 +2920,6 @@ pub const UiSurfaceState = struct {
                 self.closeMiddlePanel(.entity_inspect);
                 self.inspected_entity_index = null;
             },
-            .world_map => self.closeFullScreenOverlay(.world_map),
-            .full_combat_log => self.closeFullScreenOverlay(.full_combat_log),
         }
     }
 
@@ -2994,39 +2992,49 @@ pub const UiSurfaceState = struct {
         return false;
     }
 
-    fn toggleFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
-        if (self.isFullScreenOverlayOpen(overlay_id)) {
-            self.closeFullScreenOverlay(overlay_id);
-        } else {
-            self.openFullScreenOverlay(overlay_id);
+    /// Open a stackable overlay on TOP of the stack (no-op when already
+    /// open or every slot is taken). The direct-write sites (console,
+    /// tests) go through here so the open-order invariant cannot be
+    /// bypassed; the recorded path is `toggle`.
+    pub fn openSurface(self: *UiSurfaceState, surface: UiSurfaceId) void {
+        if (self.isOverlaySurfaceOpen(surface)) return;
+        var target_index: usize = 0;
+        for (self.open_overlays, 0..) |maybe_surface, index| {
+            if (maybe_surface != null) target_index = index + 1;
+        }
+        if (target_index < max_open_overlays) {
+            self.open_overlays[target_index] = surface;
         }
     }
 
-    fn openFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
-        if (self.isFullScreenOverlayOpen(overlay_id)) return;
-        for (&self.open_full_screen_overlays) |*slot| {
-            if (slot.* == null) {
-                slot.* = overlay_id;
-                return;
-            }
-        }
-    }
-
-    fn closeFullScreenOverlay(self: *UiSurfaceState, overlay_id: FullScreenOverlayId) void {
-        for (&self.open_full_screen_overlays) |*slot| {
+    /// Remove a stackable overlay + compact the remaining ones down (the
+    /// contiguous-prefix invariant - relative order of the rest is
+    /// preserved).
+    fn closeOverlaySurface(self: *UiSurfaceState, surface: UiSurfaceId) void {
+        for (&self.open_overlays) |*slot| {
             if (slot.*) |open| {
-                if (open == overlay_id) {
+                if (open == surface) {
                     slot.* = null;
+                    var write_index: usize = 0;
+                    for (self.open_overlays) |maybe_surface| {
+                        if (maybe_surface) |remaining| {
+                            self.open_overlays[write_index] = remaining;
+                            write_index += 1;
+                        }
+                    }
+                    while (write_index < max_open_overlays) : (write_index += 1) {
+                        self.open_overlays[write_index] = null;
+                    }
                     return;
                 }
             }
         }
     }
 
-    pub fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
-        for (self.open_full_screen_overlays) |maybe_overlay| {
-            if (maybe_overlay) |open| {
-                if (open == overlay_id) return true;
+    fn isOverlaySurfaceOpen(self: *const UiSurfaceState, surface: UiSurfaceId) bool {
+        for (self.open_overlays) |maybe_surface| {
+            if (maybe_surface) |open| {
+                if (open == surface) return true;
             }
         }
         return false;
@@ -3099,7 +3107,7 @@ test "UiSurfaceState.toggleMiddlePanel: a full panel strip ignores a new open" {
     );
 }
 
-test "UiSurfaceState.toggle routes each surface id to its field" {
+test "UiSurfaceState.toggle routes each surface id to its representation" {
     var surfaces = UiSurfaceState{};
     surfaces.toggle(.options_menu);
     surfaces.toggle(.settings);
@@ -3110,30 +3118,60 @@ test "UiSurfaceState.toggle routes each surface id to its field" {
     surfaces.toggle(.gear);
     surfaces.toggle(.world_map);
     surfaces.toggle(.full_combat_log);
-    try std.testing.expect(surfaces.options_menu_open);
-    try std.testing.expect(surfaces.settings_open);
-    try std.testing.expect(surfaces.load_save_menu_open);
-    try std.testing.expect(surfaces.credits_open);
-    try std.testing.expect(surfaces.editor_browser_open);
     try std.testing.expectEqual(@as(?u32, null), surfaces.inspected_entity_index);
     try std.testing.expectEqualSlices(
         ?MiddlePanelId,
         &.{ .inventory, .gear, null, null },
         &surfaces.open_middle_panels,
     );
+    // Slot order IS open order (bottom-first); the world map opened
+    // before the combat log, so it sits below it.
     try std.testing.expectEqualSlices(
-        ?FullScreenOverlayId,
-        &.{ .world_map, .full_combat_log },
-        &surfaces.open_full_screen_overlays,
+        ?UiSurfaceId,
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .world_map, .full_combat_log, null },
+        &surfaces.open_overlays,
     );
     // isSurfaceOpen agrees with every route above.
     try std.testing.expect(surfaces.isSurfaceOpen(.options_menu));
     try std.testing.expect(surfaces.isSurfaceOpen(.settings));
     try std.testing.expect(surfaces.isSurfaceOpen(.inventory));
     try std.testing.expect(surfaces.isSurfaceOpen(.world_map));
-    // Toggle flips back.
+    // Toggle flips back; closing compacts, so the rest keep their order.
     surfaces.toggle(.options_menu);
-    try std.testing.expect(!surfaces.options_menu_open);
+    try std.testing.expect(!surfaces.isSurfaceOpen(.options_menu));
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .settings, .load_save_menu, .credits, .editor_browser, .world_map, .full_combat_log, null, null },
+        &surfaces.open_overlays,
+    );
+}
+
+test "UiSurfaceState: closing a mid-stack overlay compacts; reopen lands on top" {
+    var surfaces = UiSurfaceState{};
+    surfaces.openSurface(.options_menu);
+    surfaces.openSurface(.tips);
+    surfaces.openSurface(.world_map);
+    // Close the BOTTOM-most entry: the rest shift down in order.
+    surfaces.toggle(.options_menu);
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, .world_map, null, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
+    // Reopening does not recall the old slot - it lands on top.
+    surfaces.openSurface(.options_menu);
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
+    // openSurface on an already-open surface is a no-op (no duplicate).
+    surfaces.openSurface(.tips);
+    try std.testing.expectEqualSlices(
+        ?UiSurfaceId,
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null },
+        &surfaces.open_overlays,
+    );
 }
 
 test "UiSurfaceState.toggle entity_inspect drops the target (the keyboard shape)" {

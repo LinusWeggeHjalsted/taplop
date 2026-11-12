@@ -196,7 +196,7 @@ Open:
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
 - **Settings screen** - settled design: DESIGN → UI Framework → Settings
-  screen. Full-screen modal overlay (`UiState.settings_open`), reachable
+  screen. Full-screen modal overlay (`isSurfaceOpen(.settings)`), reachable
   from the main-menu Settings button AND from a new "Settings" button in
   the options menu (level + hub; settings opens on top, Back returns to the
   options menu). Input bindings deferred. Slices 1-3 DONE (the overlay

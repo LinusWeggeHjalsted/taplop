@@ -37,14 +37,14 @@ test "player_toggle_ui_surface: flips the surface state, undo/redo restores" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 
     // The toggle rides the undo timeline (the surface state is captured by
     // snapshots) - undo re-closes, redo re-opens.
     try testing.expect(history.undo(event_handlers.processEvent));
-    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
     try testing.expect(history.redo(event_handlers.processEvent));
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
 
 test "surface-gated orchestrators: a recorded panel open makes the action replay-legal" {
@@ -117,13 +117,13 @@ test "tips surface: flips via the toggle orchestrator, undo restores" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expect(history.current_state.ui_surfaces.tips_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
 
     // Class-1: the surface rides the undo timeline.
     try testing.expect(history.undo(event_handlers.processEvent));
-    try testing.expect(!history.current_state.ui_surfaces.tips_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.tips));
     try testing.expect(history.redo(event_handlers.processEvent));
-    try testing.expect(history.current_state.ui_surfaces.tips_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.tips));
 }
 
 test "cycle_tips: steps + wraps the viewed tip on UiState, off the timeline" {
@@ -149,7 +149,7 @@ test "cycle_tips: steps + wraps the viewed tip on UiState, off the timeline" {
     // previous wraps at the start. No timeline step (a view affordance -
     // the click pushes no event beyond itself, so nothing becomes
     // undoable).
-    history.current_state.ui_surfaces.tips_open = true;
+    history.current_state.ui_surfaces.openSurface(.tips);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .cycle_tips,
     }, .{ .tips_direction = .next }, .{ .x = 0, .y = 0 }, &.{});

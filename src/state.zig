@@ -3256,7 +3256,7 @@ test "transitionScreen closes every UI surface" {
         .level = null,
         .hub = null,
         .ui_surfaces = .{
-            .options_menu_open = true,
+            .open_overlays = .{ .options_menu, null, null, null, null, null, null, null },
             .open_middle_panels = .{ .inventory, .skills, null, null },
             .inspected_entity_index = 3,
         },

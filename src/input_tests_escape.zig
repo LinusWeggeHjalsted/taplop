@@ -47,15 +47,15 @@ test "escape: settings closes alone, options menu beneath stays open" {
 
     // In-game drill-in: settings sits on top of the options menu. Escape
     // steps back to the menu, closing only the settings layer...
-    history.current_state.ui_surfaces.options_menu_open = true;
-    history.current_state.ui_surfaces.settings_open = true;
+    history.current_state.ui_surfaces.openSurface(.options_menu);
+    history.current_state.ui_surfaces.openSurface(.settings);
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.settings_open);
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.settings));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 
     // ...and a second Escape steps back out of the options menu.
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
 
 test "escape: every toggle rung closes alone, derived from the ladder" {
@@ -83,14 +83,14 @@ test "escape: every toggle rung closes alone, derived from the ladder" {
         };
         if (surface == .options_menu) continue;
 
-        history.current_state.ui_surfaces.open_full_screen_overlays[0] = .world_map;
-        history.current_state.ui_surfaces.options_menu_open = true;
+        history.current_state.ui_surfaces.openSurface(.world_map);
+        history.current_state.ui_surfaces.openSurface(.options_menu);
         history.current_state.ui_surfaces.toggle(surface);
         pressEscape(&history);
 
         try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(surface));
-        try testing.expect(history.current_state.ui_surfaces.options_menu_open);
-        try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[0] == .world_map);
+        try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+        try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
 
         // Reset for the next rung (direct bit flips, same as the forcing
         // above - the forced state never went through the timeline).
@@ -112,21 +112,21 @@ test "escape: tips closes alone, above the options menu and the main-menu overla
     // The tips rung is the one tips shipped without (the chain-mirror drift
     // that turned escape_ladder into a table). Tips opens on top of the
     // options menu on any screen: Escape closes only the tips layer.
-    history.current_state.ui_surfaces.options_menu_open = true;
-    history.current_state.ui_surfaces.tips_open = true;
+    history.current_state.ui_surfaces.openSurface(.options_menu);
+    history.current_state.ui_surfaces.openSurface(.tips);
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.tips_open);
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.tips));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 
     // On the main menu, tips also sits above the main-menu overlays (its
     // view rung: just above them, under mission fail/complete): with both
     // up, tips closes first.
     history.current_state.screen = .main_menu;
-    history.current_state.ui_surfaces.credits_open = true;
-    history.current_state.ui_surfaces.tips_open = true;
+    history.current_state.ui_surfaces.openSurface(.credits);
+    history.current_state.ui_surfaces.openSurface(.tips);
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.tips_open);
-    try testing.expect(history.current_state.ui_surfaces.credits_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.tips));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 }
 
 test "escape: with nothing open, opens the options menu (level)" {
@@ -141,7 +141,7 @@ test "escape: with nothing open, opens the options menu (level)" {
     test_harness.runToIdle(&history);
 
     pressEscape(&history);
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
 
 test "escape: main menu opens + closes the options menu; closes credits + load-save browser" {
@@ -155,21 +155,21 @@ test "escape: main menu opens + closes the options menu; closes credits + load-s
     // main-menu variant: Settings/Credits/Exit Game, not the session
     // verbs).
     pressEscape(&history);
-    try testing.expect(history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 
     // A second Escape closes it.
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 
     // Credits + load-save browser each close on Escape.
-    history.current_state.ui_surfaces.credits_open = true;
+    history.current_state.ui_surfaces.openSurface(.credits);
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.credits_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 
-    history.current_state.ui_surfaces.load_save_menu_open = true;
+    history.current_state.ui_surfaces.openSurface(.load_save_menu);
     pressEscape(&history);
-    try testing.expect(!history.current_state.ui_surfaces.load_save_menu_open);
-    try testing.expect(!history.current_state.ui_surfaces.options_menu_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
 
 test "options menu on the main menu: credits toggles via options_action; exit game requests the quit" {
@@ -185,13 +185,13 @@ test "options menu on the main menu: credits toggles via options_action; exit ga
     var anytime: input.AnytimeInput = .{};
     anytime.options_action = .open_credits;
     input_handlers.handleAnytimeInput(&history, anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
-    try testing.expect(history.current_state.ui_surfaces.credits_open);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 
     // The credits Back button reuses the action to close.
     var anytime_close: input.AnytimeInput = .{};
     anytime_close.options_action = .open_credits;
     input_handlers.handleAnytimeInput(&history, anytime_close, null, .{ .x = -4096, .y = -4096 }, &.{});
-    try testing.expect(!history.current_state.ui_surfaces.credits_open);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.credits));
 
     // Exit Game: a request flag for the game loop's exit condition - not
     // a state transform, nothing recorded.
@@ -212,17 +212,17 @@ test "escape: closes the topmost full-screen overlay only" {
     ));
     test_harness.runToIdle(&history);
 
-    // Both overlays open: slot 1 (full combat log) draws on top, so the
-    // first Escape closes it and leaves the world map open.
-    history.current_state.ui_surfaces.open_full_screen_overlays[0] = .world_map;
-    history.current_state.ui_surfaces.open_full_screen_overlays[1] = .full_combat_log;
+    // Both overlays open: the combat log opened last (draws on top), so
+    // the first Escape closes it and leaves the world map open.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    history.current_state.ui_surfaces.openSurface(.full_combat_log);
     pressEscape(&history);
-    try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[0] == .world_map);
-    try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[1] == null);
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.full_combat_log));
 
     pressEscape(&history);
-    try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[0] == null);
-    try testing.expect(history.current_state.ui_surfaces.open_full_screen_overlays[1] == null);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.full_combat_log));
 }
 
 test "escape: mission fail exits the mission" {

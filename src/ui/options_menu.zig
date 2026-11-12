@@ -37,8 +37,8 @@ const buildMissionFail = @import("screens.zig").buildMissionFail;
 /// resume-game meanings on some screens.
 /// Save carries `.save_game`. Rendered on top of the bottom bar when
 /// the options-menu surface is open (`GameState.ui_surfaces
-/// .options_menu_open`), like the error popup. See DESIGN → UI
-/// Framework.
+/// .isSurfaceOpen(.options_menu)`), like the error popup. See DESIGN →
+/// UI Framework.
 pub fn buildOptionsMenu(
     elements: *UiElementList,
     allocator: std.mem.Allocator,

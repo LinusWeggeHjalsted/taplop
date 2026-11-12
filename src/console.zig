@@ -1254,17 +1254,19 @@ fn dumpUiText(
     // → UI state classification); the classes-2-4 view state below stays on
     // SessionState.
     const ui_surfaces = &history.current_state.ui_surfaces;
-    buffer.print(allocator, "options_menu_open: {}\n", .{ui_surfaces.options_menu_open}) catch
+    // The overlay stack, bottom-first (slot order IS z-order - the last
+    // entry draws on top; see UiSurfaceState.open_overlays).
+    buffer.print(allocator, "open_overlays:", .{}) catch
         @panic("failed to format ui dump");
-    buffer.print(allocator, "settings_open: {}\n", .{ui_surfaces.settings_open}) catch
+    for (ui_surfaces.open_overlays) |maybe_surface| {
+        if (maybe_surface) |open| {
+            buffer.print(allocator, " {s}", .{@tagName(open)}) catch
+                @panic("failed to format ui dump");
+        }
+    }
+    buffer.print(allocator, "\n", .{}) catch
         @panic("failed to format ui dump");
     buffer.print(allocator, "settings_tab: {s}\n", .{@tagName(ui_state.settings_tab)}) catch
-        @panic("failed to format ui dump");
-    buffer.print(allocator, "credits_open: {}\n", .{ui_surfaces.credits_open}) catch
-        @panic("failed to format ui dump");
-    buffer.print(allocator, "load_save_menu_open: {}\n", .{ui_surfaces.load_save_menu_open}) catch
-        @panic("failed to format ui dump");
-    buffer.print(allocator, "editor_browser_open: {}\n", .{ui_surfaces.editor_browser_open}) catch
         @panic("failed to format ui dump");
     buffer.print(allocator, "keybind_scroll_offset: {d}\n", .{ui_state.keybind_scroll_offset}) catch
         @panic("failed to format ui dump");
@@ -1759,10 +1761,10 @@ test "reportText: curated projections report the state they are handed" {
 
     // ui: reflects the surface state (GameState) + the view flags
     // (SessionState).
-    history.current_state.ui_surfaces.options_menu_open = true;
+    history.current_state.ui_surfaces.openSurface(.options_menu);
     history.session.ui_state.keybind_scroll_offset = 4;
     const ui_text = reportText(.ui, &history, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0, arena);
-    try std_testing.expect(std.mem.indexOf(u8, ui_text, "options_menu_open: true") != null);
+    try std_testing.expect(std.mem.indexOf(u8, ui_text, "open_overlays: options_menu") != null);
     try std_testing.expect(std.mem.indexOf(u8, ui_text, "keybind_scroll_offset: 4") != null);
 
     // level: the gameplay-decision projection (here: no world → the

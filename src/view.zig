@@ -524,8 +524,8 @@ pub fn view(
     // Options menu: full-screen modal panel with a context-specific button
     // stack. Drawn on top of normal UI (bottom/top bars) but under the error
     // popup (which is the most-modal surface). Pure over
-    // GameState.ui_surfaces.options_menu_open. See DESIGN → UI Framework.
-    if (current_state.ui_surfaces.options_menu_open) {
+    // GameState.ui_surfaces.isSurfaceOpen(.options_menu). See DESIGN → UI Framework.
+    if (current_state.ui_surfaces.isSurfaceOpen(.options_menu)) {
         ui.buildOptionsMenu(
             &ui_elements,
             frame_allocator,
@@ -546,7 +546,7 @@ pub fn view(
     // lives on SessionState (scanned from the input path - view stays
     // file-free; see SessionState.save_files).
     if (current_state.screen == .main_menu) {
-        if (current_state.ui_surfaces.load_save_menu_open) {
+        if (current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
             ui.buildLoadSavePanel(
                 &ui_elements,
                 frame_allocator,
@@ -560,7 +560,7 @@ pub fn view(
 
         // Modal like the load-save browser - the panel blocks input to the
         // buttons behind it.
-        if (current_state.ui_surfaces.credits_open) {
+        if (current_state.ui_surfaces.isSurfaceOpen(.credits)) {
             ui.buildCreditsPanel(
                 &ui_elements,
                 frame_allocator,
@@ -576,7 +576,7 @@ pub fn view(
     // the options menu + main-menu overlays so it covers them; the error
     // popup (next) stays the most-modal surface, and the global top bar
     // (last) stays clickable above it.
-    if (current_state.ui_surfaces.tips_open) {
+    if (current_state.ui_surfaces.isSurfaceOpen(.tips)) {
         ui.buildTipsPanel(
             &ui_elements,
             frame_allocator,
@@ -642,7 +642,7 @@ pub fn view(
     // menu Settings button). Drawn under the error popup so a recoverable
     // error still surfaces on top. `blocks_input` panel shields the surface
     // behind it. See DESIGN → UI Framework → Settings screen.
-    if (current_state.ui_surfaces.settings_open) {
+    if (current_state.ui_surfaces.isSurfaceOpen(.settings)) {
         ui.buildSettingsPanel(
             &ui_elements,
             frame_allocator,
@@ -667,7 +667,7 @@ pub fn view(
     // most-modal surface). The lists live on SessionState (scanned from
     // the input path when the browser opens - view stays file-free; see
     // SessionState.editor_local_missions).
-    if (current_state.ui_surfaces.editor_browser_open) {
+    if (current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
         ui.buildEditorBrowser(
             &ui_elements,
             frame_allocator,
@@ -691,7 +691,7 @@ pub fn view(
     // the error popup + top bar. The binding contexts gate the toggle to
     // level + hub screens, so the campaign is in scope whenever it can
     // be open; a null campaign renders the empty surface only.
-    if (current_state.ui_surfaces.isFullScreenOverlayOpen(.world_map)) {
+    if (current_state.ui_surfaces.isSurfaceOpen(.world_map)) {
         ui.buildWorldMap(
             &ui_elements,
             frame_allocator,
@@ -5380,7 +5380,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
     // final layer).
     {
         var open_state = main_menu_state;
-        open_state.ui_surfaces.tips_open = true;
+        open_state.ui_surfaces.openSurface(.tips);
         var session = state.SessionState{};
         session.ui_state.tips_index = 1;
         const tips = [_][]const u8{ "alpha", "beta" };
@@ -5447,7 +5447,7 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
     // file), and an open surface renders no panel content.
     {
         var open_state = main_menu_state;
-        open_state.ui_surfaces.tips_open = true;
+        open_state.ui_surfaces.openSurface(.tips);
         var session = state.SessionState{};
         const view_state = view(
             &open_state,
@@ -5501,8 +5501,8 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
         .hub = null,
     };
     var session = state.SessionState{};
-    main_menu_state.ui_surfaces.options_menu_open = true;
-    main_menu_state.ui_surfaces.credits_open = true;
+    main_menu_state.ui_surfaces.openSurface(.options_menu);
+    main_menu_state.ui_surfaces.openSurface(.credits);
 
     const view_state = view(
         &main_menu_state,
@@ -5645,12 +5645,12 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
             .hub = null,
         };
         var session = state.SessionState{};
-        main_menu_state.ui_surfaces.options_menu_open = true;
-        main_menu_state.ui_surfaces.load_save_menu_open = true;
-        main_menu_state.ui_surfaces.credits_open = true;
-        main_menu_state.ui_surfaces.tips_open = true;
-        main_menu_state.ui_surfaces.settings_open = true;
-        main_menu_state.ui_surfaces.editor_browser_open = true;
+        main_menu_state.ui_surfaces.openSurface(.options_menu);
+        main_menu_state.ui_surfaces.openSurface(.load_save_menu);
+        main_menu_state.ui_surfaces.openSurface(.credits);
+        main_menu_state.ui_surfaces.openSurface(.tips);
+        main_menu_state.ui_surfaces.openSurface(.settings);
+        main_menu_state.ui_surfaces.openSurface(.editor_browser);
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 
@@ -5715,10 +5715,10 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         var level_state = test_harness.levelStateWithEntities(arena, &.{dead_player}, &.{});
         level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
         var session = state.SessionState{};
-        level_state.ui_surfaces.options_menu_open = true;
-        level_state.ui_surfaces.tips_open = true;
-        level_state.ui_surfaces.settings_open = true;
-        level_state.ui_surfaces.editor_browser_open = true;
+        level_state.ui_surfaces.openSurface(.options_menu);
+        level_state.ui_surfaces.openSurface(.tips);
+        level_state.ui_surfaces.openSurface(.settings);
+        level_state.ui_surfaces.openSurface(.editor_browser);
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 

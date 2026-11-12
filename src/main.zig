@@ -270,8 +270,8 @@ fn update(
     // pause: drag / camera pan / viewport gestures + idle input are blocked
     // while it's open. Its own interactions were consumed in
     // handleAnytimeInput above.
-    if (history.current_state.ui_surfaces.options_menu_open or
-        history.current_state.ui_surfaces.editor_browser_open) return;
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu) or
+        history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
 
     // Recoverable error popup pauses the game (modal - same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
@@ -787,7 +787,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // off the undoable GameState, so looping anims wave continuously across
     // undo/redo without phase jumps, and pausing freezes anims in place. Read
     // by view() for sprite-animation frame selection. See DESIGN → Animation.
-    if (!history.current_state.ui_surfaces.options_menu_open and history.session.pending_error == null) {
+    if (!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu) and history.session.pending_error == null) {
         history.session.animation_clock +%= delta_microseconds;
     }
 

@@ -1816,15 +1816,16 @@ Ladder, topmost-first:
    top of the options menu, so they sit topmost whenever they're up.
 7. **Options menu** (`toggle_surface`) - closes it, leaving any
    full-screen overlay beneath it open.
-8. **Full-screen overlay stack** (custom) - closes the topmost occupied
-   slot of `open_full_screen_overlays` (world map, full combat log; the
-   last slot draws on top).
+8. **Full-screen overlay stack** (custom) - closes the topmost open
+   entry of the overlay stack's world-map / combat-log pair (the last
+   opened draws on top).
 
 **The new-overlay gate.** A comptime check (`escapeCoverageCheck`, run
 over every `UiSurfaceId` at file scope) fails the build if a surface
 has no Escape treatment: it must be a `toggle_surface` rung in
-`escape_ladder`, carry a `FullScreenOverlayId` name (the stack rung
-closes the topmost of them), or sit in `escape_excluded_surfaces` -
+`escape_ladder`, be one of the `full_screen_overlay_stack` rung's
+pair (world map / combat log, name-matched via
+`isFullScreenOverlaySurface`), or sit in `escape_excluded_surfaces` -
 the deliberate exclusions (the middle panels inventory/gear/skills/
 entity_inspect, whose per-panel toggles I/G/S are the close path;
 revisit if playtesting asks). A new surface therefore decides its rung
@@ -2769,8 +2770,8 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
 
 ### Browser (the custom-mission selector)
 
-- A new full-screen overlay (alongside `world_map` / `full_combat_log` in
-  `FullScreenOverlayId`). Reachable from three triggers, one UI:
+- A new full-screen overlay (alongside `world_map` / `full_combat_log`
+  in the overlay stack). Reachable from three triggers, one UI:
   1. The dreamguide NPC in any hub (diegetic entry).
   2. The main menu (a button alongside New Game / Continue).
   3. The world map.
@@ -4685,7 +4686,7 @@ front door - browsing AND creating editor content - from both the main
 menu (the Editor button) and inside the editor (the options menu's Open
 Mission button + ctrl+O); the Back button closes it (all three toggle
 `Action.toggle_editor_browser` → the recorded `player_toggle_ui_surface`
-(`GameState.ui_surfaces.editor_browser_open`; Escape
+(`GameState.ui_surfaces.isSurfaceOpen(.editor_browser)`; Escape
 steps back one layer, the options menu it opened from stays beneath).
 The window is TABBED PER EDITOR KIND - the plan is TWO editors
 (missions + the campaign editor, which contains hub editing - see
@@ -6470,8 +6471,8 @@ header. Opened from the global top bar's `?` button
 like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
 sprites). The `?` hides in the EDITOR - that corner is the Test/Validate
 row, the one screen with UI already occupying the top-right (the
-overlay itself stays legal there). The OPEN state is class-1 (`UiSurfaceId.tips` / `tips_open`,
-the recorded `toggle_ui_surface` event); the VIEWED index is a view
+overlay itself stays legal there). The OPEN state is class-1 (`UiSurfaceId.tips` /
+`isSurfaceOpen(.tips)`, the recorded `toggle_ui_surface` event); the VIEWED index is a view
 affordance (`UiState.tips_index`, the settings_tab convention -
 `Action.cycle_tips` + the `tips_direction` payload mutate it directly at
 the input layer, off the undo timeline; wraps, no-ops on a single-tip
@@ -6486,7 +6487,7 @@ button; an empty-but-valid file leaves the panel as background + Back.
 
 ### Settings screen
 
-A full-screen modal overlay (`GameState.ui_surfaces.settings_open`,
+A full-screen modal overlay (`GameState.ui_surfaces.isSurfaceOpen(.settings)`,
 toggled by the recorded `Action.open_settings` → `player_toggle_ui_surface`)
 with TWO content
 tabs (`UiState.settings_tab`: **Settings** / **Keybinds** - tab buttons

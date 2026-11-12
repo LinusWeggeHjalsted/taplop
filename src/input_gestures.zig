@@ -631,7 +631,7 @@ pub fn handleSliderDrag(
     ui_elements: []const ui.UiElement,
 ) void {
     const session = &history.session;
-    if (!history.current_state.ui_surfaces.settings_open) {
+    if (!history.current_state.ui_surfaces.isSurfaceOpen(.settings)) {
         if (session.ui_state.active_slider != null) session.ui_state.active_slider = null;
         return;
     }

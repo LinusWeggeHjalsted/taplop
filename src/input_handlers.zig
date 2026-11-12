@@ -1018,8 +1018,8 @@ const EscapeRung = union(enum) {
     /// A surface that closes via the recorded `player_toggle_ui_surface`
     /// (the same event the surface's own buttons push) when open.
     toggle_surface: types.UiSurfaceId,
-    /// The full-screen overlay stack: closes the topmost occupied slot
-    /// of `open_full_screen_overlays` (the last draws on top).
+    /// The full-screen overlay stack: closes the topmost open overlay
+    /// among the map/combat-log pair (the last opened draws on top).
     full_screen_overlay_stack,
     /// View-derived from `last_completed_mission`: Escape equals the
     /// Continue button's `dismiss_mission_complete`.
@@ -1062,9 +1062,9 @@ const escape_excluded_surfaces = [_]types.UiSurfaceId{
 };
 
 /// The new-overlay gate: every `UiSurfaceId` must be Escape-closable - a
-/// `toggle_surface` rung in `escape_ladder`, a full-screen overlay id (the
-/// stack rung closes the topmost of them, name-matched via
-/// `fullScreenOverlaySurfaceId`), or in `escape_excluded_surfaces`.
+/// `toggle_surface` rung in `escape_ladder`, a member of the
+/// `full_screen_overlay_stack` rung's pair (name-matched via
+/// `isFullScreenOverlaySurface`), or in `escape_excluded_surfaces`.
 /// Anything else fails the build naming the two lists, so the newest
 /// surface can never silently lack an Escape rung.
 fn escapeCoverageCheck(
@@ -1077,7 +1077,7 @@ fn escapeCoverageCheck(
     for (escape_excluded_surfaces) |excluded| {
         if (excluded == surface) return;
     }
-    if (@hasField(types.FullScreenOverlayId, field_name)) return;
+    if (isFullScreenOverlaySurface(surface)) return;
     @compileError(std.fmt.comptimePrint(
         "UiSurfaceId '{s}' has no Escape-chain treatment; add it to escape_ladder or escape_excluded_surfaces in input_handlers.zig (see DESIGN → Input → Escape overlay chain)",
         .{field_name},
@@ -1132,13 +1132,15 @@ fn handleEscapeKey(history: *GameStateHistory) void {
                 return;
             },
             .full_screen_overlay_stack => {
-                var topmost_overlay: ?types.FullScreenOverlayId = null;
-                for (surfaces.open_full_screen_overlays) |maybe_overlay| {
-                    if (maybe_overlay) |overlay| topmost_overlay = overlay;
+                var topmost_overlay: ?types.UiSurfaceId = null;
+                for (surfaces.open_overlays) |maybe_overlay| {
+                    if (maybe_overlay) |overlay| {
+                        if (isFullScreenOverlaySurface(overlay)) topmost_overlay = overlay;
+                    }
                 }
                 const overlay_id = topmost_overlay orelse continue;
                 pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                    .surface = fullScreenOverlaySurfaceId(overlay_id),
+                    .surface = overlay_id,
                 } });
                 return;
             },
@@ -1153,14 +1155,11 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     } });
 }
 
-/// Map a full-screen overlay id to its surface-event id (the two enums
-/// name the same surfaces; the overlay enum is the state representation,
-/// the surface enum is the event vocabulary).
-fn fullScreenOverlaySurfaceId(overlay_id: types.FullScreenOverlayId) types.UiSurfaceId {
-    return switch (overlay_id) {
-        .world_map => .world_map,
-        .full_combat_log => .full_combat_log,
-    };
+/// The surfaces the `full_screen_overlay_stack` rung closes by name: the
+/// world map + full combat log, ordinary members of the merged overlay
+/// stack (the rung scans for the topmost of the pair).
+fn isFullScreenOverlaySurface(surface: types.UiSurfaceId) bool {
+    return surface == .world_map or surface == .full_combat_log;
 }
 
 /// The value `payloadAs` returns for `tag`: the variant's payload type,
@@ -1291,7 +1290,7 @@ pub fn handleAnytimeInput(
             // (your collection is the primary target), then scan now -
             // decided from the pre-toggle state (class-2 view state, direct
             // writes; the open/close itself is the recorded surface event).
-            if (!history.current_state.ui_surfaces.editor_browser_open) {
+            if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
                 history.session.ui_state.editor_mission_scroll_offset = 0;
                 history.session.ui_state.editor_mission_browser_tab = .local;
                 mission_io.rescanEditorMissionsNow(history);
@@ -1455,7 +1454,7 @@ pub fn handleAnytimeInput(
             // bottom-right button shows on both tabs). See DESIGN → UI
             // Framework → Settings screen.
             .edit_keybind => {
-                if (!history.current_state.ui_surfaces.settings_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.settings)) return;
                 const command = payloadAs(.keybind_command, clicked_payload) orelse return;
                 if (history.session.ui_state.settings_tab != .keybinds and command != .reset_defaults) return;
                 const ui_state = &history.session.ui_state;
@@ -1519,7 +1518,7 @@ pub fn handleAnytimeInput(
             // and an active keybind edit is discarded (a hidden surface
             // must not carry edit state).
             .select_settings_tab => {
-                if (!history.current_state.ui_surfaces.settings_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.settings)) return;
                 const settings_tab = payloadAs(.settings_tab, clicked_payload) orelse return;
                 if (history.session.ui_state.settings_tab == settings_tab) return;
                 history.session.ui_state.settings_tab = settings_tab;
@@ -1532,7 +1531,7 @@ pub fn handleAnytimeInput(
             // timeline; no game state changes, so no event beyond the
             // click itself). Wraps around; a single-tip list no-ops.
             .cycle_tips => {
-                if (!history.current_state.ui_surfaces.tips_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.tips)) return;
                 if (history.tips.len < 2) return;
                 const direction = payloadAs(.tips_direction, clicked_payload) orelse return;
                 const tip_count = history.tips.len;
@@ -2785,7 +2784,7 @@ pub fn handleAnytimeInput(
             // write, off the undo timeline; the scroll resets like a
             // list-tab switch (the other kind's list has its own extent).
             .select_editor_kind_tab => {
-                if (!history.current_state.ui_surfaces.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
                 const kind = payloadAs(.editor_kind, clicked_payload) orelse return;
                 history.session.ui_state.editor_browser_kind = kind;
                 history.session.ui_state.editor_mission_scroll_offset = 0;
@@ -2795,7 +2794,7 @@ pub fn handleAnytimeInput(
             // write, off the undo timeline (the sprite-picker tab's
             // convention).
             .select_editor_mission_tab => {
-                if (!history.current_state.ui_surfaces.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
                 const tab = payloadAs(.editor_mission_tab, clicked_payload) orelse return;
                 history.session.ui_state.editor_mission_browser_tab = tab;
                 // A tab switch resets the scroll - the other tab's list has
@@ -2812,7 +2811,7 @@ pub fn handleAnytimeInput(
             // surfaces and the browser stays open (the revert restores
             // world_generation, so the transition UI reset never fires).
             .open_editor_mission_row => {
-                if (!history.current_state.ui_surfaces.editor_browser_open) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
                 const row = payloadAs(.editor_mission_row, clicked_payload) orelse return;
                 const missions = switch (history.session.ui_state.editor_mission_browser_tab) {
                     .local => history.session.editor_local_missions,
@@ -2843,7 +2842,7 @@ pub fn handleAnytimeInput(
     // No periodic rescan while open (see SessionState.editor_local_missions).
     // The zip-import marker is polled here: a completed web upload extracts
     // into missions/ + rescans, so the new row appears immediately.
-    if (history.current_state.ui_surfaces.editor_browser_open) {
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
         // The Import trigger (web-only effect at the seam; native no-ops -
         // the button is never emitted there and the binding parses +
         // no-ops, the skip_level discipline).
@@ -2867,7 +2866,7 @@ pub fn handleAnytimeInput(
     // pattern in main's frame). One wheel notch = one row (whole visible
     // rows); lower clamp here, upper clamp authoritative in the builder.
     // The Settings tab has no scrollable content - the wheel no-ops there.
-    if (history.current_state.ui_surfaces.settings_open and
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.settings) and
         history.session.ui_state.settings_tab == .keybinds and
         anytime.scroll_delta != 0)
     {
@@ -2891,7 +2890,7 @@ pub fn handleAnytimeInput(
     }
 
     // When options menu is open, block all other input
-    if (history.current_state.ui_surfaces.options_menu_open) return;
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu)) return;
 
     if (anytime.scroll_delta != 0) {
         // Editor palette group under the pointer, if any. Computed up front
@@ -2916,7 +2915,7 @@ pub fn handleAnytimeInput(
         // while it's open belongs to the list - never the camera (which has
         // no meaning on the main menu anyway). Upper clamp is authoritative
         // in the builder; the lower clamp here prevents negative drift.
-        if (history.current_state.ui_surfaces.load_save_menu_open) {
+        if (history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.load_save_scroll_offset -= delta_rows;
             if (history.session.ui_state.load_save_scroll_offset < 0) {
@@ -3270,7 +3269,7 @@ pub fn handleIdleInput(
                     // stale from a previous open or never scanned this
                     // session) - decided from the pre-toggle state; the
                     // open/close itself is the recorded surface event.
-                    if (!history.current_state.ui_surfaces.load_save_menu_open) {
+                    if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
                         history.session.ui_state.load_save_scroll_offset = 0;
                         rescanSaveFilesNow(history);
                     }
@@ -3287,7 +3286,7 @@ pub fn handleIdleInput(
                 // Bounds-checked against the current list as a belt-and-
                 // suspenders stale guard.
                 .load_save_row => {
-                    if (!history.current_state.ui_surfaces.load_save_menu_open) return;
+                    if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) return;
                     const row = payloadAs(.save_row, clicked_payload) orelse return;
                     if (row >= history.session.save_files.len) return;
                     // Dupe the path into the current arena: the session
@@ -3335,7 +3334,7 @@ pub fn handleIdleInput(
         // outside appear live. Both are acquisition steps in idle input -
         // never in an event handler (see DESIGN → Custom Missions for the
         // replay-safety rationale).
-        if (history.current_state.ui_surfaces.load_save_menu_open) {
+        if (history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
             pollImportMarker(history);
             rescanSaveFilesIfDue(history);
         }

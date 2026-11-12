@@ -39,8 +39,8 @@ const wrapRow = ui_element.wrapRow;
 /// in the credits position. The viewed tip index is a view affordance on
 /// `SessionState.ui_state.tips_index` (the settings_tab convention - off
 /// the undo timeline; the `cycle_tips` action mutates it at the input
-/// layer). Pure over `GameState.ui_surfaces.tips_open` + the session's
-/// tips list + index. See DESIGN → UI Framework.
+/// layer). Pure over `GameState.ui_surfaces.isSurfaceOpen(.tips)` + the
+/// session's tips list + index. See DESIGN → UI Framework.
 pub fn buildTipsPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
