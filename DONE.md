@@ -308,6 +308,7 @@ working rules).
 - [Campaign slice-2 design settle: uuid identity + the viewing model](#campaign-slice-2-design-settle-uuid-identity--the-viewing-model)
 - [campaign-editor slice 2a+2b: uuid identity + scan resolution + the arrival rule](#campaign-editor-slice-2a2b-uuid-identity--scan-resolution--the-arrival-rule)
 - [Session reflection: campaign-editor slice 2 (post-2a/2b debrief)](#session-reflection-campaign-editor-slice-2-post-2a2b-debrief)
+- [build: configure-cache deps for generated files](#build-configure-cache-deps-for-generated-files)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19580,3 +19581,69 @@ open questions with one mechanism, and 2a+2b landing green in a day
 suggests the remaining slices (2c: the map surface + curve element; 2d:
 acting from the map; 2e: the switcher) are well-scoped. Next-session
 priority: the test-root build bug fix, then 2c.
+
+## build: configure-cache deps for generated files
+
+The open build bug from campaign-editor slice 2a (new test files not
+picked up until configure re-runs; a probe test silently absent from
+the binary) - root-caused against the Zig sources and fixed.
+
+**Root cause - a 0.16→0.17 behavior change, not our bug.** In 0.16,
+`zig build` spawned the build runner on EVERY invocation, so
+`build.zig` always executed and its directory scans were always fresh
+(the "regenerated on every build" comments were true). In 0.17, `zig
+build` dispatches to `Maker.zig`, which caches the CONFIGURE phase
+itself: on a cache hit `build.zig` never runs - Maker loads a
+serialized configuration from `.zig-cache/c/<digest>`. The cache key
+hashes build.zig, each package's build.zig.zon, CLI args, and
+explicitly declared path dependencies; untracked directory listings
+are invisible to it. All five configure-time generated artifacts had
+the identical staleness class (test root, lookups, SkillId/EffectId
+enums, embedded assets, sprite metadata) - new skill files, data
+files, and art were all silently missed the same way; we'd been saved
+by sessions usually touching build.zig or clearing the cache
+incidentally.
+
+**The fix - the mechanism upstream built for exactly this.** 0.17's
+`std.Build` gained configure-dependency declarations; the walks now
+register their own inputs:
+
+- `collectZigFiles` + `scanDir`: `b.dependOnDirectoryContents` per
+  visited directory - only entry NAMES matter (import paths, enum
+  stems); content changes rehash at compile time.
+- `collectContentFiles`: `dependOnDirectoryContents` per directory +
+  `dependOnFileContents` per PNG - the IHDR dims are the only content
+  READ at configure time; everything else is `@embedFile`'d and
+  compile-hashed.
+- `collectLicenseFiles`: `dependOnDirectoryContents` on the project
+  root (the listing includes only direct entry names, so `.zig-cache`
+  churn below it never retriggers).
+
+The registrations live INSIDE the walks so the dep list and the scan
+share one traversal - self-maintaining by construction (a new
+subdirectory changes its parent's listing → configure re-runs → the
+walk visits it → registers it). No second hand-maintained list.
+
+**Cost model** (why not `b.graph.poisonCache()`, the 0.16-behavior
+sledgehammer): steady state is one `stat` per declared path per build
+(content deps re-read only when stat changed; directory deps re-list
+only when the dir mtime changed, digest-compared). The configure
+cache stays hot on no-change builds; `poisonCache` would re-run
+configure every build forever.
+
+**Verified empirically, each direction:** a probe test file with
+`@compileError` passed `zig build test` SILENTLY before the fix
+(phantom green confirmed against the real build), failed correctly
+immediately after; no-change rebuilds keep the configure cache hot
+(no new `.zig-cache/c` entries); a data-file touch does NOT re-run
+configure (stat-first rehash matches); a real PNG content change
+DOES (new cache entry); a new data file DOES; removal is picked up
+too. Full suite PASS, web build OK, `zig fmt --check` clean.
+
+**Escape hatches worth knowing** (from the 0.17 sources): `zig build
+--cache-poison=poisoned` forces configure to re-run without clearing
+any cache (strictly better than the old `rm -rf .zig-cache/h`
+workaround); `--cache-poison=disallowed` panics if anything poisons
+it; `findProgram`-style env observation calls `poisonCache()`
+automatically. AGENTS → Build & Test now names the dep registrations
+as load-bearing for any future walk or generator.

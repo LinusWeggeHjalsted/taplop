@@ -91,18 +91,8 @@ entry); only the campaign-editor riders remain, folded into that work.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **OPEN BUILD BUG (found during campaign-editor slice 2a): new test files
-  are NOT picked up until the configure step re-runs** -
-  `generateTestRootFile` writes `src/generated_test_root.zig` at CONFIGURE
-  time, and adding a `src/*.zig` file does not retrigger configure (only
-  build.zig/dependency changes do). The AGENTS claim "new test files
-  picked up automatically" is therefore conditional. Workaround while
-  open: force a reconfigure (`rm -rf .zig-cache/h`, then build). Proper
-  fixes to weigh: a build step with a directory-listing manifest
-  dependency, or deleting the generated root in favor of a comptime
-  directory walk. Cost a confusing debugging hour before it was spotted
-  (a probe test silently not running; see DONE.md, "campaign-editor
-  slice 2a+2b").
+- [x] Configure-cache staleness for generated files - DONE (see DONE.md,
+      "build: configure-cache deps for generated files").
 
 - [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
       ALL FIVE SLICES DONE (DONE.md, "Parser grammar slice 1" through

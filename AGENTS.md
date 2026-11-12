@@ -284,9 +284,17 @@ session + the ButtonPayload migration):
   full rebuild is ~40 s - pruning is cheap, letting it pile up is not.
 - Test discovery is automatic: build.zig generates `src/generated_test_root.zig`
   (gitignored) importing every `src/**/*.zig`, and `addTest` uses it as root. Any
-  `test` block in any src file is picked up with no manual wiring. Note this
-  means the test build compiles the whole tree, including files main.zig may not
-  reach directly. EXCEPTION: `native.zig`, `web.zig`, and the whole
+  `test` block in any src file is picked up with no manual wiring. The directory
+  walks in build.zig register configure-time dependencies
+  (`b.dependOnDirectoryContents` per visited directory, `b.dependOnFileContents`
+  per PNG) so adding/removing/renaming source, content, or art files retriggers
+  configure - the 0.17 build system caches the configure phase and never
+  re-runs build.zig unless a declared dependency changed (history + rationale:
+  DONE.md, "build: configure-cache deps for generated files"). These
+  registrations are load-bearing: a new walk or generator must register its own
+  inputs or its output goes silently stale. Note this means the test build
+  compiles the whole tree, including files main.zig may not reach directly.
+  EXCEPTION: `native.zig`, `web.zig`, and the whole
   `src/raylib/` directory are excluded
   from the scan because they link raylib and the test build must stay headless.
   `web.zig` is also excluded (same reason).

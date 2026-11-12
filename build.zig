@@ -726,6 +726,12 @@ fn generateTestRootFile(b: *std.Build) void {
 
 /// Recursively collect .zig file paths under src/, relative to src/ (using
 /// forward slashes for @import). `rel_prefix` is the path accumulated so far.
+/// Each visited directory is registered as a configure-time dependency
+/// (`dependOnDirectoryContents`), so adding/removing/renaming a file or
+/// subdirectory retriggers configure - the generated test root can never go
+/// stale. Zig 0.17 caches the configure phase (build.zig itself does not
+/// re-run unless a declared dependency changed); without these registrations
+/// the directory scans are invisible to that cache.
 fn collectZigFiles(
     b: *std.Build,
     rel_prefix: []const u8,
@@ -737,6 +743,11 @@ fn collectZigFiles(
     var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch
         @panic("failed to open directory for test root generation");
     defer dir.close(io);
+
+    // Only entry NAMES matter for the test root (import paths), so a
+    // directory-listing dependency suffices; content changes are picked up
+    // by the compile step's own hashing.
+    b.dependOnDirectoryContents(b.path(dir_path));
 
     var iter = dir.iterate();
     while (iter.next(io) catch @panic("failed to iterate directory")) |entry| {
@@ -921,6 +932,11 @@ fn collectContentFiles(
         @panic("failed to open directory for asset embedding");
     defer dir.close(io);
 
+    // Configure-time dependency: the embedded map's keys mirror this listing,
+    // so any add/remove/rename here must re-run configure (see
+    // collectZigFiles' doc comment for the 0.17 configure-cache background).
+    b.dependOnDirectoryContents(b.path(dir_path));
+
     var iter = dir.iterate();
     while (iter.next(io) catch @panic("failed to iterate directory")) |entry| {
         const key = b.fmt("{s}/{s}", .{ key_prefix, entry.name });
@@ -930,6 +946,12 @@ fn collectContentFiles(
                 collectContentFiles(b, sub_dir_path, key, entries);
             },
             .file => {
+                // PNGs are the only content read at configure time (the IHDR
+                // dims baked into generated_sprite_metadata.zig), so they alone
+                // need a per-file content dependency; everything else is
+                // @embedFile'd and content changes rehash at compile time.
+                if (std.mem.endsWith(u8, entry.name, ".png"))
+                    b.dependOnFileContents(b.path(key));
                 // embed_path == key (project-root-relative from the root file).
                 entries.append(b.allocator, .{ key, key }) catch @panic("append failed");
             },
@@ -953,6 +975,11 @@ fn collectLicenseFiles(
         @panic("failed to open project root for license embedding");
     defer dir.close(io);
 
+    // Configure-time dependency on the project-root listing so a new
+    // LICENSE-*.txt re-runs configure (see collectZigFiles' doc comment for
+    // the 0.17 configure-cache background).
+    b.dependOnDirectoryContents(b.path(""));
+
     var iter = dir.iterate();
     while (iter.next(io) catch @panic("failed to iterate project root")) |entry| {
         if (entry.kind != .file) continue;
@@ -974,6 +1001,10 @@ fn scanDir(b: *std.Build, dir_path: []const u8) []const []const u8 {
     var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch
         @panic("failed to open directory for ID generation");
     defer dir.close(io);
+
+    // Configure-time dependency: the generated enums mirror this listing (see
+    // collectZigFiles' doc comment for the 0.17 configure-cache background).
+    b.dependOnDirectoryContents(b.path(dir_path));
 
     var iter = dir.iterate();
     while (iter.next(io) catch @panic("failed to iterate directory")) |entry| {
