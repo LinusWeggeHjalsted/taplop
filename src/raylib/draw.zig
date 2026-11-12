@@ -510,13 +510,19 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             const thickness: f32 = @floatFromInt(curve.width);
             var index: usize = 0;
             while (index + 1 < samples.len) : (index += 1) {
-                const draw_segment = !curve.dashed or index % 2 == 0;
-                if (draw_segment) {
-                    rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
-                }
-                if (!curve.dashed) {
+                if (curve.dashed and index % 2 == 1) continue;
+                rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
+                if (curve.dashed) {
+                    // Round caps per dash: each dash is a pill, and the
+                    // outline element's cap (wider) extends past the inner
+                    // stroke's at BOTH ends - with butt caps the two
+                    // elements end flush and the outline vanishes at every
+                    // dash tip.
+                    rl.drawCircleV(samples[index], thickness / 2, raylib_color);
+                    rl.drawCircleV(samples[index + 1], thickness / 2, raylib_color);
+                } else {
                     // The join circle - covers the corner notch between
-                    // consecutive segments.
+                    // consecutive segments (and caps the stroke's start).
                     rl.drawCircleV(samples[index], thickness / 2, raylib_color);
                 }
             }
@@ -527,7 +533,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 // The directionality chevron: two arms from the end point
                 // (element.arrowheadArms - same samples) drawn at the
                 // curve's own width, so an outline+stroke pair renders an
-                // outlined chevron.
+                // outlined chevron. Round cap at each arm's TIP: both
+                // elements' arms end at the same point, so butt caps ended
+                // flush (no outline at the tip); the cap circles leave the
+                // rim visible, same as the stroke's ends.
                 const arms = ui.arrowheadArms(curve);
                 const end = samples[samples.len - 1];
                 const arm_vectors = [2]rl.Vector2{
@@ -536,6 +545,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 };
                 for (arm_vectors) |arm| {
                     rl.drawLineEx(end, arm, thickness, raylib_color);
+                    rl.drawCircleV(arm, thickness / 2, raylib_color);
                 }
             }
         },
