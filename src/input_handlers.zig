@@ -1015,46 +1015,40 @@ fn backUpSettingsFile(history: *GameStateHistory) void {
 /// One rung of `escape_ladder`: what Escape closes when this rung is the
 /// topmost thing open.
 const EscapeRung = union(enum) {
-    /// A surface that closes via the recorded `player_toggle_ui_surface`
-    /// (the same event the surface's own buttons push) when open.
-    toggle_surface: types.UiSurfaceId,
-    /// The full-screen overlay stack: closes the topmost open overlay
-    /// among the map/combat-log pair (the last opened draws on top).
-    full_screen_overlay_stack,
     /// View-derived from `last_completed_mission`: Escape equals the
     /// Continue button's `dismiss_mission_complete`.
     mission_complete,
     /// View-derived from `playerDead`: Escape equals the Exit Mission
     /// button's `player_exit_mission`.
     mission_fail,
+    /// The overlay stack: closes the TOPMOST open overlay - the last
+    /// opened, the same one that draws on top (slot order IS z-order).
+    pop_overlay_stack,
 };
 
-/// The Escape chain: which overlay closes, topmost-first. The view's
-/// z-order is DYNAMIC (the overlay stack's open order - see view() + the
-/// census), while this chain walks a fixed rung order with the overlay
-/// stack's world-map/combat-log pair last; `handleEscapeKey` walks it
-/// from the top down and closes the first open rung. `escapeCoverageCheck`
-/// below forces every `UiSurfaceId` to have a rung here (or an explicit
-/// exclusion), so a new surface fails the build until its Escape behavior
-/// is decided - instead of shipping silently without one, the way tips
-/// did when the chain was a hand-maintained mirror of the z-order.
-/// `pub` for input_tests_escape.zig, which derives its layered-close test
-/// by walking this list.
+/// The Escape chain, topmost-first: the announcements (mission complete
+/// / fail - fixed ABOVE the overlay stack in the view, so they close
+/// before anything the player had open), then the overlay stack top.
+/// `handleEscapeKey` walks it and closes the first open rung; every rung
+/// empty opens the options menu. The old per-surface coverage gate is
+/// gone with the stack: every stackable surface is popped by the
+/// `pop_overlay_stack` rung automatically, and the comptime check below
+/// pins the exclusion list to the middle-panel set so the one remaining
+/// decision (stack member vs middle panel) cannot drift. `pub` for
+/// input_tests_escape.zig, which derives its layered-close test by
+/// walking the surface enum alongside it.
 pub const escape_ladder = [_]EscapeRung{
-    .{ .toggle_surface = .editor_browser },
-    .{ .toggle_surface = .settings },
     .mission_complete,
     .mission_fail,
-    .{ .toggle_surface = .tips },
-    .{ .toggle_surface = .load_save_menu },
-    .{ .toggle_surface = .credits },
-    .{ .toggle_surface = .options_menu },
-    .full_screen_overlay_stack,
+    .pop_overlay_stack,
 };
 
-/// Surfaces deliberately NOT in the chain: the middle panels close via
-/// their own toggle keys (I/G/S); revisit if playtesting asks for Escape
-/// to close them too (DESIGN → Input → Escape overlay chain).
+/// Surfaces deliberately NOT closed by Escape: the middle panels close
+/// via their own toggle keys (I/G/S); revisit if playtesting asks for
+/// Escape to close them too (DESIGN → Input → Escape overlay chain).
+/// The comptime check below pins this list to the `MiddlePanelId` set in
+/// BOTH directions - an entry that is not a middle panel, or a middle
+/// panel missing from the list, fails the build.
 const escape_excluded_surfaces = [_]types.UiSurfaceId{
     .inventory,
     .gear,
@@ -1062,33 +1056,37 @@ const escape_excluded_surfaces = [_]types.UiSurfaceId{
     .entity_inspect,
 };
 
-/// The new-overlay gate: every `UiSurfaceId` must be Escape-closable - a
-/// `toggle_surface` rung in `escape_ladder`, a member of the
-/// `full_screen_overlay_stack` rung's pair (name-matched via
-/// `isFullScreenOverlaySurface`), or in `escape_excluded_surfaces`.
-/// Anything else fails the build naming the two lists, so the newest
-/// surface can never silently lack an Escape rung.
-fn escapeCoverageCheck(
-    comptime surface: types.UiSurfaceId,
-    comptime field_name: []const u8,
-) void {
-    for (escape_ladder) |rung| {
-        if (rung == .toggle_surface and rung.toggle_surface == surface) return;
-    }
+/// Whether Escape deliberately ignores `surface` (the middle panels).
+/// `pub` for input_tests_escape.zig's derived walk over the surface enum.
+pub fn escapeExcluded(surface: types.UiSurfaceId) bool {
     for (escape_excluded_surfaces) |excluded| {
-        if (excluded == surface) return;
+        if (excluded == surface) return true;
     }
-    if (isFullScreenOverlaySurface(surface)) return;
-    @compileError(std.fmt.comptimePrint(
-        "UiSurfaceId '{s}' has no Escape-chain treatment; add it to escape_ladder or escape_excluded_surfaces in input_handlers.zig (see DESIGN → Input → Escape overlay chain)",
-        .{field_name},
-    ));
+    return false;
 }
 
 comptime {
     @setEvalBranchQuota(10_000);
-    for (@typeInfo(types.UiSurfaceId).@"enum".field_names) |field_name| {
-        escapeCoverageCheck(@field(types.UiSurfaceId, field_name), field_name);
+    for (escape_excluded_surfaces) |excluded| {
+        if (!@hasField(types.MiddlePanelId, @tagName(excluded))) {
+            @compileError(std.fmt.comptimePrint(
+                "UiSurfaceId '{s}' is in escape_excluded_surfaces but is not a middle panel; the list must mirror the MiddlePanelId set exactly (see DESIGN → Input → Escape overlay chain)",
+                .{@tagName(excluded)},
+            ));
+        }
+    }
+    for (@typeInfo(types.MiddlePanelId).@"enum".field_names) |field_name| {
+        const surface = @field(types.UiSurfaceId, field_name);
+        var found = false;
+        for (escape_excluded_surfaces) |excluded| {
+            if (excluded == surface) found = true;
+        }
+        if (!found) {
+            @compileError(std.fmt.comptimePrint(
+                "middle panel '{s}' is missing from escape_excluded_surfaces; the list must mirror the MiddlePanelId set exactly (see DESIGN → Input → Escape overlay chain)",
+                .{field_name},
+            ));
+        }
     }
 }
 
@@ -1103,13 +1101,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     // (the swap_weapons interjection discipline).
     for (escape_ladder) |rung| {
         switch (rung) {
-            .toggle_surface => |surface| {
-                if (!surfaces.isSurfaceOpen(surface)) continue;
-                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                    .surface = surface,
-                } });
-                return;
-            },
             // Escape equals the overlay's own primary button, never a bare
             // surface flip: the dismissal records on the undo timeline
             // (undo re-shows, redo dismisses). Never co-rendered with
@@ -1132,16 +1123,14 @@ fn handleEscapeKey(history: *GameStateHistory) void {
                 pushPlayerActionAndDrain(history, .player_exit_mission);
                 return;
             },
-            .full_screen_overlay_stack => {
-                var topmost_overlay: ?types.UiSurfaceId = null;
-                for (surfaces.open_overlays) |maybe_overlay| {
-                    if (maybe_overlay) |overlay| {
-                        if (isFullScreenOverlaySurface(overlay)) topmost_overlay = overlay;
-                    }
+            .pop_overlay_stack => {
+                var topmost_surface: ?types.UiSurfaceId = null;
+                for (surfaces.open_overlays) |maybe_surface| {
+                    if (maybe_surface) |open| topmost_surface = open;
                 }
-                const overlay_id = topmost_overlay orelse continue;
+                const surface = topmost_surface orelse continue;
                 pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                    .surface = overlay_id,
+                    .surface = surface,
                 } });
                 return;
             },
@@ -1154,13 +1143,6 @@ fn handleEscapeKey(history: *GameStateHistory) void {
     pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
         .surface = .options_menu,
     } });
-}
-
-/// The surfaces the `full_screen_overlay_stack` rung closes by name: the
-/// world map + full combat log, ordinary members of the merged overlay
-/// stack (the rung scans for the topmost of the pair).
-fn isFullScreenOverlaySurface(surface: types.UiSurfaceId) bool {
-    return surface == .world_map or surface == .full_combat_log;
 }
 
 /// The value `payloadAs` returns for `tag`: the variant's payload type,

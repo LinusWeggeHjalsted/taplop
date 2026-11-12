@@ -1,13 +1,12 @@
 //! Tests for the Escape overlay chain (`handleEscapeKey`, reached via
-//! `handleAnytimeInput`'s `escape` arm): Escape closes the
-//! topmost open overlay - a walk down `escape_ladder`, which mirrors the
-//! view's z-order (settings, tips, load-save browser, credits, world map /
-//! full combat log, options menu) and fires the mission fail/complete
-//! overlay's primary button; a derived test walks the ladder itself, so a
-//! new toggle rung gets its layered-close coverage automatically. With
-//! nothing open, Escape opens the options menu
-//! on ANY screen (the main-menu variant carries its own entries). See
-//! DESIGN → Input → Escape overlay chain.
+//! `handleAnytimeInput`'s `escape` arm): Escape closes the topmost open
+//! overlay - the announcements first (mission complete / fail, fixed
+//! above the stack), then the TOP of the overlay stack (the last opened,
+//! the same one that draws on top - any overlay, any stacking order); a
+//! derived test walks the surface enum itself, so a new stackable surface
+//! gets its layered-close coverage automatically. With nothing open,
+//! Escape opens the options menu on ANY screen (the main-menu variant
+//! carries its own entries). See DESIGN → Input → Escape overlay chain.
 
 const std = @import("std");
 const testing = std.testing;
@@ -58,7 +57,7 @@ test "escape: settings closes alone, options menu beneath stays open" {
     try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
 
-test "escape: every toggle rung closes alone, derived from the ladder" {
+test "escape: every stackable surface closes alone, derived from the surface enum" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -69,33 +68,64 @@ test "escape: every toggle rung closes alone, derived from the ladder" {
     ));
     test_harness.runToIdle(&history);
 
-    // Derived expectations: the test walks escape_ladder itself, so a new
-    // toggle rung is exercised the moment it's added - no per-rung test to
-    // remember. The options menu + a full-screen overlay ride open UNDER
-    // every rung: each close must be layered (the rung's own bit flips,
-    // nothing beneath it does). The options menu is skipped as a rung
-    // because closing it is the whole-walk behavior the dedicated tests
-    // below already pin.
-    for (input_handlers.escape_ladder) |rung| {
-        const surface = switch (rung) {
-            .toggle_surface => |rung_surface| rung_surface,
-            else => continue,
-        };
-        if (surface == .options_menu) continue;
+    // Derived expectations: the test walks every UiSurfaceId itself (minus
+    // the escape-excluded middle panels), so a new stackable surface is
+    // exercised the moment it is added - no per-surface test to remember.
+    // The options menu + world map ride open UNDER the surface under test
+    // (it is opened LAST, on top): each close must be layered (the surface
+    // under test flips, nothing beneath it does). The options menu is
+    // skipped as the surface under test because closing it is the
+    // whole-walk behavior the dedicated tests below already pin; the world
+    // map is skipped because it is one of the riders (the dedicated
+    // topmost-overlay tests below cover it as the surface under test).
+    inline for (@typeInfo(types.UiSurfaceId).@"enum".field_names) |field_name| {
+        const surface = @field(types.UiSurfaceId, field_name);
+        if (comptime input_handlers.escapeExcluded(surface)) continue;
+        if (surface == .options_menu or surface == .world_map) continue;
 
-        history.current_state.ui_surfaces.openSurface(.world_map);
         history.current_state.ui_surfaces.openSurface(.options_menu);
-        history.current_state.ui_surfaces.toggle(surface);
+        history.current_state.ui_surfaces.openSurface(.world_map);
+        history.current_state.ui_surfaces.openSurface(surface);
         pressEscape(&history);
 
         try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(surface));
         try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
         try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
 
-        // Reset for the next rung (direct bit flips, same as the forcing
-        // above - the forced state never went through the timeline).
+        // Reset for the next surface (direct state writes, same as the
+        // forcing above - the forced state never went through the
+        // timeline).
         history.current_state.ui_surfaces.closeAll();
     }
+}
+
+test "escape: pops the topmost overlay regardless of kind (the map over the menu)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    test_harness.runToIdle(&history);
+
+    // The stack, not a fixed kind ladder, decides: with the world map
+    // opened AFTER the options menu, the map is the topmost overlay and
+    // Escape closes IT first - the menu underneath survives.
+    history.current_state.ui_surfaces.openSurface(.options_menu);
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+
+    // ...and the reverse opening order flips which one Escape takes.
+    history.current_state.ui_surfaces.closeAll();
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    history.current_state.ui_surfaces.openSurface(.options_menu);
+    pressEscape(&history);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
 }
 
 test "escape: tips closes alone, above the options menu and the main-menu overlays" {

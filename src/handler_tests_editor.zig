@@ -7988,8 +7988,11 @@ test "mission browser: toggle opens (scan + reset) editor-only, escape closes ab
     try testing.expect(history.session.editor_official_missions_scanned);
 
     // The browser opens ON TOP of the options menu (the settings-screen
-    // stacking): Escape steps back one layer - only the browser closes.
+    // stacking - opened after it here, as the Open Mission button does):
+    // Escape steps back one layer - only the browser closes.
+    history.current_state.ui_surfaces.closeAll();
     history.current_state.ui_surfaces.openSurface(.options_menu);
+    history.current_state.ui_surfaces.openSurface(.editor_browser);
     input_handlers.handleAnytimeInput(&history, .{
         .escape = true,
     }, null, .{ .x = 0, .y = 0 }, &.{});
