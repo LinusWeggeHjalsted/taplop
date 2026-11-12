@@ -341,10 +341,52 @@ pub fn buildWorldMap(
         else
             null;
 
-        // The outline stroke first (painter order), then the lightest
-        // stroke on top - both carry the same geometry, and the hit
-        // region (below) samples the SAME curve, so the drawn edge and
-        // its click target agree by construction.
+        // The clickable edge: a spriteless button whose hit region is the
+        // DRAWN ARROW's sampled stroke (the hit_curve seam - distance to
+        // the polyline, not the bounds rect), emitted BEFORE the stroke
+        // pair so the hover-highlight rim (drawn by the backend from the
+        // same curve, wider) renders BENEATH the black outline + lightest
+        // stroke (painter order; the curves are hit-test-transparent, so
+        // emission order only affects paint). The hit_curve carries the
+        // drawn arrow's OUTLINE-INCLUSIVE width (black outline + inner
+        // stroke) + the dashed/arrowhead flags - hit-testing, the tooltip
+        // bounds (curveBounds), and the highlight rim all derive from it.
+        // Clickable exactly when the edge is lit (its start hub
+        // discovered-or-start = the mission-entry legality); the mission
+        // tooltip rides the button too (containsPoint respects hit_curve,
+        // so the tooltip shows exactly where a click would work - a
+        // bounds-rect hover on the decorative stroke would cover the whole
+        // bezier bbox). An edge with no resolvable mission is never
+        // clickable (the consumption site's popup names the broken exit) -
+        // a dangling DESTINATION is still clickable (it is a placed hub +
+        // mission, only the to-end forward reference is missing).
+        if (lit and edge.mission_dir.len > 0) {
+            const hit_curve = ui_element.Curve{
+                .start = start,
+                .control_start = control_start,
+                .control_end = control_end,
+                .end = end,
+                .width = edge_width + 2 * edge_outline_width,
+                .dashed = dashed,
+                .arrowhead = true,
+            };
+            const bounds = ui_element.curveBounds(hit_curve);
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = bounds.position(),
+                .width = bounds.width,
+                .height = bounds.height,
+                .action = .start_mission_from_map_edge,
+                .payload = .{ .map_edge = @intCast(edge_index) },
+                .hit_curve = hit_curve,
+                .tooltip = tooltip,
+            } });
+        }
+
+        // The outline stroke (painter order), then the lightest stroke on
+        // top - both carry the same geometry, and the hit region (above)
+        // samples the SAME curve, so the drawn edge and its click target
+        // agree by construction.
         try elements.append(allocator, .{ .curve = .{
             .start = start,
             .control_start = control_start,
@@ -368,36 +410,6 @@ pub fn buildWorldMap(
             .arrowhead = true,
             .blocks_input = false,
         } });
-        // The clickable edge: a spriteless button whose hit region is the
-        // STROKE's samples (the hit_curve seam - distance to the polyline,
-        // not the bounds rect). Clickable exactly when the edge is lit
-        // (its start hub discovered-or-start = the mission-entry legality).
-        // The mission tooltip rides the BUTTON too (containsPoint respects
-        // hit_curve, so the tooltip shows exactly where a click would work
-        // - the decorative stroke carries no tooltip, whose bounds-rect
-        // hover would cover the whole bezier bbox). An edge with no
-        // resolvable mission is never clickable (the consumption site's
-        // popup names the broken exit) - a dangling DESTINATION is still
-        // clickable (it is a placed hub + mission, only the to-end forward
-        // reference is missing).
-        if (lit and edge.mission_dir.len > 0) {
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = null,
-                .screen_position = start,
-                .width = 0,
-                .height = 0,
-                .action = .start_mission_from_map_edge,
-                .payload = .{ .map_edge = @intCast(edge_index) },
-                .hit_curve = .{
-                    .start = start,
-                    .control_start = control_start,
-                    .control_end = control_end,
-                    .end = end,
-                    .width = edge_width,
-                },
-                .tooltip = tooltip,
-            } });
-        }
     }
 }
 
@@ -531,8 +543,9 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Pair 0: the self-loop - start == end == the anchor 64px NORTH of
     // hub a's screen center (direction 0, the hub icon's boundary), the
     // controls at the teardrop offsets beyond the anchor.
-    const loop_black = elements.items[9].curve;
-    const loop_light = elements.items[10].curve;
+    const loop_button = elements.items[9].button;
+    const loop_black = elements.items[10].curve;
+    const loop_light = elements.items[11].curve;
     const loop_center = mapToScreen(.{ .x = -200, .y = 0 });
     const loop_anchor: ScreenPosition = .{
         .x = loop_center.x,
@@ -551,11 +564,27 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // clickable button, whose hit region is the stroke's samples - the
     // tooltip shows exactly where a click would work.
     try std.testing.expect(loop_light.tooltip == null);
-    const loop_button = elements.items[11].button;
+    // The button emits BEFORE the stroke pair (the hover-highlight rim
+    // renders beneath them), its hit_curve carries the outline-inclusive
+    // width + the arrowhead flag, and its rect is the drawn arrow's
+    // bbox (curveBounds) - the tooltip anchors to the FULL arrow, not a
+    // corner on the start point.
     try std.testing.expectEqual(types.Action.start_mission_from_map_edge, loop_button.action);
     try std.testing.expectEqual(@as(u32, 0), loop_button.payload.?.map_edge);
     try std.testing.expectEqualStrings("Loop", loop_button.tooltip.?.header.?[0].text);
-    try std.testing.expect(loop_button.hit_curve != null);
+    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_button.hit_curve.?.width);
+    try std.testing.expect(loop_button.hit_curve.?.arrowhead);
+    const loop_bounds = ui_element.curveBounds(loop_button.hit_curve.?);
+    try std.testing.expectEqual(loop_bounds, Rectangle{
+        .x = loop_button.screen_position.x,
+        .y = loop_button.screen_position.y,
+        .width = loop_button.width,
+        .height = loop_button.height,
+    });
+    // The self-loop's bounds contain the anchor + reach north past it
+    // (the teardrop + chevron extend beyond the hub-boundary anchor).
+    try std.testing.expect(loop_bounds.contains(loop_anchor));
+    try std.testing.expect(loop_bounds.y < loop_anchor.y);
     try std.testing.expect(loop_light.control_start.y < loop_anchor.y);
     try std.testing.expect(loop_light.control_end.y < loop_anchor.y);
     // The teardrop is symmetric about the direction axis (north): both
@@ -568,7 +597,8 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Pair 1: the straight edge a -> b - endpoints displaced to each
     // hub's boundary along the hub-position difference (64px from each
     // center), solid, lit (its start hub 'a' is the start hub).
-    const straight_light = elements.items[12].curve;
+    const straight_button = elements.items[12].button;
+    const straight_light = elements.items[14].curve;
     const a_center = mapToScreen(.{ .x = -200, .y = 0 });
     const b_center = mapToScreen(.{ .x = 400, .y = 300 });
     try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.start, a_center));
@@ -579,14 +609,14 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expect(straight_light.start.x > a_center.x and straight_light.start.y > a_center.y);
     try std.testing.expect(straight_light.end.x < b_center.x and straight_light.end.y < b_center.y);
     try std.testing.expect(!straight_light.dashed);
-    try std.testing.expect(straight_light.arrowhead);
+    try std.testing.expect(straight_button.screen_position.x <= straight_light.start.x);
     try std.testing.expectEqual(@as(u8, 255), straight_light.alpha);
 
     // Pair 2: the dangling stub from b - dashed, pointing south
     // (direction 180) from the hub's boundary anchor, lit ('b' is in the
     // discovered set, so its start hub is lit; the dimming case is
     // asserted in the dedicated test below).
-    const stub_light = elements.items[15].curve;
+    const stub_light = elements.items[17].curve;
     try std.testing.expect(stub_light.dashed);
     try std.testing.expect(stub_light.arrowhead);
     try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius, stub_light.start.y);
@@ -621,7 +651,7 @@ test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only 
     const beta_icon = elements.items[7].image;
     try std.testing.expectEqual(dimmed_alpha, beta_icon.alpha);
     // Pair 1 (a -> b): start hub 'a' is the start hub - lit.
-    try std.testing.expectEqual(@as(u8, 255), elements.items[12].curve.alpha);
+    try std.testing.expectEqual(@as(u8, 255), elements.items[13].curve.alpha);
     // Pair 2 (the stub from b): 'b' undiscovered - dimmed.
     try std.testing.expectEqual(dimmed_alpha, elements.items[15].curve.alpha);
 }

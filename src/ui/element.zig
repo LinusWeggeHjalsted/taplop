@@ -811,7 +811,10 @@ pub const Button = struct {
     /// along this curve's SAMPLED STROKE (distance to the polyline, not
     /// the bounds rect) - the world map's edge buttons (the visual
     /// `curve` element stays decorative; see Curve). The button's
-    /// rect remains its bounds/extents identity.
+    /// rect remains its bounds/extents identity. The curve's `width` is
+    /// the DRAWN arrow's (outline-inclusive) width: the hit tolerance,
+    /// the tooltip bounds (see `curveBounds`), and the hover-highlight
+    /// rim all derive from it, so the three cannot disagree.
     hit_curve: ?Curve = null,
     blocks_input: bool = true,
 };
@@ -995,6 +998,44 @@ fn screenPoint(x: f32, y: f32) ScreenPosition {
 
 fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
     return .{ .x = @floatFromInt(position.x), .y = @floatFromInt(position.y) };
+}
+
+/// The curve's DRAWN extent as a bounds rect: the sampled polyline's
+/// min/max (plus the arrowhead chevron's arm endpoints when `arrowhead`
+// is set), padded by `width / 2` (the stroke's drawn reach). The world
+/// map's edge button carries this as its rect - the tooltip anchors to
+/// the FULL arrow (the 0x0-at-the-start-point rect put the tooltip's
+/// corner on the arrow tip), and the bounds are the truthful extents.
+/// Hit-testing is unaffected: a Button with a `hit_curve` hit-tests
+/// against the sampled stroke, never the bounds.
+pub fn curveBounds(curve: Curve) Rectangle {
+    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
+    sampleCurve(curve, &samples);
+    var min_x = samples[0].x;
+    var max_x = samples[0].x;
+    var min_y = samples[0].y;
+    var max_y = samples[0].y;
+    for (samples[1..]) |sample| {
+        min_x = @min(min_x, sample.x);
+        max_x = @max(max_x, sample.x);
+        min_y = @min(min_y, sample.y);
+        max_y = @max(max_y, sample.y);
+    }
+    if (curve.arrowhead) {
+        for (arrowheadArms(curve)) |arm| {
+            min_x = @min(min_x, arm.x);
+            max_x = @max(max_x, arm.x);
+            min_y = @min(min_y, arm.y);
+            max_y = @max(max_y, arm.y);
+        }
+    }
+    const pad = @divTrunc(curve.width, 2);
+    return .{
+        .x = min_x - pad,
+        .y = min_y - pad,
+        .width = (max_x - min_x) + 2 * pad,
+        .height = (max_y - min_y) + 2 * pad,
+    };
 }
 
 /// The arrowhead chevron's two arm endpoints for `curve`: from the END
@@ -1838,4 +1879,71 @@ test "buttonAt: a decorative curve never occludes" {
     const elements = [_]UiElement{ button, overlay };
     const clicked = buttonAt(&elements, .{ .x = 50, .y = 50 }).?;
     try std.testing.expectEqual(Action.confirm, clicked.action);
+}
+
+test "curveBounds: the sampled extent incl. arrowhead, padded by the stroke" {
+    // A straight horizontal segment: the bounds span both endpoints,
+    // padded by width/2 on every side (the drawn stroke's reach).
+    const straight = Curve{
+        .start = .{ .x = 100, .y = 200 },
+        .control_start = .{ .x = 200, .y = 200 },
+        .control_end = .{ .x = 300, .y = 200 },
+        .end = .{ .x = 400, .y = 200 },
+        .width = 24,
+    };
+    const straight_bounds = curveBounds(straight);
+    try std.testing.expectEqual(Rectangle{
+        .x = 100 - 12,
+        .y = 200 - 12,
+        .width = 300 + 24,
+        .height = 0 + 24,
+    }, straight_bounds);
+
+    // The arrowhead chevron's arms extend BEYOND the endpoint's
+    // perpendicular (the arms open backward into the curve at 15 degrees
+    // off the reversed tangent, 48 long): the bounds must include them -
+    // the tooltip anchors to the FULL arrow.
+    const arrowed = Curve{
+        .start = .{ .x = 100, .y = 200 },
+        .control_start = .{ .x = 200, .y = 200 },
+        .control_end = .{ .x = 300, .y = 200 },
+        .end = .{ .x = 400, .y = 200 },
+        .width = 24,
+        .arrowhead = true,
+    };
+    const arrowed_bounds = curveBounds(arrowed);
+    const arms = arrowheadArms(arrowed);
+    for (arms) |arm| {
+        try std.testing.expect(arrowed_bounds.contains(arm));
+    }
+    // The arms open up/down beyond the stroke's padding: strictly taller
+    // than the stroke-only bounds. On a SHORT edge the arms also reach
+    // backward past the start (the 48px arm reach vs the 40px segment).
+    try std.testing.expect(arrowed_bounds.height > straight_bounds.height);
+    const short = Curve{
+        .start = .{ .x = 100, .y = 200 },
+        .control_start = .{ .x = 110, .y = 200 },
+        .control_end = .{ .x = 120, .y = 200 },
+        .end = .{ .x = 130, .y = 200 },
+        .width = 24,
+        .arrowhead = true,
+    };
+    const short_bounds = curveBounds(short);
+    try std.testing.expect(short_bounds.x < 130 - 12 - 40);
+
+    // A self-loop (start == end, the teardrop controls): the bounds are
+    // the CONTROL extent (the curve bulges toward its controls), not a
+    // zero-size box at the anchor.
+    const loop = Curve{
+        .start = .{ .x = 500, .y = 500 },
+        .control_start = .{ .x = 620, .y = 380 },
+        .control_end = .{ .x = 380, .y = 380 },
+        .end = .{ .x = 500, .y = 500 },
+        .width = 24,
+    };
+    const loop_bounds = curveBounds(loop);
+    try std.testing.expect(loop_bounds.contains(loop.start));
+    try std.testing.expect(loop_bounds.y < 500 - 12);
+    try std.testing.expect(loop_bounds.x < 500 - 12);
+    try std.testing.expect(loop_bounds.x + loop_bounds.width > 500 + 12);
 }

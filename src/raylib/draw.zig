@@ -403,25 +403,44 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 drawSprite(backend, sprite_id, dest, null, button.color, 255, false);
                 if (button.highlighted) drawHighlightOutline(backend, sprite_id, dest, highlight_color);
             } else if (button.highlighted) {
-                // Stroked rect OUTSIDE the bounds: inflate by the outline
-                // thickness on all sides so the stroke frames the button
-                // instead of overlapping its edge (drawRectangleLinesEx
-                // centers the stroke on the rect boundary). Spriteless
-                // buttons sit on 9-slice panel cells (the editor tool
-                // palette) - this stroked rect is their lightest hover
-                // outline, so it gets the same stripe treatment as the
-                // sprite-backed outlines above.
-                const t: i32 = types.outline_thickness;
-                const dest = referenceRectangle(button.screen_position, button.width, button.height);
-                const outer = rl.Rectangle{
-                    .x = dest.x - @as(f32, @floatFromInt(t)),
-                    .y = dest.y - @as(f32, @floatFromInt(t)),
-                    .width = dest.width + 2 * @as(f32, @floatFromInt(t)),
-                    .height = dest.height + 2 * @as(f32, @floatFromInt(t)),
-                };
-                backend.beginOutlineStripeScope();
-                rl.drawRectangleLinesEx(outer, @floatFromInt(t), toRaylibColor(highlight_color, 255));
-                backend.endOutlineStripeScope(backend.renderScale());
+                if (button.hit_curve) |hit_curve| {
+                    // A hit-curve button's hover outline is the FULL ARROW
+                    // (stroke + chevron + the dashed variant), drawn from
+                    // the SAME curve widened by one outline thickness per
+                    // side - the black outline is part of the arrow art,
+                    // so the rim sits OUTSIDE it (the sprite-backed
+                    // convention: the halo outlines the whole drawn
+                    // thing). The stripe treatment matches every other
+                    // hover outline. Painter order does the rest: the
+                    // button emits BEFORE the edge's stroke pair, so this
+                    // wider draw renders beneath the black outline +
+                    // lightest stroke.
+                    var outlined = hit_curve;
+                    outlined.width = hit_curve.width + 2 * types.outline_thickness;
+                    backend.beginOutlineStripeScope();
+                    drawCurveGeometry(outlined, toRaylibColor(highlight_color, 255));
+                    backend.endOutlineStripeScope(backend.renderScale());
+                } else {
+                    // Stroked rect OUTSIDE the bounds: inflate by the outline
+                    // thickness on all sides so the stroke frames the button
+                    // instead of overlapping its edge (drawRectangleLinesEx
+                    // centers the stroke on the rect boundary). Spriteless
+                    // buttons sit on 9-slice panel cells (the editor tool
+                    // palette) - this stroked rect is their lightest hover
+                    // outline, so it gets the same stripe treatment as the
+                    // sprite-backed outlines above.
+                    const t: i32 = types.outline_thickness;
+                    const dest = referenceRectangle(button.screen_position, button.width, button.height);
+                    const outer = rl.Rectangle{
+                        .x = dest.x - @as(f32, @floatFromInt(t)),
+                        .y = dest.y - @as(f32, @floatFromInt(t)),
+                        .width = dest.width + 2 * @as(f32, @floatFromInt(t)),
+                        .height = dest.height + 2 * @as(f32, @floatFromInt(t)),
+                    };
+                    backend.beginOutlineStripeScope();
+                    rl.drawRectangleLinesEx(outer, @floatFromInt(t), toRaylibColor(highlight_color, 255));
+                    backend.endOutlineStripeScope(backend.renderScale());
+                }
             }
         },
         .text_label => |label| backend.text.drawTextLabel(backend.frame_arena.allocator(), label, highlight_color),
@@ -485,70 +504,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 backend.endOutlineStripeScope(backend.renderScale());
             }
         },
-        .curve => |curve| {
-            // The SAME sampler hit-testing uses (element.sampleCurve), so
-            // the drawn stroke and the click region cannot disagree. The
-            // stroke is drawn per segment (drawLineEx) with a filled
-            // circle at every sample (drawCircleV) - round joins + round
-            // caps, structurally gap-free. raylib's drawSplineLinear
-            // would be the obvious call, but its miter joins sit behind
-            // SUPPORT_SPLINE_MITERS (off by default): without it each
-            // segment is a bare quad, and sharp curvature (the map's
-            // self-loop teardrops) shows notches between segments.
-            // Dashed (the dangling-stub class) draws alternating segments
-            // via drawLineEx only.
-            var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
-            var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
-            ui.sampleCurve(curve, &screen_samples);
-            for (screen_samples, 0..) |sample, index| {
-                samples[index] = .{
-                    .x = @floatFromInt(sample.x),
-                    .y = @floatFromInt(sample.y),
-                };
-            }
-            const raylib_color = toRaylibColor(curve.color, curve.alpha);
-            const thickness: f32 = @floatFromInt(curve.width);
-            var index: usize = 0;
-            while (index + 1 < samples.len) : (index += 1) {
-                if (curve.dashed and index % 2 == 1) continue;
-                rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
-                if (curve.dashed) {
-                    // Round caps per dash: each dash is a pill, and the
-                    // outline element's cap (wider) extends past the inner
-                    // stroke's at BOTH ends - with butt caps the two
-                    // elements end flush and the outline vanishes at every
-                    // dash tip.
-                    rl.drawCircleV(samples[index], thickness / 2, raylib_color);
-                    rl.drawCircleV(samples[index + 1], thickness / 2, raylib_color);
-                } else {
-                    // The join circle - covers the corner notch between
-                    // consecutive segments (and caps the stroke's start).
-                    rl.drawCircleV(samples[index], thickness / 2, raylib_color);
-                }
-            }
-            if (!curve.dashed) {
-                rl.drawCircleV(samples[samples.len - 1], thickness / 2, raylib_color);
-            }
-            if (curve.arrowhead) {
-                // The directionality chevron: two arms from the end point
-                // (element.arrowheadArms - same samples) drawn at the
-                // curve's own width, so an outline+stroke pair renders an
-                // outlined chevron. Round cap at each arm's TIP: both
-                // elements' arms end at the same point, so butt caps ended
-                // flush (no outline at the tip); the cap circles leave the
-                // rim visible, same as the stroke's ends.
-                const arms = ui.arrowheadArms(curve);
-                const end = samples[samples.len - 1];
-                const arm_vectors = [2]rl.Vector2{
-                    .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },
-                    .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
-                };
-                for (arm_vectors) |arm| {
-                    rl.drawLineEx(end, arm, thickness, raylib_color);
-                    rl.drawCircleV(arm, thickness / 2, raylib_color);
-                }
-            }
-        },
+        .curve => |curve| drawCurveGeometry(curve, toRaylibColor(curve.color, curve.alpha)),
         .slider => |slider| {
             // Integer slider: track (dark) + fill (lightest, proportional)
             // + thumb (lightest square at the fill end). The value label
@@ -584,6 +540,66 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// outline stripe shader (the marching flip between the highlight tint
 /// and the theme's darkest - see DESIGN → Platform Seam → Outline stripe
 /// shader).
+/// Draw one curve's full geometry - the sampled stroke (per-segment
+/// drawLineEx with a filled circle at every sample: round joins + round
+/// caps, structurally gap-free; raylib's drawSplineLinear miter joins sit
+/// behind SUPPORT_SPLINE_MITERS, off by default - without it each segment
+/// is a bare quad and sharp curvature shows notches), the dashed variant
+/// (alternating segments, round caps per dash), and the arrowhead chevron
+/// (element.arrowheadArms - the same samples). Shared by the `.curve` draw
+/// arm and the hit-curve button's hover highlight, so the highlight is the
+/// SAME arrow, just wider.
+fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
+    var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
+    var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
+    ui.sampleCurve(curve, &screen_samples);
+    for (screen_samples, 0..) |sample, index| {
+        samples[index] = .{
+            .x = @floatFromInt(sample.x),
+            .y = @floatFromInt(sample.y),
+        };
+    }
+    const thickness: f32 = @floatFromInt(curve.width);
+    var index: usize = 0;
+    while (index + 1 < samples.len) : (index += 1) {
+        if (curve.dashed and index % 2 == 1) continue;
+        rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
+        if (curve.dashed) {
+            // Round caps per dash: each dash is a pill, and the outline
+            // element's cap (wider) extends past the inner stroke's at
+            // BOTH ends - with butt caps the two elements end flush and
+            // the outline vanishes at every dash tip.
+            rl.drawCircleV(samples[index], thickness / 2, raylib_color);
+            rl.drawCircleV(samples[index + 1], thickness / 2, raylib_color);
+        } else {
+            // The join circle - covers the corner notch between
+            // consecutive segments (and caps the stroke's start).
+            rl.drawCircleV(samples[index], thickness / 2, raylib_color);
+        }
+    }
+    if (!curve.dashed) {
+        rl.drawCircleV(samples[samples.len - 1], thickness / 2, raylib_color);
+    }
+    if (curve.arrowhead) {
+        // The directionality chevron: two arms from the end point, drawn
+        // at the curve's own width, so an outline+stroke pair renders an
+        // outlined chevron. Round cap at each arm's TIP: both elements'
+        // arms end at the same point, so butt caps ended flush (no outline
+        // at the tip); the cap circles leave the rim visible, same as the
+        // stroke's ends.
+        const arms = ui.arrowheadArms(curve);
+        const end = samples[samples.len - 1];
+        const arm_vectors = [2]rl.Vector2{
+            .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },
+            .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
+        };
+        for (arm_vectors) |arm| {
+            rl.drawLineEx(end, arm, thickness, raylib_color);
+            rl.drawCircleV(arm, thickness / 2, raylib_color);
+        }
+    }
+}
+
 fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {
     // The scope covers BOTH paths (mask + rectangle fallback) - the whole
     // function is one outlined draw. The close restores the enclosing
