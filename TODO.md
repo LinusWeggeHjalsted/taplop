@@ -16,6 +16,39 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
+- **runToIdle hides the failure reason (session reflection, tiny)** - the
+      harness panics "test content should be valid" when a handler sets
+      `load_error`, but not WHAT the pending error was. This session that
+      cost a debug-print detour to learn "hub B is unreachable from the
+      start hub" - information the harness already held. One-line fix:
+      include `pending_error` in the panic message.
+- **Does gameplay input pause under the open world map? (session
+      reflection, UNVERIFIED)** - the options menu gates gameplay input
+      (skill slots, swap weapons) behind its modal gate; the world map
+      does not (pre-existing posture, noticed mid-2d + left alone). Now
+      that the map is an ACTING surface, a skill keypress firing under
+      an open map may behave oddly (targeting a hidden level, sounds
+      under the overlay). Hands-on check first; if wrong, the fix is one
+      gate condition in handleAnytimeInput.
+- **No-op clicks still play the action sound (session reflection,
+      accepted-for-now)** - the fired-actions sound choke point queues at
+      the ACTION layer, but a consumption arm can no-op silently (the
+      mid-level hub-click bug's remaining half: the click sound fired,
+      nothing happened). Two-sided fix if it ever bites: either the
+      no-op gates return before the sound, or sounds fire at the
+      consumption layer for outcome-gated cases (the design note in
+      types.zig's applyAction already names this class). Leaving it: the
+      cases are rare + the fix touches the audio choke point.
+- **Hit-curve button bounds coherence is unchecked (session-reflection
+      rider)** - the 2e full-arrow fixes established that a `hit_curve`
+      button's rect should equal `curveBounds(hit_curve)` (the 0x0 rect
+      shipped two user-visible bugs: tooltip corner on the arrow tip,
+      tiny highlight at the anchor). True by construction in
+      buildWorldMap now, but nothing enforces it elsewhere - a
+      view-level contract test (every hit-curve button's bounds ==
+      curveBounds of its curve) would make it true everywhere, the
+      z-order-census spirit. Fold into the world-map test work riding
+      slice 3's predicate-scan rewrite.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different
@@ -405,10 +438,15 @@ work:
         model, two renderers" rule; the constants ride with it). Also:
         replace the world-map structure tests' hardcoded flat-list
         indices with predicate scans (find the curve by endpoints) as
-        part of the extraction. Includes the editor-side identity model:
-        rename-in-place + cosmetic dir tidy + Save As Copy + the
-        FileSource renameDir seam (DESIGN → Rename + Save As Copy);
-        decide mint-on-fork here.
+        part of the extraction - ELEVATED from the original fold-in note:
+        the 2d/2e sessions re-indexed those tests FOUR times (icon
+        resize, clickable buttons, emission reorder), each pass slow +
+        error-prone (one update silently mangled a comment boundary). Do
+        the predicate-scan rewrite the next time world_map.zig's element
+        layout changes at all, not just at the extraction. Includes the
+        editor-side identity model: rename-in-place + cosmetic dir tidy +
+        Save As Copy + the FileSource renameDir seam (DESIGN → Rename +
+        Save As Copy); decide mint-on-fork here.
   - [ ] 4. The hub editor drill-in: the reused viewport machinery +
         exit + NPC tools with inspector fields (mission pick / import
         COPY-AT-PICK / new blank mission; destination picks placed hubs
@@ -433,6 +471,19 @@ work:
 
 Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 → Logging & Replay; history in DONE.md). Remaining:
+
+- **The reconstruction cache has a second call context (map-acting
+      validation, session reflection)**: `readCampaignIdentity`
+      (state.zig, the cross-campaign map-acting legality read) reads +
+      caches at `current_event_index` itself, because validation runs
+      BEFORE the event is seeded and `readReconstructionFile`'s contract
+      (`current_event_index - 1`) assumes dispatch-time calls. It works
+      (commented at the site) but is a silent-breakage seam: a future
+      refactor of either context breaks replay consistency with no
+      compile error - just a replay mismatch, the expensive-to-diagnose
+      class. Cleaner shape: an explicit pre-seed variant of the read
+      (e.g. `readReconstructionFileForValidation`) that owns the index
+      convention, so the two contexts can't drift. Not urgent.
 
 - **Session-log bundles do not capture custom-art DIMS reads** (found
       during campaign-editor slice 1c - the custom-asset path unify): the
