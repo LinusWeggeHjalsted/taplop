@@ -68,6 +68,22 @@ pub const MetaEvent = union(enum) {
     // recomputed identically on replay/undo). See DESIGN → Architecture →
     // Skill pacing.
     accelerating_wait: struct {},
+    // Switch the ACTIVE campaign (the world-map acting path's cross-
+    // campaign branch): load the target campaign's graph through the
+    // reconstruction cache (the load_save / start_level precedent - a
+    // recorded read, so replay is deterministic) + install it on
+    // GameState, updating the PlayerData identity fields
+    // (current_campaign_uuid / current_campaign). NO screen transition -
+    // the event rides INSIDE a map-acting cascade beneath the real
+    // arrival/entry (a transitionScreen would clear the event stack and
+    // eat it; see player_travel_to_hub / player_start_mission_from_map).
+    // The campaign's start hub is always act-legal even when the
+    // campaign was never entered (no discovered group yet) - see
+    // DESIGN → Campaigns & the Campaign Editor → Discovery + travel.
+    install_campaign: struct {
+        campaign_dir: []const u8,
+        campaign_uuid: []const u8,
+    },
     open_main_menu: void,
     close_main_menu: void,
     load_save: struct {
@@ -1267,12 +1283,18 @@ pub const PlayerInputEvent = union(enum) {
     // hub (backtrack-only - see DESIGN → Campaigns & the Campaign
     // Editor → Discovery + travel). From a hub: start_hub + end_hub
     // (the exit-tile shape); mid-level: end_level{.exit_mission} with
-    // the destination override (the abandon ride - pickups kept, no
+    // the return suppressed (the abandon ride - pickups kept, no
     // clone). The hub uuid rides the event; the handler resolves the
     // dir through the loaded campaign's table (state, never the
-    // filesystem - replay-safe).
+    // filesystem - replay-safe). The campaign identity (dir + uuid,
+    // click-time resolved from the VIEWED graph) names the campaign
+    // being acted on: null = the active campaign; non-null = the
+    // cross-campaign branch (install_campaign rides the cascade - see
+    // DESIGN → Campaigns & the Campaign Editor → Campaign switching).
     player_travel_to_hub: struct {
         hub_uuid: []const u8,
+        campaign_uuid: ?[]const u8 = null,
+        campaign_dir: ?[]const u8 = null,
     },
     // World-map mission entry (an edge click on the map): equivalent to
     // standing on the exit in the edge's start hub. The payload is the
@@ -1280,11 +1302,15 @@ pub const PlayerInputEvent = union(enum) {
     // the mission path + the campaign edge's to-end destination (null =
     // dangling, the entering-hub fallback) + the edge's start hub (the
     // mission's enter hub - current_hub on the way in, DESIGN → Campaigns
-    // & the Campaign Editor → Discovery + travel).
+    // & the Campaign Editor → Discovery + travel). The campaign identity
+    // names the campaign being acted on (null = active; non-null = the
+    // cross-campaign branch - install_campaign rides the cascade).
     player_start_mission_from_map: struct {
         mission_path: []const u8,
         end_hub_id: ?[]const u8,
         start_hub_id: []const u8,
+        campaign_uuid: ?[]const u8 = null,
+        campaign_dir: ?[]const u8 = null,
     },
     // Options-menu "exit to menu" button. Handler branches on screen:
     // level → end_level{.exit_to_menu}; hub → end_hub + open_main_menu.

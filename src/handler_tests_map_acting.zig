@@ -206,3 +206,117 @@ test "map mission entry mid-level: abandon + re-enter with a new edge" {
     try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
     try testing.expectEqual(@as(usize, 0), history.current_state.player_data.clones.len);
 }
+
+// --- cross-campaign acting (2d step 2) ---
+
+/// A SECOND fixture campaign (never entered - no discovered group), so
+/// the cross-campaign tests exercise entering a campaign whose only
+/// act-legal hub is its start hub (the reconstruction-cache read).
+const hub_x_uuid = "xxxxxxxx-0000-0000-0000-000000000005";
+const hub_y_uuid = "yyyyyyyy-0000-0000-0000-000000000006";
+const campaign2_uuid = "zzzzzzzz-0000-0000-0000-000000000007";
+const mission2_path = "campaigns/second_campaign/missions/m2";
+
+fn writeSecondCampaign(history: *state.GameStateHistory) void {
+    const fs = history.file_source;
+    fs.writeFile(
+        "campaigns/second_campaign/campaign.txt",
+        "Metadata\nfile_format_version 3\nname Second Campaign\ncampaign_uuid " ++ campaign2_uuid ++ "\nstart_hub " ++ hub_x_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_x_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_y_uuid ++ "\nposition 900 0\n",
+    ) catch @panic("write second campaign");
+    fs.writeFile(
+        "campaigns/second_campaign/hubs/hub_x/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_x_uuid ++ "\nname Hub X\n\nLayout 3\n...\n.!.\n...\n",
+    ) catch @panic("write hub x");
+    fs.writeFile(
+        "campaigns/second_campaign/hubs/hub_y/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_y_uuid ++ "\nname Hub Y\n\nLayout 3\n...\n.!.\n...\n",
+    ) catch @panic("write hub y");
+    fs.writeFile(
+        "campaigns/second_campaign/missions/m2/mission.txt",
+        "Metadata\nfile_format_version 3\nmission_uuid eeeeeeee-0000-0000-0000-000000000008\nname Second Mission\n",
+    ) catch @panic("write second mission");
+    fs.writeFile(
+        "campaigns/second_campaign/missions/m2/level_1.txt",
+        "Metadata\nfile_format_version 2\n\nLayout 1\n!=\n",
+    ) catch @panic("write second level");
+}
+
+test "cross-campaign travel: a never-entered campaign's start hub is act-legal" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    writeSecondCampaign(&history);
+
+    // Standing in the FIRST campaign's hub A, acting on the second
+    // campaign's start hub X (discovered NOWHERE - the campaign was
+    // never entered; the legality read resolved the start hub from the
+    // campaign.txt through the reconstruction cache in this session's
+    // harness too, via the same read validatePlayerAction does):
+    // the install switches the active campaign, the arrival discovers X
+    // in the NEW campaign's group (arrival IS discovery), and the session
+    // lands in X's hub content.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pushMapAction(&history, .{ .player_travel_to_hub = .{
+        .hub_uuid = hub_x_uuid,
+        .campaign_uuid = campaign2_uuid,
+        .campaign_dir = "second_campaign",
+    } });
+
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_x_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("second_campaign", history.current_state.player_data.current_campaign);
+    try testing.expectEqualStrings(campaign2_uuid, history.current_state.player_data.current_campaign_uuid);
+    try testing.expectEqualStrings("Hub X", history.current_state.hub.?.name);
+    // The arrival created the second campaign's discovered group.
+    var found_group = false;
+    for (history.current_state.player_data.discovered_hubs) |group| {
+        if (!std.mem.eql(u8, group.campaign_uuid, campaign2_uuid)) continue;
+        found_group = true;
+        try testing.expectEqual(@as(usize, 1), group.hub_uuids.len);
+        try testing.expectEqualStrings(hub_x_uuid, group.hub_uuids[0]);
+    }
+    try testing.expect(found_group);
+
+    // Switching back: the FIRST campaign's start hub is act-legal for
+    // the same reason (its start hub, not its discovered set - hub A is
+    // also discovered there, but the point is the rule composes).
+    pushMapAction(&history, .{ .player_travel_to_hub = .{
+        .hub_uuid = hub_a_uuid,
+        .campaign_uuid = campaign_uuid,
+        .campaign_dir = "test_campaign",
+    } });
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings("test_campaign", history.current_state.player_data.current_campaign);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
+}
+
+test "cross-campaign mission entry: installs the campaign + enters from the edge's start hub" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    writeSecondCampaign(&history);
+
+    // From the first campaign's hub, entering the second campaign's
+    // mission via the map: the install switches the campaign, the entry's
+    // enter hub (the edge's start hub X) becomes current_hub on the way
+    // in, and the mission's end hub rides the payload (the Y edge).
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission2_path,
+        .end_hub_id = hub_y_uuid,
+        .start_hub_id = hub_x_uuid,
+        .campaign_uuid = campaign2_uuid,
+        .campaign_dir = "second_campaign",
+    } });
+
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expectEqualStrings(mission2_path, history.current_state.mission.?.path);
+    try testing.expectEqualStrings(hub_y_uuid, history.current_state.mission.?.end_hub.?);
+    try testing.expectEqualStrings(hub_x_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("second_campaign", history.current_state.player_data.current_campaign);
+}

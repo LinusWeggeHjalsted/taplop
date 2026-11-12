@@ -98,14 +98,22 @@ pub fn getLevelEntity(
     @panic("getLevelEntity called with no level");
 }
 
-/// Load the campaign file for the player's current campaign (through the
-/// reconstruction cache) and push start_hub for `player_data.current_hub`.
+/// Load the ACTIVE campaign's graph through the reconstruction cache and
+/// install it on GameState: parse campaign.txt, run the resolution scans,
+/// derive the edge table + background dims, run the integrity checks,
+/// surface warnings, and update the PlayerData identity fields. Shared by
+/// `loadCampaignAndPushHub` (the continue/load-save path - reads the
+/// PLAYER'S current campaign) and the `install_campaign` handler (the
+/// world-map cross-campaign switch - reads the event's named campaign).
 /// A read/parse failure takes the recoverable reconstruction-read path
-/// (popup + revert via `failReconstructionRead`).
-pub fn loadCampaignAndPushHub(
+/// (popup + revert via `failReconstructionRead`); null on `current.campaign`
+/// afterward means it fired. `campaign_dir` is the campaign's dir name
+/// under campaigns/.
+pub fn installCampaignGraph(
     current: *GameState,
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
+    campaign_dir: []const u8,
 ) void {
     // Build campaign file path: campaigns/{campaign_id}/campaign.txt -
     // content-root-relative (the official campaign resolves through the
@@ -115,7 +123,7 @@ pub fn loadCampaignAndPushHub(
     const campaign_path = std.fmt.allocPrint(
         allocator,
         "campaigns/{s}/campaign.txt",
-        .{current.player_data.current_campaign},
+        .{campaign_dir},
     ) catch @panic("failed to allocate campaign path");
     // The campaign's content dir (the background mint + the integrity
     // checks' hub/mission reads resolve from here).
@@ -157,21 +165,6 @@ pub fn loadCampaignAndPushHub(
         &campaign_warnings,
     );
 
-    // Verify the save's campaign identity against the loaded campaign
-    // (a mismatch means the dir's content changed under the save - the
-    // shadow case; warn + proceed, the untrusted-content posture).
-    if (current.player_data.current_campaign_uuid.len > 0 and
-        current.campaign.?.uuid.len > 0 and
-        !std.mem.eql(u8, current.player_data.current_campaign_uuid, current.campaign.?.uuid))
-    {
-        campaign_warnings.append(allocator, std.fmt.allocPrint(
-            allocator,
-            "campaign '{s}' identity changed since the save was written (expected uuid {s}, found {s})",
-            .{ current.campaign.?.dir, current.player_data.current_campaign_uuid, current.campaign.?.uuid },
-        ) catch @panic("failed to format campaign identity warning")) catch
-            @panic("failed to append campaign identity warning");
-    }
-
     // The derived edge table + hub display names (the graph the map view
     // renders + map-acting legality reads - one walk over the resolved
     // hubs' hub.txt, missions resolved through the table above).
@@ -183,6 +176,41 @@ pub fn loadCampaignAndPushHub(
     // table, warn-only).
     loaders.checkCampaignGraph(current.campaign.?, allocator, &campaign_warnings);
     surfaceWarnings(history, &campaign_warnings, allocator);
+
+    // The PlayerData identity fields follow the installed graph.
+    current.player_data.current_campaign = current.campaign.?.dir;
+    current.player_data.current_campaign_uuid = current.campaign.?.uuid;
+}
+
+/// Load the player's current campaign (through the reconstruction cache)
+/// and push start_hub for `player_data.current_hub` - the continue /
+/// load-save resume path over `installCampaignGraph`.
+pub fn loadCampaignAndPushHub(
+    current: *GameState,
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+) void {
+    const resume_uuid = current.player_data.current_campaign_uuid;
+    installCampaignGraph(current, history, allocator, current.player_data.current_campaign);
+    if (current.campaign == null) return; // the recoverable-read path fired
+
+    // Verify the save's campaign identity against the loaded campaign
+    // (a mismatch means the dir's content changed under the save - the
+    // shadow case; warn + proceed, the untrusted-content posture).
+    if (resume_uuid.len > 0 and
+        current.campaign.?.uuid.len > 0 and
+        !std.mem.eql(u8, resume_uuid, current.campaign.?.uuid))
+    {
+        var campaign_warnings: std.ArrayList([]const u8) = .empty;
+        defer campaign_warnings.deinit(allocator);
+        campaign_warnings.append(allocator, std.fmt.allocPrint(
+            allocator,
+            "campaign '{s}' identity changed since the save was written (expected uuid {s}, found {s})",
+            .{ current.campaign.?.dir, resume_uuid, current.campaign.?.uuid },
+        ) catch @panic("failed to format campaign identity warning")) catch
+            @panic("failed to append campaign identity warning");
+        surfaceWarnings(history, &campaign_warnings, allocator);
+    }
 
     // Push start_hub with the player's current hub
     const hub_id = current.player_data.current_hub;

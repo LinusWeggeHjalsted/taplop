@@ -18,6 +18,7 @@ const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
 const writers = @import("writers.zig");
 const loaders = @import("loaders.zig");
+const parser = @import("parser.zig");
 const build_info = @import("build_info");
 
 const FileSource = file_source_mod.FileSource;
@@ -1241,6 +1242,71 @@ pub const GameStateHistory = struct {
         return bytes;
     }
 
+    /// Read one campaign's IDENTITY (start hub + uuid) from its
+    /// campaign.txt through the reconstruction cache - the map-acting
+    /// legality read for cross-campaign validation (a never-entered
+    /// campaign has no discovered group, so its start hub is only
+    /// knowable from the file; the cache keeps the check
+    /// replay-deterministic). Returns false when the campaign.txt is
+    /// unreadable or unparseable (the caller fails closed). Parses in a
+    /// throwaway arena; writes `start_hub` + `campaign_uuid` outputs
+    /// (history-arena-duped when present, left untouched when absent).
+    fn readCampaignIdentity(
+        self: *const GameStateHistory,
+        campaign_dir: []const u8,
+        hub_uuid: []const u8,
+        start_hub: *?[]const u8,
+        campaign_uuid: *[]const u8,
+    ) bool {
+        _ = hub_uuid;
+        var path_buf: [256]u8 = undefined;
+        const campaign_path = std.fmt.bufPrint(
+            &path_buf,
+            "campaigns/{s}/campaign.txt",
+            .{campaign_dir},
+        ) catch return false;
+
+        // The cache discipline needs the mutable self the read takes -
+        // cast away the const here (validatePlayerAction's call chain is
+        // const-correct at the GameState level; the cache append is the
+        // same one every reconstruction read does).
+        const history: *GameStateHistory = @constCast(self);
+        // VALIDATION CONTEXT (validatePlayerAction runs BEFORE the event
+        // is seeded, so current_event_index names no dispatching event):
+        // read the bytes directly (no cache append), then cache them ON
+        // the event's own index so the replayed handler finds them - the
+        // handler re-reads the same path through readReconstructionFile
+        // and must hit the cache (its file may have changed by then; the
+        // validation's answer must match the event's effect).
+        const event_index = history.current_event_index;
+        const arena = history.history_arena.allocator();
+        const durable_path = arena.dupe(u8, campaign_path) catch
+            @panic("failed to dupe campaign identity path");
+        const bytes = history.file_source.readFile(arena, campaign_path) catch return false;
+        history.reconstruction_cache.append(arena, .{
+            .event_index = event_index,
+            .path = durable_path,
+            .bytes = bytes,
+        }) catch @panic("failed to append campaign identity cache entry");
+
+        var parse_arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+        defer parse_arena.deinit();
+        const pa = parse_arena.allocator();
+        const sections = parser.parseConfigFile(bytes, pa, &parser.campaign_sections) catch return false;
+        const metadata = parser.findSection(sections, "Metadata") orelse return false;
+        if (metadata.entry_groups.len == 0) return false;
+        const pairs = metadata.entry_groups[0].pairs;
+        if (parser.findValue(pairs, "start_hub")) |value| {
+            start_hub.* = history.history_arena.allocator().dupe(u8, value) catch
+                @panic("failed to dupe campaign start hub");
+        }
+        if (parser.findValue(pairs, "campaign_uuid")) |value| {
+            campaign_uuid.* = history.history_arena.allocator().dupe(u8, value) catch
+                @panic("failed to dupe campaign uuid");
+        }
+        return true;
+    }
+
     /// Absence-tolerant reconstruction read: same cache discipline as
     /// `readReconstructionFile`, but a live `FileNotFound` is an EXPECTED
     /// answer, not an error - it caches an empty-bytes "known absent"
@@ -1853,7 +1919,7 @@ pub const GameStateHistory = struct {
                             self.rejectReplay("replay validation: map travel outside level/hub screen");
                             return;
                         }
-                        if (!mapHubActingLegal(&self.current_state, travel.hub_uuid)) {
+                        if (!self.mapHubActingLegal(travel.campaign_dir, travel.hub_uuid)) {
                             self.rejectReplay("replay validation: map travel to an undiscovered hub");
                             return;
                         }
@@ -1867,7 +1933,7 @@ pub const GameStateHistory = struct {
                             self.rejectReplay("replay validation: map mission entry outside level/hub screen");
                             return;
                         }
-                        if (!mapHubActingLegal(&self.current_state, entry.start_hub_id)) {
+                        if (!self.mapHubActingLegal(entry.campaign_dir, entry.start_hub_id)) {
                             self.rejectReplay("replay validation: map mission entry from an undiscovered hub");
                             return;
                         }
@@ -2711,19 +2777,55 @@ pub const GameStateHistory = struct {
     /// no-expectPanics convention - tested directly). See DESIGN →
     /// Determinism → Replay PLAYER-ACTION LEGALITY.
     /// Whether `hub_uuid` is legal to ACT on from the world map in the
-    /// active campaign: discovered, or the campaign's start hub
-    /// (discovered-or-start - the same rule the map view lights hubs by;
-    /// see DESIGN → Campaigns & the Campaign Editor → Discovery + travel).
-    /// The bool core behind validatePlayerAction's map-acting arms (the
-    /// no-expectPanics convention - tested directly, the panic wrappers
-    /// are thin policy over it).
-    fn mapHubActingLegal(current: *const GameState, hub_uuid: []const u8) bool {
-        const campaign = current.campaign orelse return false;
-        if (std.mem.eql(u8, hub_uuid, campaign.start_hub)) return true;
-        for (current.player_data.discovered_hubs) |group| {
-            if (!std.mem.eql(u8, group.campaign_uuid, campaign.uuid)) continue;
-            for (group.hub_uuids) |discovered| {
-                if (std.mem.eql(u8, discovered, hub_uuid)) return true;
+    /// campaign named by `campaign_dir` (null = the ACTIVE campaign):
+    /// discovered in that campaign's group, or that campaign's start
+    /// hub (discovered-or-start - the same rule the map view lights
+    /// hubs by; a never-entered campaign's start hub is always
+    /// act-legal, which is what makes entering a new campaign possible
+    /// at all - see DESIGN → Campaigns & the Campaign Editor →
+    /// Discovery + travel). The bool core behind validatePlayerAction's
+    /// map-acting arms (the no-expectPanics convention - tested
+    /// directly, the panic wrappers are thin policy over it).
+    ///
+    /// For the ACTIVE campaign the check is pure state (the graph rides
+    /// GameState). For ANOTHER campaign the start hub comes from a
+    /// campaign.txt read through the RECONSTRUCTION cache (the
+    /// load_save / start_level precedent for handler-side reads -
+    /// replay-deterministic; the session graph cache is never read
+    /// here). An unreadable campaign.txt fails CLOSED (not act-legal):
+    /// the corresponding install would fail anyway, and failing closed
+    /// keeps the validation total.
+    fn mapHubActingLegal(
+        self: *const GameStateHistory,
+        campaign_dir: ?[]const u8,
+        hub_uuid: []const u8,
+    ) bool {
+        if (campaign_dir == null) {
+            const campaign = self.current_state.campaign orelse return false;
+            if (std.mem.eql(u8, hub_uuid, campaign.start_hub)) return true;
+            for (self.current_state.player_data.discovered_hubs) |group| {
+                if (!std.mem.eql(u8, group.campaign_uuid, campaign.uuid)) continue;
+                for (group.hub_uuids) |discovered| {
+                    if (std.mem.eql(u8, discovered, hub_uuid)) return true;
+                }
+            }
+            return false;
+        }
+        // Another campaign: the discovered groups are uuid-keyed PlayerData
+        // state (readable now), the start hub needs the campaign's
+        // campaign.txt (the reconstruction cache - never the session
+        // graph cache).
+        var start_hub: ?[]const u8 = null;
+        var campaign_uuid: []const u8 = "";
+        if (self.readCampaignIdentity(campaign_dir.?, hub_uuid, &start_hub, &campaign_uuid)) {
+            if (start_hub) |start| {
+                if (std.mem.eql(u8, hub_uuid, start)) return true;
+            }
+            for (self.current_state.player_data.discovered_hubs) |group| {
+                if (campaign_uuid.len == 0 or !std.mem.eql(u8, group.campaign_uuid, campaign_uuid)) continue;
+                for (group.hub_uuids) |discovered| {
+                    if (std.mem.eql(u8, discovered, hub_uuid)) return true;
+                }
             }
         }
         return false;
@@ -3762,66 +3864,57 @@ test "map acting legality: discovered-or-start (the backtrack rule)" {
     // The bool core behind validatePlayerAction's map-acting arms: a hub
     // is travel/click legal when discovered OR the campaign's start hub
     // (the same rule the map view lights hubs by - see DESIGN → Campaigns
-    // & the Campaign Editor → Discovery + travel).
-    const current = GameState{
-        .screen = .hub,
-        .event_stack = &.{},
-        .player_data = .{
-            .discovered_hubs = &.{.{
-                .campaign_uuid = "camp-uuid",
-                .hub_uuids = &.{"discovered-hub"},
-            }},
-        },
-        .camera = null,
-        .editor = null,
-        .replay_viewer = null,
-        .campaign = .{
-            .uuid = "camp-uuid",
-            .start_hub = "start-hub",
-        },
-        .mission = null,
-        .level = null,
-        .hub = null,
-    };
+    // & the Campaign Editor → Discovery + travel). The ACTIVE-campaign
+    // half is pure state; the OTHER-campaign half reads the target's
+    // campaign.txt through the reconstruction cache (a never-entered
+    // campaign's start hub is only knowable from the file - which is what
+    // makes entering a new campaign possible at all).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
 
-    try std.testing.expect(GameStateHistory.mapHubActingLegal(&current, "discovered-hub"));
-    try std.testing.expect(GameStateHistory.mapHubActingLegal(&current, "start-hub"));
-    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&current, "undiscovered-hub"));
+    const campaign = types.Campaign{
+        .uuid = "camp-uuid",
+        .start_hub = "start-hub",
+    };
+    history.current_state.campaign = campaign;
+    history.current_state.player_data.discovered_hubs = &.{.{
+        .campaign_uuid = "camp-uuid",
+        .hub_uuids = &.{"discovered-hub"},
+    }};
+
+    // Active campaign (null dir): pure state.
+    try std.testing.expect(history.mapHubActingLegal(null, "discovered-hub"));
+    try std.testing.expect(history.mapHubActingLegal(null, "start-hub"));
+    try std.testing.expect(!history.mapHubActingLegal(null, "undiscovered-hub"));
     // A hub discovered in ANOTHER campaign does not count (the groups
     // scope by campaign uuid).
-    const other_campaign = GameState{
-        .screen = .hub,
-        .event_stack = &.{},
-        .player_data = .{
-            .discovered_hubs = &.{.{
-                .campaign_uuid = "other-camp",
-                .hub_uuids = &.{"discovered-hub"},
-            }},
-        },
-        .camera = null,
-        .editor = null,
-        .replay_viewer = null,
-        .campaign = .{
-            .uuid = "camp-uuid",
-            .start_hub = "start-hub",
-        },
-        .mission = null,
-        .level = null,
-        .hub = null,
-    };
-    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&other_campaign, "discovered-hub"));
+    history.current_state.player_data.discovered_hubs = &.{.{
+        .campaign_uuid = "other-camp",
+        .hub_uuids = &.{"discovered-hub"},
+    }};
+    try std.testing.expect(!history.mapHubActingLegal(null, "discovered-hub"));
     // No campaign loaded (the main menu): nothing is map-acting legal.
-    const no_campaign = GameState{
-        .screen = .main_menu,
-        .event_stack = &.{},
-        .player_data = .{},
-        .camera = null,
-        .editor = null,
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    };
-    try std.testing.expect(!GameStateHistory.mapHubActingLegal(&no_campaign, "start-hub"));
+    history.current_state.campaign = null;
+    try std.testing.expect(!history.mapHubActingLegal(null, "start-hub"));
+
+    // Another campaign: the start hub comes from its campaign.txt (read
+    // through the reconstruction cache); an unreadable campaign dir fails
+    // CLOSED.
+    history.file_source.writeFile(
+        "campaigns/other/campaign.txt",
+        "Metadata\nfile_format_version 3\ncampaign_uuid other-uuid\nstart_hub other-start\n",
+    ) catch @panic("write other campaign");
+    try std.testing.expect(history.mapHubActingLegal("other", "other-start"));
+    try std.testing.expect(!history.mapHubActingLegal("other", "other-undiscovered"));
+    try std.testing.expect(!history.mapHubActingLegal("nonexistent", "any-hub"));
+    // Once the player has discovered a hub in the other campaign (the
+    // group exists), that hub is act-legal too - and the group scopes by
+    // the file's uuid, not the dir name.
+    history.current_state.player_data.discovered_hubs = &.{.{
+        .campaign_uuid = "other-uuid",
+        .hub_uuids = &.{"other-discovered"},
+    }};
+    try std.testing.expect(history.mapHubActingLegal("other", "other-discovered"));
 }

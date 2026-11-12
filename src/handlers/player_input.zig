@@ -525,19 +525,38 @@ pub fn handlePlayerInputEvent(
         .player_travel_to_hub => |travel| {
             const hub_id = allocator.dupe(u8, travel.hub_uuid) catch
                 @panic("failed to allocate travel hub id");
+            // Cross-campaign: the install rides BENEATH the arrival
+            // (LIFO - it runs first), switching the active campaign +
+            // its graph so start_hub resolves through the NEW table.
+            const install_events: []const Event = if (travel.campaign_dir) |campaign_dir| blk: {
+                const dir = allocator.dupe(u8, campaign_dir) catch
+                    @panic("failed to allocate travel campaign dir");
+                const uuid = allocator.dupe(u8, travel.campaign_uuid orelse "") catch
+                    @panic("failed to allocate travel campaign uuid");
+                break :blk &.{.{ .meta_event = .{ .install_campaign = .{
+                    .campaign_dir = dir,
+                    .campaign_uuid = uuid,
+                } } }};
+            } else &.{};
             if (current.screen == .level) {
-                pushEvents(current, &.{
-                    .{ .meta_event = .{ .start_hub = .{ .hub_id = hub_id } } },
-                    .{ .meta_event = .{ .end_level = .{
-                        .continuation = .exit_mission,
-                        .suppress_return_hub = true,
-                    } } },
-                }, allocator);
+                var stack: std.ArrayList(Event) = .empty;
+                stack.append(allocator, .{ .meta_event = .{ .start_hub = .{
+                    .hub_id = hub_id,
+                } } }) catch @panic("failed to append arrival");
+                stack.appendSlice(allocator, install_events) catch @panic("failed to append install");
+                stack.append(allocator, .{ .meta_event = .{ .end_level = .{
+                    .continuation = .exit_mission,
+                    .suppress_return_hub = true,
+                } } }) catch @panic("failed to append abandon");
+                pushEvents(current, stack.items, allocator);
             } else if (current.screen == .hub) {
-                pushEvents(current, &.{
-                    .{ .meta_event = .{ .start_hub = .{ .hub_id = hub_id } } },
-                    .{ .meta_event = .end_hub },
-                }, allocator);
+                var stack: std.ArrayList(Event) = .empty;
+                stack.append(allocator, .{ .meta_event = .{ .start_hub = .{
+                    .hub_id = hub_id,
+                } } }) catch @panic("failed to append arrival");
+                stack.appendSlice(allocator, install_events) catch @panic("failed to append install");
+                stack.append(allocator, .{ .meta_event = .end_hub }) catch @panic("failed to append hub exit");
+                pushEvents(current, stack.items, allocator);
             }
         },
         // World-map mission entry (an edge click): equivalent to standing
@@ -557,27 +576,45 @@ pub fn handlePlayerInputEvent(
                 null;
             const start_hub_id = allocator.dupe(u8, entry.start_hub_id) catch
                 @panic("failed to allocate map mission start hub");
+            // Cross-campaign: the install rides BENEATH the entry (LIFO -
+            // it runs first), switching the active campaign + its graph
+            // so the mission's campaign-relative path resolves against
+            // the NEW campaign and the enter hub's discovery lands in the
+            // NEW campaign's group (start_hub discovers through the
+            // installed graph's uuid).
+            const install_events: []const Event = if (entry.campaign_dir) |campaign_dir| blk: {
+                const dir = allocator.dupe(u8, campaign_dir) catch
+                    @panic("failed to allocate entry campaign dir");
+                const uuid = allocator.dupe(u8, entry.campaign_uuid orelse "") catch
+                    @panic("failed to allocate entry campaign uuid");
+                break :blk &.{.{ .meta_event = .{ .install_campaign = .{
+                    .campaign_dir = dir,
+                    .campaign_uuid = uuid,
+                } } }};
+            } else &.{};
             if (current.screen == .level) {
-                pushEvents(current, &.{
-                    .{ .meta_event = .{ .start_mission = .{
-                        .mission_path = mission_path,
-                        .end_hub_id = end_hub_id,
-                        .enter_hub_id = start_hub_id,
-                    } } },
-                    .{ .meta_event = .{ .end_level = .{
-                        .continuation = .exit_mission,
-                        .suppress_return_hub = true,
-                    } } },
-                }, allocator);
+                var stack: std.ArrayList(Event) = .empty;
+                stack.append(allocator, .{ .meta_event = .{ .start_mission = .{
+                    .mission_path = mission_path,
+                    .end_hub_id = end_hub_id,
+                    .enter_hub_id = start_hub_id,
+                } } }) catch @panic("failed to append entry");
+                stack.appendSlice(allocator, install_events) catch @panic("failed to append install");
+                stack.append(allocator, .{ .meta_event = .{ .end_level = .{
+                    .continuation = .exit_mission,
+                    .suppress_return_hub = true,
+                } } }) catch @panic("failed to append abandon");
+                pushEvents(current, stack.items, allocator);
             } else if (current.screen == .hub) {
-                pushEvents(current, &.{
-                    .{ .meta_event = .{ .start_mission = .{
-                        .mission_path = mission_path,
-                        .end_hub_id = end_hub_id,
-                        .enter_hub_id = start_hub_id,
-                    } } },
-                    .{ .meta_event = .end_hub },
-                }, allocator);
+                var stack: std.ArrayList(Event) = .empty;
+                stack.append(allocator, .{ .meta_event = .{ .start_mission = .{
+                    .mission_path = mission_path,
+                    .end_hub_id = end_hub_id,
+                    .enter_hub_id = start_hub_id,
+                } } }) catch @panic("failed to append entry");
+                stack.appendSlice(allocator, install_events) catch @panic("failed to append install");
+                stack.append(allocator, .{ .meta_event = .end_hub }) catch @panic("failed to append hub exit");
+                pushEvents(current, stack.items, allocator);
             }
         },
         .player_exit_to_menu => {

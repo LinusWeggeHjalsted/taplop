@@ -153,6 +153,38 @@ pub fn handleMetaEvent(
                 return;
             };
         },
+        .install_campaign => |install| {
+            // Cross-campaign world-map acting (see DESIGN → Campaigns &
+            // the Campaign Editor → Campaign switching): swap the active
+            // campaign to the event's named one. The graph loads through
+            // the reconstruction cache (a recorded read - replay is
+            // deterministic), the PlayerData identity fields follow, and
+            // NO screen transition happens - the event rides inside a
+            // map-acting cascade beneath the real arrival/entry (the
+            // player_travel_to_hub / player_start_mission_from_map
+            // orchestrators). A read/parse failure takes the recoverable
+            // path (popup + revert).
+            shared.installCampaignGraph(current, history, allocator, install.campaign_dir);
+            if (current.campaign == null) return; // failReconstructionRead fired
+            // The recorded payload's uuid is the identity the click
+            // resolved against (the viewed graph); a mismatch means the
+            // dir's content changed between the click and the drain -
+            // the untrusted-content posture (warn + proceed).
+            if (install.campaign_uuid.len > 0 and
+                current.campaign.?.uuid.len > 0 and
+                !std.mem.eql(u8, install.campaign_uuid, current.campaign.?.uuid))
+            {
+                var campaign_warnings: std.ArrayList([]const u8) = .empty;
+                defer campaign_warnings.deinit(allocator);
+                campaign_warnings.append(allocator, std.fmt.allocPrint(
+                    allocator,
+                    "campaign '{s}' identity changed since the map click (expected uuid {s}, found {s})",
+                    .{ current.campaign.?.dir, install.campaign_uuid, current.campaign.?.uuid },
+                ) catch @panic("failed to format campaign identity warning")) catch
+                    @panic("failed to append campaign identity warning");
+                surfaceWarnings(history, &campaign_warnings, allocator);
+            }
+        },
         .start_hub => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
             // Resolve the hub uuid to its dir through the loaded
