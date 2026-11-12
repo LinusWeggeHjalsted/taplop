@@ -25,9 +25,14 @@ const text = ui_element.text;
 
 const spanRow = ui_tooltip.spanRow;
 const top_bar_height = ui_element.top_bar_height;
-const panel_button_height = ui_element.panel_button_height;
-const menu_button_font_size = ui_element.menu_button_font_size;
 const ui_gap = ui_element.ui_gap;
+
+/// The campaign button's metrics - smaller than a panel button (the
+/// nameplate shares the map's corner with the world, it is not a primary
+/// action). Font size is the round step down at roughly the menu buttons'
+/// 0.6 height/font ratio (128 * 0.6 = 76.8 -> 72).
+const campaign_button_height: i32 = 128;
+const campaign_button_font_size: i32 = 72;
 
 /// The hub icon's draw size (reference px, centered on the hub's map
 /// position). A dedicated icon ships eventually; until then the id is
@@ -141,7 +146,7 @@ pub fn buildWorldMap(
     // The label is the VIEWED campaign's name, no prefix - the button is
     // the nameplate of whatever the map is showing.
     const campaign_label = if (campaign.name.len > 0) campaign.name else "Campaign";
-    const campaign_label_width = font_metrics.measureSpanWidth(text(campaign_label), menu_button_font_size);
+    const campaign_label_width = font_metrics.measureSpanWidth(text(campaign_label), campaign_button_font_size);
     try emit.emitPanelButton(
         elements,
         allocator,
@@ -150,10 +155,10 @@ pub fn buildWorldMap(
             .x = screen.x + ui_gap,
             .y = screen.y + top_bar_height + ui_gap,
             .width = campaign_label_width + 4 * ui_gap,
-            .height = panel_button_height,
+            .height = campaign_button_height,
         },
         campaign_label,
-        menu_button_font_size,
+        campaign_button_font_size,
         .toggle_campaign_browser,
         button_color,
         null,
