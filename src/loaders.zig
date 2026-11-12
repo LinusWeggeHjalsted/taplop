@@ -3022,6 +3022,26 @@ fn embeddedHubDirs(campaign_dir: []const u8, allocator: std.mem.Allocator) []con
     return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded hub dirs");
 }
 
+/// Resolve the campaign background's pixel dims into
+/// `Campaign.background_dims` (the map view draws it at native size,
+/// centered on the origin). No background, no resolution; a background
+/// whose file cannot be read warns + leaves the dims null (the map skips
+/// the draw - untrusted content degrades, never crashes). The LOADING
+/// side only.
+pub fn resolveCampaignBackgroundDims(
+    campaign: *types.Campaign,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) void {
+    if (campaign.background.len == 0) return;
+    const dims = resolveCustomSpriteFileDims(campaign.background, file_source, allocator) orelse {
+        appendWarning(warnings, allocator, "campaign '{s}' background '{s}' is not a readable PNG - the world map renders without it", .{ campaign.dir, campaign.background });
+        return;
+    };
+    campaign.background_dims = dims;
+}
+
 /// Build the campaign's mission table (scan every mission dir in the
 /// campaign's `missions/` - persistent + embedded - read each
 /// mission.txt's uuid + name). Duplicates resolve latest-mtime-wins +

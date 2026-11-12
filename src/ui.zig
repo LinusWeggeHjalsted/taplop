@@ -27,6 +27,7 @@ const ui_main_menu = @import("ui/main_menu.zig");
 const ui_browsers = @import("ui/browsers.zig");
 const ui_credits = @import("ui/credits.zig");
 const ui_tips = @import("ui/tips.zig");
+const ui_world_map = @import("ui/world_map.zig");
 const ui_settings = @import("ui/settings.zig");
 
 pub const SlotRef = ui_element.SlotRef;
@@ -202,6 +203,8 @@ pub const buildGearPanel = ui_panels.buildGearPanel;
 pub const buildEntityInspectPanel = ui_panels.buildEntityInspectPanel;
 pub const buildSkillsPanel = ui_panels.buildSkillsPanel;
 pub const buildErrorPopup = ui_screens.buildErrorPopup;
+pub const buildWorldMap = ui_world_map.buildWorldMap;
+pub const mapToScreen = ui_world_map.mapToScreen;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;
 pub const ValidationCompleteContext = ui_screens.ValidationCompleteContext;

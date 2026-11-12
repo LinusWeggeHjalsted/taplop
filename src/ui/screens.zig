@@ -292,6 +292,11 @@ pub fn buildGlobalTopBar(
     /// (Test/Validate). view() owns the rule; the bar draws what it's
     /// told.
     tips_available: bool,
+    /// Whether the world-map button should show: the level + hub screens
+    /// (the `toggle_world_map` binding contexts - playtest/validation runs
+    /// are level screens, so the run gets the map too). view() owns the
+    /// rule.
+    map_available: bool,
 ) !void {
     const p = active_theme.player_gradient.colors;
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
@@ -369,6 +374,29 @@ pub fn buildGlobalTopBar(
         },
     });
     if (!can_redo) try emitDimWash(elements, allocator, redo_cell, c_dim);
+
+    // World-map button - same size, one `ui_gap` right of redo. Legal on
+    // the level + hub screens only (the `toggle_world_map` binding
+    // contexts; view() gates it via `map_available`). The icon sprite is
+    // MISSING until the artist ships `ui/icon_world_map` - it draws the
+    // magenta placeholder meanwhile (the art_report shopping list carries
+    // it automatically).
+    if (map_available) {
+        const map_cell = row.next(top_bar_slot_size);
+        try emitIconButton(
+            elements,
+            allocator,
+            map_cell,
+            small_button_background_sprite_id,
+            "ui/icon_world_map",
+            .toggle_world_map,
+            .{ .header = try spanRow(allocator, text("World Map")) },
+            c_btn_bg,
+            c_btn_icon,
+            false,
+            null,
+        );
+    }
 
     // Tips button - flush in the top-RIGHT corner, mirroring the options
     // button at top-left: the same 128x128 background with a font-glyph

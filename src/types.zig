@@ -3023,7 +3023,7 @@ pub const UiSurfaceState = struct {
         }
     }
 
-    fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
+    pub fn isFullScreenOverlayOpen(self: *const UiSurfaceState, overlay_id: FullScreenOverlayId) bool {
         for (self.open_full_screen_overlays) |maybe_overlay| {
             if (maybe_overlay) |open| {
                 if (open == overlay_id) return true;
@@ -3378,6 +3378,14 @@ pub const Campaign = struct {
     /// The derived edge table (see `CampaignEdgeEntry`) - one entry per
     /// resolvable exit across all placed hubs, built by the load scan.
     edges: []const CampaignEdgeEntry = &.{},
+    /// The background image's pixel dims, resolved at load from the PNG's
+    /// IHDR through the custom-asset dims machinery (null when the
+    /// campaign has no background or the file is unreadable - the map
+    /// view skips the background then; the warn surface carries the
+    /// unresolvable case). The map draws the background at NATIVE size,
+    /// centered on the origin - stored positions never depend on it (see
+    /// DESIGN → The map coordinate model).
+    background_dims: ?Vector2 = null,
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

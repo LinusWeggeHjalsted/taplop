@@ -175,6 +175,7 @@ pub fn loadCampaignAndPushHub(
     // renders + map-acting legality reads - one walk over the resolved
     // hubs' hub.txt, missions resolved through the table above).
     loaders.deriveCampaignEdges(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
+    loaders.resolveCampaignBackgroundDims(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
 
     // Graph integrity checks (dangling destinations, unresolvable
     // missions, unplaced/unreachable hubs - pure over the derived edge

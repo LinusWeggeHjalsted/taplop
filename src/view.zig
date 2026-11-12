@@ -521,6 +521,25 @@ pub fn view(
     else
         null;
 
+    // The world-map overlay (a full-screen overlay - the surface plumbing
+    // predates the view): the active campaign's graph as a pure state
+    // read (background + hubs + bezier edges, dim-undiscovered - see
+    // DESIGN → Campaigns & the Campaign Editor → The map surface). The
+    // binding contexts gate the toggle to level + hub screens, so the
+    // campaign is in scope whenever it can be open; a null campaign
+    // renders the empty surface only.
+    if (current_state.ui_surfaces.isFullScreenOverlayOpen(.world_map)) {
+        ui.buildWorldMap(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+            current_state.campaign orelse types.Campaign{},
+            current_state.player_data.discovered_hubs,
+            active_theme,
+        ) catch @panic("failed to build world map");
+    }
+
     // Options menu: full-screen modal panel with a context-specific button
     // stack. Drawn on top of normal UI (bottom/top bars) but under the error
     // popup (which is the most-modal surface). Pure over
@@ -709,6 +728,7 @@ pub fn view(
         render.can_undo,
         render.can_redo,
         tips.len > 0 and current_state.screen != .editor,
+        current_state.screen == .level or current_state.screen == .hub,
     ) catch @panic("failed to build global top bar");
 
     // Hover tooltip: the topmost element under the pointer that carries

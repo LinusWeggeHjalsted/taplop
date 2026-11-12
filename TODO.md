@@ -386,14 +386,14 @@ work:
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] 2c. The map surface (design: DESIGN → Campaigns & the
-          Campaign Editor → The map surface): buildWorldMap (background,
-          hubs, bezier edges incl. self-loops via direction, dim
-          undiscovered) + the `curve` UiElement (shared deterministic
-          `sampleCurve`) + backend draw + hit-testing; the derived edge
-          table + hub names on Campaign (the load-scan side); the
-          session-scoped graph cache + the campaign picker incl.
-          listCampaigns (the 2e fold); structure tests.
+    - [ ] 2c remainder: the campaign picker for viewing other campaigns
+          - the session-scoped graph cache (the editor_local_missions
+          pattern: idle-input acquisition, SessionState-held, the same
+          derive fns) + listCampaigns (embedded + persistent,
+          uuid-deduped, persistent-wins - the listMissions pattern) +
+          the picker UI in the map overlay. The map surface itself
+          (buildWorldMap + curve element + edge table + top-bar button)
+          is DONE - DONE.md, "campaign-editor slice 2c, step 3".
     - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
           backtrack-to-discovered legality) + mission start
           (player_start_mission_from_map; start-hub-discovered
