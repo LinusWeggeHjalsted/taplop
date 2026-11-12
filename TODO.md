@@ -65,9 +65,9 @@ entry); only the campaign-editor riders remain, folded into that work.
       (see DONE.md, "The vestigial !replaying gates").
 
 **Campaign-editor riders (fold into that work, not standalone):**
-- Re-type `PlayerData.discovered_hubs` to a name set before slice 2
-      (stores full Hub structs for names today; also carries the tree's
-      only two comment-rule violations).
+- [x] Re-type `PlayerData.discovered_hubs` to a name set - DONE (see
+      DONE.md, "discovered_hubs re-typed to a name set (review m-2.3)");
+      the per-campaign scoping question moved to slice 2 below.
 - Settle the `start_hub` path shape (`data/campaigns/...` vs
       `campaigns/...`) in slice 2's design (PROJECTREVIEW Part 5 note).
 
@@ -512,7 +512,11 @@ work:
         is discovered) - the exit-click end_hub_id population landed
         early with slice 1e -
         buildWorldMap renders the mirror (dim undiscovered hubs /
-        unavailable missions).
+        unavailable missions). OPEN (inline, decide here): the discovered
+        set's per-campaign scoping - hub names are only unique WITHIN a
+        campaign, so a player switching campaigns needs the set cleared
+        or keyed by campaign (new_game is the natural clear point; the
+        lean).
   - [ ] 3. The campaign editor state + framing + the editor browser's
         Campaign tab (scan `campaigns/`, New Campaign) + the campaign
         view (background, hub place/free-move/drag, edge rendering,

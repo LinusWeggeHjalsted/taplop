@@ -59,8 +59,8 @@ fn writePlayerSave(
 
     // DiscoveredHubs
     try buffer.appendSlice(allocator, "\nDiscoveredHubs\n");
-    for (player_data.discovered_hubs, 0..) |hub, index| {
-        try buffer.print(allocator, "name {s}\n", .{hub.name});
+    for (player_data.discovered_hubs, 0..) |hub_name, index| {
+        try buffer.print(allocator, "name {s}\n", .{hub_name});
         if (index < player_data.discovered_hubs.len - 1) {
             try buffer.appendSlice(allocator, "\n");
         }

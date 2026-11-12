@@ -2418,8 +2418,11 @@ pub const PlayerData = struct {
     current_campaign: []const u8 = &.{},
     current_hub: []const u8 = &.{},
     materials: Materials = .{},
-    clones: []const Clone = &.{}, // will also be used to identify completed missions - maybe per campaign also?
-    discovered_hubs: []const Hub = &.{}, // change to be per campaign
+    clones: []const Clone = &.{},
+    /// Hub NAMES (dir names) discovered in the current campaign; seeded at
+    /// new_game, grown on arrival (DESIGN → Campaigns & the Campaign Editor
+    /// → Discovery + travel).
+    discovered_hubs: []const []const u8 = &.{},
     learned_skills: []const SkillId = &.{},
     turns: u32 = 0,
     deaths: u32 = 0,

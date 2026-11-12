@@ -3203,13 +3203,13 @@ pub fn loadPlayerSave(
     // parsing it here closes a writer/reader asymmetry that silently
     // dropped discovery on every save/load round trip).
     if (findSection(sections, "DiscoveredHubs")) |section| {
-        var hubs: std.ArrayList(types.Hub) = .empty;
+        var hub_names: std.ArrayList([]const u8) = .empty;
         for (section.entry_groups) |group| {
             if (findValue(group.pairs, "name")) |name| {
-                hubs.append(allocator, .{ .name = name }) catch @panic("failed to append discovered hub");
+                hub_names.append(allocator, name) catch @panic("failed to append discovered hub");
             }
         }
-        player_data.discovered_hubs = hubs.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice");
+        player_data.discovered_hubs = hub_names.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice");
     }
 
     try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
@@ -6327,7 +6327,7 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     // Every utility skill learned; the campaign's hub discovered.
     try std.testing.expectEqual(@as(usize, 7), player_data.learned_skills.len);
     try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs.len);
-    try std.testing.expectEqualStrings("camp_at_the_crossroads", player_data.discovered_hubs[0].name);
+    try std.testing.expectEqualStrings("camp_at_the_crossroads", player_data.discovered_hubs[0]);
 
     // The editor fallback maps it onto the player template.
     const template = playerLoadoutEntity(player_data);

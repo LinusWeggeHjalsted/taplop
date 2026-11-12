@@ -3341,7 +3341,11 @@ So a clone is a permanent, compounding material factory keyed by mission.
   Services → Content identity) - NOT by mission name (names can be duplicated
   across custom missions or renamed). `Clone.mission_uuid` is the identity;
   `Clone.name` is a denormalized display label carried for a future clones-list
-  UI that renders without re-reading mission files.
+  UI that renders without re-reading mission files. Consequence: `clones` IS
+  the completed-missions record - the presence of a clone with a mission's
+  uuid means the mission was completed (the world map / campaign view read
+  completion state from it; no side channel, no per-campaign scoping needed -
+  uuids are content-identity hashes, globally unique).
 
 - **Pickup accumulator.** `pickup_items` adds `computeSalvageValue(item,` 
   `salvage_definitions)` to `Mission.converted_materials_collected` for each item

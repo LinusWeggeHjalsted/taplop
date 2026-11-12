@@ -303,6 +303,7 @@ working rules).
 - [Session reflection riders: the fmt advisory's file-set hole + two notes](#session-reflection-riders-the-fmt-advisorys-file-set-hole--two-notes)
 - [doc_index.sh: the marker block owns its container heading](#docindexsh-the-marker-block-owns-its-container-heading)
 - [zig 0.17 migration](#zig-017-migration)
+- [discovered_hubs re-typed to a name set (review m-2.3)](#discoveredhubs-re-typed-to-a-name-set-review-m-23)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19354,3 +19355,34 @@ clean (10s, no stderr); aarch64-macos cross-build produces exe +
 .ziglop.app bundle. STILL PENDING: mac runtime validation on the
 friend's hardware (TODO → macOS native port - unchanged by this
 migration), and an interactive native click-through.
+
+## discovered_hubs re-typed to a name set (review m-2.3)
+
+`PlayerData.discovered_hubs: []const Hub` -> `[]const []const u8` (hub
+names). The field is semantically a set of NAMES - the save format
+serializes only `name` from each entry - but it stored full `Hub` structs
+(tiles, player Entity, NPCs, decorations, mission_exits). Re-typed BEFORE
+the campaign-editor slice 2 runtime lands (discovery + travel), because
+afterwards the old shape would have forced cloning whole hubs on every
+discovery and deep-copying full hub structs per snapshot in every
+history/replay comparison - nearly free now, expensive later (the review's
+m-2.3 disposition). Touch sites: the field (types.zig), the DiscoveredHubs
+parse (loaders.zig), the save writer (writers.zig), the max_player test.
+No runtime consumer existed yet; the save format is unchanged.
+
+Riding the same commit, the field's two forward-looking comments (the
+tree's only comment-rule violations, per the review) were resolved, not
+just deleted:
+
+- `clones: "will also be used to identify completed missions - maybe per
+  campaign also?"` - SETTLED: already true and now documented. Clones are
+  keyed by `mission_uuid`, so `PlayerData.clones` IS the completed-
+  missions record (the world map / campaign view read completion state
+  from it - no side channel). The "per campaign?" half is moot: uuids are
+  content-identity hashes, globally unique across campaigns. Recorded in
+  DESIGN → Clones → Keying.
+- `discovered_hubs: "change to be per campaign"` - deferred to its
+  consumer: the per-campaign scoping question (what happens to the
+  discovered set when a player switches campaigns) is now an inline open
+  question on campaign-editor slice 2 in TODO, where discovery semantics
+  are implemented.
