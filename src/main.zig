@@ -269,9 +269,11 @@ fn update(
     // top of it or standalone over the editor / main menu) gets the same
     // pause: drag / camera pan / viewport gestures + idle input are blocked
     // while it's open. Its own interactions were consumed in
-    // handleAnytimeInput above.
+    // handleAnytimeInput above. The campaign browser (a modal over the
+    // world map) joins the same gate.
     if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu) or
-        history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
+        history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser) or
+        history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser)) return;
 
     // Recoverable error popup pauses the game (modal - same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this

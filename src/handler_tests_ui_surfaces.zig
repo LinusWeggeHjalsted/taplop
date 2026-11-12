@@ -236,3 +236,84 @@ test "player_inspect_entity: opens, retargets, and closes via the machinery" {
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.entity_inspect));
 }
+
+// --- campaign browser (the world map's picker) ---
+
+test "campaign browser: opens from the map, picks view (cache), the active pick clears it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+    ));
+    runToIdle(&history);
+
+    // The player is in the OFFICIAL campaign (the shipped uuid) - the
+    // active-campaign pick below must clear the cache.
+    history.current_state.player_data.current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d";
+
+    // A local campaign to view: campaign.txt + a resolvable hub dir (the
+    // scan-side fixtures the graph derivation reads).
+    history.file_source.writeFile(
+        "campaigns/zeta_lands/campaign.txt",
+        "Metadata\nfile_format_version 3\ncampaign_uuid zeta-uuid\nname Zeta Lands\nstart_hub zeta-hub\n\nHubs\nhub_uuid zeta-hub\nposition 0 0\n",
+    ) catch @panic("write zeta campaign");
+    history.file_source.writeFile(
+        "campaigns/zeta_lands/hubs/zeta_hub/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid zeta-hub\nname Zeta Hub\n",
+    ) catch @panic("write zeta hub");
+
+    // The browser opens from the map (the top-left campaign button's
+    // action): scan-on-open populates both tabs.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_campaign_browser,
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expectEqual(types.CampaignBrowserTab.local, history.session.ui_state.campaign_browser_tab);
+    try testing.expectEqual(@as(usize, 1), history.session.campaign_browser_local.len);
+    try testing.expectEqualStrings("Zeta Lands", history.session.campaign_browser_local[0].name);
+    try testing.expect(history.session.campaign_browser_official.len > 0);
+
+    // The OFFICIAL tab's row (the main campaign = the ACTIVE campaign):
+    // the pick CLEARS the cache (the map falls back to the live GameState
+    // campaign) and closes the browser via the recorded toggle.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_campaign_browser_tab,
+    }, .{ .campaign_browser_tab = .official }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.CampaignBrowserTab.official, history.session.ui_state.campaign_browser_tab);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .view_campaign_row,
+    }, .{ .campaign_row = 0 }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser));
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.world_map));
+    try testing.expectEqual(@as(?types.Campaign, null), history.session.viewed_campaign);
+
+    // A LOCAL pick: the graph derives into the cache (viewing ≠ state -
+    // nothing recorded beyond the browser's own close toggle) and the
+    // map stays open underneath.
+    const events_before = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_campaign_browser,
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_campaign_browser_tab,
+    }, .{ .campaign_browser_tab = .local }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .view_campaign_row,
+    }, .{ .campaign_row = 0 }, .{ .x = 0, .y = 0 }, &.{});
+    const viewed = history.session.viewed_campaign;
+    try testing.expect(viewed != null);
+    try testing.expectEqualStrings("Zeta Lands", viewed.?.name);
+    try testing.expectEqualStrings("zeta-uuid", viewed.?.uuid);
+    try testing.expectEqual(@as(usize, 1), viewed.?.hubs.len);
+    try testing.expectEqualStrings("Zeta Hub", viewed.?.hubs[0].name);
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser));
+
+    // Only the browser's own open/close toggles recorded (two opens + two
+    // closes = 4 events; the picks themselves are session-side).
+    try testing.expectEqual(events_before + 4, history.event_history.items.len);
+}

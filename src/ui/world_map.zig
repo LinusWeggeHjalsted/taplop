@@ -12,6 +12,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const ui_tooltip = @import("tooltip.zig");
+const emit = @import("emit.zig");
 
 const UiElement = ui_element.UiElement;
 const UiElementList = ui_element.UiElementList;
@@ -23,6 +24,10 @@ const Color = types.Color;
 const text = ui_element.text;
 
 const spanRow = ui_tooltip.spanRow;
+const top_bar_height = ui_element.top_bar_height;
+const panel_button_height = ui_element.panel_button_height;
+const menu_button_font_size = ui_element.menu_button_font_size;
+const ui_gap = ui_element.ui_gap;
 
 /// The hub icon's draw size (reference px, centered on the hub's map
 /// position). A dedicated icon ships eventually; until then the id is
@@ -101,9 +106,8 @@ pub fn buildWorldMap(
     campaign: types.Campaign,
     discovered: []const types.DiscoveredCampaignHubs,
     active_theme: types.ActiveColorTheme,
+    button_color: Color,
 ) !void {
-    _ = font_metrics;
-
     // The overlay surface: a full-screen dark fill that blocks input (the
     // world + panels behind must not receive clicks through the map).
     try elements.append(allocator, .{ .solid_rect = .{
@@ -131,6 +135,29 @@ pub fn buildWorldMap(
             .blocks_input = false,
         } });
     }
+
+    // The campaign button (top-left, immediately below the global top
+    // bar): opens the campaign browser (the full-screen picker overlay).
+    // The label is the VIEWED campaign's name, no prefix - the button is
+    // the nameplate of whatever the map is showing.
+    const campaign_label = if (campaign.name.len > 0) campaign.name else "Campaign";
+    const campaign_label_width = font_metrics.measureSpanWidth(text(campaign_label), menu_button_font_size);
+    try emit.emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = screen.x + ui_gap,
+            .y = screen.y + top_bar_height + ui_gap,
+            .width = campaign_label_width + 4 * ui_gap,
+            .height = panel_button_height,
+        },
+        campaign_label,
+        menu_button_font_size,
+        .toggle_campaign_browser,
+        button_color,
+        null,
+    );
 
     // The active campaign's discovered group.
     var discovered_hubs: []const []const u8 = &.{};
@@ -332,6 +359,8 @@ const test_theme = types.ActiveColorTheme{
     .player_gradient = undefined,
 };
 
+const test_button_color = Color{ .r = 50, .g = 50, .b = 50 };
+
 /// Euclidean distance between two screen positions, rounded to an i32
 /// (test helper for displacement contracts).
 fn screenDistance(a: ScreenPosition, b: ScreenPosition) i32 {
@@ -380,13 +409,15 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
         campaign,
         &.{.{ .campaign_uuid = "camp", .hub_uuids = &.{"b"} }},
         test_theme,
+        test_button_color,
     );
 
-    // Derived expectations: 1 surface + 1 background + 2 hub icons +
-    // 2 curves per edge (3 edges) = 10 elements total. Derived from the
-    // fixture lists, not a magic number snapshot.
+    // Derived expectations: 1 surface + 1 background + the campaign
+    // button's 3 elements (panel + button + label - emitPanelButton) +
+    // 2 hub icons + 2 curves per edge (3 edges) = 13 elements total.
+    // Derived from the fixture lists, not a magic number snapshot.
     const expected_total = 1 + @as(usize, if (campaign.background_dims != null) 1 else 0) +
-        campaign.hubs.len + 2 * campaign.edges.len;
+        3 + campaign.hubs.len + 2 * campaign.edges.len;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
     // The surface blocks input; everything else is decorative.
@@ -410,20 +441,25 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Hub icons: centered on mapToScreen(position); Alpha lit (start hub
     // discovered-or-start + 'b' in the discovered set), Beta lit; the name
     // rides the tooltip, not a label.
-    const alpha_icon = elements.items[2].image;
+    // The campaign button (panel at [2], button at [3], label at [4]):
+    // the nameplate fires the browser toggle.
+    try std.testing.expectEqualStrings("Fixture", elements.items[4].text_label.text);
+    try std.testing.expectEqual(types.Action.toggle_campaign_browser, elements.items[3].button.action);
+
+    const alpha_icon = elements.items[5].image;
     try std.testing.expectEqualStrings("world/hub_icon", alpha_icon.sprite_id);
     try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }).x - @divTrunc(hub_icon_size, 2), alpha_icon.screen_position.x);
     try std.testing.expectEqual(@as(u8, 255), alpha_icon.alpha);
     try std.testing.expectEqualStrings("Alpha", alpha_icon.tooltip.?.header.?[0].text);
-    const beta_icon = elements.items[3].image;
+    const beta_icon = elements.items[6].image;
     try std.testing.expectEqual(@as(u8, 255), beta_icon.alpha);
 
     // Edge curves arrive as pairs (black outline, then lightest stroke).
     // Pair 0: the self-loop - start == end == the anchor 64px NORTH of
     // hub a's screen center (direction 0, the hub icon's boundary), the
     // controls at the teardrop offsets beyond the anchor.
-    const loop_black = elements.items[4].curve;
-    const loop_light = elements.items[5].curve;
+    const loop_black = elements.items[7].curve;
+    const loop_light = elements.items[8].curve;
     const loop_center = mapToScreen(.{ .x = -200, .y = 0 });
     const loop_anchor: ScreenPosition = .{
         .x = loop_center.x,
@@ -450,7 +486,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Pair 1: the straight edge a -> b - endpoints displaced to each
     // hub's boundary along the hub-position difference (64px from each
     // center), solid, lit (its start hub 'a' is the start hub).
-    const straight_light = elements.items[7].curve;
+    const straight_light = elements.items[10].curve;
     const a_center = mapToScreen(.{ .x = -200, .y = 0 });
     const b_center = mapToScreen(.{ .x = 400, .y = 300 });
     try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.start, a_center));
@@ -468,7 +504,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // (direction 180) from the hub's boundary anchor, lit ('b' is in the
     // discovered set, so its start hub is lit; the dimming case is
     // asserted in the dedicated test below).
-    const stub_light = elements.items[9].curve;
+    const stub_light = elements.items[12].curve;
     try std.testing.expect(stub_light.dashed);
     try std.testing.expect(stub_light.arrowhead);
     try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius, stub_light.start.y);
@@ -497,12 +533,13 @@ test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only 
         campaign,
         &.{},
         test_theme,
+        test_button_color,
     );
 
-    const beta_icon = elements.items[3].image;
+    const beta_icon = elements.items[6].image;
     try std.testing.expectEqual(dimmed_alpha, beta_icon.alpha);
     // Pair 1 (a -> b): start hub 'a' is the start hub - lit.
-    try std.testing.expectEqual(@as(u8, 255), elements.items[7].curve.alpha);
+    try std.testing.expectEqual(@as(u8, 255), elements.items[10].curve.alpha);
     // Pair 2 (the stub from b): 'b' undiscovered - dimmed.
-    try std.testing.expectEqual(dimmed_alpha, elements.items[9].curve.alpha);
+    try std.testing.expectEqual(dimmed_alpha, elements.items[12].curve.alpha);
 }

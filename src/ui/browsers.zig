@@ -410,19 +410,39 @@ pub fn buildEditorBrowser(
     }
 }
 
-/// The editor browser's MISSION-kind content: the Your Missions /
-/// Official list tabs + the mission rows + scrollbar (the pre-kind-tab
-/// browser body). One content builder per editor kind - the parent
-/// switch routes here. `tabs_y` is the content top (below the kind row).
-fn buildMissionBrowserContent(
+/// The per-surface configuration of the shared list-browser body (the
+/// mission list + the campaign browser - one machinery, N surfaces).
+/// `Entry` needs a `name: []const u8` field (the row label); `Tab` is a
+/// local/official pair.
+const ListBrowserConfig = struct {
+    Entry: type,
+    Tab: type,
+    tab_action: types.Action,
+    row_action: types.Action,
+    /// The ButtonPayload variants the tab + row buttons carry.
+    tab_payload_tag: types.ButtonPayloadTag,
+    row_payload_tag: types.ButtonPayloadTag,
+    local_tab_label: []const u8,
+    official_tab_label: []const u8,
+    empty_local_text: []const u8,
+    empty_official_text: []const u8,
+};
+
+/// The shared LIST-BROWSER body: the two list tabs + the rows +
+/// scrollbar (the pre-kind-tab browser body, now serving the mission
+/// list AND the campaign browser). `tabs_y` is the content top (below
+/// the kind row on the editor browser, below the top bar on the campaign
+/// browser).
+fn buildListBrowserContent(
+    comptime config: ListBrowserConfig,
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
     tabs_y: i32,
-    local_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
-    official_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
-    tab: types.EditorMissionBrowserTab,
+    local_entries: []const config.Entry,
+    official_entries: []const config.Entry,
+    tab: config.Tab,
     scroll_offset: *i32,
     button_color: Color,
 ) !void {
@@ -433,9 +453,9 @@ fn buildMissionBrowserContent(
     // Tabs top-left (the tabs ARE the header, like the sprite picker).
     // Darkest background panels; the active tab's highlight outline is the
     // indication, no tint change (the picker's convention).
-    const tab_specs = [_]struct { tab: types.EditorMissionBrowserTab, label: []const u8 }{
-        .{ .tab = .local, .label = "Your Missions" },
-        .{ .tab = .official, .label = "Official" },
+    const tab_specs = [_]struct { tab: config.Tab, label: []const u8 }{
+        .{ .tab = .local, .label = config.local_tab_label },
+        .{ .tab = .official, .label = config.official_tab_label },
     };
     var tab_x = origin.x + ui_gap;
     for (tab_specs) |spec| {
@@ -453,8 +473,8 @@ fn buildMissionBrowserContent(
             .screen_position = .{ .x = tab_x, .y = tabs_y },
             .width = tab_width,
             .height = middle_panel_header_height,
-            .action = .select_editor_mission_tab,
-            .payload = .{ .editor_mission_tab = spec.tab },
+            .action = config.tab_action,
+            .payload = @unionInit(types.ButtonPayload, @tagName(config.tab_payload_tag), spec.tab),
             .highlighted = active,
         } });
         try elements.append(allocator, .{ .text_label = .{
@@ -480,14 +500,14 @@ fn buildMissionBrowserContent(
     const row_pitch = load_save_row_height + load_save_row_gap;
     const visible_rows: usize = @intCast(@max(0, @divTrunc(rows_height, row_pitch)));
 
-    const missions = switch (tab) {
-        .local => local_missions,
-        .official => official_missions,
+    const entries = switch (tab) {
+        .local => local_entries,
+        .official => official_entries,
     };
 
     // Clamp the scroll offset (authoritative - the input handler can't know
     // max_scroll_row without the row count).
-    const total_rows: usize = missions.len;
+    const total_rows: usize = entries.len;
     const max_scroll_row: i32 = @intCast(total_rows -| @min(total_rows, visible_rows));
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
@@ -495,8 +515,8 @@ fn buildMissionBrowserContent(
 
     if (total_rows == 0) {
         const empty_text = switch (tab) {
-            .local => "No saved missions yet",
-            .official => "No official missions",
+            .local => config.empty_local_text,
+            .official => config.empty_official_text,
         };
         try elements.append(allocator, .{ .text_label = .{
             .text = empty_text,
@@ -533,10 +553,10 @@ fn buildMissionBrowserContent(
                 .screen_position = cell.position(),
                 .width = cell.width,
                 .height = cell.height,
-                .action = .open_editor_mission_row,
-                .payload = .{ .editor_mission_row = @intCast(index) },
+                .action = config.row_action,
+                .payload = @unionInit(types.ButtonPayload, @tagName(config.row_payload_tag), @as(u32, @intCast(index))),
             } });
-            const label = missions[index].name;
+            const label = entries[index].name;
             const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
             const label_box = cell.placeCenter(label_width, load_save_row_font_size);
             try elements.append(allocator, .{ .text_label = .{
@@ -561,6 +581,128 @@ fn buildMissionBrowserContent(
             );
         }
     }
+}
+
+/// The editor browser's MISSION-kind content configuration (the shared
+/// list-browser body; the parent switch routes here).
+const mission_list_browser_config = ListBrowserConfig{
+    .Entry = @import("../file_source.zig").FileSource.MissionEntry,
+    .Tab = types.EditorMissionBrowserTab,
+    .tab_action = .select_editor_mission_tab,
+    .row_action = .open_editor_mission_row,
+    .tab_payload_tag = .editor_mission_tab,
+    .row_payload_tag = .editor_mission_row,
+    .local_tab_label = "Your Missions",
+    .official_tab_label = "Official",
+    .empty_local_text = "No saved missions yet",
+    .empty_official_text = "No official missions",
+};
+
+/// The campaign browser's content configuration.
+const campaign_list_browser_config = ListBrowserConfig{
+    .Entry = @import("../file_source.zig").FileSource.CampaignEntry,
+    .Tab = types.CampaignBrowserTab,
+    .tab_action = .select_campaign_browser_tab,
+    .row_action = .view_campaign_row,
+    .tab_payload_tag = .campaign_browser_tab,
+    .row_payload_tag = .campaign_row,
+    .local_tab_label = "Your Campaigns",
+    .official_tab_label = "Official",
+    .empty_local_text = "No saved campaigns yet",
+    .empty_official_text = "No official campaigns",
+};
+
+fn buildMissionBrowserContent(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    tabs_y: i32,
+    local_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
+    official_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
+    tab: types.EditorMissionBrowserTab,
+    scroll_offset: *i32,
+    button_color: Color,
+) !void {
+    return buildListBrowserContent(
+        mission_list_browser_config,
+        elements,
+        allocator,
+        font_metrics,
+        screen,
+        tabs_y,
+        local_missions,
+        official_missions,
+        tab,
+        scroll_offset,
+        button_color,
+    );
+}
+
+/// The CAMPAIGN browser (the world map's campaign picker - see DESIGN →
+/// Campaigns & the Campaign Editor → Campaign switching): the shared
+/// list-browser body with the campaign lists + a Back button, the editor
+/// browser's shape minus the kind row / New / Import (campaign creation
+/// rides the campaign editor). Rows VIEW the campaign on the map (the
+/// pick mutates the session-side graph cache, never a recorded event).
+pub fn buildCampaignBrowser(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    local_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    official_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    tab: types.CampaignBrowserTab,
+    scroll_offset: *i32,
+    button_color: Color,
+) !void {
+    // Full-screen modal background - blocks input to the world map behind
+    // it. Reuses the editor browser's metrics (same visual class).
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    // Tabs top-left, BELOW the global top bar (the always-on-top layer
+    // would cover them - the editor browser's kind-row placement).
+    const origin = screen.position();
+    const tabs_y = origin.y + top_bar_height + load_save_padding;
+    try buildListBrowserContent(
+        campaign_list_browser_config,
+        elements,
+        allocator,
+        font_metrics,
+        screen,
+        tabs_y,
+        local_campaigns,
+        official_campaigns,
+        tab,
+        scroll_offset,
+        button_color,
+    );
+
+    // Bottom-left: Back (closes the browser - the same toggle action that
+    // opens it from the map's campaign button).
+    const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = screen.x + load_save_padding,
+            .y = button_y,
+            .width = load_save_button_width,
+            .height = panel_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .toggle_campaign_browser,
+        button_color,
+        null,
+    );
 }
 
 test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
@@ -884,4 +1026,64 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
         else => {},
     };
     try std.testing.expect(found_new_label);
+}
+
+test "buildCampaignBrowser: tabs, rows carry view payloads, Back fires the toggle" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    const local = [_]@import("../file_source.zig").FileSource.CampaignEntry{
+        .{ .uuid = "zeta-uuid", .dir = "campaigns/zeta_lands", .name = "Zeta Lands" },
+    };
+    const official = [_]@import("../file_source.zig").FileSource.CampaignEntry{
+        .{ .uuid = "main-uuid", .dir = "campaigns/main_campaign", .name = "Main Campaign" },
+    };
+
+    for ([_]types.CampaignBrowserTab{ .local, .official }) |tab| {
+        var scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildCampaignBrowser(
+            &elements,
+            allocator,
+            metrics,
+            screen,
+            &local,
+            &official,
+            tab,
+            &scroll,
+            .{ .r = 50, .g = 50, .b = 50 },
+        );
+
+        // The full-screen modal background blocks input (shields the map).
+        try std.testing.expect(elements.items[0].nine_slice_panel.blocks_input);
+
+        var found_row = false;
+        var found_row_label = false;
+        var found_back = false;
+        const expected_name = switch (tab) {
+            .local => "Zeta Lands",
+            .official => "Main Campaign",
+        };
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .view_campaign_row => {
+                    found_row = true;
+                    try std.testing.expectEqual(@as(u32, 0), button.payload.?.campaign_row);
+                },
+                .toggle_campaign_browser => found_back = true,
+                else => {},
+            },
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, expected_name)) found_row_label = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found_row);
+        try std.testing.expect(found_row_label);
+        try std.testing.expect(found_back);
+    }
 }

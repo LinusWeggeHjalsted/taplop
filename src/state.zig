@@ -218,6 +218,34 @@ pub const SessionState = struct {
     editor_official_missions: []file_source_mod.FileSource.MissionEntry = &.{},
     editor_official_missions_scanned: bool = false,
 
+    /// The LOCAL campaigns listed in the campaign browser (the Your
+    /// Campaigns tab: `campaigns/` in the persistent dir - see
+    /// `file_source.listCampaigns`). The editor_local_missions pattern:
+    /// scanned when the browser OPENS (view stays file-free, no periodic
+    /// rescan while open - reopening is the refresh path), owned by
+    /// `backing_allocator`, each scan freeing the previous list.
+    campaign_browser_local: []file_source_mod.FileSource.CampaignEntry = &.{},
+
+    /// The OFFICIAL campaigns (the Official tab: the shipped embedded
+    /// campaigns). Parsed at the browser's FIRST open of the session (the
+    /// embedded map is immutable per build); the `_scanned` flag gates the
+    /// one-time scan. The editor_official_missions pattern.
+    campaign_browser_official: []file_source_mod.FileSource.CampaignEntry = &.{},
+    campaign_browser_official_scanned: bool = false,
+
+    /// The campaign whose graph the world map is VIEWING (the campaign
+    /// browser's pick). Null = the ACTIVE campaign (`current.campaign` on
+    /// GameState - the map falls back to it). Viewing ≠ state (DESIGN →
+    /// Campaigns & the Campaign Editor → Campaign switching): this cache
+    /// is session-side acquisition, never recorded, never replayed; the
+    /// pick derives the graph with the same loader chain the active
+    /// campaign's load uses, but through plain file reads (no
+    /// reconstruction cache - nothing about it is event-relevant). Picking
+    /// the ACTIVE campaign clears the slot. Owned by `backing_allocator`;
+    /// freed + replaced on repick, freed at the session deinit
+    /// (`loaders.freeCampaign`).
+    viewed_campaign: ?types.Campaign = null,
+
     /// The mission-local `.png`s for the editor sprite picker's Mission
     /// tab (see DESIGN → Architecture → Level Editor → Editor UI layout -
     /// the centered sprite picker). Scanned from the input path when the
@@ -1070,6 +1098,11 @@ pub const GameStateHistory = struct {
         file_source_mod.freeSaveFiles(allocator, self.session.save_files);
         file_source_mod.freeMissions(allocator, self.session.editor_local_missions);
         file_source_mod.freeMissions(allocator, self.session.editor_official_missions);
+        file_source_mod.freeCampaigns(allocator, self.session.campaign_browser_local);
+        file_source_mod.freeCampaigns(allocator, self.session.campaign_browser_official);
+        if (self.session.viewed_campaign) |viewed| {
+            loaders.freeCampaign(viewed, allocator);
+        }
         for (self.session.editor_mission_sprites) |sprite| {
             allocator.free(sprite.file_name);
             allocator.free(sprite.stored_id);
@@ -2683,6 +2716,9 @@ pub const GameStateHistory = struct {
             // on every screen.
             .tips => true,
             .editor_browser => screen == .main_menu or screen == .editor,
+            // The campaign browser opens from the world map (its top-left
+            // campaign button), which is itself level/hub-gated.
+            .campaign_browser => screen == .level or screen == .hub,
             .inventory,
             .gear,
             .skills,
@@ -3256,7 +3292,7 @@ test "transitionScreen closes every UI surface" {
         .level = null,
         .hub = null,
         .ui_surfaces = .{
-            .open_overlays = .{ .options_menu, null, null, null, null, null, null, null },
+            .open_overlays = .{ .options_menu, null, null, null, null, null, null, null, null },
             .open_middle_panels = .{ .inventory, .skills, null, null },
             .inspected_entity_index = 3,
         },

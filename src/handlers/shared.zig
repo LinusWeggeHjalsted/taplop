@@ -11,6 +11,7 @@ const types = @import("../types.zig");
 const events = @import("../events.zig");
 const state = @import("../state.zig");
 const parser = @import("../parser.zig");
+const file_source_mod = @import("../file_source.zig");
 const loaders = @import("../loaders.zig");
 const functions = @import("../functions.zig");
 const event_push = @import("../event_push.zig");
@@ -188,6 +189,77 @@ pub fn loadCampaignAndPushHub(
     pushEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
         .hub_id = hub_id,
     } } }}, allocator);
+}
+
+/// Derive one campaign's full graph for the world-map VIEW cache: parse
+/// campaign.txt + the same loader chain the active campaign's load runs
+/// (loadCampaign → resolveCampaignHubs → resolveCampaignMissions →
+/// deriveCampaignEdges → resolveCampaignBackgroundDims + the integrity
+/// check), all through PLAIN file reads (never the reconstruction cache -
+/// viewing is session-side acquisition, nothing about it is
+/// event-relevant; see DESIGN → Campaigns & the Campaign Editor →
+/// Campaign switching). Returns the campaign owned by `allocator` (free
+/// via `loaders.freeCampaign`), or null when the campaign.txt is
+/// unreadable/unparseable (not viewable - the caller surfaces a popup).
+/// `campaign_content_dir` is content-root-relative ("campaigns/<id>" -
+/// the CampaignEntry.dir addressing, resolving through readFile's
+/// persistent-then-embedded bridge).
+pub fn loadCampaignGraph(
+    history: *GameStateHistory,
+    campaign_content_dir: []const u8,
+    allocator: std.mem.Allocator,
+) ?types.Campaign {
+    const campaign_txt_path = std.fmt.allocPrint(
+        allocator,
+        "{s}/campaign.txt",
+        .{campaign_content_dir},
+    ) catch @panic("failed to allocate campaign.txt path");
+    defer allocator.free(campaign_txt_path);
+
+    const campaign_bytes = history.file_source.readFile(allocator, campaign_txt_path) catch return null;
+    defer allocator.free(campaign_bytes);
+    const sections = parser.parseConfigFile(campaign_bytes, allocator, &parser.campaign_sections) catch return null;
+    defer parser.freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |warning| allocator.free(warning);
+        warnings.deinit(allocator);
+    }
+    var campaign = loaders.loadCampaign(sections, campaign_content_dir, allocator, &warnings) catch return null;
+    errdefer loaders.freeCampaign(campaign, allocator);
+    loaders.resolveCampaignHubs(&campaign, history.file_source, allocator, &warnings);
+    campaign.missions = loaders.resolveCampaignMissions(campaign, history.file_source, allocator, &warnings);
+    loaders.deriveCampaignEdges(&campaign, history.file_source, allocator, &warnings);
+    loaders.resolveCampaignBackgroundDims(&campaign, history.file_source, allocator, &warnings);
+    loaders.checkCampaignGraph(campaign, allocator, &warnings);
+
+    // Warn to the popup surface (a broken-but-viewable campaign shows its
+    // graph defects - the same posture as the active campaign's load);
+    // the graph still renders (warn-only, the loader convention).
+    surfaceWarnings(history, &warnings, allocator);
+    return campaign;
+}
+
+/// Scan both campaign-browser lists into SessionState, freeing the
+/// previous local list (the rescanEditorMissionsNow pattern). The LOCAL
+/// list is the persistent `campaigns/` dir; the OFFICIAL list is parsed
+/// from the embedded map ONCE per session (immutable per build). Runs
+/// when the browser OPENS (view stays file-free); reopening is the
+/// refresh path. An unreadable dir keeps the previous list.
+pub fn rescanCampaignBrowserLists(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    if (history.file_source.listCampaigns(allocator)) |local| {
+        file_source_mod.freeCampaigns(allocator, history.session.campaign_browser_local);
+        history.session.campaign_browser_local = local;
+    } else |_| {}
+    if (!history.session.campaign_browser_official_scanned) {
+        if (history.file_source.listOfficialCampaigns(allocator)) |official| {
+            file_source_mod.freeCampaigns(allocator, history.session.campaign_browser_official);
+            history.session.campaign_browser_official = official;
+            history.session.campaign_browser_official_scanned = true;
+        } else |_| {}
+    }
 }
 
 /// Derive a mission's level count: the largest N such that

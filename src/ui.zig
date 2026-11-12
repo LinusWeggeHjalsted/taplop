@@ -213,6 +213,7 @@ pub const buildOptionsMenu = ui_options_menu.buildOptionsMenu;
 pub const buildMainMenu = ui_main_menu.buildMainMenu;
 pub const buildLoadSavePanel = ui_browsers.buildLoadSavePanel;
 pub const buildEditorBrowser = ui_browsers.buildEditorBrowser;
+pub const buildCampaignBrowser = ui_browsers.buildCampaignBrowser;
 pub const buildCreditsPanel = ui_credits.buildCreditsPanel;
 pub const buildTipsPanel = ui_tips.buildTipsPanel;
 pub const settings_row_font_size = ui_settings.settings_row_font_size;

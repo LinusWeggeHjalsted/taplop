@@ -597,6 +597,27 @@ pub const Action = enum {
     // (an index into the CURRENT tab's list; the tab is read from UiState at
     // resolution). Pushes `open_editor` with the row's mission path.
     open_editor_mission_row,
+    // The campaign browser (the world map's top-left campaign button, the
+    // browser's Back button): toggle the campaign-browser overlay - the
+    // full-screen campaign picker (Official / Your Campaigns tabs, the
+    // editor browser's split). Button-only (no binding ships); reachable
+    // wherever the world map is (level + hub screens). See DESIGN →
+    // Campaigns & the Campaign Editor → Campaign switching.
+    toggle_campaign_browser,
+    // A campaign-browser TAB button was clicked (Your Campaigns /
+    // Official). The tab rides the click payload (the
+    // `campaign_browser_tab` variant). Routed through `options_action`
+    // (the editor-browser tabs' routing) - a view affordance, direct
+    // UiState write.
+    select_campaign_browser_tab,
+    // A campaign-browser ROW was clicked (view that campaign's map).
+    // Viewing ≠ state: the pick derives the campaign's graph into the
+    // session-side cache (never a recorded event - DESIGN → Campaigns &
+    // the Campaign Editor → Campaign switching) and closes the browser
+    // via the recorded surface toggle. The row index rides the click
+    // payload (the `campaign_row` variant, an index into the CURRENT
+    // tab's list).
+    view_campaign_row,
     // The mission browser's "Import" (web only): opens a file picker for a
     // mission .zip; the picked zip lands in imported_missions/ and the Zig
     // side extracts it into missions/ (see
@@ -971,6 +992,12 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .replay_mission,
         .overwrite_clone,
         .skip_level,
+        // The campaign browser fires from the world map (level + hub
+        // screens). Button-only today - the contexts are the defensive
+        // future-keybind half (the save_game discipline).
+        .toggle_campaign_browser,
+        .select_campaign_browser_tab,
+        .view_campaign_row,
         => .{ .game = true },
 
         // The editor screen (edit mode - during a playtest/validation run
@@ -1231,8 +1258,12 @@ pub const ButtonPayload = union(enum) {
     editor_kind: EditorKind,
     /// A mission-browser tab (Your Missions / Official).
     editor_mission_tab: EditorMissionBrowserTab,
+    /// A campaign-browser tab (Your Campaigns / Official).
+    campaign_browser_tab: CampaignBrowserTab,
     /// A mission-browser row (index into the current tab's list).
     editor_mission_row: u32,
+    /// A campaign-browser row (index into the current tab's list).
+    campaign_row: u32,
     /// The settings screen's content tab (Settings / Keybinds).
     settings_tab: SettingsTab,
     /// A keybinds-tab edit command (the whole editing UI rides one action).
@@ -1314,6 +1345,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_kind_tab => .editor_kind,
         .select_editor_mission_tab => .editor_mission_tab,
         .open_editor_mission_row => .editor_mission_row,
+        .select_campaign_browser_tab => .campaign_browser_tab,
+        .view_campaign_row => .campaign_row,
 
         // Payload-less actions: every action below carries no button
         // identity beyond its own name. Grouped, not elided - an `else =>
@@ -1400,6 +1433,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .toggle_editor_entity_group,
         .toggle_editor_decoration_group,
         .toggle_editor_item_group,
+        .toggle_campaign_browser,
         => null,
     };
 }
@@ -2646,6 +2680,14 @@ pub const EditorMissionBrowserTab = enum {
     official,
 };
 
+/// Which tab the campaign browser is showing (the editor browser's
+/// mission-list split). Local = the player's campaigns under `campaigns/`
+/// in the persistent dir; Official = the shipped embedded campaigns.
+pub const CampaignBrowserTab = enum {
+    local,
+    official,
+};
+
 /// One collapsible section of the editor's side panels. The ids key BOTH
 /// the inspector's content (enemy or player) and the METADATA sidebar's
 /// Mission / Current-level sections - one shared expansion-state array
@@ -2773,7 +2815,7 @@ pub const max_middle_panels: usize = 4;
 /// count (every modal in `UiSurfaceId` minus the middle panels), so the
 /// stack can hold every overlay at once - duplicates are impossible
 /// (`openSurface` is idempotent), so no headroom is needed.
-pub const max_open_overlays: usize = 8;
+pub const max_open_overlays: usize = 9;
 
 /// One semantic UI surface the player can open/close - the event
 /// vocabulary for `toggle_ui_surface`. The enum names the surface;
@@ -2786,6 +2828,7 @@ pub const UiSurfaceId = enum {
     credits,
     tips,
     editor_browser,
+    campaign_browser,
     inventory,
     gear,
     skills,
@@ -2853,6 +2896,7 @@ pub const UiSurfaceState = struct {
             .credits,
             .tips,
             .editor_browser,
+            .campaign_browser,
             .world_map,
             .full_combat_log,
             => {
@@ -2885,6 +2929,7 @@ pub const UiSurfaceState = struct {
             .credits,
             .tips,
             .editor_browser,
+            .campaign_browser,
             .world_map,
             .full_combat_log,
             => self.isOverlaySurfaceOpen(surface),
@@ -2923,6 +2968,7 @@ pub const UiSurfaceState = struct {
             .credits,
             .tips,
             .editor_browser,
+            .campaign_browser,
             .world_map,
             .full_combat_log,
             => self.closeOverlaySurface(surface),
@@ -3137,6 +3183,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     surfaces.toggle(.load_save_menu);
     surfaces.toggle(.credits);
     surfaces.toggle(.editor_browser);
+    surfaces.toggle(.campaign_browser);
     surfaces.toggle(.inventory);
     surfaces.toggle(.gear);
     surfaces.toggle(.world_map);
@@ -3151,7 +3198,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     // before the combat log, so it sits below it.
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .world_map, .full_combat_log, null },
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, .full_combat_log, null },
         &surfaces.open_overlays,
     );
     // isSurfaceOpen agrees with every route above.
@@ -3166,7 +3213,7 @@ test "UiSurfaceState.toggle routes each surface id to its representation" {
     try std.testing.expect(!surfaces.isSurfaceOpen(.full_combat_log));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .world_map, null, null },
+        &.{ .options_menu, .settings, .load_save_menu, .credits, .editor_browser, .campaign_browser, .world_map, null, null },
         &surfaces.open_overlays,
     );
 }
@@ -3182,21 +3229,21 @@ test "UiSurfaceState: closing a mid-stack overlay compacts; reopen lands on top"
     surfaces.closeOverlaySurface(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, null, null, null, null, null, null },
+        &.{ .tips, .world_map, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
     // Reopening does not recall the old slot - it lands on top.
     surfaces.openSurface(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, .options_menu, null, null, null, null, null },
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
     // openSurface on an already-open surface is a no-op (no duplicate).
     surfaces.openSurface(.tips);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, .options_menu, null, null, null, null, null },
+        &.{ .tips, .world_map, .options_menu, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 }
@@ -3214,7 +3261,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     try std.testing.expect(surfaces.isSurfaceOpen(.tips));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .world_map, null, null, null, null, null, null },
+        &.{ .tips, .world_map, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 
@@ -3224,7 +3271,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     try std.testing.expect(!surfaces.isSurfaceOpen(.world_map));
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, null, null, null, null, null, null, null },
+        &.{ .tips, null, null, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 
@@ -3235,7 +3282,7 @@ test "UiSurfaceState.toggle raises a covered overlay instead of closing it" {
     surfaces.toggle(.options_menu);
     try std.testing.expectEqualSlices(
         ?UiSurfaceId,
-        &.{ .tips, .settings, .options_menu, null, null, null, null, null },
+        &.{ .tips, .settings, .options_menu, null, null, null, null, null, null },
         &surfaces.open_overlays,
     );
 

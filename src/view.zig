@@ -614,6 +614,23 @@ pub fn view(
                     button_color,
                 ) catch @panic("failed to build editor browser");
             },
+            // The campaign browser (the world map's picker): the campaign
+            // lists live on SessionState (scanned when the browser opens -
+            // the editor browser's acquisition pattern; view stays
+            // file-free).
+            .campaign_browser => {
+                ui.buildCampaignBrowser(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    session.campaign_browser_local,
+                    session.campaign_browser_official,
+                    session.ui_state.campaign_browser_tab,
+                    &session.ui_state.campaign_browser_scroll_offset,
+                    button_color,
+                ) catch @panic("failed to build campaign browser");
+            },
             // The binding contexts gate the toggle to level + hub screens,
             // so the campaign is in scope whenever the map can be open; a
             // null campaign renders the empty surface only (background +
@@ -625,9 +642,16 @@ pub fn view(
                     frame_allocator,
                     font_metrics,
                     ui.screenRect(),
-                    current_state.campaign orelse types.Campaign{},
+                    // The VIEWED campaign (the browser's pick) or the
+                    // active one - viewing ≠ state (DESIGN → Campaign
+                    // switching); the discovered groups scope by uuid
+                    // inside the builder, so the player's own set lights a
+                    // viewed campaign's hubs when applicable and a
+                    // never-entered one shows its start hub lit.
+                    session.viewed_campaign orelse current_state.campaign orelse types.Campaign{},
                     current_state.player_data.discovered_hubs,
                     active_theme,
+                    button_color,
                 ) catch @panic("failed to build world map");
             },
             .full_combat_log => @panic("full combat log view not implemented"),

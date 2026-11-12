@@ -477,6 +477,13 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_tips,
         .cycle_tips,
         => player_input.anytime.options_action = action,
+        // The campaign browser fires from the world map (its top-left
+        // campaign button) - an overlay context, so the anytime path's
+        // one options_action handler serves it (the open_tips routing).
+        .toggle_campaign_browser,
+        .select_campaign_browser_tab,
+        .view_campaign_row,
+        => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .select_settings_tab => player_input.anytime.options_action = action,
         .edit_keybind => player_input.anytime.options_action = action,

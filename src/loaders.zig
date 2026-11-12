@@ -2799,7 +2799,7 @@ pub fn loadCampaign(
 /// Free a campaign's owned strings + hub list. The empty defaults are the
 /// static empty slice, whose free is a no-op, so this is safe on a
 /// campaign loaded without name/start_hub/background/hubs.
-fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
+pub fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
     allocator.free(campaign.name);
     allocator.free(campaign.uuid);
     allocator.free(campaign.dir);
@@ -2819,6 +2819,12 @@ fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
         if (edge.mission_name.len > 0) allocator.free(edge.mission_name);
     }
     allocator.free(campaign.edges);
+    for (campaign.missions) |mission| {
+        allocator.free(mission.uuid);
+        allocator.free(mission.dir);
+        if (mission.name.len > 0) allocator.free(mission.name);
+    }
+    allocator.free(campaign.missions);
 }
 
 /// Derive the campaign's EDGE TABLE (`Campaign.edges`) + hub display names
@@ -5470,12 +5476,6 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     }.run;
     const freePipeline = struct {
         fn free(campaign: types.Campaign, alloc: std.mem.Allocator) void {
-            for (campaign.missions) |mission| {
-                alloc.free(mission.uuid);
-                alloc.free(mission.dir);
-                alloc.free(mission.name);
-            }
-            alloc.free(campaign.missions);
             freeCampaign(campaign, alloc);
         }
     }.free;

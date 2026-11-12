@@ -33,6 +33,7 @@ const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const editor_handlers = @import("editor/handlers.zig");
 const mission_io = @import("editor/mission_io.zig");
+const shared = @import("handlers/shared.zig");
 const input_gestures = @import("input_gestures.zig");
 const skillsSlotUnderPointer = input_gestures.skillsSlotUnderPointer;
 const handleRightClickEditorDelete = input_gestures.handleRightClickEditorDelete;
@@ -1413,6 +1414,79 @@ pub fn handleAnytimeInput(
             .open_tips => pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .tips,
             } }),
+            // The campaign browser (the world map's top-left campaign
+            // button + the browser's Back button). Reachable wherever the
+            // map is (level + hub); the scan-on-open is the editor
+            // browser's pattern - fresh view state + lists, decided from
+            // the pre-toggle state (class-2 view state, direct writes; the
+            // open/close itself is the recorded surface event).
+            .toggle_campaign_browser => {
+                const surfaces = &history.current_state.ui_surfaces;
+                if (!(surfaces.isSurfaceOpen(.world_map) or
+                    surfaces.isSurfaceOpen(.campaign_browser))) return;
+                if (!surfaces.isSurfaceOpen(.campaign_browser)) {
+                    history.session.ui_state.campaign_browser_scroll_offset = 0;
+                    history.session.ui_state.campaign_browser_tab = .local;
+                    shared.rescanCampaignBrowserLists(history);
+                }
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = .campaign_browser,
+                } });
+            },
+            // Campaign-browser tab switch (Your Campaigns / Official). A
+            // view affordance - direct UiState write, the scroll reset of
+            // the editor-browser tabs (the other tab's list has its own
+            // extent).
+            .select_campaign_browser_tab => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser)) return;
+                const tab = payloadAs(.campaign_browser_tab, clicked_payload) orelse return;
+                history.session.ui_state.campaign_browser_tab = tab;
+                history.session.ui_state.campaign_browser_scroll_offset = 0;
+            },
+            // A campaign row was clicked: VIEW that campaign on the map.
+            // Viewing ≠ state (DESIGN → Campaigns & the Campaign Editor
+            // → Campaign switching): the pick mutates only the
+            // session-side graph cache (never recorded, replay-irrelevant);
+            // the browser close is the recorded surface toggle (Back ≡
+            // pick, on the undo timeline). Picking the ACTIVE campaign
+            // clears the slot - the map falls back to the live GameState
+            // campaign.
+            .view_campaign_row => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser)) return;
+                const row = payloadAs(.campaign_row, clicked_payload) orelse return;
+                const campaigns = switch (history.session.ui_state.campaign_browser_tab) {
+                    .local => history.session.campaign_browser_local,
+                    .official => history.session.campaign_browser_official,
+                };
+                if (row >= campaigns.len) return; // stale-list belt
+                const entry = campaigns[row];
+                const backing = history.backing_allocator;
+                if (entry.uuid.len > 0 and std.mem.eql(
+                    u8,
+                    entry.uuid,
+                    history.current_state.player_data.current_campaign_uuid,
+                )) {
+                    if (history.session.viewed_campaign) |viewed| {
+                        loaders.freeCampaign(viewed, backing);
+                    }
+                    history.session.viewed_campaign = null;
+                } else {
+                    const graph = shared.loadCampaignGraph(history, entry.dir, backing) orelse {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "failed to read that campaign",
+                        );
+                        return;
+                    };
+                    if (history.session.viewed_campaign) |viewed| {
+                        loaders.freeCampaign(viewed, backing);
+                    }
+                    history.session.viewed_campaign = graph;
+                }
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = .campaign_browser,
+                } });
+            },
             // Exit Game (the main-menu options menu variant, native only -
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's
@@ -2838,6 +2912,22 @@ pub fn handleAnytimeInput(
             history.session.ui_state.editor_mission_scroll_offset -= delta_rows;
             if (history.session.ui_state.editor_mission_scroll_offset < 0) {
                 history.session.ui_state.editor_mission_scroll_offset = 0;
+            }
+        }
+        return;
+    }
+
+    // Campaign browser: the same modal posture (a full-screen picker over
+    // the world map). The wheel scrolls the row list - the load-save
+    // browser's model, lower clamp here, upper clamp authoritative in the
+    // builder. No rescan while open (the rescanCampaignBrowserLists rule:
+    // reopening is the refresh path).
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser)) {
+        if (anytime.scroll_delta != 0) {
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.campaign_browser_scroll_offset -= delta_rows;
+            if (history.session.ui_state.campaign_browser_scroll_offset < 0) {
+                history.session.ui_state.campaign_browser_scroll_offset = 0;
             }
         }
         return;

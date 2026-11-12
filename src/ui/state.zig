@@ -205,6 +205,15 @@ pub const UiState = struct {
     /// Cleared on every open. Off the undo timeline like the other scrolls.
     editor_mission_scroll_offset: i32 = 0,
 
+    /// Which tab the campaign browser is showing (Your Campaigns /
+    /// Official). View affordance - the editor_mission_browser_tab
+    /// convention; reset to `.local` on every open.
+    campaign_browser_tab: types.CampaignBrowserTab = .local,
+
+    /// Campaign browser vertical scroll offset, in ROWS - the mission
+    /// browser's exact scroll model. Cleared on every open.
+    campaign_browser_scroll_offset: i32 = 0,
+
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
