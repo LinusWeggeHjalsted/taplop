@@ -1487,6 +1487,91 @@ pub fn handleAnytimeInput(
                     .surface = .campaign_browser,
                 } });
             },
+            // The campaign the world map is RENDERING - the graph the
+            // click's payload resolves against (the mission-browser-row
+            // precedent: the click-time view, never re-derived). The
+            // VIEWED campaign when one is picked, else the active one.
+            // The acting identity (campaign_dir/uuid) rides the payload
+            // only when the map is viewing ANOTHER campaign (null =
+            // active - the same-campaign payloads carry no identity).
+            .travel_to_map_hub => {
+                const surfaces = &history.current_state.ui_surfaces;
+                if (!surfaces.isSurfaceOpen(.world_map)) return;
+                const hub_index = payloadAs(.map_hub, clicked_payload) orelse return;
+                const campaign = history.session.viewed_campaign orelse
+                    history.current_state.campaign orelse return;
+                if (hub_index >= campaign.hubs.len) return; // stale-graph belt
+                const hub = campaign.hubs[hub_index];
+                // Traveling to the hub the player is ALREADY at: a no-op
+                // (the recorded event would be legal but pointless - the
+                // click did nothing, so nothing records).
+                if (std.mem.eql(u8, hub.uuid, history.current_state.player_data.current_hub) and
+                    history.session.viewed_campaign == null) return;
+                const campaign_dir: ?[]const u8 = if (history.session.viewed_campaign != null)
+                    (allocator.dupe(u8, campaign.dir) catch @panic("failed to dupe travel campaign dir"))
+                else
+                    null;
+                const campaign_uuid: ?[]const u8 = if (history.session.viewed_campaign != null)
+                    (allocator.dupe(u8, campaign.uuid) catch @panic("failed to dupe travel campaign uuid"))
+                else
+                    null;
+                const hub_uuid = allocator.dupe(u8, hub.uuid) catch
+                    @panic("failed to dupe travel hub uuid");
+                pushPlayerActionAndDrain(history, .{ .player_travel_to_hub = .{
+                    .hub_uuid = hub_uuid,
+                    .campaign_dir = campaign_dir,
+                    .campaign_uuid = campaign_uuid,
+                } });
+            },
+            .start_mission_from_map_edge => {
+                const surfaces = &history.current_state.ui_surfaces;
+                if (!surfaces.isSurfaceOpen(.world_map)) return;
+                const edge_index = payloadAs(.map_edge, clicked_payload) orelse return;
+                const campaign = history.session.viewed_campaign orelse
+                    history.current_state.campaign orelse return;
+                if (edge_index >= campaign.edges.len) return; // stale-graph belt
+                const edge = campaign.edges[edge_index];
+                // An unresolvable mission is never clickable (the button
+                // is not emitted for it) - reaching here with one means a
+                // stale graph; the popup names it rather than starting
+                // nothing.
+                if (edge.mission_dir.len == 0) {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "mission exit does not resolve to any installed mission",
+                    );
+                    return;
+                }
+                // `mission_dir` is the FULL content path
+                // ("campaigns/<campaign>/missions/<id>" - the resolution
+                // table's addressing), so the path is used as-is (the
+                // exit-tile path builds the same string via
+                // missionDirForUuid's basename; here the table already
+                // carries it whole).
+                const mission_path = allocator.dupe(u8, edge.mission_dir) catch
+                    @panic("failed to allocate map mission path");
+                const end_hub_id = if (edge.destination.len > 0)
+                    (allocator.dupe(u8, edge.destination) catch @panic("failed to dupe map mission end hub"))
+                else
+                    null;
+                const start_hub_id = allocator.dupe(u8, edge.from) catch
+                    @panic("failed to dupe map mission start hub");
+                const campaign_dir: ?[]const u8 = if (history.session.viewed_campaign != null)
+                    (allocator.dupe(u8, campaign.dir) catch @panic("failed to dupe map campaign dir"))
+                else
+                    null;
+                const campaign_uuid: ?[]const u8 = if (history.session.viewed_campaign != null)
+                    (allocator.dupe(u8, campaign.uuid) catch @panic("failed to dupe map campaign uuid"))
+                else
+                    null;
+                pushPlayerActionAndDrain(history, .{ .player_start_mission_from_map = .{
+                    .mission_path = mission_path,
+                    .end_hub_id = end_hub_id,
+                    .start_hub_id = start_hub_id,
+                    .campaign_dir = campaign_dir,
+                    .campaign_uuid = campaign_uuid,
+                } });
+            },
             // Exit Game (the main-menu options menu variant, native only -
             // the button is not emitted on web, where closing the tab is
             // the user's). A request, not a state transform: the game loop's

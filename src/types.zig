@@ -618,6 +618,17 @@ pub const Action = enum {
     // payload (the `campaign_row` variant, an index into the CURRENT
     // tab's list).
     view_campaign_row,
+    // A HUB icon on the world map was clicked: travel there (a recorded
+    // `player_travel_to_hub` - backtrack-to-discovered legality, the
+    // cross-campaign install when the map is viewing another campaign).
+    // The hub rides the click payload (the `map_hub` variant). Button-
+    // only (the icons are map geometry, not keybindable).
+    travel_to_map_hub,
+    // An EDGE on the world map was clicked: enter that mission (a
+    // recorded `player_start_mission_from_map` - the exit-tile
+    // equivalence). The edge rides the click payload (the `map_edge`
+    // variant, an index into the campaign's edge table). Button-only.
+    start_mission_from_map_edge,
     // The mission browser's "Import" (web only): opens a file picker for a
     // mission .zip; the picked zip lands in imported_missions/ and the Zig
     // side extracts it into missions/ (see
@@ -998,6 +1009,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .toggle_campaign_browser,
         .select_campaign_browser_tab,
         .view_campaign_row,
+        // The world-map acting clicks (hub travel + mission entry) fire
+        // from the map overlay - the same game-context routing as the
+        // browser (button-only).
+        .travel_to_map_hub,
+        .start_mission_from_map_edge,
         => .{ .game = true },
 
         // The editor screen (edit mode - during a playtest/validation run
@@ -1264,6 +1280,12 @@ pub const ButtonPayload = union(enum) {
     editor_mission_row: u32,
     /// A campaign-browser row (index into the current tab's list).
     campaign_row: u32,
+    /// A world-map HUB icon (index into the viewed campaign's hub list -
+    /// the `travel_to_map_hub` action's identity).
+    map_hub: u32,
+    /// A world-map EDGE (index into the viewed campaign's edge table -
+    /// the `start_mission_from_map_edge` action's identity).
+    map_edge: u32,
     /// The settings screen's content tab (Settings / Keybinds).
     settings_tab: SettingsTab,
     /// A keybinds-tab edit command (the whole editing UI rides one action).
@@ -1347,6 +1369,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .open_editor_mission_row => .editor_mission_row,
         .select_campaign_browser_tab => .campaign_browser_tab,
         .view_campaign_row => .campaign_row,
+        .travel_to_map_hub => .map_hub,
+        .start_mission_from_map_edge => .map_edge,
 
         // Payload-less actions: every action below carries no button
         // identity beyond its own name. Grouped, not elided - an `else =>

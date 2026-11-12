@@ -483,6 +483,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_campaign_browser,
         .select_campaign_browser_tab,
         .view_campaign_row,
+        .travel_to_map_hub,
+        .start_mission_from_map_edge,
         => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .select_settings_tab => player_input.anytime.options_action = action,

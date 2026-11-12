@@ -183,22 +183,43 @@ pub fn buildWorldMap(
     }.check;
 
     // Hubs: an icon centered on each position, dimmed when undiscovered.
-    // The name rides the tooltip (no map labels).
-    for (campaign.hubs) |hub| {
+    // The name rides the tooltip (no map labels). Each LIT hub icon gets a
+    // spriteless button (the clickable travel target): discovered-or-start
+    // is exactly the travel-legality rule, so what the map lights is what
+    // is clickable - an undiscovered hub is not a target (backtrack-only).
+    for (campaign.hubs, 0..) |hub, hub_index| {
         const center = mapToScreen(hub.position);
         const lit = hubDiscovered(discovered_hubs, campaign.start_hub, hub.uuid);
+        const icon_rect = Rectangle{
+            .x = center.x - @divTrunc(hub_icon_size, 2),
+            .y = center.y - @divTrunc(hub_icon_size, 2),
+            .width = hub_icon_size,
+            .height = hub_icon_size,
+        };
         try elements.append(allocator, .{ .image = .{
             .sprite_id = hub_icon_sprite_id,
-            .screen_position = .{
-                .x = center.x - @divTrunc(hub_icon_size, 2),
-                .y = center.y - @divTrunc(hub_icon_size, 2),
-            },
+            .screen_position = icon_rect.position(),
             .width = hub_icon_size,
             .height = hub_icon_size,
             .alpha = if (lit) 255 else dimmed_alpha,
             .blocks_input = false,
             .tooltip = .{ .header = try spanRow(allocator, text(hub.name)) },
         } });
+        if (lit) {
+            // The travel target's tooltip carries the hub name (the same
+            // read the icon gives) - the click resolves the hub uuid +
+            // the campaign identity (viewing's cross-campaign branch) at
+            // the consumption site.
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = icon_rect.position(),
+                .width = hub_icon_size,
+                .height = hub_icon_size,
+                .action = .travel_to_map_hub,
+                .payload = .{ .map_hub = @intCast(hub_index) },
+                .tooltip = .{ .header = try spanRow(allocator, text(hub.name)) },
+            } });
+        }
     }
 
     // Edges: one curve pair per edge (black outline under the lightest
@@ -210,7 +231,7 @@ pub fn buildWorldMap(
     //   dangling stub (destination unplaced/empty): a dash along the
     //     direction bearing.
     const lightest = active_theme.lightest;
-    for (campaign.edges) |edge| {
+    for (campaign.edges, 0..) |edge, edge_index| {
         var from_hub: ?types.CampaignHub = null;
         var to_hub: ?types.CampaignHub = null;
         for (campaign.hubs) |hub| {
@@ -321,8 +342,9 @@ pub fn buildWorldMap(
             null;
 
         // The outline stroke first (painter order), then the lightest
-        // stroke on top - both carry the same geometry, so the drawn edge
-        // and the (future, slice 2d) hit region agree.
+        // stroke on top - both carry the same geometry, and the hit
+        // region (below) samples the SAME curve, so the drawn edge and
+        // its click target agree by construction.
         try elements.append(allocator, .{ .curve = .{
             .start = start,
             .control_start = control_start,
@@ -347,6 +369,32 @@ pub fn buildWorldMap(
             .blocks_input = false,
             .tooltip = tooltip,
         } });
+        // The clickable edge: a spriteless button whose hit region is the
+        // STROKE's samples (the hit_curve seam - distance to the polyline,
+        // not the bounds rect). Clickable exactly when the edge is lit
+        // (its start hub discovered-or-start = the mission-entry legality).
+        // An edge with no resolvable mission is never clickable (the
+        // consumption site's popup names the broken exit) - a dangling
+        // DESTINATION is still clickable (it is a placed hub + mission,
+        // only the to-end forward reference is missing).
+        if (lit and edge.mission_dir.len > 0) {
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = start,
+                .width = 0,
+                .height = 0,
+                .action = .start_mission_from_map_edge,
+                .payload = .{ .map_edge = @intCast(edge_index) },
+                .hit_curve = .{
+                    .start = start,
+                    .control_start = control_start,
+                    .control_end = control_end,
+                    .end = end,
+                    .width = edge_width,
+                },
+                .tooltip = tooltip,
+            } });
+        }
     }
 }
 
@@ -419,10 +467,18 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
 
     // Derived expectations: 1 surface + 1 background + the campaign
     // button's 3 elements (panel + button + label - emitPanelButton) +
-    // 2 hub icons + 2 curves per edge (3 edges) = 13 elements total.
-    // Derived from the fixture lists, not a magic number snapshot.
+    // per hub 1 icon + 1 clickable button (BOTH fixture hubs are lit:
+    // the start hub by the start rule, Beta by the discovered set) +
+    // per LIT edge 2 curves + 1 clickable button (all three fixture
+    // edges have a resolvable mission_dir + lit start hubs). Derived
+    // from the fixture lists, not a magic number snapshot.
+    var lit_hub_count: usize = 0;
+    for (campaign.hubs) |hub| {
+        if (std.mem.eql(u8, hub.uuid, campaign.start_hub) or
+            std.mem.eql(u8, hub.uuid, "b")) lit_hub_count += 1;
+    }
     const expected_total = 1 + @as(usize, if (campaign.background_dims != null) 1 else 0) +
-        3 + campaign.hubs.len + 2 * campaign.edges.len;
+        3 + 2 * lit_hub_count + 3 * campaign.edges.len;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
     // The surface blocks input; everything else is decorative.
@@ -452,19 +508,28 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expectEqual(types.Action.toggle_campaign_browser, elements.items[3].button.action);
 
     const alpha_icon = elements.items[5].image;
+    const alpha_travel = elements.items[6].button;
     try std.testing.expectEqualStrings("world/hub_icon", alpha_icon.sprite_id);
     try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }).x - @divTrunc(hub_icon_size, 2), alpha_icon.screen_position.x);
     try std.testing.expectEqual(@as(u8, 255), alpha_icon.alpha);
     try std.testing.expectEqualStrings("Alpha", alpha_icon.tooltip.?.header.?[0].text);
-    const beta_icon = elements.items[6].image;
+    const beta_icon = elements.items[7].image;
     try std.testing.expectEqual(@as(u8, 255), beta_icon.alpha);
+    const beta_travel = elements.items[8].button;
+    // Both lit hubs carry a spriteless travel button over their icons,
+    // with the hub's index in the payload.
+    try std.testing.expect(alpha_travel.sprite_id == null);
+    try std.testing.expectEqual(types.Action.travel_to_map_hub, alpha_travel.action);
+    try std.testing.expectEqual(@as(u32, 0), alpha_travel.payload.?.map_hub);
+    try std.testing.expectEqual(types.Action.travel_to_map_hub, beta_travel.action);
+    try std.testing.expectEqual(@as(u32, 1), beta_travel.payload.?.map_hub);
 
     // Edge curves arrive as pairs (black outline, then lightest stroke).
     // Pair 0: the self-loop - start == end == the anchor 64px NORTH of
     // hub a's screen center (direction 0, the hub icon's boundary), the
     // controls at the teardrop offsets beyond the anchor.
-    const loop_black = elements.items[7].curve;
-    const loop_light = elements.items[8].curve;
+    const loop_black = elements.items[9].curve;
+    const loop_light = elements.items[10].curve;
     const loop_center = mapToScreen(.{ .x = -200, .y = 0 });
     const loop_anchor: ScreenPosition = .{
         .x = loop_center.x,
@@ -491,7 +556,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Pair 1: the straight edge a -> b - endpoints displaced to each
     // hub's boundary along the hub-position difference (64px from each
     // center), solid, lit (its start hub 'a' is the start hub).
-    const straight_light = elements.items[10].curve;
+    const straight_light = elements.items[12].curve;
     const a_center = mapToScreen(.{ .x = -200, .y = 0 });
     const b_center = mapToScreen(.{ .x = 400, .y = 300 });
     try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.start, a_center));
@@ -509,7 +574,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // (direction 180) from the hub's boundary anchor, lit ('b' is in the
     // discovered set, so its start hub is lit; the dimming case is
     // asserted in the dedicated test below).
-    const stub_light = elements.items[12].curve;
+    const stub_light = elements.items[15].curve;
     try std.testing.expect(stub_light.dashed);
     try std.testing.expect(stub_light.arrowhead);
     try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius, stub_light.start.y);
@@ -541,10 +606,10 @@ test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only 
         test_button_color,
     );
 
-    const beta_icon = elements.items[6].image;
+    const beta_icon = elements.items[7].image;
     try std.testing.expectEqual(dimmed_alpha, beta_icon.alpha);
     // Pair 1 (a -> b): start hub 'a' is the start hub - lit.
-    try std.testing.expectEqual(@as(u8, 255), elements.items[10].curve.alpha);
+    try std.testing.expectEqual(@as(u8, 255), elements.items[12].curve.alpha);
     // Pair 2 (the stub from b): 'b' undiscovered - dimmed.
-    try std.testing.expectEqual(dimmed_alpha, elements.items[12].curve.alpha);
+    try std.testing.expectEqual(dimmed_alpha, elements.items[15].curve.alpha);
 }

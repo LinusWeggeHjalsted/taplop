@@ -16,6 +16,7 @@ const state = @import("state.zig");
 const events = @import("events.zig");
 const event_push = @import("event_push.zig");
 const event_handlers = @import("event_handlers.zig");
+const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
@@ -44,7 +45,7 @@ fn enterFixtureCampaign(history: *state.GameStateHistory) void {
     ) catch @panic("write fixture campaign");
     fs.writeFile(
         "campaigns/test_campaign/hubs/hub_a/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!.\n...\n",
+        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!.\n...\n\nExits\n\nmission_uuid " ++ mission_uuid ++ "\ndestination_hub " ++ hub_b_uuid ++ "\n",
     ) catch @panic("write fixture hub a");
     fs.writeFile(
         "campaigns/test_campaign/hubs/hub_b/hub.txt",
@@ -319,4 +320,37 @@ test "cross-campaign mission entry: installs the campaign + enters from the edge
     try testing.expectEqualStrings(hub_y_uuid, history.current_state.mission.?.end_hub.?);
     try testing.expectEqualStrings(hub_x_uuid, history.current_state.player_data.current_hub);
     try testing.expectEqualStrings("second_campaign", history.current_state.player_data.current_campaign);
+}
+
+test "map click path: hub button + edge button drive the recorded orchestrators" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+    discoverHubB(&history);
+
+    // The consumption arms resolve the click payload against the map's
+    // rendered graph (the ACTIVE campaign here - no viewed cache), fire
+    // the recorded orchestrator, and the cascade plays out as in the
+    // direct tests above. Hub A (index 0) is discovered (the start hub)
+    // + not the player's current hub, so the click travels.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .travel_to_map_hub,
+    }, .{ .map_hub = 0 }, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+
+    // The edge click: the payload is an index into the campaign's edge
+    // table (populated by the fixture's A->B exit); the arm resolves the
+    // mission path + end hub + start hub from it.
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .start_mission_from_map_edge,
+    }, .{ .map_edge = 0 }, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try testing.expectEqualStrings(mission_path, history.current_state.mission.?.path);
+    try testing.expectEqualStrings(hub_b_uuid, history.current_state.mission.?.end_hub.?);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
 }
