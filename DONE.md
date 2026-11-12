@@ -311,6 +311,7 @@ working rules).
 - [build: configure-cache deps for generated files](#build-configure-cache-deps-for-generated-files)
 - [docs: finished tasks fully deleted from TODO](#docs-finished-tasks-fully-deleted-from-todo)
 - [campaign slice 2c design settle](#campaign-slice-2c-design-settle)
+- [campaign-editor slice 2c, step 1: the curve UiElement](#campaign-editor-slice-2c-step-1-the-curve-uielement)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19719,3 +19720,38 @@ Design recorded in DESIGN → Campaigns & the Campaign Editor → The map
 surface (new section; the Edge geometry curve bullet amended for the
 shared sampler). The Editor-state split spike stays AFTER 2c/2d, before
 slice 3, as before.
+
+## campaign-editor slice 2c, step 1: the curve UiElement
+
+The map surface's rendering primitive, landed bottom-up before any map
+builder exists:
+
+- **`Curve`** (element.zig): a cubic bezier stroke - endpoints + two
+  control points + width + color + alpha (the dim class) + dashed (the
+  dangling-stub class) + the uniform tooltip/blocks_input fields.
+  Decorative by default: `blocks_input = false`.
+- **`sampleCurve`** (element.zig): the ONE deterministic sampler
+  (fixed `curve_sample_count = 48` segments, caller-provided
+  fixed-size output - no allocator). Both the backend draw and
+  hit-testing call it, so the drawn edge and its hit region agree by
+  construction (the settle's core invariant).
+- **`Button.hit_curve`**: optional non-rect hit region - when set, the
+  button's hit region is the curve's sampled stroke (distance to
+  polyline <= width/2 + `curve_hit_tolerance` 12 reference px) instead
+  of its bounds rect. `hitTest`'s containment check became
+  `containsPoint` (one switch arm; every other element keeps the rect).
+  This is the settled spriteless-Button seam: the visual curve stays
+  decorative, the button carries action + payload + tooltip.
+- **Backend draw** (raylib/draw.zig): solid strokes via
+  `drawSplineLinear` (a thick polyline with proper joints); dashed via
+  alternating-segment `drawLineEx`. Same samples, same width, so draw
+  and hit-test share one truth.
+- **Tests** (inline, element.zig): endpoint exactness + linear
+  interpolation on the straight-line degenerate; controls actually bend
+  the samples; the stroke-is-the-hit-region property (on-stroke hits
+  the edge button, AABB-but-off-stroke falls through to the button
+  behind, the exact tolerance boundary 16 vs 17 px); a decorative curve
+  never occludes a button under it.
+
+Facade: Curve/curve_sample_count/sampleCurve re-exported through ui.zig.
+Full suite PASS, web build OK, dash sweep clean.
