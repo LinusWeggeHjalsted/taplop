@@ -391,11 +391,6 @@ work:
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] 2d. Acting from the map: travel (player_travel_to_hub;
-          backtrack-to-discovered legality) + mission start
-          (player_start_mission_from_map; start-hub-discovered
-          legality) incl. the mid-level abandon ride on the .exit_mission
-          cascade (pickups preserved by the end_level sync invariant).
     - [ ] later. New-game campaign picker + the speedrun seed
           (all-hubs-discovered start option, runtime-derived) - main-menu
           work, rides the same machinery.

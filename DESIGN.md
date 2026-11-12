@@ -3381,18 +3381,39 @@ whenever the real map lands.
   edges with everything else dimmed.
 - **Map travel is BACKTRACKING only** - jump to any DISCOVERED hub; forward
   movement is playing edges (the core loop: missions are the connections,
-  and the map must not skip them).
+  and the map must not skip them). Every campaign's START hub is always
+  act-legal EVEN WHEN the campaign was never entered (no discovered group
+  yet) - which is what makes entering a newly added campaign possible at
+  all; the legality read resolves the start hub from the campaign's
+  campaign.txt through the RECONSTRUCTION cache for other campaigns (the
+  active campaign's graph is pure state).
 - **Map mission-entry is deliberately EQUIVALENT to the exit tile**: an
   edge is clickable when its start hub is discovered, and starting it is
   the same as standing on the exit in the start hub. The world map is a
-  navigation shortcut for players who want it - never a requirement.
+  navigation shortcut for players who want it - never a requirement. The
+  entry is FROM the edge's start hub: `start_mission.enter_hub_id` sets
+  `current_hub` on the way in (a pure PlayerData write - NOT a hub
+  transition, which would clear the event stack and eat the queued
+  entry), so abandoning the entered mission returns there.
 - **The map is ALWAYS navigable** - from a hub or mid-mission alike.
   Acting on it mid-mission rides the existing abandon cascade
-  (`end_level{.exit_mission}` → `end_mission` → the pushed arrival):
-  pickups are kept (the `end_level` sync invariant -
-  `build_data_from_player` before any level discard; tested in
-  `handler_tests_autosave`), the run earns no clone (the clone is the
-  record of COMPLETED runs).
+  (`end_level{.exit_mission, suppress_return_hub}` → the queued
+  arrival/entry beneath): pickups are kept (the `end_level` sync
+  invariant - `build_data_from_player` before any level discard; tested
+  in `handler_tests_autosave`), the run earns no clone (the clone is the
+  record of COMPLETED runs). The suppress flag exists because
+  `transitionScreen` clears the event stack - the exit's own
+  `end_mission → start_hub` return would eat the map action's queued
+  arrival, so the map-acting orchestrators queue their REAL arrival
+  (start_hub / start_mission) beneath the end_level and suppress the
+  default return.
+- **The acting orchestrators** (`player_travel_to_hub`,
+  `player_start_mission_from_map`) carry the click-time RESOLVED payload
+  (hub uuid; mission path + end hub + start hub from the edge table) +
+  the campaign identity when acting on a VIEWED campaign ≠ the active
+  one (null = active). Legality is validated per-event in
+  `validatePlayerAction` (map open + level/hub screen +
+  discovered-or-start).
 - **Rendering: the simple mirror first** - the world map renders ALL hubs
   + edges (the exact campaign-editor view) with undiscovered hubs /
   unavailable missions DIMMED. Fog-of-war hiding is a future refinement
@@ -3429,17 +3450,24 @@ installed campaign's map at any time and SWITCH by acting on it:
   fully resolved payloads (campaign uuid + dir, hub uuid + dir,
   mission path, end destination) - the mission-browser-row precedent;
   legality never reads the cache.
-- **The active campaign switches as a side effect of ARRIVAL.** The
-  `start_hub` event carries campaign identity (`campaign_uuid` + resolved
-  `campaign_dir`); its handler updates `current_campaign_uuid` + installs
-  the hub + sets `current_hub` (which IS the last-visited hub - the
-  handler already writes it) + discovers. Entering a mission from the
-  map of another campaign puts that edge's start hub as `current_hub` on
-  the way in. No separate resume bookkeeping: ONE `last_hub` =
-  `current_hub`, exactly one per player.
-- **Cross-campaign arrival loads the target campaign's graph inside the
-  handler** through reconstruction reads (the `load_save` / `start_level`
-  precedent - handlers already do recorded reads).
+- **The active campaign switches as a side effect of ACTING on another
+  campaign's map.** The acting orchestrators carry the click-resolved
+  campaign identity (dir + uuid) when the map is viewing another
+  campaign, and the cascade pushes `install_campaign` beneath the real
+  arrival/entry: a machinery event that loads the target graph through
+  reconstruction reads (the `load_save` / `start_level` precedent -
+  handlers already do recorded reads; the graph load is
+  `shared.installCampaignGraph`, shared with the continue/load-save
+  path), swaps `current.campaign`, and updates the PlayerData identity
+  fields. NO screen transition - the install rides INSIDE the cascade
+  (a `transitionScreen` would clear the event stack and eat the queued
+  arrival; the same constraint that shaped the mission-entry path).
+  The arrival itself then proceeds through the ordinary `start_hub`
+  (installs the hub, sets `current_hub` - which IS the last-visited
+  hub - and discovers into the NEW campaign's group), and a map mission
+  entry sets the edge's start hub as `current_hub` via
+  `start_mission.enter_hub_id` on the way in. No separate resume
+  bookkeeping: ONE `last_hub` = `current_hub`, exactly one per player.
 - PlayerData (gear, materials, clones) travels across switches - the
   player IS the save; campaigns are worlds they enter. The save file is
   untouched by switching (no autosave backup needed - nothing is
@@ -3513,7 +3541,13 @@ custom campaigns is a lie, so both shipped with the browser. Legality
 elements - hub icons (`image` or a filled shape) + `curve` edges -
 are decorative (`blocks_input = false`); a spriteless `button`
 (`sprite_id = null`) overlays each clickable target carrying the
-action + payload + tooltip. No new element contract for input.
+action + payload + tooltip. Hubs: `travel_to_map_hub` + the hub index
+(`map_hub` payload), emitted only for LIT hubs (discovered-or-start =
+travel legality - what the map lights is what is clickable). Edges:
+`start_mission_from_map_edge` + the edge index (`map_edge` payload),
+emitted only for LIT edges with a resolvable mission, with the
+button's `hit_curve` carrying the drawn stroke's geometry (the
+sampled-polyline hit region). No new element contract for input.
 - **One sampling function for the curve.** `sampleCurve` in
 element.zig is the single deterministic bezier sampler (fixed
 segment count in v1): the backend draws the sampled line strip and

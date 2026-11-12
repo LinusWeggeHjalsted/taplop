@@ -320,6 +320,7 @@ working rules).
 - [overlay stack: toggle is raise-or-close (the covered-overlay wart)](#overlay-stack-toggle-is-raise-or-close-the-covered-overlay-wart)
 - [campaign browser: viewing other campaigns (2c remainder)](#campaign-browser-viewing-other-campaigns-2c-remainder)
 - [surface toggles dispatch above the options-menu gate (the map from the menu)](#surface-toggles-dispatch-above-the-options-menu-gate-the-map-from-the-menu)
+- [map acting: travel + mission entry from the world map (2d)](#map-acting-travel--mission-entry-from-the-world-map-2d)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20122,3 +20123,71 @@ level: the map keybind opens the map ON TOP with Escape popping the map
 first, then the menu; swap_weapons with an equipped weapon records
 nothing - the fixture weapon means the arm's own no-op gate cannot mask
 the block).
+
+## map acting: travel + mission entry from the world map (2d)
+
+Campaign-editor slice 2d, complete in three steps - the world map went
+from a read-only mirror to the full navigation surface (travel +
+mission entry, same-campaign and cross-campaign, from a hub and
+mid-level).
+
+- **Step 1 - the same-campaign verbs.** Two orchestrators:
+  `player_travel_to_hub` (backtrack to a discovered hub) and
+  `player_start_mission_from_map` (the exit-tile equivalence, resolved
+  payloads per the mission-browser-row precedent). The key structural
+  finding: `transitionScreen` clears the event stack, so a mid-cascade
+  `start_hub` arrival EATS anything queued beneath it - the design's
+  "arrive at the edge's start hub, then enter" cannot be two real
+  transitions. The landed shape: `start_mission.enter_hub_id` (a pure
+  PlayerData write setting current_hub on the way in, symmetric with
+  end_hub_id) + `end_level.suppress_return_hub` (the map-acting cascades
+  queue their REAL arrival/entry beneath the end_level{.exit_mission}
+  abandon and suppress the default entering-hub return, which would eat
+  the queue). Legality: `mapHubActingLegal` (discovered-or-start, the
+  bool core) + validatePlayerAction arms (map open + level/hub screen +
+  the rule).
+- **Step 2 - cross-campaign.** The `install_campaign` machinery event:
+  loads the target graph through reconstruction reads via
+  `shared.installCampaignGraph` (the loadCampaignAndPushHub body
+  factored out - graph install + identity fields, no transition), pushed
+  beneath the arrival/entry when acting on a viewed campaign ≠ active.
+  The never-entered-campaign gap the user caught mid-design: a newly
+  added campaign's start hub is in NO discovered group, so without a
+  rule fix it could never be traveled to. Settled: every campaign's
+  start hub is ALWAYS act-legal; the legality read resolves it from the
+  target's campaign.txt through the RECONSTRUCTION cache (the sanctioned
+  handler-read path - the "legality never reads the cache" rule refers
+  to the session graph cache). The read runs in the validation context
+  (before the event is seeded - current_event_index underflows the
+  readReconstructionFile contract), so it reads + caches on the event's
+  own index: the replayed handler's re-read hits the cache, keeping the
+  validation's answer and the event's effect consistent. First entry
+  creates the campaign's discovered group (arrival IS discovery); from
+  the second action on, everything is pure state again.
+- **Step 3 - the click surfaces.** Spriteless buttons over every LIT hub
+  icon (`travel_to_map_hub` + the `map_hub` index payload) and over
+  every LIT resolvable edge (`start_mission_from_map_edge` + `map_edge`,
+  the button's `hit_curve` carrying the drawn stroke's geometry - the
+  sampled-polyline hit region the curve element was designed for). The
+  consumption arms resolve the payload against the map's rendered graph
+  (viewed or active), carry the campaign identity only when viewing
+  another campaign, and fire the recorded orchestrators through
+  pushPlayerActionAndDrain (idle points automatic, the user confirmed -
+  the anytime-interjection discipline). One no-op gate: clicking the hub
+  the player already stands at records nothing.
+
+Tests: handler_tests_map_acting.zig (a two-hub fixture campaign written
+into the scratch persistent dir + entered via player_continue): travel
+from hub + mid-level (the abandon ride, no clone), mission entry from
+hub + mid-level (re-enter with a new edge), the undo timeline, the
+cross-campaign pair (never-entered start hub act-legal + creates the
+discovered group; switch back), and the full click path through
+handleAnytimeInput (the options_action + payload route). Plus the
+mapHubActingLegal bool test in state.zig (state half + reconstruction-
+read half + fail-closed) and the world-map structure tests' clickable-
+button assertions. En route: the fixture initially tripped the graph
+integrity check (hub B unreachable -> warning popup -> the error modal
+swallowed the click - the exact interaction the test exists to catch),
+fixed by giving hub A the A->B exit from the start; and the edge
+mission_dir addressing is the FULL content path (the consumption arm
+uses it as-is, not the exit-tile path's basename rebuild).
