@@ -72,7 +72,8 @@ fn validateConfigFile(
         // table) - the shipped campaign must resolve like any other.
         campaign.missions = loaders.resolveCampaignMissions(campaign, file_source, allocator, warnings);
         loaders.resolveCampaignHubs(&campaign, file_source, allocator, warnings);
-        loaders.checkCampaignGraph(campaign, campaign_dir, file_source, allocator, warnings);
+        loaders.deriveCampaignEdges(&campaign, file_source, allocator, warnings);
+        loaders.checkCampaignGraph(campaign, allocator, warnings);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/hub.txt")) {
         const sections = try parser.parseConfigFile(bytes, allocator, &parser.hub_sections);

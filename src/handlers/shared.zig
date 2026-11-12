@@ -171,17 +171,15 @@ pub fn loadCampaignAndPushHub(
             @panic("failed to append campaign identity warning");
     }
 
-    // Graph integrity checks (dangling destinations, missing missions/
-    // hub files, unplaced/unreachable hubs - warn-only; see
-    // loaders.checkCampaignGraph for why the reads bypass the
-    // reconstruction cache).
-    loaders.checkCampaignGraph(
-        current.campaign.?,
-        campaign_dir_path,
-        history.file_source,
-        allocator,
-        &campaign_warnings,
-    );
+    // The derived edge table + hub display names (the graph the map view
+    // renders + map-acting legality reads - one walk over the resolved
+    // hubs' hub.txt, missions resolved through the table above).
+    loaders.deriveCampaignEdges(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
+
+    // Graph integrity checks (dangling destinations, unresolvable
+    // missions, unplaced/unreachable hubs - pure over the derived edge
+    // table, warn-only).
+    loaders.checkCampaignGraph(current.campaign.?, allocator, &campaign_warnings);
     surfaceWarnings(history, &campaign_warnings, allocator);
 
     // Push start_hub with the player's current hub

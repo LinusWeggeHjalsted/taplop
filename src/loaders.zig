@@ -2808,40 +2808,147 @@ fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
     for (campaign.hubs) |hub| {
         allocator.free(hub.uuid);
         if (hub.dir.len > 0) allocator.free(hub.dir);
+        if (hub.name.len > 0) allocator.free(hub.name);
     }
     allocator.free(campaign.hubs);
+    for (campaign.edges) |edge| {
+        allocator.free(edge.from);
+        if (edge.destination.len > 0) allocator.free(edge.destination);
+        allocator.free(edge.mission_uuid);
+        if (edge.mission_dir.len > 0) allocator.free(edge.mission_dir);
+        if (edge.mission_name.len > 0) allocator.free(edge.mission_name);
+    }
+    allocator.free(campaign.edges);
 }
 
-/// Load-time campaign graph INTEGRITY checks (warn-only, the loader
-/// convention): the dangling format is save-legal BY DESIGN (an exit is
-/// authored before its destination exists), so the catch belongs here - a
-/// hand-edited campaign must not silently misresolve. Checks, each
-/// appending a warning:
-///   - the start hub is placed (a start_hub naming no Hubs entry, or none
-///     at all)
-///   - every placed hub's hub.txt exists and parses
-///   - no exit's destination_hub names an unplaced hub (the dangling
-///     forward reference)
-///   - no exit names a mission dir that doesn't exist
-///   - every placed hub is reachable from the start hub over hub → exit →
-///     destination edges (an empty destination does not traverse - it is
-///     the dangling case above)
-/// Reads go through `file_source` DIRECTLY, not the reconstruction cache:
-/// warnings apply no bytes to state (surfaceWarnings is !replaying-gated
-/// and advisory-only), so replay purity is unaffected - the cache exists
-/// for bytes events apply. `campaign_content_path` is the campaign dir.
-/// One hub-exit edge as the graph checker collects it (from-hub id, the
-/// exit's destination + mission, and the exit's index for warning text).
-/// `from` borrows the campaign's hub ids (caller-owned, alive through the
-/// call); `destination` + `mission_id` are DUPED - they point into the
-/// per-hub parsed sections, which are freed before the edge-consuming
-/// loops run.
-const CampaignEdge = struct {
-    from: []const u8,
-    destination: []const u8,
-    mission_uuid: []const u8,
-    exit_index: usize,
-};
+/// Derive the campaign's EDGE TABLE (`Campaign.edges`) + hub display names
+/// (`CampaignHub.name`): ONE walk over the placed hubs' hub.txt (the same
+/// files resolveCampaignHubs resolved), capturing each hub's Metadata
+/// name (denormalized for map labels + warnings - the mission-table
+/// precedent) and each exit as a `CampaignEdgeEntry` with the mission
+/// resolved through the campaign's mission table. The effective direction
+/// is the authored `direction` value, else the auto-spread default
+/// (360 * exit_index / the hub's exit count - see DESIGN → Campaigns &
+/// the Campaign Editor → Edge geometry); an unparsable direction warns +
+/// falls back to the default. Read/parse failures warn + skip the hub
+/// (the texts the integrity checks used to emit - they now consume this
+/// table instead of re-reading; an unresolved hub dir is already warned
+/// by resolveCampaignHubs). The LOADING side only - the table rides
+/// GameState as the graph the map view renders and map-acting legality
+/// reads (replay never scans; see DESIGN → The map surface). Self-owned:
+/// every string is duped into `allocator`; freed by `freeCampaign`.
+pub fn deriveCampaignEdges(
+    campaign: *types.Campaign,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) void {
+    var edges: std.ArrayList(types.CampaignEdgeEntry) = .empty;
+    var new_hubs: std.ArrayList(types.CampaignHub) = .empty;
+
+    for (campaign.hubs) |hub| {
+        // The rebuilt entry: the same uuid/dir/position, plus the name
+        // this walk fills (the resolveCampaignHubs rebuild pattern -
+        // Campaign.hubs is a const slice, so in-place writes are not
+        // possible).
+        var new_hub = types.CampaignHub{
+            .uuid = dupeString(allocator, hub.uuid),
+            .dir = if (hub.dir.len > 0) dupeString(allocator, hub.dir) else &.{},
+            .position = hub.position,
+        };
+        read_hub: {
+            if (hub.dir.len == 0) break :read_hub;
+            const hub_file_path = std.fmt.allocPrint(
+                allocator,
+                "campaigns/{s}/hubs/{s}/hub.txt",
+                .{ campaign.dir, hub.dir },
+            ) catch @panic("failed to build hub file path");
+            defer allocator.free(hub_file_path);
+
+            const bytes = file_source.readFile(allocator, hub_file_path) catch {
+                appendWarning(warnings, allocator, "placed hub '{s}' has no readable hub.txt ({s})", .{ hub.uuid, hub_file_path });
+                break :read_hub;
+            };
+            defer allocator.free(bytes);
+
+            const parsed_hub_sections = parseConfigFile(bytes, allocator, &hub_sections) catch {
+                appendWarning(warnings, allocator, "placed hub '{s}' has an unparsable hub.txt", .{hub.uuid});
+                break :read_hub;
+            };
+            defer freeParsedSections(parsed_hub_sections, allocator);
+
+            if (findSection(parsed_hub_sections, "Metadata")) |section| {
+                if (section.entry_groups.len > 0) {
+                    if (findValue(section.entry_groups[0].pairs, "name")) |name| {
+                        if (name.len > 0) new_hub.name = dupeString(allocator, name);
+                    }
+                }
+            }
+
+            const exits_section = findSection(parsed_hub_sections, "Exits") orelse break :read_hub;
+            const exit_count = exits_section.entry_groups.len;
+            for (exits_section.entry_groups, 0..) |group, exit_index| {
+                const mission_uuid = findValue(group.pairs, "mission_uuid") orelse continue;
+                const destination = findValue(group.pairs, "destination_hub") orelse &.{};
+
+                var direction_degrees: i32 = if (exit_count > 0)
+                    @divTrunc(360 * @as(i32, @intCast(exit_index)), @as(i32, @intCast(exit_count)))
+                else
+                    0;
+                if (findValue(group.pairs, "direction")) |value| {
+                    if (asI32(value)) |authored| {
+                        direction_degrees = authored;
+                    } else {
+                        appendWarning(warnings, allocator, "hub '{s}' exit {d} has an unparsable direction '{s}' - using the auto-spread default", .{ hub.uuid, exit_index, value });
+                    }
+                }
+
+                var mission_dir: []const u8 = &.{};
+                var mission_name: []const u8 = &.{};
+                for (campaign.missions) |mission| {
+                    if (!std.mem.eql(u8, mission.uuid, mission_uuid)) continue;
+                    mission_dir = mission.dir;
+                    mission_name = mission.name;
+                    break;
+                }
+
+                edges.append(allocator, .{
+                    .from = dupeString(allocator, hub.uuid),
+                    .destination = if (destination.len > 0) dupeString(allocator, destination) else &.{},
+                    .mission_uuid = dupeString(allocator, mission_uuid),
+                    .mission_dir = if (mission_dir.len > 0) dupeString(allocator, mission_dir) else &.{},
+                    .mission_name = if (mission_name.len > 0) dupeString(allocator, mission_name) else &.{},
+                    .direction_degrees = direction_degrees,
+                    .exit_index = @intCast(exit_index),
+                }) catch @panic("failed to append campaign edge entry");
+            }
+        }
+        new_hubs.append(allocator, new_hub) catch @panic("failed to append rebuilt campaign hub");
+    }
+
+    // Swap in the rebuilt hubs (freeing the resolveCampaignHubs-owned
+    // originals - the same ownership handoff resolveCampaignHubs itself
+    // performs).
+    for (campaign.hubs) |hub| {
+        allocator.free(hub.uuid);
+        if (hub.dir.len > 0) allocator.free(hub.dir);
+        if (hub.name.len > 0) allocator.free(hub.name);
+    }
+    if (campaign.hubs.len > 0) allocator.free(campaign.hubs);
+    campaign.hubs = new_hubs.toOwnedSlice(allocator) catch @panic("failed to own rebuilt campaign hubs slice");
+
+    if (campaign.edges.len > 0) {
+        for (campaign.edges) |edge| {
+            allocator.free(edge.from);
+            if (edge.destination.len > 0) allocator.free(edge.destination);
+            allocator.free(edge.mission_uuid);
+            if (edge.mission_dir.len > 0) allocator.free(edge.mission_dir);
+            if (edge.mission_name.len > 0) allocator.free(edge.mission_name);
+        }
+        allocator.free(campaign.edges);
+    }
+    campaign.edges = edges.toOwnedSlice(allocator) catch @panic("failed to own campaign edges slice");
+}
 
 /// Resolve every placed hub's storage dir (uuid -> dir) into
 /// `campaign.hubs[i].dir` in place - the scan side of the loading
@@ -2913,37 +3020,6 @@ fn embeddedHubDirs(campaign_dir: []const u8, allocator: std.mem.Allocator) []con
         dirs.append(allocator, hub_dir) catch @panic("failed to append embedded hub dir");
     }
     return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded hub dirs");
-}
-
-/// Resolve a mission uuid to its dir within a campaign (the missions/
-/// scan, persistent + embedded). Returns the content-root-relative dir
-/// (caller-owned) or null. The integrity-check + graph-derivation path;
-/// recorded handlers use the resolved tables in state instead (replay
-/// never scans).
-pub fn resolveCampaignMissionDir(
-    campaign: types.Campaign,
-    file_source: *const FileSource,
-    allocator: std.mem.Allocator,
-    warnings: ?*std.ArrayList([]const u8),
-    mission_uuid: []const u8,
-) ?[]const u8 {
-    const missions_dir = std.fmt.allocPrint(allocator, "campaigns/{s}/missions", .{campaign.dir}) catch
-        @panic("failed to build missions dir path");
-    defer allocator.free(missions_dir);
-    const resolved = file_source_mod.resolveUuidDir(
-        file_source,
-        allocator,
-        missions_dir,
-        file_source_mod.officialMissionDirPathsForCampaign(missions_dir, allocator),
-        "mission.txt",
-        &mission_sections,
-        "mission_uuid",
-        mission_uuid,
-    ) orelse return null;
-    if (resolved.duplicate) {
-        appendWarning(warnings, allocator, "duplicate mission uuid '{s}': resolved to {s} (latest-updated wins; open one in the editor and Save As Copy to split)", .{ mission_uuid, resolved.dir });
-    }
-    return resolved.dir;
 }
 
 /// Build the campaign's mission table (scan every mission dir in the
@@ -3039,10 +3115,25 @@ pub fn resolveCampaignMissions(
     return entries.toOwnedSlice(allocator) catch @panic("failed to own campaign missions slice");
 }
 
+/// Load-time campaign graph INTEGRITY checks (warn-only, the loader
+/// convention): the dangling format is save-legal BY DESIGN (an exit is
+/// authored before its destination exists), so the catch belongs here - a
+/// hand-edited campaign must not silently misresolve. PURE over the
+/// derived edge table (see deriveCampaignEdges) - no file reads, so the
+/// check adds nothing the derive did not already read (and replay purity
+/// is unaffected by construction: the derive runs loading-side only).
+/// Checks, each appending a warning:
+///   - the start hub is placed (a start_hub naming no Hubs entry, or none
+///     at all)
+///   - no edge's destination_hub names an unplaced hub (the dangling
+///     forward reference)
+///   - no edge names a mission that resolves to nothing in the campaign's
+///     mission table
+///   - every placed hub is reachable from the start hub over hub → edge →
+///     destination edges (an empty destination does not traverse - it is
+///     the dangling case above)
 pub fn checkCampaignGraph(
     campaign: types.Campaign,
-    campaign_content_path: []const u8,
-    file_source: *const FileSource,
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
 ) void {
@@ -3064,82 +3155,19 @@ pub fn checkCampaignGraph(
         appendWarning(warnings, allocator, "start hub '{s}' is not placed in the Hubs section", .{campaign.start_hub});
     }
 
-    // Per placed hub: the hub file exists + parses; its exits resolve.
     // reachable_set doubles as the BFS frontier bookkeeping below.
     var reachable = std.StringHashMap(void).init(allocator);
     defer reachable.deinit();
-    var edges: std.ArrayList(CampaignEdge) = .empty;
-    defer {
-        for (edges.items) |edge| {
-            allocator.free(edge.destination);
-            allocator.free(edge.mission_uuid);
+
+    // Dangling destinations + unresolvable missions, over the derived
+    // table (read/parse failures were already warned by the derive).
+    for (campaign.edges) |edge| {
+        if (edge.destination.len > 0 and !hub_placed(campaign.hubs, edge.destination)) {
+            appendWarning(warnings, allocator, "hub '{s}' exit {d} destination_hub '{s}' names an unplaced hub", .{ edge.from, edge.exit_index, edge.destination });
         }
-        edges.deinit(allocator);
-    }
-
-    for (campaign.hubs) |hub| {
-        // A hub whose dir the scan could not resolve (empty) is
-        // flagged below with its own warning - not a crash.
-        if (hub.dir.len == 0) {
-            appendWarning(warnings, allocator, "placed hub '{s}' has no resolvable directory", .{hub.uuid});
-            continue;
-        }
-        const hub_file_path = std.fmt.allocPrint(
-            allocator,
-            "{s}/hubs/{s}/hub.txt",
-            .{ campaign_content_path, hub.dir },
-        ) catch @panic("failed to build hub file path");
-        defer allocator.free(hub_file_path);
-
-        const bytes = file_source.readFile(allocator, hub_file_path) catch {
-            appendWarning(warnings, allocator, "placed hub '{s}' has no readable hub.txt ({s})", .{ hub.uuid, hub_file_path });
-            continue;
-        };
-        defer allocator.free(bytes);
-
-        const parsed_hub_sections = parseConfigFile(bytes, allocator, &hub_sections) catch {
-            appendWarning(warnings, allocator, "placed hub '{s}' has an unparsable hub.txt", .{hub.uuid});
-            continue;
-        };
-        defer freeParsedSections(parsed_hub_sections, allocator);
-
-        if (findSection(parsed_hub_sections, "Exits")) |section| {
-            for (section.entry_groups, 0..) |group, exit_index| {
-                const mission_uuid = findValue(group.pairs, "mission_uuid") orelse continue;
-                const destination = findValue(group.pairs, "destination_hub") orelse &.{};
-                if (destination.len > 0 and !hub_placed(campaign.hubs, destination)) {
-                    appendWarning(warnings, allocator, "hub '{s}' exit {d} destination_hub '{s}' names an unplaced hub", .{ hub.uuid, exit_index, destination });
-                }
-                edges.append(allocator, CampaignEdge{
-                    .from = hub.uuid,
-                    .destination = dupeString(allocator, destination),
-                    .mission_uuid = dupeString(allocator, mission_uuid),
-                    .exit_index = exit_index,
-                }) catch @panic("failed to collect campaign edge");
-            }
-        }
-    }
-
-    // Every edge's mission exists. The mission dir resolves through
-    // the same scan the load ran (uuid -> dir); the check reads
-    // the file only to confirm existence + parseability of the uuid.
-    for (edges.items) |edge| {
-        const mission_dir = resolveCampaignMissionDir(campaign, file_source, allocator, warnings, edge.mission_uuid) orelse {
+        if (edge.mission_dir.len == 0) {
             appendWarning(warnings, allocator, "hub '{s}' exit {d} names mission '{s}' but no mission in the campaign resolves to it", .{ edge.from, edge.exit_index, edge.mission_uuid });
-            continue;
-        };
-        defer allocator.free(mission_dir);
-        const mission_file_path = std.fmt.allocPrint(
-            allocator,
-            "{s}/mission.txt",
-            .{mission_dir},
-        ) catch @panic("failed to build mission file path");
-        defer allocator.free(mission_file_path);
-        const mission_bytes = file_source.readFile(allocator, mission_file_path) catch {
-            appendWarning(warnings, allocator, "hub '{s}' exit {d} names mission '{s}' but {s} does not exist", .{ edge.from, edge.exit_index, edge.mission_uuid, mission_file_path });
-            continue;
-        };
-        allocator.free(mission_bytes);
+        }
     }
 
     // Reachability: BFS from the start hub over destination edges.
@@ -3149,7 +3177,7 @@ pub fn checkCampaignGraph(
         reachable.put(campaign.start_hub, {}) catch @panic("failed to insert start hub");
         frontier.append(allocator, campaign.start_hub) catch @panic("failed to enqueue start hub");
         while (frontier.pop()) |current| {
-            for (edges.items) |edge| {
+            for (campaign.edges) |edge| {
                 if (!std.mem.eql(u8, edge.from, current)) continue;
                 if (edge.destination.len == 0) continue;
                 if (reachable.contains(edge.destination)) continue;
@@ -5357,7 +5385,7 @@ test "loadCampaign without name/start_hub/background/hubs defaults to empty and 
     freeCampaign(campaign, allocator);
 }
 
-test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
+test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per defect" {
     const allocator = std.testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
@@ -5369,8 +5397,8 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = file_source_mod.FileSource.init(io, temp_dir);
 
-    // The clean layout: start -> (m1) -> far; far's exit dangles its
-    // destination deliberately? No - empty destination, and both missions
+    // The clean layout: start -> (m1) -> far; far's exit has an empty
+    // destination (the save-legal dangling shape), and both missions
     // exist. Everything resolves + far is reachable.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
@@ -5383,84 +5411,151 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     file_source.writeFile("campaigns/check/missions/m1/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u1\nname M1\n") catch @panic("write m1");
     file_source.writeFile("campaigns/check/missions/m2/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u2\nname M2\n") catch @panic("write m2");
 
-    const campaign_path = "campaigns/check";
     var warnings: std.ArrayList([]const u8) = .empty;
     defer {
         for (warnings.items) |warning| allocator.free(warning);
         warnings.deinit(allocator);
     }
 
-    // Run 1 - clean: two placed hubs, start placed, edges resolve, far
-    // reachable. Static strings are fine: the checker reads, never owns.
-    const clean = types.Campaign{
-        .dir = "check",
-        .start_hub = "start",
-        .hubs = &[_]types.CampaignHub{
-            .{ .uuid = "start", .dir = "start", .position = .{ .x = 0, .y = 0 } },
-            .{ .uuid = "far", .dir = "far", .position = .{ .x = 900, .y = 0 } },
-        },
-    };
-    checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
+    // The load-side pipeline, per run: a fresh heap-owned campaign (the
+    // derive writes names into the hubs slice - static fixtures would
+    // crash), the mission table scan, the edge-table derive, the graph
+    // checks. Mirrors loadCampaignAndPushHub's sequence.
+    const runPipeline = struct {
+        fn run(
+            fs: *const file_source_mod.FileSource,
+            alloc: std.mem.Allocator,
+            start_hub: []const u8,
+            hub_specs: []const [2][]const u8,
+            sink: ?*std.ArrayList([]const u8),
+        ) types.Campaign {
+            var hubs: std.ArrayList(types.CampaignHub) = .empty;
+            for (hub_specs, 0..) |spec, index| {
+                hubs.append(alloc, .{
+                    .uuid = dupeString(alloc, spec[0]),
+                    .dir = dupeString(alloc, spec[1]),
+                    .position = .{ .x = @intCast(index * 900), .y = 0 },
+                }) catch @panic("append hub");
+            }
+            var campaign = types.Campaign{
+                .dir = dupeString(alloc, "check"),
+                .start_hub = dupeString(alloc, start_hub),
+                .hubs = hubs.toOwnedSlice(alloc) catch @panic("own hubs"),
+            };
+            campaign.missions = resolveCampaignMissions(campaign, fs, alloc, sink);
+            deriveCampaignEdges(&campaign, fs, alloc, sink);
+            checkCampaignGraph(campaign, alloc, sink);
+            return campaign;
+        }
+    }.run;
+    const freePipeline = struct {
+        fn free(campaign: types.Campaign, alloc: std.mem.Allocator) void {
+            for (campaign.missions) |mission| {
+                alloc.free(mission.uuid);
+                alloc.free(mission.dir);
+                alloc.free(mission.name);
+            }
+            alloc.free(campaign.missions);
+            freeCampaign(campaign, alloc);
+        }
+    }.free;
+
+    // Run 1 - clean: the derive fills names + the edge table (asserted
+    // below), and the checks warn nothing.
+    const clean_hubs = [_][2][]const u8{ .{ "start", "start" }, .{ "far", "far" } };
+    const clean = runPipeline(&file_source, allocator, "start", &clean_hubs, &warnings);
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+
+    // The derived table (the map view's + legality's read - see
+    // types.CampaignEdgeEntry): hub names denormalized, missions
+    // resolved through the table, the empty destination preserved as
+    // the dangling shape.
+    try std.testing.expectEqual(@as(usize, 2), clean.edges.len);
+    try std.testing.expectEqualStrings("Start", clean.hubs[0].name);
+    try std.testing.expectEqualStrings("Far", clean.hubs[1].name);
+    try std.testing.expectEqualStrings("start", clean.edges[0].from);
+    try std.testing.expectEqualStrings("far", clean.edges[0].destination);
+    try std.testing.expectEqualStrings("u1", clean.edges[0].mission_uuid);
+    try std.testing.expect(std.mem.endsWith(u8, clean.edges[0].mission_dir, "missions/m1"));
+    try std.testing.expectEqualStrings("M1", clean.edges[0].mission_name);
+    try std.testing.expectEqual(@as(i32, 0), clean.edges[0].direction_degrees);
+    try std.testing.expectEqual(@as(u32, 0), clean.edges[0].exit_index);
+    try std.testing.expectEqualStrings("far", clean.edges[1].from);
+    try std.testing.expectEqual(@as(usize, 0), clean.edges[1].destination.len);
+    try std.testing.expect(std.mem.endsWith(u8, clean.edges[1].mission_dir, "missions/m2"));
+    freePipeline(clean, allocator);
 
     // Run 2 - start hub not placed (and, with the BFS gated on a placed
     // start, no unreachable warnings either: exactly one warning).
-    const unplaced_start = types.Campaign{
-        .dir = "check",
-        .start_hub = "nowhere",
-        .hubs = clean.hubs,
-    };
-    checkCampaignGraph(unplaced_start, campaign_path, &file_source, allocator, &warnings);
+    const unplaced_start = runPipeline(&file_source, allocator, "nowhere", &clean_hubs, &warnings);
+    freePipeline(unplaced_start, allocator);
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "'nowhere' is not placed") != null);
     clearWarnings(&warnings, allocator);
 
-    // Run 3 - a placed hub with no hub.txt. Three warnings: start's exit
-    // destination 'far' is no longer placed in this campaign (dangling),
-    // ghost has no hub.txt, and ghost is unreachable (no edges reach it).
-    const ghost_hub = types.Campaign{
-        .dir = "check",
-        .start_hub = "start",
-        .hubs = &[_]types.CampaignHub{
-            .{ .uuid = "start", .dir = "start", .position = .{ .x = 0, .y = 0 } },
-            .{ .uuid = "ghost", .dir = "ghost", .position = .{ .x = 0, .y = 0 } },
-        },
-    };
-    checkCampaignGraph(ghost_hub, campaign_path, &file_source, allocator, &warnings);
+    // Run 3 - a placed hub with no hub.txt. Three warnings: ghost has no
+    // hub.txt (the derive), start's exit destination 'far' is not placed
+    // in this campaign (the check), and ghost is unreachable (the check).
+    const ghost_hubs = [_][2][]const u8{ .{ "start", "start" }, .{ "ghost", "ghost" } };
+    const ghost = runPipeline(&file_source, allocator, "start", &ghost_hubs, &warnings);
+    freePipeline(ghost, allocator);
     try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "'far' names an unplaced hub") != null);
-    try std.testing.expect(std.mem.indexOf(u8, warnings.items[1], "no readable hub.txt") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "no readable hub.txt") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[1], "'far' names an unplaced hub") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[2], "'ghost' is unreachable") != null);
     clearWarnings(&warnings, allocator);
 
     // Run 4 - a dangling destination (names an unplaced hub) + the now
-    // unreachable far hub: rewriting start's exit destination to a name
+    // unreachable far hub: rewriting start's exit destination to a uuid
     // that is not placed.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
         "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\ndestination_hub beyond\n",
     ) catch @panic("rewrite start hub");
-    checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
+    const dangling = runPipeline(&file_source, allocator, "start", &clean_hubs, &warnings);
+    freePipeline(dangling, allocator);
     try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "'beyond' names an unplaced hub") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[1], "'far' is unreachable") != null);
     clearWarnings(&warnings, allocator);
 
-    // Run 5 - an exit naming a mission that does not exist: start's exit
-    // restored to destination far (edges resolve again), m1's dir removed.
-    // One warning - far stays reachable through start's edge.
+    // Run 5 - an exit naming a mission that does not resolve: start's
+    // exit restored to destination far, m1's dir removed. One warning -
+    // far stays reachable through start's edge.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
         "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\ndestination_hub far\n",
     ) catch @panic("restore start hub");
     std.Io.Dir.cwd().deleteTree(io, scratch ++ "/campaigns/check/missions/m1") catch @panic("remove m1");
-    checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
+    const missing_mission = runPipeline(&file_source, allocator, "start", &clean_hubs, &warnings);
+    freePipeline(missing_mission, allocator);
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "names mission 'u1'") != null);
     clearWarnings(&warnings, allocator);
 
-    // Run 6 - a null warnings sink is a no-op (the checks exist to warn).
-    checkCampaignGraph(clean, campaign_path, &file_source, allocator, null);
+    // Run 6 - direction handling: three exits on start - unauthored (the
+    // auto-spread default 360*0/3 = 0), authored 42, and unparsable
+    // (warns + falls back to the default 360*2/3 = 240). far keeps its
+    // single exit (default 0).
+    file_source.writeFile(
+        "campaigns/check/hubs/start/hub.txt",
+        "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u2\ndestination_hub far\n\ncharacter_code F\nmission_uuid u2\ndestination_hub far\ndirection 42\n\ncharacter_code G\nmission_uuid u2\ndestination_hub far\ndirection abc\n",
+    ) catch @panic("rewrite start hub for directions");
+    const directions = runPipeline(&file_source, allocator, "start", &clean_hubs, &warnings);
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "unparsable direction") != null);
+    clearWarnings(&warnings, allocator);
+    try std.testing.expectEqual(@as(usize, 4), directions.edges.len);
+    try std.testing.expectEqual(@as(i32, 0), directions.edges[0].direction_degrees);
+    try std.testing.expectEqual(@as(i32, 42), directions.edges[1].direction_degrees);
+    try std.testing.expectEqual(@as(i32, 240), directions.edges[2].direction_degrees);
+    try std.testing.expectEqual(@as(i32, 0), directions.edges[3].direction_degrees);
+    freePipeline(directions, allocator);
+
+    // Run 7 - a null warnings sink is a no-op through the whole pipeline
+    // (the checks exist to warn).
+    const null_sink = runPipeline(&file_source, allocator, "start", &clean_hubs, null);
+    freePipeline(null_sink, allocator);
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
 }
 

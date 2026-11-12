@@ -3314,6 +3314,11 @@ pub const CampaignHub = struct {
     uuid: []const u8,
     dir: []const u8,
     position: Vector2,
+    /// Display name, denormalized from hub.txt's Metadata at load (the
+    /// mission-table precedent: map labels + warnings without re-reading
+    /// files). Empty for an unresolved hub (no readable hub.txt to read
+    /// it from) or a hub file without a name.
+    name: []const u8 = &.{},
 };
 
 /// One mission entry in the campaign's resolved mission table: the
@@ -3328,6 +3333,29 @@ pub const CampaignMissionEntry = struct {
     uuid: []const u8,
     dir: []const u8,
     name: []const u8,
+};
+
+/// One derived mission edge in the campaign's edge table - the graph the
+/// map view renders and map-acting legality reads (see DESIGN → Campaigns
+/// & the Campaign Editor → The map surface). Derived by the load scan
+/// (`loaders.deriveCampaignEdges`) from each hub's Exits; every string is
+/// owned by the campaign. `destination` is the exit's destination_hub
+/// uuid - EMPTY means a dangling forward reference (renders as a dashed
+/// stub bearing `direction_degrees`; save-legal by design, warned by the
+/// load-time graph checks). `mission_dir` + `mission_name` are the
+/// mission's scan-resolved identity (empty when no mission in the campaign
+/// resolves to `mission_uuid` - also warned). `direction_degrees` is the
+/// EFFECTIVE direction: the authored value, else the auto-spread default
+/// (see DESIGN → Edge geometry). `exit_index` is the exit's group index in
+/// its hub file - the parallel-spread input for same-pair straight edges.
+pub const CampaignEdgeEntry = struct {
+    from: []const u8,
+    destination: []const u8,
+    mission_uuid: []const u8,
+    mission_dir: []const u8,
+    mission_name: []const u8,
+    direction_degrees: i32,
+    exit_index: u32,
 };
 
 /// The loaded campaign. Self-owned: `name`, `start_hub`, `campaign_uuid`,
@@ -3347,6 +3375,9 @@ pub const Campaign = struct {
     background: []const u8 = &.{},
     hubs: []const CampaignHub = &.{},
     missions: []const CampaignMissionEntry = &.{},
+    /// The derived edge table (see `CampaignEdgeEntry`) - one entry per
+    /// resolvable exit across all placed hubs, built by the load scan.
+    edges: []const CampaignEdgeEntry = &.{},
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for
