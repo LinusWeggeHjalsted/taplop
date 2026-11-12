@@ -67,7 +67,11 @@ fn validateConfigFile(
         // dangling edge or unplaced start hub fails HERE (the integrity
         // contract over real content).
         const campaign_dir = path[0..std.mem.lastIndexOfScalar(u8, path, '/').?];
-        const campaign = try loaders.loadCampaign(sections, campaign_dir, allocator, warnings);
+        var campaign = try loaders.loadCampaign(sections, campaign_dir, allocator, warnings);
+        // The same resolution scans the load runs (hub dirs + the mission
+        // table) - the shipped campaign must resolve like any other.
+        campaign.missions = loaders.resolveCampaignMissions(campaign, file_source, allocator, warnings);
+        loaders.resolveCampaignHubs(&campaign, file_source, allocator, warnings);
         loaders.checkCampaignGraph(campaign, campaign_dir, file_source, allocator, warnings);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/hub.txt")) {

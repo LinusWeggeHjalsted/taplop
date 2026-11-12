@@ -1,10 +1,11 @@
 Metadata
-file_format_version 2
+file_format_version 3
 
 Info
 player_name New Player
 current_campaign main_campaign
-current_hub camp_at_the_crossroads
+current_campaign_uuid 8ecb3f44-9a3d-497c-95a9-a000b8517b7d
+current_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
 turns 0
 deaths 0
 defeated_enemies 0
@@ -16,7 +17,8 @@ cloth_salvage 0
 knowledge 0
 
 DiscoveredHubs
-name camp_at_the_crossroads
+campaign_uuid 8ecb3f44-9a3d-497c-95a9-a000b8517b7d
+name 03aeefda-c68b-4853-b65a-d46edb9790f1
 
 UnlockedSkills
 name blink

@@ -454,6 +454,20 @@ survived many sessions this way).
   Found as the repo-link bug (xdg-open exit 3 from the game, exit 0 from
   any shell); the spawn design was then removed entirely in favor of the
   clipboard - history in DONE.md.
+- **Comptime-built arrays over `StaticStringMap` key slices mis-materialize
+  (Zig 0.17.1)**: comptime arrays (fixed-size OR `++`-grown) whose elements
+  are slices into `generated_assets` map keys read back as 0xaa undefined
+  fill at runtime when the slice has a non-zero start offset - and
+  unreliably even for start-0 slices in some array shapes (elements beyond
+  the first lost). Isolated during campaign-editor slice 2a
+  (`official_mission_dir_paths`; DONE.md has the full debugging record).
+  The reliable shapes: the map's OWN keys (every `map.get` depends on
+  them), and RUNTIME slicing of those keys (plain pointer arithmetic on
+  lowered static data). So: derive lists from the embedded map at RUNTIME
+  (the `officialMissionDirPaths` scan is the pattern), and keep comptime
+  walks to VALUE payloads (u32 counts, not string slices). A comptime
+  `++`-grown block over the same keys can also corrupt a SIBLING block's
+  materialization - two comptime scans over one map is twice the risk.
 - `std.heap.page_allocator` is UNUSABLE on wasm32-emscripten: on wasm it is
   BrkAllocator, which grows memory via the raw `@wasmMemoryGrow` intrinsic
   behind emscripten's back - the JS heap views detach and SAFE_HEAP bounds

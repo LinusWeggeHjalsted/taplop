@@ -60,62 +60,257 @@ fn isInvalidRelativePath(path: []const u8) bool {
 /// browser's Official tab, and the shape every campaign-content path uses
 /// (the official campaign's bytes resolve through readFile's embedded
 /// `data/`-prefix bridge; see DESIGN → Campaigns & the Campaign Editor →
-/// Campaign content paths). Comptime from the embedded map (shipped
-/// content is immutable per build; the map KEYS are `data/`-prefixed, so
-/// the scan strips the prefix at the boundary). Sorted for a stable
-/// browser order. Mirrors ui/editor_pickers.zig's
-/// `official_entity_sprite_stems` comptime scan.
-/// The OFFICIAL missions' level counts, comptime from the embedded map:
-/// dir path -> the largest N with level_1..level_N embedded. Shipped
-/// content is immutable per build, so this is machine-walked truth with
-/// zero runtime cost (the runtime probe + the persistent scan derive the
-/// same rule from disk listings).
-const official_mission_level_counts: []const u32 = build: {
-    @setEvalBranchQuota(20000);
-    var counts: []const u32 = &.{};
-    for (official_mission_dir_paths) |dir_path| {
-        var count: u32 = 0;
-        probe: while (true) {
-            const probe_path = "data/" ++ dir_path ++ "/level_" ++
-                std.fmt.comptimePrint("{d}", .{count + 1}) ++ ".txt";
-            for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
-                if (std.mem.eql(u8, key, probe_path)) {
-                    count += 1;
-                    continue :probe;
-                }
-            }
-            break :probe;
-        }
-        counts = counts ++ [_]u32{count};
+/// Campaign content paths). RUNTIME scan of the embedded map, sorted for
+/// a stable browser order - deliberately NOT comptime: comptime-built
+/// arrays over the map's key slices mis-materialize on this toolchain
+/// (Zig 0.17.1 - elements read back as 0xaa undefined fill in every
+/// array/growth shape tried; isolated with an in-file minimal test), while
+/// the map's own keys are reliably readable at runtime (every readFile
+/// depends on that). Caller owns the slice + every element (free each,
+/// then the slice). Mirrors ui/editor_pickers.zig's
+/// `official_entity_sprite_stems` comptime scan in purpose.
+pub fn officialMissionDirPaths(allocator: std.mem.Allocator) []const []const u8 {
+    var dirs: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (dirs.items) |dir| allocator.free(dir);
+        dirs.deinit(allocator);
     }
-    break :build counts;
+    for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
+        if (!isOfficialMissionDirKey(key)) continue;
+        // Strip the embedded map's `data/` addressing prefix: the dir
+        // path is a CONTENT path from here on (readFile/readEmbeddedFile
+        // re-add the prefix when they need the embedded key).
+        const content_dir = key["data/".len .. key.len - "/mission.txt".len];
+        dirs.append(allocator, allocator.dupe(u8, content_dir) catch
+            @panic("failed to dupe official mission dir")) catch
+            @panic("failed to append official mission dir");
+    }
+    std.mem.sort([]const u8, dirs.items, {}, struct {
+        fn before(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.before);
+    return dirs.toOwnedSlice(allocator) catch @panic("failed to own official mission dirs");
+}
+
+/// One embedded-map key is an official campaign mission dir's mission.txt
+/// (data/campaigns/<campaign>/missions/<stem>/mission.txt with single
+/// plain campaign + stem segments).
+fn isOfficialMissionDirKey(key: []const u8) bool {
+    if (!std.mem.startsWith(u8, key, "data/campaigns/")) return false;
+    if (!std.mem.endsWith(u8, key, "/mission.txt")) return false;
+    const missions_index = std.mem.indexOf(u8, key, "/missions/") orelse return false;
+    const campaign = key["data/campaigns/".len..missions_index];
+    if (campaign.len == 0 or std.mem.indexOfScalar(u8, campaign, '/') != null) return false;
+    const stem = key[missions_index + "/missions/".len .. key.len - "/mission.txt".len];
+    if (stem.len == 0 or std.mem.indexOfScalar(u8, stem, '/') != null) return false;
+    return true;
+}
+
+/// The OFFICIAL missions' level counts, derived from the embedded map at
+/// runtime: dir path -> the largest N with level_1..level_N embedded (the
+/// same rule as everywhere - a gap truncates). Used by the Official tab;
+/// the runtime probe + the persistent scan derive the same rule from
+/// their sources.
+fn officialMissionLevelCount(dir_path: []const u8) u32 {
+    var count: u32 = 0;
+    while (true) {
+        var probe_buf: [128]u8 = undefined;
+        const probe_path = std.fmt.bufPrint(
+            &probe_buf,
+            "data/{s}/level_{d}.txt",
+            .{ dir_path, count + 1 },
+        ) catch break;
+        if (embedded_assets.map.get(probe_path) == null) break;
+        count += 1;
+    }
+    return count;
+}
+
+/// The embedded OFFICIAL campaign dirs (content-root-relative, e.g.
+/// "campaigns/main_campaign") - the campaign-level counterpart of
+/// `official_mission_dir_paths`. Comptime from the embedded map: every
+/// `data/campaigns/<campaign>/campaign.txt` key with a single plain
+/// campaign segment.
+/// The embedded map's keys (project-root-relative, `data/`-prefixed for
+/// campaign content). The raw comptime list for scans that walk arbitrary
+/// embedded subtrees (the hub-dir scan). Returns a RUNTIME slice duped
+/// into `allocator` (comptime slices can't be returned as mutable-length
+/// runtime slices).
+pub fn embeddedMapKeys(allocator: std.mem.Allocator) []const []const u8 {
+    var keys: std.ArrayList([]const u8) = .empty;
+    for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
+        keys.append(allocator, key) catch @panic("failed to append embedded key");
+    }
+    return keys.toOwnedSlice(allocator) catch @panic("failed to own embedded keys");
+}
+
+/// The embedded campaign's mission dirs under one campaign
+/// (content-root-relative), for the embedded tier of mission uuid
+/// resolution. Caller-owned.
+pub fn officialMissionDirPathsForCampaign(campaign_dir: []const u8, allocator: std.mem.Allocator) []const []const u8 {
+    const official_dirs = officialMissionDirPaths(allocator);
+    defer {
+        for (official_dirs) |dir| allocator.free(dir);
+        allocator.free(official_dirs);
+    }
+    var dirs: std.ArrayList([]const u8) = .empty;
+    for (official_dirs) |dir_path| {
+        if (!std.mem.startsWith(u8, dir_path, campaign_dir)) continue;
+        if (dir_path.len <= campaign_dir.len or dir_path[campaign_dir.len] != '/') continue;
+        dirs.append(allocator, allocator.dupe(u8, dir_path) catch
+            @panic("failed to dupe embedded mission dir")) catch
+            @panic("failed to append embedded mission dir");
+    }
+    return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded mission dirs");
+}
+
+/// Read just the Metadata `<uuid_key>` value out of a small config file
+/// (campaign.txt / hub.txt / mission.txt) - the uuid-resolution probe.
+/// Returns null when the file is unreadable/unparsable or carries no such
+/// key. Uses a throwaway arena: the returned slice is duped into
+/// `allocator` and owns nothing else.
+fn readConfigUuid(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    sections: []const []const u8,
+    uuid_key: []const u8,
+) ?[]const u8 {
+    var probe_arena = std.heap.ArenaAllocator.init(allocator);
+    defer probe_arena.deinit();
+    const bytes = file_source.readFile(probe_arena.allocator(), path) catch return null;
+    const parsed = parser.parseConfigFile(bytes, probe_arena.allocator(), sections) catch return null;
+    const metadata = parser.findSection(parsed, "Metadata") orelse return null;
+    if (metadata.entry_groups.len == 0) return null;
+    const value = parser.findValue(metadata.entry_groups[0].pairs, uuid_key) orelse return null;
+    return allocator.dupe(u8, value) catch @panic("failed to dupe config uuid");
+}
+
+/// One uuid-resolution candidate: a dir + its evidence (the uuid read
+/// from its config file + the folder mtime for duplicate tiebreaking).
+const UuidDirCandidate = struct {
+    dir: []const u8,
+    uuid: []const u8,
+    mtime_ns: i128,
 };
 
-const official_mission_dir_paths: []const []const u8 = build: {
-    @setEvalBranchQuota(20000);
-    var paths: []const []const u8 = &.{};
-    for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
-        if (!std.mem.startsWith(u8, key, "data/campaigns/")) continue;
-        if (!std.mem.endsWith(u8, key, "/mission.txt")) continue;
-        const missions_index = std.mem.indexOf(u8, key, "/missions/") orelse continue;
-        // The campaign segment between the prefix and "/missions/" must be
-        // a single plain path segment (no nesting beyond campaign/missions/).
-        const campaign = key["data/campaigns/".len..missions_index];
-        if (campaign.len == 0 or std.mem.indexOfScalar(u8, campaign, '/') != null) continue;
-        const stem = key[missions_index + "/missions/".len .. key.len - "/mission.txt".len];
-        if (stem.len == 0 or std.mem.indexOfScalar(u8, stem, '/') != null) continue;
-        // Strip the embedded map's `data/` addressing prefix: the dir path
-        // is a CONTENT path from here on (readFile/readEmbeddedFile re-add
-        // the prefix when they need the embedded key).
-        const dir_path = key["data/".len .. key.len - "/mission.txt".len];
-        // Insert in sorted position (comptime slices have const elements -
-        // no in-place sort).
-        var insert_index: usize = 0;
-        while (insert_index < paths.len and std.mem.lessThan(u8, paths[insert_index], dir_path)) : (insert_index += 1) {}
-        paths = paths[0..insert_index] ++ [_][]const u8{dir_path} ++ paths[insert_index..];
-    }
-    break :build paths;
+/// The result of a uuid->dir resolution: the winning dir (caller-owned)
+/// + whether duplicates were seen (the caller surfaces the warning).
+pub const UuidDirResolution = struct {
+    dir: []const u8,
+    duplicate: bool,
 };
+
+/// Resolve a content uuid to its storage dir under one parent (both
+/// tiers: the persistent dir +, for campaign content, the embedded map -
+/// embedded counts as mtime 0 so a persistent copy always wins, matching
+/// FileSource's persistent-first read order). Duplicate uuids resolve
+/// LATEST-MTIME WINS, name-ascending on exact ties (see DESIGN →
+/// Campaigns & the Campaign Editor → Uuid→dir resolution). Returns the
+/// winning dir (caller-owned) + true when duplicates were seen, so the
+/// caller can surface the warning. Null when no candidate matches.
+pub fn resolveUuidDir(
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    parent: []const u8,
+    embedded_dirs: []const []const u8,
+    config_name: []const u8,
+    sections: []const []const u8,
+    uuid_key: []const u8,
+    uuid: []const u8,
+) ?UuidDirResolution {
+    var candidates: std.ArrayList(UuidDirCandidate) = .empty;
+    defer {
+        for (candidates.items) |candidate| {
+            allocator.free(candidate.dir);
+            allocator.free(candidate.uuid);
+        }
+        candidates.deinit(allocator);
+    }
+
+    // Tier 1: the persistent dir's subdirs (absent parent dir - fresh
+    // install - simply contributes no candidates; the embedded tier
+    // below still runs).
+    if (file_source.persistent_dir.openDir(file_source.io, parent, .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch null) |parent_dir| {
+        defer std.Io.Dir.close(parent_dir, file_source.io);
+        var it = parent_dir.iterate();
+        while (it.next(file_source.io) catch null) |dir_entry| {
+            if (dir_entry.kind != .directory) continue;
+            const dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ parent, dir_entry.name }) catch
+                @panic("failed to build candidate dir");
+            defer allocator.free(dir);
+            const config_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ dir, config_name }) catch
+                @panic("failed to build candidate config path");
+            defer allocator.free(config_path);
+            const found_uuid = readConfigUuid(file_source, allocator, config_path, sections, uuid_key) orelse continue;
+            defer allocator.free(found_uuid);
+            if (!std.mem.eql(u8, found_uuid, uuid)) continue;
+            const mtime = dirMtime(file_source, dir);
+            candidates.append(allocator, .{
+                .dir = allocator.dupe(u8, dir) catch @panic("failed to dupe candidate dir"),
+                .uuid = allocator.dupe(u8, found_uuid) catch @panic("failed to dupe candidate uuid"),
+                .mtime_ns = mtime,
+            }) catch @panic("failed to append candidate");
+        }
+    }
+
+    // Tier 2: the embedded dirs (campaign content - mtime 0).
+    for (embedded_dirs) |embedded_dir| {
+        const config_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ embedded_dir, config_name }) catch
+            @panic("failed to build candidate config path");
+        defer allocator.free(config_path);
+        const found_uuid = readConfigUuid(file_source, allocator, config_path, sections, uuid_key) orelse continue;
+        defer allocator.free(found_uuid);
+        if (!std.mem.eql(u8, found_uuid, uuid)) continue;
+        candidates.append(allocator, .{
+            .dir = allocator.dupe(u8, embedded_dir) catch @panic("failed to dupe candidate dir"),
+            .uuid = allocator.dupe(u8, found_uuid) catch @panic("failed to dupe candidate uuid"),
+            .mtime_ns = 0,
+        }) catch @panic("failed to append candidate");
+    }
+
+    if (candidates.items.len == 0) return null;
+
+    // Latest mtime wins; name-ascending breaks exact ties. Deterministic
+    // under all inputs (the settle's requirement).
+    var best: usize = 0;
+    var index: usize = 1;
+    while (index < candidates.items.len) : (index += 1) {
+        const better = candidates.items[index].mtime_ns > candidates.items[best].mtime_ns or
+            (candidates.items[index].mtime_ns == candidates.items[best].mtime_ns and
+                std.mem.lessThan(u8, candidates.items[index].dir, candidates.items[best].dir));
+        if (better) best = index;
+    }
+    const winner = candidates.items[best];
+    return .{
+        .dir = allocator.dupe(u8, winner.dir) catch @panic("failed to dupe resolved dir"),
+        .duplicate = candidates.items.len > 1,
+    };
+}
+
+/// The max mtime across a dir's direct file entries (the duplicate-
+/// resolution recency stamp - any change to any file is an update). An
+/// unreadable dir reports 0. Pub: the campaign load's scans share the
+/// stamp.
+pub fn dirMtime(file_source: *const FileSource, dir: []const u8) i128 {
+    const opened = file_source.persistent_dir.openDir(file_source.io, dir, .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch return 0;
+    defer std.Io.Dir.close(opened, file_source.io);
+    var max_mtime: i128 = 0;
+    var it = opened.iterate();
+    while (it.next(file_source.io) catch null) |dir_entry| {
+        if (dir_entry.kind == .directory) continue;
+        const stat = opened.statFile(file_source.io, dir_entry.name, .{}) catch continue;
+        max_mtime = @max(max_mtime, stat.mtime.nanoseconds);
+    }
+    return max_mtime;
+}
 
 /// The content-root-relative location a `custom/...` sprite id resolves
 /// to: everything after the `custom/` path segment IS the file's location
@@ -233,8 +428,8 @@ pub const FileSource = struct {
             const embedded_key = std.fmt.allocPrint(allocator, "data/{s}", .{path}) catch
                 @panic("failed to build embedded data/ lookup key");
             defer allocator.free(embedded_key);
-            if (embedded_assets.map.get(embedded_key)) |bytes| {
-                return allocator.dupe(u8, bytes) catch @panic("failed to dupe embedded file bytes");
+            if (embedded_assets.map.get(embedded_key)) |bytes2| {
+                return allocator.dupe(u8, bytes2) catch @panic("failed to dupe embedded file bytes");
             }
         }
         return error.FileNotFound;
@@ -623,7 +818,12 @@ pub const FileSource = struct {
             entries.deinit(allocator);
         }
 
-        for (official_mission_dir_paths, 0..) |dir_path, dir_index| {
+        const official_dirs = officialMissionDirPaths(allocator);
+        defer {
+            for (official_dirs) |dir| allocator.free(dir);
+            allocator.free(official_dirs);
+        }
+        for (official_dirs) |dir_path| {
             const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{dir_path});
             defer allocator.free(mission_txt_path);
             const mission_bytes = self.readEmbeddedFile(allocator, mission_txt_path) catch continue;
@@ -656,9 +856,10 @@ pub const FileSource = struct {
                 .id = id,
                 .path = path,
                 .name = name,
-                // Comptime-derived (the embedded map's consecutive level
-                // files) - see official_mission_level_counts.
-                .level_count = official_mission_level_counts[dir_index],
+                // Derived from the embedded map's consecutive level files
+                // (the same rule as everywhere - see
+                // officialMissionLevelCount).
+                .level_count = officialMissionLevelCount(dir_path),
                 .has_custom_assets = false,
                 .author_turns = null,
             });
@@ -1242,6 +1443,25 @@ test "missionOrder: mtime descending, name ascending tiebreak" {
     try testing.expectEqualStrings("Alpha", entries[0].name);
     try testing.expectEqualStrings("Beta", entries[1].name);
     try testing.expectEqualStrings("Older", entries[2].name);
+}
+
+test "officialMissionDirPaths: the four shipped dirs, content-shaped + sorted" {
+    const allocator = testing.allocator;
+    const dirs = officialMissionDirPaths(allocator);
+    defer {
+        for (dirs) |dir| allocator.free(dir);
+        allocator.free(dirs);
+    }
+    const expected = [_][]const u8{
+        "campaigns/main_campaign/missions/beginnings",
+        "campaigns/main_campaign/missions/forest",
+        "campaigns/main_campaign/missions/seatown",
+        "campaigns/main_campaign/missions/wetlands",
+    };
+    try testing.expectEqual(expected.len, dirs.len);
+    for (dirs, expected) |actual, want| {
+        try testing.expectEqualStrings(want, actual);
+    }
 }
 
 test "listOfficialMissions: the shipped campaign missions with paths + metadata" {

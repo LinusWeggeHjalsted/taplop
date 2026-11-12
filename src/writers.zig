@@ -46,6 +46,7 @@ fn writePlayerSave(
     try buffer.appendSlice(allocator, "\nInfo\n");
     try buffer.print(allocator, "player_name {s}\n", .{player_data.player_name});
     try buffer.print(allocator, "current_campaign {s}\n", .{player_data.current_campaign});
+    try buffer.print(allocator, "current_campaign_uuid {s}\n", .{player_data.current_campaign_uuid});
     try buffer.print(allocator, "current_hub {s}\n", .{player_data.current_hub});
     try buffer.print(allocator, "turns {d}\n", .{player_data.turns});
     try buffer.print(allocator, "deaths {d}\n", .{player_data.deaths});
@@ -57,12 +58,19 @@ fn writePlayerSave(
     try buffer.print(allocator, "cloth_salvage {d}\n", .{player_data.materials.cloth});
     try buffer.print(allocator, "knowledge {d}\n", .{player_data.materials.knowledge});
 
-    // DiscoveredHubs
+    // DiscoveredHubs - one group per campaign: the campaign_uuid line,
+    // then one `name` (hub uuid) per entry group (the parser's grouping
+    // shape: names after their campaign_uuid line belong to it).
     try buffer.appendSlice(allocator, "\nDiscoveredHubs\n");
-    for (player_data.discovered_hubs, 0..) |hub_name, index| {
-        try buffer.print(allocator, "name {s}\n", .{hub_name});
-        if (index < player_data.discovered_hubs.len - 1) {
-            try buffer.appendSlice(allocator, "\n");
+    for (player_data.discovered_hubs, 0..) |group, group_index| {
+        try buffer.print(allocator, "campaign_uuid {s}\n\n", .{group.campaign_uuid});
+        for (group.hub_uuids, 0..) |hub_uuid, hub_index| {
+            try buffer.print(allocator, "name {s}\n", .{hub_uuid});
+            const last_in_group = hub_index == group.hub_uuids.len - 1;
+            const last_group = group_index == player_data.discovered_hubs.len - 1;
+            if (!last_in_group or !last_group) {
+                try buffer.appendSlice(allocator, "\n");
+            }
         }
     }
 

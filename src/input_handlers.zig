@@ -5332,8 +5332,18 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
     // forward reference, legal by design).
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
     const exits = [_]types.MissionExit{
-        .{ .mission_id = "beginnings", .destination_hub = "far_camp", .position = .{ .x = 1, .y = 0 } },
-        .{ .mission_id = "beginnings", .destination_hub = "", .position = .{ .x = 2, .y = 0 } },
+        .{ .mission_uuid = "beginnings-uuid", .destination_hub = "far_camp", .position = .{ .x = 1, .y = 0 } },
+        .{ .mission_uuid = "beginnings-uuid", .destination_hub = "", .position = .{ .x = 2, .y = 0 } },
+    };
+    // The loaded campaign the exit click resolves through (the mission
+    // table: beginnings-uuid -> dir). Static strings are fine here: the
+    // handler only reads the table.
+    const campaign = types.Campaign{
+        .uuid = "campaign-uuid",
+        .dir = "main_campaign",
+        .missions = &.{
+            .{ .uuid = "beginnings-uuid", .dir = "campaigns/main_campaign/missions/beginnings", .name = "Beginnings" },
+        },
     };
 
     // Exit A: the destination rides the recorded start_mission (the event,
@@ -5346,7 +5356,7 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
             .camera = null,
             .editor = null,
             .replay_viewer = null,
-            .campaign = null,
+            .campaign = campaign,
             .mission = null,
             .level = null,
             .hub = .{
@@ -5382,7 +5392,7 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
             .camera = null,
             .editor = null,
             .replay_viewer = null,
-            .campaign = null,
+            .campaign = campaign,
             .mission = null,
             .level = null,
             .hub = .{

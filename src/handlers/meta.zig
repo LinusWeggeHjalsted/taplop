@@ -30,6 +30,8 @@ const pushEvents = event_push.pushEvents;
 const failReconstructionRead = shared.failReconstructionRead;
 const surfaceWarnings = shared.surfaceWarnings;
 const validateConfigKeys = shared.validateConfigKeys;
+const hubDirForUuid = shared.hubDirForUuid;
+const discoverHub = shared.discoverHub;
 const loadCampaignAndPushHub = shared.loadCampaignAndPushHub;
 const pushGameplayStartEvents = shared.pushGameplayStartEvents;
 
@@ -153,13 +155,27 @@ pub fn handleMetaEvent(
         },
         .start_hub => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
-            // Build hub file path: campaigns/{campaign}/hubs/{hub_id}/hub.txt
+            // Resolve the hub uuid to its dir through the loaded
+            // campaign's table (state, never the filesystem - replay
+            // derives the same path from the same state). A hub uuid the
+            // table can't resolve is a hand-edited dangling reference:
+            // the recoverable popup, not a crash.
+            const hub_dir = hubDirForUuid(current, start.hub_id) orelse {
+                const message = std.fmt.allocPrint(
+                    history.history_arena.allocator(),
+                    "start_hub: no hub resolves to uuid '{s}' in campaign '{s}'",
+                    .{ start.hub_id, current.player_data.current_campaign },
+                ) catch @panic("failed to format hub resolution error");
+                history.session.setPendingError(history.history_arena.allocator(), message);
+                return;
+            };
+            // Build hub file path: campaigns/{campaign}/hubs/{hub_dir}/hub.txt
             // (content-root-relative - see DESIGN → Campaigns & the
             // Campaign Editor → Campaign content paths).
             const hub_path = std.fmt.allocPrint(
                 allocator,
                 "campaigns/{s}/hubs/{s}/hub.txt",
-                .{ current.player_data.current_campaign, start.hub_id },
+                .{ current.player_data.current_campaign, hub_dir },
             ) catch @panic("failed to allocate hub path");
 
             const hub_sections = blk: {
@@ -187,6 +203,12 @@ pub fn handleMetaEvent(
             surfaceWarnings(history, &balance_warnings, allocator);
 
             current.player_data.current_hub = start.hub_id;
+            // Discovery: arriving IS discovering (the ONE rule - new
+            // game, mission completion, travel, cross-campaign entry,
+            // mission-from-map all land here). Idempotent append into
+            // the active campaign's group (DESIGN → Campaigns & the
+            // Campaign Editor → Discovery + travel).
+            discoverHub(current, allocator, start.hub_id);
             current.world_generation +%= 1;
             current.transitionScreen(.hub);
 

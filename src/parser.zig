@@ -40,7 +40,10 @@ pub const oldest_supported_level_file_format_version: u32 = 1;
 /// (the entity fields name/sprite are gone); Exits gain `destination_hub`.
 /// v3 (parser grammar): counted layouts, exactly as levels v2 - a
 /// current-version hub with a bare Layout errors (UncountedLayout).
-pub const hub_file_format_version: u32 = 3;
+/// v4 (campaign-editor slice 2a): Metadata gains `hub_uuid`; Exits carry
+/// `mission_uuid` + `destination_hub` (a uuid) + `direction` (degrees -
+/// see DESIGN → Campaigns & the Campaign Editor → Edge geometry).
+pub const hub_file_format_version: u32 = 4;
 /// The range floor: v2 hub files (bare `Layout`) still load under the
 /// legacy grammar.
 pub const oldest_supported_hub_file_format_version: u32 = 2;
@@ -52,8 +55,14 @@ pub const mission_file_format_version: u32 = 3;
 /// v2 (campaign-editor slice 1): Metadata gains `background` (a bare stem
 /// for a PNG in the campaign's own directory) + a `Hubs` section (hub_id +
 /// position, one group per placed hub).
-pub const campaign_file_format_version: u32 = 2;
-pub const player_save_file_format_version: u32 = 2;
+/// v3 (campaign-editor slice 2a): Metadata gains `campaign_uuid`;
+/// `start_hub` + `Hubs` entries key by `hub_uuid` (identity - see DESIGN
+/// → Campaigns & the Campaign Editor → Content identity).
+pub const campaign_file_format_version: u32 = 3;
+/// v3 (campaign-editor slice 2a): Info gains `current_campaign_uuid`;
+/// `current_hub` is a hub uuid; DiscoveredHubs entries carry a
+/// `campaign_uuid` key (groups: one campaign_uuid per group of names).
+pub const player_save_file_format_version: u32 = 3;
 pub const settings_file_format_version: u32 = 2;
 pub const color_themes_file_format_version: u32 = 1;
 pub const player_loadout_file_format_version: u32 = 2;
@@ -678,11 +687,11 @@ pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).
 // dangling forward reference, legal by design). Decorations share the
 // level decoration key set. Layout is a raw grid (excluded).
 
-const hub_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
+const hub_metadata_keys = [_][]const u8{ "file_format_version", "hub_uuid", "name", "color_wheel_index" };
 
 const hub_npcs_keys = [_][]const u8{ "character_code", "npc_type" };
 
-const hub_exits_keys = [_][]const u8{ "character_code", "mission_id", "destination_hub" };
+const hub_exits_keys = [_][]const u8{ "character_code", "mission_uuid", "destination_hub", "direction" };
 
 /// Hub file key map: section header → valid keys. Decorations share the
 /// level decoration key set (same format). Layout is excluded (raw grid).
@@ -711,9 +720,9 @@ pub const mission_key_map = std.StaticStringMap([]const []const u8).initComptime
 // PNG in the campaign's own directory). Hubs entries carry hub_id +
 // position (center-offset integers - see types.CampaignHub).
 
-const campaign_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub", "background" };
+const campaign_metadata_keys = [_][]const u8{ "file_format_version", "campaign_uuid", "name", "start_hub", "background" };
 
-const campaign_hubs_keys = [_][]const u8{ "hub_id", "position" };
+const campaign_hubs_keys = [_][]const u8{ "hub_uuid", "position" };
 
 pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &campaign_metadata_keys },
@@ -819,10 +828,13 @@ pub const tips_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
 // clone_name + turn count + materials. DiscoveredHubs entries carry `name`.
 
 const save_info_keys = [_][]const u8{
-    "player_name",     "current_campaign", "current_hub",
-    "turns",           "deaths",           "defeated_enemies",
-    "skills_used",     "wood_salvage",     "metal_salvage",
-    "leather_salvage", "cloth_salvage",    "knowledge",
+    "player_name",           "current_campaign",
+    "current_campaign_uuid", "current_hub",
+    "turns",                 "deaths",
+    "defeated_enemies",      "skills_used",
+    "wood_salvage",          "metal_salvage",
+    "leather_salvage",       "cloth_salvage",
+    "knowledge",
 };
 const save_unlocked_skills_keys = [_][]const u8{"name"};
 const save_weapon_keys = [_][]const u8{ "item_name", "weapon_type", "damage" };
@@ -843,7 +855,7 @@ const save_clone_data_keys = [_][]const u8{
     "wood",         "metal",      "leather",
     "cloth",        "knowledge",
 };
-const save_discovered_hubs_keys = [_][]const u8{"name"};
+const save_discovered_hubs_keys = [_][]const u8{ "campaign_uuid", "name" };
 
 pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &shared_metadata_keys },

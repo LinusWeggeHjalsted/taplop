@@ -306,6 +306,7 @@ working rules).
 - [discovered_hubs re-typed to a name set (review m-2.3)](#discoveredhubs-re-typed-to-a-name-set-review-m-23)
 - [campaign content paths re-shaped to content-root-relative (review Part 5 rider)](#campaign-content-paths-re-shaped-to-content-root-relative-review-part-5-rider)
 - [Campaign slice-2 design settle: uuid identity + the viewing model](#campaign-slice-2-design-settle-uuid-identity--the-viewing-model)
+- [campaign-editor slice 2a+2b: uuid identity + scan resolution + the arrival rule](#campaign-editor-slice-2a2b-uuid-identity--scan-resolution--the-arrival-rule)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19470,3 +19471,75 @@ Copy, Campaign switching, Edge geometry):
 TODO's slice 2 re-cut into 2a-2e (+ the later new-game picker/speedrun
 seed) with the identity work concentrated in 2a; the editor-side
 rename/save-as machinery folded into slice 3.
+
+## campaign-editor slice 2a+2b: uuid identity + scan resolution + the arrival rule
+
+The identity half of slice 2 (DESIGN → Campaigns & the Campaign Editor →
+Content identity / Uuid→dir resolution / Discovery + travel), landed as
+one commit:
+
+- **The uuid sweep (formats v3/v4/save-v3)**: campaign.txt gains
+  `campaign_uuid` + uuid-keyed `start_hub`/`Hubs` entries; hub.txt gains
+  `hub_uuid` + Exits carry `mission_uuid` + `destination_hub` (uuid) +
+  `direction` (0/90/180/270 authored for the official campaign's four
+  self-loops); the player save gains `current_campaign_uuid`, a uuid
+  `current_hub`, and DiscoveredHubs entries grouped by `campaign_uuid`
+  (one group per campaign, names following their campaign_uuid line - a
+  name with no preceding campaign_uuid warns + drops). The official
+  campaign's files carry minted campaign + hub uuids (the four missions
+  already had theirs); new_player/autosave/max_player migrated.
+- **Scan-based uuid→dir resolution**: `file_source.resolveUuidDir` (the
+  generic core: persistent subdirs + an embedded-dirs tier, embedded =
+  mtime 0 so uuid resolution can never disagree with readFile's
+  persistent-first order; latest-mtime wins, name-ascending ties) +
+  `loaders.resolveCampaignHubs` (fills `CampaignHub.dir`) +
+  `loaders.resolveCampaignMissions` (builds `Campaign.missions` - the
+  uuid→dir+name table the graph + handlers read). Duplicate uuids warn
+  with the Save As Copy escape hatch. `loadCampaignAndPushHub` runs the
+  scans at load (state, never replay), verifies the save's
+  `current_campaign_uuid` against the loaded campaign (warn + proceed on
+  mismatch), then checkCampaignGraph runs over the resolved tables.
+- **The arrival rule (2b)**: `start_hub`'s handler resolves the hub uuid
+  through the loaded campaign's table (state - replay derives the same
+  path from the same state; a dangling uuid is the recoverable popup),
+  and `discoverHub` idempotently appends to the active campaign's
+  discovered group, creating the group on first arrival (new_game's
+  seeding IS that branch - no seeding code anywhere). The exit-click path
+  resolves the exit's mission_uuid through the campaign's mission table;
+  `player_replay_mission` matches exits by mission uuid (was: dir-name
+  basename).
+- **NOT the settled fat-event shape**: start_hub carries only the hub
+  uuid; the handler derives the dir from `current.campaign` in state -
+  the "campaign table in state" option approved mid-slice, strictly
+  cleaner than resolved-payload event fields (events stay thin, replay
+  stays pure).
+
+**The comptime-materialization bug this slice surfaced** (recorded in
+AGENTS → Zig Gotchas): comptime arrays over `generated_assets` map-key
+slices read back as 0xaa fill at runtime - offset-start slices always,
+start-0 slices beyond the first element in grown/array shapes, and a
+sibling comptime block can corrupt another's materialization. Every
+comptime shape was tried (grown `++`, fixed two-pass array,
+comptimePrint-fresh strings); all broke differently. The fix: derive the
+official mission dirs at RUNTIME (`officialMissionDirPaths` - the map's
+own keys are reliably readable at runtime, every readFile depends on it;
+runtime slicing is plain pointer arithmetic on lowered static data), and
+fold the level counts into a runtime probe (`officialMissionLevelCount`)
+- deleting `official_mission_dir_paths` +
+`official_mission_level_counts` (the comptime decls) entirely.
+
+**The debugging confounds that made it slow** (lessons, both now
+recorded): (1) `src/generated_test_root.zig` does not regenerate when
+new test files appear - configure-time generation, no retrigger - so a
+probe test silently didn't run until `.zig-cache/h` was cleared (open
+build bug in TODO). (2) One phantom "pass" was a compile error a
+too-narrow grep didn't match - grep for `error:` categories explicitly
+when claiming green. The decisive method once methodical: an in-file
+minimal test asserting every element (not just [0]) distinguished
+"elements 1+ corrupt" from "all corrupt" and killed the
+nondeterminism theory.
+
+Validation: full suite PASS (902 tests); the console smokes against the
+real binary - boot, click-through new game landing in the hub, and
+`dump player_data.discovered_hubs` showing the live-created group with
+the start hub's uuid.

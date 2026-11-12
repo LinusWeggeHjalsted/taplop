@@ -1,10 +1,11 @@
 Metadata
-file_format_version 2
+file_format_version 3
 name Main Campaign
-start_hub camp_at_the_crossroads
+campaign_uuid 8ecb3f44-9a3d-497c-95a9-a000b8517b7d
+start_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
 background map
 
 Hubs
 
-hub_id camp_at_the_crossroads
+hub_uuid 03aeefda-c68b-4853-b65a-d46edb9790f1
 position 0 0

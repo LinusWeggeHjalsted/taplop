@@ -91,6 +91,19 @@ entry); only the campaign-editor riders remain, folded into that work.
 
 ## NEXT UP (not ordered - pick what progresses)
 
+- **OPEN BUILD BUG (found during campaign-editor slice 2a): new test files
+  are NOT picked up until the configure step re-runs** -
+  `generateTestRootFile` writes `src/generated_test_root.zig` at CONFIGURE
+  time, and adding a `src/*.zig` file does not retrigger configure (only
+  build.zig/dependency changes do). The AGENTS claim "new test files
+  picked up automatically" is therefore conditional. Workaround while
+  open: force a reconfigure (`rm -rf .zig-cache/h`, then build). Proper
+  fixes to weigh: a build step with a directory-listing manifest
+  dependency, or deleting the generated root in favor of a comptime
+  directory walk. Cost a confusing debugging hour before it was spotted
+  (a probe test silently not running; see DONE.md, "campaign-editor
+  slice 2a+2b").
+
 - [x] **Parser grammar overhaul (per-format headers + counted layouts)** -
       ALL FIVE SLICES DONE (DONE.md, "Parser grammar slice 1" through
       "slice 5"; design: DESIGN → File System & IO → Config grammar +
@@ -520,7 +533,7 @@ work:
   - [ ] 2. Runtime (re-cut; the identity model + viewing model settled in
         DESIGN → Campaigns & the Campaign Editor - Content identity,
         Uuid→dir resolution, Campaign switching, Edge geometry):
-    - [ ] 2a. The identity + graph slice: the uuid sweep across
+    - [x] 2a. The identity + graph slice: the uuid sweep across
           campaign.txt (v3: campaign_uuid, uuid start_hub + Hubs
           entries) / hub.txt (v4: hub_uuid, uuid Exits: mission_uuid +
           destination_hub + direction) / the player save
@@ -531,12 +544,17 @@ work:
           warnings; resolved-payload event fields (start_hub carries
           campaign + hub uuids + dirs); official-data migration (mint
           campaign + hub uuids; exits switch to mission_uuids);
-          max_player/new_player fixture updates.
-    - [ ] 2b. The arrival rule (rides 2a's commit if it fits): the
+          max_player/new_player fixture updates. - LANDED (see DONE.md,
+          "campaign-editor slice 2a+2b"); note: start_hub resolves
+          uuid→dir through the loaded campaign's table in STATE
+          (the approved cleaner option), not fat event fields.
+    - [x] 2b. The arrival rule (rides 2a's commit if it fits): the
           start_hub handler discovers the arrived hub idempotently
           into the active campaign's group; campaign identity fields
           update on arrival; one rule covers new_game, completion,
-          travel, cross-campaign entry, mission-from-map.
+          travel, cross-campaign entry, mission-from-map. - LANDED
+          (same DONE entry; verified live: new game → discovered group
+          with the start hub's uuid).
     - [ ] 2c. The map surface: buildWorldMap (background, hubs, bezier
           edges incl. self-loops via direction, dim undiscovered) + the
           `curve` UiElement + backend draw + hit-testing; the

@@ -1080,7 +1080,7 @@ fn dumpLevelText(
                 allocator,
                 "mission_exit \"{s}\" ({d}, {d}) center {d} {d}\n",
                 .{
-                    mission_exit.mission_id,
+                    mission_exit.mission_uuid,
                     mission_exit.position.x,
                     mission_exit.position.y,
                     view.tileClickCenter(mission_exit.position, camera, camera_zoom).x,

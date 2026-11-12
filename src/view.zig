@@ -3245,7 +3245,7 @@ test "level-end flag: the banner waves only while no active enemies remain" {
     }
     // Hub mission-start markers always wave (not levels - no enemies).
     {
-        const exits = [_]types.MissionExit{.{ .mission_id = "m1", .position = .{ .x = 1, .y = 1 } }};
+        const exits = [_]types.MissionExit{.{ .mission_uuid = "m1", .position = .{ .x = 1, .y = 1 } }};
         const state_ = GameState{
             .screen = .hub,
             .event_stack = &.{},

@@ -2413,16 +2413,31 @@ pub const Clone = struct {
     materials_collected: Materials = .{},
 };
 
+/// One campaign's discovered-hub group on PlayerData: every hub uuid the
+/// player has arrived at, keyed by the campaign's identity. Hub uuids are
+/// only unique within their campaign, so the group IS the scoping (see
+/// DESIGN → Campaigns & the Campaign Editor → Discovery + travel).
+pub const DiscoveredCampaignHubs = struct {
+    campaign_uuid: []const u8 = &.{},
+    hub_uuids: []const []const u8 = &.{},
+};
+
 pub const PlayerData = struct {
     player_name: []const u8 = &.{},
+    /// The active campaign's storage dir (the resolution root pointer -
+    /// verified against `current_campaign_uuid` at load) + its identity.
     current_campaign: []const u8 = &.{},
+    current_campaign_uuid: []const u8 = &.{},
+    /// The last-visited hub, as a hub uuid (the single resume point - see
+    /// DESIGN → Campaigns & the Campaign Editor → Campaign switching).
     current_hub: []const u8 = &.{},
     materials: Materials = .{},
     clones: []const Clone = &.{},
-    /// Hub NAMES (dir names) discovered in the current campaign; seeded at
-    /// new_game, grown on arrival (DESIGN → Campaigns & the Campaign Editor
-    /// → Discovery + travel).
-    discovered_hubs: []const []const u8 = &.{},
+    /// Discovered hubs GROUPED BY CAMPAIGN (one entry per campaign the
+    /// player has visited; groups for uninstalled campaigns are kept).
+    /// Grown on arrival (DESIGN → Campaigns & the Campaign Editor →
+    /// Discovery + travel).
+    discovered_hubs: []const DiscoveredCampaignHubs = &.{},
     learned_skills: []const SkillId = &.{},
     turns: u32 = 0,
     deaths: u32 = 0,
@@ -3282,32 +3297,56 @@ pub const Editor = struct {
 
 pub const ReplayViewer = struct {};
 
-/// One placed hub on the campaign map. `id` is the hub's directory name
-/// (the reference everywhere - exits' destination_hub, start_hub, saves).
-/// `position` is the hub icon's CENTER as an offset from the map's center:
-/// integer background-pixel space, `0 0` = the center (where the
-/// background is anchored), UNBOUNDED in every direction (a hub outside
-/// the map view's default framing is reachable by zooming out - the
-/// levels-are-infinite philosophy; no clamps, no validation). The map
-/// view's default framing (a 3840x2160 region centered on the origin) is
-/// a VIEW constant, never campaign data. See DESIGN → Campaigns & the
-/// Campaign Editor → The map coordinate model.
+/// One placed hub on the campaign map. `uuid` is the hub's identity
+/// (authored in hub.txt; the reference everywhere - exits'
+/// destination_hub, start_hub, saves); `dir` is the storage directory
+/// name the scan resolved (arbitrary, never referenced - see DESIGN →
+/// Campaigns & the Campaign Editor → Content identity + Uuid→dir
+/// resolution). `position` is the hub icon's CENTER as an offset from
+/// the map's center: integer background-pixel space, `0 0` = the center
+/// (where the background is anchored), UNBOUNDED in every direction (a
+/// hub outside the map view's default framing is reachable by zooming
+/// out - the levels-are-infinite philosophy; no clamps, no validation).
+/// The map view's default framing (a 3840x2160 region centered on the
+/// origin) is a VIEW constant, never campaign data. See DESIGN →
+/// Campaigns & the Campaign Editor → The map coordinate model.
 pub const CampaignHub = struct {
-    id: []const u8,
+    uuid: []const u8,
+    dir: []const u8,
     position: Vector2,
 };
 
-/// The loaded campaign. Self-owned: `name`, `start_hub`, and every hub id
-/// are duped by `loadCampaign`; `background` holds the RESOLVED
-/// content-addressed sprite id (minted at load from the bare stem in
-/// campaign.txt + the campaign's content path - see
+/// One mission entry in the campaign's resolved mission table: the
+/// uuid (identity) + storage dir (scan-resolved; the dir name under the
+/// campaign's `missions/`) + the display name (denormalized from
+/// mission.txt for map labels + warnings without re-reading files).
+/// The campaign load scan builds the table; recorded handlers resolve
+/// mission references through IT (never the filesystem) so replay stays
+/// pure (see DESIGN → Campaigns & the Campaign Editor → Uuid→dir
+/// resolution).
+pub const CampaignMissionEntry = struct {
+    uuid: []const u8,
+    dir: []const u8,
+    name: []const u8,
+};
+
+/// The loaded campaign. Self-owned: `name`, `start_hub`, `campaign_uuid`,
+/// and every hub uuid + dir are duped by `loadCampaign`; `background`
+/// holds the RESOLVED content-addressed sprite id (minted at load from the
+/// bare stem in campaign.txt + the campaign's content path - see
 /// file_source.customStemForContentPath), empty when the campaign has no
-/// background.
+/// background. `uuid` is the campaign's identity (authored in
+/// campaign.txt); `dir` is the storage dir the load resolved (the campaign
+/// dir under `campaigns/`). `missions` is the scan-built resolution table
+/// (every mission dir in the campaign + its identity).
 pub const Campaign = struct {
     name: []const u8 = &.{},
+    uuid: []const u8 = &.{},
+    dir: []const u8 = &.{},
     start_hub: []const u8 = &.{},
     background: []const u8 = &.{},
     hubs: []const CampaignHub = &.{},
+    missions: []const CampaignMissionEntry = &.{},
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for
@@ -3433,18 +3472,26 @@ pub const Level = struct {
 };
 
 pub const MissionExit = struct {
-    mission_id: []const u8,
-    /// The hub this mission's edge ends at (hub dir name), or empty for a
+    mission_uuid: []const u8,
+    /// The hub this mission's edge ends at (hub uuid), or empty for a
     /// dangling forward reference - legal by design, caught by the
     /// load-time campaign integrity checks. The campaign graph owns the
     /// edge; mission.txt carries no hub metadata. See DESIGN → Campaigns
     /// & the Campaign Editor.
     destination_hub: []const u8 = &.{},
+    /// The self-loop / dangling-stub departure bearing in degrees
+    /// (compass: 0 = north, clockwise). Unauthored exits carry `null` and
+    /// the view auto-spreads them by index (see DESIGN → Campaigns & the
+    /// Campaign Editor → Edge geometry).
+    direction: ?u32 = null,
     position: Vector2,
 };
 
 pub const Hub = struct {
     name: []const u8 = &.{},
+    /// The hub's identity (authored in hub.txt Metadata; see DESIGN →
+    /// Campaigns & the Campaign Editor → Content identity).
+    uuid: []const u8 = &.{},
     color_wheel_index: u32 = 0,
     hub_tiles: []const Vector2 = &.{},
     player: Entity = .{},

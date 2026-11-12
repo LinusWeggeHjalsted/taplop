@@ -2181,13 +2181,14 @@ fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
 /// production, the arena absorbs everything.
 fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
     allocator.free(hub.name);
+    allocator.free(hub.uuid);
     allocator.free(hub.hub_tiles);
     freeEntity(hub.player, allocator);
     allocator.free(hub.npcs);
     for (hub.decorations) |decoration| freeDecoration(decoration, allocator);
     allocator.free(hub.decorations);
     for (hub.mission_exits) |exit| {
-        allocator.free(exit.mission_id);
+        allocator.free(exit.mission_uuid);
         allocator.free(exit.destination_hub);
     }
     allocator.free(hub.mission_exits);
@@ -2519,6 +2520,9 @@ pub fn loadHub(
             if (findValue(pairs, "name")) |value| {
                 hub.name = dupeString(allocator, value);
             }
+            if (findValue(pairs, "hub_uuid")) |value| {
+                hub.uuid = dupeString(allocator, value);
+            }
             if (findValue(pairs, "color_wheel_index")) |value| {
                 hub.color_wheel_index = asU32(value) orelse 0;
             }
@@ -2543,10 +2547,14 @@ pub fn loadHub(
             if (code_string.len != 1) continue;
             exit_codes.append(allocator, code_string[0]) catch @panic("failed to append exit code");
             exit_definitions.put(code_string[0], .{
-                .mission_id = findValue(pairs, "mission_id") orelse &.{},
+                .mission_uuid = findValue(pairs, "mission_uuid") orelse &.{},
                 // Empty = a dangling forward reference (legal by design -
                 // see DESIGN → Campaigns & the Campaign Editor).
                 .destination_hub = findValue(pairs, "destination_hub") orelse &.{},
+                .direction = if (findValue(pairs, "direction")) |value|
+                    asU32(value)
+                else
+                    null,
                 .position = .{ .x = 0, .y = 0 },
             }) catch @panic("failed to insert exit definition");
         }
@@ -2598,7 +2606,7 @@ pub fn loadHub(
         for (decoration_list.items) |decoration| freeDecoration(decoration, allocator);
         decoration_list.deinit(allocator);
         for (exit_list.items) |exit| {
-            allocator.free(exit.mission_id);
+            allocator.free(exit.mission_uuid);
             allocator.free(exit.destination_hub);
         }
         exit_list.deinit(allocator);
@@ -2647,7 +2655,7 @@ pub fn loadHub(
                             tile_positions.append(allocator, position) catch @panic("failed to append tile position");
                             exit.position = position;
                             var exit_copy = exit.*;
-                            exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
+                            exit_copy.mission_uuid = dupeString(allocator, exit_copy.mission_uuid);
                             exit_copy.destination_hub = dupeString(allocator, exit_copy.destination_hub);
                             exit_list.append(allocator, exit_copy) catch @panic("failed to append mission exit");
                         } else if (npc_definitions.get(character)) |npc_type| {
@@ -2718,17 +2726,19 @@ pub fn loadHub(
 }
 
 /// Load a campaign from parsed sections. Self-owned: `name`, `start_hub`,
-/// and every hub id are duped into `allocator`, so the result does not
-/// borrow from the parse bytes - free with `freeCampaign` (tests) or the
-/// arena (production). `background` is a bare stem in the file naming a
-/// PNG in the campaign's own directory; it is minted here into the
-/// content-addressed sprite id (customStemForContentPath +
-/// `campaign_content_path`) so the render side resolves it through the
-/// standard custom-asset rule. `campaign_content_path` is the campaign
-/// dir, content-root-relative (e.g. `campaigns/main_campaign`; a leading
-/// `data/` is also accepted and stripped by the mint). Hubs entries: hub_id is the identity (missing → silent
-/// skip); position is the payload (missing/unparsable → warn + drop, the
-/// NPC-entry convention).
+/// `campaign_uuid`, and every hub uuid + dir are duped into `allocator`,
+/// so the result does not borrow from the parse bytes - free with
+/// `freeCampaign` (tests) or the arena (production). `background` is a
+/// bare stem in the file naming a PNG in the campaign's own directory; it
+/// is minted here into the content-addressed sprite id
+/// (customStemForContentPath + `campaign_content_path`) so the render side
+/// resolves it through the standard custom-asset rule.
+/// `campaign_content_path` is the campaign dir the load resolved,
+/// content-root-relative (e.g. `campaigns/main_campaign`; a leading
+/// `data/` is also accepted and stripped by the mint); its basename lands
+/// on `Campaign.dir`. Hubs entries: `hub_uuid` is the identity (missing →
+/// silent skip); position is the payload (missing/unparsable → warn +
+/// drop, the NPC-entry convention).
 pub fn loadCampaign(
     sections: []const Section,
     campaign_content_path: []const u8,
@@ -2737,11 +2747,13 @@ pub fn loadCampaign(
 ) !Campaign {
     _ = try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version, campaign_file_format_version);
     var campaign: Campaign = .{};
+    campaign.dir = dupeString(allocator, std.fs.path.basename(campaign_content_path));
 
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "name")) |value| campaign.name = dupeString(allocator, value);
+            if (findValue(pairs, "campaign_uuid")) |value| campaign.uuid = dupeString(allocator, value);
             if (findValue(pairs, "start_hub")) |value| campaign.start_hub = dupeString(allocator, value);
             if (findValue(pairs, "background")) |value| {
                 if (value.len > 0) {
@@ -2759,17 +2771,22 @@ pub fn loadCampaign(
         var hub_list: std.ArrayList(types.CampaignHub) = .empty;
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
-            const hub_id = findValue(pairs, "hub_id") orelse continue;
+            const hub_uuid = findValue(pairs, "hub_uuid") orelse continue;
             const position_value = findValue(pairs, "position") orelse {
-                appendWarning(warnings, allocator, "Hubs entry '{s}' has no position - dropped", .{hub_id});
+                appendWarning(warnings, allocator, "Hubs entry '{s}' has no position - dropped", .{hub_uuid});
                 continue;
             };
             const position = parseVector2Pair(position_value) orelse {
-                appendWarning(warnings, allocator, "Hubs entry '{s}' has an unparsable position '{s}' - dropped", .{ hub_id, position_value });
+                appendWarning(warnings, allocator, "Hubs entry '{s}' has an unparsable position '{s}' - dropped", .{ hub_uuid, position_value });
                 continue;
             };
+            // The hub's storage dir is resolved by the loading scan
+            // (readHubUuidTable); the campaign table itself only carries
+            // identity + position. A hub whose hub.txt cannot be found
+            // keeps the empty dir here - the integrity checks flag it.
             hub_list.append(allocator, .{
-                .id = dupeString(allocator, hub_id),
+                .uuid = dupeString(allocator, hub_uuid),
+                .dir = &.{},
                 .position = position,
             }) catch @panic("failed to append campaign hub");
         }
@@ -2784,9 +2801,14 @@ pub fn loadCampaign(
 /// campaign loaded without name/start_hub/background/hubs.
 fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
     allocator.free(campaign.name);
+    allocator.free(campaign.uuid);
+    allocator.free(campaign.dir);
     allocator.free(campaign.start_hub);
     allocator.free(campaign.background);
-    for (campaign.hubs) |hub| allocator.free(hub.id);
+    for (campaign.hubs) |hub| {
+        allocator.free(hub.uuid);
+        if (hub.dir.len > 0) allocator.free(hub.dir);
+    }
     allocator.free(campaign.hubs);
 }
 
@@ -2817,9 +2839,205 @@ fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void {
 const CampaignEdge = struct {
     from: []const u8,
     destination: []const u8,
-    mission_id: []const u8,
+    mission_uuid: []const u8,
     exit_index: usize,
 };
+
+/// Resolve every placed hub's storage dir (uuid -> dir) into
+/// `campaign.hubs[i].dir` in place - the scan side of the loading
+/// contract (DESIGN → Campaigns & the Campaign Editor → Uuid→dir
+/// resolution). Called by the LOADING side (live play; the result is
+/// state), never by a replayed handler - replay derives paths from the
+/// loaded state. Duplicate uuids across candidate dirs resolve
+/// latest-mtime-wins + a warning naming the winner.
+pub fn resolveCampaignHubs(
+    campaign: *types.Campaign,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) void {
+    const hubs_dir = std.fmt.allocPrint(allocator, "campaigns/{s}/hubs", .{campaign.dir}) catch
+        @panic("failed to build hubs dir path");
+    defer allocator.free(hubs_dir);
+    var resolved_hubs: std.ArrayList(types.CampaignHub) = .empty;
+    for (campaign.hubs) |hub| {
+        const resolved = file_source_mod.resolveUuidDir(
+            file_source,
+            allocator,
+            hubs_dir,
+            embeddedHubDirs(campaign.dir, allocator),
+            "hub.txt",
+            &hub_sections,
+            "hub_uuid",
+            hub.uuid,
+        ) orelse {
+            appendWarning(warnings, allocator, "hub '{s}' has no resolvable directory (no hubs/<dir>/hub.txt carries its uuid)", .{hub.uuid});
+            // The unresolved hub rides along with its uuid duped (the
+            // original strings are freed below - the rebuild owns
+            // everything it keeps).
+            resolved_hubs.append(allocator, .{
+                .uuid = dupeString(allocator, hub.uuid),
+                .dir = &.{},
+                .position = hub.position,
+            }) catch @panic("failed to append unresolved campaign hub");
+            continue;
+        };
+        defer allocator.free(resolved.dir);
+        if (resolved.duplicate) {
+            appendWarning(warnings, allocator, "duplicate hub uuid '{s}': resolved to {s} (latest-updated wins; open one in the editor and Save As Copy to split)", .{ hub.uuid, resolved.dir });
+        }
+        resolved_hubs.append(allocator, .{
+            .uuid = dupeString(allocator, hub.uuid),
+            .dir = dupeString(allocator, std.fs.path.basename(resolved.dir)),
+            .position = hub.position,
+        }) catch @panic("failed to append resolved campaign hub");
+    }
+    // The empty default (no hubs section) is the static empty slice - its
+    // free is a no-op, but the per-hub uuids are heap-owned either way.
+    for (campaign.hubs) |hub| allocator.free(hub.uuid);
+    if (campaign.hubs.len > 0) allocator.free(campaign.hubs);
+    campaign.hubs = resolved_hubs.toOwnedSlice(allocator) catch @panic("failed to own resolved campaign hubs slice");
+}
+
+/// The embedded campaign's hub dirs (content-root-relative), for the
+/// embedded tier of hub uuid resolution. Caller-owned.
+fn embeddedHubDirs(campaign_dir: []const u8, allocator: std.mem.Allocator) []const []const u8 {
+    var dirs: std.ArrayList([]const u8) = .empty;
+    const prefix = std.fmt.allocPrint(allocator, "data/campaigns/{s}/hubs/", .{campaign_dir}) catch
+        @panic("failed to build embedded hubs prefix");
+    defer allocator.free(prefix);
+    for (file_source_mod.embeddedMapKeys(allocator)) |key| {
+        if (!std.mem.startsWith(u8, key, prefix)) continue;
+        if (!std.mem.endsWith(u8, key, "/hub.txt")) continue;
+        const hub_dir = key["data/".len .. key.len - "/hub.txt".len];
+        dirs.append(allocator, hub_dir) catch @panic("failed to append embedded hub dir");
+    }
+    return dirs.toOwnedSlice(allocator) catch @panic("failed to own embedded hub dirs");
+}
+
+/// Resolve a mission uuid to its dir within a campaign (the missions/
+/// scan, persistent + embedded). Returns the content-root-relative dir
+/// (caller-owned) or null. The integrity-check + graph-derivation path;
+/// recorded handlers use the resolved tables in state instead (replay
+/// never scans).
+pub fn resolveCampaignMissionDir(
+    campaign: types.Campaign,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+    mission_uuid: []const u8,
+) ?[]const u8 {
+    const missions_dir = std.fmt.allocPrint(allocator, "campaigns/{s}/missions", .{campaign.dir}) catch
+        @panic("failed to build missions dir path");
+    defer allocator.free(missions_dir);
+    const resolved = file_source_mod.resolveUuidDir(
+        file_source,
+        allocator,
+        missions_dir,
+        file_source_mod.officialMissionDirPathsForCampaign(missions_dir, allocator),
+        "mission.txt",
+        &mission_sections,
+        "mission_uuid",
+        mission_uuid,
+    ) orelse return null;
+    if (resolved.duplicate) {
+        appendWarning(warnings, allocator, "duplicate mission uuid '{s}': resolved to {s} (latest-updated wins; open one in the editor and Save As Copy to split)", .{ mission_uuid, resolved.dir });
+    }
+    return resolved.dir;
+}
+
+/// Build the campaign's mission table (scan every mission dir in the
+/// campaign's `missions/` - persistent + embedded - read each
+/// mission.txt's uuid + name). Duplicates resolve latest-mtime-wins +
+/// a warning (see DESIGN → Campaigns & the Campaign Editor →
+/// Uuid→dir resolution). Returns a caller-owned table, empty when the
+/// campaign has no missions dir. The LOADING side only - replay reads
+/// the table from state.
+pub fn resolveCampaignMissions(
+    campaign: types.Campaign,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) []const types.CampaignMissionEntry {
+    var entries: std.ArrayList(types.CampaignMissionEntry) = .empty;
+    const missions_dir = std.fmt.allocPrint(allocator, "campaigns/{s}/missions", .{campaign.dir}) catch
+        @panic("failed to build missions dir path");
+    defer allocator.free(missions_dir);
+
+    // The candidate dirs: the persistent scan + the embedded campaign's
+    // mission dirs (mtime 0). One pass, then dedupe by uuid keeping the
+    // latest-mtime candidate.
+    const Candidate = struct {
+        dir: []const u8,
+        mtime_ns: i128,
+    };
+    var candidates: std.ArrayList(Candidate) = .empty;
+    defer {
+        for (candidates.items) |candidate| allocator.free(candidate.dir);
+        candidates.deinit(allocator);
+    }
+
+    if (file_source.persistent_dir.openDir(file_source.io, missions_dir, .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch null) |persistent_dir| {
+        defer std.Io.Dir.close(persistent_dir, file_source.io);
+        var it = persistent_dir.iterate();
+        while (it.next(file_source.io) catch null) |dir_entry| {
+            if (dir_entry.kind != .directory) continue;
+            const dir = std.fmt.allocPrint(allocator, "{s}/{s}", .{ missions_dir, dir_entry.name }) catch
+                @panic("failed to build mission dir");
+            candidates.append(allocator, .{
+                .dir = dir,
+                .mtime_ns = file_source_mod.dirMtime(file_source, dir),
+            }) catch @panic("failed to append mission candidate");
+        }
+    }
+
+    for (file_source_mod.officialMissionDirPathsForCampaign(missions_dir, allocator)) |embedded_dir| {
+        defer allocator.free(embedded_dir);
+        candidates.append(allocator, .{
+            .dir = allocator.dupe(u8, embedded_dir) catch @panic("failed to dupe embedded mission dir"),
+            .mtime_ns = 0,
+        }) catch @panic("failed to append mission candidate");
+    }
+
+    // Read uuid + name per candidate; first-wins on duplicate uuid UNLESS
+    // a later candidate is strictly newer (latest-updated wins; the sort
+    // by mtime descending makes the first-seen the winner).
+    std.mem.sort(Candidate, candidates.items, {}, struct {
+        fn before(_: void, a: Candidate, b: Candidate) bool {
+            if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
+            return std.mem.lessThan(u8, a.dir, b.dir);
+        }
+    }.before);
+    var seen_uuids = std.StringHashMap(void).init(allocator);
+    defer seen_uuids.deinit();
+    for (candidates.items) |candidate| {
+        var probe_arena = std.heap.ArenaAllocator.init(allocator);
+        defer probe_arena.deinit();
+        const config_path = std.fmt.allocPrint(probe_arena.allocator(), "{s}/mission.txt", .{candidate.dir}) catch
+            @panic("failed to build mission config path");
+        const bytes = file_source.readFile(probe_arena.allocator(), config_path) catch continue;
+        const parsed = parseConfigFile(bytes, probe_arena.allocator(), &mission_sections) catch continue;
+        const metadata = findSection(parsed, "Metadata") orelse continue;
+        if (metadata.entry_groups.len == 0) continue;
+        const pairs = metadata.entry_groups[0].pairs;
+        const mission_uuid = findValue(pairs, "mission_uuid") orelse continue;
+        if (seen_uuids.contains(mission_uuid)) {
+            appendWarning(warnings, allocator, "duplicate mission uuid '{s}' ({s} shadows an earlier copy - latest-updated wins; open one in the editor and Save As Copy to split)", .{ mission_uuid, candidate.dir });
+            continue;
+        }
+        seen_uuids.put(mission_uuid, {}) catch @panic("failed to insert seen mission uuid");
+        const name = findValue(pairs, "name") orelse "";
+        entries.append(allocator, .{
+            .uuid = dupeString(allocator, mission_uuid),
+            .dir = dupeString(allocator, candidate.dir),
+            .name = dupeString(allocator, name),
+        }) catch @panic("failed to append campaign mission entry");
+    }
+    return entries.toOwnedSlice(allocator) catch @panic("failed to own campaign missions slice");
+}
 
 pub fn checkCampaignGraph(
     campaign: types.Campaign,
@@ -2831,9 +3049,9 @@ pub fn checkCampaignGraph(
     if (warnings == null) return;
 
     const hub_placed = struct {
-        fn check(hubs: []const types.CampaignHub, id: []const u8) bool {
+        fn check(hubs: []const types.CampaignHub, uuid: []const u8) bool {
             for (hubs) |hub| {
-                if (std.mem.eql(u8, hub.id, id)) return true;
+                if (std.mem.eql(u8, hub.uuid, uuid)) return true;
             }
             return false;
         }
@@ -2854,58 +3072,71 @@ pub fn checkCampaignGraph(
     defer {
         for (edges.items) |edge| {
             allocator.free(edge.destination);
-            allocator.free(edge.mission_id);
+            allocator.free(edge.mission_uuid);
         }
         edges.deinit(allocator);
     }
 
     for (campaign.hubs) |hub| {
+        // A hub whose dir the scan could not resolve (empty) is
+        // flagged below with its own warning - not a crash.
+        if (hub.dir.len == 0) {
+            appendWarning(warnings, allocator, "placed hub '{s}' has no resolvable directory", .{hub.uuid});
+            continue;
+        }
         const hub_file_path = std.fmt.allocPrint(
             allocator,
             "{s}/hubs/{s}/hub.txt",
-            .{ campaign_content_path, hub.id },
+            .{ campaign_content_path, hub.dir },
         ) catch @panic("failed to build hub file path");
         defer allocator.free(hub_file_path);
 
         const bytes = file_source.readFile(allocator, hub_file_path) catch {
-            appendWarning(warnings, allocator, "placed hub '{s}' has no readable hub.txt ({s})", .{ hub.id, hub_file_path });
+            appendWarning(warnings, allocator, "placed hub '{s}' has no readable hub.txt ({s})", .{ hub.uuid, hub_file_path });
             continue;
         };
         defer allocator.free(bytes);
 
         const parsed_hub_sections = parseConfigFile(bytes, allocator, &hub_sections) catch {
-            appendWarning(warnings, allocator, "placed hub '{s}' has an unparsable hub.txt", .{hub.id});
+            appendWarning(warnings, allocator, "placed hub '{s}' has an unparsable hub.txt", .{hub.uuid});
             continue;
         };
         defer freeParsedSections(parsed_hub_sections, allocator);
 
         if (findSection(parsed_hub_sections, "Exits")) |section| {
             for (section.entry_groups, 0..) |group, exit_index| {
-                const mission_id = findValue(group.pairs, "mission_id") orelse continue;
+                const mission_uuid = findValue(group.pairs, "mission_uuid") orelse continue;
                 const destination = findValue(group.pairs, "destination_hub") orelse &.{};
                 if (destination.len > 0 and !hub_placed(campaign.hubs, destination)) {
-                    appendWarning(warnings, allocator, "hub '{s}' exit {d} destination_hub '{s}' names an unplaced hub", .{ hub.id, exit_index, destination });
+                    appendWarning(warnings, allocator, "hub '{s}' exit {d} destination_hub '{s}' names an unplaced hub", .{ hub.uuid, exit_index, destination });
                 }
                 edges.append(allocator, CampaignEdge{
-                    .from = hub.id,
+                    .from = hub.uuid,
                     .destination = dupeString(allocator, destination),
-                    .mission_id = dupeString(allocator, mission_id),
+                    .mission_uuid = dupeString(allocator, mission_uuid),
                     .exit_index = exit_index,
                 }) catch @panic("failed to collect campaign edge");
             }
         }
     }
 
-    // Every edge's mission exists (its mission.txt resolves).
+    // Every edge's mission exists. The mission dir resolves through
+    // the same scan the load ran (uuid -> dir); the check reads
+    // the file only to confirm existence + parseability of the uuid.
     for (edges.items) |edge| {
+        const mission_dir = resolveCampaignMissionDir(campaign, file_source, allocator, warnings, edge.mission_uuid) orelse {
+            appendWarning(warnings, allocator, "hub '{s}' exit {d} names mission '{s}' but no mission in the campaign resolves to it", .{ edge.from, edge.exit_index, edge.mission_uuid });
+            continue;
+        };
+        defer allocator.free(mission_dir);
         const mission_file_path = std.fmt.allocPrint(
             allocator,
-            "{s}/missions/{s}/mission.txt",
-            .{ campaign_content_path, edge.mission_id },
+            "{s}/mission.txt",
+            .{mission_dir},
         ) catch @panic("failed to build mission file path");
         defer allocator.free(mission_file_path);
         const mission_bytes = file_source.readFile(allocator, mission_file_path) catch {
-            appendWarning(warnings, allocator, "hub '{s}' exit {d} names mission '{s}' but {s} does not exist", .{ edge.from, edge.exit_index, edge.mission_id, mission_file_path });
+            appendWarning(warnings, allocator, "hub '{s}' exit {d} names mission '{s}' but {s} does not exist", .{ edge.from, edge.exit_index, edge.mission_uuid, mission_file_path });
             continue;
         };
         allocator.free(mission_bytes);
@@ -2927,8 +3158,8 @@ pub fn checkCampaignGraph(
             }
         }
         for (campaign.hubs) |hub| {
-            if (!reachable.contains(hub.id)) {
-                appendWarning(warnings, allocator, "hub '{s}' is unreachable from the start hub (no mission path leads there)", .{hub.id});
+            if (!reachable.contains(hub.uuid)) {
+                appendWarning(warnings, allocator, "hub '{s}' is unreachable from the start hub (no mission path leads there)", .{hub.uuid});
             }
         }
     }
@@ -3173,6 +3404,7 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "player_name")) |value| player_data.player_name = value;
             if (findValue(pairs, "current_campaign")) |value| player_data.current_campaign = value;
+            if (findValue(pairs, "current_campaign_uuid")) |value| player_data.current_campaign_uuid = value;
             if (findValue(pairs, "current_hub")) |value| player_data.current_hub = value;
             if (findValue(pairs, "turns")) |value| player_data.turns = asU32(value) orelse 0;
             if (findValue(pairs, "deaths")) |value| player_data.deaths = asU32(value) orelse 0;
@@ -3201,15 +3433,41 @@ pub fn loadPlayerSave(
 
     // DiscoveredHubs - one `name` per entry group (the writer's shape;
     // parsing it here closes a writer/reader asymmetry that silently
-    // dropped discovery on every save/load round trip).
+    // dropped discovery on every save/load round trip). The campaign_uuid
+    // keys each group; consecutive entries WITHOUT a campaign_uuid belong
+    // to the most recent one (the writer emits one group per campaign,
+    // names following their campaign_uuid line).
     if (findSection(sections, "DiscoveredHubs")) |section| {
-        var hub_names: std.ArrayList([]const u8) = .empty;
+        var groups: std.ArrayList(types.DiscoveredCampaignHubs) = .empty;
+        var group_hub_names: std.ArrayList(std.ArrayList([]const u8)) = .empty;
         for (section.entry_groups) |group| {
+            if (findValue(group.pairs, "campaign_uuid")) |campaign_uuid| {
+                group_hub_names.append(allocator, .empty) catch @panic("failed to append discovered group");
+                groups.append(allocator, .{ .campaign_uuid = campaign_uuid }) catch @panic("failed to append discovered group");
+            }
             if (findValue(group.pairs, "name")) |name| {
-                hub_names.append(allocator, name) catch @panic("failed to append discovered hub");
+                if (group_hub_names.items.len == 0) {
+                    // A name with no campaign_uuid seen yet: a legacy
+                    // pre-grouping save - warn + skip (unrecoverable
+                    // without the campaign key).
+                    appendWarning(warnings, allocator, "DiscoveredHubs entry '{s}' has no campaign_uuid - dropped", .{name});
+                    continue;
+                }
+                group_hub_names.items[group_hub_names.items.len - 1].append(allocator, name) catch @panic("failed to append discovered hub");
             }
         }
-        player_data.discovered_hubs = hub_names.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice");
+        // Wire the name lists into the groups (a second pass so the
+        // ArrayList reallocations above can't dangle the inner slices).
+        var owned_groups: std.ArrayList(types.DiscoveredCampaignHubs) = .empty;
+        for (groups.items, group_hub_names.items) |*group, *names| {
+            var rebuilt: types.DiscoveredCampaignHubs = group.*;
+            rebuilt.hub_uuids = names.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice");
+            owned_groups.append(allocator, rebuilt) catch @panic("failed to append discovered group");
+        }
+        groups.deinit(allocator);
+        for (group_hub_names.items) |*names| names.deinit(allocator);
+        group_hub_names.deinit(allocator);
+        player_data.discovered_hubs = owned_groups.toOwnedSlice(allocator) catch @panic("failed to own discovered groups slice");
     }
 
     try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
@@ -3841,7 +4099,8 @@ test "level file_format_version is a supported range; current requires the count
 test "hub file_format_version is a supported range; current requires the counted Layout" {
     const allocator = std.testing.allocator;
     {
-        // v3 + counted: the current hub shape.
+        // v3 + counted: loads under the legacy grammar (the supported
+        // floor - a pre-uuid hub).
         const raw_text =
             \\Metadata
             \\file_format_version 3
@@ -3855,9 +4114,25 @@ test "hub file_format_version is a supported range; current requires the counted
         defer freeHub(hub, allocator);
     }
     {
+        // v4 (current) + counted: the current hub shape.
         const raw_text =
             \\Metadata
-            \\file_format_version 3
+            \\file_format_version 4
+            \\hub_uuid some-hub
+            \\
+            \\Layout 1
+            \\..!
+        ;
+        const sections = try parseConfigFile(raw_text, allocator, &hub_sections);
+        defer freeParsedSections(sections, allocator);
+        const hub = try loadHub(sections, null, allocator, "hub.txt", null);
+        defer freeHub(hub, allocator);
+        try std.testing.expectEqualStrings("some-hub", hub.uuid);
+    }
+    {
+        const raw_text =
+            \\Metadata
+            \\file_format_version 4
             \\
             \\Layout
             \\..!
@@ -3873,7 +4148,7 @@ test "hub file_format_version is a supported range; current requires the counted
         // Newer than this build.
         const raw_text =
             \\Metadata
-            \\file_format_version 4
+            \\file_format_version 5
             \\
             \\Layout 1
             \\..!
@@ -4864,10 +5139,11 @@ test "loadHub parses a complete hub" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 4
+        \\hub_uuid hub-uuid-1
         \\name Test Village
         \\
-        \\Layout
+        \\Layout 3
         \\...N.
         \\.!...
         \\..E..
@@ -4880,7 +5156,7 @@ test "loadHub parses a complete hub" {
         \\
         \\Exits
         \\character_code E
-        \\mission_id first_mission
+        \\mission_uuid first_mission_uuid
         \\destination_hub another_camp
     ;
 
@@ -4910,7 +5186,7 @@ test "loadHub parses a complete hub" {
     // Mission exit: mission_id + destination_hub + position. E at raw
     // (2,2), displaced by the spawn (1,1) → (1,1)
     try std.testing.expectEqual(1, hub.mission_exits.len);
-    try std.testing.expectEqualStrings("first_mission", hub.mission_exits[0].mission_id);
+    try std.testing.expectEqualStrings("first_mission_uuid", hub.mission_exits[0].mission_uuid);
     try std.testing.expectEqualStrings("another_camp", hub.mission_exits[0].destination_hub);
     try std.testing.expectEqual(1, hub.mission_exits[0].position.x);
     try std.testing.expectEqual(1, hub.mission_exits[0].position.y);
@@ -4929,10 +5205,11 @@ test "loadHub: NPC entries with missing/unknown npc_type warn and drop; destinat
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 4
+        \\hub_uuid hub-uuid-2
         \\name Test Village
         \\
-        \\Layout
+        \\Layout 3
         \\.!M.
         \\..U..
         \\..E..
@@ -4948,7 +5225,7 @@ test "loadHub: NPC entries with missing/unknown npc_type warn and drop; destinat
         \\
         \\Exits
         \\character_code E
-        \\mission_id first_mission
+        \\mission_uuid first_mission_uuid
     ;
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -4983,17 +5260,18 @@ test "loadCampaign parses metadata, background mint, + the Hubs section" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
+        \\campaign_uuid c-uuid
         \\name Main Campaign
-        \\start_hub starting_village
+        \\start_hub starting_village_uuid
         \\background map
         \\
         \\Hubs
         \\
-        \\hub_id starting_village
+        \\hub_uuid starting_village_uuid
         \\position 0 0
         \\
-        \\hub_id far_camp
+        \\hub_uuid far_camp_uuid
         \\position -1920 1080
     ;
 
@@ -5005,15 +5283,16 @@ test "loadCampaign parses metadata, background mint, + the Hubs section" {
     freeParsedSections(sections, allocator);
 
     try std.testing.expectEqualStrings("Main Campaign", campaign.name);
-    try std.testing.expectEqualStrings("starting_village", campaign.start_hub);
+    try std.testing.expectEqualStrings("starting_village_uuid", campaign.start_hub);
+    try std.testing.expectEqualStrings("c-uuid", campaign.uuid);
     // The background's bare stem mints into the content-addressed id (the
     // data/ prefix strips; the tail resolves through readFile's tiers).
     try std.testing.expectEqualStrings("custom/campaigns/main_campaign/map", campaign.background);
     try std.testing.expectEqual(@as(usize, 2), campaign.hubs.len);
-    try std.testing.expectEqualStrings("starting_village", campaign.hubs[0].id);
+    try std.testing.expectEqualStrings("starting_village_uuid", campaign.hubs[0].uuid);
     try std.testing.expectEqual(@as(i32, 0), campaign.hubs[0].position.x);
     try std.testing.expectEqual(@as(i32, 0), campaign.hubs[0].position.y);
-    try std.testing.expectEqualStrings("far_camp", campaign.hubs[1].id);
+    try std.testing.expectEqualStrings("far_camp_uuid", campaign.hubs[1].uuid);
     // Center-offset integers, negative values legal (unbounded space).
     try std.testing.expectEqual(@as(i32, -1920), campaign.hubs[1].position.x);
     try std.testing.expectEqual(@as(i32, 1080), campaign.hubs[1].position.y);
@@ -5025,18 +5304,18 @@ test "loadCampaign: Hubs entries without a parsable position warn and drop" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\name C
-        \\start_hub ok
+        \\start_hub ok_uuid
         \\
         \\Hubs
         \\
-        \\hub_id ok
+        \\hub_uuid ok_uuid
         \\position 3 4
         \\
-        \\hub_id no_position
+        \\hub_uuid no_position
         \\
-        \\hub_id bad_position
+        \\hub_uuid bad_position
         \\position over there
     ;
 
@@ -5053,7 +5332,7 @@ test "loadCampaign: Hubs entries without a parsable position warn and drop" {
     defer freeCampaign(campaign, allocator);
 
     try std.testing.expectEqual(@as(usize, 1), campaign.hubs.len);
-    try std.testing.expectEqualStrings("ok", campaign.hubs[0].id);
+    try std.testing.expectEqualStrings("ok_uuid", campaign.hubs[0].uuid);
     try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
 }
 
@@ -5061,7 +5340,7 @@ test "loadCampaign without name/start_hub/background/hubs defaults to empty and 
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
     ;
 
     const sections = try parseConfigFile(raw_text, allocator, &campaign_sections);
@@ -5095,11 +5374,11 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // exist. Everything resolves + far is reachable.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
-        "Metadata\nfile_format_version 2\nname Start\n\nExits\ncharacter_code E\nmission_id m1\ndestination_hub far\n",
+        "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\ndestination_hub far\n",
     ) catch @panic("write start hub");
     file_source.writeFile(
         "campaigns/check/hubs/far/hub.txt",
-        "Metadata\nfile_format_version 2\nname Far\n\nExits\ncharacter_code E\nmission_id m2\n",
+        "Metadata\nfile_format_version 4\nhub_uuid far\nname Far\n\nExits\ncharacter_code E\nmission_uuid u2\n",
     ) catch @panic("write far hub");
     file_source.writeFile("campaigns/check/missions/m1/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u1\nname M1\n") catch @panic("write m1");
     file_source.writeFile("campaigns/check/missions/m2/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u2\nname M2\n") catch @panic("write m2");
@@ -5114,10 +5393,11 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // Run 1 - clean: two placed hubs, start placed, edges resolve, far
     // reachable. Static strings are fine: the checker reads, never owns.
     const clean = types.Campaign{
+        .dir = "check",
         .start_hub = "start",
         .hubs = &[_]types.CampaignHub{
-            .{ .id = "start", .position = .{ .x = 0, .y = 0 } },
-            .{ .id = "far", .position = .{ .x = 900, .y = 0 } },
+            .{ .uuid = "start", .dir = "start", .position = .{ .x = 0, .y = 0 } },
+            .{ .uuid = "far", .dir = "far", .position = .{ .x = 900, .y = 0 } },
         },
     };
     checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
@@ -5126,6 +5406,7 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // Run 2 - start hub not placed (and, with the BFS gated on a placed
     // start, no unreachable warnings either: exactly one warning).
     const unplaced_start = types.Campaign{
+        .dir = "check",
         .start_hub = "nowhere",
         .hubs = clean.hubs,
     };
@@ -5138,10 +5419,11 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // destination 'far' is no longer placed in this campaign (dangling),
     // ghost has no hub.txt, and ghost is unreachable (no edges reach it).
     const ghost_hub = types.Campaign{
+        .dir = "check",
         .start_hub = "start",
         .hubs = &[_]types.CampaignHub{
-            .{ .id = "start", .position = .{ .x = 0, .y = 0 } },
-            .{ .id = "ghost", .position = .{ .x = 0, .y = 0 } },
+            .{ .uuid = "start", .dir = "start", .position = .{ .x = 0, .y = 0 } },
+            .{ .uuid = "ghost", .dir = "ghost", .position = .{ .x = 0, .y = 0 } },
         },
     };
     checkCampaignGraph(ghost_hub, campaign_path, &file_source, allocator, &warnings);
@@ -5156,7 +5438,7 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // that is not placed.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
-        "Metadata\nfile_format_version 2\nname Start\n\nExits\ncharacter_code E\nmission_id m1\ndestination_hub beyond\n",
+        "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\ndestination_hub beyond\n",
     ) catch @panic("rewrite start hub");
     checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
     try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
@@ -5169,12 +5451,12 @@ test "checkCampaignGraph: clean campaign warns nothing; each defect warns" {
     // One warning - far stays reachable through start's edge.
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
-        "Metadata\nfile_format_version 2\nname Start\n\nExits\ncharacter_code E\nmission_id m1\ndestination_hub far\n",
+        "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\ndestination_hub far\n",
     ) catch @panic("restore start hub");
     std.Io.Dir.cwd().deleteTree(io, scratch ++ "/campaigns/check/missions/m1") catch @panic("remove m1");
     checkCampaignGraph(clean, campaign_path, &file_source, allocator, &warnings);
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "names mission 'm1'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "names mission 'u1'") != null);
     clearWarnings(&warnings, allocator);
 
     // Run 6 - a null warnings sink is a no-op (the checks exist to warn).
@@ -5220,7 +5502,7 @@ test "loadPlayerSave parses a save file" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 2
+        \\file_format_version 3
         \\
         \\Info
         \\player_name Test Player
@@ -5304,6 +5586,10 @@ test "loadPlayerSave parses a save file" {
     const player_data = try loadPlayerSave(sections, allocator, "", null);
     defer allocator.free(player_data.learned_skills);
     defer allocator.free(player_data.clones);
+    defer {
+        for (player_data.discovered_hubs) |group| allocator.free(group.hub_uuids);
+        allocator.free(player_data.discovered_hubs);
+    }
 
     // Info
     try std.testing.expectEqualStrings("Test Player", player_data.player_name);
@@ -6294,7 +6580,10 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     const player_data = try loadPlayerSave(parsed.sections, allocator, "", null);
     defer allocator.free(player_data.learned_skills);
     defer allocator.free(player_data.clones);
-    defer allocator.free(player_data.discovered_hubs);
+    defer {
+        for (player_data.discovered_hubs) |group| allocator.free(group.hub_uuids);
+        allocator.free(player_data.discovered_hubs);
+    }
 
     try std.testing.expectEqualStrings("New Player", player_data.player_name);
     // No weapons or utility skills EQUIPPED - the arsenal is inventory + learned.
@@ -6327,7 +6616,11 @@ test "data/max_player.txt parses: max gear equipped, weapons in inventory, all s
     // Every utility skill learned; the campaign's hub discovered.
     try std.testing.expectEqual(@as(usize, 7), player_data.learned_skills.len);
     try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs.len);
-    try std.testing.expectEqualStrings("camp_at_the_crossroads", player_data.discovered_hubs[0]);
+    try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs[0].hub_uuids.len);
+    try std.testing.expectEqualStrings(
+        "03aeefda-c68b-4853-b65a-d46edb9790f1",
+        player_data.discovered_hubs[0].hub_uuids[0],
+    );
 
     // The editor fallback maps it onto the player template.
     const template = playerLoadoutEntity(player_data);

@@ -143,6 +143,34 @@ pub fn loadCampaignAndPushHub(
         return;
     };
 
+    // The uuid resolution scans (hub dirs + the mission table): the
+    // LOADING side runs them live; the results ride GameState as the
+    // resolution tables recorded handlers read (replay never scans -
+    // see DESIGN → Campaigns & the Campaign Editor → Uuid→dir
+    // resolution).
+    loaders.resolveCampaignHubs(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
+    current.campaign.?.missions = loaders.resolveCampaignMissions(
+        current.campaign.?,
+        history.file_source,
+        allocator,
+        &campaign_warnings,
+    );
+
+    // Verify the save's campaign identity against the loaded campaign
+    // (a mismatch means the dir's content changed under the save - the
+    // shadow case; warn + proceed, the untrusted-content posture).
+    if (current.player_data.current_campaign_uuid.len > 0 and
+        current.campaign.?.uuid.len > 0 and
+        !std.mem.eql(u8, current.player_data.current_campaign_uuid, current.campaign.?.uuid))
+    {
+        campaign_warnings.append(allocator, std.fmt.allocPrint(
+            allocator,
+            "campaign '{s}' identity changed since the save was written (expected uuid {s}, found {s})",
+            .{ current.campaign.?.dir, current.player_data.current_campaign_uuid, current.campaign.?.uuid },
+        ) catch @panic("failed to format campaign identity warning")) catch
+            @panic("failed to append campaign identity warning");
+    }
+
     // Graph integrity checks (dangling destinations, missing missions/
     // hub files, unplaced/unreachable hubs - warn-only; see
     // loaders.checkCampaignGraph for why the reads bypass the
@@ -258,4 +286,70 @@ pub fn cancelPreparedSkill(current: *GameState) void {
 
     level.prepared_skill = null;
     level.highlighted_tiles = &.{};
+}
+
+/// Resolve a hub uuid to its storage dir through the loaded campaign's
+/// table (state; never the filesystem - replay-safe by construction).
+/// Null when the campaign isn't loaded or no placed hub matches (a
+/// hand-edited dangling reference).
+pub fn hubDirForUuid(current: *GameState, hub_uuid: []const u8) ?[]const u8 {
+    const campaign = current.campaign orelse return null;
+    for (campaign.hubs) |hub| {
+        if (std.mem.eql(u8, hub.uuid, hub_uuid) and hub.dir.len > 0) return hub.dir;
+    }
+    return null;
+}
+
+/// Resolve a mission uuid to its dir (basename) through the loaded
+/// campaign's mission table. Null when no mission matches (a dangling
+/// exit reference - the caller decides the posture).
+pub fn missionDirForUuid(current: *GameState, mission_uuid: []const u8) ?[]const u8 {
+    const campaign = current.campaign orelse return null;
+    for (campaign.missions) |mission| {
+        if (std.mem.eql(u8, mission.uuid, mission_uuid)) return std.fs.path.basename(mission.dir);
+    }
+    return null;
+}
+
+/// The discovery half of arrival: idempotently append the hub uuid to the
+/// active campaign's discovered group, creating the group when the
+/// campaign is new to the player (new_game's first arrival). A pure
+/// PlayerData transform - undo/redo/replay consistent by construction.
+pub fn discoverHub(current: *GameState, allocator: std.mem.Allocator, hub_uuid: []const u8) void {
+    const campaign = current.campaign orelse return;
+    if (campaign.uuid.len == 0) return;
+    for (current.player_data.discovered_hubs) |group| {
+        if (!std.mem.eql(u8, group.campaign_uuid, campaign.uuid)) continue;
+        for (group.hub_uuids) |discovered| {
+            if (std.mem.eql(u8, discovered, hub_uuid)) return; // already discovered
+        }
+        // Rebuild the whole groups slice (the field is []const - the
+        // PlayerData convention): the matching group with one more uuid.
+        var groups: std.ArrayList(types.DiscoveredCampaignHubs) = .empty;
+        for (current.player_data.discovered_hubs) |existing| {
+            if (std.mem.eql(u8, existing.campaign_uuid, campaign.uuid)) {
+                var rebuilt_hub_uuids: std.ArrayList([]const u8) = .empty;
+                rebuilt_hub_uuids.appendSlice(allocator, existing.hub_uuids) catch @panic("failed to copy discovered hubs");
+                rebuilt_hub_uuids.append(allocator, hub_uuid) catch @panic("failed to append discovered hub");
+                groups.append(allocator, .{
+                    .campaign_uuid = existing.campaign_uuid,
+                    .hub_uuids = rebuilt_hub_uuids.toOwnedSlice(allocator) catch @panic("failed to own discovered hubs slice"),
+                }) catch @panic("failed to append discovered group");
+            } else {
+                groups.append(allocator, existing) catch @panic("failed to append discovered group");
+            }
+        }
+        current.player_data.discovered_hubs = groups.toOwnedSlice(allocator) catch @panic("failed to own discovered groups slice");
+        return;
+    }
+    // No group for this campaign yet - create one (the new-game seeding
+    // IS this branch: the first arrival at a campaign's start hub).
+    var groups: std.ArrayList(types.DiscoveredCampaignHubs) = .empty;
+    groups.appendSlice(allocator, current.player_data.discovered_hubs) catch @panic("failed to copy discovered groups");
+    const hub_uuids = allocator.dupe([]const u8, &.{hub_uuid}) catch @panic("failed to dupe discovered hub uuids");
+    groups.append(allocator, .{
+        .campaign_uuid = campaign.uuid,
+        .hub_uuids = hub_uuids,
+    }) catch @panic("failed to append discovered group");
+    current.player_data.discovered_hubs = groups.toOwnedSlice(allocator) catch @panic("failed to own discovered groups slice");
 }

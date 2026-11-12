@@ -237,8 +237,17 @@ test "escape: mission fail exits the mission" {
     ));
     history.current_state.player_data.current_campaign = "main_campaign";
     // The entering hub (the mission-exit path reads current_hub - the hub
-    // the player was in when the mission started).
-    history.current_state.player_data.current_hub = "camp_at_the_crossroads";
+    // the player was in when the mission started), as a hub uuid. The
+    // loaded campaign resolves uuid -> dir for the start_hub read.
+    const campaign = types.Campaign{
+        .uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d",
+        .dir = "main_campaign",
+        .hubs = &.{
+            .{ .uuid = "03aeefda-c68b-4853-b65a-d46edb9790f1", .dir = "camp_at_the_crossroads", .position = .{ .x = 0, .y = 0 } },
+        },
+    };
+    history.current_state.campaign = campaign;
+    history.current_state.player_data.current_hub = "03aeefda-c68b-4853-b65a-d46edb9790f1";
     history.current_state.mission = .{
         .name = "beginnings",
         .path = "campaigns/main_campaign/missions/beginnings",

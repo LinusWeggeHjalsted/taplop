@@ -37,6 +37,7 @@ const pushPlayerSkillUse = event_push.pushPlayerSkillUse;
 const failReconstructionRead = shared.failReconstructionRead;
 const surfaceWarnings = shared.surfaceWarnings;
 const validateConfigKeys = shared.validateConfigKeys;
+const missionDirForUuid = shared.missionDirForUuid;
 const getPlayerEntity = shared.getPlayerEntity;
 const getLevelEntity = shared.getLevelEntity;
 const loadCampaignAndPushHub = shared.loadCampaignAndPushHub;
@@ -532,14 +533,13 @@ pub fn handlePlayerInputEvent(
             const mission_path = allocator.dupe(u8, info.path) catch
                 @panic("failed to allocate replay mission path");
             // Return destination: the hub exit whose mission this is (the
-            // exit IS the edge - same derivation as the exit-click path).
+            // exit IS the edge - matched by mission uuid, not path).
             // No matching exit, or a dangling destination (a dream, or a
             // hand-edited hub) -> null -> the entering-hub fallback.
             var end_hub_id: ?[]const u8 = null;
             if (current.hub) |hub| {
-                const mission_id = std.fs.path.basename(info.path);
                 for (hub.mission_exits) |exit| {
-                    if (std.mem.eql(u8, exit.mission_id, mission_id) and exit.destination_hub.len > 0) {
+                    if (std.mem.eql(u8, exit.mission_uuid, info.uuid) and exit.destination_hub.len > 0) {
                         end_hub_id = exit.destination_hub;
                         break;
                     }
@@ -1093,10 +1093,24 @@ pub fn handlePlayerInputEvent(
                     if (exit.position.x == move.destination.x and
                         exit.position.y == move.destination.y)
                     {
+                        // The exit's mission dir resolves through the
+                        // loaded campaign's mission table (the load scan
+                        // built it; replay reads the recorded path - the
+                        // mission-browser-row precedent).
+                        const mission_dir = missionDirForUuid(current, exit.mission_uuid) orelse {
+                            // An exit whose mission cannot be resolved
+                            // (hand-edited dangling reference): warn via
+                            // the recoverable popup + no mission start.
+                            history.session.setPendingError(
+                                history.history_arena.allocator(),
+                                "mission exit does not resolve to any installed mission",
+                            );
+                            break;
+                        };
                         const mission_path = std.fmt.allocPrint(
                             allocator,
                             "campaigns/{s}/missions/{s}",
-                            .{ current.player_data.current_campaign, exit.mission_id },
+                            .{ current.player_data.current_campaign, mission_dir },
                         ) catch @panic("failed to allocate mission path");
                         // The campaign edge's to-end: the exit's
                         // destination_hub rides the event (a dangling/

@@ -39,7 +39,8 @@ test "player_continue: populated PlayerData resumes at current_hub" {
     var history = harness.newHistory(start);
     // Populate PlayerData as if returning from a mid-session exit-to-menu.
     history.current_state.player_data.current_campaign = "main_campaign";
-    history.current_state.player_data.current_hub = "camp_at_the_crossroads";
+    history.current_state.player_data.current_campaign_uuid = "8ecb3f44-9a3d-497c-95a9-a000b8517b7d";
+    history.current_state.player_data.current_hub = "03aeefda-c68b-4853-b65a-d46edb9790f1";
     runToIdle(&history);
 
     event_push.pushPlayerAction(

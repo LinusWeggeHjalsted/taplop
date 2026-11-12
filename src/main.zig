@@ -1448,7 +1448,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     const hub = &history1.current_state.hub.?;
     var beginnings_exit: ?types.Vector2 = null;
     for (hub.mission_exits) |exit| {
-        if (std.mem.eql(u8, exit.mission_id, "beginnings")) {
+        if (std.mem.eql(u8, exit.mission_uuid, "436ab363-3588-42ce-950a-0bc813069c3d")) {
             beginnings_exit = exit.position;
             break;
         }
@@ -1464,7 +1464,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     // the count derived from the mission dir's level files (beginnings has
     // 3). Reconstruction re-derives both identically (deep-equal below).
     try std.testing.expectEqualStrings(
-        "camp_at_the_crossroads",
+        "03aeefda-c68b-4853-b65a-d46edb9790f1",
         history1.current_state.mission.?.end_hub.?,
     );
     try std.testing.expectEqual(@as(u32, 3), history1.current_state.mission.?.level_count);
