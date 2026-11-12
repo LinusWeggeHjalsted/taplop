@@ -313,6 +313,7 @@ working rules).
 - [campaign slice 2c design settle](#campaign-slice-2c-design-settle)
 - [campaign-editor slice 2c, step 1: the curve UiElement](#campaign-editor-slice-2c-step-1-the-curve-uielement)
 - [campaign-editor slice 2c, step 2: the derived campaign edge table](#campaign-editor-slice-2c-step-2-the-derived-campaign-edge-table)
+- [campaign-editor slice 2c, step 3: the world-map overlay renders](#campaign-editor-slice-2c-step-3-the-world-map-overlay-renders)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19799,3 +19800,47 @@ graph now lives in state.
 
 Full suite PASS, doc-symbol check CLEAN (resolveCampaignMissionDir
 had no doc references), dash sweep clean.
+
+## campaign-editor slice 2c, step 3: the world-map overlay renders
+
+The map surface's view side - the overlay that the `toggle_world_map`
+plumbing (action + binding contexts + FullScreenOverlayId, all
+pre-existing) finally has something to show:
+
+- **`src/ui/world_map.zig`** (one surface per file, the options_menu
+  granularity): `buildWorldMap` - a full-screen darkest surface fill
+  (blocks input), the campaign background at NATIVE size centered on
+  the origin (dims resolved at load into the new
+  `Campaign.background_dims` via `resolveCampaignBackgroundDims` -
+  the custom-PNG-dims machinery; unreadable warns + skips), hub icons
+  (128x128 `world/hub_icon`, MISSING-draws-magenta placeholder - the
+  artist's shopping list picked it up automatically via art_report's
+  literal scan), and the three edge classes as curve PAIRS (pure-black
+  outline stroke `8+2*8` under a theme-lightest 8px stroke): the
+  self-loop teardrop (L=300, w=120, tweakable), the straight edge
+  (degenerate bezier + parallel same-pair spread by exit index), and
+  the dashed dangling stub along the direction bearing. Lit = start
+  hub discovered-or-start; dimmed = alpha 100. No name labels - names
+  ride tooltips only. The framing transform is a pure translation:
+  the 3840x2160 default framing region IS the reference resolution.
+- **The top-bar world-map button** (screens.zig): 128x128, one gap
+  right of redo, `ui/icon_world_map` (MISSING placeholder), gated to
+  level + hub screens via a `map_available` param (the binding
+  contexts' rule; playtest/validation runs are level screens, so the
+  run gets the map). Default keybind KeyM already existed.
+- **view() wiring**: the overlay branch (campaign as a pure state
+  read, discovered groups by campaign uuid); `isFullScreenOverlayOpen`
+  made pub (view.zig needs it; the first consumer of the overlay
+  render gate).
+- **Structure tests**: derived total count, the input-blocking
+  surface, the background's native-size centering, hub icon placement
+  + tooltip names, the loop's symmetric teardrop controls (found + fixed
+  a wrong first assertion - symmetry is about the direction axis, so
+  the controls mirror in x for a north loop), straight-edge endpoints,
+  the dashed stub, and the fresh-campaign dimming (only the start hub
+  + its edges lit).
+
+Console smoke (piped boot + quit + help against the fresh binary)
+clean. Steps 1-3 of 2c done; the 2c TODO item is collapsed to the
+remainder (the campaign picker + listCampaigns + the session-scoped
+graph cache).
