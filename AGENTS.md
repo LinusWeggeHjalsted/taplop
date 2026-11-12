@@ -156,6 +156,18 @@ session + the ButtonPayload migration):
   census counts were hand-updated twice before being derived from the
   same list the picker iterates (self-updating, still catches emission
   bugs). Snapshot counts of anything that grows by design are churn.
+- **When a result contradicts a previous result, distrust the HARNESS
+  before revising the theory.** The campaign-editor slice 2a comptime bug
+  produced two phantom-green states: a probe test silently absent from
+  the binary (the stale generated-test-root - see TODO's open build bug)
+  and a compile error a too-narrow grep pattern didn't classify as
+  failure. A confounded experiment is worse than no experiment - it
+  points the theory in a wrong direction with false confidence. Method:
+  assert every element, not just the first (the [0]-only probe masked
+  which elements were corrupt); grep for `error:` categories explicitly
+  when claiming green; and when the same code passes then fails without
+  changes, hunt the hidden state (caches, generated files, grep
+  patterns) before the code.
 
 ### Commit policy
 

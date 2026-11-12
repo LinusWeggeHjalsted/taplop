@@ -3362,10 +3362,12 @@ re-skinning or resizing the art moves nothing.
 
 The **default map framing** is a VIEW constant, never campaign data: the
 map view (buildWorldMap + the campaign editor view) opens framed on a
-3840×2160 region centered on the origin, and zooms in/out exactly like
-in-game zoom (the same camera model over the same space). If 4k proves
-the wrong default, it is a one-constant change - nothing stored depends
-on it.
+3840×2160 region centered on the origin. **Fixed framing in v1** (see
+Edge geometry): no zoom/pan yet - the builder keeps one transform slot
+so zoom can land later without a rewrite (zoom would then behave
+exactly like in-game zoom, the same camera model over the same space).
+If 4k proves the wrong default, it is a one-constant change - nothing
+stored depends on it.
 
 The start hub's position is ordinary authored data - no rule places it
 at the center. The official campaign currently places it at `0 0`

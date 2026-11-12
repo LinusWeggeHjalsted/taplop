@@ -307,6 +307,7 @@ working rules).
 - [campaign content paths re-shaped to content-root-relative (review Part 5 rider)](#campaign-content-paths-re-shaped-to-content-root-relative-review-part-5-rider)
 - [Campaign slice-2 design settle: uuid identity + the viewing model](#campaign-slice-2-design-settle-uuid-identity--the-viewing-model)
 - [campaign-editor slice 2a+2b: uuid identity + scan resolution + the arrival rule](#campaign-editor-slice-2a2b-uuid-identity--scan-resolution--the-arrival-rule)
+- [Session reflection: campaign-editor slice 2 (post-2a/2b debrief)](#session-reflection-campaign-editor-slice-2-post-2a2b-debrief)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -19543,3 +19544,39 @@ Validation: full suite PASS (902 tests); the console smokes against the
 real binary - boot, click-through new game landing in the hub, and
 `dump player_data.discovered_hubs` showing the live-created group with
 the start hub's uuid.
+
+## Session reflection: campaign-editor slice 2 (post-2a/2b debrief)
+
+The pause-and-reflect after slice 2a+2b (the session that landed the uuid
+identity model + the arrival rule). Points surfaced, and where each went:
+
+- **The comptime-materialization trap + the two phantom-green confounds**
+  are recorded at their homes: AGENTS → Zig Gotchas (the comptime bug +
+  the reliable shapes), AGENTS → Testing discipline (the
+  distrust-the-harness lesson - "when a result contradicts a previous
+  result, distrust the harness before revising the theory"), and the
+  stale-test-root build bug lives as an OPEN item in TODO (Next Up).
+- **DESIGN contradiction fixed**: The map coordinate model still claimed
+  the map "zooms in/out exactly like in-game zoom" while the Edge
+  geometry settle (same session) settled "fixed framing in v1" - now
+  aligned (fixed in v1, one transform slot for later zoom).
+- **FileSource accretion** (reads/writes/scans/listings + now uuid
+  resolution, mtime stamping, a future renameDir): noted, NOT acted on -
+  it's the right seam for all of it (the belong-don't-fit analysis kept
+  landing there), but the file is growing toward a split decision. No
+  TODO line: revisit when the split question actually bites (2e's
+  listCampaigns is the next add).
+- **Fixture-vs-format-bump churn** (~10 mechanical test fixes per bump):
+  accepted, not worth deriving expectations while format bumps are this
+  frequent through the campaign editor slices; the uuid identity-stable
+  fields are specifically fine to hardcode (that's their purpose).
+- **hub_uuid has no validation** (a malformed uuid is accepted silently
+  as identity - consistent with warn-not-reject, but slice 3's editor
+  starts minting them): folded into the slice-3 mint-on-fork question
+  implicitly; not a separate item.
+
+The strategic read: the uuid/scan/arrival settle dissolved five deferred
+open questions with one mechanism, and 2a+2b landing green in a day
+suggests the remaining slices (2c: the map surface + curve element; 2d:
+acting from the map; 2e: the switcher) are well-scoped. Next-session
+priority: the test-root build bug fix, then 2c.
