@@ -521,79 +521,131 @@ pub fn view(
     else
         null;
 
-    // Options menu: full-screen modal panel with a context-specific button
-    // stack. Drawn on top of normal UI (bottom/top bars) but under the error
-    // popup (which is the most-modal surface). Pure over
-    // GameState.ui_surfaces.isSurfaceOpen(.options_menu). See DESIGN → UI Framework.
-    if (current_state.ui_surfaces.isSurfaceOpen(.options_menu)) {
-        ui.buildOptionsMenu(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            current_state.screen,
-            editor_run,
-            button_color,
-            session.persistent_dir_path,
-        ) catch @panic("failed to build options menu");
-    }
-
-    // Main-menu overlays (load-save browser, credits): both open ON TOP of
-    // the options menu (the credits button lives in its main-menu variant;
-    // the browser is reachable while the menu is closed), so they emit
-    // AFTER it - painter order is draw order, and a full-screen panel
-    // emitted earlier would be covered entirely. The list for the browser
-    // lives on SessionState (scanned from the input path - view stays
-    // file-free; see SessionState.save_files).
-    if (current_state.screen == .main_menu) {
-        if (current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
-            ui.buildLoadSavePanel(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                ui.screenRect(),
-                session.save_files,
-                &session.ui_state.load_save_scroll_offset,
-                button_color,
-            ) catch @panic("failed to build load save panel");
+    // The stackable full-screen overlays, in OPEN order: slot order IS
+    // z-order (the last opened draws on top - UiSurfaceState.open_overlays),
+    // so any overlay opens on top of any other and the emission walks the
+    // stack bottom-up. Which surfaces can open on which screen lives in
+    // surfaceToggleLegal; transitions closeAll, so the stack only ever
+    // holds surfaces legal for the current screen (the main-menu gates on
+    // the browser + credits below are belt-and-suspenders on that
+    // invariant). The lists behind the browser live on SessionState
+    // (scanned from the input path - view stays file-free; see
+    // SessionState.editor_local_missions / save_files).
+    for (current_state.ui_surfaces.open_overlays) |maybe_surface| {
+        const surface = maybe_surface orelse continue;
+        switch (surface) {
+            .options_menu => {
+                ui.buildOptionsMenu(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    current_state.screen,
+                    editor_run,
+                    button_color,
+                    session.persistent_dir_path,
+                ) catch @panic("failed to build options menu");
+            },
+            .load_save_menu => if (current_state.screen == .main_menu) {
+                ui.buildLoadSavePanel(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    session.save_files,
+                    &session.ui_state.load_save_scroll_offset,
+                    button_color,
+                ) catch @panic("failed to build load save panel");
+            },
+            // Modal like the load-save browser - the panel blocks input to
+            // the buttons behind it.
+            .credits => if (current_state.screen == .main_menu) {
+                ui.buildCreditsPanel(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    button_color,
+                ) catch @panic("failed to build credits panel");
+            },
+            // Any screen - opened from the global top bar's `?` button;
+            // the bar itself stays clickable above it (emitted last below).
+            .tips => {
+                ui.buildTipsPanel(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    tips,
+                    session.ui_state.tips_index,
+                    active_theme,
+                    button_color,
+                ) catch @panic("failed to build tips panel");
+            },
+            .settings => {
+                ui.buildSettingsPanel(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    settings,
+                    active_theme.player_gradient,
+                    button_color,
+                    session.ui_state.settings_tab,
+                    &session.ui_state.keybind_scroll_offset,
+                    if (session.ui_state.keybind_edit != null)
+                        &session.ui_state.keybind_edit.?
+                    else
+                        null,
+                    &session.ui_state.keybind_picker_scroll_offset,
+                ) catch @panic("failed to build settings panel");
+            },
+            .editor_browser => {
+                ui.buildEditorBrowser(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    session.ui_state.editor_browser_kind,
+                    session.editor_local_missions,
+                    session.editor_official_missions,
+                    session.ui_state.editor_mission_browser_tab,
+                    &session.ui_state.editor_mission_scroll_offset,
+                    button_color,
+                ) catch @panic("failed to build editor browser");
+            },
+            // The binding contexts gate the toggle to level + hub screens,
+            // so the campaign is in scope whenever the map can be open; a
+            // null campaign renders the empty surface only (background +
+            // hubs + bezier edges, dim-undiscovered - see DESIGN →
+            // Campaigns & the Campaign Editor → The map surface).
+            .world_map => {
+                ui.buildWorldMap(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    current_state.campaign orelse types.Campaign{},
+                    current_state.player_data.discovered_hubs,
+                    active_theme,
+                ) catch @panic("failed to build world map");
+            },
+            .full_combat_log => @panic("full combat log view not implemented"),
+            // The middle panels are not stack members (side-by-side
+            // layout, not z-order); openSurface never stores them.
+            .inventory,
+            .gear,
+            .skills,
+            .entity_inspect,
+            => @panic("middle panel in the overlay stack"),
         }
-
-        // Modal like the load-save browser - the panel blocks input to the
-        // buttons behind it.
-        if (current_state.ui_surfaces.isSurfaceOpen(.credits)) {
-            ui.buildCreditsPanel(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                ui.screenRect(),
-                button_color,
-            ) catch @panic("failed to build credits panel");
-        }
-    }
-
-    // Tips overlay (any screen - opened from the global top bar's `?`
-    // button): a full-screen modal like the credits panel. Emitted after
-    // the options menu + main-menu overlays so it covers them; the error
-    // popup (next) stays the most-modal surface, and the global top bar
-    // (last) stays clickable above it.
-    if (current_state.ui_surfaces.isSurfaceOpen(.tips)) {
-        ui.buildTipsPanel(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            tips,
-            session.ui_state.tips_index,
-            active_theme,
-            button_color,
-        ) catch @panic("failed to build tips panel");
     }
 
     // Mission-fail overlay: full-screen modal shown when the player is dead
-    // (derived from level.entities[0].current_health == 0). Drawn on top of
-    // the options menu (death takes precedence over a manually opened menu)
-    // but under the error popup. The buttons reuse the options_action dispatch.
-    // See DESIGN → Architecture.
+    // (derived from level.entities[0].current_health == 0), fixed ABOVE the
+    // overlay stack - death takes precedence over anything the player had
+    // open. The buttons reuse the options_action dispatch. See DESIGN →
+    // Architecture.
     if (playerDead(current_state)) {
         ui.buildMissionFail(
             &ui_elements,
@@ -614,10 +666,10 @@ pub fn view(
     // shows it, dismiss_mission_complete (Continue) clears it on the timeline.
     // The validation context (personal best + medal targets + the overwrite
     // offer) is session-side - built here; view is file-free, so the write
-    // site captured the best. Drawn on top of the mission_fail overlay
-    // (mutually exclusive) but under the error popup. See DESIGN →
-    // Architecture + DESIGN → Custom Missions & Online Services →
-    // Validation replay.
+    // site captured the best. Fixed above the overlay stack + the fail
+    // overlay (never co-rendered with it; the order between them is pinned
+    // by the census). See DESIGN → Architecture + DESIGN → Custom Missions
+    // & Online Services → Validation replay.
     if (current_state.last_completed_mission) |info| {
         const validation: ?ui.ValidationCompleteContext = if (info.validation) .{
             .personal_best_turns = session.validation_personal_best_turns,
@@ -635,72 +687,6 @@ pub fn view(
             active_theme,
             validation,
         ) catch @panic("failed to build mission complete overlay");
-    }
-
-    // Settings screen: full-screen modal overlay. Opens on top of the
-    // options menu (in-game drill-in) or directly over the main menu (main-
-    // menu Settings button). Drawn under the error popup so a recoverable
-    // error still surfaces on top. `blocks_input` panel shields the surface
-    // behind it. See DESIGN → UI Framework → Settings screen.
-    if (current_state.ui_surfaces.isSurfaceOpen(.settings)) {
-        ui.buildSettingsPanel(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            settings,
-            active_theme.player_gradient,
-            button_color,
-            session.ui_state.settings_tab,
-            &session.ui_state.keybind_scroll_offset,
-            if (session.ui_state.keybind_edit != null)
-                &session.ui_state.keybind_edit.?
-            else
-                null,
-            &session.ui_state.keybind_picker_scroll_offset,
-        ) catch @panic("failed to build settings panel");
-    }
-
-    // Editor browser: full-screen modal over the editor or the main
-    // menu, on top of the options menu it opened from (the settings
-    // screen's stacking - drawn under the error popup, which stays the
-    // most-modal surface). The lists live on SessionState (scanned from
-    // the input path when the browser opens - view stays file-free; see
-    // SessionState.editor_local_missions).
-    if (current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) {
-        ui.buildEditorBrowser(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            session.ui_state.editor_browser_kind,
-            session.editor_local_missions,
-            session.editor_official_missions,
-            session.ui_state.editor_mission_browser_tab,
-            &session.ui_state.editor_mission_scroll_offset,
-            button_color,
-        ) catch @panic("failed to build editor browser");
-    }
-
-    // The world-map overlay (a full-screen overlay - the surface plumbing
-    // predates the view): the active campaign's graph as a pure state
-    // read (background + hubs + bezier edges, dim-undiscovered - see
-    // DESIGN → Campaigns & the Campaign Editor → The map surface).
-    // Emitted above the options menu + settings (opening the map from
-    // inside the menu covers it - the toggle closes it again) but under
-    // the error popup + top bar. The binding contexts gate the toggle to
-    // level + hub screens, so the campaign is in scope whenever it can
-    // be open; a null campaign renders the empty surface only.
-    if (current_state.ui_surfaces.isSurfaceOpen(.world_map)) {
-        ui.buildWorldMap(
-            &ui_elements,
-            frame_allocator,
-            font_metrics,
-            ui.screenRect(),
-            current_state.campaign orelse types.Campaign{},
-            current_state.player_data.discovered_hubs,
-            active_theme,
-        ) catch @panic("failed to build world map");
     }
 
     // Recoverable error popup: modal, centered, drawn on top of all other
@@ -5558,14 +5544,18 @@ test "main menu: credits draws ON TOP of the options menu (painter order)" {
     try std.testing.expect(exit_game_index.? < full_screen_panel_indices[1]);
 }
 
-// Z-ORDER CENSUS (DESIGN → Modal overlays → the z-order ladder): two
-// forced frames, every reachable overlay flag set at once, asserting the
-// surfaces' marker elements emit in the canonical ladder order (painter
-// order = draw order). The Escape chain mirrors this ladder topmost-first;
-// this census is what keeps the two from drifting apart again - both a
-// silent view() reorder and a chain-arm reorder without the emission
-// following fail here.
-test "z-order census: forced frames emit every overlay surface in the canonical ladder order" {
+// Z-ORDER CENSUS (DESIGN → Modal overlays → the z-order ladder): forced
+// frames asserting the DYNAMIC z-order property - the stackable overlays
+// emit in OPEN order (the overlay stack walked bottom-up; any overlay can
+// open on top of any other), with the mission complete/fail announcements
+// fixed above the stack and the error popup / top bar / tooltip / FPS
+// label above everything. The frames deliberately open their surfaces in
+// DIFFERENT orders (neither matches a fixed ladder), so a regression to
+// any fixed emission order fails here. The Escape chain closes the stack
+// topmost-first; this census is what keeps the two from drifting apart
+// again - both a silent view() reorder and a chain-arm reorder without
+// the emission following fail here.
+test "z-order census: overlays emit in open order; announcements + chrome fixed above" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const arena = backing.allocator();
@@ -5627,10 +5617,12 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         .y = @divTrunc(ui.top_bar_height, 2),
     };
 
-    // ── Frame 1: the main menu - every main-menu-reachable surface up.
-    // Ladder: base < options menu < load-save browser < credits < tips
-    // overlay < settings screen < editor browser < error popup < top bar
-    // < tooltip < FPS label.
+    // ── Frame 1: the main menu - every main-menu-reachable surface up,
+    // opened in a deliberately non-canonical order (tips UNDER credits,
+    // settings UNDER the browser's lower neighbors - the reverse of the
+    // pre-stack fixed ladder). Open order (bottom first): options menu <
+    // tips < credits < load-save browser < settings < editor browser; then
+    // the fixed chrome: error popup < top bar < tooltip < FPS label.
     {
         var main_menu_state = GameState{
             .screen = .main_menu,
@@ -5646,9 +5638,9 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         };
         var session = state.SessionState{};
         main_menu_state.ui_surfaces.openSurface(.options_menu);
-        main_menu_state.ui_surfaces.openSurface(.load_save_menu);
-        main_menu_state.ui_surfaces.openSurface(.credits);
         main_menu_state.ui_surfaces.openSurface(.tips);
+        main_menu_state.ui_surfaces.openSurface(.credits);
+        main_menu_state.ui_surfaces.openSurface(.load_save_menu);
         main_menu_state.ui_surfaces.openSurface(.settings);
         main_menu_state.ui_surfaces.openSurface(.editor_browser);
         session.setPendingError(arena, "census frame");
@@ -5689,10 +5681,13 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         const tooltip = tooltipHeader(elements, "Undo");
         const fps = fpsLabel(elements);
         try std.testing.expect(main_menu_base < options_menu);
-        try std.testing.expect(options_menu < load_save_browser);
-        try std.testing.expect(load_save_browser < credits);
-        try std.testing.expect(credits < tips_back);
-        try std.testing.expect(tips_back < settings_screen);
+        // The emission order IS the open order: tips (opened second) sits
+        // UNDER credits + the browser (opened later) - the dynamism the
+        // census exists to pin.
+        try std.testing.expect(options_menu < tips_back);
+        try std.testing.expect(tips_back < credits);
+        try std.testing.expect(credits < load_save_browser);
+        try std.testing.expect(load_save_browser < settings_screen);
         try std.testing.expect(settings_screen < editor_browser);
         try std.testing.expect(editor_browser < error_popup);
         try std.testing.expect(error_popup < top_bar);
@@ -5700,12 +5695,15 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         try std.testing.expect(tooltip < fps);
     }
 
-    // ── Frame 2: a level, player dead - every level-reachable surface up.
-    // Ladder: bottom bar < options menu < tips overlay < mission-fail <
-    // mission-complete < settings screen < editor browser < error popup <
-    // top bar < FPS label. (complete above fail is the pinned never-co-rendered order;
-    // the load-save browser + credits are main-menu-gated and absent
-    // here.)
+    // ── Frame 2: a level, player dead + a completed mission - every
+    // level-reachable surface up in ANOTHER non-canonical order (different
+    // from frame 1), with the world map opened LAST (top of the stack -
+    // also the map-over-options-menu pairing from the campaign-editor 2c
+    // rider). Open order: tips < options menu < editor browser < settings
+    // < world map; then the fixed rungs: mission-fail < mission-complete
+    // (the pinned never-co-rendered order) < error popup < top bar < FPS
+    // label. The load-save browser + credits are main-menu-gated and
+    // absent here.
     {
         const dead_player = types.Entity{
             .team = 0,
@@ -5714,11 +5712,18 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         };
         var level_state = test_harness.levelStateWithEntities(arena, &.{dead_player}, &.{});
         level_state.last_completed_mission = .{ .name = "census mission", .path = "missions/census" };
+        level_state.campaign = .{
+            .name = "Census",
+            .uuid = "census",
+            .start_hub = "hub",
+            .hubs = &.{.{ .uuid = "hub", .dir = "hub", .position = .{ .x = 0, .y = 0 }, .name = "Hub" }},
+        };
         var session = state.SessionState{};
-        level_state.ui_surfaces.openSurface(.options_menu);
         level_state.ui_surfaces.openSurface(.tips);
-        level_state.ui_surfaces.openSurface(.settings);
+        level_state.ui_surfaces.openSurface(.options_menu);
         level_state.ui_surfaces.openSurface(.editor_browser);
+        level_state.ui_surfaces.openSurface(.settings);
+        level_state.ui_surfaces.openSurface(.world_map);
         session.setPendingError(arena, "census frame");
         session.input_state.mouse_screen_position = .{ .x = @floatFromInt(hover.x), .y = @floatFromInt(hover.y) };
 
@@ -5744,22 +5749,34 @@ test "z-order census: forced frames emit every overlay surface in the canonical 
         );
         const elements = view_state.ui_elements;
         const bottom_bar = firstButton(elements, .skip);
-        const options_menu = firstButton(elements, .restart_mission);
         const tips_back = firstButton(elements, .open_tips);
+        const options_menu = firstButton(elements, .restart_mission);
+        const editor_browser = lastButton(elements, .toggle_editor_browser);
+        const settings_screen = firstButton(elements, .change_setting);
+        // The world map's marker: its hub-icon image (the only element
+        // with that sprite id - the level screen's base UI never draws
+        // one).
+        const world_map = for (elements, 0..) |element, index| {
+            if (element == .image and std.mem.eql(u8, element.image.sprite_id, "world/hub_icon")) break index;
+        } else @panic("census world-map hub icon not found");
         const mission_fail = lastButton(elements, .restart_mission);
         const mission_complete = firstButton(elements, .continue_after_mission);
-        const settings_screen = firstButton(elements, .change_setting);
-        const editor_browser = lastButton(elements, .toggle_editor_browser);
         const error_popup = firstButton(elements, .dismiss_error);
         const top_bar = firstButton(elements, .undo);
         const fps = fpsLabel(elements);
-        try std.testing.expect(bottom_bar < options_menu);
-        try std.testing.expect(options_menu < tips_back);
-        try std.testing.expect(tips_back < mission_fail);
+        // Emission order IS open order (a different one from frame 1 -
+        // tips UNDER the options menu, settings UNDER the browser).
+        try std.testing.expect(bottom_bar < tips_back);
+        try std.testing.expect(tips_back < options_menu);
+        try std.testing.expect(options_menu < editor_browser);
+        try std.testing.expect(editor_browser < settings_screen);
+        try std.testing.expect(settings_screen < world_map);
+        // The announcements sit fixed ABOVE the whole stack (complete
+        // above fail: the pinned never-co-rendered order), then the
+        // always-on-top chrome.
+        try std.testing.expect(world_map < mission_fail);
         try std.testing.expect(mission_fail < mission_complete);
-        try std.testing.expect(mission_complete < settings_screen);
-        try std.testing.expect(settings_screen < editor_browser);
-        try std.testing.expect(editor_browser < error_popup);
+        try std.testing.expect(mission_complete < error_popup);
         try std.testing.expect(error_popup < top_bar);
         try std.testing.expect(top_bar < fps);
     }

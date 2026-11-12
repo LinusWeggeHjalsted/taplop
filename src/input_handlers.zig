@@ -1029,10 +1029,11 @@ const EscapeRung = union(enum) {
     mission_fail,
 };
 
-/// The Escape chain: which overlay closes, topmost-first. The order
-/// mirrors the view's z-order (painter order in `view`), which the
-/// z-order census test in view.zig pins; `handleEscapeKey` walks it from
-/// the top down and closes the first open rung. `escapeCoverageCheck`
+/// The Escape chain: which overlay closes, topmost-first. The view's
+/// z-order is DYNAMIC (the overlay stack's open order - see view() + the
+/// census), while this chain walks a fixed rung order with the overlay
+/// stack's world-map/combat-log pair last; `handleEscapeKey` walks it
+/// from the top down and closes the first open rung. `escapeCoverageCheck`
 /// below forces every `UiSurfaceId` to have a rung here (or an explicit
 /// exclusion), so a new surface fails the build until its Escape behavior
 /// is decided - instead of shipping silently without one, the way tips

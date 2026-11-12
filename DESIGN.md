@@ -1781,8 +1781,8 @@ load and picks up the renamed action's default binding).
 `handleEscapeKey` (input_handlers.zig) consumes it as a generic
 "close the topmost overlay" chain: not a hand-maintained ladder of
 if/returns but a walk down `escape_ladder`, a topmost-first ordered
-array of `EscapeRung` values that mirrors the view's z-order (the
-emission ladder view() pins via its z-order census test). Most rungs
+array of `EscapeRung` values (fixed-priority surfaces first, then the
+overlay stack's world-map/combat-log pair - see below). Most rungs
 are `toggle_surface` (a `UiSurfaceId` that closes via the recorded
 `player_toggle_ui_surface` when open, the same event the surface's own
 buttons push); three carry custom close semantics. The walk closes the
@@ -4459,37 +4459,34 @@ the game cheating):
 
 ### Modal overlays (pause + shield pattern)
 
-**The z-order ladder** - the canonical emission order in `view()` (painter
-order = draw order; later block = on top). The Escape chain mirrors this
-list topmost-first, and the z-order census test in view.zig pins the
-reachable orderings so neither side can drift silently:
+**The z-order ladder** - the canonical emission shape in `view()` (painter
+order = draw order; later block = on top). The stackable modal overlays
+emit in OPEN order - the overlay stack (`UiSurfaceState.open_overlays`)
+walked bottom-up - so ANY overlay opens on top of any other (the world
+map over the options menu, tips over the map, settings over the
+browser); the last opened draws on top. The z-order census test in
+view.zig pins the DYNAMIC property (forced frames in deliberately
+canonical-defying open orders), so a regression to any fixed emission
+order fails the build:
 
 1. Base per-screen UI (world, bottom bar / editor shell / main menu)
 2. Drag ghost (mid-drag only - no modal is reachable then)
-3. Options menu
-4. Load-save browser + credits (main-menu screen only)
-5. Tips overlay (any screen - opened from the global top bar; under
-   mission-complete/fail, which take precedence over a manually opened
-   panel, the options-menu precedent)
-6. Mission-complete / validation stats
-7. Mission-fail overlay
-8. Settings screen
-9. Editor browser
-10. Error popup (the most-modal surface)
-11. Global top bar (options/undo/redo/tips `?` - clickable above every
-    modal by design)
-12. Hover tooltip (passive, non-blocking)
-13. FPS diagnostic label (non-blocking; spatially below the top bar)
+3. The overlay stack, in open order: options menu, load-save browser,
+   credits, tips, settings screen, editor browser, world map, full
+   combat log - whichever order they were opened in
+4. Mission-fail overlay, then mission-complete / validation stats (the
+   announcements, fixed ABOVE the stack - death/completion take
+   precedence over anything the player had open; complete above fail is
+   the pinned never-co-rendered order)
+5. Error popup (the most-modal surface)
+6. Global top bar (options/undo/redo/tips `?` - clickable above every
+   modal by design)
+7. Hover tooltip (passive, non-blocking)
+8. FPS diagnostic label (non-blocking; spatially below the top bar)
 
-The full-screen overlays (world map, full combat log) have a RESERVED slot
-between the options menu and the base UI (below the options menu -
-Escape closes the menu first, leaving them open); nothing renders them
-yet, so the census can't cover them - when `buildWorldMap`/
-`buildFullCombatLog` land, they emit there and join the census.
-
-For unreachable pair orderings (complete vs fail, browser vs settings -
-never co-rendered), the view's emission is the spec and the chain follows:
-both were once out of sync, which is why the census exists.
+The full combat log has no view yet (and no open path); when it lands it
+joins the stack like every other overlay - the dispatch loop in view() is
+the seam.
 
 Full-screen modal overlays - the options menu, the error popup, the
 mission-fail overlay, the mission-complete overlay - share a structure:
