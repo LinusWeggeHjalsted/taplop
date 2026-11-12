@@ -354,3 +354,40 @@ test "map click path: hub button + edge button drive the recorded orchestrators"
     try testing.expectEqualStrings(hub_b_uuid, history.current_state.mission.?.end_hub.?);
     try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
 }
+
+test "map travel mid-level to the entering hub: abandons + returns (not a no-op)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    enterFixtureCampaign(&history);
+
+    // Enter the mission at A, then click hub A on the map: current_hub
+    // names A but the player is IN THE MISSION, not at the hub - the
+    // click is a real travel (abandon + return to A), never the standing-
+    // at-the-hub no-op (the regression the hands-on pass caught: the
+    // click sound fired, nothing happened).
+    pushMapAction(&history, .{ .player_start_mission_from_map = .{
+        .mission_path = mission_path,
+        .end_hub_id = hub_b_uuid,
+        .start_hub_id = hub_a_uuid,
+    } });
+    try testing.expectEqual(state.Screen.level, history.current_state.screen);
+
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    pushMapAction(&history, .{ .player_travel_to_hub = .{
+        .hub_uuid = hub_a_uuid,
+    } });
+    try testing.expectEqual(state.Screen.hub, history.current_state.screen);
+    try testing.expectEqualStrings(hub_a_uuid, history.current_state.player_data.current_hub);
+    try testing.expectEqualStrings("Hub A", history.current_state.hub.?.name);
+
+    // Standing IN hub A, clicking hub A is the no-op (the input arm
+    // returns before recording anything).
+    const events_before = history.event_history.items.len;
+    history.current_state.ui_surfaces.openSurface(.world_map);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .travel_to_map_hub,
+    }, .{ .map_hub = 0 }, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expectEqual(events_before, history.event_history.items.len);
+}

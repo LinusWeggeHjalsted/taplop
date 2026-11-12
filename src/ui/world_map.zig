@@ -367,16 +367,19 @@ pub fn buildWorldMap(
             .dashed = dashed,
             .arrowhead = true,
             .blocks_input = false,
-            .tooltip = tooltip,
         } });
         // The clickable edge: a spriteless button whose hit region is the
         // STROKE's samples (the hit_curve seam - distance to the polyline,
         // not the bounds rect). Clickable exactly when the edge is lit
         // (its start hub discovered-or-start = the mission-entry legality).
-        // An edge with no resolvable mission is never clickable (the
-        // consumption site's popup names the broken exit) - a dangling
-        // DESTINATION is still clickable (it is a placed hub + mission,
-        // only the to-end forward reference is missing).
+        // The mission tooltip rides the BUTTON too (containsPoint respects
+        // hit_curve, so the tooltip shows exactly where a click would work
+        // - the decorative stroke carries no tooltip, whose bounds-rect
+        // hover would cover the whole bezier bbox). An edge with no
+        // resolvable mission is never clickable (the consumption site's
+        // popup names the broken exit) - a dangling DESTINATION is still
+        // clickable (it is a placed hub + mission, only the to-end forward
+        // reference is missing).
         if (lit and edge.mission_dir.len > 0) {
             try elements.append(allocator, .{ .button = .{
                 .sprite_id = null,
@@ -543,7 +546,16 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expectEqual(test_theme.lightest, loop_light.color);
     try std.testing.expectEqual(edge_width, loop_light.width);
     try std.testing.expect(loop_light.arrowhead);
-    try std.testing.expectEqualStrings("Loop", loop_light.tooltip.?.header.?[0].text);
+    // The decorative strokes carry NO tooltip (their bounds-rect hover
+    // would cover the whole bezier bbox); the mission tooltip rides the
+    // clickable button, whose hit region is the stroke's samples - the
+    // tooltip shows exactly where a click would work.
+    try std.testing.expect(loop_light.tooltip == null);
+    const loop_button = elements.items[11].button;
+    try std.testing.expectEqual(types.Action.start_mission_from_map_edge, loop_button.action);
+    try std.testing.expectEqual(@as(u32, 0), loop_button.payload.?.map_edge);
+    try std.testing.expectEqualStrings("Loop", loop_button.tooltip.?.header.?[0].text);
+    try std.testing.expect(loop_button.hit_curve != null);
     try std.testing.expect(loop_light.control_start.y < loop_anchor.y);
     try std.testing.expect(loop_light.control_end.y < loop_anchor.y);
     // The teardrop is symmetric about the direction axis (north): both

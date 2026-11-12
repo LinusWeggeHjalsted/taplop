@@ -1502,10 +1502,14 @@ pub fn handleAnytimeInput(
                     history.current_state.campaign orelse return;
                 if (hub_index >= campaign.hubs.len) return; // stale-graph belt
                 const hub = campaign.hubs[hub_index];
-                // Traveling to the hub the player is ALREADY at: a no-op
-                // (the recorded event would be legal but pointless - the
-                // click did nothing, so nothing records).
-                if (std.mem.eql(u8, hub.uuid, history.current_state.player_data.current_hub) and
+                // Traveling to the hub the player is ALREADY STANDING IN
+                // (screen .hub + that hub): a no-op (the recorded event
+                // would be legal but pointless - the click did nothing, so
+                // nothing records). Mid-level the same uuid is the hub the
+                // mission was ENTERED from - clicking it is a real travel
+                // (abandon + return), not a no-op.
+                if (history.current_state.screen == .hub and
+                    std.mem.eql(u8, hub.uuid, history.current_state.player_data.current_hub) and
                     history.session.viewed_campaign == null) return;
                 const campaign_dir: ?[]const u8 = if (history.session.viewed_campaign != null)
                     (allocator.dupe(u8, campaign.dir) catch @panic("failed to dupe travel campaign dir"))
