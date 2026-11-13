@@ -513,11 +513,17 @@ pub fn buildCampaignEditorView(
                     // start state (the radio readback); the untoggle case is
                     // vetoed at the consumption site.
                     const is_start = editor.start_hub == hub.handle;
+                    // The toggle entry spans the next TWO row units (the
+                    // name entry above holds units 1-2; this one 3-4): its
+                    // label sits at the bottom of its FIRST unit, the
+                    // control fills its second (inspectorControlRect - the
+                    // two-unit entry convention).
+                    const start_entry_y = content.y + 3 * editor_shell.editor_header_strip_height;
                     try elements.append(allocator, .{ .text_label = .{
                         .text = "Start Hub",
                         .screen_position = .{
                             .x = content.x,
-                            .y = content.y + 3 * editor_shell.editor_header_strip_height -
+                            .y = start_entry_y + editor_shell.editor_header_strip_height -
                                 editor_shell.editor_group_header_font_size,
                         },
                         .font_size = editor_shell.editor_group_header_font_size,
@@ -526,7 +532,7 @@ pub fn buildCampaignEditorView(
                     } });
                     const toggle_rect = inspector.inspectorControlRect(.{
                         .x = content.x,
-                        .y = content.y + 3 * editor_shell.editor_header_strip_height,
+                        .y = start_entry_y,
                         .width = content.width,
                         .height = 2 * editor_shell.editor_header_strip_height,
                     });
@@ -654,11 +660,12 @@ pub fn buildCampaignEditorView(
                 // The background button (a two-unit entry: label +
                 // control): opens the picker; the label names the current
                 // stem (None when unset).
+                const background_entry_y = content.y + 3 * editor_shell.editor_header_strip_height;
                 try elements.append(allocator, .{ .text_label = .{
                     .text = "Background",
                     .screen_position = .{
                         .x = content.x,
-                        .y = content.y + 3 * editor_shell.editor_header_strip_height -
+                        .y = background_entry_y + editor_shell.editor_header_strip_height -
                             editor_shell.editor_group_header_font_size,
                     },
                     .font_size = editor_shell.editor_group_header_font_size,
@@ -671,7 +678,7 @@ pub fn buildCampaignEditorView(
                     "None";
                 const background_rect = inspector.inspectorControlRect(.{
                     .x = content.x,
-                    .y = content.y + 3 * editor_shell.editor_header_strip_height,
+                    .y = background_entry_y,
                     .width = content.width,
                     .height = 2 * editor_shell.editor_header_strip_height,
                 });
@@ -1093,6 +1100,18 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     // is bound to the selected hub's handle.
     try std.testing.expectEqual(@as(usize, 2), field_refs);
     try std.testing.expectEqual(@as(u32, 0), hub_name_field.?.ref.target.campaign_hub);
+    // The two-unit entry convention: the Start Hub entry's label sits
+    // BELOW the name field's control line (the overlap regression - the
+    // label once rendered inside the field).
+    var start_hub_label: ?ui_element.TextLabel = null;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (std.mem.eql(u8, label.text, "Start Hub")) {
+            start_hub_label = label;
+        },
+        else => {},
+    };
+    try std.testing.expect(start_hub_label.?.screen_position.y >=
+        hub_name_field.?.screen_position.y + hub_name_field.?.height);
 
     // The start-hub toggle: a standard panel-button row (the exact
     // mission-editor control formatting); the start state reads from the

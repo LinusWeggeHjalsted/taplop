@@ -1334,6 +1334,12 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_campaign_scroll_offset = 0;
                 history.session.ui_state.editor_campaign_browser_tab = .local;
                 shared.rescanCampaignBrowserLists(history);
+                // The kind focuses by the OPENING screen: the campaign
+                // editor opens on its own kind's tab, everything else on
+                // the mission kind (the reset-on-open convention applied
+                // to the kind row).
+                history.session.ui_state.editor_browser_kind =
+                    if (history.current_state.screen == .campaign_editor) .campaign else .mission;
             }
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .editor_browser,
@@ -2558,6 +2564,18 @@ pub fn handleAnytimeInput(
             .toggle_editor_inspector => {
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
+            },
+            // The campaign editor's sidebar toggles (the same shape, the
+            // campaign editor's own screen + state).
+            .toggle_campaign_inspector => {
+                if (current.screen != .campaign_editor) return;
+                if (current.campaign_editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_campaign_inspector);
+            },
+            .toggle_campaign_metadata_sidebar => {
+                if (current.screen != .campaign_editor) return;
+                if (current.campaign_editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_campaign_metadata_sidebar);
             },
             // Settings-sidebar toggle button (editor top-right, at the
             // inspector toggle's height): same shape - push the orchestrator

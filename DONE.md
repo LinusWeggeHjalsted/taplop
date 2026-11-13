@@ -336,6 +336,7 @@ working rules).
 - [campaign-editor slice 3b: the CampaignEditor type + screen + framing + the browser's Campaign tab + the view](#campaign-editor-slice-3b-the-campaigneditor-type--screen--framing--the-browsers-campaign-tab--the-view)
 - [campaign-editor slice 3c: the campaign editor's interactions - tools, inspector, metadata, pan, delete, drag](#campaign-editor-slice-3c-the-campaign-editors-interactions---tools-inspector-metadata-pan-delete-drag)
 - [campaign editor: 3c playtest fixes - the options menu, exit, the panel toggles + formatting](#campaign-editor-3c-playtest-fixes---the-options-menu-exit-the-panel-toggles--formatting)
+- [campaign editor: 3c playtest fixes, round two - the toggle consumption, the entry-label offset, the browser's opening tab](#campaign-editor-3c-playtest-fixes-round-two---the-toggle-consumption-the-entry-label-offset-the-browsers-opening-tab)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20843,3 +20844,24 @@ Tests: the campaign options-menu variant (browser + new campaign +
 exit, no Export Save), the exit path end-to-end (main menu + state
 discarded), the sidebar defaults + the toggle's undo ride, and the
 view tests re-derived for the strip/section emission.
+
+## campaign editor: 3c playtest fixes, round two - the toggle consumption, the entry-label offset, the browser's opening tab
+
+Three more click-through findings, all one-commit fixes:
+
+- **The sidebar toggles did nothing**: the actions were routed through
+  applyAction but their CONSUMPTION arms were never written - the click
+  dispatched into the options_action switch and silently fell out. Added
+  the two arms (the player_toggle_editor_* shape: screen + editor gates,
+  push the orchestrator, drain).
+- **The Start Hub label rendered inside the name field**: the two-unit
+  entry convention puts an entry's label at the bottom of its FIRST row
+  unit (entry.y + row - font), not one row above the entry - both the
+  start-hub and background labels were a row high, landing on the
+  previous entry's control line. Fixed with named entry anchors + a
+  regression assertion (the label's y >= the field's bottom).
+- **The editor browser opened on the Mission tab from the campaign
+  editor**: the reset-on-open block now focuses the kind by the OPENING
+  screen - the campaign editor opens on the Campaign tab, everything
+  else on Mission (the reset-on-open convention applied to the kind
+  row).
