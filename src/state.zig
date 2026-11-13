@@ -56,6 +56,7 @@ pub const Screen = enum {
     hub,
     level,
     editor,
+    campaign_editor,
     replay_viewer,
 
     const Scope = struct {
@@ -64,16 +65,23 @@ pub const Screen = enum {
         level: bool = false,
         hub: bool = false,
         editor: bool = false,
+        campaign_editor: bool = false,
         replay_viewer: bool = false,
     };
 
     /// Which optional GameState fields are in scope for this screen.
+    /// The campaign editor's scope is itself alone (no playtest - DESIGN
+    /// → Campaigns & the Campaign Editor → The editor-state split); the
+    /// MISSION editor's scope carries campaign_editor so the slice-5
+    /// mission hand-off keeps the campaign graph alive across the
+    /// screen transition.
     fn scope(self: Screen) Scope {
         return switch (self) {
             .main_menu => .{},
             .hub => .{ .campaign = true, .hub = true },
             .level => .{ .campaign = true, .mission = true, .level = true, .editor = true },
-            .editor => .{ .editor = true },
+            .editor => .{ .editor = true, .campaign_editor = true },
+            .campaign_editor => .{ .campaign_editor = true },
             .replay_viewer => .{ .replay_viewer = true },
         };
     }
@@ -771,6 +779,7 @@ pub const GameState = struct {
     player_data: PlayerData,
     camera: ?Camera,
     editor: ?Editor,
+    campaign_editor: ?types.CampaignEditor = null,
     replay_viewer: ?ReplayViewer,
     campaign: ?Campaign,
     mission: ?Mission,
@@ -825,6 +834,7 @@ pub const GameState = struct {
         if (old_scope.level and !new_scope.level) self.level = null;
         if (old_scope.hub and !new_scope.hub) self.hub = null;
         if (old_scope.editor and !new_scope.editor) self.editor = null;
+        if (old_scope.campaign_editor and !new_scope.campaign_editor) self.campaign_editor = null;
         if (old_scope.replay_viewer and !new_scope.replay_viewer) self.replay_viewer = null;
 
         self.screen = new_screen;
@@ -2647,6 +2657,7 @@ pub const GameStateHistory = struct {
                     .player_cancel_skill,
                     .start_new_game,
                     .open_editor,
+                    .open_campaign_editor,
                     .save_game,
                     .export_game,
                     .dismiss_mission_complete,

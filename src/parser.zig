@@ -58,7 +58,14 @@ pub const mission_file_format_version: u32 = 3;
 /// v3 (campaign-editor slice 2a): Metadata gains `campaign_uuid`;
 /// `start_hub` + `Hubs` entries key by `hub_uuid` (identity - see DESIGN
 /// → Campaigns & the Campaign Editor → Content identity).
-pub const campaign_file_format_version: u32 = 3;
+/// v4 (campaign-editor slice 3b): gains an `Orphans` section (one entry
+/// per unwired mission: mission_uuid + optional destination_hub + the
+/// ghost positions of deleted start/destination hubs - the campaign
+/// editor's orphan model; editor-authored, runtime-ignored).
+pub const campaign_file_format_version: u32 = 4;
+/// The range floor: v3 campaign files (no Orphans section) load - the
+/// section is optional and nothing else changed.
+pub const oldest_supported_campaign_file_format_version: u32 = 3;
 /// v3 (campaign-editor slice 2a): Info gains `current_campaign_uuid`;
 /// `current_hub` is a hub uuid; DiscoveredHubs entries carry a
 /// `campaign_uuid` key (groups: one campaign_uuid per group of names).
@@ -502,7 +509,7 @@ pub const settings_sections = [_][]const u8{ "Metadata", "Audio", "Display", "Ga
 pub const weapon_type_sections = [_][]const u8{"Skills"};
 pub const level_sections = [_][]const u8{ "Metadata", "Layout", "Entities", "Decorations", "Items" };
 pub const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
-pub const campaign_sections = [_][]const u8{ "Metadata", "Hubs" };
+pub const campaign_sections = [_][]const u8{ "Metadata", "Hubs", "Orphans" };
 pub const mission_sections = [_][]const u8{"Metadata"};
 pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
 
@@ -724,9 +731,19 @@ const campaign_metadata_keys = [_][]const u8{ "file_format_version", "campaign_u
 
 const campaign_hubs_keys = [_][]const u8{ "hub_uuid", "position" };
 
+/// The Orphans section's keys - one entry per unwired mission (the
+/// campaign editor's orphan model: mission files that belong to this
+/// campaign but are not wired to the graph, frozen in place via the
+/// ghost positions of their deleted start/destination hubs - see
+/// DESIGN → Campaigns & the Campaign Editor → The campaign editor
+/// surface). Editor-authored, runtime-ignored (orphans are not
+/// gameplay). v4.
+const campaign_orphans_keys = [_][]const u8{ "mission_uuid", "destination_hub", "start_position", "destination_position" };
+
 pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &campaign_metadata_keys },
     .{ "Hubs", &campaign_hubs_keys },
+    .{ "Orphans", &campaign_orphans_keys },
 });
 
 // --- Settings file key whitelists ---

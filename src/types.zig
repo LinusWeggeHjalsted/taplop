@@ -597,6 +597,16 @@ pub const Action = enum {
     // (an index into the CURRENT tab's list; the tab is read from UiState at
     // resolution). Pushes `open_editor` with the row's mission path.
     open_editor_mission_row,
+    // The editor browser's CAMPAIGN content tabs (Your Campaigns /
+    // Official - the campaign tab pair, riding the `campaign_browser_tab`
+    // payload variant). A view affordance like the mission tabs.
+    select_editor_campaign_tab,
+    // A campaign-browser ROW in the EDITOR browser was clicked (open that
+    // campaign in the campaign editor - replacing the one being edited,
+    // the editor-browser-row discipline). The row index rides the click
+    // payload (the `campaign_row` variant); pushes `open_campaign_editor`
+    // with the row's campaign dir.
+    open_editor_campaign_row,
     // The campaign browser (the world map's top-left campaign button, the
     // browser's Back button): toggle the campaign-browser overlay - the
     // full-screen campaign picker (Official / Your Campaigns tabs, the
@@ -644,6 +654,11 @@ pub const Action = enum {
     // editor-browser-row discipline). The consumption site accepts the
     // editor + main-menu screens (the toggle_editor_browser discipline).
     new_editor_mission,
+    // The campaign editor's New Campaign button: pushes
+    // `open_campaign_editor` with a null dir - a fresh in-memory campaign
+    // (one start hub at 0 0, the single-'!'-tile default grid; files only
+    // at save). Same reachable-screen discipline as the browser itself.
+    new_editor_campaign,
     // Editor tool/palette keyboard shortcuts (Digit1-5, context editor -
     // the first same-combo cross-context pair: Digit1-8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
@@ -1084,8 +1099,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
+        .select_editor_campaign_tab,
+        .open_editor_campaign_row,
         .import_editor_mission,
         .new_editor_mission,
+        .new_editor_campaign,
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,
@@ -1367,6 +1385,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_kind_tab => .editor_kind,
         .select_editor_mission_tab => .editor_mission_tab,
         .open_editor_mission_row => .editor_mission_row,
+        .select_editor_campaign_tab => .campaign_browser_tab,
+        .open_editor_campaign_row => .campaign_row,
         .select_campaign_browser_tab => .campaign_browser_tab,
         .view_campaign_row => .campaign_row,
         .travel_to_map_hub => .map_hub,
@@ -1452,6 +1472,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .toggle_editor_browser,
         .import_editor_mission,
         .new_editor_mission,
+        .new_editor_campaign,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,
@@ -2693,6 +2714,7 @@ pub const EditorSpritePickerTab = enum {
 /// Level Editor → The editor browser.
 pub const EditorKind = enum {
     mission,
+    campaign,
 };
 
 /// Which tab the editor browser's mission list is showing (see DESIGN →
@@ -3573,6 +3595,138 @@ pub const Campaign = struct {
     /// centered on the origin - stored positions never depend on it (see
     /// DESIGN → The map coordinate model).
     background_dims: ?Vector2 = null,
+};
+
+/// The campaign editor's map-surface tools (the active-tool model over the
+/// campaign view - see DESIGN → Campaigns & the Campaign Editor → The
+/// campaign editor surface). The hub editor's grid tools are the slice-4
+/// drilled-in state, not map tools.
+pub const CampaignEditorToolId = enum {
+    select,
+    hub,
+    mission,
+};
+
+/// One mission-exit marker placement in a hub's grid - the flag tile the
+/// mission is started from in play (hub.txt's digit layout codes + Exits
+/// group are the save projection of it). `mission` is the placed mission's
+/// campaign-editor handle. The marker lives on the HUB - its grid content,
+/// like NPC and decoration placements - so the mission entry stays pure
+/// graph data (start/destination/direction). The one-marker-per-mission
+/// rule is enforced by the editor (placing a mission's tool MOVES its
+/// marker; re-attaching a start removes the marker from the old hub) and
+/// CHECKED at load (a duplicate is a hand-edit, warned through the standard
+/// surface). Orphaning needs no marker cleanup: the placement list dies
+/// with its hub, and a salvaged mission shows as unstartable until its
+/// marker is placed in the new hub (the validation finding).
+pub const ExitPlacement = struct {
+    mission: u32,
+    position: Vector2,
+};
+
+/// One hub in the campaign editor's AUTHORED graph (the
+/// EditorLevel-vs-runtime-Level precedent - the editable mirror of
+/// `CampaignHub`, not the load-derived type). `handle` is the in-editor
+/// reference (minted from CampaignEditor.next_handle - replay-
+/// deterministic, deletion-stable; mission start/destination fields and
+/// exit placements reference hubs by handle). `uuid` is the on-disk
+/// identity, EMPTY until the hub's first save (the write-only mint);
+/// `dir` is the hub's storage dir under the campaign's `hubs/` (the
+/// loaded dir, empty until saved). `grid` is the level-shaped hub grid -
+/// tiles, player spawn, decoration placements, and the gradient metadata
+/// trio (color wheel + enemy/player overrides, edited by the metadata
+/// sidebar like level metadata) - with the entity/item/level-end/name
+/// fields unused by invariant (no hub tool places them; EditorLevel is
+/// reused so the slice-4 grid machinery operates on it unchanged).
+/// `npc_placements`/`exit_placements` are the hub-only placement kinds.
+pub const CampaignHubEdit = struct {
+    handle: u32,
+    uuid: []const u8 = &.{},
+    dir: []const u8 = &.{},
+    name: []const u8 = &.{},
+    /// The hub icon's center in map space (center-offset integers - see
+    /// `CampaignHub.position`).
+    position: Vector2,
+    grid: EditorLevel = .{},
+    npc_placements: []const NPC = &.{},
+    exit_placements: []const ExitPlacement = &.{},
+};
+
+/// One mission in the campaign editor's AUTHORED graph - the
+/// mission-centric edge model (see DESIGN → Campaigns & the Campaign
+/// Editor → The campaign editor surface): identity + graph data only, no
+/// grid content (exit markers live on hubs). `handle` is the in-editor
+/// reference; `uuid` is the on-disk identity, EMPTY until the mission's
+/// first save (the write-only mint); `dir` is the mission's dir under the
+/// campaign's `missions/` - the loaded dir for on-disk missions, or the
+/// temp anchor for a fresh mission (the fresh-mission `missions/New
+/// Mission` precedent: it anchors the mission-editor hand-off's
+/// local-art scan, and the dir usually doesn't exist yet). `start`/
+/// `destination` are hub handles; null is the orphan state, with the
+/// ghost positions below frozen at hub deletion. `direction` is the
+/// authored bearing for self-loops/dangling stubs (null = the
+/// auto-spread default - see DESIGN → Edge geometry).
+pub const CampaignMissionEdit = struct {
+    handle: u32,
+    uuid: []const u8 = &.{},
+    dir: []const u8 = &.{},
+    name: []const u8 = &.{},
+    start: ?u32 = null,
+    destination: ?u32 = null,
+    direction: ?u32 = null,
+    /// The frozen MAP position of the deleted start hub - set by the
+    /// hub-deletion event (the hub's position at deletion) so the
+    /// orphaned mission renders in place; cleared by re-attach.
+    orphan_start_position: ?Vector2 = null,
+    /// The frozen MAP position of the deleted destination hub - same
+    /// convention as `orphan_start_position`.
+    orphan_destination_position: ?Vector2 = null,
+};
+
+/// The campaign editor's state (the parallel-editor settle - see DESIGN
+/// → Campaigns & the Campaign Editor → The editor-state split; lives on
+/// GameState.campaign_editor, null outside the campaign editor). The
+/// AUTHORED, editable graph: hubs carry their grid content, missions
+/// carry the edge data, and hub.txt's Exits sections are a SAVE
+/// PROJECTION (the open event runs the inverse projection). Not the
+/// load-derived Campaign type. `campaign_uuid`/`campaign_dir` are empty
+/// for a fresh campaign (New Campaign) until its first save.
+pub const CampaignEditor = struct {
+    campaign_name: []const u8 = &.{},
+    campaign_uuid: []const u8 = &.{},
+    /// The campaign's CONTENT dir ("campaigns/<id>" - the addressing
+    /// truth, the CampaignEntry.dir convention); empty for a fresh
+    /// campaign (New Campaign) until its first save.
+    campaign_dir: []const u8 = &.{},
+    /// The campaign background's bare stem (a PNG in the campaign's own
+    /// directory; empty = none). The view mints the content-addressed
+    /// sprite id from it by pure string math (the load-side minting
+    /// rule); the writer writes the stem back into campaign.txt.
+    background_stem: []const u8 = &.{},
+    /// The background PNG's pixel dims, resolved at open through the
+    /// custom-asset dims machinery (null = no background or unreadable -
+    /// the view skips it; the warn surface carries the unresolvable
+    /// case). The map draws the background at NATIVE size, centered on
+    /// the origin - stored positions never depend on it (see DESIGN →
+    /// The map coordinate model).
+    background_dims: ?Vector2 = null,
+    /// The start hub's handle (radio semantics - the start-hub toggle
+    /// writes this and only this). Null only for a hand-edited campaign
+    /// with no placed start hub (a load warning); toggling any hub sets
+    /// it, and untoggling the current start hub is vetoed.
+    start_hub: ?u32 = null,
+    hubs: []const CampaignHubEdit = &.{},
+    missions: []const CampaignMissionEdit = &.{},
+    /// The campaign-SHARED decoration palette (dedup across hub files on
+    /// open, flatten back inline on save - the
+    /// levels-share-the-mission-palette analogy). Hub grids'
+    /// decoration_placements index into it.
+    decoration_types: []const DecorationTypeDef = &.{},
+    /// The in-editor handle mint - part of state so handle assignment is
+    /// replay-deterministic. Never decremented: handles are
+    /// deletion-stable references, not indices.
+    next_handle: u32 = 0,
+    active_tool: CampaignEditorToolId = .select,
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

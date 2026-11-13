@@ -3280,7 +3280,7 @@ no rename in v1"): rename is free, for all three content kinds.
   the map is campaign-level data: moving a hub edits one file, and the
   world map loads the whole graph geometry in one read without touching
   every hub file. The coordinate model: see The map coordinate model
-  below. v3 (the campaign-editor slice) adds an Orphans section - one
+  below. v4 (the campaign-editor slice) adds an Orphans section - one
   group per unwired mission (`mission_uuid` + ghost positions; see
   The campaign editor surface) - editor-authored, runtime-ignored.
 - **Load-time graph integrity checks** (landed -
@@ -3785,7 +3785,7 @@ The slice-3 interaction design. The state shape is settled separately
   delete seam is DIRECTORY-level, never per-file: readFile's per-file
   persistent→embedded fallback would resurrect a deleted hub.txt from
   the embedded campaign while its dir lingered.
-- **Orphans persist in campaign.txt (v3)**: an Orphans section, one
+- **Orphans persist in campaign.txt (v4)**: an Orphans section, one
   group per unwired mission (`mission_uuid` + the ghost positions).
   Honest campaign data - these mission files belong to this campaign
   but are not wired to the graph - read/written by the editor's save

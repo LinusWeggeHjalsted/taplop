@@ -45,6 +45,17 @@ pub const edge_outline_width: i32 = 8;
 /// The edge stroke's outline color.
 pub const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
 
+/// The hub icon's draw size (reference px, centered on the hub's map
+/// position). A dedicated icon ships eventually; until then the id is
+/// MISSING and draws the magenta placeholder (the art_report shopping list
+/// carries it automatically). Deliberately decoupled from
+/// `hub_edge_anchor_radius` (the icon can shrink without dragging edge
+/// geometry along).
+pub const hub_icon_size: i32 = 64;
+
+/// The placeholder sprite id for the hub icon (both renderers draw it).
+pub const hub_icon_sprite_id = "world/hub_icon";
+
 /// Map space -> reference screen space. The default framing region IS the
 /// reference resolution (both 3840x2160, centered on the origin - see
 /// DESIGN → The map coordinate model), so the transform is a pure

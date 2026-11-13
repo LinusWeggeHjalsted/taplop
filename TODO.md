@@ -396,24 +396,6 @@ work:
         DESIGN → The campaign editor surface). Recut into implementation
         sub-steps (each a commit unit: builds, tests green, harness /
         round-trip coverage per the tier conventions):
-    - [ ] 3b. The CampaignEditor type + screen + framing + the
-          browser's Campaign tab: the authored graph (hub entries
-          carrying their grid payload loaded at open - the drill-in
-          later just selects one; mission entries per the
-          mission-centric model incl. exit marker position + ghost
-          positions), Screen.campaign_editor + scopes ({
-          campaign_editor }; the editor screen's scope gains
-          campaign_editor now - the slice-5 hand-off liveness),
-          open/close framing events (recorded reads through the
-          reconstruction cache - the open_editor precedent) +
-          replay-validation arms, the editor browser's Campaign tab
-          (scan campaigns/ + New Campaign: a fresh in-memory campaign,
-          one start hub at 0 0 with the single-'!'-tile default grid;
-          files only at save), + the campaign view rendering through
-          3a's helper (background, hubs, edges, dangling stubs - all
-          lit, no discovery dimming). New module family mirroring
-          src/editor/ + a per-surface ui/campaign_editor.zig; campaign
-          editor events ride the editor_ family (editor_campaign_*).
     - [ ] 3c. The hub tool + select tool + hub inspector + metadata
           sidebar: place hub (default template), click-select +
           drag-move (one position-commit event on release; transient
@@ -434,7 +416,7 @@ work:
     - [ ] 3e. Save + the identity model: the full save projection
           (missions first - session-memo uuid minting + handle
           resolution - then hub.txts (the Exits projection + grids),
-          then campaign.txt v3 incl. the Orphans section; deletions
+          then campaign.txt v4 incl. the Orphans section; deletions
           directory-level, explicit-deletions-only), rename-in-place +
           cosmetic dir tidy + Save As Copy + the FileSource renameDir
           + delete seams, ctrl+S, writer round-trip tests (the

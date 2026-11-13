@@ -199,6 +199,16 @@ pub const UiState = struct {
     /// target).
     editor_mission_browser_tab: types.EditorMissionBrowserTab = .local,
 
+    /// Which tab the editor browser's CAMPAIGN content is showing (Your
+    /// Campaigns / Official - the campaign_browser_tab payload variant,
+    /// reused). Same convention as the mission tab; its own scroll offset
+    /// below (the kind switch resets both content states).
+    editor_campaign_browser_tab: types.CampaignBrowserTab = .local,
+
+    /// The campaign content's scroll offset (its own extent - the
+    /// mission scroll's convention).
+    editor_campaign_scroll_offset: i32 = 0,
+
     /// Mission browser vertical scroll offset, in ROWS - the load-save
     /// browser's exact scroll model (one notch = one full row pitch, lower
     /// clamp at the input site, upper clamp authoritative in the builder).

@@ -277,6 +277,13 @@ pub fn handleMetaEvent(
             // scope .main_menu has no editor).
             current.transitionScreen(.main_menu);
         },
+        .close_campaign_editor => {
+            // The same teardown for the campaign editor: the scope swap
+            // clears campaign_editor (old scope .campaign_editor, new
+            // scope .main_menu has none). See DESIGN → Campaigns & the
+            // Campaign Editor → The editor-state split.
+            current.transitionScreen(.main_menu);
+        },
         .start_playtest => |start| {
             // Instantiate the chosen level from the editor's palette +
             // player_def into a concrete gameplay Level. Discard

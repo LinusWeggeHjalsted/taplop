@@ -161,6 +161,12 @@ pub const MetaEvent = union(enum) {
     // reconstruction cache). The gameplay events stay pristine - end_level's
     // guard defers to these.
     close_editor: void,
+    // Campaign-editor framing (the close_editor pattern: a plain scope
+    // swap back to the main menu discards campaign_editor - see DESIGN
+    // → Campaigns & the Campaign Editor → The editor-state split). The
+    // HUB drill-in and the mission hand-off are in-editor screen states,
+    // not separate framings.
+    close_campaign_editor: void,
     start_playtest: struct {
         level_index: u32, // 0-based into editor.levels
     },
@@ -771,6 +777,22 @@ pub const PlayerInputEvent = union(enum) {
     // browser's rows + the round-trip tests).
     open_editor: struct {
         mission_path: ?[]const u8,
+    },
+    // Open the campaign editor (see DESIGN → Campaigns & the Campaign
+    // Editor → The editor-state split / The campaign editor surface).
+    // Null campaign_dir = New Campaign (a fresh in-memory campaign: one
+    // start hub at 0 0 with the single-'!'-tile default grid; files only
+    // at save - the campaign uuid is minted then, never held in state).
+    // A dir = open that campaign dir (the browser's Campaign tab rows):
+    // the campaign's CONTENT dir, "campaigns/<id>" - the row's dir
+    // verbatim (the mission-row full-path convention; resolving through
+    // readFile's persistent-then-embedded bridge).
+    // Legal from the main menu's editor browser, from the mission
+    // editor (switching content), and from the campaign editor itself
+    // (switching campaigns - the open_editor open-from-the-editor
+    // precedent: the world_generation bump resets stale view state).
+    open_campaign_editor: struct {
+        campaign_dir: ?[]const u8,
     },
     // Orchestrates a save: syncs PlayerData from the working entity (in a
     // hub/level) via build_data_from_player, then writes via write_save.

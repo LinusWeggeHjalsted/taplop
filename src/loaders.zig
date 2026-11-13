@@ -1962,7 +1962,9 @@ pub fn loadEditorDefaults(
 }
 
 /// Parse a `"x y"` pair of integers into a Vector2. Returns null on failure.
-fn parseVector2Pair(value: []const u8) ?types.Vector2 {
+/// Parse a two-integer space-separated pair ("-200 300") into a Vector2 -
+/// the position-key convention (campaign.txt Hubs/Orphans entries).
+pub fn parseVector2Pair(value: []const u8) ?types.Vector2 {
     var it = std.mem.tokenizeScalar(u8, value, ' ');
     const x_str = it.next() orelse return null;
     const y_str = it.next() orelse return null;
@@ -2745,7 +2747,12 @@ pub fn loadCampaign(
     allocator: std.mem.Allocator,
     warnings: ?*std.ArrayList([]const u8),
 ) !Campaign {
-    _ = try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version, campaign_file_format_version);
+    _ = try validateFileFormatVersion(
+        sections,
+        "Metadata",
+        parser.oldest_supported_campaign_file_format_version,
+        campaign_file_format_version,
+    );
     var campaign: Campaign = .{};
     campaign.dir = dupeString(allocator, std.fs.path.basename(campaign_content_path));
 

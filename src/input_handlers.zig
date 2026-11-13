@@ -777,6 +777,7 @@ fn actionLayerRidesConsumptionSite(action: types.Action) bool {
 /// menu only the button path reaches these consumption sites.
 fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
     if (current_state.screen == .editor) return current_state.editor != null;
+    if (current_state.screen == .campaign_editor) return current_state.campaign_editor != null;
     return current_state.screen == .main_menu;
 }
 
@@ -1279,6 +1280,13 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_mission_scroll_offset = 0;
                 history.session.ui_state.editor_mission_browser_tab = .local;
                 mission_io.rescanEditorMissionsNow(history);
+                // The campaign content's view state + lists (the same
+                // SessionState lists the world-map browser reads - one
+                // list per concern, rescanned by whichever browser
+                // opens).
+                history.session.ui_state.editor_campaign_scroll_offset = 0;
+                history.session.ui_state.editor_campaign_browser_tab = .local;
+                shared.rescanCampaignBrowserLists(history);
             }
             pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
                 .surface = .editor_browser,
@@ -1297,6 +1305,17 @@ pub fn handleAnytimeInput(
         // every other screen no-ops (the save_editor_mission discipline).
         if (editorBrowserReachableScreen(&history.current_state)) {
             pushPlayerActionAndDrain(history, .{ .open_editor = .{ .mission_path = null } });
+        }
+    }
+
+    if (anytime.new_editor_campaign) {
+        // The fresh-campaign open (the editor browser's Campaign tab's New
+        // Campaign button): the same recorded-action shape as the mission
+        // New - `open_campaign_editor` with a null dir (one start hub at
+        // 0 0, the single-'!'-tile default grid; files only at save). Same
+        // reachable-screen discipline.
+        if (editorBrowserReachableScreen(&history.current_state)) {
+            pushPlayerActionAndDrain(history, .{ .open_campaign_editor = .{ .campaign_dir = null } });
         }
     }
 
@@ -2935,6 +2954,7 @@ pub fn handleAnytimeInput(
                 const kind = payloadAs(.editor_kind, clicked_payload) orelse return;
                 history.session.ui_state.editor_browser_kind = kind;
                 history.session.ui_state.editor_mission_scroll_offset = 0;
+                history.session.ui_state.editor_campaign_scroll_offset = 0;
             },
             // Mission-list tab switch (Your Missions / Official - the
             // active kind's content tab). A view affordance - direct UiState
@@ -2973,6 +2993,36 @@ pub fn handleAnytimeInput(
                     @panic("failed to allocate mission path");
                 pushPlayerActionAndDrain(history, .{ .open_editor = .{
                     .mission_path = mission_path,
+                } });
+            },
+            // The campaign content's tab switch (Your Campaigns / Official
+            // - the editor browser's campaign kind). Same convention as the
+            // mission tabs; its own scroll offset (its own extent).
+            .select_editor_campaign_tab => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
+                const tab = payloadAs(.campaign_browser_tab, clicked_payload) orelse return;
+                history.session.ui_state.editor_campaign_browser_tab = tab;
+                history.session.ui_state.editor_campaign_scroll_offset = 0;
+            },
+            // A campaign row was clicked in the EDITOR browser: open that
+            // campaign in the campaign editor (replacing the one being
+            // edited - the mission-row discipline). The recorded event is
+            // `open_campaign_editor` with the row's dir (duped into the
+            // current arena - the session list is backing-owned, the
+            // mission-row convention); the acquisition happened at browser
+            // open, so replay re-reads the files silently.
+            .open_editor_campaign_row => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
+                const row = payloadAs(.campaign_row, clicked_payload) orelse return;
+                const campaigns = switch (history.session.ui_state.editor_campaign_browser_tab) {
+                    .local => history.session.campaign_browser_local,
+                    .official => history.session.campaign_browser_official,
+                };
+                if (row >= campaigns.len) return; // stale-list belt
+                const campaign_dir = allocator.dupe(u8, campaigns[row].dir) catch
+                    @panic("failed to allocate campaign dir");
+                pushPlayerActionAndDrain(history, .{ .open_campaign_editor = .{
+                    .campaign_dir = campaign_dir,
                 } });
             },
             // Load-save browser open/close (the main-menu Load Save button,

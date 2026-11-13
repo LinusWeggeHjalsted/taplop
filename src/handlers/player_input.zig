@@ -19,6 +19,8 @@ const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 const player_handlers = @import("player.zig");
 const editor_handlers = @import("../editor/handlers.zig");
+const campaign_editor_handlers = @import("../campaign_editor/handlers.zig");
+const campaign_editor_load = @import("../campaign_editor/load.zig");
 const planning = @import("../editor/planning.zig");
 const session_log = @import("../session_log.zig");
 const validation_replay = @import("../validation_replay.zig");
@@ -362,6 +364,38 @@ pub fn handlePlayerInputEvent(
                     .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
                 }, allocator);
             }
+        },
+
+        // --- Meta: open campaign editor ---
+        .open_campaign_editor => |start| {
+            if (start.campaign_dir == null) {
+                campaign_editor_handlers.openFreshCampaignEditor(current, allocator);
+                // The newly installed campaign is a new world: bump so the
+                // transition UI reset fires (stale view state must not
+                // survive the swap) - the openFreshEditorMission
+                // convention.
+                current.world_generation +%= 1;
+                current.transitionScreen(.campaign_editor);
+                return;
+            }
+            // The dir-open path (the browser's Campaign tab rows): the
+            // inverse projection - campaign.txt + every hub.txt + the
+            // mission table - through the reconstruction cache (the
+            // open_editor convention).
+            var campaign_warnings: std.ArrayList([]const u8) = .empty;
+            if (!campaign_editor_load.loadCampaignEditorIntoState(
+                history,
+                current,
+                allocator,
+                start.campaign_dir.?,
+                &campaign_warnings,
+            )) {
+                shared.failReconstructionRead(history, "failed to read campaign file");
+                return;
+            }
+            shared.surfaceWarnings(history, &campaign_warnings, allocator);
+            current.world_generation +%= 1;
+            current.transitionScreen(.campaign_editor);
         },
 
         // --- Meta: open editor ---

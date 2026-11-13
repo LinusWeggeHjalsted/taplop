@@ -231,6 +231,7 @@ const editor_browser_kind_specs: [editor_kind_count]EditorBrowserKindSpec = blk:
 fn editorBrowserKindLabel(kind: types.EditorKind) []const u8 {
     return switch (kind) {
         .mission => "Mission",
+        .campaign => "Campaign",
     };
 }
 
@@ -241,6 +242,18 @@ fn editorBrowserKindLabel(kind: types.EditorKind) []const u8 {
 fn editorBrowserNewButtonLabel(kind: types.EditorKind) []const u8 {
     return switch (kind) {
         .mission => "New Mission",
+        .campaign => "New Campaign",
+    };
+}
+
+/// The New button's ACTION, derived from the active kind like its label:
+/// the mission kind fires the mission open, the campaign kind the
+/// campaign open (each a recorded player action with a null payload - a
+/// fresh instance). Exhaustive like the label.
+fn editorBrowserNewButtonAction(kind: types.EditorKind) types.Action {
+    return switch (kind) {
+        .mission => .new_editor_mission,
+        .campaign => .new_editor_campaign,
     };
 }
 
@@ -268,6 +281,10 @@ pub fn buildEditorBrowser(
     official_missions: []const @import("../file_source.zig").FileSource.MissionEntry,
     tab: types.EditorMissionBrowserTab,
     scroll_offset: *i32,
+    local_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    official_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    campaign_tab: types.CampaignBrowserTab,
+    campaign_scroll_offset: *i32,
     button_color: Color,
 ) !void {
     // Full-screen modal background - blocks input to the editor UI behind
@@ -342,6 +359,18 @@ pub fn buildEditorBrowser(
             scroll_offset,
             button_color,
         ),
+        .campaign => try buildEditorCampaignBrowserContent(
+            elements,
+            allocator,
+            font_metrics,
+            screen,
+            kind_tabs_y + middle_panel_header_height + load_save_header_gap,
+            local_campaigns,
+            official_campaigns,
+            campaign_tab,
+            campaign_scroll_offset,
+            button_color,
+        ),
     }
 
     // Bottom-left: Back (closes the browser - same toggle action that
@@ -380,7 +409,7 @@ pub fn buildEditorBrowser(
         },
         editorBrowserNewButtonLabel(kind),
         menu_button_font_size,
-        .new_editor_mission,
+        editorBrowserNewButtonAction(kind),
         button_color,
         null,
     );
@@ -612,6 +641,24 @@ const campaign_list_browser_config = ListBrowserConfig{
     .empty_official_text = "No official campaigns",
 };
 
+/// The editor browser's CAMPAIGN content configuration - the campaign
+/// list with EDITOR semantics: rows OPEN the campaign in the campaign
+/// editor (a recorded `open_campaign_editor`), vs the world-map browser's
+/// view-only rows (one machinery, N surfaces - the ListBrowserConfig
+/// pattern).
+const editor_campaign_list_browser_config = ListBrowserConfig{
+    .Entry = @import("../file_source.zig").FileSource.CampaignEntry,
+    .Tab = types.CampaignBrowserTab,
+    .tab_action = .select_editor_campaign_tab,
+    .row_action = .open_editor_campaign_row,
+    .tab_payload_tag = .campaign_browser_tab,
+    .row_payload_tag = .campaign_row,
+    .local_tab_label = "Your Campaigns",
+    .official_tab_label = "Official",
+    .empty_local_text = "No saved campaigns yet",
+    .empty_official_text = "No official campaigns",
+};
+
 fn buildMissionBrowserContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -633,6 +680,36 @@ fn buildMissionBrowserContent(
         tabs_y,
         local_missions,
         official_missions,
+        tab,
+        scroll_offset,
+        button_color,
+    );
+}
+
+/// The editor browser's campaign content: the shared list-browser body
+/// with the EDITOR campaign config (rows open campaigns in the campaign
+/// editor).
+fn buildEditorCampaignBrowserContent(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    tabs_y: i32,
+    local_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    official_campaigns: []const @import("../file_source.zig").FileSource.CampaignEntry,
+    tab: types.CampaignBrowserTab,
+    scroll_offset: *i32,
+    button_color: Color,
+) !void {
+    return buildListBrowserContent(
+        editor_campaign_list_browser_config,
+        elements,
+        allocator,
+        font_metrics,
+        screen,
+        tabs_y,
+        local_campaigns,
+        official_campaigns,
         tab,
         scroll_offset,
         button_color,
@@ -818,6 +895,7 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
     }
 
     var scroll: i32 = 0;
+    var campaign_scroll: i32 = 0;
     var elements: UiElementList = .empty;
     try buildEditorBrowser(
         &elements,
@@ -829,6 +907,10 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         &.{},
         .local,
         &scroll,
+        &.{},
+        &.{},
+        .local,
+        &campaign_scroll,
         .{ .r = 50, .g = 50, .b = 50 },
     );
 
@@ -879,6 +961,10 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         &.{},
         .local,
         &scroll,
+        &.{},
+        &.{},
+        .local,
+        &campaign_scroll,
         .{ .r = 50, .g = 50, .b = 50 },
     );
     var last_row_index: u32 = 0;
@@ -905,6 +991,10 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         &.{},
         .local,
         &scroll,
+        &.{},
+        &.{},
+        .local,
+        &campaign_scroll,
         .{ .r = 50, .g = 50, .b = 50 },
     );
     try std.testing.expectEqual(@as(i32, 0), scroll);
@@ -920,6 +1010,7 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
 
     for ([_]types.EditorMissionBrowserTab{ .local, .official }) |tab| {
         var scroll: i32 = 0;
+        var campaign_scroll: i32 = 0;
         var elements: UiElementList = .empty;
         try buildEditorBrowser(
             &elements,
@@ -931,6 +1022,10 @@ test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emi
             &.{},
             tab,
             &scroll,
+            &.{},
+            &.{},
+            .local,
+            &campaign_scroll,
             .{ .r = 50, .g = 50, .b = 50 },
         );
 
@@ -963,6 +1058,7 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
     const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
 
     var scroll: i32 = 0;
+    var campaign_scroll: i32 = 0;
     var elements: UiElementList = .empty;
     try buildEditorBrowser(
         &elements,
@@ -974,6 +1070,10 @@ test "buildEditorBrowser: kind tabs derived from the enum, one New button derive
         &.{},
         .local,
         &scroll,
+        &.{},
+        &.{},
+        .local,
+        &campaign_scroll,
         .{ .r = 50, .g = 50, .b = 50 },
     );
 
@@ -1086,4 +1186,77 @@ test "buildCampaignBrowser: tabs, rows carry view payloads, Back fires the toggl
         try std.testing.expect(found_row_label);
         try std.testing.expect(found_back);
     }
+}
+
+test "buildEditorBrowser: the campaign kind lists campaigns, rows open the campaign editor, New Campaign" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    const campaigns = [_]@import("../file_source.zig").FileSource.CampaignEntry{
+        .{ .uuid = "u1", .dir = "campaigns/one", .name = "One" },
+        .{ .uuid = "u2", .dir = "campaigns/two", .name = "Two" },
+    };
+
+    var scroll: i32 = 0;
+    var campaign_scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildEditorBrowser(
+        &elements,
+        allocator,
+        metrics,
+        screen,
+        .campaign,
+        &.{},
+        &.{},
+        .local,
+        &scroll,
+        &campaigns,
+        &.{},
+        .local,
+        &campaign_scroll,
+        .{ .r = 50, .g = 50, .b = 50 },
+    );
+
+    // One row per campaign, each carrying the editor ROW action (not the
+    // world-map browser's view action) + the campaign_row payload.
+    var row_count: usize = 0;
+    var view_rows: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_editor_campaign_row) {
+            row_count += 1;
+            _ = button.payload.? == .campaign_row;
+        } else if (button.action == .view_campaign_row) {
+            view_rows += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(campaigns.len, row_count);
+    try std.testing.expectEqual(@as(usize, 0), view_rows);
+
+    // The New button fires the CAMPAIGN open (the mission open must not
+    // fire from the campaign kind), labeled "New Campaign".
+    var new_campaign_buttons: usize = 0;
+    var new_mission_buttons: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .new_editor_campaign) {
+            new_campaign_buttons += 1;
+        } else if (button.action == .new_editor_mission) {
+            new_mission_buttons += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 1), new_campaign_buttons);
+    try std.testing.expectEqual(@as(usize, 0), new_mission_buttons);
+    var found_label = false;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (std.mem.eql(u8, label.text, "New Campaign")) {
+            found_label = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_label);
 }

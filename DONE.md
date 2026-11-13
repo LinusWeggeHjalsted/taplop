@@ -333,6 +333,7 @@ working rules).
 - [campaign editor: mission-editor campaign context settled (export unchanged)](#campaign-editor-mission-editor-campaign-context-settled-export-unchanged)
 - [campaign editor: autosave-on-exit settled (no - explicit save only)](#campaign-editor-autosave-on-exit-settled-no---explicit-save-only)
 - [campaign-editor slice 3a: the geometry extraction + predicate-scan test rewrite](#campaign-editor-slice-3a-the-geometry-extraction--predicate-scan-test-rewrite)
+- [campaign-editor slice 3b: the CampaignEditor type + screen + framing + the browser's Campaign tab + the view](#campaign-editor-slice-3b-the-campaigneditor-type--screen--framing--the-browsers-campaign-tab--the-view)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20644,3 +20645,86 @@ file-private until 3b's editor view consumes them (the unused-pub
 report flagged them otherwise - minimize-pub discipline, re-pub at the
 consuming slice). AGENTS key files + DESIGN's map-surface bullet name
 the module.
+
+## campaign-editor slice 3b: the CampaignEditor type + screen + framing + the browser's Campaign tab + the view
+
+The state substrate of the campaign editor, per the settles (the
+parallel-editor state split; the mission-centric authored graph; the
+campaign editor surface):
+
+- **The types** (types.zig): CampaignEditor (authored graph: campaign
+  identity empty-until-save, background stem + dims, start hub handle,
+  hubs, missions, the campaign-shared decoration palette, the handle
+  mint, the active tool), CampaignHubEdit (handle/uuid/dir/name/position
+  + the EditorLevel grid + npc_placements + exit_placements),
+  CampaignMissionEdit (pure graph data: identity, start/destination
+  handles, direction, ghost positions - NO marker field), ExitPlacement.
+  IN-EDITOR REFERENCES ARE u32 HANDLES minted from a CampaignEditor
+  counter (part of state: replay-deterministic, deletion-stable - no
+  index remapping anywhere). The hub grid reuses EditorLevel outright
+  (entity/item/name/level-end fields unused by invariant); exit markers
+  live on the HUB (the discussion's concern-separation call over the
+  mission-centric alternative - one-marker-per-mission enforced by the
+  editor's move-in-place semantics + the load-time duplicate warning).
+- **The screen + scopes**: Screen.campaign_editor (scope: itself alone);
+  the editor screen's scope GAINS campaign_editor (the slice-5 hand-off
+  liveness, pre-wired); the scope-drop line; GameState.campaign_editor
+  (defaulted null so no literal site churned); the binding-context
+  switch rides the editor context.
+- **Framing**: open_campaign_editor (PlayerInput orchestrator: null dir
+  = the fresh default campaign - ONE start hub at 0 0 with the
+  single-'!' grid, pure construction, no reads; a dir = the inverse
+  projection) + close_campaign_editor (the close_editor scope-swap
+  pattern). The open is legal from the main menu, the editors, AND the
+  campaign editor itself (campaign switching - the open-from-editor
+  precedent).
+- **campaign.txt v4**: the Orphans section (mission_uuid +
+  destination_hub + start/destination_position ghost pairs) - correcting
+  the settle prose, which had said "v3" (v3 was already taken by the
+  uuid sweep; oldest-supported is v3, so shipped content loads
+  unchanged). Grammar + key map + loadCampaign's widened version range.
+- **The inverse projection** (src/campaign_editor/load.zig):
+  campaign.txt + every hub.txt through the RECONSTRUCTION CACHE, the
+  uuid scans LIVE (the installCampaignGraph conventions); loadHub
+  yields grids + NPCs + exits-with-marker-positions; decorations dedup
+  into the campaign-shared palette (the buildEditorMission visual
+  identity pattern); exits + Orphans project into mission entries;
+  load-time checks: one-edge duplicates (warn + drop), unresolvable
+  missions, both-wired-and-orphaned (exit wins), missing ghosts (warn +
+  origin default). Two path bugs found at first runtime test
+  (CampaignEntry.dir is the FULL content dir "campaigns/<id>", not the
+  bare folder - the loader had double-prefixed; hub paths now derive
+  from loadCampaign's basename, matching deriveCampaignEdges) - now
+  pinned by the official-campaign open test against the real embedded
+  content.
+- **The browser's Campaign tab**: EditorKind.campaign (the comptime
+  spec row makes the tab appear); the campaign content reuses the
+  list-browser machinery with EDITOR semantics (rows open campaigns -
+  open_editor_campaign_row vs the world-map browser's view_campaign_row;
+  the "one machinery, N surfaces" pattern); New Campaign
+  (new_editor_campaign); the kind-derived New button action; view state
+  (own tab + scroll) + rescan-on-open reusing the SessionState campaign
+  lists; editorBrowserReachableScreen gains the campaign editor screen.
+- **The view** (src/ui/campaign_editor.zig): the static slice render -
+  surface, background (stem minted by pure string math, native size,
+  centered), hub icons all lit, edges through the shared geometry with
+  ORPHAN GHOSTING (missing-end missions render from frozen ghost
+  positions at reduced alpha). The editor-side resolution is pure:
+  endpoint classes from live-or-ghost ends, the settled auto-spread
+  (unauthored directions spread among THEMSELVES, 0-based - authored
+  sit put), parallel spread by resolved end positions. The hub icon
+  constants moved to campaign_geometry (both renderers share them).
+
+Tests: the harness drain tests (official-campaign open end-to-end,
+fresh default, close + undo, the recoverable-error path via the
+manual-drain-on-load_error pattern), the browser Campaign-tab structure
+test (editor row actions vs view actions, the kind-derived New button),
+the view structure tests (predicate scans; the orphan classes'
+geometries asserted through the shared derivation). Discovery en route:
+loadHub normalizes hub grids to SPAWN-RELATIVE coordinates ('!' -> the
+origin) - the editor grid inherits the EditorLevel-compatible
+convention for free.
+
+Riders: parseVector2Pair made pub (the Orphans position parse);
+CampaignEditor.background_dims resolved at open like the runtime load;
+ui.zig facade exports the new surface + the geometry constants.

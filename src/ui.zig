@@ -29,6 +29,7 @@ const ui_credits = @import("ui/credits.zig");
 const ui_tips = @import("ui/tips.zig");
 const ui_world_map = @import("ui/world_map.zig");
 const ui_campaign_geometry = @import("ui/campaign_geometry.zig");
+const ui_campaign_editor = @import("ui/campaign_editor.zig");
 const ui_settings = @import("ui/settings.zig");
 
 pub const SlotRef = ui_element.SlotRef;
@@ -212,6 +213,8 @@ pub const EdgeGeometry = ui_campaign_geometry.EdgeGeometry;
 pub const ParallelSpread = ui_campaign_geometry.ParallelSpread;
 pub const edge_width = ui_campaign_geometry.edge_width;
 pub const edge_outline_width = ui_campaign_geometry.edge_outline_width;
+pub const hub_icon_size = ui_campaign_geometry.hub_icon_size;
+pub const buildCampaignEditorView = ui_campaign_editor.buildCampaignEditorView;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;
 pub const ValidationCompleteContext = ui_screens.ValidationCompleteContext;

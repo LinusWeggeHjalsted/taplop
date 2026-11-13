@@ -35,20 +35,11 @@ const ui_gap = ui_element.ui_gap;
 const campaign_button_height: i32 = 128;
 const campaign_button_font_size: i32 = 72;
 
-/// The hub icon's draw size (reference px, centered on the hub's map
-/// position). A dedicated icon ships eventually; until then the id is
-/// MISSING and draws the magenta placeholder (the art_report shopping list
-/// carries it automatically).
-pub const hub_icon_size: i32 = 64;
-
-/// The placeholder sprite id for the hub icon + its art_report home.
-const hub_icon_sprite_id = "world/hub_icon";
-
 /// Dimmed (undiscovered) draw alpha - the simple-mirror dimming class.
 const dimmed_alpha: u8 = 100;
 
 // The shared campaign-map geometry (the map->screen transform, the three
-// edge-shape derivations, the view constants) lives in
+// edge-shape derivations, the view constants incl. the hub icon) lives in
 // campaign_geometry.zig - the ONE implementation behind "one data model,
 // two renderers": the campaign editor's view (slice 3) renders the same
 // graph through the same `deriveEdgeGeometry`.
@@ -59,6 +50,8 @@ const ParallelSpread = campaign_geometry.ParallelSpread;
 const edge_width = campaign_geometry.edge_width;
 const edge_outline_width = campaign_geometry.edge_outline_width;
 const black = campaign_geometry.black;
+const hub_icon_size = campaign_geometry.hub_icon_size;
+const hub_icon_sprite_id = campaign_geometry.hub_icon_sprite_id;
 
 /// The edge's position among its same-pair siblings (straight edges
 /// connecting the same hub pair): 1-based by exit_index, over the count

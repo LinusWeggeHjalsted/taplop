@@ -436,6 +436,23 @@ pub fn view(
                 }
             }
         }
+    } else if (current_state.screen == .campaign_editor) {
+        // The campaign editor's map view (the static slice-3b render - the
+        // tool palette / inspector / metadata sidebar land with 3c).
+        // The editor is non-null on this screen by invariant
+        // (open_campaign_editor sets it, close_campaign_editor transitions
+        // away - the open_editor discipline). No camera: the fixed
+        // map framing (pan arrives with 3c on the existing right-drag
+        // seam).
+        if (current_state.campaign_editor) |campaign_editor| {
+            ui.buildCampaignEditorView(
+                &ui_elements,
+                frame_allocator,
+                ui.screenRect(),
+                campaign_editor,
+                active_theme,
+            ) catch @panic("failed to build campaign editor view");
+        }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either
         // PlayerData is already populated (mid-session exit to menu) OR an
@@ -611,6 +628,10 @@ pub fn view(
                     session.editor_official_missions,
                     session.ui_state.editor_mission_browser_tab,
                     &session.ui_state.editor_mission_scroll_offset,
+                    session.campaign_browser_local,
+                    session.campaign_browser_official,
+                    session.ui_state.editor_campaign_browser_tab,
+                    &session.ui_state.editor_campaign_scroll_offset,
                     button_color,
                 ) catch @panic("failed to build editor browser");
             },

@@ -636,6 +636,12 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   mission list/sprite rescans + the validation-replay write
   (`writeValidationReplay`, the one handler-owned side effect - the
   end_validation success path calls it gated `!replaying`).
+- `src/campaign_editor/` - the campaign editor's module family (the
+  src/editor/ sibling): `handlers.zig` (the open/close framing + the
+  fresh-campaign default) + `load.zig` (the INVERSE PROJECTION -
+  campaign.txt v4 + every hub.txt + the mission table into the authored
+  CampaignEditor graph; the open-from-dir path of `open_campaign_editor`).
+  The state type is `types.CampaignEditor` (the parallel-editor settle).
 - `src/view.zig` - `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,
   overlays, entities, decoration pieces, ground items, flag poles, occlusion
@@ -755,6 +761,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (`mapToScreen` + `deriveEdgeGeometry`'s three edge-shape classes + the
   view constants) - the ONE implementation behind "one data model, two
   renderers" (buildWorldMap + the campaign editor's view)
+- `src/ui/campaign_editor.zig` - the campaign editor's map view (the
+  static slice-3b render of the authored graph; the mission-geometry
+  resolution - endpoint classes, ghost fallbacks, auto-spread, orphan
+  ghosting - feeds campaign_geometry)
 - `src/ui/credits.zig` + `src/ui/tips.zig` - the credits screen + the
   tips overlay
 - `src/ui/settings.zig` - the settings screen (two tabs: controls + the

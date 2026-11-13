@@ -356,6 +356,10 @@ pub const AnytimeInput = struct {
     /// the editor + main-menu screens (the toggle_editor_browser
     /// discipline).
     new_editor_mission: bool = false,
+    /// The fresh-campaign open (the editor browser's Campaign tab's New
+    /// Campaign button): pushes `open_campaign_editor` with a null dir.
+    /// Same reachable-screen discipline as the mission New.
+    new_editor_campaign: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -548,11 +552,14 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
+        .select_editor_campaign_tab,
+        .open_editor_campaign_row,
         => player_input.anytime.options_action = action,
         .close_editor_picker => player_input.anytime.options_action = action,
         .toggle_editor_browser => player_input.anytime.toggle_editor_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
+        .new_editor_campaign => player_input.anytime.new_editor_campaign = true,
         // Keyboard-only editor shortcuts - no button carries these (the
         // palette cells use the payload-carrying click actions). The
         // keybind→click-action BRIDGE lives here: the keyboard action folds
