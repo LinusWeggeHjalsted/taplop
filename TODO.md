@@ -50,9 +50,10 @@ Test by running `zig build run` and clicking through.
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
-  drill-in + mission hand-off + the settled slice-3 interaction design:
-  the state split, mint-on-fork, the campaign editor surface). The one
-  open question left (the mission editor's campaign context, slice 5) +
+  drill-in + mission hand-off + the settled slice-3/4/5 designs: the
+  state split, mint-on-fork, the campaign editor surface, the hub
+  editor surface, the mission editor's campaign context). The one
+  open question left (autosave on exit back to the map, slice 5) +
   the slices live in Level Editor → campaign editor below.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
@@ -367,24 +368,12 @@ work:
   exit + NPC tools, no entity tooling, no player.txt, no playtest); click
   an edge → the mission editor hand-off. The in-game world map is the
   READ-side mirror of the same view (discovery + travel semantics
-  settled in DESIGN). OPEN questions (inline, decide at the
-  corresponding slices):
-  - the Editor-state split - SETTLED by the pre-slice-3 spike: a
-    parallel CampaignEditor state + a campaign_editor screen, NOT a
-    campaign payload inside Editor (see DESIGN → Campaigns & the
-    Campaign Editor → The editor-state split);
-  - the mission editor's campaign context - the return path is
-    SETTLED (a world-map button in the top bar, shown only in campaign
-    context, returning to the campaign graph); still open: what else
-    differs beyond the return (the "slightly different setup" - e.g.
-    no standalone-dream export surface while campaign-owned);
-  - mint-on-fork - SETTLED: imports KEEP the uuid (the same authored
-    work keeps its identity - leaderboards, clone records, personal
-    bests persist across an import) and duplicate-uuid imports into a
-    campaign already containing that mission are refused (see DESIGN
-    → Rename + Save As Copy);
-  (The hub-rename question DISSOLVED - rename is free under uuid
-  references: see DESIGN → Rename + Save As Copy.)
+  settled in DESIGN). All previously-open questions are SETTLED: the
+  Editor-state split, mint-on-fork, the campaign editor surface, the
+  hub editor surface, and the mission editor's campaign context (see
+  DESIGN → Campaigns & the Campaign Editor). (The hub-rename question
+  DISSOLVED - rename is free under uuid references: see DESIGN →
+  Rename + Save As Copy.)
   Future surfaces riding this work: the pre-mission briefing overlay
   (leaderboards, clone info + medal - before ANY mission start, map
   edge / exit tile / re-run alike); fog-of-war hiding as a possible
@@ -443,8 +432,12 @@ work:
         hub validation findings). Edge creation stays on the campaign
         map (the original exit-inspector pick/import/new flow is
         superseded - DESIGN → The campaign editor).
-  - [ ] 5. The mission-editor hand-off (campaign context) + campaign
-        save/export bundling (the STORE-zip pattern).
+  - [ ] 5. The mission-editor hand-off (campaign context - SETTLED:
+        only the save target (the campaign's missions/) + the
+        world-map return button differ; export unchanged - DESIGN →
+        The campaign editor) + campaign save/export bundling (the
+        STORE-zip pattern). OPEN: autosave a hub / mission on exit
+        back to the campaign map view, or explicit save only?
   - future (post-slice-3 polish): multi-select + multi-reposition of
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction

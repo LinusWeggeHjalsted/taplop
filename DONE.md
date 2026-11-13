@@ -330,6 +330,7 @@ working rules).
 - [campaign editor: mint-on-fork settled (imports keep the uuid; duplicates refused)](#campaign-editor-mint-on-fork-settled-imports-keep-the-uuid-duplicates-refused)
 - [campaign editor: slice-3 interaction design settle (tools, inspector, orphans, start-hub toggle)](#campaign-editor-slice-3-interaction-design-settle-tools-inspector-orphans-start-hub-toggle)
 - [campaign editor: hub editor design settle (the slice-4 drill-in)](#campaign-editor-hub-editor-design-settle-the-slice-4-drill-in)
+- [campaign editor: mission-editor campaign context settled (export unchanged)](#campaign-editor-mission-editor-campaign-context-settled-export-unchanged)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20551,3 +20552,26 @@ The decisions, with what they superseded or revised:
   overlapping placements; off-grid placements.
 
 TODO slice 4 re-cut to point at the settle.
+
+## campaign editor: mission-editor campaign context settled (export unchanged)
+
+The campaign editor's last open design question - what the mission
+editor's campaign context changes beyond the return path (the original
+TODO example guess was "no standalone-dream export surface while
+campaign-owned") - settled to ALMOST NOTHING differs: a world-map
+return button (top bar, campaign-context-gated) + the SAVE TARGET
+(ctrl+S / options-menu Save writes into the campaign's missions/ dir
+instead of the standalone missions/ - the per-screen save granularity).
+EXPORT (the mission STORE-zip) works identically to a standalone
+session, as do Test/Validate and everything else in the editor.
+
+The export-stays call matters beyond convenience: export is the
+mission-sharing path, and a campaign-owned mission is still an
+author's shareable work - severing export while campaign-owned would
+have made the campaign a one-way door for content.
+
+With this, every open question in the campaign editor's design is
+settled (state split, mint-on-fork, campaign editor surface, hub
+editor surface, campaign context); the only remaining open item is
+the autosave-on-exit-to-map question (TODO, slice 5). The superseded
+open-questions list in TODO collapsed to a settled pointer.

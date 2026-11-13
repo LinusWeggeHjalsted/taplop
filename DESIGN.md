@@ -3690,8 +3690,14 @@ Consequences:
 - **The mission editor in campaign context** (the edge-click hand-off)
   knows its campaign and returns via a WORLD-MAP BUTTON (a top-bar
   button shown only while campaign context is active; returns to the
-  campaign graph - see The campaign editor surface). What else differs
-  is an OPEN question - see TODO.
+  campaign graph - see The campaign editor surface). The ONLY other
+  difference is the SAVE TARGET: ctrl+S (and the options-menu Save)
+  writes the mission into the CAMPAIGN'S `missions/` dir instead of
+  the standalone `missions/` (the per-screen save granularity - see
+  The hub editor surface). Everything else is IDENTICAL to a
+  standalone mission session: EXPORT (the mission STORE-zip)
+  works just the same, as do Test/Validate and the rest of the
+  editor. Settled - nothing else differs.
 
 ### The campaign editor surface (settled requirements)
 
