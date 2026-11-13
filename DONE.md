@@ -322,6 +322,7 @@ working rules).
 - [surface toggles dispatch above the options-menu gate (the map from the menu)](#surface-toggles-dispatch-above-the-options-menu-gate-the-map-from-the-menu)
 - [map acting: travel + mission entry from the world map (2d)](#map-acting-travel--mission-entry-from-the-world-map-2d)
 - [world map: tooltip + hover highlight track the full arrow](#world-map-tooltip--hover-highlight-track-the-full-arrow)
+- [test harness: runToIdle surfaces the pending error](#test-harness-runtoidle-surfaces-the-pending-error)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20217,3 +20218,16 @@ that black outlines are part of the art). The button emits BEFORE the
 stroke pair so the wider rim renders beneath the black outline +
 lightest stroke (the curves are hit-test-transparent, so emission order
 only affects paint).
+
+## test harness: runToIdle surfaces the pending error
+
+Session-reflection fix: the harness's load_error panic said "test content
+should be valid" but not WHAT the pending error was - the previous session
+burned a debug-print detour to learn "hub B is unreachable from the start
+hub", information the harness already held. Both runToIdle sites
+(`src/test_harness.zig` + the round-trip test's copy in `src/main.zig`)
+now format `history.session.pending_error` into the panic via
+`std.debug.panic` (`@panic` is comptime-string-only). The message is
+arena-resident (dupe'd at set time), so reading it at panic time is safe;
+the "(no pending_error set)" fallback covers a load_error set without a
+pending message.

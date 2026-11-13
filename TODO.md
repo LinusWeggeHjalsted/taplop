@@ -16,12 +16,6 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **runToIdle hides the failure reason (session reflection, tiny)** - the
-      harness panics "test content should be valid" when a handler sets
-      `load_error`, but not WHAT the pending error was. This session that
-      cost a debug-print detour to learn "hub B is unreachable from the
-      start hub" - information the harness already held. One-line fix:
-      include `pending_error` in the panic message.
 - **Does gameplay input pause under the open world map? (session
       reflection, UNVERIFIED)** - the options menu gates gameplay input
       (skill slots, swap weapons) behind its modal gate; the world map
@@ -339,8 +333,6 @@ saturating overflow guard, central-hub decoration customization, weapon
 skins incl. custom-mission-shipped art, the static tier pricing ladder).
 LOW PRIORITY - the official campaign comes first; slices when it lands:
 
-- [ ] saturating material adds (harvest + salvage clamp at u32 max) -
-      small + independent of the rest; could land early.
 - [ ] skin registry + PlayerData unlock/selection fields + `weaponSprite`
       resolution + the default-sprite fallback + save round-trip.
 - [ ] the item skin-id flag + pickup-unlock event + unique boss-weapon

@@ -167,7 +167,7 @@ pub fn levelEntity(history: *GameStateHistory, entity_index: usize) *types.Entit
 pub fn runToIdle(history: *GameStateHistory) void {
     while (history.current_state.event_stack.len > 0) {
         event_handlers.processEvent(history);
-        if (history.load_error) @panic("runToIdle: handler set load_error (test content should be valid)");
+        if (history.load_error) std.debug.panic("runToIdle: handler set load_error (test content should be valid): {s}", .{history.session.pending_error orelse "(no pending_error set)"});
         history.current_state.waiting = null;
     }
     history.maybeRecordIdlePoint(true);
