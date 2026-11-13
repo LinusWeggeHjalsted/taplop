@@ -359,3 +359,63 @@ test "options menu open: surface toggles dispatch (map opens on top), gameplay s
     input_handlers.handleAnytimeInput(&history, .{ .escape = true }, null, .{ .x = -4096, .y = -4096 }, &.{});
     try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu));
 }
+
+test "any fullscreen overlay pauses gameplay input (world map, tips, settings)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .main_hand_weapon = .{
+            .name = "sword",
+            .weapon_type = .sword,
+        } }},
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+    ));
+    runToIdle(&history);
+
+    // The pause rule generalized: EVERY fullscreen overlay gates gameplay
+    // input exactly like the options menu (the test above), not just the
+    // menu. The map's own interactions still dispatch pre-gate (the
+    // map-acting tests pin that half); here the gameplay arm under the
+    // open overlay records nothing.
+    for ([_]types.UiSurfaceId{ .world_map, .tips, .settings }) |surface| {
+        history.current_state.ui_surfaces.openSurface(surface);
+        var gameplay_anytime: @import("input.zig").AnytimeInput = .{};
+        gameplay_anytime.in_game.swap_weapons = true;
+        const events_before = history.event_history.items.len;
+        input_handlers.handleAnytimeInput(&history, gameplay_anytime, null, .{ .x = -4096, .y = -4096 }, &.{});
+        try testing.expectEqual(events_before, history.event_history.items.len);
+        // Close through the recorded toggle (the real close path).
+        event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_toggle_ui_surface = .{
+            .surface = surface,
+        } } }}, history.current_arena.allocator());
+        runToIdle(&history);
+        try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(surface));
+    }
+}
+
+test "load-save browser dispatches through the anytime path (pre-gate)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // The browser is a main-menu surface - the fresh history starts there.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    try testing.expect(state.Screen.main_menu == history.current_state.screen);
+
+    // The toggle dispatches via options_action (the anytime umbrella) and
+    // opens the browser - it must work while overlays pause update(), which
+    // is what makes the browser's own Back button work under the uniform
+    // overlay gate.
+    input_handlers.handleAnytimeInput(&history, .{ .options_action = .toggle_load_save_menu }, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu));
+
+    // While the browser is open, the overlay gate blocks everything below
+    // the pre-gate region (anyOverlayOpen) - and the browser's Back button
+    // still closes it through the same anytime path.
+    try testing.expect(history.current_state.ui_surfaces.anyOverlayOpen());
+    input_handlers.handleAnytimeInput(&history, .{ .options_action = .toggle_load_save_menu }, null, .{ .x = -4096, .y = -4096 }, &.{});
+    try testing.expect(!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu));
+    try testing.expect(!history.current_state.ui_surfaces.anyOverlayOpen());
+}

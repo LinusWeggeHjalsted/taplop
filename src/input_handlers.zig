@@ -137,9 +137,10 @@ fn dumpEventLog(history: *GameStateHistory) void {
 
 /// Push a player-action orchestrator event and drain it (plus its handler-
 /// pushed children) to completion within this call. Used by the
-/// options_action dispatch and the Escape overlay chain, both inside
-/// handleAnytimeInput - which runs before update()'s options-menu/pause
-/// gates, so the drain proceeds even while a modal overlay is open. The
+/// options_action dispatch, the overlay-browser blocks, and the Escape
+/// overlay chain - all inside handleAnytimeInput, which runs before
+/// update()'s overlay/pause gates, so the drain proceeds even while a modal
+/// overlay is open. The
 /// overlay opened in a previous frame and nothing drains while it's open
 /// (update() returns at its gate), so event_stack.len on entry equals the
 /// depth when the overlay opened - that's the drain baseline. Draining back
@@ -2974,6 +2975,52 @@ pub fn handleAnytimeInput(
                     .mission_path = mission_path,
                 } });
             },
+            // Load-save browser open/close (the main-menu Load Save button,
+            // the browser's Back button, and the keybind). Main-menu only
+            // (the surface's toggle-legal screens); on open, scan now +
+            // reset the scroll - decided from the pre-toggle state (class-2
+            // view state, direct writes; the open/close itself is the
+            // recorded surface event).
+            .toggle_load_save_menu => {
+                if (current.screen != .main_menu) return;
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
+                    history.session.ui_state.load_save_scroll_offset = 0;
+                    rescanSaveFilesNow(history);
+                }
+                pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
+                    .surface = .load_save_menu,
+                } });
+            },
+            // A save row was clicked: load that save. The row index rides
+            // the `.save_row` payload (set by the button-release dispatch in
+            // main.zig) and refers to the list the CLICKED BUTTON was
+            // rendered from - which is why the rescan/poll below runs AFTER
+            // this switch: it must not replace the list between the dispatch
+            // (start of update) and this resolution. Bounds-checked against
+            // the current list as a belt-and-suspenders stale guard. Dupe the
+            // path into the current arena: the session list's strings are
+            // backing-owned and the housekeeping rescan below can free them
+            // THIS frame, while the pushed event isn't recorded (deep-copied)
+            // until the next frame's drain - a borrowed path could dangle.
+            .load_save_row => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) return;
+                const row = payloadAs(.save_row, clicked_payload) orelse return;
+                if (row >= history.session.save_files.len) return;
+                const save_path = allocator.dupe(u8, history.session.save_files[row].path) catch
+                    @panic("failed to allocate save path");
+                pushPlayerActionAndDrain(history, .{ .player_load_save = .{
+                    .save_path = save_path,
+                } });
+            },
+            // Web import: open the browser file picker. The picked file
+            // lands in saves/ and the import marker is written; the poll in
+            // the browser block below picks it up next frame. No-op on
+            // native (the button is never emitted there - drop files into
+            // the persistent saves/ dir by hand instead).
+            .import_save => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) return;
+                file_source_mod.triggerBrowserUpload();
+            },
             else => {},
         }
     }
@@ -3019,6 +3066,31 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.campaign_browser_scroll_offset = 0;
             }
         }
+        return;
+    }
+
+    // Load-save browser: the same modal posture (a fullscreen picker over
+    // the main menu). The wheel scrolls the row list - the load-save
+    // browser's model (whole-row ticks, lower clamp here, upper clamp
+    // authoritative in the builder). Runs AFTER the options_action dispatch
+    // above so a row click resolves against the list its button was
+    // rendered from. Housekeeping (every frame while open): poll the import
+    // marker (web - a picked file has landed in saves/) and rescan the
+    // directory on a throttle so files dropped in from outside appear live.
+    // Both are acquisition steps in input - never in an event handler (see
+    // DESIGN → Custom Missions for the replay-safety rationale). The
+    // rescan throttle runs off session_clock (pause-independent), so it
+    // keeps ticking while the browser freezes the animation clock.
+    if (history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
+        if (anytime.scroll_delta != 0) {
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.load_save_scroll_offset -= delta_rows;
+            if (history.session.ui_state.load_save_scroll_offset < 0) {
+                history.session.ui_state.load_save_scroll_offset = 0;
+            }
+        }
+        pollImportMarker(history);
+        rescanSaveFilesIfDue(history);
         return;
     }
 
@@ -3097,10 +3169,13 @@ pub fn handleAnytimeInput(
         }
     }
 
-    // When options menu is open, block all other input (gameplay stays
-    // paused while the menu is up - the surface toggles above already
-    // dispatched).
-    if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu)) return;
+    // When any fullscreen overlay is open, block all other input (the
+    // game stays paused while an overlay is up - the options-menu pause
+    // generalized to every overlay: world map, tips, settings, browsers,
+    // credits alike. The surface toggles above already dispatched, and each
+    // open overlay's own interactions dispatched in the options_action /
+    // browser blocks above). See DESIGN → UI Framework → Modal overlays.
+    if (history.current_state.ui_surfaces.anyOverlayOpen()) return;
 
     if (anytime.scroll_delta != 0) {
         // Editor palette group under the pointer, if any. Computed up front
@@ -3119,19 +3194,7 @@ pub fn handleAnytimeInput(
                 null
         else
             null;
-        // Load-save browser open: the wheel scrolls the save list, one full
-        // row per notch (whole-row ticks keep text placement identical at
-        // every offset). The panel is a fullscreen modal, so any wheel input
-        // while it's open belongs to the list - never the camera (which has
-        // no meaning on the main menu anyway). Upper clamp is authoritative
-        // in the builder; the lower clamp here prevents negative drift.
-        if (history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
-            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
-            history.session.ui_state.load_save_scroll_offset -= delta_rows;
-            if (history.session.ui_state.load_save_scroll_offset < 0) {
-                history.session.ui_state.load_save_scroll_offset = 0;
-            }
-        } else if (history.current_state.screen == .editor and
+        if (history.current_state.screen == .editor and
             history.current_state.editor != null and
             history.current_state.editor.?.inspector_open and
             ui.editorInspectorPanelRect().contains(pointer_position))
@@ -3346,10 +3409,12 @@ fn rescanSaveFilesNow(history: *GameStateHistory) void {
     };
     file_source_mod.freeSaveFiles(history.backing_allocator, history.session.save_files);
     history.session.save_files = files;
-    history.session.save_files_last_scan_us = history.session.animation_clock;
+    history.session.save_files_last_scan_us = history.session.session_clock;
 }
 
-/// Rescan interval in animation-clock microseconds. One directory iterate +
+/// Rescan interval in session-clock microseconds (the pause-independent
+/// clock - the throttle keeps ticking while the browser overlay freezes the
+/// animation clock). One directory iterate +
 /// stat-per-file + sort per interval - cheap, but not free, so not per-frame.
 const save_file_rescan_interval_us: u64 = 500_000;
 
@@ -3361,7 +3426,7 @@ fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
         rescanSaveFilesNow(history);
         return;
     }
-    if (history.session.animation_clock - history.session.save_files_last_scan_us >=
+    if (history.session.session_clock - history.session.save_files_last_scan_us >=
         save_file_rescan_interval_us)
     {
         rescanSaveFilesNow(history);
@@ -3393,18 +3458,18 @@ fn pollImportMarker(history: *GameStateHistory) void {
     const path_copy = allocator.dupe(u8, save_path) catch
         @panic("failed to allocate imported save path");
     rescanSaveFilesNow(history);
-    event_push.pushPlayerAction(&history.current_state, .{ .player_load_save = .{
+    // Drained to completion here (the pushPlayerActionAndDrain shape): the
+    // browser overlay pauses update(), so nothing else would process the
+    // load while the browser is up - and the load's screen transition
+    // closes the browser, which is the point of the import.
+    pushPlayerActionAndDrain(history, .{ .player_load_save = .{
         .save_path = path_copy,
-    } }, history.current_arena.allocator());
+    } });
 }
 
 pub fn handleIdleInput(
     history: *GameStateHistory,
     idle_input: input.IdleInput,
-    /// The frame's clicked-button payload (see `types.ButtonPayload`),
-    /// riding alongside the menu action that consumed the click - the
-    /// `.load_save_row` arm reads `.save_row`.
-    clicked_payload: ?types.ButtonPayload,
     modifiers: input.Modifiers,
 ) void {
     // Enter acts as a click on the active tile cursor: fold it into
@@ -3421,7 +3486,10 @@ pub fn handleIdleInput(
     const current = &history.current_state;
     const allocator = history.current_arena.allocator();
 
-    // Main menu: menu buttons emit a menu_action (no keybind path).
+    // Main menu: menu buttons emit a menu_action (no keybind path). The
+    // load-save browser's own interactions (rows / Back / Import) dispatch
+    // in handleAnytimeInput instead - they must work while the browser
+    // overlay pauses update(), which blocks this function.
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
             // The action's layer queues once at the fired-actions choke
@@ -3434,51 +3502,6 @@ pub fn handleIdleInput(
                 // (populated PlayerData → resume from memory; empty → load the
                 // autosave first).
                 .continue_game => event_push.pushPlayerAction(current, .player_continue, allocator),
-                // Load-save browser: toggle the panel; on open, scan now +
-                // reset the scroll (the list may be stale from a previous
-                // open or never scanned this session).
-                .toggle_load_save_menu => {
-                    // On open, scan now + reset the scroll (the list may be
-                    // stale from a previous open or never scanned this
-                    // session) - decided from the pre-toggle state; the
-                    // open/close itself is the recorded surface event.
-                    if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
-                        history.session.ui_state.load_save_scroll_offset = 0;
-                        rescanSaveFilesNow(history);
-                    }
-                    pushPlayerActionAndDrain(history, .{ .player_toggle_ui_surface = .{
-                        .surface = .load_save_menu,
-                    } });
-                },
-                // A save row was clicked. The row index rides the
-                // `.save_row` payload (set by the button-release dispatch
-                // in main.zig) and refers to the list the CLICKED BUTTON was
-                // rendered from - which is why the rescan/poll below runs
-                // AFTER this switch: it must not replace the list between
-                // the dispatch (start of update) and this resolution.
-                // Bounds-checked against the current list as a belt-and-
-                // suspenders stale guard.
-                .load_save_row => {
-                    if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) return;
-                    const row = payloadAs(.save_row, clicked_payload) orelse return;
-                    if (row >= history.session.save_files.len) return;
-                    // Dupe the path into the current arena: the session
-                    // list's strings are backing-owned and the housekeeping
-                    // rescan below can free them THIS frame, while the
-                    // pushed event isn't recorded (deep-copied) until the
-                    // next frame's drain - a borrowed path could dangle.
-                    const save_path = allocator.dupe(u8, history.session.save_files[row].path) catch
-                        @panic("failed to allocate save path");
-                    event_push.pushPlayerAction(current, .{ .player_load_save = .{
-                        .save_path = save_path,
-                    } }, allocator);
-                },
-                // Web import: open the browser file picker. The picked file
-                // lands in saves/ and the import marker is written; the poll
-                // above picks it up next frame. No-op on native (the button
-                // is never emitted there - drop files into the persistent
-                // saves/ dir by hand instead).
-                .import_save => file_source_mod.triggerBrowserUpload(),
                 // Import Game: open the browser file picker for a full
                 // ziglop.zip. The picked file lands at the staging temp +
                 // the game import marker is written; the EVERY-FRAME poll
@@ -3498,18 +3521,6 @@ pub fn handleIdleInput(
                 .open_repo_link => browser_url.handleRepoLinkClick(history),
                 else => {},
             }
-        }
-
-        // Load-save browser housekeeping (every frame while open, AFTER the
-        // action switch - see the load_save_row arm for why). Poll the
-        // import marker (web - a picked file has landed in saves/) and
-        // rescan the directory on a throttle so files dropped in from
-        // outside appear live. Both are acquisition steps in idle input -
-        // never in an event handler (see DESIGN → Custom Missions for the
-        // replay-safety rationale).
-        if (history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) {
-            pollImportMarker(history);
-            rescanSaveFilesIfDue(history);
         }
         return;
     }
@@ -4452,7 +4463,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expect(history.session.ui_state.editor_move_drag != null);
     try std.testing.expect(!history.session.ui_state.editor_move_drag.?.promoted);
     try std.testing.expect(history.session.ui_state.editor_move_drag.?.selected_at_press);
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // --- Drag beyond the threshold promotes; the live delta tracks the
@@ -4741,7 +4752,7 @@ test "handleEditorMoveDrag: selected press moves, unselected press claims and dr
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     // The plain click on empty ground still deselects (the idle arm's
     // replace fires the clear alone).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
@@ -5111,7 +5122,7 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // A plain click on (1,1) with an EMPTY selection: the group (tile +
     // entity) becomes the selection.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
     @import("test_harness.zig").runToIdle(&history);
     {
         const selection = history.current_state.editor.?.selection;
@@ -5122,7 +5133,7 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // A plain click elsewhere REPLACES the selection entirely (the old
     // entries go, the clicked group becomes the selection).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
     @import("test_harness.zig").runToIdle(&history);
     {
         const selection = history.current_state.editor.?.selection;
@@ -5132,19 +5143,19 @@ test "player_replace_editor_selection (plain click): replaces the selection, emp
 
     // Clicking the exact current selection is a NO-OP - no event fires.
     const history_length_before = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expectEqual(history_length_before, history.event_history.items.len);
 
     // A plain click on EMPTY GROUND clears the selection - the clicky
     // deselect-all.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 
     // Clicking empty ground with an ALREADY-EMPTY selection is a no-op.
     const history_length_before_empty = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expectEqual(history_length_before_empty, history.event_history.items.len);
 
@@ -5479,7 +5490,7 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     var history = preparedSkillToggleHistory(&backing, .flash_strike);
     @import("test_harness.zig").runToIdle(&history);
 
-    handleIdleInput(&history, .{ .skill_slot_selected = 4 }, null, .{});
+    handleIdleInput(&history, .{ .skill_slot_selected = 4 }, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .player_cancel_skill);
     @import("test_harness.zig").runToIdle(&history);
@@ -5619,23 +5630,23 @@ test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
     @import("test_harness.zig").runToIdle(&history);
 
     // Own tile: a same-position move would be a recorded no-op - no fire.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // NPC tile: the interact_with_npc handler is an unimplemented stub -
     // no fire (no recorded no-op).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A walkable other tile: fires move_player and moves.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, .{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .move_player);
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.hub.?.player.position);
 
     // A non-walkable tile: no fire.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, null, .{});
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, .{});
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
@@ -6014,7 +6025,7 @@ test "the skip action layers exactly once (the consumption site, not the choke p
     var player_input = input.PlayerInput{};
     input.applyAction(&player_input, .skip);
     dispatchFiredActionSounds(&history, player_input.fired_actions);
-    handleIdleInput(&history, player_input.idle, null, .{});
+    handleIdleInput(&history, player_input.idle, .{});
     @import("test_harness.zig").runToIdle(&history);
 
     // Exactly ONE skip layer cue total (the consumption site's).

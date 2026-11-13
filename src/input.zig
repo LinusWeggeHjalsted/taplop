@@ -331,10 +331,13 @@ pub const AnytimeInput = struct {
     zoom_in: bool = false,
     zoom_out: bool = false,
     zoom_reset: bool = false,
-    /// A button action from the options menu (context-specific: save, exit,
-    /// etc.). Dispatched in handleAnytimeInput before the options-menu gate,
-    /// so the action takes effect immediately even though the menu pauses
-    /// the game. Null when no options button was clicked this tick.
+    /// A button action from an overlay surface (the options menu's own
+    /// buttons, plus every fullscreen overlay's interactions: the editor
+    /// browser rows, the campaign browser, the world map's travel/mission
+    /// buttons, the load-save browser's rows/Back/Import, settings, tips).
+    /// Dispatched in handleAnytimeInput before the overlay pause gate, so
+    /// the action takes effect immediately even though an open overlay
+    /// pauses the game. Null when no overlay button was clicked this tick.
     options_action: ?types.Action = null,
     /// Open/close the editor browser (the main-menu Editor button, the
     /// options-menu Open Mission button, the browser's Back button, and
@@ -423,9 +426,12 @@ pub const IdleInput = struct {
     // `delete_editor_selection` (plus a select-tool gate - every
     // selection op requires the select tool).
     select_editor_all: bool = false,
-    /// A main-menu command (New Game / Load Save / ...), set only when a menu
-    /// button is clicked (no keybind path). Handled by the main_menu branch of
-    /// handleIdleInput.
+    /// A main-menu command (New Game / Continue / Import Game / the repo
+    /// link - the buttons that live on the main menu itself, never under an
+    /// overlay). Set when a menu button is clicked (no default keybind).
+    /// Handled by the main_menu branch of handleIdleInput. The load-save
+    /// browser's own interactions ride `anytime.options_action` instead -
+    /// they must dispatch while the browser (an overlay) pauses the game.
     menu_action: ?types.Action = null,
 };
 
@@ -435,7 +441,9 @@ pub const IdleInput = struct {
 /// binding and its button land on the exact same fields, and every action is
 /// uniformly keybindable (the keybinds tab's action picker lists the whole
 /// enum; the derived binding-context gate keeps each action to its screens).
-/// Main-menu commands (no default keybind) go to idle.menu_action.
+/// Main-menu commands (no default keybind) go to idle.menu_action; the
+/// load-save browser's interactions go to anytime.options_action (they must
+/// dispatch while the browser overlay pauses the game).
 pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
     // The fired-actions record: the one choke point for per-action behavior
     // (the action-layer sound now; analytics/policy later). A set - a
@@ -601,11 +609,16 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .skill_slot_6 => player_input.idle.skill_slot_selected = 6,
         .skill_slot_7 => player_input.idle.skill_slot_selected = 7,
         .skill_slot_8 => player_input.idle.skill_slot_selected = 8,
-        .continue_game,
-        .new_game,
+        // The load-save browser's interactions (rows / Back / Import) ride
+        // the anytime options_action umbrella: the browser is a fullscreen
+        // overlay that pauses update(), so its dispatch must run pre-gate
+        // (the editor-browser discipline).
         .toggle_load_save_menu,
         .load_save_row,
         .import_save,
+        => player_input.anytime.options_action = action,
+        .continue_game,
+        .new_game,
         // Import Game (web only, the main-menu button - a pure input-path
         // side effect consumed in the main-menu idle arm).
         .import_game,

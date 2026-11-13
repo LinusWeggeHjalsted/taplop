@@ -189,7 +189,9 @@ pub const SessionState = struct {
     persistent_dir_path: ?[]const u8 = null,
 
     /// The save files listed in the load-save browser (newest first), plus
-    /// the animation-clock stamp of the last scan. File-derived UI state
+    /// the session-clock stamp of the last scan (session_clock, not the
+    /// animation clock, so the throttle keeps ticking while the browser
+    /// overlay pauses the game). File-derived UI state
     /// like `autosave_available` - off the undoable GameState, but scanned
     /// from the input path (never `view()`, which stays file-free): on open
     /// + throttled periodic rescans while the browser is open, so files

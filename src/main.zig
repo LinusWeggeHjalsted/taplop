@@ -265,15 +265,16 @@ fn update(
     // DESIGN → UI Framework → Settings screen.
     input_gestures.handleSliderDrag(history, player_input.pointer, ui_elements);
 
-    // Options menu pauses the game. The editor browser (a modal on
-    // top of it or standalone over the editor / main menu) gets the same
-    // pause: drag / camera pan / viewport gestures + idle input are blocked
-    // while it's open. Its own interactions were consumed in
-    // handleAnytimeInput above. The campaign browser (a modal over the
-    // world map) joins the same gate.
-    if (history.current_state.ui_surfaces.isSurfaceOpen(.options_menu) or
-        history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser) or
-        history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser)) return;
+    // Any fullscreen overlay pauses the game (the options-menu rule
+    // generalized - DESIGN → UI Framework → Modal overlays): drag / camera
+    // pan / viewport gestures, the wait timer, event processing, and idle
+    // input are all blocked while an overlay is up (world map, tips,
+    // settings, browsers, credits alike). Each overlay's own interactions
+    // were consumed in handleAnytimeInput above, before this gate. Events
+    // already on the stack stay locked at their depth until the overlay
+    // closes; overlay actions drain to the baseline inside
+    // pushPlayerActionAndDrain (see its doc).
+    if (history.current_state.ui_surfaces.anyOverlayOpen()) return;
 
     // Recoverable error popup pauses the game (modal - same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
@@ -355,7 +356,7 @@ fn update(
         event_handlers.processEvent(history);
     } else {
         // Stack empty - accept gameplay input
-        input_handlers.handleIdleInput(history, player_input.idle, player_input.clicked_payload, player_input.modifiers);
+        input_handlers.handleIdleInput(history, player_input.idle, player_input.modifiers);
     }
 }
 
@@ -784,12 +785,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     }
 
     // Advance the animation clock by this frame's real-time delta, but only
-    // when the world isn't paused (options menu / pending error open - same
-    // gates as `update()`). The clock is session-relative (starts at 0) and
+    // when the world isn't paused (any fullscreen overlay / pending error -
+    // same gates as `update()`). The clock is session-relative (starts at 0) and
     // off the undoable GameState, so looping anims wave continuously across
     // undo/redo without phase jumps, and pausing freezes anims in place. Read
     // by view() for sprite-animation frame selection. See DESIGN → Animation.
-    if (!history.current_state.ui_surfaces.isSurfaceOpen(.options_menu) and history.session.pending_error == null) {
+    if (!history.current_state.ui_surfaces.anyOverlayOpen() and history.session.pending_error == null) {
         history.session.animation_clock +%= delta_microseconds;
     }
 

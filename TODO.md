@@ -16,14 +16,6 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
-- **Does gameplay input pause under the open world map? (session
-      reflection, UNVERIFIED)** - the options menu gates gameplay input
-      (skill slots, swap weapons) behind its modal gate; the world map
-      does not (pre-existing posture, noticed mid-2d + left alone). Now
-      that the map is an ACTING surface, a skill keypress firing under
-      an open map may behave oddly (targeting a hidden level, sounds
-      under the overlay). Hands-on check first; if wrong, the fix is one
-      gate condition in handleAnytimeInput.
 - **No-op clicks still play the action sound (session reflection,
       accepted-for-now)** - the fired-actions sound choke point queues at
       the ACTION layer, but a consumption arm can no-op silently (the

@@ -324,6 +324,7 @@ working rules).
 - [world map: tooltip + hover highlight track the full arrow](#world-map-tooltip--hover-highlight-track-the-full-arrow)
 - [test harness: runToIdle surfaces the pending error](#test-harness-runtoidle-surfaces-the-pending-error)
 - [material overflow guard: harvest payout + salvage share math saturate](#material-overflow-guard-harvest-payout--salvage-share-math-saturate)
+- [every fullscreen overlay pauses the game (the options-menu rule generalized)](#every-fullscreen-overlay-pauses-the-game-the-options-menu-rule-generalized)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20263,3 +20264,54 @@ before the fix was re-applied). DESIGN → Post-game Rewards & Cosmetics →
 Overflow guard updated to describe the payout-side clamping (its old
 "u64 intermediate already prevents per-clone overflow" claim was the
 gap this closes).
+
+## every fullscreen overlay pauses the game (the options-menu rule generalized)
+
+The session-reflection item: the options menu gated gameplay input behind
+its modal gate, but the world map (now an ACTING surface), tips, settings,
+and credits did not - a skill keypress under an open map could target the
+hidden level, camera pan ran under overlays, and the enemy-turn wait kept
+draining. Settled direction from the author: ANY fullscreen overlay gets
+the options-menu pause, uniformly.
+
+The mechanism: `UiSurfaceState.anyOverlayOpen()` (slot 0 of the
+contiguous-prefix overlay stack is the whole test) replaces the
+per-surface gate conditions at the two gate sites - `handleAnytimeInput`'s
+post-dispatch gate and `update()`'s early return (which lists
+options_menu/editor_browser/campaign_browser explicitly before) - plus the
+animation-clock freeze in `frame()`. Every existing and future overlay id
+joins the pause by construction. The pause semantics are unchanged from
+the options menu's: gameplay input gated, animation clock + wait timer
+frozen, events already on the stack LOCKED at their depth until close (the
+recorded intent - not drift: `pushPlayerActionAndDrain` drains overlay
+actions to the stack baseline, never past it, so a mid-drain enemy turn
+resumes exactly where it froze).
+
+The one structural rider: the load-save browser's interactions (rows /
+Back / Import / the import-marker poll + rescan housekeeping) dispatched
+from `handleIdleInput`'s main-menu branch - dead under the uniform gate
+(update() now returns before idle runs whenever the browser is open).
+They moved to the pre-gate region of `handleAnytimeInput`, the
+editor-browser/campaign-browser pattern: the row/toggle/import actions
+ride the anytime `options_action` umbrella (applyAction reclassifies
+`.toggle_load_save_menu`/`.load_save_row`/`.import_save` from
+idle.menu_action), a dedicated pre-gate block owns the wheel scroll +
+marker poll + throttled rescan, and both the row click and the marker-poll
+load switched from bare `pushPlayerAction` to `pushPlayerActionAndDrain`
+so the load processes (and closes the browser via its screen transition)
+inside the dispatch. The rescan throttle moved from animation_clock to
+session_clock (the pause-independent clock) so dropped-in files still
+appear live while the browser freezes the animation clock.
+`handleIdleInput` lost its now-unused `clicked_payload` parameter (~55
+call sites swept). `.import_game` + `.open_repo_link` stay idle
+menu_action (main-menu buttons, never under an overlay).
+
+Tests: the any-overlay pause test (world map / tips / settings open over
+a level -> swap_weapons records nothing, closing via the recorded toggle
+between iterations) + the load-save anytime-dispatch test (the toggle
+opens/closes the browser through options_action with the gate up), both
+in handler_tests_ui_surfaces.zig beside the options-menu original.
+Verified non-phantom the deliberate-break way. DESIGN updated: the Modal
+overlays "what blocks" paragraph generalized, the error-popup + gate-rule
+references, and the Load-save browser section's dispatch/throttle/clock
+facts.

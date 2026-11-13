@@ -2964,6 +2964,15 @@ pub const UiSurfaceState = struct {
         };
     }
 
+    /// Whether ANY full-screen overlay is open - the pause test (every
+    /// fullscreen overlay pauses the game exactly like the options menu;
+    /// see DESIGN → UI Framework → Modal overlays). The open overlays
+    /// occupy a contiguous prefix of the stack (the close-compaction
+    /// invariant), so slot 0 is the whole test.
+    pub fn anyOverlayOpen(self: *const UiSurfaceState) bool {
+        return self.open_overlays[0] != null;
+    }
+
     /// The right-click inspect verb: a non-null index OPENS (or retargets)
     /// the entity-inspect panel, null CLOSES it. The gesture resolves
     /// same/different/none against current state and pushes the resolved

@@ -2120,7 +2120,8 @@ modal centered popup (`ui.buildErrorPopup`), appended last so it draws on
 top. `Action.dismiss_error` (bound to Escape + Enter, context `error_popup`)
 clears it. `handleAnytimeInput` gates all input when a pending error is set
 - only `dismiss_error` and the scroll actions get through; `update()` pauses
-the game (drag/camera/wait/idle blocked), mirroring the options-menu pause.
+the game (drag/camera/wait/idle blocked), mirroring the overlay pause
+(DESIGN → UI Framework → Modal overlays).
 The message is duped into `history_arena` (durable across frames; overwrite
 leaks the prior bytes - accepted, same unbounded-arena tradeoff as
 `event_history`).
@@ -2518,9 +2519,12 @@ main menu. Design points:
   `SessionState.save_files` (file-derived UI state, like
   `autosave_available`), owned by the backing allocator: each rescan frees
   the previous slice, so the only leak is the final list at process exit.
-- **Rescan on open + every 500ms while open** (animation-clock throttled), so
+- **Rescan on open + every 500ms while open** (session-clock throttled -
+  the pause-independent clock, so the throttle keeps ticking while the
+  browser overlay freezes the animation clock), so
   files dropped into saves/ from outside appear live. The rescan runs AFTER
-  the menu-action switch in `handleIdleInput`: a `load_save_row` click's
+  the options_action dispatch in `handleAnytimeInput`: a `load_save_row`
+  click's
   index refers to the list the clicked button was rendered from, and a rescan
   between the release dispatch (start of `update`) and the handler could
   otherwise shift the list under the index.
@@ -2530,10 +2534,13 @@ main menu. Design points:
   `PlayerInput.clicked_payload` alongside the action. Save rows are never
   drag sources (they carry no `SlotRef`), so the drag machinery ignores
   them.
-- **Clicking a row pushes `player_load_save{path}`** - a PlayerInputEvent so
+- **Clicking a row pushes `player_load_save{path}`** and drains it to
+  completion (`pushPlayerActionAndDrain`) - the dispatch rides the anytime
+  `options_action` path so it works while the browser overlay pauses
+  `update()`. It's a PlayerInputEvent so
   the replay player-action whitelist stays a pure tag check; the handler
-  pushes the ordinary meta `load_save` (acquisition already happened in idle
-  input; the recorded event references a resident file). A failed load
+  pushes the ordinary meta `load_save` (acquisition already happened in the
+  input path; the recorded event references a resident file). A failed load
   surfaces the recoverable popup and leaves the browser open.
 - **Scrolling is whole rows**: the offset is in rows, clamped in the builder
   (the view is the only place that knows the max); one wheel notch = one row
@@ -2544,8 +2551,10 @@ main menu. Design points:
   into saves/ under its sanitized name, then writes
   `.import_marker` (persistent-dir root, outside saves/ so the scan never
   sees it) containing the path. The Zig side polls the marker while the
-  browser is open (idle input - the acquisition-step rule), deletes it, and
-  loads the path through the normal `player_load_save` flow. Write order
+  browser is open (the anytime pre-gate block - the acquisition-step rule),
+  deletes it, and
+  loads the path through the normal `player_load_save` flow (drained to
+  completion; the load's screen transition closes the browser). Write order
   (save then marker) guarantees the bytes exist when the marker does; a name
   collision overwrites (importing your own export is the primary case).
   Native has no import button - drop files into the persistent saves/ dir by
@@ -4546,22 +4555,30 @@ GameState field, or `pending_error`), the full-screen 9-slice panel is
 buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
 `update()` gate) so they work while the world is paused.
 
-**What the options menu blocks - and what it doesn't.** The menu is a
-pause, not an input vacuum: GAMEPLAY input (skill slots, swap weapons,
-drag/camera/idle input) is gated, but UI navigation stays live - the
-menu's own buttons via `options_action`, and the SURFACE toggles
+**What an open overlay blocks - and what it doesn't.** Every
+full-screen overlay (`UiSurfaceState.anyOverlayOpen`) is a pause, not an
+input vacuum, and they all pause identically (the options-menu rule
+generalized): GAMEPLAY input (skill slots, swap weapons, drag/camera/
+idle input) is gated, the animation clock + wait timer freeze, and events
+already on the stack stay locked at their depth until the overlay closes.
+UI navigation stays live - each overlay's own interactions via
+`options_action` and the per-browser pre-gate blocks in
+`handleAnytimeInput` (the load-save browser's rows/Back/Import ride the
+anytime path too, drained to the stack baseline by
+`pushPlayerActionAndDrain`), and the SURFACE toggles
 (inventory/gear/skills/inspect/world-map keybinds) via their dispatch
-hoisted above the modal gate in `handleAnytimeInput`. Any overlay can
-open on top of the menu (the stack model); Escape pops the map first,
-the menu second. The gate is the pause rule, not a z-order rule.
+hoisted above the pause gate. Any overlay can open on top of any other
+(the stack model); Escape pops the topmost first. The gate is the pause
+rule, not a z-order rule.
 
 **Two rules, learned the hard way:**
 
 1. **Don't gate `update()` before `processEvent` when the trigger is set
-   inside an event handler.** The options menu and error popup gate
+   inside an event handler.** The overlays and the error popup gate
    `update()` at the top (return early before `processEvent`) - that's safe
-   because their triggers are set OUTSIDE the event drain: the options toggle
-   is in `handleAnytimeInput` (before the gate), and `pending_error` exits
+   because their triggers are set OUTSIDE the event drain: overlay
+   toggles are in
+   `handleAnytimeInput` (before the gate), and `pending_error` exits
    the drain via the `load_error` break (not via the gate). The mission
    overlays are different: their triggers are set INSIDE a handler
    (`end_level` sets `last_completed_mission`; the `attack` handler sets

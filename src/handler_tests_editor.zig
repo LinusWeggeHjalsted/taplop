@@ -2636,11 +2636,11 @@ test "editor tool click with an empty plan fires no event" {
     runToIdle(&history);
     history.current_state.editor.?.active_tool = .tile;
 
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // Positive control: empty ground fires the paint.
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 }
 
@@ -2927,13 +2927,13 @@ test "tile-tool idle arm defers while a paint drag owns the press" {
     // already claimed, or a keyboard confirm) fires nothing - the gesture
     // owns the pointer press.
     history.session.ui_state.editor_tile_drag = true;
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // No drag: the same click fires (the keyboard confirm-at-cursor path -
     // the arm still works when no drag is in progress).
     history.session.ui_state.editor_tile_drag = false;
-    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 }
 
@@ -3275,7 +3275,7 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
 
     // Through the input layer: no player action fires (no dead undo step),
     // and the protected selection is untouched.
-    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
 
@@ -3283,7 +3283,7 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
     // orchestrator.
     const with_deletable = [_]types.Selectable{ .player_start, .{ .tile = .{ .x = 0, .y = 0 } }, .{ .tile = .{ .x = 2, .y = 2 } } };
     history.current_state.editor.?.selection = &with_deletable;
-    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(history.current_state.event_stack[0].player_input_event == .player_delete_editor_selection);
 }
@@ -3309,13 +3309,13 @@ test "player_clear_editor_selection: ctrl+D clears everything, gated on a nonemp
 
     // An empty selection never fires (no dead undo step).
     history.current_state.editor.?.selection = &.{};
-    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // A nonempty selection fires the orchestrator; the single clear event
     // empties it; one undo step restores the selection.
     history.current_state.editor.?.selection = &seeded_selection;
-    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(history.current_state.event_stack[0].player_input_event == .player_clear_editor_selection);
     runToIdle(&history);
@@ -3369,7 +3369,7 @@ test "player_select_editor_all: ctrl+A selects everything, skips present, one un
 
     // ctrl+A adds the other 7, skipping the present two - one player
     // action, one undo step.
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(
         history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
@@ -5104,7 +5104,7 @@ test "player_select_editor_all: tool-agnostic - switches to select, one undo res
     // ctrl+A from the TILE tool: the action fires, switches to the select
     // tool (the selection can only live there), and selects everything
     // (the tile + the '!').
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(
         history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
@@ -5132,7 +5132,7 @@ test "player_select_editor_all: tool-agnostic - switches to select, one undo res
     history.current_state.editor.?.active_tool = .select;
     const everything = [_]types.Selectable{ .{ .tile = .{ .x = 1, .y = 1 } }, .player_start };
     history.current_state.editor.?.selection = &everything;
-    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, null, .{});
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 

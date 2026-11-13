@@ -566,7 +566,7 @@ test "console action open_repo_link queues the clipboard copy (the native click 
     var input_state: input.InputState = .{};
     const player_input = runConsoleScript(&history, &input_state, backing.allocator(), null, &.{"action open_repo_link"});
     try testing.expect(player_input.idle.menu_action == .open_repo_link);
-    input_handlers.handleIdleInput(&history, player_input.idle, player_input.clicked_payload, .{});
+    input_handlers.handleIdleInput(&history, player_input.idle, .{});
 
     const build_info = @import("build_info");
     if (build_info.repo_url.len > 0) {
