@@ -843,6 +843,13 @@ pub const CampaignEditorEvent = union(enum) {
     // Close the centered picker (the panel's Back button; the COMMIT
     // handler also pushes this as a child of the pick - one undo step).
     editor_campaign_close_picker: void,
+    // Toggle the inspector sidebar (the top-left strip; open by default -
+    // the editor_toggle_inspector convention: the flag rides the undo
+    // timeline).
+    editor_campaign_toggle_inspector: void,
+    // Toggle the metadata sidebar (the top-right strip; closed by
+    // default).
+    editor_campaign_toggle_metadata_sidebar: void,
 };
 
 /// Player-input events - the ONLY events input handlers can push (via
@@ -1208,6 +1215,11 @@ pub const PlayerInputEvent = union(enum) {
     player_set_campaign_background: struct {
         stem: []const u8,
     },
+    // Toggle the campaign editor's inspector / metadata sidebars (the
+    // top corner strips - the player_toggle_editor_inspector
+    // convention: the flags ride the undo timeline).
+    player_toggle_campaign_inspector: void,
+    player_toggle_campaign_metadata_sidebar: void,
     // Enemy-tool click in the editor viewport: place the palette entity
     // type at the clicked tile. The handler computes the full effect from
     // state (see the placement-tools bullet in DESIGN → Architecture →

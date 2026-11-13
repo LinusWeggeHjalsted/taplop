@@ -335,6 +335,7 @@ working rules).
 - [campaign-editor slice 3a: the geometry extraction + predicate-scan test rewrite](#campaign-editor-slice-3a-the-geometry-extraction--predicate-scan-test-rewrite)
 - [campaign-editor slice 3b: the CampaignEditor type + screen + framing + the browser's Campaign tab + the view](#campaign-editor-slice-3b-the-campaigneditor-type--screen--framing--the-browsers-campaign-tab--the-view)
 - [campaign-editor slice 3c: the campaign editor's interactions - tools, inspector, metadata, pan, delete, drag](#campaign-editor-slice-3c-the-campaign-editors-interactions---tools-inspector-metadata-pan-delete-drag)
+- [campaign editor: 3c playtest fixes - the options menu, exit, the panel toggles + formatting](#campaign-editor-3c-playtest-fixes---the-options-menu-exit-the-panel-toggles--formatting)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20801,3 +20802,44 @@ the drill-in it opens); Escape does not close the picker yet (the Back
 button is the path; the escape-chain rung can ride polish); a release
 over blocking UI during a hub drag commits at the pointer (the
 marquee's last-valid-position refinement is later polish).
+
+## campaign editor: 3c playtest fixes - the options menu, exit, the panel toggles + formatting
+
+The first manual click-through of 3c surfaced four mirror gaps against the
+mission editor, all fixed in one pass:
+
+- **The options menu showed the GAMEPLAY variant** on the campaign editor
+  screen (Export Save for a game that doesn't exist + generic verbs).
+  buildOptionsMenu now has a campaign editor variant mirroring the mission
+  editor's entries where applicable: Open Browser (the editor browser -
+  campaign switching; both kind tabs reachable) + New Campaign, plus the
+  generic Settings / Exit to Main Menu. Export Save is hidden on the
+  campaign editor screen (the editor-screens discipline); Save/Export
+  Campaign land with the save slice (3e); Revalidate is
+  mission-editor-specific.
+- **Exit to Main Menu no-oped**: player_exit_to_menu handled
+  level/hub/editor but not campaign_editor - added the arm
+  (close_campaign_editor owns the teardown + transition, the close_editor
+  shape) + the replay-validation screen gate widened.
+- **The sidebars had no toggle strips**: the exact mission-editor shape
+  now - the "Inspector" strip flush-left / "Metadata" flush-right below
+  the top bar, always emitted; the panels only while open; the DEFAULTS
+  mirror (inspector open, metadata closed - the mission editor's
+  defaults, now on CampaignEditor with toggle events riding the undo
+  timeline, the player_toggle_editor_* convention).
+- **The panel content formatting**: the exact model - the shared
+  collapsible section strips (emitInspectorSectionStrip, two new
+  EditorInspectorSectionId arms: campaign_hub + campaign_metadata,
+  collapsed by default like the mission editor's sections) + the
+  emitSidebarNameField two-unit rows (made pub + reused verbatim) + the
+  payload-carrying control rows (the start-hub toggle + the background
+  button as panel + button + label rows; the toggle's radio readback
+  moved to its label - "Start Hub (toggle another to move)" - since the
+  standard row button carries no highlight). The section-toggle
+  consumption needed no change (already screen-agnostic - the strips
+  only render where their sections do).
+
+Tests: the campaign options-menu variant (browser + new campaign +
+exit, no Export Save), the exit path end-to-end (main menu + state
+discarded), the sidebar defaults + the toggle's undo ride, and the
+view tests re-derived for the strip/section emission.

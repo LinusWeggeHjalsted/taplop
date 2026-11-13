@@ -388,6 +388,11 @@ pub const Action = enum {
     select_editor_campaign_background,
     // The background picker's Back button (closes without picking).
     close_campaign_picker,
+    // Toggle the campaign editor's inspector sidebar (the top-left strip -
+    // the toggle_editor_inspector convention).
+    toggle_campaign_inspector,
+    // Toggle the campaign editor's metadata sidebar (the top-right strip).
+    toggle_campaign_metadata_sidebar,
     // An editor level-tab was clicked (make that level active). The level
     // index rides the click payload (the `editor_level` variant). Routed through
     // `options_action` like the other payload-carrying editor clicks. See
@@ -1128,6 +1133,8 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_campaign_background_picker,
         .select_editor_campaign_background,
         .close_campaign_picker,
+        .toggle_campaign_inspector,
+        .toggle_campaign_metadata_sidebar,
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
@@ -1516,6 +1523,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .new_editor_campaign,
         .open_campaign_background_picker,
         .close_campaign_picker,
+        .toggle_campaign_inspector,
+        .toggle_campaign_metadata_sidebar,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,
@@ -2828,6 +2837,14 @@ pub const EditorInspectorSectionId = enum {
     /// The metadata sidebar's Current-level section (the active level's
     /// name + gradient rows).
     current_level,
+    /// The campaign editor's hub section (the selected hub's name + the
+    /// start-hub toggle - the hub inspector's single collapsible
+    /// section).
+    campaign_hub,
+    /// The campaign editor's campaign section (the campaign name + the
+    /// background picker button - the metadata sidebar's single
+    /// collapsible section).
+    campaign_metadata,
 };
 
 pub const EditorToolId = union(enum) {
@@ -3804,6 +3821,16 @@ pub const CampaignEditor = struct {
     /// editor_set_tool invariant). Non-null only while the active tool
     /// is select.
     selection: ?u32 = null,
+    /// The inspector sidebar's open state (the top-left toggle button).
+    /// Same convention as the mission editor's flag: on the CampaignEditor,
+    /// mutated only via the toggle event, so it rides the undo timeline
+    /// and replay reproduces it. OPEN by default (the mission editor's
+    /// default).
+    inspector_open: bool = true,
+    /// The metadata sidebar's open state (the top-right toggle button) -
+    /// CLOSED by default (the mission editor's default: metadata is a
+    /// reference panel, not the first thing an author needs).
+    metadata_sidebar_open: bool = false,
     /// The centered picker's open state (see `CampaignEditorPicker`).
     /// Mutated only via the open/close events so the open state rides the
     /// undo timeline (the picker-COMMIT handler pushes the close as a

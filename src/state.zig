@@ -1939,7 +1939,7 @@ pub const GameStateHistory = struct {
                     },
                     .player_exit_to_menu => {
                         if (self.current_state.screen != .level and self.current_state.screen != .hub and
-                            self.current_state.screen != .editor)
+                            self.current_state.screen != .editor and self.current_state.screen != .campaign_editor)
                         {
                             self.rejectReplay("replay validation: player_exit_to_menu outside level/hub/editor screen");
                             return;
@@ -2278,6 +2278,8 @@ pub const GameStateHistory = struct {
                     .player_delete_campaign_hub => |set| self.validateCampaignEditorAction(set.hub),
                     .player_open_campaign_picker,
                     .player_close_campaign_picker,
+                    .player_toggle_campaign_inspector,
+                    .player_toggle_campaign_metadata_sidebar,
                     => self.validateCampaignEditorAction(null),
                     .player_set_campaign_background => |set| {
                         self.validateCampaignEditorAction(null);

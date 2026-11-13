@@ -227,6 +227,9 @@ pub fn buildCampaignEditorView(
     text_edit: ?*const text_input.TextEditState,
     drag_override: ?HubPositionOverride,
     background_stems: []const []const u8,
+    /// The inspector-section expansion state (UiState's array - collapsed
+    /// by default, the mission editor's convention).
+    section_expanded: []const bool,
 ) !void {
     // The surface: a full-screen dark fill - NON-blocking (a screen
     // background, not an overlay: map clicks must fall through to the
@@ -407,201 +410,284 @@ pub fn buildCampaignEditorView(
         } });
     }
 
-    // The hub inspector (left sidebar): the selected hub's name field +
-    // the start-hub toggle; empty when nothing is selected (no player
-    // content - the hub editor is slice 4).
+    // The hub inspector (left): the mission editor's EXACT shape - the
+    // top-left toggle strip (always emitted, below the options button),
+    // the panel + content only while open (open by default, the mission
+    // editor's default). Content = ONE collapsible section (the "Hub"
+    // strip, collapsed by default - the mission editor's section
+    // convention) holding the selected hub's name field + the start-hub
+    // toggle; the panel is empty when nothing is selected.
     {
-        const panel = inspector.editorInspectorPanelRect();
+        const p = active_theme.player_gradient.colors;
+        const strip_button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+        const label = "Inspector";
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_shell.editor_group_header_font_size);
+        const width = @max(label_width + 2 * ui_element.ui_gap, editor_shell.editor_header_strip_height);
+        const button_cell = Rectangle{
+            .x = screen.x,
+            .y = screen.y + ui_element.top_bar_height + ui_element.ui_gap,
+            .width = width,
+            .height = editor_shell.editor_header_strip_height,
+        };
         try elements.append(allocator, .{ .nine_slice_panel = .{
             .sprite_id = "ui/panel",
-            .screen_position = panel.position(),
-            .width = panel.width,
-            .height = panel.height,
-            .color = active_theme.darkest,
-            .blocks_input = true,
+            .screen_position = button_cell.position(),
+            .width = width,
+            .height = editor_shell.editor_header_strip_height,
+            .color = strip_button_color,
         } });
-        const content_x = panel.x + ui_element.ui_gap;
-        const content_width = panel.width - 2 * ui_element.ui_gap;
-        var row_y = panel.y + ui_element.ui_gap;
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = null,
+            .screen_position = button_cell.position(),
+            .width = width,
+            .height = editor_shell.editor_header_strip_height,
+            .action = .toggle_campaign_inspector,
+        } });
         try elements.append(allocator, .{ .text_label = .{
-            .text = "Hub",
-            .screen_position = .{ .x = content_x, .y = row_y },
+            .text = label,
+            .screen_position = button_cell.placeCenter(label_width, editor_shell.editor_group_header_font_size).position(),
             .font_size = editor_shell.editor_group_header_font_size,
-            .color = lightest,
+            .color = active_theme.lightest,
             .blocks_input = false,
         } });
-        row_y += editor_shell.editor_header_strip_height;
 
-        const selected_hub: ?types.CampaignHubEdit = blk: {
-            const handle = editor.selection orelse break :blk null;
-            for (editor.hubs) |hub| {
-                if (hub.handle == handle) break :blk hub;
-            }
-            break :blk null;
-        };
-
-        if (selected_hub) |hub| {
-            // The name field (a two-unit entry: label line + control).
-            try elements.append(allocator, .{ .text_label = .{
-                .text = "Name",
-                .screen_position = .{
-                    .x = content_x,
-                    .y = row_y + editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
-                },
-                .font_size = editor_shell.editor_group_header_font_size,
-                .color = lightest,
-                .blocks_input = false,
-            } });
-            const field_rect = Rectangle{
-                .x = content_x,
-                .y = row_y + editor_shell.editor_header_strip_height,
-                .width = content_width,
-                .height = editor_shell.editor_header_strip_height,
-            };
-            try inspector.emitTextFieldUi(
-                elements,
-                allocator,
-                font_metrics,
-                text_edit,
-                .{ .id = .campaign_hub_name, .target = .{ .campaign_hub = hub.handle } },
-                hub.name,
-                field_rect,
-                active_theme,
-            );
-            row_y += 2 * editor_shell.editor_header_strip_height;
-            // The start-hub toggle: highlighted when this hub IS the
-            // start hub (radio semantics; untoggling the current start
-            // hub is vetoed at the consumption site).
-            const toggle_rect = Rectangle{
-                .x = content_x,
-                .y = row_y,
-                .width = content_width,
-                .height = editor_shell.editor_header_strip_height,
-            };
+        if (editor.inspector_open) {
+            const panel_rect = inspector.editorInspectorPanelRect();
             try elements.append(allocator, .{ .nine_slice_panel = .{
                 .sprite_id = "ui/panel",
-                .screen_position = toggle_rect.position(),
-                .width = toggle_rect.width,
-                .height = toggle_rect.height,
-                .color = button_color,
-                .blocks_input = false,
+                .screen_position = panel_rect.position(),
+                .width = panel_rect.width,
+                .height = panel_rect.height,
+                .color = active_theme.darkest,
+                .blocks_input = true,
             } });
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = null,
-                .screen_position = toggle_rect.position(),
-                .width = toggle_rect.width,
-                .height = toggle_rect.height,
-                .action = .set_editor_campaign_start_hub,
-                .payload = .{ .editor_campaign_hub = hub.handle },
-                .highlighted = editor.start_hub == hub.handle,
-            } });
-            const is_start = editor.start_hub == hub.handle;
-            try elements.append(allocator, .{ .text_label = .{
-                .text = if (is_start) "Start Hub" else "Set as Start Hub",
-                .screen_position = .{
-                    .x = content_x + ui_element.ui_gap,
-                    .y = row_y + @divFloor(
-                        editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
-                        2,
-                    ),
-                },
-                .font_size = editor_shell.editor_group_header_font_size,
-                .color = .{ .r = 0, .g = 0, .b = 0 },
-                .blocks_input = false,
-            } });
-        } else {
-            try elements.append(allocator, .{ .text_label = .{
-                .text = "No hub selected",
-                .screen_position = .{ .x = content_x, .y = row_y },
-                .font_size = editor_shell.editor_group_header_font_size,
-                .color = lightest,
-                .blocks_input = false,
-            } });
+
+            const selected_hub: ?types.CampaignHubEdit = blk: {
+                const handle = editor.selection orelse break :blk null;
+                for (editor.hubs) |hub| {
+                    if (hub.handle == handle) break :blk hub;
+                }
+                break :blk null;
+            };
+
+            if (selected_hub) |hub| {
+                const content = Rectangle{
+                    .x = panel_rect.x + ui_element.ui_gap,
+                    .y = panel_rect.y + ui_element.ui_gap,
+                    .width = panel_rect.width - 2 * ui_element.ui_gap,
+                    .height = panel_rect.height - 2 * ui_element.ui_gap,
+                };
+                const hub_section_expanded =
+                    section_expanded[@backingInt(types.EditorInspectorSectionId.campaign_hub)];
+                try inspector.emitInspectorSectionStrip(
+                    elements,
+                    allocator,
+                    .{ .x = content.x, .y = content.y, .width = content.width, .height = editor_shell.editor_header_strip_height },
+                    .campaign_hub,
+                    hub_section_expanded,
+                    strip_button_color,
+                    active_theme,
+                );
+                if (hub_section_expanded) {
+                    // The name field (the sidebar's exact two-unit entry:
+                    // label line + control line).
+                    try inspector.emitSidebarNameField(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        .{ .id = .campaign_hub_name, .target = .{ .campaign_hub = hub.handle } },
+                        hub.name,
+                        .{
+                            .x = content.x,
+                            .y = content.y + editor_shell.editor_header_strip_height,
+                            .width = content.width,
+                            .height = 2 * editor_shell.editor_header_strip_height,
+                        },
+                        active_theme,
+                    );
+                    // The start-hub toggle: a two-unit entry (label +
+                    // control), the row-unit convention - a payload-carrying
+                    // button row (panel + button + label, the mission
+                    // editor's payload-row emission). The label carries the
+                    // start state (the radio readback); the untoggle case is
+                    // vetoed at the consumption site.
+                    const is_start = editor.start_hub == hub.handle;
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = "Start Hub",
+                        .screen_position = .{
+                            .x = content.x,
+                            .y = content.y + 3 * editor_shell.editor_header_strip_height -
+                                editor_shell.editor_group_header_font_size,
+                        },
+                        .font_size = editor_shell.editor_group_header_font_size,
+                        .color = active_theme.lightest,
+                        .blocks_input = false,
+                    } });
+                    const toggle_rect = inspector.inspectorControlRect(.{
+                        .x = content.x,
+                        .y = content.y + 3 * editor_shell.editor_header_strip_height,
+                        .width = content.width,
+                        .height = 2 * editor_shell.editor_header_strip_height,
+                    });
+                    try elements.append(allocator, .{ .nine_slice_panel = .{
+                        .sprite_id = "ui/panel",
+                        .screen_position = toggle_rect.position(),
+                        .width = toggle_rect.width,
+                        .height = toggle_rect.height,
+                        .color = button_color,
+                        .blocks_input = false,
+                    } });
+                    try elements.append(allocator, .{ .button = .{
+                        .sprite_id = null,
+                        .screen_position = toggle_rect.position(),
+                        .width = toggle_rect.width,
+                        .height = toggle_rect.height,
+                        .action = .set_editor_campaign_start_hub,
+                        .payload = .{ .editor_campaign_hub = hub.handle },
+                    } });
+                    const toggle_label = if (is_start) "Start Hub (toggle another to move)" else "Set as Start Hub";
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = toggle_label,
+                        .screen_position = .{
+                            .x = toggle_rect.x + ui_element.ui_gap,
+                            .y = toggle_rect.y + @divFloor(
+                                toggle_rect.height - editor_shell.editor_group_header_font_size,
+                                2,
+                            ),
+                        },
+                        .font_size = editor_shell.editor_group_header_font_size,
+                        .color = .{ .r = 0, .g = 0, .b = 0 },
+                        .blocks_input = false,
+                    } });
+                }
+            }
         }
     }
 
-    // The metadata sidebar (right): the campaign name field + the
-    // background picker button.
+    // The metadata sidebar (right): the mission editor's EXACT shape - the
+    // top-right toggle strip, the panel + content only while open (CLOSED
+    // by default, the mission editor's default). Content = one collapsible
+    // "Campaign" section holding the campaign name field + the background
+    // picker button.
     {
-        const top = ui_element.top_bar_height + ui_element.ui_gap +
-            editor_shell.editor_header_strip_height + ui_element.ui_gap;
-        const bottom = screen.y + screen.height -
-            ui_element.bottom_bar_height - 2 * ui_element.ui_gap -
-            editor_shell.editor_header_strip_height;
-        const panel = Rectangle{
-            .x = screen.x + screen.width - sidebar_width,
-            .y = top,
-            .width = sidebar_width,
-            .height = bottom - top,
+        const p = active_theme.player_gradient.colors;
+        const strip_button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+        const label = "Metadata";
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_shell.editor_group_header_font_size);
+        const width = @max(label_width + 2 * ui_element.ui_gap, editor_shell.editor_header_strip_height);
+        const button_cell = Rectangle{
+            .x = screen.x + screen.width - width,
+            .y = screen.y + ui_element.top_bar_height + ui_element.ui_gap,
+            .width = width,
+            .height = editor_shell.editor_header_strip_height,
         };
         try elements.append(allocator, .{ .nine_slice_panel = .{
             .sprite_id = "ui/panel",
-            .screen_position = panel.position(),
-            .width = panel.width,
-            .height = panel.height,
-            .color = active_theme.darkest,
-            .blocks_input = true,
-        } });
-        const content_x = panel.x + ui_element.ui_gap;
-        const content_width = panel.width - 2 * ui_element.ui_gap;
-        var row_y = panel.y + ui_element.ui_gap;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Campaign",
-            .screen_position = .{ .x = content_x, .y = row_y },
-            .font_size = editor_shell.editor_group_header_font_size,
-            .color = lightest,
-            .blocks_input = false,
-        } });
-        row_y += editor_shell.editor_header_strip_height;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Name",
-            .screen_position = .{
-                .x = content_x,
-                .y = row_y + editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
-            },
-            .font_size = editor_shell.editor_group_header_font_size,
-            .color = lightest,
-            .blocks_input = false,
-        } });
-        const field_rect = Rectangle{
-            .x = content_x,
-            .y = row_y + editor_shell.editor_header_strip_height,
-            .width = content_width,
+            .screen_position = button_cell.position(),
+            .width = width,
             .height = editor_shell.editor_header_strip_height,
-        };
-        try inspector.emitTextFieldUi(
-            elements,
-            allocator,
-            font_metrics,
-            text_edit,
-            .{ .id = .campaign_name, .target = .campaign },
-            editor.campaign_name,
-            field_rect,
-            active_theme,
-        );
-        row_y += 2 * editor_shell.editor_header_strip_height;
-        // The background button: opens the picker (the centered-picker
-        // pattern); the label names the current stem (None when unset).
-        const background_label = if (editor.background_stem.len > 0)
-            try std.fmt.allocPrint(allocator, "Background: {s}", .{editor.background_stem})
-        else
-            "Background: None";
-        try emit.emitPanelButton(
-            elements,
-            allocator,
-            font_metrics,
-            .{
-                .x = content_x,
-                .y = row_y,
-                .width = content_width,
-                .height = editor_shell.editor_header_strip_height,
-            },
-            background_label,
-            editor_shell.editor_group_header_font_size,
-            .open_campaign_background_picker,
-            button_color,
-            null,
-        );
+            .color = strip_button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = null,
+            .screen_position = button_cell.position(),
+            .width = width,
+            .height = editor_shell.editor_header_strip_height,
+            .action = .toggle_campaign_metadata_sidebar,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = label,
+            .screen_position = button_cell.placeCenter(label_width, editor_shell.editor_group_header_font_size).position(),
+            .font_size = editor_shell.editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+
+        if (!editor.metadata_sidebar_open) {
+            // The picker overlay sits between the sidebar PANELS - a
+            // constant rect (the pickers keep it regardless of open state,
+            // the mission editor's rule); nothing else to emit.
+        } else {
+            const panel_rect = inspector.editorMetadataSidebarPanelRect();
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = panel_rect.position(),
+                .width = panel_rect.width,
+                .height = panel_rect.height,
+                .color = active_theme.darkest,
+                .blocks_input = true,
+            } });
+            const content = Rectangle{
+                .x = panel_rect.x + ui_element.ui_gap,
+                .y = panel_rect.y + ui_element.ui_gap,
+                .width = panel_rect.width - 2 * ui_element.ui_gap,
+                .height = panel_rect.height - 2 * ui_element.ui_gap,
+            };
+            const campaign_section_expanded =
+                section_expanded[@backingInt(types.EditorInspectorSectionId.campaign_metadata)];
+            try inspector.emitInspectorSectionStrip(
+                elements,
+                allocator,
+                .{ .x = content.x, .y = content.y, .width = content.width, .height = editor_shell.editor_header_strip_height },
+                .campaign_metadata,
+                campaign_section_expanded,
+                strip_button_color,
+                active_theme,
+            );
+            if (campaign_section_expanded) {
+                try inspector.emitSidebarNameField(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    text_edit,
+                    .{ .id = .campaign_name, .target = .campaign },
+                    editor.campaign_name,
+                    .{
+                        .x = content.x,
+                        .y = content.y + editor_shell.editor_header_strip_height,
+                        .width = content.width,
+                        .height = 2 * editor_shell.editor_header_strip_height,
+                    },
+                    active_theme,
+                );
+                // The background button (a two-unit entry: label +
+                // control): opens the picker; the label names the current
+                // stem (None when unset).
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "Background",
+                    .screen_position = .{
+                        .x = content.x,
+                        .y = content.y + 3 * editor_shell.editor_header_strip_height -
+                            editor_shell.editor_group_header_font_size,
+                    },
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+                const background_label = if (editor.background_stem.len > 0)
+                    try std.fmt.allocPrint(allocator, "{s}", .{editor.background_stem})
+                else
+                    "None";
+                const background_rect = inspector.inspectorControlRect(.{
+                    .x = content.x,
+                    .y = content.y + 3 * editor_shell.editor_header_strip_height,
+                    .width = content.width,
+                    .height = 2 * editor_shell.editor_header_strip_height,
+                });
+                try emit.emitPanelButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    background_rect,
+                    background_label,
+                    editor_shell.editor_group_header_font_size,
+                    .open_campaign_background_picker,
+                    button_color,
+                    null,
+                );
+            }
+        }
     }
 
     // The centered background picker (modal - emitted LAST, above every
@@ -706,6 +792,19 @@ pub fn buildCampaignEditorView(
 // ============================================================
 
 const test_font_metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+const test_section_count = @typeInfo(types.EditorInspectorSectionId).@"enum".field_names.len;
+
+/// The sections' all-collapsed default (the mission editor's default).
+const test_sections_collapsed = @as([test_section_count]bool, @splat(false));
+
+/// The campaign sections expanded (the field-level assertions' state).
+const test_sections_expanded: [test_section_count]bool = blk: {
+    var sections: [test_section_count]bool = @splat(false);
+    sections[@backingInt(types.EditorInspectorSectionId.campaign_hub)] = true;
+    sections[@backingInt(types.EditorInspectorSectionId.campaign_metadata)] = true;
+    break :blk sections;
+};
 const test_button_color = Color{ .r = 50, .g = 50, .b = 50 };
 const test_theme = types.ActiveColorTheme{
     .lightest = .{ .r = 10, .g = 20, .b = 30 },
@@ -805,16 +904,16 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         null,
         null,
         &.{},
+        &test_sections_collapsed,
     );
 
     // Derived total: the map (1 surface + 1 background + per hub an icon
-    // + a select button + per mission 2 curves) + the tool palette (2
-    // cells: button + graphic each) + the empty inspector (panel + header
-    // + placeholder) + the metadata sidebar (panel + header + name label
-    // + field + the 3-element background button).
-    const selected_hub_content: usize = 0; // the fixture selects nothing
+    // + a select button + per mission 2 curves) + the tool palette (4)
+    // + the inspector (toggle strip 3 + open panel 1; nothing selected,
+    // sections collapsed) + the metadata (toggle strip 3; CLOSED by
+    // default - the mission editor's default).
     const expected_total = 1 + 1 + 2 * editor.hubs.len + 2 * editor.missions.len +
-        4 + (3 + selected_hub_content) + 7;
+        4 + (3 + 1) + 3;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
     // The map surface is the FIRST solid_rect - NON-blocking by design
@@ -836,7 +935,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 3), blocking_panels); // inspector + metadata + the background button's panel
+    try std.testing.expectEqual(@as(usize, 3), blocking_panels); // the two toggle strips + the open inspector panel (metadata closed)
 
     // The background: the stem minted into the content-addressed id,
     // native size, centered on the origin.
@@ -963,6 +1062,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     // name field bound to the hub's handle + the highlighted start toggle.
     var editor = buildFixtureEditor();
     editor.selection = 0;
+    editor.metadata_sidebar_open = true;
     var elements: UiElementList = .empty;
     defer elements.deinit(arena.allocator());
     try buildCampaignEditorView(
@@ -977,6 +1077,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
         null,
         null,
         &.{},
+        &test_sections_expanded,
     );
 
     var field_refs: usize = 0;
@@ -993,16 +1094,22 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     try std.testing.expectEqual(@as(usize, 2), field_refs);
     try std.testing.expectEqual(@as(u32, 0), hub_name_field.?.ref.target.campaign_hub);
 
-    // The start-hub toggle: highlighted on the start hub (radio readback).
+    // The start-hub toggle: a standard panel-button row (the exact
+    // mission-editor control formatting); the start state reads from the
+    // LABEL ("Start Hub ..." vs "Set as Start Hub") - the radio readback.
     var start_toggle: ?ui_element.Button = null;
+    var start_toggle_label: ?[]const u8 = null;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .set_editor_campaign_start_hub) {
             start_toggle = button;
         },
+        .text_label => |label| if (std.mem.startsWith(u8, label.text, "Start Hub")) {
+            start_toggle_label = label.text;
+        },
         else => {},
     };
-    try std.testing.expect(start_toggle.?.highlighted);
     try std.testing.expectEqual(@as(u32, 0), start_toggle.?.payload.?.editor_campaign_hub);
+    try std.testing.expect(start_toggle_label.?.len > "Start Hub".len); // "(toggle another to move)" rides the label
 
     // The tool palette: two cells carrying the campaign tool payloads,
     // the active tool highlighted.
@@ -1047,6 +1154,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
         null,
         null,
         &.{},
+        &test_sections_collapsed,
     );
     const alpha_icon = elements.items[try findHubIcon(elements.items, "Alpha")].image;
     const panned_alpha_icon = panned_elements.items[try findHubIcon(panned_elements.items, "Alpha")].image;
@@ -1077,6 +1185,7 @@ test "buildCampaignEditorView: the background picker - None + stems, current hig
         null,
         null,
         &stems,
+        &test_sections_collapsed,
     );
 
     // One payload-carrying pick row per stem PLUS the None row (empty

@@ -459,3 +459,41 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     runToIdle(&history);
     try testing.expect(history.current_state.campaign_editor.?.picker == null);
 }
+
+test "campaign editor: exit to main menu via the options menu path, sidebar toggles, defaults" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    // The editor's panel defaults mirror the mission editor's: inspector
+    // OPEN, metadata CLOSED.
+    try testing.expect(history.current_state.campaign_editor.?.inspector_open);
+    try testing.expect(!history.current_state.campaign_editor.?.metadata_sidebar_open);
+
+    // The sidebar toggles ride the timeline (the player_toggle_editor_*
+    // convention): one event each flips the flag; undo restores.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_toggle_campaign_metadata_sidebar }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.metadata_sidebar_open);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(!history.current_state.campaign_editor.?.metadata_sidebar_open);
+
+    // Exit to Main Menu (the options-menu button): close_campaign_editor
+    // owns the teardown + transition - the campaign editor state is
+    // discarded, the screen is the main menu.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_exit_to_menu }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try testing.expect(history.current_state.campaign_editor == null);
+}

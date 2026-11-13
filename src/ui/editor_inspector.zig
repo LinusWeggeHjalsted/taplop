@@ -667,7 +667,7 @@ fn emitSidebarGradientRow(
 /// A sidebar name field: the inspector field-entry geometry (label line
 /// above, paper-strip control below) over the shared `emitTextFieldUi`.
 /// `entry` is the two-unit cell (label unit + control unit).
-fn emitSidebarNameField(
+pub fn emitSidebarNameField(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -713,7 +713,7 @@ const editor_inspector_control_gap: i32 = @divFloor(ui_gap, 2);
 /// The control line's rect inside a two-unit entry cell: the lower row
 /// unit, inset by `editor_inspector_control_gap` (the label sits flush
 /// above it at the unit's bottom).
-fn inspectorControlRect(cell: Rectangle) Rectangle {
+pub fn inspectorControlRect(cell: Rectangle) Rectangle {
     return .{
         .x = cell.x,
         .y = cell.y + editor_inspector_row_height + editor_inspector_control_gap,
@@ -966,6 +966,8 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
         .item => "Item",
         .mission => "Mission",
         .current_level => "Current level",
+        .campaign_hub => "Hub",
+        .campaign_metadata => "Campaign",
     };
 }
 
@@ -1358,7 +1360,7 @@ fn editorInspectorItemEntries(
 /// vertically centered (the group-header visual class) - and the section's
 /// EXPAND/COLLAPSE button: the whole strip is clickable, the +/- marker
 /// prefix carries the state.
-fn emitInspectorSectionStrip(
+pub fn emitInspectorSectionStrip(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     cell: Rectangle,

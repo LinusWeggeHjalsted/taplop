@@ -169,6 +169,14 @@ pub fn handleCampaignEditorEvent(
         .editor_campaign_close_picker => {
             editor.picker = null;
         },
+
+        .editor_campaign_toggle_inspector => {
+            editor.inspector_open = !editor.inspector_open;
+        },
+
+        .editor_campaign_toggle_metadata_sidebar => {
+            editor.metadata_sidebar_open = !editor.metadata_sidebar_open;
+        },
     }
 }
 

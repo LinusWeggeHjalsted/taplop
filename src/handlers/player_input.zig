@@ -667,6 +667,10 @@ pub fn handlePlayerInputEvent(
                 // the editor via the screen-scope swap) - no sibling
                 // open_main_menu needed.
                 pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
+            } else if (current.screen == .campaign_editor) {
+                // The same shape for the campaign editor:
+                // close_campaign_editor owns the teardown + transition.
+                pushEvents(current, &.{.{ .meta_event = .close_campaign_editor }}, allocator);
             }
         },
         .player_replay_mission => {
@@ -879,6 +883,12 @@ pub fn handlePlayerInputEvent(
         },
         .player_close_campaign_picker => {
             pushEvents(current, &.{.{ .campaign_editor_event = .editor_campaign_close_picker }}, allocator);
+        },
+        .player_toggle_campaign_inspector => {
+            pushEvents(current, &.{.{ .campaign_editor_event = .editor_campaign_toggle_inspector }}, allocator);
+        },
+        .player_toggle_campaign_metadata_sidebar => {
+            pushEvents(current, &.{.{ .campaign_editor_event = .editor_campaign_toggle_metadata_sidebar }}, allocator);
         },
         .player_set_campaign_background => |set| {
             // The pick + its close are ONE undo step (the editor-picker

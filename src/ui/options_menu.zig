@@ -107,7 +107,9 @@ pub fn buildOptionsMenu(
     // game is in progress (empty/throwaway player_data); Load Save is
     // that screen's save workflow. `save_game` is button-only (no
     // keybind), so hiding the button removes the path entirely.
-    if (current_screen != .editor and current_screen != .main_menu and editor_run == null) {
+    if (current_screen != .editor and current_screen != .campaign_editor and
+        current_screen != .main_menu and editor_run == null)
+    {
         const export_save_body = if (persistent_dir_path) |dir|
             try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
         else
@@ -189,6 +191,31 @@ pub fn buildOptionsMenu(
             .action = .revalidate_editor_mission,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
                 "Re-checks the stored validation replay against the saved mission and re-binds it to the current content",
+            ))}) },
+        };
+        button_count += 1;
+    }
+
+    // The CAMPAIGN editor's variant (mirrors the mission editor's entries
+    // where applicable): the browser (campaign switching - the kind tabs
+    // incl. Campaign) + a fresh campaign. Save/Export land with the save
+    // slice (3e); Revalidate is mission-editor-specific. The mission
+    // browser's Open Mission entry maps to the same browser action here
+    // (both kinds are reachable from its tabs).
+    if (current_screen == .campaign_editor) {
+        buttons[button_count] = .{
+            .label = "Open Browser",
+            .action = .toggle_editor_browser,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Ctrl+O - browse your saved campaigns and missions",
+            ))}) },
+        };
+        button_count += 1;
+        buttons[button_count] = .{
+            .label = "New Campaign",
+            .action = .new_editor_campaign,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Replaces the campaign being edited with a fresh one",
             ))}) },
         };
         button_count += 1;
@@ -532,4 +559,38 @@ fn expectMenuButtonLabel(elements: []const UiElement, action: Action, expected: 
         else => {},
     };
     try std.testing.expect(found);
+}
+
+test "buildOptionsMenu: the campaign editor variant - browser + new campaign, no export save" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    var elements: UiElementList = .empty;
+    try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, button_color, null);
+
+    var found_browser = false;
+    var found_new_campaign = false;
+    var found_exit = false;
+    var found_export_save = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| {
+            if (button.action == .toggle_editor_browser) found_browser = true;
+            if (button.action == .new_editor_campaign) found_new_campaign = true;
+            if (button.action == .exit_to_menu) found_exit = true;
+            if (button.action == .save_game) found_export_save = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_browser);
+    try std.testing.expect(found_new_campaign);
+    try std.testing.expect(found_exit);
+    // The campaign save path is hidden on editor screens (the mission
+    // editor's Export Save discipline) - the campaign save lands with its
+    // slice.
+    try std.testing.expect(!found_export_save);
 }
