@@ -391,37 +391,70 @@ work:
     - [ ] later. New-game campaign picker + the speedrun seed
           (all-hubs-discovered start option, runtime-derived) - main-menu
           work, rides the same machinery.
-  - [ ] 3. The campaign editor state + framing + the editor browser's
-        Campaign tab (scan `campaigns/`, New Campaign) + the campaign
-        view (background, hub place/free-move/drag, edge rendering,
-        dangling rendering). The state shape is SETTLED (the parallel
-        CampaignEditor + campaign_editor screen - DESIGN → Campaigns &
-        the Campaign Editor → The editor-state split) AND the full
-        interaction design is SETTLED (the mission-centric authored
-        graph + Exits-as-save-projection, the three tools, the
-        inspector/metadata contents, the start-hub toggle, the orphan
-        model + campaign.txt v3 Orphans section + ghost positions,
-        delete-at-save-only + the directory-level FileSource delete
-        seam, default templates, pan, the Validate button,
-        session-scoped uuid minting for unsaved missions - DESIGN →
-        Campaigns & the Campaign Editor → The campaign editor
-        surface). The edge GEOMETRY derivation (the
-        hub-boundary anchors, self-loop teardrop, parallel spread,
-        dangling stub) is inline in buildWorldMap's loop today -
-        extract it into a shared helper here so the editor view and the
-        map mirror render through one implementation (the "one data
-        model, two renderers" rule; the constants ride with it). Also:
-        replace the world-map structure tests' hardcoded flat-list
-        indices with predicate scans (find the curve by endpoints) as
-        part of the extraction - ELEVATED from the original fold-in note:
-        the 2d/2e sessions re-indexed those tests FOUR times (icon
-        resize, clickable buttons, emission reorder), each pass slow +
-        error-prone (one update silently mangled a comment boundary). Do
-        the predicate-scan rewrite the next time world_map.zig's element
-        layout changes at all, not just at the extraction. Includes the
-        editor-side identity model: rename-in-place + cosmetic dir tidy +
-        Save As Copy + the FileSource renameDir seam (DESIGN → Rename +
-        Save As Copy).
+  - [ ] 3. The campaign editor - design fully SETTLED (the state
+        shape: DESIGN → The editor-state split; the interaction design:
+        DESIGN → The campaign editor surface). Recut into implementation
+        sub-steps (each a commit unit: builds, tests green, harness /
+        round-trip coverage per the tier conventions):
+    - [ ] 3a. The geometry extraction: pull buildWorldMap's inline
+          edge-geometry derivation (hub-boundary anchors, self-loop
+          teardrop, parallel spread, dangling stub + the view
+          constants) into a shared pure helper so the editor view and
+          the map mirror render through one implementation ("one data
+          model, two renderers") + the predicate-scan rewrite of the
+          world-map structure tests (find elements by predicate -
+          endpoints, payload - not flat-list indices; the
+          four-times-re-indexed lesson). Pure, headless-testable, no
+          new state. Synthetic fixtures needed for the shapes official
+          content lacks (parallel edges between two hubs).
+    - [ ] 3b. The CampaignEditor type + screen + framing + the
+          browser's Campaign tab: the authored graph (hub entries
+          carrying their grid payload loaded at open - the drill-in
+          later just selects one; mission entries per the
+          mission-centric model incl. exit marker position + ghost
+          positions), Screen.campaign_editor + scopes ({
+          campaign_editor }; the editor screen's scope gains
+          campaign_editor now - the slice-5 hand-off liveness),
+          open/close framing events (recorded reads through the
+          reconstruction cache - the open_editor precedent) +
+          replay-validation arms, the editor browser's Campaign tab
+          (scan campaigns/ + New Campaign: a fresh in-memory campaign,
+          one start hub at 0 0 with the single-'!'-tile default grid;
+          files only at save), + the campaign view rendering through
+          3a's helper (background, hubs, edges, dangling stubs - all
+          lit, no discovery dimming). New module family mirroring
+          src/editor/ + a per-surface ui/campaign_editor.zig; campaign
+          editor events ride the editor_ family (editor_campaign_*).
+    - [ ] 3c. The hub tool + select tool + hub inspector + metadata
+          sidebar: place hub (default template), click-select +
+          drag-move (one position-commit event on release; transient
+          preview), the start-hub toggle (radio semantics + the
+          untoggle/delete vetoes), the hub name field, right-click
+          delete hub (orphaning + ghost positions + start-hub veto;
+          files only at save), pan (the existing right-drag seam), the
+          campaign name + background picker in metadata.
+    - [ ] 3d. The mission tool + mission inspector + orphans: the
+          arrow-draw gesture (transient SessionState state; empty-click
+          / clean right-click cancels; right-drag pans), create
+          mission + edge in one gesture (fresh-mission template + an
+          in-editor handle), the mission inspector (name, direction
+          field, start/end re-attach pick-mode, import copy-at-pick
+          with duplicate-uuid refusal), orphan rendering (ghosted,
+          live-or-frozen positions) + salvage, right-click delete
+          mission.
+    - [ ] 3e. Save + the identity model: the full save projection
+          (missions first - session-memo uuid minting + handle
+          resolution - then hub.txts (the Exits projection + grids),
+          then campaign.txt v3 incl. the Orphans section; deletions
+          directory-level, explicit-deletions-only), rename-in-place +
+          cosmetic dir tidy + Save As Copy + the FileSource renameDir
+          + delete seams, ctrl+S, writer round-trip tests (the
+          buildEditorMission/writeEditorMission pattern for campaigns).
+    - [ ] 3f. The Validate button: parameterize checkCampaignGraph
+          over a graph view (pure, no file reads) + run it over the
+          authored graph (the graph checks + unstartable missions -
+          outgoing with no marker placed - + the orphan findings);
+          findings through the standard warning surface.
   - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
         & the Campaign Editor → The hub editor surface): the level-editor
         mirror over the level-shaped hub grid (select / tile / NPC group
