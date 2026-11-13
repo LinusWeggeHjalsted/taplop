@@ -329,6 +329,7 @@ working rules).
 - [campaign-editor design settle: the Editor-state split (pre-slice-3 spike)](#campaign-editor-design-settle-the-editor-state-split-pre-slice-3-spike)
 - [campaign editor: mint-on-fork settled (imports keep the uuid; duplicates refused)](#campaign-editor-mint-on-fork-settled-imports-keep-the-uuid-duplicates-refused)
 - [campaign editor: slice-3 interaction design settle (tools, inspector, orphans, start-hub toggle)](#campaign-editor-slice-3-interaction-design-settle-tools-inspector-orphans-start-hub-toggle)
+- [campaign editor: hub editor design settle (the slice-4 drill-in)](#campaign-editor-hub-editor-design-settle-the-slice-4-drill-in)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20496,3 +20497,57 @@ the slice-5 campaign-context question).
 TODO's slice 3 re-cut to point at the settle; multi-select hub
 repositioning + drag-the-tip re-angling recorded as post-slice-3
 polish.
+
+## campaign editor: hub editor design settle (the slice-4 drill-in)
+
+The hub editor requirements, recorded in full in DESIGN → Campaigns &
+the Campaign Editor → The hub editor surface. This entry carries the
+decisions' rationale.
+
+Grounding finding first: hub placements (decorations, NPC types, exit
+markers) are LAYOUT CHARACTER CODES in hub.txt - the shipped official
+hub uses digits 0-3 for its four exits and letters for decorations -
+so the level editor's per-tool-code writer machinery carries over
+unchanged; the hub editor is a genuine level-editor mirror, not an
+adaptation.
+
+The decisions, with what they superseded or revised:
+
+- Edge creation moved OFF the hub editor entirely (supersedes the
+  original "exit's mission choices" bullet - pick from campaign dir /
+  import / new blank). One creation site (the campaign map's mission
+  tool + mission inspector), one positioning site (the hub editor's
+  per-mission exit tools). Cleaner than the original: no duplicate
+  import surfaces, and the mission-centric graph never needed a
+  hub-side picker.
+- The default hub grid is a SINGLE tile with the player spawn -
+  revising the slice-3 settle's data/default_level.txt precedent
+  (simpler; a hub starts as nothing but the arrival point).
+- The exit inspector is a READ-ONLY summary (mission name, destination
+  name) - every editable field (name, re-attach, direction) has
+  exactly one editing site, on the campaign map.
+- The decoration palette is CAMPAIGN-SHARED (dedup across hub files on
+  open, flatten back on save) - the levels-share-the-mission-palette
+  analogy; less friction authoring many hubs with consistent props.
+- Save granularity is per screen (the discussion's one revision of my
+  proposal): the campaign map saves the FULL campaign (the
+  reconciliation save - the only one that deletes files, resolving
+  every in-editor handle to minted uuids); the hub editor saves THIS
+  hub only; the mission editor saves the mission. Consequence spelled
+  out: a hub-only save skips + warns exit entries whose mission or
+  destination hub is still unsaved (no uuid exists yet to reference) -
+  they land at the next full save.
+- Exits are CLICK-activated in play - no pathing in hubs - which kills
+  the marker-reachability question outright (it had been deferred; it
+  is now known inapplicable).
+- Metadata ports all three gradients (color wheel + enemy + player
+  overrides; hub.txt v5) even though hubs have no enemies - symmetry
+  with level metadata, revisit if the enemy gradient never earns its
+  place.
+- NPC placement is unrestricted in v1 (any count, any type, on-grid);
+  semantics arrive with NPC interaction.
+- Hub-content validation findings fold into the campaign Validate
+  button: outgoing mission with no marker placed (unstartable);
+  overlapping placements; off-grid placements.
+
+TODO slice 4 re-cut to point at the settle.

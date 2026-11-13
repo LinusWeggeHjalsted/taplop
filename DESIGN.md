@@ -85,6 +85,7 @@ next session meets it as a surprise instead of a known.
   - [The editor-state split (settled: a parallel CampaignEditor)](#the-editor-state-split-settled-a-parallel-campaigneditor)
   - [The campaign editor](#the-campaign-editor)
   - [The campaign editor surface (settled requirements)](#the-campaign-editor-surface-settled-requirements)
+  - [The hub editor surface (settled requirements)](#the-hub-editor-surface-settled-requirements)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
 - [Gear Upgrading (the upgrade economy + hub vendor panel)](#gear-upgrading-the-upgrade-economy--hub-vendor-panel)
@@ -3293,7 +3294,9 @@ no rename in v1"): rename is free, for all three content kinds.
   files through `file_source` directly, NOT the reconstruction cache:
   warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
   advisory-only), so replay purity is unaffected.
-- **hub.txt** (v3 landed; v4 adds the uuid sweep): `Exits` entries carry
+- **hub.txt** (v3 landed; v4 adds the uuid sweep; v5 - the hub editor
+  - adds the three gradient keys, mirroring level Metadata): `Exits`
+  entries carry
   `destination_hub` (a uuid), `mission_uuid`, + `direction` (see Edge
   geometry below); the `NPCs` section
   becomes `character_code` + `npc_type`. Hubs bundle their own custom
@@ -3660,21 +3663,22 @@ Consequences:
   move-drag, the tile tool, decoration tools + palette, player spawn -
   MINUS the entity/item/level machinery (no entity tooling, no player.txt,
   no level tabs, no hub playtest: nothing to do in a hub until NPC
-  interaction lands). New tools: mission-exit placement + NPC placement,
-  with inspector fields. Custom decorations are authorable (the bundled
+  interaction lands). New tools: mission-exit placement + NPC placement.
+  The settled surface design (tools, inspectors, palette scope, save
+  granularity): see The hub editor surface. Custom decorations are
+  authorable (the bundled
   hub art above).
-- **The exit's mission choices** (the exit inspector): (a) missions
-  already in the campaign dir, (b) IMPORT from the player's custom
-  `missions/` - COPY AT PICK (the campaign owns a snapshot; the campaign
-  dir is always the source of truth - later edits to the original do not
-  propagate), (c) create a new blank/default mission (the
-  editor_defaults pattern - edit after). All picks are by LIST (never a
-  uuid by hand); an import is a copy with the uuid KEPT - the same
-  authored work keeps its identity, and an import whose uuid is
-  already in the campaign is refused (see Rename + Save As Copy). The
-  destination picks placed hubs (by list) or none yet (the dangling
-  stub - empty destination, save-legal; the author picks the real hub
-  once placed).
+- **Edge creation lives on the CAMPAIGN MAP, not in the hub editor**
+  (supersedes the original exit-inspector mission choices): the mission
+  tool creates a mission + its edge in one gesture; the mission
+  inspector IMPORTS (copy-at-pick - the campaign owns a snapshot; the
+  campaign dir is always the source of truth - uuid KEPT, duplicate
+  imports refused; see Rename + Save As Copy) and RE-ATTACHES
+  start/end. The hub editor only POSITIONS exit markers for missions
+  already starting at its hub (see The hub editor surface). A
+  mission's destination is picked on the map (click an end hub, or
+  re-attach) or left empty (the dangling stub - save-legal by design).
+  All picks are by list or map click, never a uuid by hand.
 - **Saving keeps the campaign dir self-contained**: campaign.txt + map +
   `hubs/` (+ bundled art) + `missions/` (+ their art). The mission
   STORE-zip pattern extends to campaign export at the online-services
@@ -3715,8 +3719,9 @@ The slice-3 interaction design. The state shape is settled separately
   random ever enters GameState.
 - **Layout mirrors the mission editor**: tool palette (bottom),
   inspector (left), metadata sidebar (right), Save + Validate primary
-  actions (top-right). No Test/Playtest - there is nothing to play in
-  a campaign.
+  actions (top-right; ctrl+S saves the FULL campaign - the per-screen
+  granularity: see The hub editor surface). No Test/Playtest - there is
+  nothing to play in a campaign.
 - **Tools** (the active-tool model):
   - select: single-select v1 (multi-select + multi-reposition of hubs
     is future polish - TODO); click-select + drag-move commits one
@@ -3779,9 +3784,10 @@ The slice-3 interaction design. The state shape is settled separately
   gameplay). Validation findings, machine-checkable: an orphan whose
   uuid resolves to no `missions/` dir (files deleted by hand); a uuid
   both wired and orphaned (hand-edit conflict).
-- **Default templates**: a new hub = the default grid + player spawn
-  (the `data/default_level.txt` precedent), empty exits/NPCs, name
-  "New Hub", uuid minted at save. A new mission (the mission tool) =
+- **Default templates**: a new hub = a SINGLE tile with the player
+  spawn ('!') - empty exits/NPCs, name "New Hub", uuid minted at save
+  (the hub editor's default grid: see The hub editor surface). A new
+  mission (the mission tool) =
   the fresh-mission template. New Campaign = campaign.txt + ONE
   default hub placed at `0 0` as the start hub (a campaign needs a
   start hub; no zero-start fresh state).
@@ -3799,6 +3805,76 @@ The slice-3 interaction design. The state shape is settled separately
   destinations, exits naming missing missions, unreachable hubs, the
   orphan findings above. Findings render through the standard warning
   surface.
+
+### The hub editor surface (settled requirements)
+
+The slice-4 drill-in (entered from the hub inspector's Open Hub Editor
+button; returns via the world-map button). Mirrors the LEVEL editor as
+closely as the content allows - same shell (tool palette bottom,
+inspector left, metadata right), same grid machinery (the extracted
+planners + selection algebra over the level-shaped hub grid;
+`Selectable`'s hub arms: tile, decoration placement, NPC placement,
+exit placement, player start).
+
+- **The grid**: one tile grid per hub (no level tabs). A new hub's
+  default grid is a SINGLE tile with the player spawn ('!') - the
+  spawn keeps its mission-editor semantics (singleton, movable,
+  never deletable). Placements are layout character codes (the
+  shipped hub uses digits for exits, letters for decorations) - the
+  level writer's per-tool-code machinery, unchanged.
+- **Tools** (the active-tool model):
+  - select: click-select + marquee + move-drag over the grid, the
+    mission editor's selection algebra.
+  - tile: paint/erase floor tiles.
+  - an NPCs group - two FIXED tools (gear_upgrader, dream_guide;
+    sprites derive from the type - nothing to author).
+  - a Missions group - ONE TOOL PER OUTGOING MISSION (the missions
+    whose start is this hub - membership is live from the campaign
+    graph and changes when starts are re-wired on the map, the one
+    live coupling between the two surfaces).
+  - a Decorations group exactly like the mission editor's (palette +
+    pickers, incl. hub-bundled custom art - the
+    `custom/campaigns/<c>/hubs/<hub>/` stem rule).
+- **Exit markers**: placing a mission's tool puts/moves THAT mission's
+  marker (one marker per mission); right-click removes the marker but
+  NOT the mission from the graph (it becomes unstartable - a
+  validation finding). Exits are CLICK-activated in play (no pathing
+  in hubs), so markers carry no reachability constraint.
+- **The decoration palette is CAMPAIGN-SHARED**: dedup across all hub
+  files on open, flatten back inline on save - the
+  levels-share-the-mission-palette analogy. One decoration vocabulary
+  across a campaign's hubs; fewer definitions to re-author.
+- **The inspector**: default view EMPTY (no player.txt for hubs); NPC
+  placements EMPTY for now (semantics arrive with NPC interaction);
+  an exit marker shows a READ-ONLY summary (mission name, destination
+  hub name, dangling marker when no destination) - all editing stays
+  on the campaign map (name, re-attach, direction each have exactly
+  one editing site).
+- **The metadata sidebar**: hub name field + all three gradients
+  ported from the level metadata (color_wheel_index + enemy/player
+  overrides; hub.txt v5). The enemy gradient is unused at runtime in
+  hubs (no enemies) - ported anyway for symmetry; revisit if it never
+  earns its place.
+- **NPC placement is free**: any number of each type, anywhere
+  on-grid (NPC tiles aren't walkable - the blocking rule);
+  restrictions, if any, arrive with NPC interaction semantics.
+- **Save granularity per screen** (ctrl+S saves what the screen
+  edits):
+  - the campaign map saves the FULL campaign (campaign.txt + all hubs
+    + missions - the reconciliation save, the ONLY save that deletes
+    files; resolves every in-editor handle to a minted uuid through
+    the session memo, missions first then hubs then campaign.txt).
+  - the hub editor saves THIS HUB's hub.txt only. Exit entries whose
+    mission or destination hub is still UNSAVED are skipped + warned
+    (their uuid does not exist yet - nothing to reference); they stay
+    in the editor graph and land at the next full save. A partial
+    save never deletes anything.
+  - the mission editor in campaign context saves the mission (its
+    files in the campaign's `missions/`).
+- **Hub-content validation findings** (folding into the campaign
+  Validate button): an outgoing mission with no marker placed
+  (unstartable); overlapping placements (two markers / NPCs /
+  decoration footprints on one tile); placements off-grid.
 
 ### Known limitations
 

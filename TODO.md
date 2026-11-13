@@ -433,10 +433,16 @@ work:
         editor-side identity model: rename-in-place + cosmetic dir tidy +
         Save As Copy + the FileSource renameDir seam (DESIGN → Rename +
         Save As Copy).
-  - [ ] 4. The hub editor drill-in: the reused viewport machinery +
-        exit + NPC tools with inspector fields (mission pick / import
-        COPY-AT-PICK / new blank mission; destination picks placed hubs
-        by list or none yet - the dangling stub; direction field).
+  - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
+        & the Campaign Editor → The hub editor surface): the level-editor
+        mirror over the level-shaped hub grid (select / tile / NPC group
+        / per-mission exits group / decorations group; the
+        campaign-shared decoration palette; read-only exit summary;
+        empty player + NPC inspectors; hub name + three gradients in
+        metadata; hub-only ctrl+S with the skip-unsaved-references rule;
+        hub validation findings). Edge creation stays on the campaign
+        map (the original exit-inspector pick/import/new flow is
+        superseded - DESIGN → The campaign editor).
   - [ ] 5. The mission-editor hand-off (campaign context) + campaign
         save/export bundling (the STORE-zip pattern).
   - future (post-slice-3 polish): multi-select + multi-reposition of
