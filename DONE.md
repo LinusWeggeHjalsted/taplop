@@ -327,6 +327,7 @@ working rules).
 - [every fullscreen overlay pauses the game (the options-menu rule generalized)](#every-fullscreen-overlay-pauses-the-game-the-options-menu-rule-generalized)
 - [console test harness: per-frame arena reset + the shared frame helper](#console-test-harness-per-frame-arena-reset--the-shared-frame-helper)
 - [campaign-editor design settle: the Editor-state split (pre-slice-3 spike)](#campaign-editor-design-settle-the-editor-state-split-pre-slice-3-spike)
+- [campaign editor: mint-on-fork settled (imports keep the uuid; duplicates refused)](#campaign-editor-mint-on-fork-settled-imports-keep-the-uuid-duplicates-refused)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20406,3 +20407,34 @@ scope-drop rule), CampaignEditor edits an authored editable graph (the
 EditorLevel-vs-runtime-Level precedent, not the load-derived Campaign
 type), and Selectable gains hub-surface arms at the hub-editor slice.
 The mission-editor campaign-context question stays open at slice 5.
+
+## campaign editor: mint-on-fork settled (imports keep the uuid; duplicates refused)
+
+The campaign editor's open mint-on-fork question (re-mint a mission's
+uuid on copy-at-pick import, or keep it?) settled during the slice-3
+requirements discussion: **keep the uuid; refuse duplicate-uuid
+imports.**
+
+The deciding argument (identity, not convenience): the uuid is the
+AUTHORED WORK's identity, and the records that key on it - leaderboards,
+clone records, personal bests - should follow the work across an import.
+A player who made a mission, uploaded it, earned a leaderboard spot,
+then imported it into a best-of collection campaign has the same
+mission; re-minting would sever the records for no authoring benefit.
+(Save As Copy still mints - an intentional fork IS a new work; the two
+rules compose: import = "use this work", Save As Copy = "make a new
+one".)
+
+The refusal closes the hole the alternative evidence exposed: keeping
+uuids on import means importing the same local mission twice would
+create two same-uuid dirs inside one campaign - exactly the
+duplicate-uuid state the editor is designed never to create itself.
+So the import picker grays out / annotates missions whose uuid is
+already in the campaign, and an import attempt is refused with a
+message. Machine-checkable from the campaign's mission table.
+
+Rider: the DESIGN hub-editor bullet still said exits pick their
+destination "or a free-typed forward reference" - dead prose since the
+uuid settle (you cannot hand-type a not-yet-minted uuid); rewritten to
+"none yet - the dangling stub (empty destination)". TODO slice 4's copy
+of the same phrase fixed with it.

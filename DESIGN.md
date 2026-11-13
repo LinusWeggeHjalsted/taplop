@@ -3191,9 +3191,14 @@ never asks for a uuid by hand.
   name = label (just a field, freely editable, may collide).
 - **Minting policy**: rename-in-place NEVER re-mints (the uuid is the
   identity); an explicit Save As Copy DOES mint a fresh uuid (an
-  intentional fork is a new work). Copy-at-pick campaign imports keep
-  the uuid today (the mission precedent); mint-on-fork for campaigns is
-  an OPEN slice-3 question.
+  intentional fork is a new work). Copy-at-pick campaign imports KEEP
+  the uuid (settled): an import is the same authored work, and the
+  records that key on the uuid - leaderboards, clone records,
+  personal bests - persist across an import into a campaign. A
+  duplicate-uuid import into a campaign already containing that
+  mission is REFUSED (the picker grays out / annotates
+  already-in-campaign missions; the editor never creates same-uuid
+  siblings itself).
 
 ### Uuid→dir resolution (scan-based loading)
 
@@ -3661,10 +3666,11 @@ Consequences:
   dir is always the source of truth - later edits to the original do not
   propagate), (c) create a new blank/default mission (the
   editor_defaults pattern - edit after). All picks are by LIST (never a
-  uuid by hand); an import is a copy with the uuid kept - mint-on-fork
-  is the OPEN slice-3 question (see Rename + Save As Copy). The
-  destination picks placed hubs (by list) or a free-typed
-  forward reference (the dangling stub; the author picks the real hub
+  uuid by hand); an import is a copy with the uuid KEPT - the same
+  authored work keeps its identity, and an import whose uuid is
+  already in the campaign is refused (see Rename + Save As Copy). The
+  destination picks placed hubs (by list) or none yet (the dangling
+  stub - empty destination, save-legal; the author picks the real hub
   once placed).
 - **Saving keeps the campaign dir self-contained**: campaign.txt + map +
   `hubs/` (+ bundled art) + `missions/` (+ their art). The mission

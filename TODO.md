@@ -375,8 +375,11 @@ work:
   - what the mission editor's campaign context changes beyond the
     options-menu return (the "slightly different setup" - e.g. no
     standalone-dream export surface while campaign-owned);
-  - mint-on-fork for campaign copy-at-pick imports (the slice-3
-    decision; see DESIGN → Rename + Save As Copy).
+  - mint-on-fork - SETTLED: imports KEEP the uuid (the same authored
+    work keeps its identity - leaderboards, clone records, personal
+    bests persist across an import) and duplicate-uuid imports into a
+    campaign already containing that mission are refused (see DESIGN
+    → Rename + Save As Copy);
   (The hub-rename question DISSOLVED - rename is free under uuid
   references: see DESIGN → Rename + Save As Copy.)
   Future surfaces riding this work: the pre-mission briefing overlay
@@ -417,11 +420,11 @@ work:
         layout changes at all, not just at the extraction. Includes the
         editor-side identity model: rename-in-place + cosmetic dir tidy +
         Save As Copy + the FileSource renameDir seam (DESIGN → Rename +
-        Save As Copy); decide mint-on-fork here.
+        Save As Copy).
   - [ ] 4. The hub editor drill-in: the reused viewport machinery +
         exit + NPC tools with inspector fields (mission pick / import
         COPY-AT-PICK / new blank mission; destination picks placed hubs
-        by list or a free-typed forward reference; direction field).
+        by list or none yet - the dangling stub; direction field).
   - [ ] 5. The mission-editor hand-off (campaign context) + campaign
         save/export bundling (the STORE-zip pattern).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
