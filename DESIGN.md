@@ -84,6 +84,7 @@ next session meets it as a surprise instead of a known.
   - [The map surface (the world-map overlay's build)](#the-map-surface-the-world-map-overlays-build)
   - [The editor-state split (settled: a parallel CampaignEditor)](#the-editor-state-split-settled-a-parallel-campaigneditor)
   - [The campaign editor](#the-campaign-editor)
+  - [The campaign editor surface (settled requirements)](#the-campaign-editor-surface-settled-requirements)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
 - [Gear Upgrading (the upgrade economy + hub vendor panel)](#gear-upgrading-the-upgrade-economy--hub-vendor-panel)
@@ -3278,7 +3279,9 @@ no rename in v1"): rename is free, for all three content kinds.
   the map is campaign-level data: moving a hub edits one file, and the
   world map loads the whole graph geometry in one read without touching
   every hub file. The coordinate model: see The map coordinate model
-  below.
+  below. v3 (the campaign-editor slice) adds an Orphans section - one
+  group per unwired mission (`mission_uuid` + ghost positions; see
+  The campaign editor surface) - editor-authored, runtime-ignored.
 - **Load-time graph integrity checks** (landed -
   `loaders.checkCampaignGraph`, called from `loadCampaignAndPushHub`,
   warn-only through the standard surfaceWarnings popup): start hub not
@@ -3681,9 +3684,121 @@ Consequences:
   persistent dir + a New Campaign button (the New-derives-from-active-kind
   rule).
 - **The mission editor in campaign context** (the edge-click hand-off)
-  knows its campaign and returns via the options menu (a top-bar return
-  button only if/when playtesting wants one). What else differs is an
-  OPEN question - see TODO.
+  knows its campaign and returns via a WORLD-MAP BUTTON (a top-bar
+  button shown only while campaign context is active; returns to the
+  campaign graph - see The campaign editor surface). What else differs
+  is an OPEN question - see TODO.
+
+### The campaign editor surface (settled requirements)
+
+The slice-3 interaction design. The state shape is settled separately
+(see The editor-state split); this section is what the surface DOES.
+
+- **The authored graph is MISSION-CENTRIC.** CampaignEditor holds hubs
+  (uuid, dir, name, position) + mission entries - identity (the uuid
+  for on-disk missions, an in-editor handle for unsaved ones), name,
+  start hub?, destination hub?, direction, ghost positions (see
+  Deletion below). hub.txt's Exits sections are a SAVE PROJECTION:
+  every mission with a start hub writes its exit entry into that hub's
+  file (destination = the end hub, or empty = the dangling stub);
+  loading a campaign into the editor runs the inverse projection
+  (exits → mission entries). The one-edge rule becomes STRUCTURAL: a
+  mission is one entry, so it cannot be referenced by two hubs -
+  nothing to enforce.
+- **Unsaved missions: in-editor handles + session-scoped minting.** A
+  fresh mission has no uuid until save (the write-only mint rule);
+  the authored graph references it by a deterministic in-editor handle
+  with a temp dir anchor under the campaign's `missions/` (the
+  fresh-mission `missions/New Mission` precedent, generalized). Save
+  resolves handles → minted uuids through a session-scoped memo (the
+  `editor_saved_mission` precedent, extended to a table); nothing
+  random ever enters GameState.
+- **Layout mirrors the mission editor**: tool palette (bottom),
+  inspector (left), metadata sidebar (right), Save + Validate primary
+  actions (top-right). No Test/Playtest - there is nothing to play in
+  a campaign.
+- **Tools** (the active-tool model):
+  - select: single-select v1 (multi-select + multi-reposition of hubs
+    is future polish - TODO); click-select + drag-move commits one
+    position event on release (the preview is transient drag state).
+    Re-angling self-loops/dangling stubs is a direction field in the
+    mission inspector (drag-the-tip polish can ride later - both
+    write the same event).
+  - hub: a click on empty canvas places a hub at that point (the whole
+    4k canvas is placeable - the background is art, not a bounds); a
+    click landing on an existing hub SELECTS it, never displaces.
+  - mission: click a start hub → the arrow follows the cursor → click
+    an end hub → places the mission + its exit entry in one gesture.
+    Clicking the same hub twice = a self-loop. Clicking empty space or
+    a clean right-click cancels the draw; a right-drag pans during a
+    draw.
+- **The hub inspector** (selected hub, or the last placed object when
+  it is a hub - the auto-open-on-new-type precedent): editable name
+  (rename is free); the campaign START-HUB toggle - radio semantics by
+  construction (campaign.txt's one `start_hub`): toggling a hub
+  untoggles all others, untoggling the current start hub is vetoed
+  with a message, deleting the start hub is vetoed with a message
+  (toggle another first); Open Hub Editor (the slice-4 drill-in).
+- **The mission inspector** (selected edge/mission, or the last placed
+  object when it is a mission): editable name; Open Mission Editor
+  (the slice-5 hand-off); Import from the player's local missions
+  (copy-at-pick - the uuid is kept, duplicate-uuid imports refused;
+  see Rename + Save As Copy); start/end RE-ATTACH (click the button,
+  then click a hub - re-wiring, for orphans and wired missions alike;
+  moving the start re-homes the exit entry, pure data under the
+  mission-centric model); the direction field for self-loops and
+  dangling stubs.
+- **The metadata sidebar**: editable campaign name (rename is free;
+  cosmetic dir tidy on save) + the BACKGROUND picker - lists the PNG
+  stems in the campaign's own directory (the sprite picker's
+  mission-local scan precedent) plus a none option. No import-image
+  flow in v1: native authors drop files into the campaign dir; an
+  import can ride the zip-import machinery later if wanted.
+- **Deletion: right-click; orphan, never cascade.** Deleting a HUB
+  removes the hub only - its missions become ORPHANS, frozen in
+  place: the deletion event stores the hub's position into each
+  touching mission's ghost slot (`orphan_start_position` /
+  `orphan_destination_position`), and rendering uses the live hub
+  position where an end survives, the ghost position where it does
+  not. A fully-orphaned mission renders as the complete edge floating
+  where it was, in a distinct ghosted style - selectable, salvageable
+  (re-attach), deletable. When deleting a hub turns a straight edge
+  into an end-orphan, the new stub's direction inherits the deleted
+  edge's terminal bearing (deterministic, replay-safe). Deleting a
+  MISSION removes it outright. Files are removed only at SAVE, and
+  only for explicitly deleted things - orphaned mission files are
+  always kept (keeping them is the point of orphans). The FileSource
+  delete seam is DIRECTORY-level, never per-file: readFile's per-file
+  persistent→embedded fallback would resurrect a deleted hub.txt from
+  the embedded campaign while its dir lingered.
+- **Orphans persist in campaign.txt (v3)**: an Orphans section, one
+  group per unwired mission (`mission_uuid` + the ghost positions).
+  Honest campaign data - these mission files belong to this campaign
+  but are not wired to the graph - read/written by the editor's save
+  projection, ignored by the runtime loader (orphans are not
+  gameplay). Validation findings, machine-checkable: an orphan whose
+  uuid resolves to no `missions/` dir (files deleted by hand); a uuid
+  both wired and orphaned (hand-edit conflict).
+- **Default templates**: a new hub = the default grid + player spawn
+  (the `data/default_level.txt` precedent), empty exits/NPCs, name
+  "New Hub", uuid minted at save. A new mission (the mission tool) =
+  the fresh-mission template. New Campaign = campaign.txt + ONE
+  default hub placed at `0 0` as the start hub (a campaign needs a
+  start hub; no zero-start fresh state).
+- **Pan**: the existing right-drag threshold gesture (the camera-pan
+  seam input_gestures already arbitrates for the editor viewport) -
+  right-drag pans, a sub-threshold release stays a clean right-click
+  (delete). No new gesture machinery.
+- **Auto-spread with authored directions**: unauthored exits spread
+  evenly among THEMSELVES over the full circle; authored ones sit
+  where placed. No gap bookkeeping.
+- **Validation**: a Validate button (next to Save) runs the
+  graph-integrity checks over the AUTHORED GRAPH in memory
+  (checkCampaignGraph parameterized over a graph view instead of
+  file reads - pure, no IO): unset/unresolvable start hub, dangling
+  destinations, exits naming missing missions, unreachable hubs, the
+  orphan findings above. Findings render through the standard warning
+  surface.
 
 ### Known limitations
 

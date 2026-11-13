@@ -328,6 +328,7 @@ working rules).
 - [console test harness: per-frame arena reset + the shared frame helper](#console-test-harness-per-frame-arena-reset--the-shared-frame-helper)
 - [campaign-editor design settle: the Editor-state split (pre-slice-3 spike)](#campaign-editor-design-settle-the-editor-state-split-pre-slice-3-spike)
 - [campaign editor: mint-on-fork settled (imports keep the uuid; duplicates refused)](#campaign-editor-mint-on-fork-settled-imports-keep-the-uuid-duplicates-refused)
+- [campaign editor: slice-3 interaction design settle (tools, inspector, orphans, start-hub toggle)](#campaign-editor-slice-3-interaction-design-settle-tools-inspector-orphans-start-hub-toggle)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20438,3 +20439,60 @@ destination "or a free-typed forward reference" - dead prose since the
 uuid settle (you cannot hand-type a not-yet-minted uuid); rewritten to
 "none yet - the dangling stub (empty destination)". TODO slice 4's copy
 of the same phrase fixed with it.
+
+## campaign editor: slice-3 interaction design settle (tools, inspector, orphans, start-hub toggle)
+
+The requirements discussion that unblocked slice 3, recorded in full in
+DESIGN → Campaigns & the Campaign Editor → The campaign editor surface.
+This entry carries the decisions' rationale and the rejected
+alternatives.
+
+The structural consequence: allowing PARTIAL orphans (the user's call -
+deleting a hub should orphan its missions, not cascade-delete them)
+pushed the authored graph to be MISSION-CENTRIC. CampaignEditor holds
+mission entries each knowing its optional start/destination hub, and
+hub.txt's Exits sections become a save projection (exit entries derived
+at save; the editor load runs the inverse). This is what makes the
+one-edge rule structural (a mission is one entry, cannot be shared),
+makes re-wiring pure data, and makes the mission tool's one-gesture
+edge+mission creation natural. Rejected alternative: cascade deletion
+(the original proposal) - destroys the author's work when they may just
+want to re-wire.
+
+Orphan positioning: ghost positions, frozen in place (the user's call
+over the alternatives - a parking row, or stubs anchored at the
+surviving end). The hub-deletion event stores the deleted hub's
+position into each touching mission's ghost slot; rendering mixes live
+and ghost positions, so an orphan stays exactly where it was and the
+author sees the hole. Persistence wrinkle this created: ghost positions
+are editor state with no hub.txt home (an orphan without a start has no
+file that can hold an exit), so campaign.txt v3 gains an Orphans
+section (mission_uuid + ghost positions) - honest campaign data,
+runtime-ignored, and it removes the need for any reopen scan-diff
+derivation. Rejected: session-only positions (orphans would teleport on
+reopen - reads as a bug) and per-file deletion at save (readFile's
+persistent→embedded per-file fallback would resurrect deleted hub.txt
+files from the embedded campaign; the delete seam is directory-level).
+
+The rest, as decided in discussion: the start-hub toggle (radio
+semantics; untoggling/deleting the current start hub vetoed - veto
+over silent auto-reassign); the three tools (select single-select v1,
+hub click-to-place with click-on-existing-hub = select, mission
+click-start/click-end with empty-click/right-click cancel); right-click
+delete with files removed only at save and only for explicit deletions;
+default templates (hub = default grid + player spawn; New Campaign =
+one start hub at 0 0); pan via the existing right-drag threshold seam
+(no new gesture machinery - input_gestures already arbitrates
+right-drag-pan vs right-click-delete in the editor viewport); the
+Validate button running checkCampaignGraph over the in-memory authored
+graph (parameterized over a graph view, pure); session-scoped uuid
+minting for unsaved missions (in-editor handles + the
+editor_saved_mission memo extended to a table - keeping the write-only
+mint rule intact); auto-spread with authored directions (unauthored
+spread evenly among themselves, no gap bookkeeping); the world-map
+return button in the mission editor (settles the return-path half of
+the slice-5 campaign-context question).
+
+TODO's slice 3 re-cut to point at the settle; multi-select hub
+repositioning + drag-the-tip re-angling recorded as post-slice-3
+polish.

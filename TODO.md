@@ -50,9 +50,10 @@ Test by running `zig build run` and clicking through.
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
-  drill-in + mission hand-off). Slices + open questions (map position
-  units, hub rename, the Editor-state split, the mission-editor campaign
-  context) in Level Editor → campaign editor below.
+  drill-in + mission hand-off + the settled slice-3 interaction design:
+  the state split, mint-on-fork, the campaign editor surface). The one
+  open question left (the mission editor's campaign context, slice 5) +
+  the slices live in Level Editor → campaign editor below.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
@@ -372,9 +373,11 @@ work:
     parallel CampaignEditor state + a campaign_editor screen, NOT a
     campaign payload inside Editor (see DESIGN → Campaigns & the
     Campaign Editor → The editor-state split);
-  - what the mission editor's campaign context changes beyond the
-    options-menu return (the "slightly different setup" - e.g. no
-    standalone-dream export surface while campaign-owned);
+  - the mission editor's campaign context - the return path is
+    SETTLED (a world-map button in the top bar, shown only in campaign
+    context, returning to the campaign graph); still open: what else
+    differs beyond the return (the "slightly different setup" - e.g.
+    no standalone-dream export surface while campaign-owned);
   - mint-on-fork - SETTLED: imports KEEP the uuid (the same authored
     work keeps its identity - leaderboards, clone records, personal
     bests persist across an import) and duplicate-uuid imports into a
@@ -404,7 +407,16 @@ work:
         view (background, hub place/free-move/drag, edge rendering,
         dangling rendering). The state shape is SETTLED (the parallel
         CampaignEditor + campaign_editor screen - DESIGN → Campaigns &
-        the Campaign Editor → The editor-state split). The edge GEOMETRY derivation (the
+        the Campaign Editor → The editor-state split) AND the full
+        interaction design is SETTLED (the mission-centric authored
+        graph + Exits-as-save-projection, the three tools, the
+        inspector/metadata contents, the start-hub toggle, the orphan
+        model + campaign.txt v3 Orphans section + ghost positions,
+        delete-at-save-only + the directory-level FileSource delete
+        seam, default templates, pan, the Validate button,
+        session-scoped uuid minting for unsaved missions - DESIGN →
+        Campaigns & the Campaign Editor → The campaign editor
+        surface). The edge GEOMETRY derivation (the
         hub-boundary anchors, self-loop teardrop, parallel spread,
         dangling stub) is inline in buildWorldMap's loop today -
         extract it into a shared helper here so the editor view and the
@@ -427,6 +439,10 @@ work:
         by list or none yet - the dangling stub; direction field).
   - [ ] 5. The mission-editor hand-off (campaign context) + campaign
         save/export bundling (the STORE-zip pattern).
+  - future (post-slice-3 polish): multi-select + multi-reposition of
+        hubs on the campaign map (single-select in v1); drag-the-tip
+        re-angling of self-loop/dangling stubs (the inspector direction
+        field is the v1 path).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
