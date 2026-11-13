@@ -82,6 +82,7 @@ next session meets it as a surprise instead of a known.
   - [Campaign switching (the viewing model)](#campaign-switching-the-viewing-model)
   - [Edge geometry (loops, dangling stubs, parallels)](#edge-geometry-loops-dangling-stubs-parallels)
   - [The map surface (the world-map overlay's build)](#the-map-surface-the-world-map-overlays-build)
+  - [The editor-state split (settled: a parallel CampaignEditor)](#the-editor-state-split-settled-a-parallel-campaigneditor)
   - [The campaign editor](#the-campaign-editor)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
@@ -3581,6 +3582,62 @@ zoom.
 - **Hub icon art**: none exists yet - the magenta missing-art
 fallback + an art_report line (the map-background placeholder
 posture).
+
+### The editor-state split (settled: a parallel CampaignEditor)
+
+Where the campaign editor's state lives, settled by the pre-slice-3
+spike against the real Editor code: a **parallel `campaign_editor`
+field on GameState (a `?CampaignEditor`) + a `campaign_editor` Screen
+variant** - NOT the lean (a campaign payload riding inside `Editor`).
+
+Why the parallel shape wins:
+
+- **The mission hand-off needs both states LIVE simultaneously**
+  (click an edge → the mission editor in campaign context; the campaign
+  graph survives; return to the campaign graph from there). A strict
+  mission/campaign content union cannot represent that state, so the
+  lean degrades to a sibling payload inside Editor anyway - at which
+  point it is the parallel option with worse field placement.
+- **Editor and its ~50-event family are mission-shaped.** Replay
+  validates each editor event against `screen == .editor` +
+  `editor != null`; a campaign payload inside Editor would force an
+  audit of every existing validation (is this event legal on the
+  campaign surface?) for zero structural gain. Parallel keeps the
+  mission editor untouched and gives campaign-editor events their own
+  screen-scoped checks - the established per-event pattern.
+- **The mandated hub-editor reuse is CODE reuse, not state reuse.**
+  The planners + selection algebra (editor/planning.zig) operate on a
+  level-shaped grid + placements + `Selectable`; the hub payload
+  embeds an EditorLevel-shaped grid and the planners get extracted to
+  take the grid directly - required under either option, decided by
+  neither. The state shape buys nothing here.
+- **The campaign map surface shares nothing with the Editor spine**
+  (free-drag float hubs, no grid, no selection algebra, no clamp
+  bounds, no playtest mode). The spine flags only become meaningful
+  again in the hub drill-in - which is level-shaped anyway.
+
+Consequences:
+
+- **Screens + scopes**: the `campaign_editor` screen's scope is
+  `{ campaign_editor }` (no `.level` interplay - the campaign editor
+  has no playtest); the `editor` screen's scope GAINS
+  `campaign_editor` so the scope-drop rule (the transition-time
+  auto-null) keeps the campaign alive across the mission hand-off
+  transition, and dropping back to the campaign screen nulls the
+  mission Editor the same way.
+- **CampaignEditor edits an AUTHORED, editable graph** (the
+  EditorLevel-vs-runtime-Level precedent): hub list with positions,
+  exits, background stem - not the load-derived Campaign type. Save
+  writes campaign.txt + the hub files.
+- **`Selectable` gains hub-surface arms** (NPC placement, exit
+  placement - shaped at the hub-editor slice); the union stays
+  per-surface by construction under the split.
+- **The undo timeline is shared either way** (the history snapshots
+  the whole GameState), so undo steps across the campaign ↔ mission
+  hand-off under both shapes - a non-differentiator.
+- The mission-editor campaign-context question (what differs beyond
+  the return path) remains open at the hand-off slice, now on a
+  concrete substrate: a campaign-context field on the mission payload.
 
 ### The campaign editor
 

@@ -326,6 +326,7 @@ working rules).
 - [material overflow guard: harvest payout + salvage share math saturate](#material-overflow-guard-harvest-payout--salvage-share-math-saturate)
 - [every fullscreen overlay pauses the game (the options-menu rule generalized)](#every-fullscreen-overlay-pauses-the-game-the-options-menu-rule-generalized)
 - [console test harness: per-frame arena reset + the shared frame helper](#console-test-harness-per-frame-arena-reset--the-shared-frame-helper)
+- [campaign-editor design settle: the Editor-state split (pre-slice-3 spike)](#campaign-editor-design-settle-the-editor-state-split-pre-slice-3-spike)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20367,3 +20368,41 @@ Also updated the now-stale comment on the static-lifetime pin (the
 "other console tests share one arena" carve-out is gone - they reset now
 too; that test keeps its unique value in the SCRIBBLE between frames,
 which a plain reset can't provide).
+
+## campaign-editor design settle: the Editor-state split (pre-slice-3 spike)
+
+The TODO's pre-slice-3 open question - a campaign payload riding
+inside `Editor` on the shared spine (the lean) vs a parallel
+CampaignEditor state - settled by a design spike against the real
+Editor code: **the parallel shape** (a `?CampaignEditor` field on
+GameState + a `campaign_editor` screen), full prose in DESIGN →
+Campaigns & the Campaign Editor → The editor-state split.
+
+The spike's decisive findings:
+
+- The strict content union is unrepresentable: the slice-5 mission
+  hand-off (mission editor in campaign context, campaign graph alive,
+  return to the map) needs BOTH states live simultaneously - so the
+  lean degrades to a sibling payload inside Editor, which is the
+  parallel option with worse field placement.
+- Editor is mission-shaped end to end: 8 of 14 fields are mission
+  payload, the ~50-event family mutates levels/palettes, and replay
+  validates each event against screen + editor-nonnull. A campaign
+  payload inside would force an audit of every existing validation for
+  zero structural gain.
+- The DESIGN-mandated hub-editor reuse (viewport machinery, selection
+  algebra, planning) is CODE reuse - the planners operate on a
+  level-shaped grid + placements, so a hub payload embeds an
+  EditorLevel-shaped grid and the planners get extracted to take the
+  grid directly. Required under both options; the state shape is
+  orthogonal to it.
+- The campaign map surface shares nothing with the Editor spine
+  (free-drag floats, no grid selection, no clamp, no playtest).
+
+Consequences recorded with the settle (see the DESIGN section): the
+campaign_editor screen's scope is `{ campaign_editor }`, the editor
+screen's scope gains campaign_editor (hand-off liveness across the
+scope-drop rule), CampaignEditor edits an authored editable graph (the
+EditorLevel-vs-runtime-Level precedent, not the load-derived Campaign
+type), and Selectable gains hub-surface arms at the hub-editor slice.
+The mission-editor campaign-context question stays open at slice 5.

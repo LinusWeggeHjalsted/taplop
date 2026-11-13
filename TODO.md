@@ -368,11 +368,10 @@ work:
   READ-side mirror of the same view (discovery + travel semantics
   settled in DESIGN). OPEN questions (inline, decide at the
   corresponding slices):
-  - the Editor-state split - `Editor` + content union (mission /
-    campaign payloads on the shared spine; the lean) vs a parallel
-    CampaignEditor state; UNDECIDED - settle with a dedicated design
-    spike against the real `Editor` code BEFORE slice 3 (it shapes
-    slices 3-5; cheap to revisit on paper, expensive in code);
+  - the Editor-state split - SETTLED by the pre-slice-3 spike: a
+    parallel CampaignEditor state + a campaign_editor screen, NOT a
+    campaign payload inside Editor (see DESIGN → Campaigns & the
+    Campaign Editor → The editor-state split);
   - what the mission editor's campaign context changes beyond the
     options-menu return (the "slightly different setup" - e.g. no
     standalone-dream export surface while campaign-owned);
@@ -400,7 +399,9 @@ work:
   - [ ] 3. The campaign editor state + framing + the editor browser's
         Campaign tab (scan `campaigns/`, New Campaign) + the campaign
         view (background, hub place/free-move/drag, edge rendering,
-        dangling rendering). The edge GEOMETRY derivation (the
+        dangling rendering). The state shape is SETTLED (the parallel
+        CampaignEditor + campaign_editor screen - DESIGN → Campaigns &
+        the Campaign Editor → The editor-state split). The edge GEOMETRY derivation (the
         hub-boundary anchors, self-loop teardrop, parallel spread,
         dangling stub) is inline in buildWorldMap's loop today -
         extract it into a shared helper here so the editor view and the
