@@ -215,6 +215,7 @@ pub const edge_width = ui_campaign_geometry.edge_width;
 pub const edge_outline_width = ui_campaign_geometry.edge_outline_width;
 pub const hub_icon_size = ui_campaign_geometry.hub_icon_size;
 pub const buildCampaignEditorView = ui_campaign_editor.buildCampaignEditorView;
+pub const HubPositionOverride = ui_campaign_editor.HubPositionOverride;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;
 pub const ValidationCompleteContext = ui_screens.ValidationCompleteContext;

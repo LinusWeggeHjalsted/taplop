@@ -33,6 +33,7 @@ const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const editor_handlers = @import("editor/handlers.zig");
 const mission_io = @import("editor/mission_io.zig");
+const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
 const shared = @import("handlers/shared.zig");
 const input_gestures = @import("input_gestures.zig");
 const skillsSlotUnderPointer = input_gestures.skillsSlotUnderPointer;
@@ -649,6 +650,34 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
                 .name = value,
             } });
         },
+        // Campaign-editor name fields (the metadata sidebar's campaign
+        // name + the hub inspector's hub name). Same would-change gate;
+        // the hub commit addresses the handle the field was focused on (a
+        // mid-edit selection change can't retarget it - the level-name
+        // pattern).
+        .campaign_name => {
+            if (history.current_state.campaign_editor == null) return;
+            if (std.mem.eql(u8, history.current_state.campaign_editor.?.campaign_name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_base_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_campaign_name = .{
+                .name = value,
+            } });
+        },
+        .campaign_hub_name => {
+            if (history.current_state.campaign_editor == null) return;
+            const hub_handle = field.target.campaign_hub;
+            var current_name: ?[]const u8 = null;
+            for (history.current_state.campaign_editor.?.hubs) |hub| {
+                if (hub.handle == hub_handle) current_name = hub.name;
+            }
+            const name = current_name orelse return; // stale focus (hub deleted mid-edit) commits nothing
+            if (std.mem.eql(u8, name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_base_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_campaign_hub_name = .{
+                .hub = hub_handle,
+                .name = value,
+            } });
+        },
     }
 
     // A committed edit is ONE undo step: record the idle point HERE. The
@@ -686,6 +715,9 @@ pub fn beginFocusedTextEdit(
             .mission => {
                 current_value = editor.mission.name;
             },
+            // The campaign-editor targets resolve below, from the
+            // campaign editor's own state (not the mission editor's).
+            .campaign, .campaign_hub => {},
             .level => |level_index| {
                 if (level_index < editor.levels.len) {
                     current_value = editor.levels[level_index].name;
@@ -711,6 +743,21 @@ pub fn beginFocusedTextEdit(
                     }
                 }
             },
+        }
+    }
+
+    // The campaign editor's fields seed from its own state (the
+    // campaign name + the addressed hub's name).
+    if (history.current_state.campaign_editor != null) {
+        const campaign_editor = &history.current_state.campaign_editor.?;
+        switch (field.target) {
+            .campaign => current_value = campaign_editor.campaign_name,
+            .campaign_hub => |hub_handle| {
+                for (campaign_editor.hubs) |hub| {
+                    if (hub.handle == hub_handle) current_value = hub.name;
+                }
+            },
+            else => {},
         }
     }
     ui.beginTextEdit(&history.session.ui_state, field, current_value);
@@ -2998,6 +3045,84 @@ pub fn handleAnytimeInput(
             // The campaign content's tab switch (Your Campaigns / Official
             // - the editor browser's campaign kind). Same convention as the
             // mission tabs; its own scroll offset (its own extent).
+            // The campaign editor's tool cell: switch the active tool (a
+            // recorded action - the tool switch + its selection clear are
+            // one undo step).
+            .select_editor_campaign_tool => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const tool = payloadAs(.editor_campaign_tool, clicked_payload) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_set_campaign_tool = .{
+                    .tool = tool,
+                } });
+            },
+            // A hub icon click: select it (the select + hub tools share the
+            // target - a hub-tool click on an existing hub selects, never
+            // places). No-op gate: re-selecting the already-selected hub
+            // never fires.
+            .select_editor_campaign_hub => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const hub = payloadAs(.editor_campaign_hub, clicked_payload) orelse return;
+                if (history.current_state.campaign_editor.?.selection == hub) return;
+                pushPlayerActionAndDrain(history, .{ .player_select_campaign_hub = .{
+                    .hub = hub,
+                } });
+            },
+            // The start-hub toggle: VETOED with a message when it names the
+            // current start hub - untoggling is not a state change, and
+            // the radio rule is "toggle another hub" (never a dead undo
+            // step).
+            .set_editor_campaign_start_hub => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                const hub = payloadAs(.editor_campaign_hub, clicked_payload) orelse return;
+                if (editor.start_hub != null and editor.start_hub.? == hub) {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "This hub is the campaign's start hub - toggle another hub to move the start",
+                    );
+                    return;
+                }
+                pushPlayerActionAndDrain(history, .{ .player_set_campaign_start_hub = .{
+                    .hub = hub,
+                } });
+            },
+            // The background button: scan the campaign dir's PNGs (the
+            // session-side list - replay never opens a picker) + open the
+            // picker. No-op gate: an already-open picker never re-fires
+            // (no dead undo step).
+            .open_campaign_background_picker => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                if (editor.picker != null) return;
+                campaign_editor_handlers.rescanCampaignBackgroundStems(history);
+                pushPlayerActionAndDrain(history, .{ .player_open_campaign_picker = .{
+                    .picker = .background,
+                } });
+            },
+            // A background-picker cell: the stem pick (empty = None).
+            // Dupe the stem into the current arena (the session list's
+            // bytes are backing-owned; the recorded event must not borrow
+            // across frames). No-op gate: re-picking the current stem never
+            // fires.
+            .select_editor_campaign_background => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                if (editor.picker != .background) return;
+                const stem = payloadAs(.editor_campaign_background, clicked_payload) orelse return;
+                if (std.mem.eql(u8, editor.background_stem, stem)) return;
+                const stem_owned = allocator.dupe(u8, stem) catch
+                    @panic("failed to allocate background stem");
+                pushPlayerActionAndDrain(history, .{ .player_set_campaign_background = .{
+                    .stem = stem_owned,
+                } });
+            },
+            // The picker's Back button: close without picking.
+            .close_campaign_picker => {
+                if (history.current_state.screen != .campaign_editor) return;
+                if (history.current_state.campaign_editor == null) return;
+                if (history.current_state.campaign_editor.?.picker == null) return;
+                pushPlayerActionAndDrain(history, .player_close_campaign_picker);
+            },
             .select_editor_campaign_tab => {
                 if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
                 const tab = payloadAs(.campaign_browser_tab, clicked_payload) orelse return;
@@ -3598,6 +3723,42 @@ pub fn handleIdleInput(
     // action - it would land in the event log as an undo/replay step that
     // changes nothing (see the planEditor*Actions planners / DESIGN →
     // Level Editor → Active-tool model).
+    // The campaign editor's map clicks: the hub tool places a hub at the
+    // click's map position (the framing + pan inversion - pure math, the
+    // same transform the view applies forward); the select tool's
+    // empty-canvas click deselects. Hub-icon clicks never land here (the
+    // button press consumed them - main.zig nulls map_clicked), and a
+    // hub-tool click ON a hub likewise selects via its button. No-op
+    // gates: a deselect with nothing selected never fires; the mission
+    // tool (3d) has no map click yet.
+    if (current.screen == .campaign_editor) {
+        if (idle.map_clicked) |screen_position| {
+            if (current.campaign_editor) |editor| {
+                switch (editor.active_tool) {
+                    .hub => {
+                        const pan = history.session.camera_pan orelse types.Vector2{ .x = 0, .y = 0 };
+                        const map_position = types.Vector2{
+                            .x = screen_position.x - @divTrunc(types.reference_width, 2) - pan.x,
+                            .y = screen_position.y - @divTrunc(types.reference_height, 2) - pan.y,
+                        };
+                        event_push.pushPlayerAction(current, .{ .player_place_campaign_hub = .{
+                            .position = map_position,
+                        } }, allocator);
+                    },
+                    .select => {
+                        if (editor.selection != null) {
+                            event_push.pushPlayerAction(current, .{ .player_select_campaign_hub = .{
+                                .hub = null,
+                            } }, allocator);
+                        }
+                    },
+                    .mission => {},
+                }
+            }
+        }
+        return;
+    }
+
     if (current.screen == .editor) {
         // Delete key: delete the current selection (the select tool's bulk
         // delete - see planEditorSelectionDeleteActions). Same no-op gate:

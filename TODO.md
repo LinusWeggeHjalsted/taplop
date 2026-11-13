@@ -396,14 +396,6 @@ work:
         DESIGN → The campaign editor surface). Recut into implementation
         sub-steps (each a commit unit: builds, tests green, harness /
         round-trip coverage per the tier conventions):
-    - [ ] 3c. The hub tool + select tool + hub inspector + metadata
-          sidebar: place hub (default template), click-select +
-          drag-move (one position-commit event on release; transient
-          preview), the start-hub toggle (radio semantics + the
-          untoggle/delete vetoes), the hub name field, right-click
-          delete hub (orphaning + ghost positions + start-hub veto;
-          files only at save), pan (the existing right-drag seam), the
-          campaign name + background picker in metadata.
     - [ ] 3d. The mission tool + mission inspector + orphans: the
           arrow-draw gesture (transient SessionState state; empty-click
           / clean right-click cancels; right-drag pans), create

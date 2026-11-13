@@ -282,6 +282,9 @@ pub const UiState = struct {
     /// set lives on SessionState (`editor_tile_drag_visited`). While set,
     /// the idle-input tile arm defers (the gesture owns the press).
     editor_tile_drag: bool = false,
+
+    /// In-progress campaign-map hub move drag (see `CampaignHubDrag`).
+    campaign_hub_drag: ?CampaignHubDrag = null,
 };
 
 /// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
@@ -341,6 +344,28 @@ pub const PendingRightClick = union(enum) {
         position: types.Vector2,
         press_position: ScreenPosition,
     },
+    /// The pressed campaign-editor hub (the map's right-click delete -
+    /// clean release deletes with orphaning; the start hub is vetoed at
+    /// the release site). Movement beyond the drag threshold cancels
+    /// (the press became a map pan).
+    campaign_hub_delete: struct {
+        hub: u32,
+        press_position: ScreenPosition,
+    },
+};
+
+/// An in-progress campaign-map hub MOVE drag (the select tool): a plain
+/// left press on a hub records it; movement beyond the drag threshold
+/// promotes (the view then renders the hub - and its edges - at the
+/// pointer's live map position, the transient preview); release commits
+/// one `player_move_campaign_hub` (an unpromoted release is the plain
+/// click-to-select, owned by the button path). Lives on UiState so a
+/// screen transition or tool switch clears it (the gesture's context
+/// guard).
+pub const CampaignHubDrag = struct {
+    hub: u32,
+    press_position: ScreenPosition,
+    promoted: bool,
 };
 
 /// The most recent plain (no-modifier) single click on a content inventory

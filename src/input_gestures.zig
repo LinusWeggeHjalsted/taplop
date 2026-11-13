@@ -499,9 +499,63 @@ pub fn handleCameraPan(
     // pan/anchor so re-entering a world doesn't inherit it (frame() also
     // clears on screen transition, but this covers direct entry without a
     // transition).
-    if (current.screen != .level and current.screen != .hub and current.screen != .editor) {
+    if (current.screen != .level and current.screen != .hub and
+        current.screen != .editor and current.screen != .campaign_editor)
+    {
         session.camera_pan = null;
         session.camera_pan_anchor = null;
+        return;
+    }
+
+    // The campaign editor's map view pans in REFERENCE space (no camera,
+    // no tiles - the fixed framing plus a translate): the anchor holds
+    // the MAP position under the cursor at press (reference position
+    // minus the pan-at-press), and the pan is the cursor's
+    // reference-space displacement from it - the grabbed map point stays
+    // under the cursor, the same feel as the world pan. The view adds the
+    // offset (buildCampaignEditorView).
+    if (current.screen == .campaign_editor) {
+        if (pointer.right_pressed) {
+            if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
+                session.camera_pan_anchor = null;
+                session.camera_pan_press = null;
+                return;
+            }
+            const reference = pointer.position.toScreenPosition();
+            const offset = session.camera_pan orelse types.Vector2{ .x = 0, .y = 0 };
+            session.camera_pan_anchor = .{
+                .world_x = @floatFromInt(reference.x - offset.x),
+                .world_y = @floatFromInt(reference.y - offset.y),
+            };
+            session.camera_pan_press = pointer.position;
+            return;
+        }
+        if (session.camera_pan_anchor == null) {
+            if (pointer.right_released) {
+                session.camera_pan_anchor = null;
+                session.camera_pan_press = null;
+            }
+            return;
+        }
+        if (pointer.right_held) {
+            // The same threshold gate as the world pan: a sub-threshold
+            // wiggle pans nothing, so a clean right-click stays clean
+            // (the pending delete-click cancels at this threshold too).
+            if (session.camera_pan_press) |press| {
+                if (!referencePositionsBeyondThreshold(press, pointer.position)) return;
+                session.camera_pan_press = null;
+            }
+            const reference = pointer.position.toScreenPosition();
+            const anchor = session.camera_pan_anchor.?;
+            session.camera_pan = .{
+                .x = reference.x - @as(i32, @intFromFloat(@round(anchor.world_x))),
+                .y = reference.y - @as(i32, @intFromFloat(@round(anchor.world_y))),
+            };
+        }
+        if (pointer.right_released) {
+            session.camera_pan_anchor = null;
+            session.camera_pan_press = null;
+        }
         return;
     }
 
@@ -877,6 +931,155 @@ pub fn handleRightClickEditorDelete(
 /// click there would REPLACE) - fired here with the same no-op gate. Mirrors the
 /// inventory salvage-region gesture (`handleDrag`) + the right-click
 /// clean-click disambiguation (`handleRightClickEditorDelete`).
+/// Campaign-editor right-click: delete the pressed hub (the pending
+/// right-click pattern - movement beyond the drag threshold cancels, the
+/// press became a map pan; a clean release acts on what was under the
+/// pointer at press). The START hub is VETOED with a message (never a
+/// dead undo step - toggle another hub first); a right-press on empty
+/// map or a panel records nothing (empty ground never deletes). A stale
+/// pending (its hub deleted mid-press) commits nothing.
+pub fn handleCampaignMapRightClick(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Not our context - clear any stale pending of OUR kind (a stale
+    // gesture must not fire later).
+    if (current.screen != .campaign_editor or current.campaign_editor == null) {
+        clearPendingRightClick(ui_state, .campaign_hub_delete);
+        return;
+    }
+
+    if (pointer.right_pressed) {
+        if (ui.buttonAt(ui_elements, pointer.position.toScreenPosition())) |button| {
+            if (button.action == .select_editor_campaign_hub and button.payload != null) {
+                ui_state.pending_right_click = .{ .campaign_hub_delete = .{
+                    .hub = button.payload.?.editor_campaign_hub,
+                    .press_position = pointer.position.toScreenPosition(),
+                } };
+            }
+        }
+        return;
+    }
+
+    // Movement beyond the threshold cancels the pending (the pan took the
+    // drag). `>` strict, the house convention.
+    if (ui_state.pending_right_click) |press| {
+        switch (press) {
+            .campaign_hub_delete => |pending| {
+                if (pointer.right_held) {
+                    if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
+                        ui_state.pending_right_click = null;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    if (pointer.right_released) {
+        if (ui_state.pending_right_click) |press| {
+            switch (press) {
+                .campaign_hub_delete => |pending| {
+                    const editor = current.campaign_editor.?;
+                    if (editor.start_hub != null and editor.start_hub.? == pending.hub) {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "The start hub cannot be deleted - toggle another hub first",
+                        );
+                        return;
+                    }
+                    // The stale-pending belt: the hub must still resolve
+                    // (deleted mid-press by some other action).
+                    var resolves = false;
+                    for (editor.hubs) |hub| {
+                        if (hub.handle == pending.hub) resolves = true;
+                    }
+                    if (resolves) {
+                        const arena = history.current_arena.allocator();
+                        event_push.pushPlayerAction(current, .{ .player_delete_campaign_hub = .{
+                            .hub = pending.hub,
+                        } }, arena);
+                    }
+                },
+                else => {},
+            }
+        }
+        clearPendingRightClick(ui_state, .campaign_hub_delete);
+    }
+}
+
+/// Campaign-editor hub move drag (the select tool): a plain left press
+/// on a hub records it; movement beyond the drag threshold promotes (the
+/// view renders the hub + its edges at the pointer's live map position);
+/// release commits ONE `player_move_campaign_hub` at the release position
+/// (an unpromoted release is the plain click-to-select, owned by the
+/// button path). A press over blocking UI (panels) claims nothing.
+pub fn handleCampaignHubDrag(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Not our context - clear any stale drag (a stale gesture must not
+    // fire later).
+    if (current.screen != .campaign_editor or current.campaign_editor == null) {
+        ui_state.campaign_hub_drag = null;
+        return;
+    }
+
+    if (pointer.pressed) {
+        // A press on a hub button claims the drag (both select + hub
+        // tools - a hub-tool press on a hub selects via the button, and
+        // dragging it is the same move).
+        if (ui.buttonAt(ui_elements, pointer.position.toScreenPosition())) |button| {
+            if (button.action == .select_editor_campaign_hub and button.payload != null) {
+                ui_state.campaign_hub_drag = .{
+                    .hub = button.payload.?.editor_campaign_hub,
+                    .press_position = pointer.position.toScreenPosition(),
+                    .promoted = false,
+                };
+            }
+        }
+        return;
+    }
+
+    if (ui_state.campaign_hub_drag) |*drag| {
+        if (pointer.held) {
+            if (screenPositionsBeyondThreshold(drag.press_position, pointer.position.toScreenPosition())) {
+                drag.promoted = true;
+            }
+        }
+        if (pointer.released) {
+            if (drag.promoted) {
+                // Commit at the pointer's live map position (the framing
+                // + pan inversion - the same transform the view applies
+                // forward). A release over blocking UI commits the last
+                // valid position? v1: commit wherever the pointer is - the
+                // hub may land under a panel edge, undo is one step away
+                // (the marquee's end-corner refinement can come later).
+                const pan = history.session.camera_pan orelse types.Vector2{ .x = 0, .y = 0 };
+                const reference = pointer.position.toScreenPosition();
+                const map_position = types.Vector2{
+                    .x = reference.x - @divTrunc(types.reference_width, 2) - pan.x,
+                    .y = reference.y - @divTrunc(types.reference_height, 2) - pan.y,
+                };
+                const arena = history.current_arena.allocator();
+                event_push.pushPlayerAction(current, .{ .player_move_campaign_hub = .{
+                    .hub = drag.hub,
+                    .position = map_position,
+                } }, arena);
+            }
+            ui_state.campaign_hub_drag = null;
+        }
+    }
+}
+
 pub fn handleEditorMarquee(
     history: *GameStateHistory,
     pointer: input.PointerInput,
@@ -1478,4 +1681,181 @@ test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tile
         @as(?u32, null),
         history.current_state.ui_surfaces.inspected_entity_index,
     );
+}
+
+// ============================================================
+// Campaign-map gesture tests
+// ============================================================
+
+/// A two-hub campaign-editor state (hub 0 = the start hub) on the
+/// campaign editor screen, for the map gesture tests.
+fn campaignGestureFixtureState() state.GameState {
+    return .{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Fixture",
+            .start_hub = 0,
+            .hubs = &.{
+                .{ .handle = 0, .uuid = "a", .name = "Alpha", .position = .{ .x = -200, .y = 0 } },
+                .{ .handle = 1, .uuid = "b", .name = "Beta", .position = .{ .x = 400, .y = 300 } },
+            },
+            .next_handle = 2,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+}
+
+/// One spriteless hub-select button at a known rect, carrying `handle` -
+/// the minimal element surface the map gestures hit-test against.
+fn campaignHubButtonElements(
+    elements: *ui.UiElementList,
+    allocator: std.mem.Allocator,
+    handle: u32,
+    rect: types.Rectangle,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = .select_editor_campaign_hub,
+        .payload = .{ .editor_campaign_hub = handle },
+    } });
+}
+
+test "handleCampaignMapRightClick: clean release deletes; the start hub vetoes; a drag cancels" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignGestureFixtureState());
+    const arena = history.current_arena.allocator();
+
+    var elements: ui.UiElementList = .empty;
+    defer elements.deinit(arena);
+    const hub_rect = types.Rectangle{ .x = 2000, .y = 1000, .width = 64, .height = 64 };
+    const start_rect = types.Rectangle{ .x = 1000, .y = 1000, .width = 64, .height = 64 };
+    try campaignHubButtonElements(&elements, arena, 1, hub_rect);
+    try campaignHubButtonElements(&elements, arena, 0, start_rect);
+
+    // A clean right-click on hub 1 records the pending at PRESS and
+    // deletes on release (the delete rides the stack as a player action).
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 2032, .y = 1032 } },
+        elements.items,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click != null);
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 2032, .y = 1032 } },
+        elements.items,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.hubs.len);
+    try std.testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.hubs[0].handle);
+
+    // The start hub (hub 0) is VETOED with a message - no event, the
+    // pending error set.
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 1032, .y = 1032 } },
+        elements.items,
+    );
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 1032, .y = 1032 } },
+        elements.items,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.session.pending_error != null);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.hubs.len);
+
+    // A right-press + movement beyond the drag threshold cancels the
+    // pending (the press became a map pan) - the release deletes nothing.
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 1032, .y = 1032 } },
+        elements.items,
+    );
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_held = true, .position = .{ .x = 3032, .y = 3032 } },
+        elements.items,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click == null);
+    handleCampaignMapRightClick(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 3032, .y = 3032 } },
+        elements.items,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "handleCampaignHubDrag: a promoted release commits one move; an unpromoted release fires nothing" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignGestureFixtureState());
+    const arena = history.current_arena.allocator();
+
+    var elements: ui.UiElementList = .empty;
+    defer elements.deinit(arena);
+    const hub_rect = types.Rectangle{ .x = 2000, .y = 1000, .width = 64, .height = 64 };
+    try campaignHubButtonElements(&elements, arena, 1, hub_rect);
+
+    // Press on hub 1's button, drag past the threshold, release: ONE move
+    // commits at the release position (the framing inversion - pan is 0).
+    handleCampaignHubDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 2032, .y = 1032 } },
+        elements.items,
+    );
+    try std.testing.expect(history.session.ui_state.campaign_hub_drag != null);
+    try std.testing.expect(!history.session.ui_state.campaign_hub_drag.?.promoted);
+    handleCampaignHubDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = 2500, .y = 1500 } },
+        elements.items,
+    );
+    try std.testing.expect(history.session.ui_state.campaign_hub_drag.?.promoted);
+    handleCampaignHubDrag(
+        &history,
+        .{ .released = true, .position = .{ .x = 2500, .y = 1500 } },
+        elements.items,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    const moved_hub = history.current_state.campaign_editor.?.hubs[1];
+    // (2500,1500) screen minus the reference center (1920,1080) = the map
+    // position (580,420).
+    try std.testing.expectEqual(@as(i32, 580), moved_hub.position.x);
+    try std.testing.expectEqual(@as(i32, 420), moved_hub.position.y);
+    try std.testing.expect(history.session.ui_state.campaign_hub_drag == null);
+
+    // An unpromoted press+release (a plain click) fires nothing - the
+    // button-click path owns it.
+    handleCampaignHubDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 2032, .y = 1032 } },
+        elements.items,
+    );
+    handleCampaignHubDrag(
+        &history,
+        .{ .released = true, .position = .{ .x = 2040, .y = 1040 } },
+        elements.items,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }

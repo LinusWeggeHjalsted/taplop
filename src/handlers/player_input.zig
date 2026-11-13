@@ -836,6 +836,66 @@ pub fn handlePlayerInputEvent(
                 .name = set.name,
             } } }}, allocator);
         },
+        .player_set_campaign_name => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_campaign_name = .{
+                .name = set.name,
+            } } }}, allocator);
+        },
+        .player_set_campaign_tool => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_tool = .{
+                .tool = set.tool,
+            } } }}, allocator);
+        },
+        .player_select_campaign_hub => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_select_hub = .{
+                .hub = set.hub,
+            } } }}, allocator);
+        },
+        .player_place_campaign_hub => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_place_hub = .{
+                .position = set.position,
+            } } }}, allocator);
+        },
+        .player_move_campaign_hub => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_hub_position = .{
+                .hub = set.hub,
+                .position = set.position,
+            } } }}, allocator);
+        },
+        .player_set_campaign_start_hub => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_start_hub = .{
+                .hub = set.hub,
+            } } }}, allocator);
+        },
+        .player_delete_campaign_hub => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_delete_hub = .{
+                .hub = set.hub,
+            } } }}, allocator);
+        },
+        .player_open_campaign_picker => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_open_picker = .{
+                .picker = set.picker,
+            } } }}, allocator);
+        },
+        .player_close_campaign_picker => {
+            pushEvents(current, &.{.{ .campaign_editor_event = .editor_campaign_close_picker }}, allocator);
+        },
+        .player_set_campaign_background => |set| {
+            // The pick + its close are ONE undo step (the editor-picker
+            // convention: the close rides as a child of the commit).
+            pushEvents(current, &.{
+                .{ .campaign_editor_event = .{ .editor_campaign_set_background = .{
+                    .stem = set.stem,
+                } } },
+                .{ .campaign_editor_event = .editor_campaign_close_picker },
+            }, allocator);
+        },
+        .player_set_campaign_hub_name => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_hub_name = .{
+                .hub = set.hub,
+                .name = set.name,
+            } } }}, allocator);
+        },
         .player_set_editor_level_name => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_name = .{
                 .level_index = set.level_index,

@@ -445,12 +445,35 @@ pub fn view(
         // map framing (pan arrives with 3c on the existing right-drag
         // seam).
         if (current_state.campaign_editor) |campaign_editor| {
+            // The hub-drag preview: a promoted drag renders the pressed
+            // hub - its icon + every edge deriving from its position - at
+            // the pointer's live map position (pure view-side, never
+            // state).
+            var drag_override: ?ui.HubPositionOverride = null;
+            if (session.ui_state.campaign_hub_drag) |drag| {
+                if (drag.promoted) {
+                    const pan = session.camera_pan orelse types.Vector2{ .x = 0, .y = 0 };
+                    const pointer = session.input_state.mouse_screen_position.toScreenPosition();
+                    drag_override = .{ .hub = drag.hub, .position = .{
+                        .x = pointer.x - @divTrunc(types.reference_width, 2) - pan.x,
+                        .y = pointer.y - @divTrunc(types.reference_height, 2) - pan.y,
+                    } };
+                }
+            }
             ui.buildCampaignEditorView(
                 &ui_elements,
                 frame_allocator,
+                font_metrics,
                 ui.screenRect(),
                 campaign_editor,
                 active_theme,
+                button_color,
+                // The transient right-drag pan offset + the focused text
+                // field (both session-side, replay-irrelevant).
+                session.camera_pan,
+                if (session.ui_state.text_edit != null) &session.ui_state.text_edit.? else null,
+                drag_override,
+                session.campaign_background_stems,
             ) catch @panic("failed to build campaign editor view");
         }
     } else if (current_state.screen == .main_menu) {

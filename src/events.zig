@@ -756,6 +756,95 @@ pub const PlayerEvent = union(enum) {
     },
 };
 
+/// Campaign-editor events - the campaign editor's own category (the
+/// EditorEvent sibling, mirroring the parallel-state settle: these mutate
+/// `current.campaign_editor.?`, never `current.editor`). One event per
+/// player action (the orchestrator convention); pushed by the input
+/// consumption sites as children of orchestrators, pure state transforms
+/// captured by deepCopy, so undo/redo works by construction. The one
+/// non-pure exception is `editor_campaign_set_background` (the PNG dims
+/// read - live, deterministic, the open path's posture). See DESIGN →
+/// Campaigns & the Campaign Editor → The campaign editor surface.
+pub const CampaignEditorEvent = union(enum) {
+    // scope: campaign_editor
+
+    // ── Active tool ──
+    // Switch the active tool (the palette click). A switch away from
+    // select clears the selection in the same event (the mission
+    // editor's editor_set_tool invariant).
+    editor_campaign_set_tool: struct {
+        tool: types.CampaignEditorToolId,
+    },
+
+    // ── Selection ──
+    // Select a hub (null deselects). Single-select v1; placing a hub
+    // selects it (the inspector's "or the last placed object" rule).
+    // A selection is non-null only while the active tool is select (the
+    // tool-switch clear keeps the invariant in one undo step).
+    editor_campaign_select_hub: struct {
+        hub: ?u32,
+    },
+
+    // ── Hubs ──
+    // Place a hub at a map position (the hub tool's click on empty
+    // canvas): the default template - name "New Hub", the
+    // single-'!' grid - minted handle, selected. Clicks landing on an
+    // existing hub never place (the input layer resolves them to a
+    // select instead).
+    editor_campaign_place_hub: struct {
+        position: Vector2,
+    },
+    // Move a hub (the select tool's drag commit - one event on release,
+    // the preview is transient drag state off the timeline).
+    editor_campaign_set_hub_position: struct {
+        hub: u32,
+        position: Vector2,
+    },
+    // Rename a hub (the inspector's name field). Free: references are
+    // handles + uuids, never names.
+    editor_campaign_set_hub_name: struct {
+        hub: u32,
+        name: []const u8,
+    },
+    // Set the campaign's start hub (the radio toggle: overwrites the
+    // single slot). Untoggling the CURRENT start hub never fires (the
+    // input layer vetoes + surfaces the message).
+    editor_campaign_set_start_hub: struct {
+        hub: u32,
+    },
+    // Delete a hub. Never fires for the start hub (the input layer
+    // vetoes). The missions it touches become ORPHANS frozen in place:
+    // each touching mission's dead end nulls + stores the hub's position
+    // as its ghost; the hub's exit placements die with it (no marker
+    // cleanup); handles stay stable. Files are removed only at the full
+    // campaign save (3e).
+    editor_campaign_delete_hub: struct {
+        hub: u32,
+    },
+
+    // ── Campaign metadata ──
+    // Rename the campaign (the metadata sidebar's name field; free -
+    // identity is the uuid).
+    editor_campaign_set_campaign_name: struct {
+        name: []const u8,
+    },
+    // Set the campaign background (the metadata picker's pick): the bare
+    // stem; the handler re-resolves the PNG dims live (deterministic on
+    // replay - same files).
+    editor_campaign_set_background: struct {
+        stem: []const u8,
+    },
+    // Open the centered picker (the metadata sidebar's background
+    // button). The open state rides the undo timeline (the picker's
+    // list acquisition is session-side - replay never opens a picker).
+    editor_campaign_open_picker: struct {
+        picker: types.CampaignEditorPicker,
+    },
+    // Close the centered picker (the panel's Back button; the COMMIT
+    // handler also pushes this as a child of the pick - one undo step).
+    editor_campaign_close_picker: void,
+};
+
 /// Player-input events - the ONLY events input handlers can push (via
 /// `pushPlayerAction`). Each maps 1:1 to a user action (keybind/click).
 /// The replay whitelist (`isPlayerAction`) is just `activeTag ==
@@ -952,6 +1041,17 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_mission_name: struct {
         name: []const u8,
     },
+    // The campaign editor's name-field commits (the same convention: the
+    // commit is a recorded player action pushing the campaign-editor
+    // event). The hub arm carries the hub handle so a mid-edit selection
+    // change can't retarget it (the level-name pattern).
+    player_set_campaign_name: struct {
+        name: []const u8,
+    },
+    player_set_campaign_hub_name: struct {
+        hub: u32,
+        name: []const u8,
+    },
     player_set_editor_level_name: struct {
         level_index: u32,
         name: []const u8,
@@ -1058,6 +1158,55 @@ pub const PlayerInputEvent = union(enum) {
     // tile).
     player_paint_editor_tile: struct {
         position: Vector2,
+    },
+    // --- Campaign editor viewport verbs (the campaign editor's idle +
+    // click arms; the handlers push the CampaignEditorEvent children) ---
+    // Switch the campaign editor's active tool (the palette cell click).
+    player_set_campaign_tool: struct {
+        tool: types.CampaignEditorToolId,
+    },
+    // Select a campaign hub (a hub-icon click; null deselects - the
+    // select tool's empty-canvas click). Placing selects too, but that
+    // rides the place event's handler (one event, one undo step).
+    player_select_campaign_hub: struct {
+        hub: ?u32,
+    },
+    // Place a hub at a map position (the hub tool's empty-canvas click,
+    // resolved by the idle arm from the click's screen position against
+    // the framing + pan).
+    player_place_campaign_hub: struct {
+        position: Vector2,
+    },
+    // Move a hub (the select tool's drag commit - one event on release,
+    // the preview is transient drag state off the timeline).
+    player_move_campaign_hub: struct {
+        hub: u32,
+        position: Vector2,
+    },
+    // Set the start hub (the inspector toggle's radio write; the
+    // untoggle-the-current-start case is vetoed at the click site with a
+    // message, never pushed).
+    player_set_campaign_start_hub: struct {
+        hub: u32,
+    },
+    // Delete a hub (the right-click; orphaning + ghost freezing ride the
+    // handler). The start hub is vetoed at the click site, never pushed.
+    player_delete_campaign_hub: struct {
+        hub: u32,
+    },
+    // Open the campaign editor's centered picker (the background button).
+    // The list acquisition (the campaign dir's PNG scan) happens at the
+    // click site - session-side, replay never opens a picker.
+    player_open_campaign_picker: struct {
+        picker: types.CampaignEditorPicker,
+    },
+    // Close the centered picker (the panel's Back button).
+    player_close_campaign_picker: void,
+    // The background picker's pick (the stem; empty = None/clear). The
+    // handler pushes set_background + close_picker as children - one undo
+    // step for pick + close (the editor-picker convention).
+    player_set_campaign_background: struct {
+        stem: []const u8,
     },
     // Enemy-tool click in the editor viewport: place the palette entity
     // type at the clicked tile. The handler computes the full effect from
@@ -1694,6 +1843,7 @@ pub const Event = union(enum) {
     meta_event: MetaEvent,
     super_event: SuperEvent,
     editor_event: EditorEvent,
+    campaign_editor_event: CampaignEditorEvent,
     player_input_event: PlayerInputEvent,
     player_event: PlayerEvent,
     level_event: LevelEvent,

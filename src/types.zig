@@ -367,6 +367,27 @@ pub const Action = enum {
     // EditorToolId rides the click payload (the `editor_tool` variant). See DESIGN
     // → Architecture → Level Editor (active-tool model).
     select_editor_tool,
+    // The campaign editor's tool cell was clicked (the `editor_campaign_tool`
+    // payload variant - the campaign editor's own active-tool model).
+    select_editor_campaign_tool,
+    // A campaign editor hub was clicked (select it - the select + hub
+    // tools share the target; the hub handle rides the
+    // `editor_campaign_hub` payload variant).
+    select_editor_campaign_hub,
+    // The hub inspector's start-hub toggle (radio write; the hub handle
+    // rides the `editor_campaign_hub` payload). Untoggling the CURRENT
+    // start hub is vetoed at the consumption site with a message.
+    set_editor_campaign_start_hub,
+    // The metadata sidebar's background button: opens the background
+    // picker (the centered picker pattern; the pick commits
+    // editor_campaign_set_background).
+    open_campaign_background_picker,
+    // The background picker's pick (the stem rides the
+    // `editor_campaign_background` payload variant; empty = None/clear).
+    // The commit closes the picker in the same undo step.
+    select_editor_campaign_background,
+    // The background picker's Back button (closes without picking).
+    close_campaign_picker,
     // An editor level-tab was clicked (make that level active). The level
     // index rides the click payload (the `editor_level` variant). Routed through
     // `options_action` like the other payload-carrying editor clicks. See
@@ -1101,6 +1122,12 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_editor_mission_row,
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
+        .select_editor_campaign_tool,
+        .select_editor_campaign_hub,
+        .set_editor_campaign_start_hub,
+        .open_campaign_background_picker,
+        .select_editor_campaign_background,
+        .close_campaign_picker,
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
@@ -1290,6 +1317,15 @@ pub const ButtonPayload = union(enum) {
     editor_skill: ?SkillId,
     /// An editor-browser kind tab (Mission today; Hub / Campaign later).
     editor_kind: EditorKind,
+    /// A campaign-editor tool cell (the campaign editor's active tool).
+    editor_campaign_tool: CampaignEditorToolId,
+    /// A campaign-editor hub, by handle (select / start-hub toggle
+    /// payloads).
+    editor_campaign_hub: u32,
+    /// A background-picker stem (empty = the None cell). Session-list
+    /// bytes - the consumption site dupes into the current arena before
+    /// recording (the mission-row convention).
+    editor_campaign_background: []const u8,
     /// A mission-browser tab (Your Missions / Official).
     editor_mission_tab: EditorMissionBrowserTab,
     /// A campaign-browser tab (Your Campaigns / Official).
@@ -1383,6 +1419,11 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_utility_skill => .editor_skill,
         .toggle_editor_footprint_tile => .editor_footprint_tile,
         .select_editor_kind_tab => .editor_kind,
+        .select_editor_campaign_tool => .editor_campaign_tool,
+        .select_editor_campaign_hub,
+        .set_editor_campaign_start_hub,
+        => .editor_campaign_hub,
+        .select_editor_campaign_background => .editor_campaign_background,
         .select_editor_mission_tab => .editor_mission_tab,
         .open_editor_mission_row => .editor_mission_row,
         .select_editor_campaign_tab => .campaign_browser_tab,
@@ -1473,6 +1514,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
+        .open_campaign_background_picker,
+        .close_campaign_picker,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,
@@ -2040,6 +2083,10 @@ pub fn itemTextFieldValue(
             try std.fmt.allocPrint(allocator, "{d}", .{value})
         else
             "",
+        // The campaign-editor ids never resolve against an item (their
+        // targets are `.campaign` / `.campaign_hub`); the arm keeps the
+        // switch exhaustive.
+        .campaign_name, .campaign_hub_name => "",
         .inventory_item_name => itemName(item),
         .inventory_item_stat => |stat| if (itemStatValue(item, stat)) |value|
             try std.fmt.allocPrint(allocator, "{d}", .{value})
@@ -2185,10 +2232,12 @@ pub const Entity = struct {
                 "",
             // Settings-sidebar + item-type + inventory ids never resolve
             // against an entity (their targets are `.mission` / `.level` /
-            // `.item_type` / `.inventory_slot`); the arms exist so the
-            // switch stays exhaustive.
+            // `.item_type` / `.inventory_slot` / `.campaign` /
+            // `.campaign_hub`); the arms exist so the switch stays
+            // exhaustive.
             .mission_name, .level_name, .item_def_name, .item_def_stat => "",
             .inventory_item_name, .inventory_item_stat => "",
+            .campaign_name, .campaign_hub_name => "",
         };
     }
 
@@ -2611,6 +2660,14 @@ pub const TextFieldId = union(enum) {
     inventory_item_stat: ItemStatField,
     /// The edited mission's name (metadata sidebar). Target: `.mission`.
     mission_name: void,
+    /// The campaign editor's campaign name (the metadata sidebar's name
+    /// field). Target: `.campaign`.
+    campaign_name: void,
+    /// The selected campaign hub's name (the campaign editor's hub
+    /// inspector). Target: `.campaign_hub` carries the hub handle so a
+    /// mid-edit selection change can't retarget the commit (the
+    /// level-name pattern).
+    campaign_hub_name: void,
     /// The edited level's name (metadata sidebar, the tab it was focused
     /// on). Target: `.level` carries the level index.
     level_name: void,
@@ -2631,6 +2688,12 @@ pub const TextEditTarget = union(enum) {
     inventory_slot: u32,
     mission: void,
     level: u32,
+    /// The campaign editor's campaign (the campaign-name field's target).
+    campaign: void,
+    /// A campaign editor hub by handle (the hub-name field's target - the
+    /// handle rides here so a mid-edit selection change can't retarget
+    /// the commit, the level-name pattern).
+    campaign_hub: u32,
 };
 
 /// Identity of one focused text field.
@@ -3683,6 +3746,14 @@ pub const CampaignMissionEdit = struct {
     orphan_destination_position: ?Vector2 = null,
 };
 
+/// The campaign editor's centered-picker kinds (the EditorPickerTarget
+/// convention): open state rides the CampaignEditor (undo/replay ride
+/// it); the list acquisition stays session-side. The background picker
+/// (the metadata sidebar's background button) is the first kind.
+pub const CampaignEditorPicker = enum {
+    background,
+};
+
 /// The campaign editor's state (the parallel-editor settle - see DESIGN
 /// → Campaigns & the Campaign Editor → The editor-state split; lives on
 /// GameState.campaign_editor, null outside the campaign editor). The
@@ -3727,6 +3798,18 @@ pub const CampaignEditor = struct {
     /// deletion-stable references, not indices.
     next_handle: u32 = 0,
     active_tool: CampaignEditorToolId = .select,
+    /// The select tool's selection (a hub handle; single-select v1).
+    /// Placing a hub selects it (the "or the last placed object" rule);
+    /// a tool switch away from select clears it in the same event (the
+    /// editor_set_tool invariant). Non-null only while the active tool
+    /// is select.
+    selection: ?u32 = null,
+    /// The centered picker's open state (see `CampaignEditorPicker`).
+    /// Mutated only via the open/close events so the open state rides the
+    /// undo timeline (the picker-COMMIT handler pushes the close as a
+    /// child of the commit - one undo step for pick + close, the
+    /// editor-picker convention).
+    picker: ?CampaignEditorPicker = null,
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

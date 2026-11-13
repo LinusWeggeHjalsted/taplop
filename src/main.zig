@@ -144,6 +144,7 @@ fn update(
             history.session.pressed_button = null;
             history.session.pressed_text_field = null;
             player_input.idle.tile_clicked = null;
+            player_input.idle.map_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.textFieldAt(ui_elements, pointer_position)) |field| {
             // A text-field press: tracks like a button press (release over
@@ -152,15 +153,18 @@ fn update(
             history.session.pressed_text_field = field.ref;
             history.session.pressed_button = null;
             player_input.idle.tile_clicked = null;
+            player_input.idle.map_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.buttonAt(ui_elements, pointer_position)) |button| {
             history.session.pressed_button = button.action;
             history.session.queueSound(history.backing_allocator, .button_base_down);
             player_input.idle.tile_clicked = null;
+            player_input.idle.map_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.blockingElementAt(ui_elements, pointer_position) != null) {
             history.session.pressed_button = null;
             player_input.idle.tile_clicked = null;
+            player_input.idle.map_clicked = null;
             player_input.idle.confirm = false;
         } else {
             history.session.pressed_button = null;
@@ -171,8 +175,12 @@ fn update(
         // An in-flight drag owns the release: the button-click model yields so
         // `handleDrag` can resolve the drop (or no-op for a drag-back-to-
         // source). `drag` still reflects the promoted state from the prior
-        // move frame - `handleDrag` hasn't run yet this frame.
-        if (history.session.ui_state.drag == null) {
+        // move frame - `handleDrag` hasn't run yet this frame. A PROMOTED
+        // campaign hub drag owns its release the same way (the move commit
+        // replaces the click-to-select; an unpromoted one stays a click).
+        const campaign_hub_drag_owns_release = history.session.ui_state.campaign_hub_drag != null and
+            history.session.ui_state.campaign_hub_drag.?.promoted;
+        if (history.session.ui_state.drag == null and !campaign_hub_drag_owns_release) {
             if (history.session.pressed_text_field) |pressed_ref| {
                 // Release over the SAME field that was pressed: focus it -
                 // or, when it is already the focused field, position the
@@ -232,6 +240,7 @@ fn update(
                             history.session.queueSound(history.backing_allocator, .button_base_up);
                         }
                         player_input.idle.tile_clicked = null;
+                        player_input.idle.map_clicked = null;
                         player_input.idle.confirm = false;
                     }
                 }
@@ -322,6 +331,13 @@ fn update(
     // drag - the gestures are exclusive by tool (tile vs select), and a
     // tile-tool press never reaches the select gestures.
     input_gestures.handleEditorTileDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
+    // Campaign editor: the map's right-click delete (clean click vs the
+    // map pan - the same threshold disambiguation) + the hub move drag
+    // (plain press on a hub, drag, release commits one move). Both gated
+    // on the campaign editor screen inside the handlers.
+    input_gestures.handleCampaignMapRightClick(history, player_input.pointer, ui_elements);
+    input_gestures.handleCampaignHubDrag(history, player_input.pointer, ui_elements);
 
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so

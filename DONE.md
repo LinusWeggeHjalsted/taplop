@@ -334,6 +334,7 @@ working rules).
 - [campaign editor: autosave-on-exit settled (no - explicit save only)](#campaign-editor-autosave-on-exit-settled-no---explicit-save-only)
 - [campaign-editor slice 3a: the geometry extraction + predicate-scan test rewrite](#campaign-editor-slice-3a-the-geometry-extraction--predicate-scan-test-rewrite)
 - [campaign-editor slice 3b: the CampaignEditor type + screen + framing + the browser's Campaign tab + the view](#campaign-editor-slice-3b-the-campaigneditor-type--screen--framing--the-browsers-campaign-tab--the-view)
+- [campaign-editor slice 3c: the campaign editor's interactions - tools, inspector, metadata, pan, delete, drag](#campaign-editor-slice-3c-the-campaign-editors-interactions---tools-inspector-metadata-pan-delete-drag)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20728,3 +20729,75 @@ convention for free.
 Riders: parseVector2Pair made pub (the Orphans position parse);
 CampaignEditor.background_dims resolved at open like the runtime load;
 ui.zig facade exports the new surface + the geometry constants.
+
+## campaign-editor slice 3c: the campaign editor's interactions - tools, inspector, metadata, pan, delete, drag
+
+The 3c surface shell + input, per DESIGN → The campaign editor surface:
+
+- **The event family** (CampaignEditorEvent, its own Event category): the
+  campaign editor's verbs - set_tool, select_hub, place_hub,
+  set_hub_position, set_hub_name, set_start_hub, delete_hub,
+  set_campaign_name, set_background, open/close_picker. Pure
+  copy-on-write transforms (the []const list convention - every mutation
+  rebuilds), plus the set-background dims read (the one live seam,
+  deterministic on replay, via loaders.resolveCampaignBackgroundDimsForStem
+  - the open path's resolution extracted for reuse).
+- **The interaction stack** (the mission editor's conventions, mirrored):
+  PlayerInput orchestrators for every verb (player_set_campaign_tool,
+  select/place/move/start/delete + the two name-field commits +
+  open/close picker + set_background), a shared
+  validateCampaignEditorAction (screen + live editor + handle
+  resolution), and per-frame gesture/input sites:
+  - Click arms: tool cells, hub icons (no-op-gated re-select), the
+    start-hub toggle (VETOED with a popup when it names the current
+    start hub - never a dead undo step), the background button.
+  - Placement: IdleInput.map_clicked (the raw screen position of an
+    unconsumed left click - set in translateInput, nulled at main.zig's
+    UI-consumption sites exactly like tile_clicked); the hub tool
+    inverts the framing + pan; the select tool's empty-canvas click
+    deselects. The map's surface fill is NON-blocking by design (a
+    screen background, not an overlay) so clicks fall through - the
+    panels block, the structure test pins the difference.
+  - Right-click delete: handleCampaignMapRightClick - the pending
+    right-click pattern (press on a hub button records; threshold
+    movement cancels - the pan took the drag; clean release deletes,
+    with the START-HUB VETO + the stale-pending belt).
+  - Hub drag: handleCampaignHubDrag - press/claim, threshold promotion,
+    ONE player_move_campaign_hub at the release position; the preview
+    renders the dragged hub - icon AND every edge deriving from its
+    position - at the pointer's live map position (HubPositionOverride
+    threaded through missionEnd/parallelSpread/missionGeometry, pure
+    view-side). main.zig's drag-owns-release widened so a promoted drag
+    suppresses the click-to-select.
+  - Pan: the right-drag seam's campaign branch (reference-space math -
+    the anchor holds the map position under the cursor; same threshold,
+    same clearing) with the offset applied across the whole map render.
+- **The view shell**: the tool palette (select + hub cells; the mission
+  cell lands with 3d), the hub inspector (name field bound by handle +
+  the highlighted start-hub toggle; "No hub selected" otherwise), the
+  metadata sidebar (campaign name + the background button), hub select
+  buttons over the icons, and the centered BACKGROUND PICKER (modal:
+  None + the campaign dir's PNG stems - listPersistentPngFiles + the
+  current stem deduped so the official campaign's embedded art is
+  offered - the pick commits set_background + close as ONE undo step).
+- **Text-field machinery**: campaign_name/campaign_hub_name ids +
+  campaign/campaign_hub targets (the handle rides the target - the
+  level-name retargeting protection), commit arms with would-change
+  gates, focus seeding from the campaign editor state, the
+  would-need-exhaustive stubs in Entity.textFieldValue +
+  itemTextFieldValue.
+
+Tests: the event-machinery harness tests (place/select/move/rename,
+delete-orphan with all three ghost classes, start-hub radio, the
+background dims against the real embedded map.png); the gesture tests
+(clean-release delete + start-hub veto + threshold cancel; promoted
+drag commit with the framing-inversion math + unpromoted no-op); the
+picker flow (open, pick = stem + dims + close in one undo step, undo
+restores, Back); view structure tests (the shell totals, the
+selected-hub inspector, the pan shift, the picker rows).
+
+Deferred riders: the inspector's Open Hub Editor button (slice 4, with
+the drill-in it opens); Escape does not close the picker yet (the Back
+button is the path; the escape-chain rung can ride polish); a release
+over blocking UI during a hub drag commits at the pointer (the
+marquee's last-valid-position refinement is later polish).

@@ -18,6 +18,7 @@ const state = @import("state.zig");
 
 const shared = @import("handlers/shared.zig");
 const editor_handlers = @import("editor/handlers.zig");
+const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
 
 const player_handlers = @import("handlers/player.zig");
 const player_input = @import("handlers/player_input.zig");
@@ -129,6 +130,18 @@ pub fn processEvent(
                     allocator,
                 ),
             }
+        },
+        .campaign_editor_event => |campaign_editor_event| {
+            // The campaign editor's own category (the EditorEvent sibling -
+            // the parallel-state settle): pure transforms on
+            // current.campaign_editor.?, plus the set-background dims read
+            // (the one live seam - history passed for it).
+            campaign_editor_handlers.handleCampaignEditorEvent(
+                history,
+                current,
+                campaign_editor_event,
+                allocator,
+            );
         },
         .replay_viewer_event => |replay_event| {
             _ = replay_event;

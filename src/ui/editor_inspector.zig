@@ -2345,7 +2345,7 @@ fn emitInspectorItemTextField(
 /// frame, pure-black text - the contrast is the point; the caret +
 /// selection draw in the same color, see the backend arm) + the focused
 /// field's live buffer/caret/selection overlay.
-fn emitTextFieldUi(
+pub fn emitTextFieldUi(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,

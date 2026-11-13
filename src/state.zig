@@ -237,6 +237,12 @@ pub const SessionState = struct {
     /// `backing_allocator`, each scan freeing the previous list.
     campaign_browser_local: []file_source_mod.FileSource.CampaignEntry = &.{},
 
+    /// The campaign editor's background-picker stems (the campaign dir's
+    /// PNG stems + the current stem, scanned at the picker's open - the
+    /// rescanEditorMissionSprites pattern; session-owned, backing
+    /// allocator, freed by the rescan).
+    campaign_background_stems: []const []const u8 = &.{},
+
     /// The OFFICIAL campaigns (the Official tab: the shipped embedded
     /// campaigns). Parsed at the browser's FIRST open of the session (the
     /// embedded map is immutable per build); the `_scanned` flag gates the
@@ -1586,6 +1592,7 @@ pub const GameStateHistory = struct {
             .meta_event => |m| std.fmt.bufPrint(buf, "meta_event.{s}", .{@tagName(m)}) catch "meta_event.?",
             .super_event => |m| std.fmt.bufPrint(buf, "super_event.{s}", .{@tagName(m)}) catch "super_event.?",
             .editor_event => |m| std.fmt.bufPrint(buf, "editor_event.{s}", .{@tagName(m)}) catch "editor_event.?",
+            .campaign_editor_event => |m| std.fmt.bufPrint(buf, "campaign_editor_event.{s}", .{@tagName(m)}) catch "campaign_editor_event.?",
             .player_event => |m| std.fmt.bufPrint(buf, "player_event.{s}", .{@tagName(m)}) catch "player_event.?",
             .player_input_event => |m| std.fmt.bufPrint(buf, "player_input_event.{s}", .{@tagName(m)}) catch "player_input_event.?",
             .level_event => |m| std.fmt.bufPrint(buf, "level_event.{s}", .{@tagName(m)}) catch "level_event.?",
@@ -1705,6 +1712,29 @@ pub const GameStateHistory = struct {
     /// Shared legality check for the metadata sidebar's level-indexed
     /// commits: the editor screen, an editor present, and the level index
     /// in range (the live path addresses the active tab).
+    /// The campaign-editor player actions' shared legality: the
+    /// campaign-editor screen + a live editor + (when a hub rides the
+    /// payload) a handle that resolves. The live paths resolve targets
+    /// from state; an unresolvable handle is a crafted log.
+    fn validateCampaignEditorAction(
+        self: *GameStateHistory,
+        hub_handle: ?u32,
+    ) void {
+        if (self.current_state.screen != .campaign_editor) {
+            self.rejectReplay("replay validation: campaign-editor action outside campaign editor screen");
+            return;
+        }
+        const campaign_editor = self.current_state.campaign_editor orelse {
+            self.rejectReplay("replay validation: campaign-editor action with no campaign editor");
+            return;
+        };
+        const handle = hub_handle orelse return;
+        for (campaign_editor.hubs) |hub| {
+            if (hub.handle == handle) return;
+        }
+        self.rejectReplay("replay validation: campaign-editor action hub handle does not resolve");
+    }
+
     fn validateEditorLevelMetadataCommit(
         self: *GameStateHistory,
         level_index: u32,
@@ -2230,6 +2260,41 @@ pub const GameStateHistory = struct {
                         }
                     },
                     .player_set_editor_level_name => |set| self.validateEditorLevelMetadataCommit(set.level_index),
+                    // The campaign editor's name-field commits: the
+                    // campaign-editor screen + editor + (hub arm) a hub
+                    // handle that resolves.
+                    .player_set_campaign_hub_name => |set| {
+                        self.validateCampaignEditorAction(set.hub);
+                    },
+                    .player_set_campaign_tool,
+                    .player_set_campaign_name,
+                    => self.validateCampaignEditorAction(null),
+                    .player_select_campaign_hub => |set| {
+                        if (set.hub) |hub| self.validateCampaignEditorAction(hub);
+                    },
+                    .player_place_campaign_hub => self.validateCampaignEditorAction(null),
+                    .player_move_campaign_hub => |set| self.validateCampaignEditorAction(set.hub),
+                    .player_set_campaign_start_hub => |set| self.validateCampaignEditorAction(set.hub),
+                    .player_delete_campaign_hub => |set| self.validateCampaignEditorAction(set.hub),
+                    .player_open_campaign_picker,
+                    .player_close_campaign_picker,
+                    => self.validateCampaignEditorAction(null),
+                    .player_set_campaign_background => |set| {
+                        self.validateCampaignEditorAction(null);
+                        // An empty stem (the None pick) is legal - it clears
+                        // the background.
+                        if (set.stem.len == 0) return;
+                        // A picked stem must be in the campaign's scanned
+                        // list OR be the current stem (the official
+                        // campaign's embedded background is offered even
+                        // though the persistent scan can't see it).
+                        const editor = self.current_state.campaign_editor orelse return; // the shared validation already rejected
+                        if (std.mem.eql(u8, editor.background_stem, set.stem)) return;
+                        for (self.session.campaign_background_stems) |stem| {
+                            if (std.mem.eql(u8, stem, set.stem)) return;
+                        }
+                        self.rejectReplay("replay validation: player_set_campaign_background stem not in the campaign's background list");
+                    },
                     .player_set_editor_level_color_wheel => |set| self.validateEditorLevelMetadataCommit(set.level_index),
                     .player_set_editor_level_enemy_gradient => |set| self.validateEditorLevelMetadataCommit(set.level_index),
                     .player_set_editor_level_player_gradient => |set| self.validateEditorLevelMetadataCommit(set.level_index),

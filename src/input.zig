@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const ui = @import("ui.zig");
 
 const Vector2 = types.Vector2;
+const ScreenPosition = types.ScreenPosition;
 const SkillId = types.SkillId;
 pub const Modifiers = types.Modifiers;
 const InputBinding = types.InputBinding;
@@ -409,6 +410,12 @@ pub const InGameInput = struct {
 /// (i.e. the game is waiting for player input).
 pub const IdleInput = struct {
     tile_clicked: ?Vector2 = null,
+    /// The raw reference-screen position of an unconsumed left click - the
+    /// campaign editor's map surface (the hub tool's placement): resolved
+    /// against the framing + pan at the consumption site. Nulled by the
+    /// press-resolution sites exactly like `tile_clicked` (a click that
+    /// hit UI never reaches the map). Other screens never read it.
+    map_clicked: ?ScreenPosition = null,
     skill_slot_selected: ?u8 = null, // 1-8, game logic resolves to SkillId
     confirm: bool = false,
     cancel: bool = false,
@@ -507,6 +514,13 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .add_editor_level => player_input.anytime.options_action = action,
         .delete_editor_level => player_input.anytime.options_action = action,
         .select_editor_tool => player_input.anytime.options_action = action,
+        .select_editor_campaign_tool,
+        .select_editor_campaign_hub,
+        .set_editor_campaign_start_hub,
+        .open_campaign_background_picker,
+        .select_editor_campaign_background,
+        .close_campaign_picker,
+        => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,
         .toggle_editor_metadata_sidebar => player_input.anytime.options_action = action,
@@ -1137,9 +1151,11 @@ pub fn translateInput(
     result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
     result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
 
-    // Left mouse click → tile_clicked
+    // Left mouse click → tile_clicked (levels/hubs/editor) + the raw
+    // screen position (the campaign editor's map surface).
     if (InputState.isHeld(&mouse_pressed, "left")) {
         result.idle.tile_clicked = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
+        result.idle.map_clicked = state.mouse_screen_position.toScreenPosition();
     }
 
     // Primary-pointer facts for the UI-resolution step. The pointer is assumed

@@ -60,6 +60,7 @@ fn combatLogTier(event: Event) CombatLogTier {
         .meta_event,
         .super_event,
         .editor_event,
+        .campaign_editor_event,
         .player_input_event,
         .player_event,
         .replay_viewer_event,

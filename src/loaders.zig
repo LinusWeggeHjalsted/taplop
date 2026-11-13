@@ -1995,6 +1995,24 @@ fn resolveCustomSpriteFileDims(
     return parsePngDimensions(bytes);
 }
 
+/// Resolve a campaign background stem's PNG dims (the campaign editor's
+/// set-background event - the open path's `resolveCampaignBackgroundDims`
+/// as a direct call). The stem mints into the content-addressed sprite
+/// id first (the load-side minting rule). Pub for the campaign editor's
+/// handler (its pure-transform signature carries no history - the dims
+/// read is the one live seam, passed the file source by the dispatch).
+pub fn resolveCampaignBackgroundDimsForStem(
+    campaign_content_dir: []const u8,
+    stem: []const u8,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) ?types.Vector2 {
+    if (stem.len == 0) return null;
+    const sprite_id = file_source_mod.customStemForContentPath(campaign_content_dir, stem, allocator);
+    defer allocator.free(sprite_id);
+    return resolveCustomSpriteFileDims(sprite_id, file_source, allocator);
+}
+
 /// The pick-commit backstop for custom ENTITY sprites (the picker filter's
 /// defense-in-depth - a stale scan or crafted input): does the custom stem
 /// resolve to a PNG with exactly the fixed 512x640 entity frame?
