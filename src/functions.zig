@@ -676,8 +676,13 @@ pub fn computeSalvageValue(
     const definition = getSalvageDefinition(item, salvage_definitions);
     if (definition.splits.len == 0) return .{};
 
+    // u64 intermediates: salvage `parts` are unbounded config (a custom
+    // salvage table can carry near-u32-max values), so the share multiply
+    // and the denominator/allocated sums would overflow u32. The result
+    // stays bounded by total_value by construction (splits partition it).
+
     // Sum all parts to get the denominator
-    var denominator: u32 = 0;
+    var denominator: u64 = 0;
     for (definition.splits) |split| {
         denominator += split.parts;
     }
@@ -686,14 +691,14 @@ pub fn computeSalvageValue(
     // Compute each split's share with integer division.
     // Last split gets the remainder to guarantee no loss.
     var result: Materials = .{};
-    var allocated: u32 = 0;
+    var allocated: u64 = 0;
 
     for (definition.splits, 0..) |split, index| {
         if (index == definition.splits.len - 1) {
-            setMaterial(&result, split.material, total_value - allocated);
+            setMaterial(&result, split.material, @intCast(total_value - allocated));
         } else {
-            const share = total_value * split.parts / denominator;
-            setMaterial(&result, split.material, share);
+            const share = @as(u64, total_value) * split.parts / denominator;
+            setMaterial(&result, split.material, @intCast(share));
             allocated += share;
         }
     }
@@ -761,6 +766,43 @@ test "computeSalvageValue skill tome" {
     const result = computeSalvageValue(tome_item, definitions);
     try std.testing.expectEqual(@as(u32, 5), result.knowledge);
     try std.testing.expectEqual(@as(u32, 0), result.wood);
+}
+
+test "computeSalvageValue: near-u32-max parts do not overflow the share math" {
+    // Salvage `parts` are unbounded config (a custom salvage table can
+    // carry near-u32-max values); u32 intermediates would overflow the
+    // denominator sum and the share multiply. u64 intermediates keep the
+    // splits' proportions exact.
+    const sword_item: Item = .{ .weapon = .{
+        .weapon_damage = 10,
+        .weapon_type = .sword,
+    } };
+
+    const definitions = SalvageDefinitions{
+        .weapon = blk: {
+            var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
+            for (&weapon_definitions) |*entry| entry.* = .{ .splits = &.{} };
+            weapon_definitions[@backingInt(types.WeaponType.sword)] = .{
+                .splits = &.{
+                    .{ .material = .wood, .parts = std.math.maxInt(u32) },
+                    .{ .material = .metal, .parts = 1 },
+                },
+            };
+            break :blk weapon_definitions;
+        },
+        .amulet = .{ .splits = &.{} },
+        .coat = .{ .splits = &.{} },
+        .gloves = .{ .splits = &.{} },
+        .pants = .{ .splits = &.{} },
+        .boots = .{ .splits = &.{} },
+        .skill_tome = .{ .splits = &.{} },
+    };
+
+    // wood share = (10 * maxInt(u32)) / (maxInt(u32) + 1) = 9;
+    // metal (last split) gets the remainder = 1.
+    const result = computeSalvageValue(sword_item, definitions);
+    try std.testing.expectEqual(@as(u32, 9), result.wood);
+    try std.testing.expectEqual(@as(u32, 1), result.metal);
 }
 
 // ───────────────────────── nearestTileAlongDirection ─────────────────────────

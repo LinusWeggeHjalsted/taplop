@@ -789,6 +789,21 @@ test "computeHarvest: multiply-before-divide pays out fractional-rate clones" {
     try testing.expectEqual(@as(u32, 0), payout.leather);
 }
 
+test "computeHarvest: payout saturates at u32 max instead of overflowing" {
+    // A maxed clone with turns_spent=2 / turns_to_complete=1 makes the
+    // per-clone quotient exceed u32, and a second clone would wrap the
+    // cross-clone sum. The payout clamps per material (the overflow
+    // guard - DESIGN → Post-game Rewards & Cosmetics).
+    const clones = [_]Clone{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 1, .materials_collected = .{ .wood = std.math.maxInt(u32), .metal = 5 } },
+        .{ .mission_uuid = "u2", .name = "B", .turns_to_complete = 1, .materials_collected = .{ .wood = 10 } },
+    };
+    const payout = player_handlers.computeHarvest(&clones, 2);
+    try testing.expectEqual(@as(u32, std.math.maxInt(u32)), payout.wood);
+    try testing.expectEqual(@as(u32, 10), payout.metal);
+    try testing.expectEqual(@as(u32, 0), payout.leather);
+}
+
 // ───────────────────────── player_overwrite_clone orchestrator ─────────────────────────
 // See DESIGN → Clones (clone system). The overlay button pushes this; the
 // handler reads last_completed_mission and pushes save_clone_info with the

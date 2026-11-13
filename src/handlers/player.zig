@@ -177,25 +177,37 @@ fn transferWeaponCooldowns(
 /// / turns_to_complete` summed over all clones. The multiply happens BEFORE
 /// the divide so a clone whose per-turn rate is fractional (materials <
 /// turns_to_complete) still pays out - dividing first truncates the rate to
-/// 0 and yields nothing. u64 intermediate guards the multiply against u32
-/// overflow. Skips clones with `turns_to_complete == 0`. Shared by the
+/// 0 and yields nothing. u64 accumulators: both the per-clone quotient
+/// (u32-max materials x u32 turns) and the cross-clone sum can exceed u32,
+/// so the payout clamps at u32 max per material rather than wrapping
+/// (DESIGN → Post-game Rewards & Cosmetics → Overflow guard). Skips clones with `turns_to_complete == 0`. Shared by the
 /// `harvest_clones` handler and the `end_level` completion branch (which
 /// snapshots the payout onto `MissionCompleteInfo` for the overlay). See
 /// DESIGN → Clones (clone system).
 pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Materials {
     if (turns_spent == 0) return .{};
-    var payout: types.Materials = .{};
+    var wood: u64 = 0;
+    var metal: u64 = 0;
+    var leather: u64 = 0;
+    var cloth: u64 = 0;
+    var knowledge: u64 = 0;
     const t: u64 = turns_spent;
     for (clones) |clone| {
         if (clone.turns_to_complete == 0) continue;
         const d: u64 = clone.turns_to_complete;
-        payout.wood += @intCast((@as(u64, clone.materials_collected.wood) * t) / d);
-        payout.metal += @intCast((@as(u64, clone.materials_collected.metal) * t) / d);
-        payout.leather += @intCast((@as(u64, clone.materials_collected.leather) * t) / d);
-        payout.cloth += @intCast((@as(u64, clone.materials_collected.cloth) * t) / d);
-        payout.knowledge += @intCast((@as(u64, clone.materials_collected.knowledge) * t) / d);
+        wood += (@as(u64, clone.materials_collected.wood) * t) / d;
+        metal += (@as(u64, clone.materials_collected.metal) * t) / d;
+        leather += (@as(u64, clone.materials_collected.leather) * t) / d;
+        cloth += (@as(u64, clone.materials_collected.cloth) * t) / d;
+        knowledge += (@as(u64, clone.materials_collected.knowledge) * t) / d;
     }
-    return payout;
+    return .{
+        .wood = @intCast(@min(wood, std.math.maxInt(u32))),
+        .metal = @intCast(@min(metal, std.math.maxInt(u32))),
+        .leather = @intCast(@min(leather, std.math.maxInt(u32))),
+        .cloth = @intCast(@min(cloth, std.math.maxInt(u32))),
+        .knowledge = @intCast(@min(knowledge, std.math.maxInt(u32))),
+    };
 }
 
 /// Whether `skill_id` is in the player's `learned_skills` list. Pure -

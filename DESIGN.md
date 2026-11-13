@@ -3941,9 +3941,13 @@ replayed mission). The sink's job is to give that scaling a destination.
 
 ### Overflow guard (saturating material adds)
 
-Materials are u32 per wallet; the harvest payout's u64 intermediate
-already prevents per-clone overflow - the exposure is the cumulative
-wallet add. Honest-play numbers put overflow far out of reach
+Materials are u32 per wallet. Every add clamps: the wallet
+sites (clone harvest, salvage, the pickup accumulator) all go through
+`Materials.add` (`+|` per material), the harvest payout itself
+accumulates in u64 and clamps at u32 max per material, and the salvage
+share math (unbounded `parts` config) runs its intermediates in u64
+(the result is bounded by the item's total value by construction).
+Honest-play numbers put overflow far out of reach
 (~17,800 distinct missions completed, or ~2.4 million replays of the
 official portfolio, to hit u32 max cumulatively), but custom content has
 no bound on clone count or pickup density, so a crafted "farm" mission

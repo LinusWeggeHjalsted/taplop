@@ -323,6 +323,7 @@ working rules).
 - [map acting: travel + mission entry from the world map (2d)](#map-acting-travel--mission-entry-from-the-world-map-2d)
 - [world map: tooltip + hover highlight track the full arrow](#world-map-tooltip--hover-highlight-track-the-full-arrow)
 - [test harness: runToIdle surfaces the pending error](#test-harness-runtoidle-surfaces-the-pending-error)
+- [material overflow guard: harvest payout + salvage share math saturate](#material-overflow-guard-harvest-payout--salvage-share-math-saturate)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20231,3 +20232,34 @@ now format `history.session.pending_error` into the panic via
 arena-resident (dupe'd at set time), so reading it at panic time is safe;
 the "(no pending_error set)" fallback covers a load_error set without a
 pending message.
+
+## material overflow guard: harvest payout + salvage share math saturate
+
+The Post-game Rewards slice-1 item ("saturating material adds"). The
+WALLET half was already done - `Materials.add` is `+|=` per material,
+tested, and every wallet-add site goes through it (harvest payout, salvage
+value, the mission's converted-materials accumulator). The audit found
+the two COMPUTATIONS feeding it could still overflow:
+
+- `computeHarvest` (handlers/player.zig): the u64 intermediate guarded the
+  multiply but the `@intCast` back to u32 panicked when one clone's
+  quotient exceeded u32 max, and the plain `+=` across clones wrapped
+  (two maxed clones already wrap). Now: u64 accumulators per material,
+  `@min(maxInt(u32))` clamp at return - the payout itself saturates.
+- `computeSalvageValue` (functions.zig): `denominator +=`, `allocated +=`,
+  and `total_value * split.parts` were u32 - and salvage `parts` are
+  UNBOUNDED config (`asU32` raw in the salvage-table loader), so a custom
+  salvage table with near-u32-max parts overflowed the denominator sum
+  (debug panic / release wrap-to-zero). Now: u64 intermediates; the result
+  stays bounded by the item's total value by construction (splits
+  partition it), so only the intermediates needed widening.
+
+Tests: the harvest saturation case (maxed clone + second clone, clamped
+payout, no panic) in handler_tests_turnflow.zig; the near-max-parts
+salvage case (wood maxInt(u32) + metal 1 on a value-10 sword -> 9/1
+split, proportions exact) in functions.zig. Verified non-phantom the
+deliberate-break way (a temporarily wrong expectation failed the suite
+before the fix was re-applied). DESIGN → Post-game Rewards & Cosmetics →
+Overflow guard updated to describe the payout-side clamping (its old
+"u64 intermediate already prevents per-clone overflow" claim was the
+gap this closes).
