@@ -2859,7 +2859,8 @@ pub fn freeCampaign(campaign: types.Campaign, allocator: std.mem.Allocator) void
 /// precedent) and each exit as a `CampaignEdgeEntry` with the mission
 /// resolved through the campaign's mission table. The effective direction
 /// is the authored `direction` value, else the auto-spread default
-/// (360 * exit_index / the hub's exit count - see DESIGN → Campaigns &
+/// (the unauthored exits share the full circle among themselves - see
+/// DESIGN → Campaigns &
 /// the Campaign Editor → Edge geometry); an unparsable direction warns +
 /// falls back to the default. Read/parse failures warn + skip the hub
 /// (the texts the integrity checks used to emit - they now consume this
@@ -2917,21 +2918,41 @@ pub fn deriveCampaignEdges(
             }
 
             const exits_section = findSection(parsed_hub_sections, "Exits") orelse break :read_hub;
-            const exit_count = exits_section.entry_groups.len;
+            // The settled auto-spread: unauthored exits share the full
+            // circle among THEMSELVES (authored ones sit where placed) -
+            // the campaign editor's rendering rule, one rule everywhere
+            // (see DESIGN → Edge geometry + The campaign editor surface).
+            var unauthored_count: i32 = 0;
+            for (exits_section.entry_groups) |group| {
+                const value = findValue(group.pairs, "direction") orelse {
+                    unauthored_count += 1;
+                    continue;
+                };
+                // An unparsable direction is fully unauthored (warns +
+                // takes a spread slot).
+                if (asI32(value) == null) unauthored_count += 1;
+            }
+            var unauthored_index: i32 = 0;
             for (exits_section.entry_groups, 0..) |group, exit_index| {
                 const mission_uuid = findValue(group.pairs, "mission_uuid") orelse continue;
                 const destination = findValue(group.pairs, "destination_hub") orelse &.{};
 
-                var direction_degrees: i32 = if (exit_count > 0)
-                    @divTrunc(360 * @as(i32, @intCast(exit_index)), @as(i32, @intCast(exit_count)))
-                else
-                    0;
+                var direction_degrees: i32 = 0;
+                var is_unauthored = true;
                 if (findValue(group.pairs, "direction")) |value| {
                     if (asI32(value)) |authored| {
                         direction_degrees = authored;
+                        is_unauthored = false;
                     } else {
                         appendWarning(warnings, allocator, "hub '{s}' exit {d} has an unparsable direction '{s}' - using the auto-spread default", .{ hub.uuid, exit_index, value });
                     }
+                }
+                if (is_unauthored) {
+                    direction_degrees = if (unauthored_count > 0)
+                        @divTrunc(360 * unauthored_index, unauthored_count)
+                    else
+                        0;
+                    unauthored_index += 1;
                 }
 
                 var mission_dir: []const u8 = &.{};
@@ -5578,10 +5599,10 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "names mission 'u1'") != null);
     clearWarnings(&warnings, allocator);
 
-    // Run 6 - direction handling: three exits on start - unauthored (the
-    // auto-spread default 360*0/3 = 0), authored 42, and unparsable
-    // (warns + falls back to the default 360*2/3 = 240). far keeps its
-    // single exit (default 0).
+    // Run 6 - direction handling: three exits on start - unauthored, an
+    // authored 42, and an unparsable (warns + fully unauthored). The two
+    // unauthored share the circle among themselves: 360*0/2 = 0 and
+    // 360*1/2 = 180. far keeps its single exit (default 0).
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
         "Metadata\nfile_format_version 4\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u2\ndestination_hub far\n\ncharacter_code F\nmission_uuid u2\ndestination_hub far\ndirection 42\n\ncharacter_code G\nmission_uuid u2\ndestination_hub far\ndirection abc\n",
@@ -5593,7 +5614,7 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     try std.testing.expectEqual(@as(usize, 4), directions.edges.len);
     try std.testing.expectEqual(@as(i32, 0), directions.edges[0].direction_degrees);
     try std.testing.expectEqual(@as(i32, 42), directions.edges[1].direction_degrees);
-    try std.testing.expectEqual(@as(i32, 240), directions.edges[2].direction_degrees);
+    try std.testing.expectEqual(@as(i32, 180), directions.edges[2].direction_degrees);
     try std.testing.expectEqual(@as(i32, 0), directions.edges[3].direction_degrees);
     freePipeline(directions, allocator);
 

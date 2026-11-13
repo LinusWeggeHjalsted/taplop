@@ -1522,3 +1522,549 @@ test "writeEditorMission fails when a level needs more codes than the ASCII set"
         writeEditorMission(editor, "u", "u_My Mission", arena),
     );
 }
+
+// ============================================================
+// Campaign writers (the campaign editor's save projection - DESIGN →
+// Campaigns & the Campaign Editor → The campaign editor surface). Pure
+// text builders; the save orchestration (uuid minting, the memo, dir
+// tidy, deletions) lives in campaign_editor/io.zig.
+// ============================================================
+
+/// The resolved identity table the campaign writer needs: the campaign's
+/// uuid + every hub's/mission's resolved uuid, INDEX-KEYED to the
+/// editor's own hub/mission lists (the orchestrator builds them in the
+// same order - the one-uuid-per-entry invariant).
+pub const CampaignSaveIds = struct {
+    campaign_uuid: []const u8,
+    hub_uuids: []const []const u8,
+    mission_uuids: []const []const u8,
+};
+
+/// One hub's layout-code assignment: exits take DIGITS ('0'-'9', the
+/// shipped convention), decorations + NPCs take LETTERS (uppercase first,
+/// matching the shipped files; then lowercase - 52 slots). Deterministic
+/// in list order.
+/// One NPC code assignment (by distinct used type, first-use order).
+const HubNpcCodeAssignment = struct {
+    npc_type: types.NpcType,
+    code: u8,
+};
+
+const HubLayoutCodes = struct {
+    /// Exit codes by the hub's exit-placement order.
+    exit: []const u8,
+    /// Decoration codes by palette type id (used types only).
+    decoration: []const LayoutCodeAssignment,
+    /// NPC codes by the distinct npc types used, in first-use order.
+    npc: []const HubNpcCodeAssignment,
+};
+
+fn assignHubLayoutCodes(
+    editor: types.CampaignEditor,
+    hub: types.CampaignHubEdit,
+    allocator: std.mem.Allocator,
+) !HubLayoutCodes {
+    // Exits: digits by placement order. Only placements whose mission
+    // STARTS here (the one-edge invariant - a placement on a non-start
+    // hub is a crafted state; the writer skips it rather than
+    // laundering it into the file).
+    var exit_codes: std.ArrayList(u8) = .empty;
+    for (hub.exit_placements) |placement| {
+        for (editor.missions) |mission| {
+            if (mission.handle != placement.mission) continue;
+            if (mission.start == null or mission.start.? != hub.handle) continue;
+            if (exit_codes.items.len >= 10) return error.TooManyExitsPerHub;
+            try exit_codes.append(allocator, '0' + @as(u8, @intCast(exit_codes.items.len)));
+        }
+    }
+
+    // Decorations: letters per used palette type.
+    var decoration_codes: std.ArrayList(LayoutCodeAssignment) = .empty;
+    var next_letter: usize = 0;
+    for (editor.decoration_types, 0..) |_, type_id| {
+        var used = false;
+        for (hub.grid.decoration_placements) |placement| {
+            if (placement.type_id == type_id) used = true;
+        }
+        if (!used) continue;
+        const code = try hubLetterCode(next_letter);
+        next_letter += 1;
+        try decoration_codes.append(allocator, .{
+            .type_id = @intCast(type_id),
+            .code = code,
+        });
+    }
+
+    // NPCs: letters per distinct used type, in first-use order.
+    var npc_codes: std.ArrayList(HubNpcCodeAssignment) = .empty;
+    for (hub.npc_placements) |npc| {
+        var seen = false;
+        for (npc_codes.items) |existing| {
+            if (existing.npc_type == npc.npc_type) seen = true;
+        }
+        if (seen) continue;
+        const code = try hubLetterCode(next_letter);
+        next_letter += 1;
+        try npc_codes.append(allocator, .{ .npc_type = npc.npc_type, .code = code });
+    }
+
+    return .{
+        .exit = try exit_codes.toOwnedSlice(allocator),
+        .decoration = try decoration_codes.toOwnedSlice(allocator),
+        .npc = try npc_codes.toOwnedSlice(allocator),
+    };
+}
+
+/// The letter sequence for hub decoration/NPC codes: uppercase A-Z, then
+/// lowercase (52 slots; a hub with more distinct kinds is not a real
+/// state).
+fn hubLetterCode(index: usize) !u8 {
+    if (index < 26) return 'A' + @as(u8, @intCast(index));
+    if (index < 52) return 'a' + @as(u8, @intCast(index - 26));
+    return error.TooManyHubCodes;
+}
+
+fn hubCodeForType(assignments: []const LayoutCodeAssignment, type_id: u32) ?u8 {
+    return codeForType(assignments, type_id);
+}
+
+/// Write one hub.txt (the campaign editor's save projection for a hub):
+/// v4 Metadata + the counted Layout (tiles, '!', decoration anchors, NPC
+/// cells, exit cells) + Decorations (the used campaign-palette
+/// definitions, custom stems normalized into the HUB's content path) +
+/// NPCs (per type) + Exits (the mission-centric graph's projection: each
+/// placed marker whose mission STARTS here - the mission's uuid, the
+/// destination hub's uuid or empty (dangling), the authored direction or
+/// absent (the auto-spread default)). `ids` resolves the uuids.
+pub fn writeCampaignHub(
+    editor: types.CampaignEditor,
+    hub: types.CampaignHubEdit,
+    ids: CampaignSaveIds,
+    hub_content_path: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    const codes = try assignHubLayoutCodes(editor, hub, allocator);
+
+    // The bbox over everything placed - the player start is always
+    // present (the '!' is undeletable), so the bbox is never empty.
+    var min_x = hub.grid.player_start.x;
+    var min_y = hub.grid.player_start.y;
+    var max_x = hub.grid.player_start.x;
+    var max_y = hub.grid.player_start.y;
+    const expand = struct {
+        fn bounds(
+            bounds_min_x: *i32,
+            bounds_min_y: *i32,
+            bounds_max_x: *i32,
+            bounds_max_y: *i32,
+            position: types.Vector2,
+        ) void {
+            bounds_min_x.* = @min(bounds_min_x.*, position.x);
+            bounds_min_y.* = @min(bounds_min_y.*, position.y);
+            bounds_max_x.* = @max(bounds_max_x.*, position.x);
+            bounds_max_y.* = @max(bounds_max_y.*, position.y);
+        }
+    };
+    for (hub.grid.level_tiles) |tile| expand.bounds(&min_x, &min_y, &max_x, &max_y, tile);
+    for (hub.npc_placements) |npc| expand.bounds(&min_x, &min_y, &max_x, &max_y, npc.position);
+    for (hub.exit_placements) |placement| expand.bounds(&min_x, &min_y, &max_x, &max_y, placement.position);
+    for (hub.grid.decoration_placements) |placement| {
+        const footprint_tiles = loaders.decorationFootprintWorldTiles(
+            editor.decoration_types[placement.type_id].footprint,
+            placement.position,
+            allocator,
+        );
+        defer allocator.free(footprint_tiles);
+        for (footprint_tiles) |tile| expand.bounds(&min_x, &min_y, &max_x, &max_y, tile);
+    }
+    const origin = types.Vector2{ .x = min_x, .y = min_y };
+    const grid_width: i32 = max_x - min_x + 1;
+    const grid_height: i32 = max_y - min_y + 1;
+
+    const grid = try allocator.alloc(u8, @intCast(grid_width * grid_height));
+    defer allocator.free(grid);
+    @memset(grid, ' ');
+    for (hub.grid.level_tiles) |tile| setGridCell(grid, grid_width, origin, tile, '.');
+    setGridCell(grid, grid_width, origin, hub.grid.player_start, '!');
+    for (hub.grid.decoration_placements) |placement| {
+        setGridCell(
+            grid,
+            grid_width,
+            origin,
+            placement.position,
+            hubCodeForType(codes.decoration, placement.type_id).?,
+        );
+    }
+    for (hub.npc_placements) |npc| {
+        var npc_code: ?u8 = null;
+        for (codes.npc) |assignment| {
+            if (assignment.npc_type == npc.npc_type) npc_code = assignment.code;
+        }
+        setGridCell(grid, grid_width, origin, npc.position, npc_code.?);
+    }
+    // The exit cells + their mission-resolution (only start-here
+    // placements - the code assignment's rule).
+    var exit_index: usize = 0;
+    for (hub.exit_placements) |placement| {
+        for (editor.missions) |mission| {
+            if (mission.handle != placement.mission) continue;
+            if (mission.start == null or mission.start.? != hub.handle) continue;
+            setGridCell(grid, grid_width, origin, placement.position, codes.exit[exit_index]);
+            exit_index += 1;
+        }
+    }
+
+    var buffer: std.ArrayList(u8) = .empty;
+
+    // Metadata
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{parser.hub_file_format_version});
+    if (hub.name.len > 0) {
+        try buffer.print(allocator, "name {s}\n", .{hub.name});
+    }
+    const hub_index = hubIndexForHandle(editor, hub.handle) orelse return error.HubNotInList;
+    try buffer.print(allocator, "hub_uuid {s}\n", .{ids.hub_uuids[hub_index]});
+    if (hub.grid.color_wheel_index != 0) {
+        try buffer.print(allocator, "color_wheel_index {d}\n", .{hub.grid.color_wheel_index});
+    }
+
+    // Layout - the counted grammar, rows trimmed (the level writer's
+    // convention).
+    try buffer.print(allocator, "\nLayout {d}\n", .{grid_height});
+    var row: i32 = 0;
+    while (row < grid_height) : (row += 1) {
+        const row_start: usize = @intCast(row * grid_width);
+        const row_cells = grid[row_start .. row_start + @as(usize, @intCast(grid_width))];
+        var row_length = row_cells.len;
+        while (row_length > 0 and row_cells[row_length - 1] == ' ') row_length -= 1;
+        try buffer.appendSlice(allocator, row_cells[0..row_length]);
+        try buffer.appendSlice(allocator, "\n");
+    }
+
+    // Decorations - used campaign-palette types (sprite + footprint +
+    // layers), custom stems normalized into the hub's content path.
+    if (codes.decoration.len > 0) {
+        try buffer.appendSlice(allocator, "\nDecorations\n");
+        for (codes.decoration, 0..) |assignment, index| {
+            if (index > 0) try buffer.appendSlice(allocator, "\n");
+            const definition = editor.decoration_types[assignment.type_id];
+            try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
+            try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(definition.sprite, hub_content_path, allocator)});
+            try buffer.print(allocator, "color_index {d}\n", .{definition.color_index});
+            if (definition.keep_original_colors) {
+                try buffer.print(allocator, "keep_original_colors true\n", .{});
+            }
+            for (definition.footprint) |footprint_tile| {
+                try buffer.print(allocator, "footprint {d} {d}\n", .{ footprint_tile.x, footprint_tile.y });
+            }
+            for (definition.layers) |layer| {
+                try buffer.appendSlice(allocator, "layer\n");
+                try buffer.print(allocator, "sprite {s}\n", .{try normalizedCustomStem(layer.sprite, hub_content_path, allocator)});
+                try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
+                if (layer.behind) {
+                    try buffer.appendSlice(allocator, "behind true\n");
+                }
+            }
+        }
+    }
+
+    // NPCs - per type (the sprite derives from it).
+    if (codes.npc.len > 0) {
+        try buffer.appendSlice(allocator, "\nNPCs\n");
+        for (codes.npc, 0..) |assignment, index| {
+            if (index > 0) try buffer.appendSlice(allocator, "\n");
+            try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
+            try buffer.print(allocator, "npc_type {s}\n", .{@tagName(assignment.npc_type)});
+        }
+    }
+
+    // Exits - the graph projection.
+    if (codes.exit.len > 0) {
+        try buffer.appendSlice(allocator, "\nExits\n");
+        var written_exits: usize = 0;
+        for (hub.exit_placements) |placement| {
+            for (editor.missions, 0..) |mission, mission_index| {
+                if (mission.handle != placement.mission) continue;
+                if (mission.start == null or mission.start.? != hub.handle) continue;
+                if (written_exits > 0) try buffer.appendSlice(allocator, "\n");
+                try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{codes.exit[written_exits]}});
+                try buffer.print(allocator, "mission_uuid {s}\n", .{ids.mission_uuids[mission_index]});
+                if (mission.destination) |destination_handle| {
+                    const destination_index = hubIndexForHandle(editor, destination_handle) orelse continue;
+                    try buffer.print(allocator, "destination_hub {s}\n", .{ids.hub_uuids[destination_index]});
+                }
+                if (mission.direction) |direction| {
+                    try buffer.print(allocator, "direction {d}\n", .{direction});
+                }
+                written_exits += 1;
+            }
+        }
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
+fn hubIndexForHandle(editor: types.CampaignEditor, handle: u32) ?usize {
+    for (editor.hubs, 0..) |hub, index| {
+        if (hub.handle == handle) return index;
+    }
+    return null;
+}
+
+/// Write campaign.txt (v4): Metadata (name, campaign uuid, the start
+/// hub's uuid, the background stem) + the Hubs section (uuid + position
+/// per placed hub) + the Orphans section (each mission with NO start - a
+/// deleted/unwired start - with its live destination when wired + the
+/// frozen ghost positions; the ghosts are written only for MISSING ends,
+/// which is the only case the loader expects them for).
+pub fn writeCampaignFile(
+    editor: types.CampaignEditor,
+    ids: CampaignSaveIds,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{parser.campaign_file_format_version});
+    try buffer.print(allocator, "name {s}\n", .{editor.campaign_name});
+    try buffer.print(allocator, "campaign_uuid {s}\n", .{ids.campaign_uuid});
+    if (editor.start_hub) |start_handle| {
+        const start_index = hubIndexForHandle(editor, start_handle) orelse return error.StartHubNotInList;
+        try buffer.print(allocator, "start_hub {s}\n", .{ids.hub_uuids[start_index]});
+    }
+    if (editor.background_stem.len > 0) {
+        try buffer.print(allocator, "background {s}\n", .{editor.background_stem});
+    }
+
+    try buffer.appendSlice(allocator, "\nHubs\n");
+    for (editor.hubs, 0..) |hub, index| {
+        if (index > 0) try buffer.appendSlice(allocator, "\n");
+        try buffer.print(allocator, "hub_uuid {s}\n", .{ids.hub_uuids[index]});
+        try buffer.print(allocator, "position {d} {d}\n", .{ hub.position.x, hub.position.y });
+    }
+
+    // Orphans: missions with no start hub (nothing to project into a
+    // hub.txt Exits group). The ghosts are the frozen positions of the
+    // DELETED ends - written only when that end is missing (a live
+    // destination supplies its own position on reload). The section is
+    // omitted entirely when there are none.
+    var orphan_count: usize = 0;
+    for (editor.missions, 0..) |mission, index| {
+        if (mission.start != null) continue;
+        if (orphan_count == 0) {
+            try buffer.appendSlice(allocator, "\nOrphans\n");
+        } else {
+            try buffer.appendSlice(allocator, "\n");
+        }
+        try buffer.print(allocator, "mission_uuid {s}\n", .{ids.mission_uuids[index]});
+        if (mission.destination) |destination_handle| {
+            const destination_index = hubIndexForHandle(editor, destination_handle) orelse continue;
+            try buffer.print(allocator, "destination_hub {s}\n", .{ids.hub_uuids[destination_index]});
+        }
+        if (mission.orphan_start_position) |position| {
+            try buffer.print(allocator, "start_position {d} {d}\n", .{ position.x, position.y });
+        }
+        if (mission.orphan_destination_position) |position| {
+            try buffer.print(allocator, "destination_position {d} {d}\n", .{ position.x, position.y });
+        }
+        orphan_count += 1;
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
+/// Write one mission's mission.txt (the identity + name - Metadata-only;
+/// the level files + player.txt are the mission editor's business, and a
+/// fresh campaign mission deliberately ships WITHOUT player.txt (the
+/// loader's max-default fallback - the loadout is authored via the
+/// mission hand-off, slice 5).
+pub fn writeCampaignMissionFile(
+    mission: types.CampaignMissionEdit,
+    mission_uuid: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{parser.mission_file_format_version});
+    try buffer.print(allocator, "mission_uuid {s}\n", .{mission_uuid});
+    try buffer.print(allocator, "name {s}\n", .{mission.name});
+    return try buffer.toOwnedSlice(allocator);
+}
+
+// ============================================================
+// Campaign writer tests - the round-trip pattern: build the authored
+// graph, write the projection, parse it back through the LOADERS, and
+// compare (the buildEditorMission precedent). The full save-to-disk
+// round trip (the io orchestration) lives in the harness tests.
+// ============================================================
+
+fn campaignWriterFixture() types.CampaignEditor {
+    return .{
+        .campaign_name = "Fixture",
+        .campaign_dir = "campaigns/fixture",
+        .background_stem = "map",
+        .start_hub = 0,
+        .hubs = &.{
+            // Alpha's grid is spawn-normalized (spawn at 0,0, all
+            // coordinates >= 0) so the written bbox equals the authored
+            // coordinates - the reload comparisons are exact.
+            .{
+                .handle = 0,
+                .uuid = "a",
+                .dir = "alpha",
+                .name = "Alpha",
+                .position = .{ .x = -200, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{
+                        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+                        .{ .x = 0, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 0, .y = 2 },
+                        .{ .x = 1, .y = 2 }, .{ .x = 2, .y = 2 },
+                    },
+                    .player_start = .{ .x = 0, .y = 0 },
+                    .decoration_placements = &.{
+                        .{ .type_id = 0, .position = .{ .x = 2, .y = 0 } },
+                        .{ .type_id = 1, .position = .{ .x = 0, .y = 2 } },
+                        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+                    },
+                },
+                .npc_placements = &.{
+                    .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 1 } },
+                    .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 2 } },
+                    .{ .npc_type = .gear_upgrader, .position = .{ .x = 0, .y = 1 } },
+                },
+                .exit_placements = &.{
+                    .{ .mission = 2, .position = .{ .x = 2, .y = 1 } },
+                    .{ .mission = 3, .position = .{ .x = 1, .y = 2 } },
+                },
+            },
+            .{
+                .handle = 1,
+                .uuid = "b",
+                .dir = "beta",
+                .name = "Beta",
+                .position = .{ .x = 400, .y = 300 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            },
+        },
+        .missions = &.{
+            .{ .handle = 2, .uuid = "u1", .name = "One", .dir = "one", .start = 0, .destination = 1, .direction = 90 },
+            .{ .handle = 3, .uuid = "u2", .name = "Beyond", .dir = "beyond", .start = 0 },
+            .{ .handle = 4, .uuid = "u3", .name = "Salvage", .dir = "salvage", .destination = 1, .orphan_start_position = .{ .x = -600, .y = -300 } },
+            .{ .handle = 5, .uuid = "u4", .name = "Ghost", .dir = "ghost", .orphan_start_position = .{ .x = -600, .y = -300 }, .orphan_destination_position = .{ .x = -600, .y = 300 } },
+        },
+        .decoration_types = &.{
+            .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            .{ .id = "rock", .sprite = "ruin_10", .footprint = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } } },
+        },
+        .next_handle = 6,
+    };
+}
+
+fn campaignWriterFixtureIds() CampaignSaveIds {
+    return .{
+        .campaign_uuid = "cu",
+        .hub_uuids = &.{ "a", "b" },
+        .mission_uuids = &.{ "u1", "u2", "u3", "u4" },
+    };
+}
+
+test "writeCampaignHub: the round trip through loadHub" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const editor = campaignWriterFixture();
+    const ids = campaignWriterFixtureIds();
+    const hub_txt = try writeCampaignHub(editor, editor.hubs[0], ids, "campaigns/fixture/hubs/alpha", allocator);
+
+    const sections = try parser.parseConfigFile(hub_txt, allocator, &parser.hub_sections);
+    const hub = try loaders.loadHub(sections, null, allocator, "campaigns/fixture/hubs/alpha/hub.txt", null);
+
+    try std.testing.expectEqualStrings("Alpha", hub.name);
+    try std.testing.expectEqualStrings("a", hub.uuid);
+    // The grid: the written bbox equals the authored coordinates (the
+    // spawn-normalized fixture), so the reload is exact. Every authored
+    // tile cell hosts a code or '!' (no bare '.'), and the reload counts
+    // 1 (!) + 3 (NPC cells, walkable) + 2 (exit cells, walkable) - the
+    // three decoration ANCHOR cells imply no tile (the level writer's
+    // convention).
+    try std.testing.expectEqual(@as(usize, 6), hub.hub_tiles.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, hub.player.position);
+    // The decorations: three placements, the sprites from the palette,
+    // in the LAYOUT WALK order (row-major: (1,0) + (2,0) tree, then
+    // (0,2) rock).
+    try std.testing.expectEqual(@as(usize, 3), hub.decorations.len);
+    try std.testing.expectEqualStrings("tree_1", hub.decorations[0].name);
+    try std.testing.expectEqualStrings("tree_1", hub.decorations[1].name);
+    try std.testing.expectEqualStrings("ruin_10", hub.decorations[2].name);
+    // The NPCs: three placements, the types preserved (two of one kind
+    // share a code + section entry), row-major order.
+    try std.testing.expectEqual(@as(usize, 3), hub.npcs.len);
+    try std.testing.expectEqual(types.NpcType.gear_upgrader, hub.npcs[0].npc_type);
+    try std.testing.expectEqual(types.NpcType.gear_upgrader, hub.npcs[1].npc_type);
+    try std.testing.expectEqual(types.NpcType.dream_guide, hub.npcs[2].npc_type);
+    // The exits: the graph projection - m1 (wired to Beta, authored
+    // direction 90) + m2 (dangling - empty destination, no direction).
+    try std.testing.expectEqual(@as(usize, 2), hub.mission_exits.len);
+    try std.testing.expectEqualStrings("u1", hub.mission_exits[0].mission_uuid);
+    try std.testing.expectEqualStrings("b", hub.mission_exits[0].destination_hub);
+    try std.testing.expectEqual(@as(?u32, 90), hub.mission_exits[0].direction);
+    try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 1 }, hub.mission_exits[0].position);
+    try std.testing.expectEqualStrings("u2", hub.mission_exits[1].mission_uuid);
+    try std.testing.expectEqual(@as(usize, 0), hub.mission_exits[1].destination_hub.len);
+    try std.testing.expectEqual(@as(?u32, null), hub.mission_exits[1].direction);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, hub.mission_exits[1].position);
+}
+
+test "writeCampaignFile: the round trip through loadCampaign + the Orphans section" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const editor = campaignWriterFixture();
+    const ids = campaignWriterFixtureIds();
+    const campaign_txt = try writeCampaignFile(editor, ids, allocator);
+
+    const sections = try parser.parseConfigFile(campaign_txt, allocator, &parser.campaign_sections);
+    const campaign = try loaders.loadCampaign(sections, "campaigns/fixture", allocator, null);
+
+    try std.testing.expectEqualStrings("Fixture", campaign.name);
+    try std.testing.expectEqualStrings("cu", campaign.uuid);
+    try std.testing.expectEqualStrings("a", campaign.start_hub);
+    try std.testing.expectEqualStrings("map", editor.background_stem);
+    try std.testing.expectEqual(@as(usize, 2), campaign.hubs.len);
+    try std.testing.expectEqualStrings("a", campaign.hubs[0].uuid);
+    try std.testing.expectEqual(types.Vector2{ .x = -200, .y = 0 }, campaign.hubs[0].position);
+    try std.testing.expectEqualStrings("b", campaign.hubs[1].uuid);
+
+    // The Orphans section: the two no-start missions, with the live
+    // destination uuid + the ghosts for the missing ends (u3 keeps its
+    // start ghost only - its destination is live; u4 both ghosts).
+    const orphan_section = parser.findSection(sections, "Orphans").?;
+    try std.testing.expectEqual(@as(usize, 2), orphan_section.entry_groups.len);
+    const first = orphan_section.entry_groups[0].pairs;
+    try std.testing.expectEqualStrings("u3", parser.findValue(first, "mission_uuid").?);
+    try std.testing.expectEqualStrings("b", parser.findValue(first, "destination_hub").?);
+    try std.testing.expect(parser.findValue(first, "start_position") != null);
+    try std.testing.expect(parser.findValue(first, "destination_position") == null);
+    const second = orphan_section.entry_groups[1].pairs;
+    try std.testing.expectEqualStrings("u4", parser.findValue(second, "mission_uuid").?);
+    try std.testing.expect(parser.findValue(second, "start_position") != null);
+    try std.testing.expect(parser.findValue(second, "destination_position") != null);
+}
+
+test "writeCampaignMissionFile: the identity round trip through loadMission" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const editor = campaignWriterFixture();
+    const mission_txt = try writeCampaignMissionFile(editor.missions[0], "u1", allocator);
+    const sections = try parser.parseConfigFile(mission_txt, allocator, &parser.mission_sections);
+    const mission = try loaders.loadMission(sections, allocator);
+    try std.testing.expectEqualStrings("u1", mission.uuid);
+    try std.testing.expectEqualStrings("One", mission.name);
+}

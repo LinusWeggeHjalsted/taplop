@@ -243,6 +243,26 @@ pub const SessionState = struct {
     /// allocator, freed by the rescan).
     campaign_background_stems: []const []const u8 = &.{},
 
+    /// The campaign save's identity MEMO (the editor_saved_mission
+    /// pattern, extended): the uuids + canonical dirs minted THIS session
+    /// for content whose GameState identity is still empty (fresh
+    /// campaigns/hubs/missions - the write-only mint rule means the
+    /// state's uuid never fills in; the memo is how repeated saves keep
+    /// the same identity). Keyed by handle; the campaign itself uses the
+    /// sentinel handle `campaign_save_memo_handle`. Session-owned
+    /// (backing allocator, appended by the save, never freed - bounded by
+    /// the session's fresh-content count).
+    campaign_save_memos: []types.CampaignSaveMemo = &.{},
+
+    /// The campaign save's deletion list: the content dirs of hubs/
+    /// missions deleted this session, collected by the delete handlers
+    /// (gated !replaying) and reconciled at the NEXT full save (an entry
+    /// whose dir is back in the graph - an UNDO restored it - is skipped;
+    /// only genuinely-absent content is removed from disk, and only at
+    /// the save - never at the delete). Session-owned, appended by the
+    /// handlers.
+    campaign_deleted_dirs: []const []const u8 = &.{},
+
     /// The OFFICIAL campaigns (the Official tab: the shipped embedded
     /// campaigns). Parsed at the browser's FIRST open of the session (the
     /// embedded map is immutable per build); the `_scanned` flag gates the

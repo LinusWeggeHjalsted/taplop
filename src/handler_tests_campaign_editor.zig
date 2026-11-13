@@ -684,3 +684,246 @@ test "campaign editor: the mission tool's draw gesture - arm, place, cancel via 
     // The right-click was consumed by the CANCEL - hub 1 (Beta) survived.
     try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
 }
+
+test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; the deletion reconciliation" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A compact authored graph exercising every projection arm: two hubs
+    // (grids + NPCs + decorations + exit markers), a wired mission with
+    // an authored direction, a dangling mission, an orphan with ghosts,
+    // and a fresh campaign identity (everything mints at save).
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Round Trip",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = -200, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{
+                            .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+                            .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 },
+                        },
+                        .player_start = .{ .x = 0, .y = 0 },
+                        .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 2, .y = 0 } }},
+                    },
+                    .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 1 } }},
+                    .exit_placements = &.{
+                        .{ .mission = 2, .position = .{ .x = 1, .y = 0 } },
+                        .{ .mission = 3, .position = .{ .x = 0, .y = 1 } },
+                    },
+                },
+                .{
+                    .handle = 1,
+                    .name = "Beta",
+                    .position = .{ .x = 400, .y = 300 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                    },
+                },
+            },
+            .missions = &.{
+                .{ .handle = 2, .name = "One", .dir = "New Mission", .start = 0, .destination = 1, .direction = 90 },
+                .{ .handle = 3, .name = "Beyond", .dir = "New Mission 2", .start = 0 },
+                .{ .handle = 4, .name = "Salvage", .dir = "New Mission 3", .destination = 1, .orphan_start_position = .{ .x = -600, .y = -300 } },
+            },
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 5,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+
+    // The in-place save of a FRESH campaign: everything mints.
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    try testing.expect(history.session.pending_error == null);
+    // The memo values are SNAPSHOT into the test's arena: the reopen
+    // below clears the memos (freeing their backing strings), and the
+    // later assertions must not read freed bytes.
+    const campaign_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const campaign_memo = types.CampaignSaveMemo{
+        .handle = campaign_memo_raw.handle,
+        .uuid = backing.allocator().dupe(u8, campaign_memo_raw.uuid) catch unreachable,
+        .dir = backing.allocator().dupe(u8, campaign_memo_raw.dir) catch unreachable,
+    };
+    try testing.expect(campaign_memo.uuid.len > 0);
+    try testing.expect(std.mem.startsWith(u8, campaign_memo.dir, "campaigns/"));
+    const hub_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, 0).?;
+    const hub_memo = types.CampaignSaveMemo{
+        .handle = hub_memo_raw.handle,
+        .uuid = backing.allocator().dupe(u8, hub_memo_raw.uuid) catch unreachable,
+        .dir = backing.allocator().dupe(u8, hub_memo_raw.dir) catch unreachable,
+    };
+    try testing.expect(std.mem.startsWith(u8, hub_memo.dir, hub_memo.uuid));
+    const mission_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, 2).?;
+    const mission_memo = types.CampaignSaveMemo{
+        .handle = mission_memo_raw.handle,
+        .uuid = backing.allocator().dupe(u8, mission_memo_raw.uuid) catch unreachable,
+        .dir = backing.allocator().dupe(u8, mission_memo_raw.dir) catch unreachable,
+    };
+    try testing.expect(std.mem.startsWith(u8, mission_memo.dir, mission_memo.uuid));
+
+    // Reopen the saved campaign through the ordinary open path: the
+    // inverse projection reconstructs the graph.
+    const saved_campaign_dir = history.current_arena.allocator().dupe(u8, campaign_memo.dir) catch unreachable;
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = saved_campaign_dir,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    if (history.session.pending_error) |error_message| {
+        std.debug.print("REOPEN ERROR: {s}\n", .{error_message});
+    }
+    const reloaded = history.current_state.campaign_editor.?;
+
+    try testing.expectEqualStrings("Round Trip", reloaded.campaign_name);
+    try testing.expectEqualStrings(campaign_memo.uuid, reloaded.campaign_uuid);
+    try testing.expectEqual(@as(usize, 2), reloaded.hubs.len);
+    try testing.expectEqualStrings("Alpha", reloaded.hubs[0].name);
+    try testing.expectEqualStrings(hub_memo.uuid, reloaded.hubs[0].uuid);
+    try testing.expectEqual(types.Vector2{ .x = -200, .y = 0 }, reloaded.hubs[0].position);
+    try testing.expectEqual(@as(usize, 1), reloaded.hubs[0].npc_placements.len);
+    try testing.expectEqual(@as(usize, 1), reloaded.hubs[0].grid.decoration_placements.len);
+    try testing.expectEqual(@as(usize, 2), reloaded.hubs[0].exit_placements.len);
+    try testing.expectEqual(@as(usize, 1), reloaded.decoration_types.len);
+
+    try testing.expectEqual(@as(usize, 3), reloaded.missions.len);
+    // The wired mission: both ends + the authored direction.
+    var one: ?types.CampaignMissionEdit = null;
+    var beyond: ?types.CampaignMissionEdit = null;
+    var salvage: ?types.CampaignMissionEdit = null;
+    for (reloaded.missions) |mission| {
+        if (std.mem.eql(u8, mission.name, "One")) one = mission;
+        if (std.mem.eql(u8, mission.name, "Beyond")) beyond = mission;
+        if (std.mem.eql(u8, mission.name, "Salvage")) salvage = mission;
+    }
+    try testing.expect(one != null);
+    try testing.expectEqualStrings(mission_memo.uuid, one.?.uuid);
+    try testing.expect(one.?.start != null and one.?.destination != null);
+    try testing.expectEqual(@as(?u32, 90), one.?.direction);
+    // The dangling mission: a start, no destination, a marker.
+    try testing.expect(beyond != null);
+    try testing.expect(beyond.?.start != null and beyond.?.destination == null);
+    // The orphan: no start, its ghost frozen + the live destination.
+    try testing.expect(salvage != null);
+    try testing.expect(salvage.?.start == null);
+    try testing.expectEqual(types.Vector2{ .x = -600, .y = -300 }, salvage.?.orphan_start_position.?);
+    try testing.expect(salvage.?.destination != null);
+
+    // Save As Copy: a fresh campaign identity, last-wins - the session
+    // continues saving the copy (a third in-place save reuses the COPY's
+    // memo, not the original's).
+    campaign_editor_io.saveCampaignEditor(&history, .as_copy);
+    const copy_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const copy_memo = types.CampaignSaveMemo{
+        .handle = copy_memo_raw.handle,
+        .uuid = backing.allocator().dupe(u8, copy_memo_raw.uuid) catch unreachable,
+        .dir = backing.allocator().dupe(u8, copy_memo_raw.dir) catch unreachable,
+    };
+    const copy_campaign_dir = backing.allocator().dupe(u8, copy_memo.dir) catch unreachable;
+    try testing.expect(!std.mem.eql(u8, copy_memo.uuid, campaign_memo.uuid));
+    try testing.expect(!std.mem.eql(u8, copy_memo.dir, campaign_memo.dir));
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    try testing.expectEqualStrings(
+        copy_memo.dir,
+        campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir,
+    );
+
+    // The deletion reconciliation: move the start hub to Beta first
+    // (the input layer vetoes deleting the start hub - the raw event
+    // here would otherwise leave a dangling start_hub the save rejects),
+    // then delete Alpha (its dir is memo'd - the state dir is empty),
+    // save, and its dir leaves the disk while the missions orphan; an
+    // UNDO before the save restores it instead.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_set_start_hub = .{ .hub = 1 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_delete_hub = .{ .hub = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    // The deleted dir was recorded (the memo's dir - the state's is
+    // empty).
+    try testing.expect(history.session.campaign_deleted_dirs.len == 1);
+    try testing.expectEqualStrings(hub_memo.dir, history.session.campaign_deleted_dirs[0]);
+    // UNDO the delete, then save: the restored hub's dir is back in the
+    // graph (via its memo) - nothing is deleted from disk.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
+    // The raw-pushed events share one idle window - the single undo may
+    // have reverted the delete AND the start reassignment. Re-establish
+    // the start on Beta (the radio write is idempotent) so the save's
+    // start-hub lookup is valid either way.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_set_start_hub = .{ .hub = 1 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    // The reopen still finds Alpha's dir (delete-then-undo-then-save kept
+    // it): reopen from the copy dir (the session's current identity).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = copy_campaign_dir,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
+    try testing.expectEqualStrings("Alpha", history.current_state.campaign_editor.?.hubs[0].name);
+
+    // And the real deletion: delete Alpha again, save - the dir goes.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_delete_hub = .{ .hub = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const debug_editor = history.current_state.campaign_editor.?;
+        std.debug.print("PRE-FINAL-SAVE: start={?d} hubs={d} names:", .{ debug_editor.start_hub, debug_editor.hubs.len });
+        for (debug_editor.hubs) |hub| std.debug.print(" {s}({d})", .{ hub.name, hub.handle });
+        std.debug.print("\n", .{});
+    }
+    // The second delete leaves the start on Beta (the reload resolved
+    // it); the save + reopen confirm the deletion stuck.
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = copy_campaign_dir,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.hubs.len);
+    try testing.expectEqualStrings("Beta", history.current_state.campaign_editor.?.hubs[0].name);
+}

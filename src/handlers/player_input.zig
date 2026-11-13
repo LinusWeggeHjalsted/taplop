@@ -369,7 +369,7 @@ pub fn handlePlayerInputEvent(
         // --- Meta: open campaign editor ---
         .open_campaign_editor => |start| {
             if (start.campaign_dir == null) {
-                campaign_editor_handlers.openFreshCampaignEditor(current, allocator);
+                campaign_editor_handlers.openFreshCampaignEditor(history, current, allocator);
                 // The newly installed campaign is a new world: bump so the
                 // transition UI reset fires (stale view state must not
                 // survive the swap) - the openFreshEditorMission

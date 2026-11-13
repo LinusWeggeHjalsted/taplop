@@ -536,6 +536,31 @@ pub const FileSource = struct {
     /// mount only - the session-scoped storage model touches no browser
     /// storage at all (no syncfs, no IDBFS; see DESIGN → File System & IO →
     /// Web storage model).
+    /// Rename a directory within the persistent dir (the campaign
+    /// editor's cosmetic dir tidy + the future rename seams). Both paths
+    /// are content-root-relative; the target must not already exist (the
+    /// callers check - a collision keeps the old name + warns instead).
+    pub fn renameDir(
+        self: *const FileSource,
+        old_path: []const u8,
+        new_path: []const u8,
+    ) !void {
+        try self.persistent_dir.rename(old_path, self.persistent_dir, new_path, self.io);
+    }
+
+    /// Delete a directory tree within the persistent dir (the campaign
+    /// save's explicit-deletion reconciliation - directory-level, never
+    /// per-file: readFile's per-file persistent-then-embedded fallback
+    /// would resurrect a deleted single file from the embedded campaign
+    /// while its dir lingered). A missing dir is a no-op (an unsaved
+    /// fresh entry's dir never existed).
+    pub fn deleteDir(
+        self: *const FileSource,
+        path: []const u8,
+    ) !void {
+        try self.persistent_dir.deleteTree(self.io, path);
+    }
+
     pub fn writeFile(
         self: *const FileSource,
         path: []const u8,

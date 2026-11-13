@@ -15,6 +15,7 @@ const file_source_mod = @import("../file_source.zig");
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 const CampaignEditorEvent = events.CampaignEditorEvent;
+const campaign_io = @import("io.zig");
 
 /// Handle a campaign-editor event (the handleEditorEvent mirror - pure
 /// state transforms on current.campaign_editor.?, mutably in place via
@@ -104,7 +105,18 @@ pub fn handleCampaignEditorEvent(
             // see DESIGN → The campaign editor surface).
             var deleted_position: ?types.Vector2 = null;
             for (editor.hubs) |hub| {
-                if (hub.handle == delete.hub) deleted_position = hub.position;
+                if (hub.handle == delete.hub) {
+                    deleted_position = hub.position;
+                    // The dir rides the session deletion list (reconciled
+                    // at the next full save - never at the delete; an
+                    // undo restores the content and the save skips it).
+                    // Fresh content's dir lives in the save memo (its
+                    // state dir is still empty - the write-only mint).
+                    if (!history.replaying) {
+                        const dir = if (hub.dir.len > 0) hub.dir else if (campaign_io.campaignSaveMemoFor(history, hub.handle)) |memo| memo.dir else &.{};
+                        campaign_io.recordCampaignContentDeletion(history, dir);
+                    }
+                }
             }
             const ghost = deleted_position orelse return;
             // The missions the hub touches orphan: the dead end nulls +
@@ -261,7 +273,13 @@ pub fn handleCampaignEditorEvent(
         .editor_campaign_delete_mission => |delete| {
             var surviving_start: ?u32 = null;
             for (editor.missions) |mission| {
-                if (mission.handle == delete.mission) surviving_start = mission.start;
+                if (mission.handle == delete.mission) {
+                    surviving_start = mission.start;
+                    if (!history.replaying) {
+                        const dir = if (mission.dir.len > 0) mission.dir else if (campaign_io.campaignSaveMemoFor(history, mission.handle)) |memo| memo.dir else &.{};
+                        campaign_io.recordCampaignContentDeletion(history, dir);
+                    }
+                }
             }
             // The mission IS the edge: the entry + its exit placement in
             // its start hub go together.
@@ -314,9 +332,11 @@ pub fn handleCampaignEditorEvent(
 /// uuid is minted (write-only, never held in state - the
 /// openFreshEditorMission convention).
 pub fn openFreshCampaignEditor(
+    history: *GameStateHistory,
     current: *GameState,
     allocator: std.mem.Allocator,
 ) void {
+    campaign_io.clearCampaignSaveState(history);
     var hubs: std.ArrayList(types.CampaignHubEdit) = .empty;
     hubs.append(allocator, .{
         .handle = 0,

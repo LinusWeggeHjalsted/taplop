@@ -396,13 +396,6 @@ work:
         DESIGN → The campaign editor surface). Recut into implementation
         sub-steps (each a commit unit: builds, tests green, harness /
         round-trip coverage per the tier conventions):
-          (missions first - session-memo uuid minting + handle
-          resolution - then hub.txts (the Exits projection + grids),
-          then campaign.txt v4 incl. the Orphans section; deletions
-          directory-level, explicit-deletions-only), rename-in-place +
-          cosmetic dir tidy + Save As Copy + the FileSource renameDir
-          + delete seams, ctrl+S, writer round-trip tests (the
-          buildEditorMission/writeEditorMission pattern for campaigns).
     - [ ] 3f. The Validate button: parameterize checkCampaignGraph
           over a graph view (pure, no file reads) + run it over the
           authored graph (the graph checks + unstartable missions -

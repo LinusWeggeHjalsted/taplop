@@ -400,6 +400,13 @@ pub const Action = enum {
     // The mission inspector's Import button: opens the import picker (the
     // player's local missions, copy-at-pick with duplicate-uuid refusal).
     open_campaign_import_picker,
+    // The campaign save (ctrl+S + the options menu's Save Campaign - the
+    // full save projection, the reconciliation save). An input-layer side
+    // effect, never a recorded event (the mission-save class).
+    save_campaign,
+    // Save As Copy: mints a fresh campaign uuid + dir (an intentional
+    // fork is a new work); the session continues saving the copy.
+    save_campaign_as_copy,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1156,6 +1163,8 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
         .select_editor_campaign_import,
+        .save_campaign,
+        .save_campaign_as_copy,
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
@@ -1556,6 +1565,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .reattach_campaign_mission_start,
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
+        .save_campaign,
+        .save_campaign_as_copy,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,
@@ -3827,6 +3838,22 @@ pub const CampaignMissionEnd = enum {
     start,
     destination,
 };
+
+/// One campaign-save identity memo entry (see
+/// SessionState.campaign_save_memos): the uuid + canonical dir minted at
+/// a prior save this session, keyed by handle. For hubs + missions the
+/// dir is the bare folder name (under the campaign's hubs//missions/);
+/// for the campaign itself the full content dir.
+pub const CampaignSaveMemo = struct {
+    handle: u32,
+    uuid: []const u8,
+    dir: []const u8,
+};
+
+/// The campaign-save memo's sentinel handle for the CAMPAIGN itself
+/// (hubs + missions use their editor handles, which mint from 0 - the
+/// sentinel can never collide).
+pub const campaign_save_memo_handle: u32 = std.math.maxInt(u32);
 
 /// The campaign editor's select-tool selection: a hub or a mission
 /// (single-select v1 - the inspector renders for whichever is selected).

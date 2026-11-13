@@ -203,6 +203,28 @@ pub fn buildOptionsMenu(
     // browser's Open Mission entry maps to the same browser action here
     // (both kinds are reachable from its tabs).
     if (current_screen == .campaign_editor) {
+        // The campaign save (also ctrl+S, the binding coexisting with the
+        // mission's - the consumption gates no-op the wrong screen) + the
+        // explicit fork (a fresh uuid + dir; the session continues saving
+        // the copy).
+        const campaign_save_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Ctrl+S - saves to {s}/campaigns/", .{dir})
+        else
+            "Ctrl+S - saves to the browser's persistent storage";
+        buttons[button_count] = .{
+            .label = "Save Campaign",
+            .action = .save_campaign,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(campaign_save_body))}) },
+        };
+        button_count += 1;
+        buttons[button_count] = .{
+            .label = "Save As Copy",
+            .action = .save_campaign_as_copy,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Mints a fresh identity - the original stays untouched behind",
+            ))}) },
+        };
+        button_count += 1;
         buttons[button_count] = .{
             .label = "Open Browser",
             .action = .toggle_editor_browser,

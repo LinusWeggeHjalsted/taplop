@@ -3522,12 +3522,16 @@ missing information:
   line-strip draw (portable to web) and hit-testing, which is distance
   to the SAME sampled polyline, so the drawn edge and its hit region
   cannot disagree - see The map surface);
-- **Defaults when unauthored: auto-spread.** The exits sharing a hub
-  space their directions evenly by index (four unauthored camp loops land
-  at 90° spacing); parallel straight edges between the same hub pair
-  spread perpendicular by exit index. Cosmetic default, no warning (the
-  warn surface is for correctness, not style); the author overrides
-  per-exit for expression.
+- **Defaults when unauthored: auto-spread.** The UNAUTHORED exits
+  sharing a hub space their directions evenly among themselves over the
+  full circle (four unauthored camp loops land at 90° spacing;
+  authored ones sit where placed - no gap bookkeeping); parallel straight
+  edges between the same hub pair spread perpendicular by exit index.
+  Cosmetic default, no warning (the warn surface is for correctness, not
+  style); the author overrides per-exit for expression. One rule
+  everywhere: the runtime's `deriveCampaignEdges` and the campaign
+  editor's rendering share it, so a saved unauthored exit renders the
+  same in-game as in-editor.
 - **The map view is FIXED in v1**: the 3840×2160 default framing (a view
   constant - see The map coordinate model) with no zoom/pan; the builder
   keeps one transform slot so zoom can land later without a rewrite.

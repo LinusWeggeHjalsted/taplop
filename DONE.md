@@ -338,6 +338,7 @@ working rules).
 - [campaign editor: 3c playtest fixes - the options menu, exit, the panel toggles + formatting](#campaign-editor-3c-playtest-fixes---the-options-menu-exit-the-panel-toggles--formatting)
 - [campaign editor: 3c playtest fixes, round two - the toggle consumption, the entry-label offset, the browser's opening tab](#campaign-editor-3c-playtest-fixes-round-two---the-toggle-consumption-the-entry-label-offset-the-browsers-opening-tab)
 - [campaign-editor slice 3d: the mission tool, the mission inspector, orphan salvage + the import](#campaign-editor-slice-3d-the-mission-tool-the-mission-inspector-orphan-salvage--the-import)
+- [campaign-editor slice 3e: save + the identity model - the full save projection, minting, Save As Copy, the deletion reconciliation](#campaign-editor-slice-3e-save--the-identity-model---the-full-save-projection-minting-save-as-copy-the-deletion-reconciliation)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20926,3 +20927,79 @@ collection is small; the list-browser machinery can adopt it in the
 polish pass); the armed re-attach draws no preview arrow (the button
 label prompts); an imported unwired mission renders at the map origin
 (ghostless - the {0,0} fallback) until attached.
+
+## campaign-editor slice 3e: save + the identity model - the full save projection, minting, Save As Copy, the deletion reconciliation
+
+The campaign editor's work is now durable. The pieces:
+
+- **The writers** (writers.zig, pure - landed with round-trip tests
+  through the loaders first): writeCampaignHub (the counted Layout with
+  exits-digits/decoration+NPC-letters code assignment, the used
+  campaign-palette Decorations with custom stems normalized into the
+  HUB's path, NPCs per type, the Exits projection - each placed marker
+  whose mission starts here, mission uuid + destination uuid or empty +
+  authored direction), writeCampaignFile (v4: Metadata + Hubs + the
+  Orphans section - start-less missions, ghosts only for missing ends,
+  section omitted when empty), writeCampaignMissionFile (identity +
+  name).
+- **The identity model** (campaign_editor/io.zig, the save
+  orchestration - the input-layer side-effect class, never recorded,
+  never replayed): resolve-every-identity-first (the Exits projection
+  forward-references any hub's uuid), the state identity -> the session
+  MEMO -> a fresh mint chain per campaign/hub/mission
+  (CampaignSaveMemo, handle-keyed, LAST-WINS), the memo being how
+  repeated saves keep minted identity stable while the state's uuid
+  stays empty (the write-only mint rule). Fresh campaigns land in
+  campaigns/<uuid>_<name>/; fresh missions in the canonical
+  <uuid>_<name> (their temp anchor never hits disk) + the default level
+  template at first materialization, deliberately NO player.txt (the
+  loader's max-default fallback; the loadout is the hand-off's, slice
+  5). generateMissionUuid + the name sanitizer made pub (one
+  identity-mint shape everywhere).
+- **Save As Copy**: mints a fresh CAMPAIGN uuid + dir (the settle: an
+  intentional fork is a new work; the missions are the same works -
+  their identity resolves normally); the session CONTINUES SAVING THE
+  COPY - the memo takes precedence over the state identity (a side
+  effect never mutates replayed state, so state-first precedence would
+  have kept writing the original forever - the bug the round-trip test
+  caught). The memos + the deletion list are PER-CAMPAIGN-SESSION:
+  clearCampaignSaveState at every open (a stale memo would redirect
+  saves to the previous campaign's dir; a stale deletion would remove
+  the new campaign's content). That clearing FREES the memo strings -
+  the input layer's dupe-at-push convention is load-bearing (the
+  browser arms already duped; the test learned it the hard way).
+- **The deletion reconciliation**: the delete handlers record the
+  content dir (the state's, else the MEMO's - fresh content's state dir
+  is empty) on a session list, gated !replaying; the SAVE removes each
+  recorded dir whose content is not in the current graph (an undo
+  restored it - the presence check resolves state-else-memo dirs,
+  the same fresh-content hole), directory-level ONLY via the new
+  FileSource deleteDir (deleteTree; a missing dir no-ops - an unsaved
+  fresh entry never existed) - never per-file (readFile's per-file
+  persistent-then-embedded fallback would resurrect deleted files from
+  the embedded campaign). Plus FileSource.renameDir (the cosmetic dir
+  tidy: a loaded hub dir renamed toward the canonical form when the
+  target is free).
+- **The wiring**: ctrl+S (a second editor-context binding on KeyS -
+  save_campaign coexists with save_editor_mission; the consumption
+  gates no-op the wrong screen) + the options menu's Save Campaign /
+  Save As Copy in the campaign variant.
+- **One-rule-everywhere fix en route**: deriveCampaignEdges' auto-
+  spread changed from 360*exit_index/exit_count (all exits) to the
+  settled unauthored-among-themselves rule (0-based) - a saved
+  unauthored exit now renders the same in-game as in-editor; DESIGN's
+  Edge-geometry paragraph updated to name the shared rule.
+
+Tests: the writers' loader round trips (landed first), and the gold
+harness test - a fresh campaign authored in-editor, saved (everything
+mints), REOPENED through the ordinary open path (the graph
+reconstructed + identity compared against the minted uuids), Save As
+Copy (fresh identity + the session's third save hitting the copy), the
+deletion reconciliation both ways (delete-undo-save keeps the dir on
+disk + reopens intact; delete-save removes it + the reopen shows the
+survivor). En route discoveries folded in: expectEqual on strings
+compares slice identity (expectEqualStrings is the string assert - the
+project convention, now followed); the raw-pushed test events share one
+idle window so a single undo can revert a chain (the test re-establishes
+state); the fixture's cell collisions (an exit code overwrites a
+decoration/NPC on the same cell - one char per cell is the format).

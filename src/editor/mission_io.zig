@@ -77,7 +77,7 @@ pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Edit
 /// effect that never enters GameState or a recorded event, so the
 /// randomness is replay-safe by construction. See DESIGN → Level Editor →
 /// Mission identity.
-fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
+pub fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
     var bytes: [16]u8 = undefined;
     // Seed a CSPRNG from the wall clock (the same clock the session
     // timestamps read) + the raw nanoseconds - good enough for identity
@@ -107,7 +107,7 @@ fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator)
 /// Make a mission name safe as a path segment: path separators + control
 /// characters become '_', an empty result falls back to "Unnamed" (a
 /// mission can be renamed to an empty string via the metadata sidebar).
-fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []const u8 {
+pub fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []const u8 {
     const sanitized = allocator.dupe(u8, name) catch @panic("failed to sanitize mission name");
     for (sanitized) |*character| {
         const invalid = character.* == '/' or character.* == '\\' or character.* < 0x20 or character.* == 0x7f;

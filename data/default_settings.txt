@@ -45,6 +45,12 @@ action save_editor_mission
 context editor
 
 input_type key
+input_name KeyS
+ctrl true
+action save_campaign
+context editor
+
+input_type key
 input_name KeyE
 ctrl true
 action export_editor_mission

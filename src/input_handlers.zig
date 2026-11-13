@@ -1447,6 +1447,26 @@ pub fn handleAnytimeInput(
         }
     }
 
+    if (anytime.save_campaign) {
+        // The campaign save: the mission-save class - a pure input-layer
+        // side effect (no recorded event; replay never runs the input
+        // layer), gated on the campaign editor screen so the mission's
+        // ctrl+S and this coexist on one binding.
+        if (history.current_state.screen == .campaign_editor and
+            history.current_state.campaign_editor != null)
+        {
+            campaign_editor_io.saveCampaignEditor(history, .in_place);
+        }
+    }
+
+    if (anytime.save_campaign_as_copy) {
+        if (history.current_state.screen == .campaign_editor and
+            history.current_state.campaign_editor != null)
+        {
+            campaign_editor_io.saveCampaignEditor(history, .as_copy);
+        }
+    }
+
     if (anytime.escape) {
         handleEscapeKey(history);
     }

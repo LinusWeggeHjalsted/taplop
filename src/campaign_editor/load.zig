@@ -22,6 +22,7 @@ const state = @import("../state.zig");
 const parser = @import("../parser.zig");
 const loaders = @import("../loaders.zig");
 const shared = @import("../handlers/shared.zig");
+const campaign_io_shared = @import("io.zig");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -74,6 +75,7 @@ pub fn loadCampaignEditorIntoState(
     campaign_content_dir: []const u8,
     warnings: *std.ArrayList([]const u8),
 ) bool {
+    campaign_io_shared.clearCampaignSaveState(history);
     // `campaign_content_dir` is the CONTENT dir ("campaigns/<id>" - the
     // CampaignEntry.dir addressing, the browser row's dir verbatim; the
     // mission-row's full-path convention). loadCampaign derives the bare
@@ -310,15 +312,18 @@ pub fn loadCampaignEditorIntoState(
             }
             const index = mission_index.?;
             const destination_uuid = parser.findValue(pairs, "destination_hub") orelse &.{};
-            mission_entries.items[index].destination = resolveHubHandle(hub_entries.items, destination_uuid);
-            // Ghost positions: the frozen end-positions the orphan renders
-            // from. A missing or unparsable position warns + defaults to
-            // the map origin (the deletion flow always writes them - a
-            // missing one is a hand-edit, and the orphan must still render).
+            const destination = resolveHubHandle(hub_entries.items, destination_uuid);
+            mission_entries.items[index].destination = destination;
+            // Ghost positions: expected ONLY for ends that do not resolve
+            // to a live hub (a live destination supplies its own geometry;
+            // the save writes ghosts only for missing ends - a live
+            // destination with no ghost is the normal state, not a warn).
             mission_entries.items[index].orphan_start_position =
                 parseGhostPosition(pairs, "start_position", mission_uuid, warnings, allocator);
-            mission_entries.items[index].orphan_destination_position =
-                parseGhostPosition(pairs, "destination_position", mission_uuid, warnings, allocator);
+            if (destination == null) {
+                mission_entries.items[index].orphan_destination_position =
+                    parseGhostPosition(pairs, "destination_position", mission_uuid, warnings, allocator);
+            }
         }
     }
 
