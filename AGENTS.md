@@ -751,6 +751,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/ui/world_map.zig` - the world-map overlay's surface (the
   campaign graph's read-side mirror: background, hub icons, bezier
   edges, the top-left campaign button that opens the campaign browser)
+- `src/ui/campaign_geometry.zig` - the shared campaign-map geometry
+  (`mapToScreen` + `deriveEdgeGeometry`'s three edge-shape classes + the
+  view constants) - the ONE implementation behind "one data model, two
+  renderers" (buildWorldMap + the campaign editor's view)
 - `src/ui/credits.zig` + `src/ui/tips.zig` - the credits screen + the
   tips overlay
 - `src/ui/settings.zig` - the settings screen (two tabs: controls + the

@@ -396,17 +396,6 @@ work:
         DESIGN → The campaign editor surface). Recut into implementation
         sub-steps (each a commit unit: builds, tests green, harness /
         round-trip coverage per the tier conventions):
-    - [ ] 3a. The geometry extraction: pull buildWorldMap's inline
-          edge-geometry derivation (hub-boundary anchors, self-loop
-          teardrop, parallel spread, dangling stub + the view
-          constants) into a shared pure helper so the editor view and
-          the map mirror render through one implementation ("one data
-          model, two renderers") + the predicate-scan rewrite of the
-          world-map structure tests (find elements by predicate -
-          endpoints, payload - not flat-list indices; the
-          four-times-re-indexed lesson). Pure, headless-testable, no
-          new state. Synthetic fixtures needed for the shapes official
-          content lacks (parallel edges between two hubs).
     - [ ] 3b. The CampaignEditor type + screen + framing + the
           browser's Campaign tab: the authored graph (hub entries
           carrying their grid payload loaded at open - the drill-in

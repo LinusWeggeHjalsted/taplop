@@ -3537,7 +3537,10 @@ missing information:
 The world-map overlay (a full-screen overlay, `toggle_world_map` - the
 surface plumbing predates the view) renders `buildWorldMap`; the campaign
 editor's view (slice 3) renders the same graph geometry through its own
-builder - one data model, two renderers (see Discovery + travel).
+builder - one data model, two renderers (see Discovery + travel). The
+shared implementation is `src/ui/campaign_geometry.zig` (`mapToScreen` +
+`deriveEdgeGeometry` + the view constants): each renderer resolves its
+graph into the endpoint class + parallel spread and derives through it.
 
 - **The active campaign's map is a PURE STATE read.** The load scan
 derives the campaign's EDGE TABLE into `Campaign` - every hub's exits

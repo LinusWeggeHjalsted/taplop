@@ -332,6 +332,7 @@ working rules).
 - [campaign editor: hub editor design settle (the slice-4 drill-in)](#campaign-editor-hub-editor-design-settle-the-slice-4-drill-in)
 - [campaign editor: mission-editor campaign context settled (export unchanged)](#campaign-editor-mission-editor-campaign-context-settled-export-unchanged)
 - [campaign editor: autosave-on-exit settled (no - explicit save only)](#campaign-editor-autosave-on-exit-settled-no---explicit-save-only)
+- [campaign-editor slice 3a: the geometry extraction + predicate-scan test rewrite](#campaign-editor-slice-3a-the-geometry-extraction--predicate-scan-test-rewrite)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20602,3 +20603,44 @@ multi-select hub repositioning and drag-the-tip re-angling.
 
 With this, the campaign editor's design is fully settled - no open
 questions remain; slices 3-5 are ready to implement.
+
+## campaign-editor slice 3a: the geometry extraction + predicate-scan test rewrite
+
+The first slice-3 sub-step: buildWorldMap's inline edge-geometry
+derivation (the three shape classes + the view constants + the
+map->screen transform) extracted into src/ui/campaign_geometry.zig -
+mapToScreen, deriveEdgeGeometry (taking the caller-resolved EdgeEndpoint
+union + ParallelSpread), the EdgeGeometry result, and the shared
+constants. The caller-side design point: the helper is parameterized
+over GEOMETRIC inputs (endpoint class + spread), not the runtime edge
+types, so the editor's authored graph (3b) feeds the same derivation
+without sharing types - pair identity stays the caller's vocabulary
+(uuids at runtime, handles in the editor; the runtime's parallelSpread
+scan is file-private to world_map.zig).
+
+The world-map structure tests rewritten from hardcoded flat-list
+indices to predicate scans (the four-times-re-indexed lesson): elements
+are found by action+payload, sprite id + tooltip name, or - for edge
+strokes - FULL geometry equality against deriveEdgeGeometry's output
+for the fixture. That last shape is the one-implementation contract:
+the test derives the expected curve through the SAME helper the builder
+uses, so the tests assert emission correctness (colors, widths,
+hit_curve coherence, dimming) while the geometry math is covered once,
+in the module's own pure tests.
+
+New pure tests in the module: the parallel-spread shape (synthetic
+fixtures - official content ships only self-loops, so same-pair
+straight edges had zero coverage; including the shipped-behavior fact
+that only the CONTROLS offset - endpoints stay anchored at hub
+boundaries, siblings bow apart mid-segment and converge at the hubs)
+and the coincident-hubs fallback (two distinct hubs at the same map
+position are legal; the zero-length pair axis falls back to east
+instead of dividing by zero - previously untested, awkward-values
+class).
+
+Riders: ui.zig's facade re-points mapToScreen at the new module and
+exports the geometry surface; the five geometry constants stay
+file-private until 3b's editor view consumes them (the unused-pub
+report flagged them otherwise - minimize-pub discipline, re-pub at the
+consuming slice). AGENTS key files + DESIGN's map-surface bullet name
+the module.

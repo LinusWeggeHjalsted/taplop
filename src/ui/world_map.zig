@@ -13,6 +13,7 @@ const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const ui_tooltip = @import("tooltip.zig");
 const emit = @import("emit.zig");
+const campaign_geometry = @import("campaign_geometry.zig");
 
 const UiElement = ui_element.UiElement;
 const UiElementList = ui_element.UiElementList;
@@ -43,57 +44,38 @@ pub const hub_icon_size: i32 = 64;
 /// The placeholder sprite id for the hub icon + its art_report home.
 const hub_icon_sprite_id = "world/hub_icon";
 
-/// The mission-edge stroke width + its pure-black outline (each side adds
-/// `edge_outline_width`, so the under-stroke is
-/// `edge_width + 2 * edge_outline_width` wide).
-const edge_width: i32 = 8;
-const edge_outline_width: i32 = 8;
-
 /// Dimmed (undiscovered) draw alpha - the simple-mirror dimming class.
 const dimmed_alpha: u8 = 100;
 
-/// Self-loop geometry: the teardrop's reach along the exit direction (L)
-/// and half-width across it (w) - see DESIGN → Edge geometry. Fixed view
-/// constants in v1 (style consistency); tweak freely.
-const self_loop_length: i32 = 300;
-const self_loop_half_width: i32 = 120;
+// The shared campaign-map geometry (the map->screen transform, the three
+// edge-shape derivations, the view constants) lives in
+// campaign_geometry.zig - the ONE implementation behind "one data model,
+// two renderers": the campaign editor's view (slice 3) renders the same
+// graph through the same `deriveEdgeGeometry`.
+const mapToScreen = campaign_geometry.mapToScreen;
+const deriveEdgeGeometry = campaign_geometry.deriveEdgeGeometry;
+const EdgeEndpoint = campaign_geometry.EdgeEndpoint;
+const ParallelSpread = campaign_geometry.ParallelSpread;
+const edge_width = campaign_geometry.edge_width;
+const edge_outline_width = campaign_geometry.edge_outline_width;
+const black = campaign_geometry.black;
 
-/// The dangling-stub reach along the exit direction.
-const stub_length: i32 = 300;
-
-/// Edge endpoints anchor this far from the hub's CENTER - deliberately
-/// decoupled from `hub_icon_size` (the icon can shrink without dragging
-/// edge geometry along): self-loops + stubs along the exit's configured
-/// direction, straight edges along the hub-position difference.
-const hub_edge_anchor_radius: i32 = 64;
-
-/// Perpendicular spacing between PARALLEL straight edges connecting the
-/// same hub pair (spread by exit index - see DESIGN → Edge geometry).
-const parallel_edge_spacing: i32 = 64;
-
-pub const black: Color = .{ .r = 0, .g = 0, .b = 0 };
-
-/// Map space -> reference screen space. The default framing region IS the
-/// reference resolution (both 3840x2160, centered on the origin - see
-/// DESIGN → The map coordinate model), so the transform is a pure
-/// translation; the framing constant and this function change together if
-/// the default framing ever moves.
-pub fn mapToScreen(position: Vector2) ScreenPosition {
-    return .{
-        .x = position.x + @divTrunc(types.reference_width, 2),
-        .y = position.y + @divTrunc(types.reference_height, 2),
-    };
-}
-
-/// The direction unit vector for a compass degree value (0 = north = up,
-/// clockwise - the screen's y axis points down, so north is -y).
-fn directionUnitVector(direction_degrees: i32) struct { x: f32, y: f32 } {
-    const radians = std.math.degreesToRadians(@as(f32, @floatFromInt(direction_degrees)));
-    return .{ .x = @sin(radians), .y = -@cos(radians) };
-}
-
-fn screenPoint(x: f32, y: f32) ScreenPosition {
-    return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
+/// The edge's position among its same-pair siblings (straight edges
+/// connecting the same hub pair): 1-based by exit_index, over the count
+/// of same-pair edges. Pair identity is uuid equality here - the
+/// caller-side scan feeding `deriveEdgeGeometry`'s spread (the editor's
+/// authored graph computes the same shape from its own pair identity).
+fn parallelSpread(edges: []const types.CampaignEdgeEntry, edge: types.CampaignEdgeEntry) ParallelSpread {
+    var index: i32 = 0;
+    var count: i32 = 0;
+    for (edges) |other| {
+        const same_pair = std.mem.eql(u8, other.from, edge.from) and
+            std.mem.eql(u8, other.destination, edge.destination);
+        if (!same_pair) continue;
+        if (other.exit_index <= edge.exit_index) index += 1;
+        count += 1;
+    }
+    return .{ .index = index, .count = count };
 }
 
 /// Build the world-map overlay for `campaign` (the active campaign's derived
@@ -240,100 +222,23 @@ pub fn buildWorldMap(
         }
         const origin = from_hub orelse continue;
 
-        var start = mapToScreen(origin.position);
-        var control_start: ScreenPosition = start;
-        var control_end: ScreenPosition = start;
-        var end: ScreenPosition = start;
-        var dashed = false;
-
+        // Resolve the destination into the geometric endpoint class + the
+        // parallel-spread position, then derive the shape through the
+        // shared helper - the campaign editor's view renders the same
+        // graph through the same derivation ("one data model, two
+        // renderers").
+        var endpoint: EdgeEndpoint = .dangling;
         if (edge.destination.len > 0 and std.mem.eql(u8, edge.destination, edge.from)) {
-            // Self-loop: the anchor sits on the exit's direction bearing
-            // at the hub's edge; the teardrop extends from it -
-            // {a, a + d*L + n*w, a + d*L - n*w, a} with a = hub + d*R.
-            const direction = directionUnitVector(edge.direction_degrees);
-            const px = -direction.y;
-            const py = direction.x;
-            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
-            const hub_x: f32 = @floatFromInt(start.x);
-            const hub_y: f32 = @floatFromInt(start.y);
-            const anchor_x: f32 = hub_x + direction.x * radius;
-            const anchor_y: f32 = hub_y + direction.y * radius;
-            const length: f32 = @floatFromInt(self_loop_length);
-            const half_width: f32 = @floatFromInt(self_loop_half_width);
-            start = screenPoint(anchor_x, anchor_y);
-            control_start = screenPoint(
-                anchor_x + direction.x * length + px * half_width,
-                anchor_y + direction.y * length + py * half_width,
-            );
-            control_end = screenPoint(
-                anchor_x + direction.x * length - px * half_width,
-                anchor_y + direction.y * length - py * half_width,
-            );
-            end = start;
+            endpoint = .self_loop;
         } else if (to_hub) |destination| {
-            // Straight edge: the direction is the HUB-POSITION difference
-            // (well-defined), the endpoints displaced to each hub's
-            // boundary along it. Controls on the segment at 1/3 + 2/3,
-            // slid perpendicular by the parallel-spread offset for
-            // same-pair edges (the exit's index among its pair).
-            const hub_start = start;
-            const hub_end = mapToScreen(destination.position);
-            const hub_dx: f32 = @floatFromInt(hub_end.x - hub_start.x);
-            const hub_dy: f32 = @floatFromInt(hub_end.y - hub_start.y);
-            const hub_length = @sqrt(hub_dx * hub_dx + hub_dy * hub_dy);
-            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
-            const unit_x = if (hub_length > 0) hub_dx / hub_length else 1;
-            const unit_y = if (hub_length > 0) hub_dy / hub_length else 0;
-            const from_x: f32 = @floatFromInt(hub_start.x);
-            const from_y: f32 = @floatFromInt(hub_start.y);
-            const to_x: f32 = @floatFromInt(hub_end.x);
-            const to_y: f32 = @floatFromInt(hub_end.y);
-            const start_x: f32 = from_x + unit_x * radius;
-            const start_y: f32 = from_y + unit_y * radius;
-            const end_x: f32 = to_x - unit_x * radius;
-            const end_y: f32 = to_y - unit_y * radius;
-            start = screenPoint(start_x, start_y);
-            end = screenPoint(end_x, end_y);
-            var parallel_index: i32 = 0;
-            var parallel_count: i32 = 0;
-            for (campaign.edges) |other| {
-                const same_pair = std.mem.eql(u8, other.from, edge.from) and
-                    std.mem.eql(u8, other.destination, edge.destination);
-                if (!same_pair) continue;
-                if (other.exit_index <= edge.exit_index) parallel_index += 1;
-                parallel_count += 1;
-            }
-            const dx: f32 = end_x - start_x;
-            const dy: f32 = end_y - start_y;
-            const offset: f32 = @as(f32, @floatFromInt(parallel_edge_spacing)) *
-                (@as(f32, @floatFromInt(parallel_index)) -
-                    (@as(f32, @floatFromInt(parallel_count)) + 1.0) / 2.0);
-            const ox = (-dy / @max(@sqrt(dx * dx + dy * dy), 1.0)) * offset;
-            const oy = (dx / @max(@sqrt(dx * dx + dy * dy), 1.0)) * offset;
-            control_start = screenPoint(start_x + dx / 3.0 + ox, start_y + dy / 3.0 + oy);
-            control_end = screenPoint(start_x + 2.0 * dx / 3.0 + ox, start_y + 2.0 * dy / 3.0 + oy);
-        } else {
-            // Dangling stub: along the direction bearing from the hub's
-            // boundary, dashed.
-            const direction = directionUnitVector(edge.direction_degrees);
-            const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
-            const length: f32 = @floatFromInt(stub_length);
-            const hub_x: f32 = @floatFromInt(start.x);
-            const hub_y: f32 = @floatFromInt(start.y);
-            const anchor_x: f32 = hub_x + direction.x * radius;
-            const anchor_y: f32 = hub_y + direction.y * radius;
-            start = screenPoint(anchor_x, anchor_y);
-            end = screenPoint(anchor_x + direction.x * length, anchor_y + direction.y * length);
-            control_start = screenPoint(
-                anchor_x + direction.x * length / 3.0,
-                anchor_y + direction.y * length / 3.0,
-            );
-            control_end = screenPoint(
-                anchor_x + 2.0 * direction.x * length / 3.0,
-                anchor_y + 2.0 * direction.y * length / 3.0,
-            );
-            dashed = true;
+            endpoint = .{ .hub = destination.position };
         }
+        const geometry = deriveEdgeGeometry(
+            origin.position,
+            endpoint,
+            edge.direction_degrees,
+            parallelSpread(campaign.edges, edge),
+        );
 
         const lit = hubDiscovered(discovered_hubs, campaign.start_hub, edge.from);
         const tooltip: ?ui_element.Tooltip = if (edge.mission_name.len > 0)
@@ -362,12 +267,12 @@ pub fn buildWorldMap(
         // mission, only the to-end forward reference is missing).
         if (lit and edge.mission_dir.len > 0) {
             const hit_curve = ui_element.Curve{
-                .start = start,
-                .control_start = control_start,
-                .control_end = control_end,
-                .end = end,
+                .start = geometry.start,
+                .control_start = geometry.control_start,
+                .control_end = geometry.control_end,
+                .end = geometry.end,
                 .width = edge_width + 2 * edge_outline_width,
-                .dashed = dashed,
+                .dashed = geometry.dashed,
                 .arrowhead = true,
             };
             const bounds = ui_element.curveBounds(hit_curve);
@@ -388,25 +293,25 @@ pub fn buildWorldMap(
         // samples the SAME curve, so the drawn edge and its click target
         // agree by construction.
         try elements.append(allocator, .{ .curve = .{
-            .start = start,
-            .control_start = control_start,
-            .control_end = control_end,
-            .end = end,
+            .start = geometry.start,
+            .control_start = geometry.control_start,
+            .control_end = geometry.control_end,
+            .end = geometry.end,
             .width = edge_width + 2 * edge_outline_width,
             .color = black,
-            .dashed = dashed,
+            .dashed = geometry.dashed,
             .arrowhead = true,
             .blocks_input = false,
         } });
         try elements.append(allocator, .{ .curve = .{
-            .start = start,
-            .control_start = control_start,
-            .control_end = control_end,
-            .end = end,
+            .start = geometry.start,
+            .control_start = geometry.control_start,
+            .control_end = geometry.control_end,
+            .end = geometry.end,
             .width = edge_width,
             .color = lightest,
             .alpha = if (lit) 255 else dimmed_alpha,
-            .dashed = dashed,
+            .dashed = geometry.dashed,
             .arrowhead = true,
             .blocks_input = false,
         } });
@@ -414,7 +319,15 @@ pub fn buildWorldMap(
 }
 
 // ============================================================
-// Structure tests
+// Structure tests - elements are found by PREDICATE SCAN (action +
+// payload, sprite id + tooltip name, drawn geometry), never by
+// flat-list index: the 2d/2e sessions re-indexed these tests four
+// times on emission-order changes (icon resize, clickable buttons,
+// emission reorder), each pass slow and error-prone. A predicate scan
+// survives any reorder; edge curves are found by their FULL geometry,
+// derived through the SAME shared helper the builder uses - so the
+// tests assert the builder draws exactly deriveEdgeGeometry's output
+// (the one-implementation contract), not restated geometry math.
 // ============================================================
 
 const test_font_metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
@@ -428,14 +341,6 @@ const test_theme = types.ActiveColorTheme{
 };
 
 const test_button_color = Color{ .r = 50, .g = 50, .b = 50 };
-
-/// Euclidean distance between two screen positions, rounded to an i32
-/// (test helper for displacement contracts).
-fn screenDistance(a: ScreenPosition, b: ScreenPosition) i32 {
-    const dx: f32 = @floatFromInt(a.x - b.x);
-    const dy: f32 = @floatFromInt(a.y - b.y);
-    return @intFromFloat(@round(@sqrt(dx * dx + dy * dy)));
-}
 
 fn buildFixtureCampaign() types.Campaign {
     return .{
@@ -458,6 +363,110 @@ fn buildFixtureCampaign() types.Campaign {
             .{ .from = "b", .destination = "zzz", .mission_uuid = "m3", .mission_dir = "missions/m3", .mission_name = "Beyond", .direction_degrees = 180, .exit_index = 0 },
         },
     };
+}
+
+/// The fixture's expected edge geometry, edge-indexed - derived through
+/// the same shared helper the builder uses, with the fixture's endpoint
+/// CLASSES spelled out per edge (so the builder's classification is
+/// under test, not just its emission).
+fn fixtureEdgeGeometry(campaign: types.Campaign, edge_index: usize) campaign_geometry.EdgeGeometry {
+    const edge = campaign.edges[edge_index];
+    const from_position = if (edge_index == 2) campaign.hubs[1].position else campaign.hubs[0].position;
+    const endpoint: campaign_geometry.EdgeEndpoint = switch (edge_index) {
+        0 => .self_loop,
+        1 => .{ .hub = campaign.hubs[1].position },
+        2 => .dangling,
+        else => unreachable,
+    };
+    return deriveEdgeGeometry(from_position, endpoint, edge.direction_degrees, parallelSpread(campaign.edges, edge));
+}
+
+fn screenPositionEqual(a: ScreenPosition, b: ScreenPosition) bool {
+    return a.x == b.x and a.y == b.y;
+}
+
+fn colorEqual(a: Color, b: Color) bool {
+    return a.r == b.r and a.g == b.g and a.b == b.b;
+}
+
+fn curveGeometryMatches(curve: ui_element.Curve, geometry: campaign_geometry.EdgeGeometry) bool {
+    return screenPositionEqual(curve.start, geometry.start) and
+        screenPositionEqual(curve.control_start, geometry.control_start) and
+        screenPositionEqual(curve.control_end, geometry.control_end) and
+        screenPositionEqual(curve.end, geometry.end) and
+        curve.dashed == geometry.dashed;
+}
+
+/// Find the first element matching `matches`, failing loudly (naming
+/// what was being looked for) when nothing does - the scan helpers'
+/// shared back end for parameterless predicates.
+fn findFirst(elements: []const UiElement, context: []const u8, matches: fn (element: UiElement) bool) !usize {
+    for (elements, 0..) |element, index| {
+        if (matches(element)) return index;
+    }
+    std.debug.print("predicate scan found no {s}\n", .{context});
+    return error.TestUnexpectedResult;
+}
+
+/// The hub icon for `hub_name` (the name rides the icon's tooltip).
+fn findHubIcon(elements: []const UiElement, hub_name: []const u8) !usize {
+    for (elements, 0..) |element, index| {
+        if (element != .image) continue;
+        const image = element.image;
+        if (!std.mem.eql(u8, image.sprite_id, hub_icon_sprite_id)) continue;
+        if (image.tooltip == null or image.tooltip.?.header == null) continue;
+        if (std.mem.eql(u8, image.tooltip.?.header.?[0].text, hub_name)) return index;
+    }
+    std.debug.print("predicate scan found no hub icon named {s}\n", .{hub_name});
+    return error.TestUnexpectedResult;
+}
+
+/// The travel button for hub `hub_index` (action + payload).
+fn findHubTravelButton(elements: []const UiElement, hub_index: u32) !usize {
+    for (elements, 0..) |element, index| {
+        if (element != .button) continue;
+        const button = element.button;
+        if (button.action != .travel_to_map_hub) continue;
+        if (button.payload == null or button.payload.? != .map_hub) continue;
+        if (button.payload.?.map_hub == hub_index) return index;
+    }
+    std.debug.print("predicate scan found no travel button for hub {d}\n", .{hub_index});
+    return error.TestUnexpectedResult;
+}
+
+/// The clickable edge button for edge `edge_index` (action + payload).
+fn findEdgeButton(elements: []const UiElement, edge_index: u32) !usize {
+    for (elements, 0..) |element, index| {
+        if (element != .button) continue;
+        const button = element.button;
+        if (button.action != .start_mission_from_map_edge) continue;
+        if (button.payload == null or button.payload.? != .map_edge) continue;
+        if (button.payload.?.map_edge == edge_index) return index;
+    }
+    std.debug.print("predicate scan found no edge button for edge {d}\n", .{edge_index});
+    return error.TestUnexpectedResult;
+}
+
+/// The lightest-colored stroke drawing `geometry`.
+fn findLightCurve(elements: []const UiElement, geometry: campaign_geometry.EdgeGeometry) !usize {
+    for (elements, 0..) |element, index| {
+        if (element != .curve) continue;
+        if (!colorEqual(element.curve.color, test_theme.lightest)) continue;
+        if (curveGeometryMatches(element.curve, geometry)) return index;
+    }
+    std.debug.print("predicate scan found no lightest stroke for the edge geometry\n", .{});
+    return error.TestUnexpectedResult;
+}
+
+/// The black outline stroke drawing `geometry`.
+fn findBlackCurve(elements: []const UiElement, geometry: campaign_geometry.EdgeGeometry) !usize {
+    for (elements, 0..) |element, index| {
+        if (element != .curve) continue;
+        if (!colorEqual(element.curve.color, black)) continue;
+        if (curveGeometryMatches(element.curve, geometry)) return index;
+    }
+    std.debug.print("predicate scan found no black stroke for the edge geometry\n", .{});
+    return error.TestUnexpectedResult;
 }
 
 test "buildWorldMap: surface, background, hubs, and the three edge classes" {
@@ -496,13 +505,27 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
         3 + 2 * lit_hub_count + 3 * campaign.edges.len;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
-    // The surface blocks input; everything else is decorative.
-    try std.testing.expect(elements.items[0].solid_rect.blocks_input);
+    // The surface blocks input (the map's only solid_rect); everything
+    // else is decorative.
+    const surface = elements.items[
+        try findFirst(elements.items, "surface solid_rect", struct {
+            fn matches(element: UiElement) bool {
+                return element == .solid_rect;
+            }
+        }.matches)
+    ].solid_rect;
+    try std.testing.expect(surface.blocks_input);
 
     // The background: native size, centered on the map's origin (screen
     // center, since the framing region equals the reference resolution).
-    const background = elements.items[1].image;
-    try std.testing.expectEqualStrings("custom/campaigns/fixture/map", background.sprite_id);
+    const background = elements.items[
+        try findFirst(elements.items, "background image", struct {
+            fn matches(element: UiElement) bool {
+                return element == .image and
+                    std.mem.eql(u8, element.image.sprite_id, "custom/campaigns/fixture/map");
+            }
+        }.matches)
+    ].image;
     try std.testing.expectEqual(@as(i32, 1000), background.width);
     try std.testing.expectEqual(@as(i32, 600), background.height);
     try std.testing.expectEqual(
@@ -514,64 +537,61 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
         background.screen_position.y,
     );
 
-    // Hub icons: centered on mapToScreen(position); Alpha lit (start hub
-    // discovered-or-start + 'b' in the discovered set), Beta lit; the name
-    // rides the tooltip, not a label.
-    // The campaign button (panel at [2], button at [3], label at [4]):
-    // the nameplate fires the browser toggle.
-    try std.testing.expectEqualStrings("Fixture", elements.items[4].text_label.text);
-    try std.testing.expectEqual(types.Action.toggle_campaign_browser, elements.items[3].button.action);
+    // The campaign button (the nameplate) fires the browser toggle; the
+    // label is the campaign's name.
+    _ = try findFirst(elements.items, "campaign browser button", struct {
+        fn matches(element: UiElement) bool {
+            return element == .button and
+                element.button.action == .toggle_campaign_browser;
+        }
+    }.matches);
+    _ = try findFirst(elements.items, "campaign nameplate label", struct {
+        fn matches(element: UiElement) bool {
+            return element == .text_label and
+                std.mem.eql(u8, element.text_label.text, "Fixture");
+        }
+    }.matches);
 
-    const alpha_icon = elements.items[5].image;
-    const alpha_travel = elements.items[6].button;
-    try std.testing.expectEqualStrings("world/hub_icon", alpha_icon.sprite_id);
+    // Hub icons: centered on mapToScreen(position); the name rides the
+    // tooltip, not a label. Both fixture hubs are lit (the start-hub
+    // rule + the discovered set).
+    const alpha_icon = elements.items[try findHubIcon(elements.items, "Alpha")].image;
     try std.testing.expectEqual(mapToScreen(.{ .x = -200, .y = 0 }).x - @divTrunc(hub_icon_size, 2), alpha_icon.screen_position.x);
     try std.testing.expectEqual(@as(u8, 255), alpha_icon.alpha);
-    try std.testing.expectEqualStrings("Alpha", alpha_icon.tooltip.?.header.?[0].text);
-    const beta_icon = elements.items[7].image;
-    try std.testing.expectEqual(@as(u8, 255), beta_icon.alpha);
-    const beta_travel = elements.items[8].button;
-    // Both lit hubs carry a spriteless travel button over their icons,
-    // with the hub's index in the payload.
-    try std.testing.expect(alpha_travel.sprite_id == null);
-    try std.testing.expectEqual(types.Action.travel_to_map_hub, alpha_travel.action);
-    try std.testing.expectEqual(@as(u32, 0), alpha_travel.payload.?.map_hub);
-    try std.testing.expectEqual(types.Action.travel_to_map_hub, beta_travel.action);
-    try std.testing.expectEqual(@as(u32, 1), beta_travel.payload.?.map_hub);
+    try std.testing.expectEqual(@as(u8, 255), elements.items[try findHubIcon(elements.items, "Beta")].image.alpha);
 
-    // Edge curves arrive as pairs (black outline, then lightest stroke).
-    // Pair 0: the self-loop - start == end == the anchor 64px NORTH of
-    // hub a's screen center (direction 0, the hub icon's boundary), the
-    // controls at the teardrop offsets beyond the anchor.
-    const loop_button = elements.items[9].button;
-    const loop_black = elements.items[10].curve;
-    const loop_light = elements.items[11].curve;
-    const loop_center = mapToScreen(.{ .x = -200, .y = 0 });
-    const loop_anchor: ScreenPosition = .{
-        .x = loop_center.x,
-        .y = loop_center.y - hub_edge_anchor_radius,
-    };
-    try std.testing.expectEqual(loop_anchor, loop_black.start);
-    try std.testing.expectEqual(loop_anchor, loop_black.end);
-    try std.testing.expectEqual(black, loop_black.color);
-    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_black.width);
-    try std.testing.expect(loop_black.arrowhead);
+    // Both lit hubs carry a spriteless travel button over their icon,
+    // with the hub's index in the payload.
+    const alpha_travel = elements.items[try findHubTravelButton(elements.items, 0)].button;
+    try std.testing.expect(alpha_travel.sprite_id == null);
+    _ = try findHubTravelButton(elements.items, 1);
+
+    // Edge 0: the self-loop on a (authored north). The drawn strokes ARE
+    // deriveEdgeGeometry's output (the scan matches the full geometry);
+    // the emission-level facts are the stroke pair's colors + widths.
+    const loop_geometry = fixtureEdgeGeometry(campaign, 0);
+    const loop_light = elements.items[try findLightCurve(elements.items, loop_geometry)].curve;
+    const loop_black = elements.items[try findBlackCurve(elements.items, loop_geometry)].curve;
     try std.testing.expectEqual(test_theme.lightest, loop_light.color);
     try std.testing.expectEqual(edge_width, loop_light.width);
     try std.testing.expect(loop_light.arrowhead);
+    try std.testing.expectEqual(black, loop_black.color);
+    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_black.width);
     // The decorative strokes carry NO tooltip (their bounds-rect hover
     // would cover the whole bezier bbox); the mission tooltip rides the
     // clickable button, whose hit region is the stroke's samples - the
     // tooltip shows exactly where a click would work.
     try std.testing.expect(loop_light.tooltip == null);
-    // The button emits BEFORE the stroke pair (the hover-highlight rim
-    // renders beneath them), its hit_curve carries the outline-inclusive
-    // width + the arrowhead flag, and its rect is the drawn arrow's
-    // bbox (curveBounds) - the tooltip anchors to the FULL arrow, not a
-    // corner on the start point.
-    try std.testing.expectEqual(types.Action.start_mission_from_map_edge, loop_button.action);
-    try std.testing.expectEqual(@as(u32, 0), loop_button.payload.?.map_edge);
+    // The button's hit_curve carries the drawn arrow's geometry at the
+    // outline-inclusive width + the arrowhead flag, and its rect is the
+    // drawn arrow's bbox (curveBounds) - the tooltip anchors to the FULL
+    // arrow, not a corner on the start point.
+    const loop_button = elements.items[try findEdgeButton(elements.items, 0)].button;
     try std.testing.expectEqualStrings("Loop", loop_button.tooltip.?.header.?[0].text);
+    try std.testing.expectEqual(loop_geometry.start, loop_button.hit_curve.?.start);
+    try std.testing.expectEqual(loop_geometry.control_start, loop_button.hit_curve.?.control_start);
+    try std.testing.expectEqual(loop_geometry.control_end, loop_button.hit_curve.?.control_end);
+    try std.testing.expectEqual(loop_geometry.end, loop_button.hit_curve.?.end);
     try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_button.hit_curve.?.width);
     try std.testing.expect(loop_button.hit_curve.?.arrowhead);
     const loop_bounds = ui_element.curveBounds(loop_button.hit_curve.?);
@@ -581,48 +601,25 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
         .width = loop_button.width,
         .height = loop_button.height,
     });
-    // The self-loop's bounds contain the anchor + reach north past it
-    // (the teardrop + chevron extend beyond the hub-boundary anchor).
-    try std.testing.expect(loop_bounds.contains(loop_anchor));
-    try std.testing.expect(loop_bounds.y < loop_anchor.y);
-    try std.testing.expect(loop_light.control_start.y < loop_anchor.y);
-    try std.testing.expect(loop_light.control_end.y < loop_anchor.y);
-    // The teardrop is symmetric about the direction axis (north): both
-    // controls at the same reach along the axis, mirrored across it.
-    try std.testing.expectEqual(loop_light.control_start.y, loop_light.control_end.y);
-    try std.testing.expectEqual(loop_anchor.x + self_loop_half_width, loop_light.control_start.x);
-    try std.testing.expectEqual(loop_anchor.x - self_loop_half_width, loop_light.control_end.x);
-    try std.testing.expectEqual(loop_anchor.y - self_loop_length, loop_light.control_start.y);
 
-    // Pair 1: the straight edge a -> b - endpoints displaced to each
-    // hub's boundary along the hub-position difference (64px from each
-    // center), solid, lit (its start hub 'a' is the start hub).
-    const straight_button = elements.items[12].button;
-    const straight_light = elements.items[14].curve;
-    const a_center = mapToScreen(.{ .x = -200, .y = 0 });
-    const b_center = mapToScreen(.{ .x = 400, .y = 300 });
-    try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.start, a_center));
-    try std.testing.expectEqual(@as(i32, 64), screenDistance(straight_light.end, b_center));
-    // The displacement is ALONG the hub line: start sits between the two
-    // centers (positive scalar projection onto a->b, less than the full
-    // distance).
-    try std.testing.expect(straight_light.start.x > a_center.x and straight_light.start.y > a_center.y);
-    try std.testing.expect(straight_light.end.x < b_center.x and straight_light.end.y < b_center.y);
+    // Edge 1: the straight edge a -> b - solid, lit (its start hub 'a'
+    // is the start hub).
+    const straight_geometry = fixtureEdgeGeometry(campaign, 1);
+    const straight_light = elements.items[try findLightCurve(elements.items, straight_geometry)].curve;
     try std.testing.expect(!straight_light.dashed);
-    try std.testing.expect(straight_button.screen_position.x <= straight_light.start.x);
     try std.testing.expectEqual(@as(u8, 255), straight_light.alpha);
+    const straight_button = elements.items[try findEdgeButton(elements.items, 1)].button;
+    try std.testing.expect(straight_button.screen_position.x <= straight_light.start.x);
 
-    // Pair 2: the dangling stub from b - dashed, pointing south
-    // (direction 180) from the hub's boundary anchor, lit ('b' is in the
-    // discovered set, so its start hub is lit; the dimming case is
-    // asserted in the dedicated test below).
-    const stub_light = elements.items[17].curve;
+    // Edge 2: the dangling stub from b (direction 180 = south) - dashed,
+    // lit ('b' is in the discovered set; the dimming case is asserted in
+    // the dedicated test below).
+    const stub_geometry = fixtureEdgeGeometry(campaign, 2);
+    const stub_light = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
     try std.testing.expect(stub_light.dashed);
     try std.testing.expect(stub_light.arrowhead);
-    try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius, stub_light.start.y);
-    try std.testing.expectEqual(b_center.x, stub_light.start.x);
-    try std.testing.expectEqual(b_center.y + hub_edge_anchor_radius + stub_length, stub_light.end.y);
-    try std.testing.expect(stub_light.control_start.y > stub_light.start.y);
+    try std.testing.expectEqual(@as(u8, 255), stub_light.alpha);
+    _ = try findEdgeButton(elements.items, 2);
 }
 
 test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only the start hub lit" {
@@ -648,10 +645,19 @@ test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only 
         test_button_color,
     );
 
-    const beta_icon = elements.items[7].image;
-    try std.testing.expectEqual(dimmed_alpha, beta_icon.alpha);
-    // Pair 1 (a -> b): start hub 'a' is the start hub - lit.
-    try std.testing.expectEqual(@as(u8, 255), elements.items[13].curve.alpha);
-    // Pair 2 (the stub from b): 'b' undiscovered - dimmed.
-    try std.testing.expectEqual(dimmed_alpha, elements.items[15].curve.alpha);
+    // Beta's icon dims (found by tooltip name, not index).
+    try std.testing.expectEqual(
+        dimmed_alpha,
+        elements.items[try findHubIcon(elements.items, "Beta")].image.alpha,
+    );
+    // The a -> b edge (start hub 'a' is the start hub) stays lit; the
+    // stub from b ('b' undiscovered) dims - both found by geometry.
+    try std.testing.expectEqual(
+        @as(u8, 255),
+        elements.items[try findLightCurve(elements.items, fixtureEdgeGeometry(campaign, 1))].curve.alpha,
+    );
+    try std.testing.expectEqual(
+        dimmed_alpha,
+        elements.items[try findLightCurve(elements.items, fixtureEdgeGeometry(campaign, 2))].curve.alpha,
+    );
 }
