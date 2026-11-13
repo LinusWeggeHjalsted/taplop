@@ -396,16 +396,6 @@ work:
         DESIGN → The campaign editor surface). Recut into implementation
         sub-steps (each a commit unit: builds, tests green, harness /
         round-trip coverage per the tier conventions):
-    - [ ] 3d. The mission tool + mission inspector + orphans: the
-          arrow-draw gesture (transient SessionState state; empty-click
-          / clean right-click cancels; right-drag pans), create
-          mission + edge in one gesture (fresh-mission template + an
-          in-editor handle), the mission inspector (name, direction
-          field, start/end re-attach pick-mode, import copy-at-pick
-          with duplicate-uuid refusal), orphan rendering (ghosted,
-          live-or-frozen positions) + salvage, right-click delete
-          mission.
-    - [ ] 3e. Save + the identity model: the full save projection
           (missions first - session-memo uuid minting + handle
           resolution - then hub.txts (the Exits projection + grids),
           then campaign.txt v4 incl. the Orphans section; deletions

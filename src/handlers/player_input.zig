@@ -890,6 +890,48 @@ pub fn handlePlayerInputEvent(
         .player_toggle_campaign_metadata_sidebar => {
             pushEvents(current, &.{.{ .campaign_editor_event = .editor_campaign_toggle_metadata_sidebar }}, allocator);
         },
+        .player_select_campaign_mission => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_select_mission = .{
+                .mission = set.mission,
+            } } }}, allocator);
+        },
+        .player_place_campaign_mission => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_place_mission = .{
+                .start = set.start,
+                .destination = set.destination,
+            } } }}, allocator);
+        },
+        .player_set_campaign_mission_name => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_mission_name = .{
+                .mission = set.mission,
+                .name = set.name,
+            } } }}, allocator);
+        },
+        .player_set_campaign_mission_direction => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_set_mission_direction = .{
+                .mission = set.mission,
+                .direction = set.direction,
+            } } }}, allocator);
+        },
+        .player_reattach_campaign_mission => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_reattach_mission = .{
+                .mission = set.mission,
+                .end = set.end,
+                .hub = set.hub,
+            } } }}, allocator);
+        },
+        .player_delete_campaign_mission => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_delete_mission = .{
+                .mission = set.mission,
+            } } }}, allocator);
+        },
+        .player_import_campaign_mission => |set| {
+            pushEvents(current, &.{.{ .campaign_editor_event = .{ .editor_campaign_import_mission = .{
+                .uuid = set.uuid,
+                .dir = set.dir,
+                .name = set.name,
+            } } }}, allocator);
+        },
         .player_set_campaign_background => |set| {
             // The pick + its close are ONE undo step (the editor-picker
             // convention: the close rides as a child of the commit).

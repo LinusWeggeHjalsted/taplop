@@ -39,7 +39,7 @@ pub fn handleCampaignEditorEvent(
         },
 
         .editor_campaign_select_hub => |select| {
-            editor.selection = select.hub;
+            editor.selection = if (select.hub) |handle| .{ .hub = handle } else null;
         },
 
         .editor_campaign_place_hub => |place| {
@@ -61,7 +61,7 @@ pub fn handleCampaignEditorEvent(
                 @panic("failed to own placed campaign hubs slice");
             // Placing selects (the inspector's "or the last placed
             // object" rule).
-            editor.selection = handle;
+            editor.selection = .{ .hub = handle };
         },
 
         .editor_campaign_set_hub_position => |set| {
@@ -138,7 +138,9 @@ pub fn handleCampaignEditorEvent(
             }
             editor.hubs = hubs.toOwnedSlice(allocator) catch
                 @panic("failed to own surviving campaign hubs slice");
-            if (editor.selection == delete.hub) editor.selection = null;
+            if (editor.selection) |selection| {
+                if (selection == .hub and selection.hub == delete.hub) editor.selection = null;
+            }
         },
 
         .editor_campaign_set_campaign_name => |set| {
@@ -176,6 +178,130 @@ pub fn handleCampaignEditorEvent(
 
         .editor_campaign_toggle_metadata_sidebar => {
             editor.metadata_sidebar_open = !editor.metadata_sidebar_open;
+        },
+
+        .editor_campaign_select_mission => |select| {
+            editor.selection = .{ .mission = select.mission };
+        },
+
+        .editor_campaign_place_mission => |place| {
+            const handle = editor.next_handle;
+            editor.next_handle += 1;
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            missions.appendSlice(allocator, editor.missions) catch
+                @panic("failed to copy campaign missions for placement");
+            missions.append(allocator, .{
+                .handle = handle,
+                .dir = mintMissionAnchor(editor.missions, allocator),
+                .name = "New Mission",
+                .start = place.start,
+                .destination = place.destination,
+            }) catch @panic("failed to append placed campaign mission");
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own placed campaign missions slice");
+            // Placing selects (the last-placed-object rule).
+            editor.selection = .{ .mission = handle };
+        },
+
+        .editor_campaign_set_mission_name => |set| {
+            const name = allocator.dupe(u8, set.name) catch
+                @panic("failed to dupe campaign mission name");
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            for (editor.missions) |mission| {
+                var updated = mission;
+                if (mission.handle == set.mission) updated.name = name;
+                missions.append(allocator, updated) catch
+                    @panic("failed to copy campaign missions for rename");
+            }
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own renamed campaign missions slice");
+        },
+
+        .editor_campaign_set_mission_direction => |set| {
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            for (editor.missions) |mission| {
+                var updated = mission;
+                if (mission.handle == set.mission) updated.direction = set.direction;
+                missions.append(allocator, updated) catch
+                    @panic("failed to copy campaign missions for direction set");
+            }
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign missions for direction set");
+        },
+
+        .editor_campaign_reattach_mission => |set| {
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            for (editor.missions) |mission| {
+                var updated = mission;
+                if (mission.handle == set.mission) {
+                    if (set.end == .start) {
+                        // The re-attached start drops its exit marker from
+                        // the old start hub (the marker is re-placed in the
+                        // new hub via the hub editor; until then the
+                        // mission is unstartable - the validation finding).
+                        if (mission.start) |old_start| {
+                            removeExitPlacement(editor, old_start, mission.handle, allocator);
+                        }
+                        updated.start = set.hub;
+                        updated.orphan_start_position = null;
+                    } else {
+                        updated.destination = set.hub;
+                        updated.orphan_destination_position = null;
+                    }
+                }
+                missions.append(allocator, updated) catch
+                    @panic("failed to copy campaign missions for re-attach");
+            }
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign missions for re-attach");
+            // The old-start marker removal may have rebuilt the hubs list;
+            // the re-attach itself does not touch hubs further.
+        },
+
+        .editor_campaign_delete_mission => |delete| {
+            var surviving_start: ?u32 = null;
+            for (editor.missions) |mission| {
+                if (mission.handle == delete.mission) surviving_start = mission.start;
+            }
+            // The mission IS the edge: the entry + its exit placement in
+            // its start hub go together.
+            if (surviving_start) |start_hub| {
+                removeExitPlacement(editor, start_hub, delete.mission, allocator);
+            }
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            for (editor.missions) |mission| {
+                if (mission.handle != delete.mission) {
+                    missions.append(allocator, mission) catch
+                        @panic("failed to copy surviving campaign missions");
+                }
+            }
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own surviving campaign missions slice");
+            if (editor.selection) |selection| {
+                if (selection == .mission and selection.mission == delete.mission) editor.selection = null;
+            }
+        },
+
+        .editor_campaign_import_mission => |set| {
+            const handle = editor.next_handle;
+            editor.next_handle += 1;
+            var missions: std.ArrayList(types.CampaignMissionEdit) = .empty;
+            missions.appendSlice(allocator, editor.missions) catch
+                @panic("failed to copy campaign missions for import");
+            missions.append(allocator, .{
+                .handle = handle,
+                .uuid = allocator.dupe(u8, set.uuid) catch
+                    @panic("failed to dupe imported mission uuid"),
+                .dir = allocator.dupe(u8, set.dir) catch
+                    @panic("failed to dupe imported mission dir"),
+                .name = allocator.dupe(u8, set.name) catch
+                    @panic("failed to dupe imported mission name"),
+            }) catch @panic("failed to append imported campaign mission");
+            editor.missions = missions.toOwnedSlice(allocator) catch
+                @panic("failed to own imported campaign missions slice");
+            // The import lands selected (the inspector's
+            // last-placed-object rule).
+            editor.selection = .{ .mission = handle };
         },
     }
 }
@@ -255,4 +381,58 @@ pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
     }
     session.campaign_background_stems = stems.toOwnedSlice(allocator) catch
         @panic("failed to own background stems");
+}
+
+/// Remove `mission_handle`'s exit placement from `hub_handle`'s list (the
+/// copy-on-write convention). A no-op when the hub or the placement is
+/// absent.
+fn removeExitPlacement(
+    editor: *types.CampaignEditor,
+    hub_handle: u32,
+    mission_handle: u32,
+    allocator: std.mem.Allocator,
+) void {
+    var hubs: std.ArrayList(types.CampaignHubEdit) = .empty;
+    for (editor.hubs) |hub| {
+        var updated = hub;
+        if (hub.handle == hub_handle) {
+            var placements: std.ArrayList(types.ExitPlacement) = .empty;
+            for (hub.exit_placements) |placement| {
+                if (placement.mission != mission_handle) {
+                    placements.append(allocator, placement) catch
+                        @panic("failed to copy surviving exit placements");
+                }
+            }
+            updated.exit_placements = placements.toOwnedSlice(allocator) catch
+                @panic("failed to own surviving exit placements slice");
+        }
+        hubs.append(allocator, updated) catch
+            @panic("failed to copy campaign hubs for placement removal");
+    }
+    editor.hubs = hubs.toOwnedSlice(allocator) catch
+        @panic("failed to own campaign hubs for placement removal");
+}
+
+/// Mint a unique temp anchor dir for a fresh mission ("New Mission",
+/// "New Mission 2", ... - unique among the editor's mission entries; the
+/// fresh-mission `missions/New Mission` precedent, anchoring the
+/// mission-editor hand-off under the campaign's missions/). Deterministic
+/// on replay (the mission list is state).
+fn mintMissionAnchor(
+    missions: []const types.CampaignMissionEdit,
+    allocator: std.mem.Allocator,
+) []const u8 {
+    var attempt: u32 = 1;
+    while (true) : (attempt += 1) {
+        const candidate = if (attempt == 1)
+            "New Mission"
+        else
+            std.fmt.allocPrint(allocator, "New Mission {d}", .{attempt}) catch
+                @panic("failed to format mission anchor");
+        var taken = false;
+        for (missions) |mission| {
+            if (std.mem.eql(u8, mission.dir, candidate)) taken = true;
+        }
+        if (!taken) return candidate;
+    }
 }

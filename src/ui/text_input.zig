@@ -293,7 +293,8 @@ fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
         .entity_name, .item_name, .item_def_name, .mission_name, .level_name => false,
         .inventory_item_name => false,
-        .campaign_name, .campaign_hub_name => false,
+        .campaign_name, .campaign_hub_name, .campaign_mission_name => false,
+        .campaign_mission_direction => true,
         .entity_stat, .item_stat, .item_def_stat => true,
         .inventory_item_stat => true,
     };

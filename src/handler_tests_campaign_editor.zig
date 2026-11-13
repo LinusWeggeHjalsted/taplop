@@ -219,7 +219,16 @@ fn campaignEditorEventFixtureState() state.GameState {
             .campaign_dir = "campaigns/fixture",
             .start_hub = 0,
             .hubs = &.{
-                .{ .handle = 0, .uuid = "a", .name = "Alpha", .position = .{ .x = -200, .y = 0 } },
+                .{
+                    .handle = 0,
+                    .uuid = "a",
+                    .name = "Alpha",
+                    .position = .{ .x = -200, .y = 0 },
+                    .exit_placements = &.{
+                        .{ .mission = 2, .position = .{ .x = 1, .y = 1 } },
+                        .{ .mission = 5, .position = .{ .x = 2, .y = 2 } },
+                    },
+                },
                 .{ .handle = 1, .uuid = "b", .name = "Beta", .position = .{ .x = 400, .y = 300 } },
             },
             .missions = &.{
@@ -275,7 +284,7 @@ test "campaign editor events: place/select/move/rename + the tool-switch clear" 
     try testing.expectEqual(@as(i32, 200), placed.position.y);
     try testing.expectEqual(@as(usize, 1), placed.grid.level_tiles.len);
     try testing.expectEqual(@as(u32, 7), editor.next_handle);
-    try testing.expectEqual(@as(?u32, 6), editor.selection);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .hub = 6 }), editor.selection);
 
     // Rename + move: copy-on-write rebuilds, handle-stable.
     event_push.pushEvents(
@@ -306,14 +315,14 @@ test "campaign editor events: place/select/move/rename + the tool-switch clear" 
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(?u32, 6), history.current_state.campaign_editor.?.selection);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .hub = 6 }), history.current_state.campaign_editor.?.selection);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .campaign_editor_event = .{ .editor_campaign_select_hub = .{ .hub = 1 } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(?u32, 1), history.current_state.campaign_editor.?.selection);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .hub = 1 }), history.current_state.campaign_editor.?.selection);
 }
 
 test "campaign editor events: delete hub orphans touching missions with frozen ghosts" {
@@ -343,7 +352,7 @@ test "campaign editor events: delete hub orphans touching missions with frozen g
 
     try testing.expectEqual(@as(usize, 1), editor.hubs.len);
     try testing.expectEqual(@as(u32, 1), editor.hubs[0].handle);
-    try testing.expectEqual(@as(?u32, null), editor.selection);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, null), editor.selection);
 
     // m1 (0->1): start-orphaned - ghost start, LIVE destination.
     try testing.expectEqual(@as(?u32, null), editor.missions[0].start);
@@ -496,4 +505,182 @@ test "campaign editor: exit to main menu via the options menu path, sidebar togg
     runToIdle(&history);
     try testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
     try testing.expect(history.current_state.campaign_editor == null);
+}
+
+test "campaign editor mission events: place (anchor minting), re-attach, delete, import" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    // Place a self-loop (the mission tool's same-hub draw): the fresh
+    // template (name "New Mission", the anchor dir), wired both ends,
+    // selected.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_place_mission = .{
+            .start = 0,
+            .destination = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    var editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(usize, 5), editor.missions.len);
+    const placed = editor.missions[4];
+    try testing.expectEqual(@as(u32, 6), placed.handle);
+    try testing.expectEqualStrings("New Mission", placed.name);
+    try testing.expectEqualStrings("New Mission", placed.dir);
+    try testing.expectEqual(@as(?u32, 0), placed.start);
+    try testing.expectEqual(@as(?u32, 0), placed.destination);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .mission = 6 }), editor.selection);
+
+    // A second place mints the NEXT anchor (uniqueness among the entries).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_place_mission = .{
+            .start = 0,
+            .destination = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    editor = history.current_state.campaign_editor.?;
+    try testing.expectEqualStrings("New Mission 2", editor.missions[5].dir);
+
+    // The direction set (the direction field's commit).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_set_mission_direction = .{
+            .mission = 6,
+            .direction = 270,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(?u32, 270), editor.missions[4].direction);
+
+    // Re-attach m1's start (0 -> 1): the start moves, its ghost clears,
+    // and its exit MARKER drops from the old start hub (the placement
+    // removal - the new hub has no marker until placed, slice 4).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_reattach_mission = .{
+            .mission = 2,
+            .end = .start,
+            .hub = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(?u32, 1), editor.missions[0].start);
+    try testing.expect(editor.missions[0].orphan_start_position == null);
+    try testing.expectEqual(@as(usize, 1), editor.hubs[0].exit_placements.len); // m1's marker gone, m4's stays
+
+    // Delete m4 (its start IS hub 0 - its marker lives there): the entry
+    // + its marker in the start hub go together.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_delete_mission = .{
+            .mission = 5,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(usize, 0), editor.hubs[0].exit_placements.len);
+    var found_m4 = false;
+    for (editor.missions) |mission| {
+        if (mission.handle == 5) found_m4 = true;
+    }
+    try testing.expect(!found_m4);
+
+    // An import lands UNWIRED + selected (the author re-attaches it).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .campaign_editor_event = .{ .editor_campaign_import_mission = .{
+            .uuid = "u9",
+            .dir = "imported",
+            .name = "Imported",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    editor = history.current_state.campaign_editor.?;
+    const imported = editor.missions[editor.missions.len - 1];
+    try testing.expectEqualStrings("u9", imported.uuid);
+    try testing.expectEqualStrings("imported", imported.dir);
+    try testing.expect(imported.start == null);
+    try testing.expect(imported.destination == null);
+    try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .mission = imported.handle }), editor.selection);
+}
+
+test "campaign editor: the mission tool's draw gesture - arm, place, cancel via clean right-click" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    history.current_state.campaign_editor.?.active_tool = .mission;
+    runToIdle(&history);
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // The first hub click ARMS (no event recorded).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw != null);
+    try testing.expectEqual(@as(u32, 0), history.session.ui_state.campaign_mission_draw.?.start_hub);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // The second hub click PLACES (same hub = a self-loop) + clears the
+    // draw - the arm drains inline (pushPlayerActionAndDrain), so the
+    // state is post-drain here.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw == null);
+    const editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(usize, 5), editor.missions.len);
+    try testing.expectEqual(@as(?u32, 0), editor.missions[4].start);
+    try testing.expectEqual(@as(?u32, 0), editor.missions[4].destination);
+
+    // Re-arm + a clean right-click cancels the draw (no event, no
+    // delete): the cancel-mode pending owns the release.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_hub },
+        .{ .editor_campaign_hub = 1 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw != null);
+    const input_gestures_mod = @import("input_gestures.zig");
+    input_gestures_mod.handleCampaignMapRightClick(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 2032, .y = 1032 } },
+        &.{},
+    );
+    input_gestures_mod.handleCampaignMapRightClick(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 2032, .y = 1032 } },
+        &.{},
+    );
+    try testing.expect(history.session.ui_state.campaign_mission_draw == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    // The right-click was consumed by the CANCEL - hub 1 (Beta) survived.
+    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
 }

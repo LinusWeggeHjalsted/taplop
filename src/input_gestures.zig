@@ -954,6 +954,15 @@ pub fn handleCampaignMapRightClick(
     }
 
     if (pointer.right_pressed) {
+        // A transient mode (the armed mission draw / the re-attach pick)
+        // owns the right-click: a clean release cancels the MODE, never
+        // deletes what is under the cursor.
+        if (ui_state.campaign_mission_draw != null or ui_state.campaign_reattach != null) {
+            ui_state.pending_right_click = .{ .campaign_cancel_mode = .{
+                .press_position = pointer.position.toScreenPosition(),
+            } };
+            return;
+        }
         if (ui.buttonAt(ui_elements, pointer.position.toScreenPosition())) |button| {
             if (button.action == .select_editor_campaign_hub and button.payload != null) {
                 ui_state.pending_right_click = .{ .campaign_hub_delete = .{
@@ -966,10 +975,18 @@ pub fn handleCampaignMapRightClick(
     }
 
     // Movement beyond the threshold cancels the pending (the pan took the
-    // drag). `>` strict, the house convention.
+    // drag - the MODE survives the pan; only the pending is dropped).
+    // `>` strict, the house convention.
     if (ui_state.pending_right_click) |press| {
         switch (press) {
             .campaign_hub_delete => |pending| {
+                if (pointer.right_held) {
+                    if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
+                        ui_state.pending_right_click = null;
+                    }
+                }
+            },
+            .campaign_cancel_mode => |pending| {
                 if (pointer.right_held) {
                     if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
                         ui_state.pending_right_click = null;
@@ -983,6 +1000,14 @@ pub fn handleCampaignMapRightClick(
     if (pointer.right_released) {
         if (ui_state.pending_right_click) |press| {
             switch (press) {
+                .campaign_cancel_mode => {
+                    // The clean release cancels whichever transient mode
+                    // is active (the press recorded one; both may even be
+                    // set - the draw is tool state, the pick inspector
+                    // state - clear both).
+                    ui_state.campaign_mission_draw = null;
+                    ui_state.campaign_reattach = null;
+                },
                 .campaign_hub_delete => |pending| {
                     const editor = current.campaign_editor.?;
                     if (editor.start_hub != null and editor.start_hub.? == pending.hub) {
@@ -1009,6 +1034,7 @@ pub fn handleCampaignMapRightClick(
             }
         }
         clearPendingRightClick(ui_state, .campaign_hub_delete);
+        clearPendingRightClick(ui_state, .campaign_cancel_mode);
     }
 }
 

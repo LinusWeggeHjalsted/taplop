@@ -968,6 +968,7 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
         .current_level => "Current level",
         .campaign_hub => "Hub",
         .campaign_metadata => "Campaign",
+        .campaign_mission => "Mission",
     };
 }
 

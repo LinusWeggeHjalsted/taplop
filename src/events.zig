@@ -850,6 +850,59 @@ pub const CampaignEditorEvent = union(enum) {
     // Toggle the metadata sidebar (the top-right strip; closed by
     // default).
     editor_campaign_toggle_metadata_sidebar: void,
+
+    // ── Missions ──
+    // Select a mission (an edge click under the select tool). The
+    // selection is a hub-or-mission union; this arm sets the mission arm.
+    editor_campaign_select_mission: struct {
+        mission: u32,
+    },
+    // Place a mission + its edge in ONE gesture (the mission tool's
+    // click-start-hub / click-end-hub draw; start == destination = a
+    // self-loop). The handler mints the handle + the "New Mission"
+    // template (name + a unique temp anchor dir) and selects it.
+    editor_campaign_place_mission: struct {
+        start: u32,
+        destination: u32,
+    },
+    // Rename a mission (the mission inspector's name field).
+    editor_campaign_set_mission_name: struct {
+        mission: u32,
+        name: []const u8,
+    },
+    // Set a mission's authored direction (self-loops + dangling stubs;
+    // null = clear to the auto-spread default).
+    editor_campaign_set_mission_direction: struct {
+        mission: u32,
+        direction: ?u32,
+    },
+    // Re-attach one end of a mission to a hub (the mission inspector's
+    // re-attach pick-mode: click the button, then click a hub). The
+    // re-attached end's ghost position clears; a re-attached START also
+    // drops the mission's exit marker from the old start hub (the marker
+    // is re-placed in the new hub via the hub editor - a salvaged mission
+    // shows as unstartable until then, the validation finding).
+    editor_campaign_reattach_mission: struct {
+        mission: u32,
+        end: types.CampaignMissionEnd,
+        hub: u32,
+    },
+    // Delete a mission (the right-click on an edge): the entry + its exit
+    // placement in its start hub go together (the mission IS the edge).
+    // Files are removed only at the full campaign save (3e).
+    editor_campaign_delete_mission: struct {
+        mission: u32,
+    },
+    // An import landed (the mission inspector's Import picker - the
+    // copy-at-pick already happened at the input layer; this event
+    // carries the copied mission's resolved identity and adds the entry
+    // UNWIRED (an orphan - the author re-attaches it). Duplicate-uuid
+    // imports are refused at the pick site, never pushed.
+    editor_campaign_import_mission: struct {
+        uuid: []const u8,
+        dir: []const u8,
+        name: []const u8,
+    },
 };
 
 /// Player-input events - the ONLY events input handlers can push (via
@@ -1220,6 +1273,43 @@ pub const PlayerInputEvent = union(enum) {
     // convention: the flags ride the undo timeline).
     player_toggle_campaign_inspector: void,
     player_toggle_campaign_metadata_sidebar: void,
+    // Select a mission (an edge click under the select tool).
+    player_select_campaign_mission: struct {
+        mission: u32,
+    },
+    // Place a mission + edge in one gesture (the mission tool's draw).
+    player_place_campaign_mission: struct {
+        start: u32,
+        destination: u32,
+    },
+    // The mission name-field commit (the handle rides the payload - the
+    // level-name retargeting protection).
+    player_set_campaign_mission_name: struct {
+        mission: u32,
+        name: []const u8,
+    },
+    // The mission direction-field commit (null = clear to auto-spread).
+    player_set_campaign_mission_direction: struct {
+        mission: u32,
+        direction: ?u32,
+    },
+    // The re-attach pick-mode's hub click (the end + target hub).
+    player_reattach_campaign_mission: struct {
+        mission: u32,
+        end: types.CampaignMissionEnd,
+        hub: u32,
+    },
+    // Delete a mission (the edge right-click).
+    player_delete_campaign_mission: struct {
+        mission: u32,
+    },
+    // An import landed (the copy-at-pick happened at the input layer;
+    // the event carries the copied identity).
+    player_import_campaign_mission: struct {
+        uuid: []const u8,
+        dir: []const u8,
+        name: []const u8,
+    },
     // Enemy-tool click in the editor viewport: place the palette entity
     // type at the clicked tile. The handler computes the full effect from
     // state (see the placement-tools bullet in DESIGN → Architecture →

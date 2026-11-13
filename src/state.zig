@@ -1716,6 +1716,27 @@ pub const GameStateHistory = struct {
     /// campaign-editor screen + a live editor + (when a hub rides the
     /// payload) a handle that resolves. The live paths resolve targets
     /// from state; an unresolvable handle is a crafted log.
+    /// The mission-targeted campaign-editor actions' legality (the hub
+    /// twin of validateCampaignEditorAction): the screen + editor + a
+    /// mission handle that resolves.
+    fn validateCampaignMissionAction(
+        self: *GameStateHistory,
+        mission_handle: u32,
+    ) void {
+        if (self.current_state.screen != .campaign_editor) {
+            self.rejectReplay("replay validation: campaign-editor action outside campaign editor screen");
+            return;
+        }
+        const campaign_editor = self.current_state.campaign_editor orelse {
+            self.rejectReplay("replay validation: campaign-editor action with no campaign editor");
+            return;
+        };
+        for (campaign_editor.missions) |mission| {
+            if (mission.handle == mission_handle) return;
+        }
+        self.rejectReplay("replay validation: campaign-editor action mission handle does not resolve");
+    }
+
     fn validateCampaignEditorAction(
         self: *GameStateHistory,
         hub_handle: ?u32,
@@ -2281,6 +2302,22 @@ pub const GameStateHistory = struct {
                     .player_toggle_campaign_inspector,
                     .player_toggle_campaign_metadata_sidebar,
                     => self.validateCampaignEditorAction(null),
+                    .player_select_campaign_mission => |set| self.validateCampaignMissionAction(set.mission),
+                    // The place gesture's two ends must both resolve as
+                    // hubs (the live path resolves them from clicks on hub
+                    // buttons; a crafted log could name anything).
+                    .player_place_campaign_mission => |set| {
+                        self.validateCampaignEditorAction(set.start);
+                        self.validateCampaignEditorAction(set.destination);
+                    },
+                    .player_set_campaign_mission_name => |set| self.validateCampaignMissionAction(set.mission),
+                    .player_set_campaign_mission_direction => |set| self.validateCampaignMissionAction(set.mission),
+                    .player_reattach_campaign_mission => |set| {
+                        self.validateCampaignMissionAction(set.mission);
+                        self.validateCampaignEditorAction(set.hub);
+                    },
+                    .player_delete_campaign_mission => |set| self.validateCampaignMissionAction(set.mission),
+                    .player_import_campaign_mission => self.validateCampaignEditorAction(null),
                     .player_set_campaign_background => |set| {
                         self.validateCampaignEditorAction(null);
                         // An empty stem (the None pick) is legal - it clears

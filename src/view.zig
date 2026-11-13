@@ -460,6 +460,26 @@ pub fn view(
                     } };
                 }
             }
+            // The mission tool's arrow preview inputs: the armed start
+            // hub + the pointer's live map position (computed only while
+            // armed - the preview is the only consumer).
+            var mission_draw: ?u32 = null;
+            var pointer_map_position: ?types.Vector2 = null;
+            if (session.ui_state.campaign_mission_draw) |draw| {
+                if (campaign_editor.active_tool == .mission) {
+                    mission_draw = draw.start_hub;
+                    const pan = session.camera_pan orelse types.Vector2{ .x = 0, .y = 0 };
+                    const pointer = session.input_state.mouse_screen_position.toScreenPosition();
+                    pointer_map_position = .{
+                        .x = pointer.x - @divTrunc(types.reference_width, 2) - pan.x,
+                        .y = pointer.y - @divTrunc(types.reference_height, 2) - pan.y,
+                    };
+                }
+            }
+            const reattach_end: ?types.CampaignMissionEnd = if (session.ui_state.campaign_reattach) |pick|
+                pick.end
+            else
+                null;
             ui.buildCampaignEditorView(
                 &ui_elements,
                 frame_allocator,
@@ -475,6 +495,10 @@ pub fn view(
                 drag_override,
                 session.campaign_background_stems,
                 &session.ui_state.editor_inspector_section_expanded,
+                mission_draw,
+                pointer_map_position,
+                reattach_end,
+                session.editor_local_missions,
             ) catch @panic("failed to build campaign editor view");
         }
     } else if (current_state.screen == .main_menu) {

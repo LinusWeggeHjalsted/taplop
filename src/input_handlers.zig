@@ -34,6 +34,7 @@ const planning = @import("editor/planning.zig");
 const editor_handlers = @import("editor/handlers.zig");
 const mission_io = @import("editor/mission_io.zig");
 const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
+const campaign_editor_io = @import("campaign_editor/io.zig");
 const shared = @import("handlers/shared.zig");
 const input_gestures = @import("input_gestures.zig");
 const skillsSlotUnderPointer = input_gestures.skillsSlotUnderPointer;
@@ -678,6 +679,61 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
                 .name = value,
             } });
         },
+        // The mission inspector's fields (the mission editor's own
+        // conventions: would-change gates, the handle riding the ref
+        // target, a stale focus committing nothing, the direction's
+        // empty-value clearing to the auto-spread default).
+        .campaign_mission_name => {
+            if (history.current_state.campaign_editor == null) return;
+            const mission_handle = field.target.campaign_mission;
+            var current_name: ?[]const u8 = null;
+            for (history.current_state.campaign_editor.?.missions) |mission| {
+                if (mission.handle == mission_handle) current_name = mission.name;
+            }
+            const name = current_name orelse return;
+            if (std.mem.eql(u8, name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_base_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_campaign_mission_name = .{
+                .mission = mission_handle,
+                .name = value,
+            } });
+        },
+        .campaign_mission_direction => {
+            if (history.current_state.campaign_editor == null) return;
+            const mission_handle = field.target.campaign_mission;
+            var current: ?u32 = null;
+            var resolves = false;
+            for (history.current_state.campaign_editor.?.missions) |mission| {
+                if (mission.handle == mission_handle) {
+                    resolves = true;
+                    current = mission.direction;
+                }
+            }
+            if (!resolves) return;
+            const direction: ?u32 = if (value.len == 0)
+                null
+            else
+                std.fmt.parseInt(u32, value, 10) catch {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "Direction must be a whole number of degrees (0-359), or empty for the default spread",
+                    );
+                    return;
+                };
+            if (direction != null and direction.? >= 360) {
+                history.session.setPendingError(
+                    history.history_arena.allocator(),
+                    "Direction must be 0-359 degrees",
+                );
+                return;
+            }
+            if (direction == current) return;
+            history.session.queueSound(history.backing_allocator, .button_base_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_campaign_mission_direction = .{
+                .mission = mission_handle,
+                .direction = direction,
+            } });
+        },
     }
 
     // A committed edit is ONE undo step: record the idle point HERE. The
@@ -717,7 +773,7 @@ pub fn beginFocusedTextEdit(
             },
             // The campaign-editor targets resolve below, from the
             // campaign editor's own state (not the mission editor's).
-            .campaign, .campaign_hub => {},
+            .campaign, .campaign_hub, .campaign_mission => {},
             .level => |level_index| {
                 if (level_index < editor.levels.len) {
                     current_value = editor.levels[level_index].name;
@@ -746,8 +802,8 @@ pub fn beginFocusedTextEdit(
         }
     }
 
-    // The campaign editor's fields seed from its own state (the
-    // campaign name + the addressed hub's name).
+    // The campaign editor's fields seed from its own state (the campaign
+    // name + the addressed hub's/mission's values).
     if (history.current_state.campaign_editor != null) {
         const campaign_editor = &history.current_state.campaign_editor.?;
         switch (field.target) {
@@ -755,6 +811,25 @@ pub fn beginFocusedTextEdit(
             .campaign_hub => |hub_handle| {
                 for (campaign_editor.hubs) |hub| {
                     if (hub.handle == hub_handle) current_value = hub.name;
+                }
+            },
+            .campaign_mission => |mission_handle| {
+                for (campaign_editor.missions) |mission| {
+                    if (mission.handle != mission_handle) continue;
+                    current_value = switch (field.id) {
+                        .campaign_mission_name => mission.name,
+                        // The direction shows the authored value; empty
+                        // = the auto-spread default (clears at commit).
+                        .campaign_mission_direction => if (mission.direction) |direction|
+                            std.fmt.allocPrint(
+                                history.current_arena.allocator(),
+                                "{d}",
+                                .{direction},
+                            ) catch @panic("failed to format mission direction")
+                        else
+                            "",
+                        else => "",
+                    };
                 }
             },
             else => {},
@@ -3080,9 +3155,125 @@ pub fn handleAnytimeInput(
             .select_editor_campaign_hub => {
                 if (history.current_state.screen != .campaign_editor) return;
                 const hub = payloadAs(.editor_campaign_hub, clicked_payload) orelse return;
-                if (history.current_state.campaign_editor.?.selection == hub) return;
-                pushPlayerActionAndDrain(history, .{ .player_select_campaign_hub = .{
-                    .hub = hub,
+                // The re-attach pick-mode owns hub clicks regardless of
+                // tool (the mission inspector's pending re-wire): the click
+                // attaches that end + clears the mode.
+                if (history.session.ui_state.campaign_reattach) |pick| {
+                    history.session.ui_state.campaign_reattach = null;
+                    pushPlayerActionAndDrain(history, .{ .player_reattach_campaign_mission = .{
+                        .mission = pick.mission,
+                        .end = pick.end,
+                        .hub = hub,
+                    } });
+                    return;
+                }
+                const editor = history.current_state.campaign_editor orelse return;
+                switch (editor.active_tool) {
+                    // The mission tool's arrow draw: the first hub click
+                    // ARMS the start; the second places the mission + edge
+                    // in one gesture (the same hub = a self-loop).
+                    .mission => {
+                        if (history.session.ui_state.campaign_mission_draw) |draw| {
+                            history.session.ui_state.campaign_mission_draw = null;
+                            pushPlayerActionAndDrain(history, .{ .player_place_campaign_mission = .{
+                                .start = draw.start_hub,
+                                .destination = hub,
+                            } });
+                        } else {
+                            history.session.ui_state.campaign_mission_draw = .{ .start_hub = hub };
+                        }
+                    },
+                    // The select + hub tools select (a hub-tool click on an
+                    // existing hub selects, never places).
+                    .select, .hub => {
+                        const selection = editor.selection;
+                        if (selection != null and selection.? == .hub and selection.?.hub == hub) return;
+                        pushPlayerActionAndDrain(history, .{ .player_select_campaign_hub = .{
+                            .hub = hub,
+                        } });
+                    },
+                }
+            },
+            // A mission edge click (under the select tool - the buttons
+            // only render there): select it, the mission inspector's
+            // target. No-op gate on re-selecting the selected mission.
+            .select_editor_campaign_mission => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                if (editor.active_tool != .select) return;
+                const mission = payloadAs(.editor_campaign_mission, clicked_payload) orelse return;
+                const selection = editor.selection;
+                if (selection != null and selection.? == .mission and selection.?.mission == mission) return;
+                pushPlayerActionAndDrain(history, .{ .player_select_campaign_mission = .{
+                    .mission = mission,
+                } });
+            },
+            // The mission inspector's re-attach buttons: enter the
+            // pick-mode for that end of the SELECTED mission (a view
+            // affordance - direct UiState write, off the timeline; the
+            // next hub click resolves it, an empty click or clean
+            // right-click cancels).
+            .reattach_campaign_mission_start,
+            .reattach_campaign_mission_destination,
+            => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                const selection = editor.selection orelse return;
+                if (selection != .mission) return;
+                history.session.ui_state.campaign_reattach = .{
+                    .mission = selection.mission,
+                    .end = if (action == .reattach_campaign_mission_start) .start else .destination,
+                };
+            },
+            // The mission inspector's Import button: scan the local
+            // missions (the session list - replay never opens a picker) +
+            // open the import picker.
+            .open_campaign_import_picker => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                if (editor.picker != null) return;
+                mission_io.rescanEditorMissionsNow(history);
+                pushPlayerActionAndDrain(history, .{ .player_open_campaign_picker = .{
+                    .picker = .import_mission,
+                } });
+            },
+            // An import picker row: copy-at-pick. The uuid is resolved
+            // BEFORE copying (a broken mission never copies) and the
+            // duplicate-uuid refusal fires here (the editor never creates
+            // same-uuid siblings); the copy is the input-layer side
+            // effect, the graph change the recorded event.
+            .select_editor_campaign_import => {
+                if (history.current_state.screen != .campaign_editor) return;
+                const editor = history.current_state.campaign_editor orelse return;
+                if (editor.picker != .import_mission) return;
+                const dir = payloadAs(.editor_campaign_import, clicked_payload) orelse return;
+                const identity = campaign_editor_io.readMissionIdentity(history, allocator, dir) orelse {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "That mission has no readable identity (uuid) - not importable",
+                    );
+                    return;
+                };
+                for (editor.missions) |mission| {
+                    if (mission.uuid.len > 0 and std.mem.eql(u8, mission.uuid, identity.uuid)) {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "That mission is already in this campaign (same uuid) - re-import would fork it",
+                        );
+                        return;
+                    }
+                }
+                if (!campaign_editor_io.copyMissionIntoCampaign(history, allocator, editor.campaign_dir, dir)) {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "Failed to copy that mission into the campaign",
+                    );
+                    return;
+                }
+                pushPlayerActionAndDrain(history, .{ .player_import_campaign_mission = .{
+                    .uuid = identity.uuid,
+                    .dir = dir,
+                    .name = identity.name,
                 } });
             },
             // The start-hub toggle: VETOED with a message when it names the
@@ -3751,6 +3942,17 @@ pub fn handleIdleInput(
     // tool (3d) has no map click yet.
     if (current.screen == .campaign_editor) {
         if (idle.map_clicked) |screen_position| {
+            // An empty-canvas click cancels any transient mode FIRST (the
+            // armed mission draw, any tool; the re-attach pick): the click
+            // is consumed by the cancel - it does not also deselect.
+            if (history.session.ui_state.campaign_mission_draw != null) {
+                history.session.ui_state.campaign_mission_draw = null;
+                return;
+            }
+            if (history.session.ui_state.campaign_reattach != null) {
+                history.session.ui_state.campaign_reattach = null;
+                return;
+            }
             if (current.campaign_editor) |editor| {
                 switch (editor.active_tool) {
                     .hub => {

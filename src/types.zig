@@ -388,6 +388,22 @@ pub const Action = enum {
     select_editor_campaign_background,
     // The background picker's Back button (closes without picking).
     close_campaign_picker,
+    // A mission edge was clicked under the campaign editor's select tool
+    // (select it - the mission inspector's target). The mission handle
+    // rides the `editor_campaign_mission` payload variant.
+    select_editor_campaign_mission,
+    // The mission inspector's re-attach buttons: enter the pick-mode for
+    // that end (the next hub click attaches it; empty-click/right-click
+    // cancels). Payload-less - they act on the selected mission.
+    reattach_campaign_mission_start,
+    reattach_campaign_mission_destination,
+    // The mission inspector's Import button: opens the import picker (the
+    // player's local missions, copy-at-pick with duplicate-uuid refusal).
+    open_campaign_import_picker,
+    // An import picker row: the mission dir rides the
+    // `editor_campaign_import` payload variant (the copy + entry event
+    // follow at the consumption site).
+    select_editor_campaign_import,
     // Toggle the campaign editor's inspector sidebar (the top-left strip -
     // the toggle_editor_inspector convention).
     toggle_campaign_inspector,
@@ -1135,6 +1151,11 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .close_campaign_picker,
         .toggle_campaign_inspector,
         .toggle_campaign_metadata_sidebar,
+        .select_editor_campaign_mission,
+        .reattach_campaign_mission_start,
+        .reattach_campaign_mission_destination,
+        .open_campaign_import_picker,
+        .select_editor_campaign_import,
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
@@ -1333,6 +1354,11 @@ pub const ButtonPayload = union(enum) {
     /// bytes - the consumption site dupes into the current arena before
     /// recording (the mission-row convention).
     editor_campaign_background: []const u8,
+    /// A campaign-editor mission, by handle (edge-select payloads).
+    editor_campaign_mission: u32,
+    /// An import picker row's mission dir. Session-list bytes - duped at
+    /// the consumption site (the mission-row convention).
+    editor_campaign_import: []const u8,
     /// A mission-browser tab (Your Missions / Official).
     editor_mission_tab: EditorMissionBrowserTab,
     /// A campaign-browser tab (Your Campaigns / Official).
@@ -1431,6 +1457,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .set_editor_campaign_start_hub,
         => .editor_campaign_hub,
         .select_editor_campaign_background => .editor_campaign_background,
+        .select_editor_campaign_mission => .editor_campaign_mission,
+        .select_editor_campaign_import => .editor_campaign_import,
         .select_editor_mission_tab => .editor_mission_tab,
         .open_editor_mission_row => .editor_mission_row,
         .select_editor_campaign_tab => .campaign_browser_tab,
@@ -1525,6 +1553,9 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .close_campaign_picker,
         .toggle_campaign_inspector,
         .toggle_campaign_metadata_sidebar,
+        .reattach_campaign_mission_start,
+        .reattach_campaign_mission_destination,
+        .open_campaign_import_picker,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,
@@ -2093,9 +2124,9 @@ pub fn itemTextFieldValue(
         else
             "",
         // The campaign-editor ids never resolve against an item (their
-        // targets are `.campaign` / `.campaign_hub`); the arm keeps the
-        // switch exhaustive.
-        .campaign_name, .campaign_hub_name => "",
+        // targets are `.campaign` / `.campaign_hub` / `.campaign_mission`);
+        // the arm keeps the switch exhaustive.
+        .campaign_name, .campaign_hub_name, .campaign_mission_name, .campaign_mission_direction => "",
         .inventory_item_name => itemName(item),
         .inventory_item_stat => |stat| if (itemStatValue(item, stat)) |value|
             try std.fmt.allocPrint(allocator, "{d}", .{value})
@@ -2247,6 +2278,7 @@ pub const Entity = struct {
             .mission_name, .level_name, .item_def_name, .item_def_stat => "",
             .inventory_item_name, .inventory_item_stat => "",
             .campaign_name, .campaign_hub_name => "",
+            .campaign_mission_name, .campaign_mission_direction => "",
         };
     }
 
@@ -2677,6 +2709,14 @@ pub const TextFieldId = union(enum) {
     /// mid-edit selection change can't retarget the commit (the
     /// level-name pattern).
     campaign_hub_name: void,
+    /// The selected campaign mission's name (the mission inspector).
+    /// Target: `.campaign_mission` carries the mission handle (the
+    /// level-name pattern).
+    campaign_mission_name: void,
+    /// The selected campaign mission's direction in degrees (self-loops +
+    /// dangling stubs; empty = clear to the auto-spread default). Target:
+    /// `.campaign_mission`.
+    campaign_mission_direction: void,
     /// The edited level's name (metadata sidebar, the tab it was focused
     /// on). Target: `.level` carries the level index.
     level_name: void,
@@ -2703,6 +2743,9 @@ pub const TextEditTarget = union(enum) {
     /// handle rides here so a mid-edit selection change can't retarget
     /// the commit, the level-name pattern).
     campaign_hub: u32,
+    /// A campaign editor mission by handle (the mission name + direction
+    /// fields' target - the handle-retargeting protection).
+    campaign_mission: u32,
 };
 
 /// Identity of one focused text field.
@@ -2845,6 +2888,10 @@ pub const EditorInspectorSectionId = enum {
     /// background picker button - the metadata sidebar's single
     /// collapsible section).
     campaign_metadata,
+    /// The campaign editor's mission section (the selected mission's
+    /// name + direction + the start/end re-attach buttons + the import
+    /// button - the mission inspector's single collapsible section).
+    campaign_mission,
 };
 
 pub const EditorToolId = union(enum) {
@@ -3766,9 +3813,26 @@ pub const CampaignMissionEdit = struct {
 /// The campaign editor's centered-picker kinds (the EditorPickerTarget
 /// convention): open state rides the CampaignEditor (undo/replay ride
 /// it); the list acquisition stays session-side. The background picker
-/// (the metadata sidebar's background button) is the first kind.
+/// (the metadata sidebar's background button) + the mission import
+/// picker (the mission inspector's Import button - copy-at-pick from the
+/// player's local missions).
 pub const CampaignEditorPicker = enum {
     background,
+    import_mission,
+};
+
+/// Which end of a mission edge a re-attach addresses (the mission
+/// inspector's pick-mode buttons).
+pub const CampaignMissionEnd = enum {
+    start,
+    destination,
+};
+
+/// The campaign editor's select-tool selection: a hub or a mission
+/// (single-select v1 - the inspector renders for whichever is selected).
+pub const CampaignEditorSelection = union(enum) {
+    hub: u32,
+    mission: u32,
 };
 
 /// The campaign editor's state (the parallel-editor settle - see DESIGN
@@ -3815,12 +3879,12 @@ pub const CampaignEditor = struct {
     /// deletion-stable references, not indices.
     next_handle: u32 = 0,
     active_tool: CampaignEditorToolId = .select,
-    /// The select tool's selection (a hub handle; single-select v1).
-    /// Placing a hub selects it (the "or the last placed object" rule);
-    /// a tool switch away from select clears it in the same event (the
-    /// editor_set_tool invariant). Non-null only while the active tool
-    /// is select.
-    selection: ?u32 = null,
+    /// The select tool's selection (a hub or a mission handle;
+    /// single-select v1). Placing a hub or a mission selects it (the "or
+    /// the last placed object" rule); a tool switch away from select
+    /// clears it in the same event (the editor_set_tool invariant).
+    /// Non-null only while the active tool is select.
+    selection: ?CampaignEditorSelection = null,
     /// The inspector sidebar's open state (the top-left toggle button).
     /// Same convention as the mission editor's flag: on the CampaignEditor,
     /// mutated only via the toggle event, so it rides the undo timeline

@@ -337,6 +337,7 @@ working rules).
 - [campaign-editor slice 3c: the campaign editor's interactions - tools, inspector, metadata, pan, delete, drag](#campaign-editor-slice-3c-the-campaign-editors-interactions---tools-inspector-metadata-pan-delete-drag)
 - [campaign editor: 3c playtest fixes - the options menu, exit, the panel toggles + formatting](#campaign-editor-3c-playtest-fixes---the-options-menu-exit-the-panel-toggles--formatting)
 - [campaign editor: 3c playtest fixes, round two - the toggle consumption, the entry-label offset, the browser's opening tab](#campaign-editor-3c-playtest-fixes-round-two---the-toggle-consumption-the-entry-label-offset-the-browsers-opening-tab)
+- [campaign-editor slice 3d: the mission tool, the mission inspector, orphan salvage + the import](#campaign-editor-slice-3d-the-mission-tool-the-mission-inspector-orphan-salvage--the-import)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20865,3 +20866,63 @@ Three more click-through findings, all one-commit fixes:
   screen - the campaign editor opens on the Campaign tab, everything
   else on Mission (the reset-on-open convention applied to the kind
   row).
+
+## campaign-editor slice 3d: the mission tool, the mission inspector, orphan salvage + the import
+
+The mission-side surface, per DESIGN → The campaign editor surface (the
+orphan RENDERING had landed with 3b's view; this slice completes the
+interaction model):
+
+- **The selection became a hub-or-mission union**
+  (CampaignEditorSelection): edge clicks select missions, hub clicks
+  hubs; the inspector renders whichever is selected. The mission select
+  buttons ride the world map's hit_curve seam over each drawn arrow
+  (select tool only - the hit region IS the stroke, so they cannot
+  disagree).
+- **The mission tool's arrow draw**: the third palette cell (the flag
+  graphic). A hub click ARMS; the next hub click places the mission +
+  its edge in ONE gesture (same hub = self-loop); an empty-canvas click
+  or a CLEAN right-click cancels (a right-drag pans - the mode survives
+  the pan; a new campaign_cancel_mode pending kind owns the
+  disambiguation). The transient preview renders the arrow (stroke pair)
+  from the armed hub toward the pointer's live map position. The place
+  event mints the handle + the "New Mission" template with a UNIQUE
+  anchor dir ("New Mission", "New Mission 2", ... - deterministic on
+  replay) and selects it.
+- **The mission inspector** (the Mission section - collapsed by default,
+  the shared strip model): the name + direction fields (the direction
+  numeric, 0-359 validated at commit, empty = clear to auto-spread), the
+  START/END re-attach rows (each names its attached hub or "Unattached";
+  the button enters the pick-mode - the next hub click attaches that
+  end, any tool), + the Import affordance (also the empty inspector's
+  content - an import lands unwired and selected).
+- **Re-attach semantics** (the settle): the end moves, its ghost clears;
+  a re-attached START drops the mission's exit marker from the old start
+  hub (the marker is re-placed in the new hub via the hub editor, slice
+  4 - until then the mission is unstartable, the validation finding).
+  Works for orphans AND wired missions (edge retargeting).
+- **Delete mission** (the edge right-click): the entry + its exit
+  placement in its start hub go together (the mission IS the edge).
+- **The import** (src/campaign_editor/io.zig - the campaign editor's
+  file-IO module, the mission_io sibling; the save projection grows
+  there in 3e): copy-at-pick of a local mission's files into the
+  campaign's missions/ (mission.txt required; player.txt + levels + PNG
+  art each optional), the uuid resolved BEFORE copying (a broken mission
+  never copies), the DUPLICATE-UUID REFUSAL at the pick site ("same
+  uuid - re-import would fork it", the settle), the copy an
+  input-layer side effect, the graph change the recorded
+  editor_campaign_import_mission event (the entry lands unwired -
+  an orphan the author re-attaches).
+
+Tests: the event machinery (place + anchor minting, direction,
+re-attach incl. the marker-drop + ghost-clear, delete, import), the
+draw-gesture drive (arm / place / clean-right-click cancel via
+handleAnytimeInput), and the view structure (the mission section's
+fields bound by handle, the re-attach rows naming their hubs, the edge
+buttons, the preview's derived count).
+
+Deferred riders: the import picker has no scroll windowing (the local
+collection is small; the list-browser machinery can adopt it in the
+polish pass); the armed re-attach draws no preview arrow (the button
+label prompts); an imported unwired mission renders at the map origin
+(ghostless - the {0,0} fallback) until attached.

@@ -285,6 +285,28 @@ pub const UiState = struct {
 
     /// In-progress campaign-map hub move drag (see `CampaignHubDrag`).
     campaign_hub_drag: ?CampaignHubDrag = null,
+
+    /// The mission tool's in-progress arrow draw: the ARMED start hub (a
+    /// hub click armed it; the next hub click places the mission + edge -
+    /// same hub = self-loop; an empty-canvas click or clean right-click
+    /// cancels; right-drag pans). Transient navigation, off the timeline.
+    campaign_mission_draw: ?CampaignMissionDraw = null,
+
+    /// The mission inspector's re-attach pick-mode: the mission + which
+    /// end the next HUB click attaches (a hub click resolves it; an
+    /// empty-canvas click or clean right-click cancels). Transient.
+    campaign_reattach: ?CampaignReattach = null,
+};
+
+/// The mission tool's armed draw state (see `campaign_mission_draw`).
+pub const CampaignMissionDraw = struct {
+    start_hub: u32,
+};
+
+/// The re-attach pick-mode state (see `campaign_reattach`).
+pub const CampaignReattach = struct {
+    mission: u32,
+    end: types.CampaignMissionEnd,
 };
 
 /// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
@@ -350,6 +372,13 @@ pub const PendingRightClick = union(enum) {
     /// (the press became a map pan).
     campaign_hub_delete: struct {
         hub: u32,
+        press_position: ScreenPosition,
+    },
+    /// A right-press while a transient campaign-editor mode is active
+    /// (the armed mission draw / the re-attach pick): a CLEAN release
+    /// cancels the mode (a right-drag pans - the mode survives the pan;
+    /// movement beyond the threshold cancels the pending, not the mode).
+    campaign_cancel_mode: struct {
         press_position: ScreenPosition,
     },
 };
