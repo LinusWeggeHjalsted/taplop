@@ -98,20 +98,6 @@ Test by running `zig build run` and clicking through.
       all five slices (DONE.md, "console input slice 1"-"2" + "dump-path
       walker"; settled design: DESIGN → Input → Console input). Console
       sessions produce ordinary session logs → valid `--replay` fixtures.
-- **Console test-harness hardening (session-reflection rider)** - two
-      footguns found while driving the channel hard: (1)
-      `runConsoleScript` never RESETS its arena per frame, so its
-      scripts don't exercise the live loop's per-frame reset cadence
-      - the exact condition the id-lifetime bug class hides behind
-      (the new e2e tests reset manually; the helper should, so every
-      script gets it for free). (2) The path-dump tests build
-      `WalkerTestRoot{ .history = history }` copies refreshed BY HAND
-      per frame - a forgotten refresh silently reads stale state; a
-      shared live-root helper (test_harness) would remove the trap.
-      Nothing dangles today (ids are static, mission ids
-      scan-minted); this is keeping the next transient-lifetime bug
-      VISIBLE to exactly the tests that should catch it (see DESIGN
-      → Architecture → the transient-lifetime invariant).
 - **Cross-cutting polish** - 9-slice edge/center TILING (corners are
   aspect-true - DONE.md; `highlighted` edge outlines DONE), missing art
   (the `art_report.md` MISSING list - `scripts/art_report.sh` - is the

@@ -39,12 +39,67 @@ fn keyHeld(input_state: *const input.InputState, id: []const u8) bool {
     return false;
 }
 
+/// One live-shaped console frame: reset the frame arena (main.frame's
+/// per-frame cadence, retain capacity), build the dump-path root FRESH
+/// (the live path passes the real FrameState; the test root is a shallow
+/// copy that must be rebuilt per frame - a stale root silently reads dead
+/// state, so the construction lives HERE and can't be forgotten), then
+/// applyFrameCommand → translateInput → foldInjectedActions. Shared by
+/// runConsoleScript's loop and the per-frame manual tests (the
+/// static-lifetime pin, the rollover e2e). `hardware_pointer` simulates
+/// the native backend's UNCONDITIONAL per-frame mouse_move event.
+fn runConsoleFrame(
+    queue: *console.ConsoleQueue,
+    input_state: *input.InputState,
+    history: *state.GameStateHistory,
+    frame_arena: *std.heap.ArenaAllocator,
+    hardware_pointer: ?input.PointerPosition,
+) input.PlayerInput {
+    _ = frame_arena.reset(.retain_capacity);
+    const WalkerRoot = struct { history: state.GameStateHistory };
+    var root = WalkerRoot{ .history = history.* };
+    const hardware_events: [1]input.PlatformInputEvent = if (hardware_pointer) |position|
+        .{.{ .mouse_move = position }}
+    else
+        .{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
+    const backend_input = input.PlatformInput{
+        .events = &hardware_events,
+        .viewport = .{ .width = types.reference_width, .height = types.reference_height },
+    };
+    const platform_input = console.applyFrameCommand(
+        queue,
+        backend_input,
+        frame_arena.allocator(),
+        history,
+        &root,
+        &.{},
+        .{ .position = .{ .x = 0, .y = 0 } },
+        1.0,
+    );
+    var player_input = input.translateInput(
+        platform_input,
+        input_state,
+        history.settings,
+        .{ .position = .{ .x = 0, .y = 0 } },
+        0,
+        null,
+        null,
+        game_contexts,
+    );
+    console.foldInjectedActions(&player_input, platform_input);
+    return player_input;
+}
+
 /// One frame's console-driven input: parse a script of commands, run them
 /// one per frame (the live drain's cadence) against `history`, returning the
 /// LAST frame's PlayerInput. Mirrors frame()'s seam order: poll (backend
-/// input) → applyFrameCommand → translateInput → fold injected actions.
-/// `arena` backs the merged bytes (the live seam's frame arena - not
-/// testing.allocator, whose leak check would fire on the merges).
+/// input) → applyFrameCommand → translateInput → fold injected actions -
+/// INCLUDING the per-frame arena reset (runConsoleFrame's reset), so every
+/// script exercises the live loop's reset cadence: an id (or any merged
+/// byte) that dangles across frames fails HERE, not in a live session.
+/// `arena` is the parent for the script's frame arena (reset per command,
+/// freed at return - the returned PlayerInput is all values, nothing
+/// borrowed from it).
 /// `hardware_pointer` simulates the native backend's UNCONDITIONAL per-frame
 /// mouse_move event (the hardware position it re-reports every frame - the
 /// behavior that would overwrite a scripted position between commands).
@@ -59,43 +114,57 @@ fn runConsoleScript(
     // One queue for the whole script (the live queue lives on FrameState -
     // the remembered pointer position persists across frames on it).
     var queue: console.ConsoleQueue = .{};
+    var frame_arena = std.heap.ArenaAllocator.init(arena);
+    defer frame_arena.deinit();
     for (script) |line| {
-        // The dump-path root, refreshed per frame (history by value - a
-        // read-only shallow copy; the live path passes the real FrameState).
-        const WalkerTestRoot = struct { history: state.GameStateHistory };
-        var root = WalkerTestRoot{ .history = history.* };
         queue.push(console.parseCommandLine(line).command);
-        const hardware_events: [1]input.PlatformInputEvent = if (hardware_pointer) |position|
-            .{.{ .mouse_move = position }}
-        else
-            .{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
-        const backend_input = input.PlatformInput{
-            .events = &hardware_events,
-            .viewport = .{ .width = types.reference_width, .height = types.reference_height },
-        };
-        const platform_input = console.applyFrameCommand(
-            &queue,
-            backend_input,
-            arena,
-            history,
-            &root,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
-        result = input.translateInput(
-            platform_input,
-            input_state,
-            history.settings,
-            .{ .position = .{ .x = 0, .y = 0 } },
-            0,
-            null,
-            null,
-            game_contexts,
-        );
-        console.foldInjectedActions(&result, platform_input);
+        result = runConsoleFrame(&queue, input_state, history, &frame_arena, hardware_pointer);
     }
     return result;
+}
+
+test "runConsoleFrame resets the frame arena (the live loop's per-frame cadence)" {
+    // The hardening's own guard: every console-driven frame must start
+    // from a reset arena (main.frame's cadence), so bytes merged for one
+    // command never survive into the next frame - the condition the
+    // id-lifetime bug class hides behind when the reset is missing. The
+    // static ids make today's tests insensitive to the reset's presence
+    // (the deliberate-break check confirmed it), so the cadence is pinned
+    // directly: two identical frames' allocations must land at the SAME
+    // addresses (the reset between them rewound the arena), proven by a
+    // probe allocated after each frame.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    test_harness.runToIdle(&history);
+
+    var frame_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer frame_arena.deinit();
+
+    // One big node with plenty of slack, so the frames' allocations can
+    // never spill into a second node (reset retains the LAST node - a
+    // spilled frame would change which memory survives, making the
+    // address assertion flaky).
+    const warm = try frame_arena.allocator().alloc(u8, 8192);
+    _ = warm;
+    _ = frame_arena.reset(.retain_capacity);
+
+    var queue: console.ConsoleQueue = .{};
+    var input_state: input.InputState = .{};
+    queue.push(console.parseCommandLine("press ArrowRight").command);
+    _ = runConsoleFrame(&queue, &input_state, &history, &frame_arena, null);
+    // Lands immediately after frame 1's merged-bytes allocations.
+    const first_probe = try frame_arena.allocator().alloc(u8, 64);
+
+    // Frame 2 (a release - the same allocation shape as the press). With
+    // the per-frame reset, its allocations land where frame 1's did, so
+    // the probe after it lands at the SAME address. Without the reset,
+    // frame 2 stacks after first_probe and the addresses differ.
+    queue.push(console.parseCommandLine("release ArrowRight").command);
+    _ = runConsoleFrame(&queue, &input_state, &history, &frame_arena, null);
+    const second_probe = try frame_arena.allocator().alloc(u8, 64);
+    try testing.expect(second_probe.ptr == first_probe.ptr);
 }
 
 test "console press Escape closes the options menu (merge → translate → handler)" {
@@ -299,8 +368,11 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
     // Regression pin for the crash class: arena-duped ids dangled into the
     // reset arena; the next held-state comparison read dead memory (a live
     // segfault in isHeld, and silently wrong held state - a "held" key
-    // vanishing mid-chord). The other console tests share one arena for
-    // the whole script, which is why they could not see this class.
+    // vanishing mid-chord). runConsoleScript resets per frame now too, so
+    // every console test exercises the reset - but this pin goes further:
+    // it SCRIBBLES over the reused bytes between frames, so a dangling id
+    // reads garbage, not its own stale bytes (a reset alone can leave old
+    // content readable).
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -314,34 +386,8 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
 
     // Frame 1: press ArrowRight (never released - it stays held).
     queue.push(console.parseCommandLine("press ArrowRight").command);
-    const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
-    const backend_input = input.PlatformInput{
-        .events = &hardware_events,
-        .viewport = .{ .width = types.reference_width, .height = types.reference_height },
-    };
     {
-        const WalkerTestRoot = struct { history: state.GameStateHistory };
-        var root = WalkerTestRoot{ .history = history };
-        const platform_input = console.applyFrameCommand(
-            &queue,
-            backend_input,
-            frame_arena.allocator(),
-            &history,
-            &root,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
-        const player_input = input.translateInput(
-            platform_input,
-            &input_state,
-            history.settings,
-            .{ .position = .{ .x = 0, .y = 0 } },
-            0,
-            null,
-            null,
-            game_contexts,
-        );
+        const player_input = runConsoleFrame(&queue, &input_state, &history, &frame_arena, null);
         try testing.expect(player_input.anytime.in_game.move_cursor_right);
         try testing.expectEqual(@as(i32, 1), player_input.anytime.in_game.cursor_direction.x);
         try testing.expect(keyHeld(&input_state, "ArrowRight"));
@@ -361,28 +407,7 @@ test "console press: held-key id survives the frame-arena reset (static-lifetime
     // keeps cursor_direction.x at 0.
     queue.push(console.parseCommandLine("press ArrowLeft").command);
     {
-        const WalkerTestRoot = struct { history: state.GameStateHistory };
-        var root = WalkerTestRoot{ .history = history };
-        const platform_input = console.applyFrameCommand(
-            &queue,
-            backend_input,
-            frame_arena.allocator(),
-            &history,
-            &root,
-            &.{},
-            .{ .position = .{ .x = 0, .y = 0 } },
-            1.0,
-        );
-        const player_input = input.translateInput(
-            platform_input,
-            &input_state,
-            history.settings,
-            .{ .position = .{ .x = 0, .y = 0 } },
-            0,
-            null,
-            null,
-            game_contexts,
-        );
+        const player_input = runConsoleFrame(&queue, &input_state, &history, &frame_arena, null);
         try testing.expect(player_input.anytime.in_game.move_cursor_left);
         try testing.expectEqual(@as(i32, 0), player_input.anytime.in_game.cursor_direction.x);
         try testing.expect(keyHeld(&input_state, "ArrowRight"));
@@ -401,9 +426,9 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     // rollover press at its own frame.
     //
     // Drives the full live seam per frame - applyFrameCommand (with a
-    // per-frame arena RESET, like main.frame) → translateInput →
-    // resolveTileCursor - so the pin also re-exercises the held-id
-    // static-lifetime property every frame.
+    // per-frame arena RESET, like main.frame - runConsoleFrame) →
+    // translateInput → resolveTileCursor - so the pin also re-exercises
+    // the held-id static-lifetime property every frame.
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -418,46 +443,18 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     var queue: console.ConsoleQueue = .{};
     var frame_arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer frame_arena.deinit();
-    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
 
-    // One live-shaped frame: drain one console command, translate, resolve
-    // the tile cursor. Returns the frame's PlayerInput.
+    // One live-shaped frame plus the cursor resolution (update()'s step
+    // order): drain one console command, translate, resolve the tile
+    // cursor. Returns the frame's PlayerInput.
     const frame = struct {
         fn run(
             queue_ptr: *console.ConsoleQueue,
             input_state_ptr: *input.InputState,
             history_ptr: *state.GameStateHistory,
             arena_ptr: *std.heap.ArenaAllocator,
-            camera_value: types.Camera,
         ) input.PlayerInput {
-            const WalkerTestRoot = struct { history: state.GameStateHistory };
-            const root = WalkerTestRoot{ .history = history_ptr.* };
-            const hardware_events = [1]input.PlatformInputEvent{.{ .mouse_move = .{ .x = 0, .y = 0 } }};
-            const backend_input = input.PlatformInput{
-                .events = &hardware_events,
-                .viewport = .{ .width = types.reference_width, .height = types.reference_height },
-            };
-            const platform_input = console.applyFrameCommand(
-                queue_ptr,
-                backend_input,
-                arena_ptr.allocator(),
-                history_ptr,
-                &root,
-                &.{},
-                camera_value,
-                1.0,
-            );
-            var player_input = input.translateInput(
-                platform_input,
-                input_state_ptr,
-                history_ptr.settings,
-                camera_value,
-                0,
-                null,
-                null,
-                game_contexts,
-            );
-            console.foldInjectedActions(&player_input, platform_input);
+            const player_input = runConsoleFrame(queue_ptr, input_state_ptr, history_ptr, arena_ptr, null);
             input_handlers.resolveTileCursor(history_ptr, player_input, &.{});
             return player_input;
         }
@@ -466,23 +463,20 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     // Rollover sequence: right press → left press (right still held) →
     // release right → release left. Every PRESS must register.
     queue.push(console.parseCommandLine("press ArrowRight").command);
-    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena);
     try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
-    _ = frame_arena.reset(.retain_capacity);
 
     queue.push(console.parseCommandLine("press ArrowLeft").command);
-    const rollover_frame = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    const rollover_frame = frame.run(&queue, &input_state, &history, &frame_arena);
     try testing.expect(rollover_frame.anytime.in_game.move_cursor_left);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
-    _ = frame_arena.reset(.retain_capacity);
 
     queue.push(console.parseCommandLine("release ArrowRight").command);
-    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
-    _ = frame_arena.reset(.retain_capacity);
 
     queue.push(console.parseCommandLine("release ArrowLeft").command);
-    _ = frame.run(&queue, &input_state, &history, &frame_arena, camera);
+    _ = frame.run(&queue, &input_state, &history, &frame_arena);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
 
     // Control - sequential taps (right fully released before left presses)
@@ -491,16 +485,13 @@ test "console end-to-end: fast right-then-left arrow rollover moves the cursor b
     var tap_queue: console.ConsoleQueue = .{};
     {
         tap_queue.push(console.parseCommandLine("press ArrowRight").command);
-        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
-        _ = frame_arena.reset(.retain_capacity);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena);
         tap_queue.push(console.parseCommandLine("release ArrowRight").command);
-        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
-        _ = frame_arena.reset(.retain_capacity);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena);
         tap_queue.push(console.parseCommandLine("press ArrowLeft").command);
-        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
-        _ = frame_arena.reset(.retain_capacity);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena);
         tap_queue.push(console.parseCommandLine("release ArrowLeft").command);
-        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena, camera);
+        _ = frame.run(&tap_queue, &tap_state, &history, &frame_arena);
     }
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, history.session.tile_cursor.?);
 }

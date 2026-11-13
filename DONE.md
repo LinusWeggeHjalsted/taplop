@@ -325,6 +325,7 @@ working rules).
 - [test harness: runToIdle surfaces the pending error](#test-harness-runtoidle-surfaces-the-pending-error)
 - [material overflow guard: harvest payout + salvage share math saturate](#material-overflow-guard-harvest-payout--salvage-share-math-saturate)
 - [every fullscreen overlay pauses the game (the options-menu rule generalized)](#every-fullscreen-overlay-pauses-the-game-the-options-menu-rule-generalized)
+- [console test harness: per-frame arena reset + the shared frame helper](#console-test-harness-per-frame-arena-reset--the-shared-frame-helper)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20315,3 +20316,54 @@ Verified non-phantom the deliberate-break way. DESIGN updated: the Modal
 overlays "what blocks" paragraph generalized, the error-popup + gate-rule
 references, and the Load-save browser section's dispatch/throttle/clock
 facts.
+
+## console test harness: per-frame arena reset + the shared frame helper
+
+The session-reflection rider from the console channel's hard-driving
+session, both footguns closed:
+
+- **`runConsoleScript` now resets its frame arena per command.** The
+  helper previously passed ONE arena for the whole script, so its scripts
+  never exercised the live loop's per-frame reset cadence
+  (`frame_arena.reset(.retain_capacity)` in main.frame) - the exact
+  condition the id-lifetime bug class hides behind (an arena-backed id
+  read in a later frame crashes live but passes in tests, since the
+  arena keeps the bytes alive). The helper now owns a frame arena
+  (parented by the passed allocator), reset before each command's frame,
+  freed at return - the returned PlayerInput is all values, nothing
+  borrowed from it (held ids are interned statics; queued commands are
+  inline BoundedText storage; PlayerInput carries no slices).
+- **The shared live-root helper.** The per-frame dump-path root
+  (`WalkerTestRoot{ .history = ... }` - a shallow copy that must be
+  rebuilt every frame or it silently reads stale state) was hand-written
+  at four sites. A file-local `runConsoleFrame` now owns the whole
+  one-frame shape - the reset, the fresh root construction, applyFrame-
+  Command → translateInput → foldInjectedActions - and every site calls
+  it: runConsoleScript's loop, the static-lifetime pin's two blocks, and
+  the rollover e2e test's closure (which shrinks to runConsoleFrame +
+  resolveTileCursor). The refresh can no longer be forgotten; it lives
+  inside the helper. Placement note: file-local in
+  input_tests_console.zig, NOT test_harness.zig as the TODO guessed -
+  the helper needs console.zig + input.zig imports test_harness doesn't
+  carry, and it has one consumer file (belong-over-fit; hoist it if a
+  second consumer appears).
+
+En route, the deliberate-break verification of the reset produced a real
+finding: with the reset DISABLED, the whole suite still passed - the
+static ids, inline queue storage, and value-only PlayerInput mean no
+existing test can observe the reset. The hardening's value is entirely
+prospective (future dangling bugs fail at the helper), which also means a
+future refactor could silently drop the reset. So the cadence got its own
+pin: "runConsoleFrame resets the frame arena" - two identical frames'
+probes must land at the same address (the reset rewound the arena between
+them). Two design iterations on the pin itself, both instructive: a
+pre-frame sentinel fails because the helper resets AT ENTRY (invalidating
+it by design), and the retained node is the LAST node (std's arena keeps
+the most recently allocated buffer), so the pin warms one big node first
+to keep every frame's allocations inside it. Verified both directions
+(break → the pin fails alone; restore → pass).
+
+Also updated the now-stale comment on the static-lifetime pin (the
+"other console tests share one arena" carve-out is gone - they reset now
+too; that test keeps its unique value in the SCRIBBLE between frames,
+which a plain reset can't provide).
