@@ -331,6 +331,7 @@ working rules).
 - [campaign editor: slice-3 interaction design settle (tools, inspector, orphans, start-hub toggle)](#campaign-editor-slice-3-interaction-design-settle-tools-inspector-orphans-start-hub-toggle)
 - [campaign editor: hub editor design settle (the slice-4 drill-in)](#campaign-editor-hub-editor-design-settle-the-slice-4-drill-in)
 - [campaign editor: mission-editor campaign context settled (export unchanged)](#campaign-editor-mission-editor-campaign-context-settled-export-unchanged)
+- [campaign editor: autosave-on-exit settled (no - explicit save only)](#campaign-editor-autosave-on-exit-settled-no---explicit-save-only)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -20575,3 +20576,29 @@ settled (state split, mint-on-fork, campaign editor surface, hub
 editor surface, campaign context); the only remaining open item is
 the autosave-on-exit-to-map question (TODO, slice 5). The superseded
 open-questions list in TODO collapsed to a settled pointer.
+
+## campaign editor: autosave-on-exit settled (no - explicit save only)
+
+The last campaign-editor design question - autosave a hub / mission
+when exiting back to the campaign map view - settled to NO.
+
+The deciding observations: nothing is lost on the navigation itself
+(the map, hub, and mission surfaces are views over one in-memory
+session - the scope rules from the state-split settle guarantee the
+state survives the transitions, so an autosave protects nothing within
+a session); the real loss scenario is quit or crash, and crash is
+already covered by the crash-dump session bundle (replay reconstructs
+editor state), while quit-without-save is exactly the standalone
+mission editor's posture today. Against that: an autosave-on-return
+would mint uuids on navigation clicks (the mint is meant to be the
+author's deliberate save), spray the skip-unsaved-references warnings
+mid-workflow (hopping hub-to-map is the world-map button's whole
+purpose), and put surprise file writes on a "go back" button.
+
+The forgetting-to-save worry, if it ever bites, gets a SIGNAL not a
+side effect: a dirty indicator (unsaved-dot on the world-map button /
+top bar) - recorded in TODO as post-slice-3 polish alongside
+multi-select hub repositioning and drag-the-tip re-angling.
+
+With this, the campaign editor's design is fully settled - no open
+questions remain; slices 3-5 are ready to implement.

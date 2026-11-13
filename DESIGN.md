@@ -3877,6 +3877,16 @@ exit placement, player start).
     save never deletes anything.
   - the mission editor in campaign context saves the mission (its
     files in the campaign's `missions/`).
+- **Exiting back to the campaign map NEVER autosaves** (settled):
+  navigation is side-effect-free - the surfaces share one in-memory
+  session (nothing is lost on return), crash recovery is the
+  crash-dump session bundle, and quit-without-save matches the
+  mission editor's explicit-save posture. Autosave-on-return would
+  mint uuids on navigation clicks and spray the
+  skip-unsaved-references warnings mid-workflow. If forgetting-to-
+  save becomes a real pain, the answer is a dirty indicator (an
+  unsaved-dot on the world-map button / top bar), never a write on
+  navigation.
 - **Hub-content validation findings** (folding into the campaign
   Validate button): an outgoing mission with no marker placed
   (unstartable); overlapping placements (two markers / NPCs /

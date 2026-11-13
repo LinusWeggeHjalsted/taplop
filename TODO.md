@@ -52,9 +52,9 @@ Test by running `zig build run` and clicking through.
   discovery + travel, the world-map mirror, the campaign view + hub
   drill-in + mission hand-off + the settled slice-3/4/5 designs: the
   state split, mint-on-fork, the campaign editor surface, the hub
-  editor surface, the mission editor's campaign context). The one
-  open question left (autosave on exit back to the map, slice 5) +
-  the slices live in Level Editor → campaign editor below.
+  editor surface, the mission editor's campaign context). All open
+  questions are settled; the slices live in Level Editor → campaign
+  editor below.
 - **Combat-log UI** - render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
