@@ -427,6 +427,55 @@ work:
           authored graph (the graph checks + unstartable missions -
           outgoing with no marker placed - + the orphan findings);
           findings through the standard warning surface.
+    - [ ] Playtest punch list, round three (the full-graph authoring
+          round - a 48-mission stress session + the save/reopen path;
+          fix one at a time, each its own commit):
+      1. Tool-placed mission edges do not persist: place a hub + a
+         mission from the start hub to it, save, reopen - the hub
+         survives, the edge is gone. Root cause: the save projection
+         materializes a started mission ONLY through its start hub's
+         Exits section, which pairs `hub.exit_placements` with missions
+         - and `editor_campaign_place_mission` creates the mission
+         entry with start/destination handles but NO exit placement, so
+         the edge is written nowhere (campaign.txt's Orphans section
+         covers only missions with NO start; hub.txt's Hubs-section
+         listing is unconditional, which is why the hub survives).
+         OPEN - the fix shape: auto-place a default exit marker in the
+         start hub at placement (the marker is the edge's materialization
+         - the mission IS the edge; needs a default-position rule) vs
+         write started-but-markerless missions into Orphans so they
+         survive (stays unstartable - the 3f validation finding).
+      2. ctrl+N in the campaign editor opens a fresh MISSION, not a
+         fresh campaign: the new_editor_mission binding (context
+         editor) fires on the campaign_editor screen too (input.zig's
+         test asserts it). new_editor_campaign exists as an action with
+         no binding - the fix is the context split (campaign_editor
+         screen → ctrl+N = new_editor_campaign), watching the
+         same-combo conflict lint (NEXT UP).
+      3. Campaign editor FPS degrades on the full planned graph (48
+         missions): 6 fps debug / 33 fast-release viewing the whole
+         graph. Suspects: the per-frame view rebuild (missionGeometry +
+         the parallel-spread scan is O(missions^2) per frame) and
+         per-edge outline-stroke batching. Measure before fixing - the
+         likely shape is a session-side geometry memo invalidated on
+         graph change/drag.
+      4. New mission edges have no defined direction (null, the
+         CampaignMissionEdit default). Rendering already defaults to 0
+         (a self-loop shows at 0), but the authored value should default
+         to 0 so the inspector field + the save write a defined
+         direction.
+      5. Right-click delete does not work on mission edges:
+         handleCampaignMapRightClick arms only the pressed-HUB delete
+         (campaign_hub_delete); the pressed-edge case falls through.
+         editor_campaign_delete_mission exists (the inspector path) -
+         extend the gesture with a pressed-mission arm.
+      6. The just-placed mission edge should stay highlighted (the
+         placement selects it - the last-placed-object rule - and the
+         view sets a mission-selection highlighted flag), but nothing is
+         visible in practice. Investigate whether the highlighted flag
+         has any effect on curve elements (vs sprite buttons) or whether
+         the tint is too subtle; the inspector's focus must be
+         unmistakable on the map.
   - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
         & the Campaign Editor → The hub editor surface): the level-editor
         mirror over the level-shaped hub grid (select / tile / NPC group
