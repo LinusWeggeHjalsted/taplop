@@ -545,9 +545,21 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// from the SAME samples hit-testing uses (`element.sampleCurveStrokeStrip`
 /// - the drawn/hit agreement by construction), the round caps are single
 /// strip submissions (`element.capStrip`), and the chevron's arms are
-/// line quads. Every submission keeps the render batch's TRIANGLES mode +
-/// current texture untouched, so a whole curve - and consecutive curves -
-/// land in ONE batch draw entry. This is the 48-mission-map fix: the old
+/// line quads. Every submission keeps the render batch's TRIANGLES mode
+/// untouched, so a whole curve - and consecutive curves - land in ONE
+/// batch draw entry.
+/// TEXTURE STATE: the submissions are untextured, but raylib's batch
+/// records the CURRENT texture into each draw entry and untextured
+/// vertices inherit STALE texcoords from the vertex buffer - with a
+/// sprite/font atlas current (left by whatever drew before, frame to
+/// frame), the stale UVs sample transparent texels and the curve
+/// vanishes (rendered on some frames, not others - the sustained-view
+/// bug the one-strip rewrite shipped). Every submission here therefore
+/// binds the WHITE shapes texture around itself (any UV samples white),
+/// the exact convention raylib's own shape functions follow - and what
+/// the old per-sample drawCircleV caps did implicitly, which is why the
+/// pre-rewrite curves always rendered. See DESIGN → Platform Seam's
+/// batching rule. This is the 48-mission-map fix: the old
 /// path drew a drawCircleV join cap at EVERY sample, and every circle
 /// switched the batch to QUADS + bound/unbound the shapes texture -
 /// ~5000 circles per frame forced thousands of batch flushes (6 fps
@@ -592,8 +604,12 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
             // element's cap (wider) extends past the inner stroke's at
             // BOTH ends - with butt caps the two elements end flush and
             // the outline vanishes at every dash tip.
+            // The white shapes texture around the caps (the texture-state
+            // note on drawCurveGeometry).
+            rl.gl.rlSetTexture(rl.getShapesTexture().id);
             drawRoundCap(samples[index], half, raylib_color);
             drawRoundCap(samples[index + 1], half, raylib_color);
+            rl.gl.rlSetTexture(0);
         }
     } else {
         // The solid stroke: ONE mitered triangle strip from the same
@@ -606,9 +622,13 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
         for (stroke, 0..) |point, index| {
             strip[index] = .{ .x = point.x, .y = point.y };
         }
+        // Bind the WHITE shapes texture around the whole submission (see
+        // the texture-state note on drawCurveGeometry).
+        rl.gl.rlSetTexture(rl.getShapesTexture().id);
         rl.drawTriangleStrip(&strip, raylib_color);
         drawRoundCap(samples[0], half, raylib_color);
         drawRoundCap(samples[samples.len - 1], half, raylib_color);
+        rl.gl.rlSetTexture(0);
     }
     if (curve.arrowhead) {
         // The directionality chevron: two arms from the end point, drawn
@@ -623,10 +643,14 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
             .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },
             .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
         };
+        // The white shapes texture around the chevron (the texture-state
+        // note on drawCurveGeometry).
+        rl.gl.rlSetTexture(rl.getShapesTexture().id);
         for (arm_vectors) |arm| {
             rl.drawLineEx(end, arm, thickness, raylib_color);
             drawRoundCap(arm, half, raylib_color);
         }
+        rl.gl.rlSetTexture(0);
     }
 }
 

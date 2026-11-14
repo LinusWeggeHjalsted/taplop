@@ -141,7 +141,16 @@ next session meets it as a surprise instead of a known.
   submission (a `drawTriangleStrip` over a caller-built array) or plain
   `drawLineEx`/`drawRectangle` sequences - never interleave `drawCircleV`
   with them. The pure strip builders (`element.sampleCurveStrokeStrip` +
-  `element.capStrip`) are the headless-tested pattern.
+  `element.capStrip`) are the headless-tested pattern. THE SECOND HALF of
+  the rule (the one-strip rewrite shipped broken until it was learned):
+  untextured submissions must ALSO bind the WHITE shapes texture around
+  themselves (`rlSetTexture(GetShapesTexture().id)` ... `rlSetTexture(0)`)
+  - the batch records the CURRENT texture into the draw entry and
+  untextured vertices inherit stale texcoords, so with a sprite/font
+  atlas left current the submission samples transparent texels and
+  vanishes (frame-to-frame, depending on what drew before). The white
+  1x1 makes every UV sample white; it is raylib's own shape-function
+  convention.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
   - `frame(backend, *FrameState)` is the deterministic core: poll input,

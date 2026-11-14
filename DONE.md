@@ -354,6 +354,7 @@ working rules).
 - [map edges: one-strip curve batching (punch-list item 3, the fps fix)](#map-edges-one-strip-curve-batching-punch-list-item-3-the-fps-fix)
 - [campaign editor: right-click deletes mission edges (punch-list item 5)](#campaign-editor-right-click-deletes-mission-edges-punch-list-item-5)
 - [campaign editor: the selected edge keeps its highlight across tools (punch-list item 6)](#campaign-editor-the-selected-edge-keeps-its-highlight-across-tools-punch-list-item-6)
+- [map edges: the shapes-texture bind (the one-strip rewrite's render fix)](#map-edges-the-shapes-texture-bind-the-one-strip-rewrites-render-fix)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21546,3 +21547,32 @@ its assertions.
 
 Stale comment cleaned in passing (the edges loop still said "no click
 targets yet - the mission inspector is 3d").
+
+## map edges: the shapes-texture bind (the one-strip rewrite's render fix)
+
+The one-strip curve batching (the commit below) shipped broken: mission
+edges rendered only their chevron heads in the campaign editor. The
+submissions were correct geometry in the wrong TEXTURE STATE - raylib's
+render batch records the CURRENT texture into each draw entry, and
+untextured vertices (drawTriangleStrip) inherit STALE texcoords from the
+vertex buffer. With a sprite/font atlas left current by preceding draws,
+the stale UVs sample transparent texels and the stroke vanishes; with the
+white 1x1 current, every UV samples white and it renders. Which texture
+was current differed per surface and per FRAME (the sustained view broke
+while the first frame after placement rendered) - and the pre-rewrite
+circles had worked by accident: drawCircleV binds the white shapes
+texture around every circle, leaving it current for the lines.
+
+The diagnosis was confounded twice (recorded for the method): the console
+repro's synthetic clicks were overridden by the real mouse during waits
+(some runs silently placed nothing), and the pixel-readback probe
+exported the FIRST frame a curve drew - which renders - while the
+sustained view (what the player sees) was broken. Late-frame exports
+matched the reported symptom.
+
+Fix: every untextured submission in drawCurveGeometry (the solid stroke
+strip, the dashed pill caps, the chevron's arms + tip caps) binds the
+white shapes texture around itself, then resets to texture 0 - raylib's
+own shape-function convention, made explicit. Settled into the Platform
+Seam batching rule (DESIGN → Platform Seam): untextured shape submissions
+must never rely on the leftover texture state.
