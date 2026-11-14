@@ -153,10 +153,24 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
     const scratch = history.current_arena.allocator();
     const durable = history.backing_allocator;
 
-    // 1. Resolve the uuid: opened-from-disk → in memory; saved this session
-    //    → the memo; else mint (the write-only rule - the minted value
-    //    never enters GameState).
-    var uuid: []const u8 = editor.mission.uuid;
+    // 1. Resolve the uuid: opened-from-disk (a persistent origin) → in
+    //    memory; OFFICIAL-ORIGIN (the opened content exists only embedded
+    //    - an official mission) → a fresh mint, so saving forks it as a
+    //    new work instead of re-using the official identity (the official
+    //    campaign's mission table, clone records, and leaderboard keys
+    //    stay the original's); saved this session → the memo; else mint
+    //    (the write-only rule - the minted value never enters GameState).
+    var uuid: []const u8 = &.{};
+    if (editor.mission.uuid.len > 0) {
+        const origin_mission_txt = std.fmt.allocPrint(
+            scratch,
+            "{s}/mission.txt",
+            .{editor.mission.path},
+        ) catch @panic("failed to allocate origin mission.txt path");
+        if (file_source_mod.persistentFileExists(history.file_source, origin_mission_txt)) {
+            uuid = editor.mission.uuid;
+        }
+    }
     if (uuid.len == 0) {
         if (history.session.editor_saved_mission) |saved| uuid = saved.uuid;
     }

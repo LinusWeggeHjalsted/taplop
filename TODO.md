@@ -425,15 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] BUG: save the main campaign from the editor, then load it
-          (the persistent copy OR the embedded original) → the
-          "duplicate hub uuid" warning (loadCampaign's hub resolution,
-          loaders.zig; surfaced as the error popup). Suspected seam: a
-          save materializes hub copies into the persistent dir, and
-          resolveUuidDir (which scans persistent + embedded hub dirs)
-          then sees the same uuid in BOTH tiers - a persistent copy
-          SHADOWING its embedded original is the normal save outcome,
-          not a fork. Pin the repro in a test once diagnosed.
     - [ ] BUG: the Import Mission picker + the Background picker render
           entry text BLACK; every other list row in the game is theme
           lightest. Fix the picker row emitters (campaign_editor.zig).

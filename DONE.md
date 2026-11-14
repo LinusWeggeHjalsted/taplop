@@ -339,6 +339,7 @@ working rules).
 - [campaign editor: 3c playtest fixes, round two - the toggle consumption, the entry-label offset, the browser's opening tab](#campaign-editor-3c-playtest-fixes-round-two---the-toggle-consumption-the-entry-label-offset-the-browsers-opening-tab)
 - [campaign-editor slice 3d: the mission tool, the mission inspector, orphan salvage + the import](#campaign-editor-slice-3d-the-mission-tool-the-mission-inspector-orphan-salvage--the-import)
 - [campaign-editor slice 3e: save + the identity model - the full save projection, minting, Save As Copy, the deletion reconciliation](#campaign-editor-slice-3e-save--the-identity-model---the-full-save-projection-minting-save-as-copy-the-deletion-reconciliation)
+- [campaign identity: cross-tier shadows silent + saving official content forks (punch-list item 1 - the duplicate-hub-uuid load bug)](#campaign-identity-cross-tier-shadows-silent--saving-official-content-forks-punch-list-item-1---the-duplicate-hub-uuid-load-bug)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21003,3 +21004,74 @@ project convention, now followed); the raw-pushed test events share one
 idle window so a single undo can revert a chain (the test re-establishes
 state); the fixture's cell collisions (an exit code overwrites a
 decoration/NPC on the same cell - one char per cell is the format).
+
+## campaign identity: cross-tier shadows silent + saving official content forks (punch-list item 1 - the duplicate-hub-uuid load bug)
+
+Two commits, one fix: the save-then-load "duplicate hub uuid" error and
+the shadowing behavior it revealed.
+
+**The load bug:** a campaign-editor save of the official campaign
+materialized a persistent copy at the same content-relative paths, and
+uuid resolution (`resolveUuidDir` + `resolveCampaignMissions`) then saw
+every uuid in BOTH tiers and flagged the pair as a duplicate. The pair
+is a SHADOW, not a fork: the persistent-first read order makes the
+embedded original unreachable. The embedded tier is now skipped when the
+persistent tier matched the uuid, and the warning is same-tier only
+(two persistent dirs - a hand fork; two embedded dirs - a shipped
+collision). Both warning strings reworded off the doomed "Save As Copy"
+phrasing. DESIGN → Uuid→dir resolution updated to the shadow rule.
+
+**Fork-on-save (the settle the load bug pointed at):** the user model -
+opening + editing official content then saving produces a NEW work,
+never a shadow of the shipped original. State identity naming content
+that exists only embedded (`FileSource.persistentFileExists` at the
+state's campaign.txt / mission.txt) is ignored at save: the campaign
+mints a fresh uuid + `campaigns/<uuid>_<name>` dir, every hub +
+mission mints fresh identity too (a fork is fully new identity - no
+shared clone records or leaderboard keys with the originals), and a
+WHOLE-DIR CARRY (`copyDirFiles` - persistent scan + embedded map keys,
+direct files only) re-creates the opened content's files under the fork
+(levels, player.txt, custom art, the campaign root's background PNG);
+the fresh config writes land on top. The mission editor holds the same
+rule over its opened mission - a fresh standalone identity in
+`missions/`, no carry needed (the editor state IS the content); today
+it re-used the official uuid, silently sharing the official work's
+identity in the standalone namespace. The import path mints the fork
+EARLY (`campaignImportDir`) so official-origin imports copy into the
+fork-to-be dir (a dir without a readable campaign.txt never lists - the
+half-born fork stays invisible until saved); the background scan and
+the other campaign-dir consumers read the EFFECTIVE dir
+(`effectiveCampaignDir` - the memo's fork, else the opened dir). Net
+effect: the only persistent shadow of official content is one installed
+by hand. DESIGN → Rename + Save As Copy carries the rule.
+
+**Latent bugs the work flushed out** (all masked in production by arena
+allocation or untested arms):
+- `resolveCampaignMissions` stored BORROWED probe-arena keys in its
+  seen-uuid map - a use-after-free, first exercised by a map query
+  after an iteration's arena died (the repro test hit it immediately;
+  the old code only passed because no test ever queried a dead key).
+- `embeddedHubDirs` / `resolveCampaignHubs` / `resolveCampaignMissions`
+  leaked their scan-list temporaries.
+- The inverse projection stored the mission table's FULL content path
+  into `CampaignMissionEdit.dir` (the bare-name convention everywhere
+  else - hubs, imports); the save's mission state arm would have
+  written a local campaign's missions to nested garbage paths on a
+  reopen + save. Never caught because the 3e gold round trip only ever
+  saved FRESH content.
+- The renamed-mission editor-save test built an "opened" mission in
+  memory without ever writing its mission.txt - the origin check
+  (correctly) forked it. The fixture now writes the file a
+  genuinely-opened mission has.
+
+Tests: the tier rules unit-pinned (shadow silent / same-tier fork
+warns / embedded-only collision warns, `file_source.zig` +
+`resolveUuidDir`); the real repro against shipped content (the official
+campaign's hub + mission files materialized into a scratch persistent
+dir load clean, `loaders.zig`); the campaign fork end-to-end (fresh
+identity for all three kinds, the carry, no shadow, the fork lists as
+the one local campaign, the background scan reads the fork with the
+stem cleared, memo stability across saves, reopen compares identity);
+the mission-editor fork (fresh identity, the official campaign's
+mission table still resolves to the embedded original, memo stability);
+`campaignImportDir` both origins.

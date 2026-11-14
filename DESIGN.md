@@ -3223,9 +3223,10 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   inputs). **Tier shadowing is not duplication**: a persistent
   candidate makes the embedded original with the same uuid UNREACHABLE
   (FileSource's persistent-first read order), so cross-tier repeats
-  resolve to the persistent copy silently - both the deliberate
-  hand-installed override and the normal state after a save
-  materializes a persistent copy. The duplicate warning is SAME-TIER
+  resolve to the persistent copy silently - the deliberate
+  hand-installed override path (the ONLY source of shadow pairs: the
+  editors' saves never shadow official content, they fork - see Rename +
+  Save As Copy). The duplicate warning is SAME-TIER
   only: two persistent dirs with one uuid (a hand fork), or two
   embedded dirs (a shipped-content collision). Either way uuid
   resolution and the read order can never disagree, and identity-keyed
@@ -3254,11 +3255,35 @@ dissolves the deferred hub-rename question ("rewrite references vs
 no rename in v1"): rename is free, for all three content kinds.
 
 - **The save target is the content's existing dir** when the identity
-  exists (opened-from-disk / saved-this-session): a rename-save writes
-  the same files with a new `name` field, same dir, same uuid. A NEW
-  dir is created only when identity is genuinely new - a fresh
-  mission/hub/campaign's first save (mint) or an explicit Save As Copy
-  (fresh uuid, `<uuid>_<name>` dir).
+  exists AND the content is persistent (the opened campaign's
+  campaign.txt / the opened mission's mission.txt reachable in the
+  persistent tier - `FileSource.persistentFileExists`): a rename-save
+  writes the same files with a new `name` field, same dir, same uuid. A
+  NEW dir is created when identity is genuinely new - a fresh
+  mission/hub/campaign's first save (mint), an explicit Save As Copy
+  (fresh uuid, `<uuid>_<name>` dir), or an OFFICIAL-ORIGIN fork (next
+  bullet).
+- **Saving official content FORKS** (the identity model's one rule
+  everywhere): state identity naming content that exists ONLY embedded
+  is ignored at save - the campaign mints a fresh uuid +
+  `campaigns/<uuid>_<name>` dir, every hub + mission mints fresh
+  identity too (a fork is fully new identity: no shared clone records
+  or leaderboard keys with the originals), and a WHOLE-DIR CARRY
+  re-creates the opened content's files under the fork (levels,
+  player.txt, custom art, the campaign root's background PNG) - the
+  fresh config writes land on top. The mission editor holds the same
+  rule over its opened mission: an official mission saves as a fresh
+  standalone identity in `missions/` (the editor state holds the
+  content, so no carry is needed). The fork identity is memoized like
+  every mint (stable across the session's saves); a session that saves
+  nothing writes nothing. The import path mints the fork EARLY
+  (`campaignImportDir`) so an official-origin campaign's imports copy
+  into the fork-to-be dir (a dir without a readable campaign.txt never
+  lists, so the half-born fork stays invisible until saved); the
+  background scan + every other campaign-dir consumer read the
+  EFFECTIVE dir (`effectiveCampaignDir` - the memo's fork, else the
+  opened dir). Net effect: the only persistent shadow of official
+  content is one installed by hand.
 - **Cosmetic dir tidy on save**: if the dir's name doesn't match
   `<uuid>_<current_name>` and the target name is free, the dir is
   renamed in passing (after the config writes succeed - content is the
@@ -4996,8 +5021,11 @@ end_playtest/end_validation before they run).
 characters → '_', empty → "Unnamed") - which gives the rename semantics
 for free: a re-save of an unchanged custom mission lands in the same dir,
 a RENAMED mission lands in a NEW dir (the old one stays behind), and an
-OFFICIAL mission opened for editing is saved as a persistent-dir copy
-(shipped data is immutable - FileSource refuses data/ writes). The save
+OFFICIAL mission opened for editing saves as a FORK - a fresh standalone
+identity in `missions/`, never the official uuid (the official campaign's
+mission table, clone records, and leaderboard keys stay the original's;
+the origin rule lives in Campaigns & the Campaign Editor → Rename + Save
+As Copy). The save
 is the dump_event_log class - a pure input-layer side effect with NO
 recorded event (there is no GameState component, so an event would mint
 dead undo steps; replay never runs the input layer so it never re-fires):

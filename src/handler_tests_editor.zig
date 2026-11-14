@@ -4081,6 +4081,13 @@ test "editor save: a renamed mission carries its custom art + heals stale stem n
         try std.fmt.allocPrint(arena, "{s}/hero.png", .{old_dir}),
         hero_png,
     ) catch @panic("write hero.png");
+    // The on-disk mission.txt the in-memory state simulates having been
+    // OPENED from (the origin check: an opened mission keeps its uuid on
+    // save; content that exists only embedded forks instead).
+    harness.file_source.writeFile(
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{old_dir}),
+        "Metadata\nfile_format_version 3\nmission_uuid 11111111-1111-1111-1111-111111111111\nname Old Name\n",
+    ) catch @panic("write mission.txt");
 
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
     const levels = [_]types.EditorLevel{.{
@@ -8764,4 +8771,100 @@ test "the validation stats screen: info populated, personal best captured, manua
     try testing.expectEqual(@as(u32, 4), history.session.validation_personal_best_turns.?);
     try testing.expect(history.session.pending_validation_replay == null);
     try testing.expect(!history.session.validation_replay_overwrite_offered);
+}
+
+test "editor save: an official mission forks - a fresh identity, the original untouched" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const file_source_mod = @import("file_source.zig");
+
+    // The OFFICIAL mission's identity, read from the embedded content
+    // (the harness's persistent dir has no copy - that is what makes it
+    // official-origin).
+    const official_mission_txt = try harness.file_source.readFile(
+        arena,
+        "campaigns/main_campaign/missions/beginnings/mission.txt",
+    );
+    var official_uuid: []const u8 = "";
+    {
+        const sections = try parser.parseConfigFile(official_mission_txt, arena, &parser.mission_sections);
+        const metadata = parser.findSection(sections, "Metadata").?;
+        official_uuid = parser.findValue(metadata.entry_groups[0].pairs, "mission_uuid") orelse "";
+        try testing.expect(official_uuid.len > 0);
+    }
+
+    // An editor session opened on the official mission (the official
+    // browser tab's open shape: the state carries the official identity
+    // + the campaign-bundled path).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 1, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{
+            .name = "Beginnings",
+            .uuid = official_uuid,
+            .path = "campaigns/main_campaign/missions/beginnings",
+            .level_count = 1,
+        },
+        .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
+    }));
+    runToIdle(&history);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .save_editor_mission = true,
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.pendingError() == null);
+
+    // The save FORKED: a fresh standalone identity (never the official
+    // uuid - the official campaign's mission table, clone records, and
+    // leaderboard keys stay the original's) in the top-level missions/
+    // namespace.
+    const saved = history.session.editor_saved_mission.?;
+    try testing.expect(!std.mem.eql(u8, saved.uuid, official_uuid));
+    const fork_dir = try arena.dupe(u8, saved.dir_path);
+    try testing.expect(std.mem.startsWith(u8, fork_dir, "missions/"));
+    const fork_mission_txt = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/mission.txt", .{fork_dir}),
+    );
+    try testing.expect(std.mem.indexOf(u8, fork_mission_txt, saved.uuid) != null);
+
+    // No shadow: the official campaign's own dir stays embedded-only.
+    try testing.expect(!file_source_mod.persistentFileExists(
+        &harness.file_source,
+        "campaigns/main_campaign/missions/beginnings/mission.txt",
+    ));
+
+    // The official campaign's mission table still resolves Beginnings to
+    // the EMBEDDED original - the fork is invisible to it (a different
+    // uuid in a different namespace).
+    {
+        const official_campaign = types.Campaign{ .dir = "main_campaign" };
+        const entries = loaders.resolveCampaignMissions(official_campaign, &harness.file_source, arena, null);
+        try testing.expectEqual(@as(usize, 4), entries.len);
+        var found_beginnings = false;
+        for (entries) |entry| {
+            if (std.mem.eql(u8, entry.uuid, official_uuid)) {
+                found_beginnings = true;
+                try testing.expectEqualStrings("campaigns/main_campaign/missions/beginnings", entry.dir);
+            }
+        }
+        try testing.expect(found_beginnings);
+    }
+
+    // A second save reuses the fork (the memo - no identity churn).
+    input_handlers.handleAnytimeInput(&history, .{
+        .save_editor_mission = true,
+    }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    const second_save = history.session.editor_saved_mission.?;
+    try testing.expectEqualStrings(saved.uuid, second_save.uuid);
+    try testing.expectEqualStrings(fork_dir, second_save.dir_path);
 }

@@ -3283,7 +3283,7 @@ pub fn handleAnytimeInput(
                         return;
                     }
                 }
-                if (!campaign_editor_io.copyMissionIntoCampaign(history, allocator, editor.campaign_dir, dir)) {
+                if (!campaign_editor_io.copyMissionIntoCampaign(history, allocator, campaign_editor_io.campaignImportDir(history, allocator, editor), dir)) {
                     history.session.setPendingError(
                         history.history_arena.allocator(),
                         "Failed to copy that mission into the campaign",

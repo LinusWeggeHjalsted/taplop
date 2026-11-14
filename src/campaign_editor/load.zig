@@ -57,7 +57,11 @@ fn fillMissionIdentityFromTable(
 ) bool {
     for (table) |entry| {
         if (std.mem.eql(u8, entry.uuid, mission.uuid)) {
-            mission.dir = entry.dir;
+            // The table's dir is the FULL content path
+            // ("campaigns/<c>/missions/<dir>"); the EDITOR's convention is
+            // the bare dir name (the hub + import shape - the save writes
+            // "<campaign>/missions/<dir>").
+            mission.dir = std.fs.path.basename(entry.dir);
             mission.name = entry.name;
             return true;
         }

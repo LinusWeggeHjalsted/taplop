@@ -10,6 +10,7 @@ const testing = std.testing;
 const types = @import("types.zig");
 const events = @import("events.zig");
 const state = @import("state.zig");
+const parser = @import("parser.zig");
 const event_handlers = @import("event_handlers.zig");
 const event_push = @import("event_push.zig");
 const test_harness = @import("test_harness.zig");
@@ -926,4 +927,204 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; t
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.hubs.len);
     try testing.expectEqualStrings("Beta", history.current_state.campaign_editor.?.hubs[0].name);
+}
+
+test "saveCampaignEditor: an official-origin campaign forks - fresh identity, whole-dir carry, no shadow" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+    const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
+    const file_source_mod = @import("file_source.zig");
+
+    // Open the REAL official campaign (embedded content - its files do
+    // not exist in the harness's persistent dir, which is what makes it
+    // official-origin).
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/main_campaign",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const opened = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    const official_campaign_uuid = try arena.dupe(u8, opened.campaign_uuid);
+    const official_hub_uuid = try arena.dupe(u8, opened.hubs[0].uuid);
+
+    // The save FORKS: a fresh campaign identity + dir, never the official
+    // path.
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    try testing.expect(history.session.pending_error == null);
+    const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
+    const fork_dir = try arena.dupe(u8, campaign_memo.dir);
+    const fork_uuid = try arena.dupe(u8, campaign_memo.uuid);
+    try testing.expect(!std.mem.eql(u8, fork_dir, "campaigns/main_campaign"));
+    try testing.expect(!std.mem.eql(u8, fork_uuid, official_campaign_uuid));
+
+    // No shadow: the official campaign's own dir stays embedded-only.
+    try testing.expect(!file_source_mod.persistentFileExists(&harness.file_source, "campaigns/main_campaign/campaign.txt"));
+
+    // The campaign-root carry: the background PNG re-created under the
+    // fork (a real PNG - the reopen below resolves its dims).
+    try testing.expect(file_source_mod.persistentFileExists(
+        &harness.file_source,
+        try std.fmt.allocPrint(arena, "{s}/map.png", .{fork_dir}),
+    ));
+
+    // The hub forked: a fresh uuid + canonical dir, hub.txt under it
+    // carrying the minted identity.
+    const hub_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, 0).?;
+    // Snapshot into the test arena: the reopen below clears the session
+    // memos (freeing their backing strings) - the assertion must not
+    // read freed bytes.
+    const hub_memo_uuid = try arena.dupe(u8, hub_memo_raw.uuid);
+    const hub_memo_dir = try arena.dupe(u8, hub_memo_raw.dir);
+    try testing.expect(!std.mem.eql(u8, hub_memo_uuid, official_hub_uuid));
+    const fork_hub_txt = try harness.file_source.readFile(
+        arena,
+        try std.fmt.allocPrint(arena, "{s}/hubs/{s}/hub.txt", .{ fork_dir, hub_memo_dir }),
+    );
+    {
+        const sections = try parser.parseConfigFile(fork_hub_txt, arena, &parser.hub_sections);
+        try testing.expectEqualStrings(
+            hub_memo_uuid,
+            parser.findValue(parser.findSection(sections, "Metadata").?.entry_groups[0].pairs, "hub_uuid") orelse "",
+        );
+    }
+
+    // Every mission forked with its files carried: fresh uuids (none of
+    // the official mission uuids), levels + player.txt re-created under
+    // the minted dirs, and the hub's Exits reference the MINTED uuids.
+    for (opened.missions, 1..) |official_mission, mission_handle| {
+        const mission_memo = campaign_editor_io.campaignSaveMemoFor(&history, @intCast(mission_handle)).?;
+        try testing.expect(!std.mem.eql(u8, mission_memo.uuid, official_mission.uuid));
+        const mission_dir_path = try std.fmt.allocPrint(
+            arena,
+            "{s}/missions/{s}",
+            .{ fork_dir, mission_memo.dir },
+        );
+        try testing.expect(file_source_mod.persistentFileExists(
+            &harness.file_source,
+            try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{mission_dir_path}),
+        ));
+        try testing.expect(file_source_mod.persistentFileExists(
+            &harness.file_source,
+            try std.fmt.allocPrint(arena, "{s}/player.txt", .{mission_dir_path}),
+        ));
+        const mission_txt = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/mission.txt", .{mission_dir_path}),
+        );
+        try testing.expect(std.mem.indexOf(u8, mission_txt, mission_memo.uuid) != null);
+        try testing.expect(std.mem.indexOf(u8, fork_hub_txt, mission_memo.uuid) != null);
+    }
+
+    // The fork lists as a LOCAL campaign (the official one does not).
+    const local_campaigns = try harness.file_source.listCampaigns(arena);
+    try testing.expectEqual(@as(usize, 1), local_campaigns.len);
+    try testing.expectEqualStrings(fork_dir, local_campaigns[0].dir);
+    try testing.expectEqualStrings("Main Campaign", local_campaigns[0].name);
+    file_source_mod.freeCampaigns(arena, local_campaigns);
+
+    // The background scan reads the EFFECTIVE dir (the fork): with the
+    // current stem cleared, the carried map.png is the only source that
+    // can offer "map".
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_campaign_background = .{
+            .stem = "",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
+    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
+    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
+    // Restore the background (the None above was only the scan probe) -
+    // the reopen asserts its dims resolve against the carried PNG.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_campaign_background = .{
+            .stem = "map",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // A second save in the session is stable (the memo - no re-fork).
+    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    try testing.expectEqualStrings(fork_dir, campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir);
+
+    // The reopen through the ordinary open path: the fork loads with its
+    // minted identity, the full graph, and the carried background's dims.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = fork_dir,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const fork_editor = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings(fork_uuid, fork_editor.campaign_uuid);
+    try testing.expectEqualStrings(fork_dir, fork_editor.campaign_dir);
+    try testing.expectEqual(@as(usize, 1), fork_editor.hubs.len);
+    try testing.expectEqual(@as(usize, 4), fork_editor.missions.len);
+    try testing.expect(fork_editor.background_dims != null);
+    try testing.expectEqualStrings(hub_memo_uuid, fork_editor.hubs[0].uuid);
+}
+
+test "campaignImportDir: an official-origin campaign imports into the minted fork dir; a local campaign into its own" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+
+    // The official-origin campaign: the import dir is a freshly minted
+    // fork (never the official path), stable across calls (the memo), and
+    // the effective dir follows it.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/main_campaign",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+        const import_dir_one = campaign_editor_io.campaignImportDir(&history, arena, editor);
+        const import_dir_two = campaign_editor_io.campaignImportDir(&history, arena, editor);
+        try testing.expect(!std.mem.eql(u8, import_dir_one, "campaigns/main_campaign"));
+        try testing.expectEqualStrings(import_dir_one, import_dir_two);
+        try testing.expectEqualStrings(import_dir_one, campaign_editor_io.effectiveCampaignDir(&history, editor));
+    }
+
+    // A local campaign: its own dir, nothing minted.
+    harness.file_source.writeFile(
+        "campaigns/local_test/campaign.txt",
+        "Metadata\nfile_format_version 3\ncampaign_uuid 99999999-9999-9999-9999-999999999999\nname Local Test\n",
+    ) catch @panic("write local campaign");
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_campaign_editor = .{
+            .campaign_dir = "campaigns/local_test",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor orelse return error.TestUnexpectedResult;
+        try testing.expectEqualStrings(
+            "campaigns/local_test",
+            campaign_editor_io.campaignImportDir(&history, arena, editor),
+        );
+    }
 }

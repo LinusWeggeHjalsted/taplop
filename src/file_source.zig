@@ -302,6 +302,17 @@ pub fn resolveUuidDir(
     };
 }
 
+/// Does a file exist in the persistent tier (the player's dir) at this
+/// content-relative path? The editor saves' ORIGIN CHECK: content whose
+/// files exist only in the embedded map is OFFICIAL - saving it forks
+/// (a fresh identity + a new dir) instead of writing a persistent copy
+/// that shadows the shipped original.
+pub fn persistentFileExists(file_source: *const FileSource, path: []const u8) bool {
+    if (isInvalidRelativePath(path)) return false;
+    _ = file_source.persistent_dir.statFile(file_source.io, path, .{}) catch return false;
+    return true;
+}
+
 /// The max mtime across a dir's direct file entries (the duplicate-
 /// resolution recency stamp - any change to any file is an update). An
 /// unreadable dir reports 0. Pub: the campaign load's scans share the

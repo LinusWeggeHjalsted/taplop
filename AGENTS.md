@@ -640,7 +640,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   src/editor/ sibling): `handlers.zig` (the open/close framing + the
   fresh-campaign default) + `load.zig` (the INVERSE PROJECTION -
   campaign.txt v4 + every hub.txt + the mission table into the authored
-  CampaignEditor graph; the open-from-dir path of `open_campaign_editor`).
+  CampaignEditor graph; the open-from-dir path of `open_campaign_editor`)
+  + `io.zig` (the import copy + the save orchestration incl. the
+  official-origin fork rule - see DESIGN → Campaigns & the Campaign
+  Editor → Rename + Save As Copy).
   The state type is `types.CampaignEditor` (the parallel-editor settle).
 - `src/view.zig` - `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,

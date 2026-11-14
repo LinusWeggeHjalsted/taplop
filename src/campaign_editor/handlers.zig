@@ -357,12 +357,14 @@ pub fn openFreshCampaignEditor(
 
 /// Scan the campaign dir's PNG stems into
 /// `session.campaign_background_stems` (the background picker's list - the
-/// rescanEditorMissionSprites pattern): the persistent dir's PNGs PLUS the
-/// current stem (deduped - the official campaign's embedded background is
-/// offered even though the persistent scan can't see it). Frees the
-/// previous scan; the final list's leak at process exit is bounded (the
-/// save_files pattern). An IO failure degrades to the current-stem-only
-/// list (recoverable-degrade - a popup would interrupt the click flow).
+/// rescanEditorMissionSprites pattern): the EFFECTIVE campaign dir's
+/// persistent PNGs (a forked session scans the fork - the campaign save
+/// memo's dir - not the opened original) PLUS the current stem (deduped
+/// - the official campaign's embedded background is offered even though
+/// the persistent scan can't see it). Frees the previous scan; the final
+/// list's leak at process exit is bounded (the save_files pattern). An
+/// IO failure degrades to the current-stem-only list (recoverable-degrade
+/// - a popup would interrupt the click flow).
 pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const session = &history.session;
@@ -375,7 +377,7 @@ pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
     };
     const names = history.file_source.listPersistentPngFiles(
         allocator,
-        editor.campaign_dir,
+        campaign_io.effectiveCampaignDir(history, editor),
     ) catch &[_][]const u8{};
     defer allocator.free(names);
 

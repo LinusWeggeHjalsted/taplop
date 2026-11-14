@@ -2,8 +2,12 @@
 //! copy-at-pick import (a local mission's files copied into the
 //! campaign's missions/ - the campaign owns a snapshot; later edits to
 //! the original do not propagate, by design) + the mission identity read
-//! (uuid + name for the duplicate check + the entry event). The save
-//! projection (3e) grows in this module too. Input-layer side effects
+//! (uuid + name for the duplicate check + the entry event) + the save
+//! projection (3e). SAVING OFFICIAL CONTENT FORKS: content that exists
+//! only in the embedded map gets a fresh identity + a new dir at save
+//! (the whole-dir carry re-creates its files under the fork) - the
+//! editor never shadows shipped content; the only persistent shadow of
+//! official content is one installed by hand. Input-layer side effects
 //! (the mission save/export class): never recorded as events, never
 //! replayed - the graph change rides the editor_campaign_import_mission
 //! event the pick site pushes after the copy. See DESIGN → Campaigns &
@@ -13,6 +17,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const parser = @import("../parser.zig");
+const file_source_mod = @import("../file_source.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -119,6 +124,68 @@ pub fn copyMissionIntoCampaign(
     return true;
 }
 
+/// Copy every FILE directly inside `source_dir` (no recursion - both
+/// tiers: the persistent scan + the embedded map) to the same name under
+/// `destination_dir`. The FORK save's whole-dir carry: an official-origin
+/// save re-creates the opened content's files under the fork dir -
+/// everything the save does not itself write fresh (levels, player.txt,
+/// custom art, the campaign root's background). A file the source tiers
+/// cannot read is skipped; a failed write fails the carry (the caller
+/// surfaces the save error).
+fn copyDirFiles(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    source_dir: []const u8,
+    destination_dir: []const u8,
+) bool {
+    if (history.file_source.persistent_dir.openDir(history.file_source.io, source_dir, .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch null) |source_opened| {
+        defer std.Io.Dir.close(source_opened, history.file_source.io);
+        var it = source_opened.iterate();
+        while (it.next(history.file_source.io) catch null) |dir_entry| {
+            if (dir_entry.kind == .directory) continue;
+            if (!copyOneDirFile(history, allocator, source_dir, destination_dir, dir_entry.name)) return false;
+        }
+    }
+    // The embedded tier: content-root-relative keys under
+    // data/<source_dir>/ - direct files only (subdirs belong to their
+    // own carries). The elements are static map keys; only the outer
+    // slice is owned.
+    const keys = file_source_mod.embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    const embedded_prefix = std.fmt.allocPrint(allocator, "data/{s}/", .{source_dir}) catch
+        @panic("failed to build embedded carry prefix");
+    defer allocator.free(embedded_prefix);
+    for (keys) |key| {
+        if (!std.mem.startsWith(u8, key, embedded_prefix)) continue;
+        const file_name = key[embedded_prefix.len..];
+        if (std.mem.indexOfScalar(u8, file_name, '/') != null) continue;
+        if (!copyOneDirFile(history, allocator, source_dir, destination_dir, file_name)) return false;
+    }
+    return true;
+}
+
+fn copyOneDirFile(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    source_dir: []const u8,
+    destination_dir: []const u8,
+    file_name: []const u8,
+) bool {
+    const source = std.fmt.allocPrint(allocator, "{s}/{s}", .{ source_dir, file_name }) catch
+        @panic("failed to build carry source path");
+    defer allocator.free(source);
+    const bytes = history.file_source.readFile(allocator, source) catch return true;
+    defer allocator.free(bytes);
+    const destination = std.fmt.allocPrint(allocator, "{s}/{s}", .{ destination_dir, file_name }) catch
+        @panic("failed to build carry destination path");
+    defer allocator.free(destination);
+    history.file_source.writeFile(destination, bytes) catch return false;
+    return true;
+}
+
 /// The save mode: an in-place save keeps the campaign's identity (the
 /// memo stabilizes minted uuids across saves); a Save As Copy mints a
 /// FRESH campaign uuid + dir (an intentional fork is a new work) and the
@@ -139,13 +206,13 @@ fn resolveCampaignIdentity(
     editor: types.CampaignEditor,
     mode: CampaignSaveMode,
 ) types.CampaignSaveMemo {
-    // The MEMO wins over the state identity (LAST-WINS): a Save As Copy
-    // appends a fresh identity and the session continues saving the COPY
-    // - the state still carries the original's identity (a side effect
-    // never mutates replayed state), so state-first precedence would
-    // keep writing the original forever. The memos are cleared at every
-    // campaign open (see clearCampaignSaveState), so they can never leak
-    // across campaigns.
+    // The MEMO wins over the state identity (LAST-WINS): a minted
+    // identity (a fork from a prior save this session, or Save As Copy)
+    // is the session's current one - the state still carries the
+    // original's identity (a side effect never mutates replayed state),
+    // so state-first precedence would keep writing the original forever.
+    // The memos are cleared at every campaign open (see
+    // clearCampaignSaveState), so they can never leak across campaigns.
     var latest: ?types.CampaignSaveMemo = null;
     for (history.session.campaign_save_memos) |memo| {
         if (memo.handle == types.campaign_save_memo_handle) latest = memo;
@@ -153,11 +220,25 @@ fn resolveCampaignIdentity(
     if (latest) |memo| return memo;
     if (mode == .in_place) {
         if (editor.campaign_uuid.len > 0) {
-            return .{
-                .handle = types.campaign_save_memo_handle,
-                .uuid = allocator.dupe(u8, editor.campaign_uuid) catch @panic("failed to dupe campaign uuid"),
-                .dir = allocator.dupe(u8, editor.campaign_dir) catch @panic("failed to dupe campaign dir"),
-            };
+            // OFFICIAL-ORIGIN check: the state identity is honored only
+            // when the opened campaign exists in the persistent tier.
+            // Content that lives only in the embedded map is official -
+            // saving it FORKS (a fresh identity + dir below; the
+            // campaign-dir carry in saveCampaignEditor re-creates its
+            // root files) so the editor never shadows shipped content.
+            const campaign_txt_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/campaign.txt",
+                .{editor.campaign_dir},
+            ) catch @panic("failed to build campaign.txt origin path");
+            defer allocator.free(campaign_txt_path);
+            if (file_source_mod.persistentFileExists(history.file_source, campaign_txt_path)) {
+                return .{
+                    .handle = types.campaign_save_memo_handle,
+                    .uuid = allocator.dupe(u8, editor.campaign_uuid) catch @panic("failed to dupe campaign uuid"),
+                    .dir = allocator.dupe(u8, editor.campaign_dir) catch @panic("failed to dupe campaign dir"),
+                };
+            }
         }
     }
     const uuid = generateCampaignUuid(history, allocator);
@@ -173,36 +254,97 @@ fn resolveCampaignIdentity(
     return memo;
 }
 
-/// Resolve one hub's/mission's uuid + canonical dir for the save: the
-/// state's identity (loaded content), else the session memo (a prior
-/// save), else a fresh uuid mint with the canonical `<uuid>_<name>` dir
-/// (memo'd - repeated saves reuse both). Fresh missions carry a temp
-/// anchor dir in state; the save writes the CANONICAL dir (the anchor
-/// was never on disk for fresh missions; an imported mission's copy dir
-/// is already canonical and its state uuid non-empty, so it resolves
-/// through the state arm).
+/// The campaign dir this session's campaign-level writes belong to: the
+/// save memo's dir once a fork has been minted (an official-origin
+/// campaign's first save or import), else the state's opened dir. The
+/// background scan reads here, so a forked session offers the FORK's
+/// art, not the opened original's.
+pub fn effectiveCampaignDir(history: *GameStateHistory, editor: types.CampaignEditor) []const u8 {
+    if (campaignSaveMemoFor(history, types.campaign_save_memo_handle)) |memo| return memo.dir;
+    return editor.campaign_dir;
+}
+
+/// The campaign dir an import copies INTO: this session's save target.
+/// A local campaign imports into its own dir; an official-origin
+/// campaign mints the fork identity HERE (the memo carries to the later
+/// save - the fork dir materializes piecemeal and stays invisible to the
+/// campaign browser until its campaign.txt lands at save, since a dir
+/// without a readable campaign.txt never lists).
+pub fn campaignImportDir(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    editor: types.CampaignEditor,
+) []const u8 {
+    return resolveCampaignIdentity(history, allocator, editor, .in_place).dir;
+}
+
+/// Where a content entry's files live + where this session's saves put
+/// them - the fork check's roots.
+const ContentOrigin = struct {
+    /// The opened campaign's dir - the state identity's root, and the
+    /// fork carry's copy SOURCE.
+    opened_campaign_dir: []const u8,
+    /// This session's save target (the campaign memo's dir) - the
+    /// in-place existence check + the carry's DESTINATION root.
+    save_target_dir: []const u8,
+    /// "missions" | "hubs" - the content kind's dir under the campaign.
+    kind_dir: []const u8,
+    /// The kind's config file name ("mission.txt" | "hub.txt").
+    config_name: []const u8,
+};
+
+/// Resolve one hub's/mission's uuid + canonical dir for the save. The
+/// session MEMO (LAST-WINS) first - a minted identity from a prior save
+/// this session (fresh content or an official-origin fork) is the
+/// session's current one. Then the state identity (loaded content),
+/// honored only when the content exists in this session's save target:
+/// a local campaign's own dir, or a fork dir the import already copied
+/// into. Official-origin state content (its files only embedded, under
+/// the OPENED dir) FORKS - a fresh uuid + canonical dir; the save caller
+/// detects the fork and carries the opened dir's files under it. Fresh
+/// content carries neither state identity nor files: a plain mint
+/// (memo'd - repeated saves reuse it).
 fn resolveContentIdentity(
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
+    origin: ContentOrigin,
     handle: u32,
     state_uuid: []const u8,
     state_dir: []const u8,
     name: []const u8,
 ) types.CampaignSaveMemo {
-    if (state_uuid.len > 0 and state_dir.len > 0) {
-        return .{
-            .handle = handle,
-            .uuid = allocator.dupe(u8, state_uuid) catch @panic("failed to dupe uuid"),
-            .dir = allocator.dupe(u8, state_dir) catch @panic("failed to dupe dir"),
-        };
-    }
-    // LAST-WINS (the campaign-sentinel rule: the most recent identity for
-    // the handle is the session's current one).
     var latest: ?types.CampaignSaveMemo = null;
     for (history.session.campaign_save_memos) |memo| {
         if (memo.handle == handle) latest = memo;
     }
     if (latest) |memo| return memo;
+    if (state_uuid.len > 0 and state_dir.len > 0) {
+        const target_config = std.fmt.allocPrint(
+            allocator,
+            "{s}/{s}/{s}/{s}",
+            .{ origin.save_target_dir, origin.kind_dir, state_dir, origin.config_name },
+        ) catch @panic("failed to build content origin path");
+        defer allocator.free(target_config);
+        if (file_source_mod.persistentFileExists(history.file_source, target_config)) {
+            return .{
+                .handle = handle,
+                .uuid = allocator.dupe(u8, state_uuid) catch @panic("failed to dupe uuid"),
+                .dir = allocator.dupe(u8, state_dir) catch @panic("failed to dupe dir"),
+            };
+        }
+        // Official-origin state content: mint below - the save caller
+        // detects the fork (the minted dir differs from the state dir)
+        // and carries the opened dir's files under it.
+    }
+    return mintContentIdentity(history, allocator, handle, name);
+}
+
+fn mintContentIdentity(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    handle: u32,
+    name: []const u8,
+) types.CampaignSaveMemo {
     const uuid = generateCampaignUuid(history, allocator);
     const sanitized = sanitizeNameForDir(name, allocator);
     const dir = std.fmt.allocPrint(allocator, "{s}_{s}", .{ uuid, sanitized }) catch
@@ -320,6 +462,24 @@ pub fn saveCampaignEditor(
 
     const campaign_memo = resolveCampaignIdentity(history, allocator, editor, mode);
 
+    // The campaign-root carry (the fork's own files - the background PNG
+    // + anything else at the campaign root): when the save target is NOT
+    // the opened dir (a minted fork - official-origin, fresh, or Save As
+    // Copy), the opened dir's direct files re-create under the target
+    // once; the fresh campaign.txt write below lands on top. Gated on
+    // the target lacking campaign.txt, so repeated saves skip it.
+    if (!std.mem.eql(u8, campaign_memo.dir, editor.campaign_dir)) {
+        const carried_campaign_txt = std.fmt.allocPrint(allocator, "{s}/campaign.txt", .{campaign_memo.dir}) catch
+            @panic("failed to build carried campaign.txt path");
+        defer allocator.free(carried_campaign_txt);
+        if (!file_source_mod.persistentFileExists(history.file_source, carried_campaign_txt)) {
+            if (!copyDirFiles(history, allocator, editor.campaign_dir, campaign_memo.dir)) {
+                surfaceSaveError(history, "failed to carry the opened campaign's files into the new campaign dir");
+                return;
+            }
+        }
+    }
+
     // Resolve EVERY identity first (the Exits projection references any
     // hub's uuid from any hub's file - the incremental order a
     // hub-by-hub resolution would give runs out of bounds on forward
@@ -327,22 +487,66 @@ pub fn saveCampaignEditor(
     var mission_ids: std.ArrayList([]const u8) = .empty;
     var mission_dirs: std.ArrayList([]const u8) = .empty;
     var mission_needs_template: std.ArrayList(bool) = .empty;
+    const mission_origin = ContentOrigin{
+        .opened_campaign_dir = editor.campaign_dir,
+        .save_target_dir = campaign_memo.dir,
+        .kind_dir = "missions",
+        .config_name = "mission.txt",
+    };
     for (editor.missions) |mission| {
         // A fresh mission materializes at its FIRST save: no state uuid
         // + no memo from a prior save (checked BEFORE the resolve - it
         // appends this save's own memo).
         const existed_before = mission.uuid.len > 0 or missionMemoExistedBefore(history, mission.handle);
         mission_needs_template.append(allocator, !existed_before) catch @panic("failed to collect template flag");
-        const memo = resolveContentIdentity(history, allocator, mission.handle, mission.uuid, mission.dir, mission.name);
+        const memo = resolveContentIdentity(history, allocator, mission_origin, mission.handle, mission.uuid, mission.dir, mission.name);
         mission_ids.append(allocator, memo.uuid) catch @panic("failed to collect mission uuid");
         mission_dirs.append(allocator, memo.dir) catch @panic("failed to collect mission dir");
+        // The official-origin fork's whole-dir carry: re-create the
+        // opened mission dir's files (levels, player.txt, art) under the
+        // minted dir; the fresh mission.txt write below lands on top.
+        // Detected as a minted dir differing from a NON-EMPTY state dir
+        // (fresh missions mint too, but carry nothing - they were never
+        // on disk).
+        if (mission.uuid.len > 0 and mission.dir.len > 0 and !std.mem.eql(u8, memo.dir, mission.dir)) {
+            const carry_source = std.fmt.allocPrint(allocator, "{s}/missions/{s}", .{ editor.campaign_dir, mission.dir }) catch
+                @panic("failed to build mission carry source");
+            defer allocator.free(carry_source);
+            const carry_destination = std.fmt.allocPrint(allocator, "{s}/missions/{s}", .{ campaign_memo.dir, memo.dir }) catch
+                @panic("failed to build mission carry destination");
+            defer allocator.free(carry_destination);
+            if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
+                surfaceSaveError(history, "failed to carry the opened mission's files into the fork");
+                return;
+            }
+        }
     }
     var hub_ids: std.ArrayList([]const u8) = .empty;
     var hub_dirs: std.ArrayList([]const u8) = .empty;
+    const hub_origin = ContentOrigin{
+        .opened_campaign_dir = editor.campaign_dir,
+        .save_target_dir = campaign_memo.dir,
+        .kind_dir = "hubs",
+        .config_name = "hub.txt",
+    };
     for (editor.hubs) |hub| {
-        const memo = resolveContentIdentity(history, allocator, hub.handle, hub.uuid, hub.dir, hub.name);
+        const memo = resolveContentIdentity(history, allocator, hub_origin, hub.handle, hub.uuid, hub.dir, hub.name);
         hub_ids.append(allocator, memo.uuid) catch @panic("failed to collect hub uuid");
         hub_dirs.append(allocator, memo.dir) catch @panic("failed to collect hub dir");
+        // The hub fork's whole-dir carry (custom decoration art living
+        // in the hub dir; hub.txt itself is written fresh below).
+        if (hub.uuid.len > 0 and hub.dir.len > 0 and !std.mem.eql(u8, memo.dir, hub.dir)) {
+            const carry_source = std.fmt.allocPrint(allocator, "{s}/hubs/{s}", .{ editor.campaign_dir, hub.dir }) catch
+                @panic("failed to build hub carry source");
+            defer allocator.free(carry_source);
+            const carry_destination = std.fmt.allocPrint(allocator, "{s}/hubs/{s}", .{ campaign_memo.dir, memo.dir }) catch
+                @panic("failed to build hub carry destination");
+            defer allocator.free(carry_destination);
+            if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
+                surfaceSaveError(history, "failed to carry the opened hub's files into the fork");
+                return;
+            }
+        }
     }
 
     // 1. Missions first (mission.txt name sync always; a FRESH mission
