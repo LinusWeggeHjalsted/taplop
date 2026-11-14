@@ -1066,7 +1066,7 @@ pub fn buildCampaignEditorView(
                     ),
                 },
                 .font_size = editor_shell.editor_group_header_font_size,
-                .color = .{ .r = 0, .g = 0, .b = 0 },
+                .color = lightest,
                 .blocks_input = false,
             } });
             row_y += editor_shell.editor_header_strip_height + ui_element.ui_gap;
@@ -1153,7 +1153,7 @@ pub fn buildCampaignEditorView(
                     ),
                 },
                 .font_size = editor_shell.editor_group_header_font_size,
-                .color = .{ .r = 0, .g = 0, .b = 0 },
+                .color = lightest,
                 .blocks_input = false,
             } });
             row_y += editor_shell.editor_header_strip_height + ui_element.ui_gap;
@@ -1631,6 +1631,19 @@ test "buildCampaignEditorView: the background picker - None + stems, current hig
     };
     try std.testing.expectEqual(@as(usize, 1 + stems.len), pick_rows);
     try std.testing.expectEqual(@as(usize, 1), highlighted);
+
+    // The row text is theme lightest - the game's regular-text color
+    // (the picker rows shipped literal black once; every other list row
+    // in the game is lightest).
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            const is_row_text = std.mem.eql(u8, label.text, "None") or
+                std.mem.eql(u8, label.text, "map") or
+                std.mem.eql(u8, label.text, "sketch");
+            if (is_row_text) try std.testing.expectEqual(test_theme.lightest, label.color);
+        },
+        else => {},
+    };
 
     // Back fires the picker close.
     var back_buttons: usize = 0;

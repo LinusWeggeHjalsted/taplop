@@ -341,6 +341,7 @@ working rules).
 - [campaign-editor slice 3e: save + the identity model - the full save projection, minting, Save As Copy, the deletion reconciliation](#campaign-editor-slice-3e-save--the-identity-model---the-full-save-projection-minting-save-as-copy-the-deletion-reconciliation)
 - [campaign identity: cross-tier shadows silent + saving official content forks (punch-list item 1 - the duplicate-hub-uuid load bug)](#campaign-identity-cross-tier-shadows-silent--saving-official-content-forks-punch-list-item-1---the-duplicate-hub-uuid-load-bug)
 - [campaign editor: Save As Copy removed (punch-list item 9)](#campaign-editor-save-as-copy-removed-punch-list-item-9)
+- [campaign editor: the picker batch (punch-list items 2-4)](#campaign-editor-the-picker-batch-punch-list-items-2-4)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21102,3 +21103,33 @@ renamed "The editor save model (in-place identity, official-origin
 forks)" with every mention reworded (the minting policy, the
 duplicate-split advice, the cross-references); AGENTS + TODO pointers
 followed.
+
+## campaign editor: the picker batch (punch-list items 2-4)
+
+Three one-site fixes in the campaign editor's centered pickers:
+
+- **The picker row text was literal black** (both pickers - the
+  background + the import; every other list row in the game is theme
+  lightest). The row text_labels now use the theme's lightest like the
+  picker headers already did.
+- **An open picker blocked the other picker's button** - both
+  open-picker actions gated `picker != null`, so clicking Background
+  with the Import picker up did nothing. The gate is now
+  same-kind-only: firing the other kind SWITCHES the picker (one
+  recorded event chain; the rescan for the new kind re-runs), firing
+  the already-open kind stays the no-op (no dead undo step).
+- **The background picker lost map.png after choosing None** - the
+  embedded campaign art was offered only through the current-stem
+  append, so clearing the stem dropped embedded-only art from the list.
+  `rescanCampaignBackgroundStems` now scans BOTH tiers of the effective
+  campaign dir's direct PNGs (the persistent scan + the embedded map
+  keys under `data/<dir>/`), plus the current stem, deduped across all
+  sources (a hand-installed persistent map.png next to the embedded
+  original lists once).
+
+Tests: the switch/no-op flow driven through handleAnytimeInput (same
+kind = zero recorded events; other kind = the picker swaps + the event
+index moves); the None-then-rescan repro against the real embedded
+official campaign (stems == ["map"] with an empty stem, and still one
+row after a persistent namesake lands); the background picker view test
+pins the row text color against the theme.

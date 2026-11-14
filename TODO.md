@@ -425,22 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] BUG: the Import Mission picker + the Background picker render
-          entry text BLACK; every other list row in the game is theme
-          lightest. Fix the picker row emitters (campaign_editor.zig).
-    - [ ] BUG: with the Import Mission picker open, clicking the
-          Background button does nothing - both open-picker actions
-          gate `if (editor.picker != null) return;` (input_handlers.zig).
-          An already-open picker should be SWITCHED to the newly
-          requested one (opening the same picker stays the no-op).
-    - [ ] BUG: the Background picker loses map.png after choosing None -
-          open the main campaign, set the background to None, close +
-          reopen the picker: map.png is gone despite being in the
-          campaign dir. Cause: the embedded background is offered only
-          via the CURRENT-stem append in rescanCampaignBackgroundStems
-          (campaign_editor/handlers.zig) - with the stem cleared, the
-          embedded-only art drops out of the list. The offering must
-          not depend on the current selection.
     - [ ] Hub tool palette cell: the hub icon graphic should draw
           128x128 (it currently fits tool_graphic_tile_size 256).
     - [ ] Mission tool palette cell: the graphic is broken - the

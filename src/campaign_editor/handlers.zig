@@ -357,14 +357,16 @@ pub fn openFreshCampaignEditor(
 
 /// Scan the campaign dir's PNG stems into
 /// `session.campaign_background_stems` (the background picker's list - the
-/// rescanEditorMissionSprites pattern): the EFFECTIVE campaign dir's
-/// persistent PNGs (a forked session scans the fork - the campaign save
-/// memo's dir - not the opened original) PLUS the current stem (deduped
-/// - the official campaign's embedded background is offered even though
-/// the persistent scan can't see it). Frees the previous scan; the final
-/// list's leak at process exit is bounded (the save_files pattern). An
-/// IO failure degrades to the current-stem-only list (recoverable-degrade
-/// - a popup would interrupt the click flow).
+/// rescanEditorMissionSprites pattern): BOTH tiers of the EFFECTIVE
+/// campaign dir's direct PNGs (the persistent scan + the embedded map -
+/// a forked session scans the fork, the campaign save memo's dir, not
+/// the opened original; the official campaign's shipped background is
+/// offered regardless of the current stem) PLUS the current stem
+/// (deduped across all sources - a stem may exist in several). Frees the
+/// previous scan; the final list's leak at process exit is bounded (the
+/// save_files pattern). An IO failure degrades to the tiers the scan
+/// could read (recoverable-degrade - a popup would interrupt the click
+/// flow).
 pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const session = &history.session;
@@ -375,31 +377,64 @@ pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
         session.campaign_background_stems = &.{};
         return;
     };
+
+    // The deduping collector (first occurrence wins - the persistent
+    // tier leads, the embedded original follows, the current stem
+    // trails).
+    var stems: std.ArrayList([]const u8) = .empty;
+    const appendStem = struct {
+        fn append(
+            list: *std.ArrayList([]const u8),
+            alloc: std.mem.Allocator,
+            stem: []const u8,
+        ) void {
+            for (list.items) |existing| {
+                if (std.mem.eql(u8, existing, stem)) return;
+            }
+            const owned = alloc.dupe(u8, stem) catch
+                @panic("failed to dupe background stem");
+            list.append(alloc, owned) catch
+                @panic("failed to append background stem");
+        }
+    }.append;
+
+    // Tier 1: the persistent dir's direct PNGs (a forked session's own
+    // art; a local campaign's dir).
+    const campaign_dir = campaign_io.effectiveCampaignDir(history, editor);
     const names = history.file_source.listPersistentPngFiles(
         allocator,
-        campaign_io.effectiveCampaignDir(history, editor),
+        campaign_dir,
     ) catch &[_][]const u8{};
     defer allocator.free(names);
-
-    var stems: std.ArrayList([]const u8) = .empty;
     for (names) |file_name| {
         const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-        const owned = allocator.dupe(u8, stem) catch
-            @panic("failed to dupe background stem");
-        stems.append(allocator, owned) catch
-            @panic("failed to append background stem");
+        appendStem(&stems, allocator, stem);
     }
+
+    // Tier 2: the EMBEDDED campaign dir's direct PNGs (the official
+    // campaign's shipped background - offered whatever the current stem
+    // is, so choosing None never hides the shipped art). The map keys'
+    // outer slice is owned; the elements are static strings.
+    const keys = file_source_mod.embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    const embedded_prefix = std.fmt.allocPrint(allocator, "data/{s}/", .{campaign_dir}) catch
+        @panic("failed to build embedded background prefix");
+    defer allocator.free(embedded_prefix);
+    for (keys) |key| {
+        if (!std.mem.startsWith(u8, key, embedded_prefix)) continue;
+        const file_name = key[embedded_prefix.len..];
+        // Direct files only (hubs/ + missions/ subdirs are not
+        // backgrounds) + PNGs only.
+        if (std.mem.indexOfScalar(u8, file_name, '/') != null) continue;
+        if (!std.mem.endsWith(u8, file_name, ".png")) continue;
+        const stem = file_name[0 .. file_name.len - ".png".len];
+        appendStem(&stems, allocator, stem);
+    }
+
+    // The current stem last (the setting stays visible even when its
+    // file is unreadable - the row lets the player see + change it).
     if (editor.background_stem.len > 0) {
-        var present = false;
-        for (stems.items) |stem| {
-            if (std.mem.eql(u8, stem, editor.background_stem)) present = true;
-        }
-        if (!present) {
-            const owned = allocator.dupe(u8, editor.background_stem) catch
-                @panic("failed to dupe current background stem");
-            stems.append(allocator, owned) catch
-                @panic("failed to append current background stem");
-        }
+        appendStem(&stems, allocator, editor.background_stem);
     }
     session.campaign_background_stems = stems.toOwnedSlice(allocator) catch
         @panic("failed to own background stems");

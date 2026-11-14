@@ -3238,11 +3238,13 @@ pub fn handleAnytimeInput(
             },
             // The mission inspector's Import button: scan the local
             // missions (the session list - replay never opens a picker) +
-            // open the import picker.
+            // open the import picker. An already-open picker SWITCHES to
+            // the requested kind (opening the same kind is the no-op -
+            // no dead undo step).
             .open_campaign_import_picker => {
                 if (history.current_state.screen != .campaign_editor) return;
                 const editor = history.current_state.campaign_editor orelse return;
-                if (editor.picker != null) return;
+                if (editor.picker == .import_mission) return;
                 mission_io.rescanEditorMissionsNow(history);
                 pushPlayerActionAndDrain(history, .{ .player_open_campaign_picker = .{
                     .picker = .import_mission,
@@ -3308,12 +3310,13 @@ pub fn handleAnytimeInput(
             },
             // The background button: scan the campaign dir's PNGs (the
             // session-side list - replay never opens a picker) + open the
-            // picker. No-op gate: an already-open picker never re-fires
-            // (no dead undo step).
+            // picker. An already-open picker SWITCHES to the requested
+            // kind (opening the same kind is the no-op - no dead undo
+            // step).
             .open_campaign_background_picker => {
                 if (history.current_state.screen != .campaign_editor) return;
                 const editor = history.current_state.campaign_editor orelse return;
-                if (editor.picker != null) return;
+                if (editor.picker == .background) return;
                 campaign_editor_handlers.rescanCampaignBackgroundStems(history);
                 pushPlayerActionAndDrain(history, .{ .player_open_campaign_picker = .{
                     .picker = .background,

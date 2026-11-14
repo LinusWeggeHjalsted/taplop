@@ -1112,3 +1112,95 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
         );
     }
 }
+
+test "campaign editor pickers: an open picker switches to the requested kind; same-kind no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+    // The official campaign's dir so the background rescan has a dir; the
+    // local-mission rescan reads the harness's empty persistent missions/.
+    history.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // Open the background picker (the metadata sidebar's button).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_campaign_background_picker },
+        null,
+        .{ .x = 0, .y = 0 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.picker == .background);
+    const index_after_open = history.current_event_index;
+
+    // Re-firing the SAME kind: the no-op gate (no dead undo step).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_campaign_background_picker },
+        null,
+        .{ .x = 0, .y = 0 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.picker == .background);
+    try testing.expectEqual(index_after_open, history.current_event_index);
+
+    // Firing the OTHER kind (the mission inspector's Import button, with
+    // the background picker still up): SWITCHES - a recorded event chain
+    // (the orchestrator + its child), so the index strictly moves.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_campaign_import_picker },
+        null,
+        .{ .x = 0, .y = 0 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.picker == .import_mission);
+    try testing.expect(index_after_open < history.current_event_index);
+
+    // And back again.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_campaign_background_picker },
+        null,
+        .{ .x = 0, .y = 0 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.picker == .background);
+}
+
+test "campaign editor background scan: the embedded campaign dir's PNGs are offered whatever the current stem" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+    // The official campaign - embedded-only, background set to None (the
+    // fixture's empty stem): the shipped map.png must still be offered
+    // (the old scan offered it only through the current-stem append, so
+    // choosing None hid it).
+    history.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
+
+    campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
+    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
+    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
+
+    // A persistent PNG in the same dir (the fork/hand-installed shape)
+    // dedupes against the embedded namesake - one row, not two.
+    harness.file_source.writeFile(
+        "campaigns/main_campaign/map.png",
+        "fake png bytes",
+    ) catch @panic("write persistent map.png");
+    campaign_editor_handlers.rescanCampaignBackgroundStems(&history);
+    try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
+    try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
+}
