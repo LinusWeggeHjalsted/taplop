@@ -996,6 +996,98 @@ fn screenPoint(x: f32, y: f32) ScreenPosition {
     return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
 }
 
+/// A float 2D vector - the stroke-strip math runs in floats (the samples
+/// arrive rounded to reference pixels; the strip's edge offsets derive
+/// from float segment directions).
+pub const FloatVec = struct { x: f32, y: f32 };
+
+/// One round cap's slice count (see `capStrip`). 12: the cap radii are a
+/// few reference pixels - a 36-segment circle was spent fidelity.
+pub const cap_slice_count: usize = 12;
+
+/// The miter-join length clamp: at most twice the half-thickness - a
+/// sharp turn gets a small notch rather than a miter spike.
+const miter_length_clamp: f32 = 2.0;
+
+/// Build the SOLID stroke as a mitered triangle strip: the `samples`
+/// (from `sampleCurve`) become `2 * sample_total` strip points,
+/// alternating the two edges. Per sample the offset is the perpendicular
+/// of the adjacent segment directions' bisector, length-compensated by
+/// `half_thickness / cos(theta/2)` so BOTH segment edges cover the join -
+/// a notch-free join with zero extra geometry. (The alternative - a join
+/// cap at every sample - cost a batch-flushing draw call each on the map
+/// views.) The miter length clamps at `miter_length_clamp` x the half-
+/// thickness; an exact 180-degree reversal falls back to a butt join
+/// (flat across the run). Pure over its inputs: the backend turns the
+/// strip into ONE `drawTriangleStrip` call, tests assert the join math.
+pub fn sampleCurveStrokeStrip(
+    comptime sample_total: usize,
+    samples: *const [sample_total]ScreenPosition,
+    half_thickness: f32,
+    strip: *[2 * sample_total]FloatVec,
+) void {
+    // Unit segment directions (a zero-length segment inherits the
+    // previous direction, keeping the offsets perpendicular to the run).
+    var directions: [sample_total - 1]FloatVec = undefined;
+    var direction = FloatVec{ .x = 1.0, .y = 0.0 };
+    for (0..sample_total - 1) |segment| {
+        const delta_x = @as(f32, @floatFromInt(samples[segment + 1].x - samples[segment].x));
+        const delta_y = @as(f32, @floatFromInt(samples[segment + 1].y - samples[segment].y));
+        const length = @sqrt(delta_x * delta_x + delta_y * delta_y);
+        if (length > 0.0001) {
+            direction = .{ .x = delta_x / length, .y = delta_y / length };
+        }
+        directions[segment] = direction;
+    }
+
+    for (0..sample_total) |index| {
+        const previous = if (index == 0) directions[0] else directions[index - 1];
+        const next = if (index == sample_total - 1) directions[sample_total - 2] else directions[index];
+        const sum_x = previous.x + next.x;
+        const sum_y = previous.y + next.y;
+        const sum_length = @sqrt(sum_x * sum_x + sum_y * sum_y);
+        var axis_x: f32 = undefined;
+        var axis_y: f32 = undefined;
+        var cos_half: f32 = 1.0;
+        if (sum_length > 0.0001) {
+            const bisector_x = sum_x / sum_length;
+            const bisector_y = sum_y / sum_length;
+            axis_x = -bisector_y;
+            axis_y = bisector_x;
+            cos_half = @abs(next.x * bisector_x + next.y * bisector_y);
+        } else {
+            // An exact reversal: a butt join, flat across the incoming
+            // run (the two edges want opposite offsets; a miter would
+            // be infinite).
+            axis_x = -previous.y;
+            axis_y = previous.x;
+        }
+        const miter = half_thickness / @max(cos_half, 1.0 / miter_length_clamp);
+        const position_x = @as(f32, @floatFromInt(samples[index].x));
+        const position_y = @as(f32, @floatFromInt(samples[index].y));
+        strip[2 * index] = .{ .x = position_x + axis_x * miter, .y = position_y + axis_y * miter };
+        strip[2 * index + 1] = .{ .x = position_x - axis_x * miter, .y = position_y - axis_y * miter };
+    }
+}
+
+/// One round cap as a SINGLE triangle strip: the ring points alternate
+/// with the center, so every other strip triangle is degenerate (zero
+/// area) and the rest are pie slices - a filled disc as one strip
+/// submission. The ring closes (the first ring point repeats at the
+/// end). Pure: the backend turns the strip into one `drawTriangleStrip`
+/// call.
+pub fn capStrip(center: FloatVec, radius: f32, strip: *[2 * cap_slice_count + 2]FloatVec) void {
+    for (0..cap_slice_count + 1) |index| {
+        const angle = std.math.tau * @as(f32, @floatFromInt(index % cap_slice_count)) /
+            @as(f32, @floatFromInt(cap_slice_count));
+        strip[2 * index] = center;
+        strip[2 * index + 1] = .{
+            .x = center.x + @cos(angle) * radius,
+            .y = center.y + @sin(angle) * radius,
+        };
+    }
+}
+
 fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
     return .{ .x = @floatFromInt(position.x), .y = @floatFromInt(position.y) };
 }
@@ -1879,6 +1971,93 @@ test "buttonAt: a decorative curve never occludes" {
     const elements = [_]UiElement{ button, overlay };
     const clicked = buttonAt(&elements, .{ .x = 50, .y = 50 }).?;
     try std.testing.expectEqual(Action.confirm, clicked.action);
+}
+
+test "sampleCurveStrokeStrip: a straight run is a constant perpendicular offset" {
+    // A horizontal run: every offset is straight up/down by the half
+    // thickness, alternating edge points, no miter compensation.
+    const samples = [_]ScreenPosition{
+        .{ .x = 0, .y = 0 },  .{ .x = 10, .y = 0 }, .{ .x = 20, .y = 0 },
+        .{ .x = 30, .y = 0 }, .{ .x = 40, .y = 0 },
+    };
+    var strip: [2 * samples.len]FloatVec = undefined;
+    sampleCurveStrokeStrip(samples.len, &samples, 4.0, &strip);
+    for (0..samples.len) |index| {
+        const upper = strip[2 * index];
+        const lower = strip[2 * index + 1];
+        // The edge points keep the sample's x and offset by exactly the
+        // half thickness, straight up and down.
+        const sample_x: f32 = @floatFromInt(samples[index].x);
+        try std.testing.expectEqual(sample_x, upper.x);
+        try std.testing.expectEqual(@as(f32, 4.0), upper.y);
+        try std.testing.expectEqual(sample_x, lower.x);
+        try std.testing.expectEqual(@as(f32, -4.0), lower.y);
+    }
+}
+
+test "sampleCurveStrokeStrip: a bend lengthens the outer miter, clamped at 2x half" {
+    // Two segments meeting at a right angle: the corner sample's offset
+    // grows along the bisector (miter = half / cos(45/2 deg) ish), the
+    // inner edge shortens symmetrically, and nothing exceeds the clamp.
+    const samples = [_]ScreenPosition{
+        .{ .x = 0, .y = 0 },
+        .{ .x = 100, .y = 0 },
+        .{ .x = 100, .y = 100 },
+    };
+    var strip: [2 * samples.len]FloatVec = undefined;
+    sampleCurveStrokeStrip(samples.len, &samples, 10.0, &strip);
+    const corner_upper = strip[2];
+    const corner_lower = strip[3];
+    // The corner sample (100, 0): the segment directions (1, 0) and
+    // (0, 1) give the bisector (sqrt(2)/2, sqrt(2)/2); the axis is its
+    // perpendicular (-sqrt(2)/2, sqrt(2)/2), and the miter is
+    // 10 / cos(45 deg) = 10 * sqrt(2). The offset lands exactly on
+    // (-10, +10).
+    try std.testing.expectApproxEqAbs(@as(f32, 90.0), corner_upper.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 10.0), corner_upper.y, 0.001);
+    // The miter (the offset's length) is longer than the half thickness
+    // (the 90-degree corner) and within the 2x clamp.
+    const offset_x = corner_upper.x - 100.0;
+    const offset_y = corner_upper.y - 0.0;
+    const miter_length = @sqrt(offset_x * offset_x + offset_y * offset_y);
+    try std.testing.expect(miter_length > 10.0);
+    try std.testing.expect(miter_length <= 20.0 + 0.001);
+    // Symmetric: the two edge offsets are mirror images through the
+    // sample.
+    try std.testing.expectApproxEqAbs(corner_upper.x, 200.0 - corner_lower.x, 0.001);
+    try std.testing.expectApproxEqAbs(corner_upper.y, -corner_lower.y, 0.001);
+}
+
+test "sampleCurveStrokeStrip: an exact reversal stays finite (the butt fallback)" {
+    // Out and exactly back: the middle sample's directions oppose, the
+    // bisector vanishes - the fallback must produce finite offsets, not
+    // NaN or an infinite miter.
+    const samples = [_]ScreenPosition{
+        .{ .x = 0, .y = 0 },
+        .{ .x = 100, .y = 0 },
+        .{ .x = 0, .y = 0 },
+    };
+    var strip: [2 * samples.len]FloatVec = undefined;
+    sampleCurveStrokeStrip(samples.len, &samples, 6.0, &strip);
+    for (strip) |point| {
+        try std.testing.expect(point.x == point.x and point.y == point.y); // not NaN
+        try std.testing.expect(@abs(point.x) < 10000 and @abs(point.y) < 10000);
+    }
+}
+
+test "capStrip: ring points on the radius, closed, centered" {
+    var strip: [2 * cap_slice_count + 2]FloatVec = undefined;
+    capStrip(.{ .x = 50.0, .y = 60.0 }, 5.0, &strip);
+    // Every even entry is the center, every odd entry sits on the ring
+    // (the 4-cardinal slices are exact), and the ring closes.
+    for (0..cap_slice_count + 1) |index| {
+        try std.testing.expectEqual(@as(f32, 50.0), strip[2 * index].x);
+        try std.testing.expectEqual(@as(f32, 60.0), strip[2 * index].y);
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 55.0), strip[1].x, 0.0001);
+    try std.testing.expectApproxEqAbs(@as(f32, 60.0), strip[1].y, 0.0001);
+    try std.testing.expectApproxEqAbs(strip[1].x, strip[2 * cap_slice_count + 1].x, 0.0001);
+    try std.testing.expectApproxEqAbs(strip[1].y, strip[2 * cap_slice_count + 1].y, 0.0001);
 }
 
 test "curveBounds: the sampled extent incl. arrowhead, padded by the stroke" {

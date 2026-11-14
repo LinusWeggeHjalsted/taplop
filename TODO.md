@@ -432,15 +432,10 @@ work:
           fix one at a time, each its own commit). Item 1 (the campaign
           format v5 settle - DONE.md, "campaign format v5") + item 2
           (the ctrl+N split - DONE.md, "campaign editor: the ctrl+N
-          split") are DONE; item 4 dissolved into the settle (an absent
-          direction = the auto-spread default, a defined value):
-      3. Campaign editor FPS degrades on the full planned graph (48
-         missions): 6 fps debug / 33 fast-release viewing the whole
-         graph. Suspects: the per-frame view rebuild (missionGeometry +
-         the parallel-spread scan is O(missions^2) per frame) and
-         per-edge outline-stroke batching. Measure before fixing - the
-         likely shape is a session-side geometry memo invalidated on
-         graph change/drag.
+          split") + item 3 (the curve-batching fix - DONE.md, "map edges:
+          one-strip curve batching") are DONE; item 4 dissolved into the
+          settle (an absent direction = the auto-spread default, a
+          defined value):
       5. Right-click delete does not work on mission edges:
          handleCampaignMapRightClick arms only the pressed-HUB delete
          (campaign_hub_delete); the pressed-edge case falls through.

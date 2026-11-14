@@ -540,15 +540,32 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// outline stripe shader (the marching flip between the highlight tint
 /// and the theme's darkest - see DESIGN → Platform Seam → Outline stripe
 /// shader).
-/// Draw one curve's full geometry - the sampled stroke (per-segment
-/// drawLineEx with a filled circle at every sample: round joins + round
-/// caps, structurally gap-free; raylib's drawSplineLinear miter joins sit
-/// behind SUPPORT_SPLINE_MITERS, off by default - without it each segment
-/// is a bare quad and sharp curvature shows notches), the dashed variant
-/// (alternating segments, round caps per dash), and the arrowhead chevron
-/// (element.arrowheadArms - the same samples). Shared by the `.curve` draw
-/// arm and the hit-curve button's hover highlight, so the highlight is the
-/// SAME arrow, just wider.
+/// Draw one curve's full geometry as a handful of UNTEXTURED TRIANGLE
+/// submissions - the solid stroke is ONE mitered triangle strip built
+/// from the SAME samples hit-testing uses (`element.sampleCurveStrokeStrip`
+/// - the drawn/hit agreement by construction), the round caps are single
+/// strip submissions (`element.capStrip`), and the chevron's arms are
+/// line quads. Every submission keeps the render batch's TRIANGLES mode +
+/// current texture untouched, so a whole curve - and consecutive curves -
+/// land in ONE batch draw entry. This is the 48-mission-map fix: the old
+/// path drew a drawCircleV join cap at EVERY sample, and every circle
+/// switched the batch to QUADS + bound/unbound the shapes texture -
+/// ~5000 circles per frame forced thousands of batch flushes (6 fps
+/// debug / 33 fast-release). The dashed variant (dangling stubs) keeps
+/// per-dash quads + round pill caps (the dash gaps need the breaks).
+/// Shared by the `.curve` draw arm and the hit-curve button's hover
+/// highlight, so the highlight is the SAME arrow, just wider.
+fn drawRoundCap(center: rl.Vector2, radius: f32, raylib_color: rl.Color) void {
+    if (radius <= 0) return;
+    var strip: [2 * ui.cap_slice_count + 2]rl.Vector2 = undefined;
+    var vectors: [2 * ui.cap_slice_count + 2]ui.FloatVec = undefined;
+    ui.capStrip(.{ .x = center.x, .y = center.y }, radius, &vectors);
+    for (vectors, 0..) |point, index| {
+        strip[index] = .{ .x = point.x, .y = point.y };
+    }
+    rl.drawTriangleStrip(&strip, raylib_color);
+}
+
 fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
     var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
     var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
@@ -560,32 +577,45 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
         };
     }
     const thickness: f32 = @floatFromInt(curve.width);
-    var index: usize = 0;
-    while (index + 1 < samples.len) : (index += 1) {
-        if (curve.dashed and index % 2 == 1) continue;
-        rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
-        if (curve.dashed) {
+    const half = thickness / 2;
+
+    if (curve.dashed) {
+        // The dashed stroke (dangling stubs): per-dash quads + round pill
+        // caps - the dash gaps need the breaks, so the strip cannot span
+        // the curve. Same untextured submissions; no mode/texture
+        // switches.
+        var index: usize = 0;
+        while (index + 1 < samples.len) : (index += 1) {
+            if (index % 2 == 1) continue;
+            rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
             // Round caps per dash: each dash is a pill, and the outline
             // element's cap (wider) extends past the inner stroke's at
             // BOTH ends - with butt caps the two elements end flush and
             // the outline vanishes at every dash tip.
-            rl.drawCircleV(samples[index], thickness / 2, raylib_color);
-            rl.drawCircleV(samples[index + 1], thickness / 2, raylib_color);
-        } else {
-            // The join circle - covers the corner notch between
-            // consecutive segments (and caps the stroke's start).
-            rl.drawCircleV(samples[index], thickness / 2, raylib_color);
+            drawRoundCap(samples[index], half, raylib_color);
+            drawRoundCap(samples[index + 1], half, raylib_color);
         }
-    }
-    if (!curve.dashed) {
-        rl.drawCircleV(samples[samples.len - 1], thickness / 2, raylib_color);
+    } else {
+        // The solid stroke: ONE mitered triangle strip from the same
+        // samples the hit region samples - round caps at both stroke
+        // ends (the start cap replaces the old per-sample join circle;
+        // the mitered joins need no per-sample caps at all).
+        var stroke: [2 * (ui.curve_sample_count + 1)]ui.FloatVec = undefined;
+        ui.sampleCurveStrokeStrip(ui.curve_sample_count + 1, &screen_samples, half, &stroke);
+        var strip: [2 * (ui.curve_sample_count + 1)]rl.Vector2 = undefined;
+        for (stroke, 0..) |point, index| {
+            strip[index] = .{ .x = point.x, .y = point.y };
+        }
+        rl.drawTriangleStrip(&strip, raylib_color);
+        drawRoundCap(samples[0], half, raylib_color);
+        drawRoundCap(samples[samples.len - 1], half, raylib_color);
     }
     if (curve.arrowhead) {
         // The directionality chevron: two arms from the end point, drawn
         // at the curve's own width, so an outline+stroke pair renders an
         // outlined chevron. Round cap at each arm's TIP: both elements'
         // arms end at the same point, so butt caps ended flush (no outline
-        // at the tip); the cap circles leave the rim visible, same as the
+        // at the tip); the caps leave the rim visible, same as the
         // stroke's ends.
         const arms = ui.arrowheadArms(curve);
         const end = samples[samples.len - 1];
@@ -595,7 +625,7 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
         };
         for (arm_vectors) |arm| {
             rl.drawLineEx(end, arm, thickness, raylib_color);
-            rl.drawCircleV(arm, thickness / 2, raylib_color);
+            drawRoundCap(arm, half, raylib_color);
         }
     }
 }

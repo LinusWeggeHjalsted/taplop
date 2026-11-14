@@ -351,6 +351,7 @@ working rules).
 - [content hash v2 - the artifact-scope extension (the two-axis design settle + listDirFiles)](#content-hash-v2---the-artifact-scope-extension-the-two-axis-design-settle--listdirfiles)
 - [campaign format v5 - campaign.txt owns the graph (the punch-list-1 root fix)](#campaign-format-v5---campaigntxt-owns-the-graph-the-punch-list-1-root-fix)
 - [campaign editor: the ctrl+N split (punch-list item 2)](#campaign-editor-the-ctrln-split-punch-list-item-2)
+- [map edges: one-strip curve batching (punch-list item 3, the fps fix)](#map-edges-one-strip-curve-batching-punch-list-item-3-the-fps-fix)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21452,3 +21453,52 @@ The split is test-pinned twice in input.zig: the dispatch-pin test
 (renamed to the split behavior, all four context sets asserted) and the
 ctrl+S cross-editor test's New section (each editor screen fires its own
 sibling, the other dormant).
+
+## map edges: one-strip curve batching (punch-list item 3, the fps fix)
+
+The campaign editor rendered the full planned graph (48 missions) at
+6 fps debug / 33 fast-release. Root cause was in the CURVE DRAW path,
+not the view build: `drawCurveGeometry` drew a `drawCircleV` join cap at
+every bezier sample (round joins + dash pills + chevron tips - ~51
+circles per curve, two curves per mission edge = ~5000 circles per
+frame), and every `drawCircleV` switches the rlgl render batch to QUADS
+and binds + unbinds the shapes texture - each switch forces a batch
+flush, so the frame flushed the batch thousands of times. (The
+O(missions^2) parallel-spread scan in the view build was the initial
+suspect and is noise: ~2300 iterations, sub-millisecond.)
+
+Fix, two parts:
+
+- The pure part (headless-tested, element.zig): `sampleCurveStrokeStrip`
+  builds the SOLID stroke as a MITERED TRIANGLE STRIP from the same
+  `sampleCurve` samples hit-testing uses (per sample the offset is the
+  perpendicular of the adjacent segment directions' bisector,
+  length-compensated half/cos(theta/2) so both segment edges cover the
+  join - notch-free with ZERO per-sample geometry; the miter clamps at
+  2x the half thickness, an exact 180-degree reversal falls back to a
+  butt join). `capStrip` builds a round cap as a single strip (ring
+  points alternating with the center - every other strip triangle is
+  degenerate, the rest are pie slices; 12 slices, the radii are a few
+  reference pixels). Tests pin the straight run (constant perpendicular
+  offset), the 90-degree bend (miter 10*sqrt(2), within the clamp,
+  symmetric), the reversal (finite - the butt fallback), and the cap
+  ring (closed, on-radius, centered).
+- The platform part (draw.zig): the solid curve is now ~7 UNTEXTURED
+  submissions (1 stroke strip + 2 round end caps + 2 chevron arms +
+  2 tip caps), all keeping the batch's TRIANGLES mode + current texture
+  untouched - a whole curve, and consecutive curves, land in ONE batch
+  draw entry (from ~100 flush-causing calls per curve to zero). The
+  dashed variant (dangling stubs - rare) keeps per-dash quads + pill
+  caps. The drawn/hit agreement invariant is preserved by construction
+  (the strip is built FROM sampleCurve's samples - same as before,
+  stronger even: raylib's own DrawSplineSegmentBezierCubic was rejected
+  because it tessellates independently of our sampler).
+
+Settled as a Platform Seam rule (DESIGN → Platform Seam): untextured
+shape submissions must not switch the render batch's mode or texture
+per call - draw multi-part shapes through one submission or plain
+line/rect sequences, never interleaving drawCircleV. Expected residual:
+debug builds still pay per-call Zig wrapper overhead (~500 calls/frame
+now vs ~5000 before); if debug fps is still insufficient, the next
+lever is the sample count (48 -> 24), which halves both draw and
+hit-test polyline resolution.

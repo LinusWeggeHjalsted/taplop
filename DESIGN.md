@@ -129,6 +129,19 @@ next session meets it as a surprise instead of a known.
 - raylib is linked into the native AND web exes (never the test build). Keep
   it out of the test build by never importing raylib from any file the
   test-root scan pulls in.
+- **Untextured shape submissions must not switch the render batch's mode
+  or texture per call** (the curve-batching lesson): raylib batches
+  consecutive same-mode/same-texture primitives into one GL draw, but a
+  call that switches draw mode (TRIANGLES vs QUADS) or binds another
+  texture (e.g. `drawCircleV`: QUADS + the shapes texture bound/unbound
+  per call) FORCES a batch flush each way. The map views once drew a
+  `drawCircleV` join cap at every bezier sample - ~5000 circles/frame on
+  a 48-mission graph, thousands of flushes, 6 fps debug / 33 fast-release.
+  The rule in practice: draw multi-part untextured shapes through ONE
+  submission (a `drawTriangleStrip` over a caller-built array) or plain
+  `drawLineEx`/`drawRectangle` sequences - never interleave `drawCircleV`
+  with them. The pure strip builders (`element.sampleCurveStrokeStrip` +
+  `element.capStrip`) are the headless-tested pattern.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
   - `frame(backend, *FrameState)` is the deterministic core: poll input,
@@ -3688,9 +3701,12 @@ sprite-backed convention) all derive from the one curve, so they cannot
 disagree. No new element contract for input.
 - **One sampling function for the curve.** `sampleCurve` in
 element.zig is the single deterministic bezier sampler (fixed
-segment count in v1): the backend draws the sampled line strip and
-hit-testing is distance-to-polyline against the SAME samples, so the
-drawn edge and its hit region cannot disagree. Headless-testable.
+segment count in v1): the backend draws the sampled stroke (a mitered
+TRIANGLE STRIP built from the same samples - `sampleCurveStrokeStrip`,
+one untextured submission per curve, see the Platform Seam's batching
+note) and hit-testing is distance-to-polyline against the SAME
+samples, so the drawn edge and its hit region cannot disagree.
+Headless-testable.
 - **Dimming**: undiscovered hubs dim + edges whose start hub is
 undiscovered dim (the clickable rule is exactly start-hub
 discovered); a never-entered campaign's view shows the start hub +
