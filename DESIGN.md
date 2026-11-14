@@ -3215,23 +3215,27 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   save-side naming scheme for human browsability, never a load
   requirement. The official campaign's `main_campaign` dir (and any
   hand-named dir) loads by its uuid.
-- **Duplicate uuids across dirs** (manual file copying, hand edits, or
-  the CURRENT pre-rename save behavior that leaves `<uuid>_<oldname>/`
-  behind on a renamed re-save - the class shrinks to zero once
-  rename-in-place lands): resolve **latest-updated wins** - the MAX mtime across the
+- **Duplicate uuids across dirs** (manual file copying, hand edits):
+  resolve **latest-updated wins** - the MAX mtime across the
   folder's files (the mission browser's recency convention,
   `scanMissionFolder.max_mtime_ns`), name-ascending breaking exact ties
   (copied folders carry identical mtimes - deterministic under all
-  inputs). Embedded counts as mtime 0, so a persistent copy always
-  beats the embedded original - uuid resolution and FileSource's
-  persistent-first read order can never disagree. A WARNING names both
-  dirs and which one loaded; identity-keyed records stay coherent by
-  definition (same uuid = same identity: either copy's completion
-  updates the same clone). A lazy content-hash comparison (missions;
-  campaigns when hashing lands) distinguishes redundant copies (same
-  hash - silent-ish) from diverged versions (different hash - the
-  warning says so) in the warning text. **Save As Copy is the sanctioned
-  split**; the editor never creates duplicates itself.
+  inputs). **Tier shadowing is not duplication**: a persistent
+  candidate makes the embedded original with the same uuid UNREACHABLE
+  (FileSource's persistent-first read order), so cross-tier repeats
+  resolve to the persistent copy silently - both the deliberate
+  hand-installed override and the normal state after a save
+  materializes a persistent copy. The duplicate warning is SAME-TIER
+  only: two persistent dirs with one uuid (a hand fork), or two
+  embedded dirs (a shipped-content collision). Either way uuid
+  resolution and the read order can never disagree, and identity-keyed
+  records stay coherent by definition (same uuid = same identity:
+  either copy's completion updates the same clone). A lazy
+  content-hash comparison (missions; campaigns when hashing lands)
+  distinguishes redundant copies (same hash - silent-ish) from
+  diverged versions (different hash - the warning says so) in the
+  warning text. **Save As Copy is the sanctioned split**; the editor
+  never creates duplicates itself.
 - **Replay purity**: scans are LISTINGS, not reconstruction reads, so
   the recorded events carry RESOLVED payloads (the mission-browser
   pattern): push sites resolve live (scan at click / new-game time) and

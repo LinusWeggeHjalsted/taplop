@@ -203,9 +203,14 @@ pub const UuidDirResolution = struct {
 };
 
 /// Resolve a content uuid to its storage dir under one parent (both
-/// tiers: the persistent dir +, for campaign content, the embedded map -
-/// embedded counts as mtime 0 so a persistent copy always wins, matching
-/// FileSource's persistent-first read order). Duplicate uuids resolve
+/// tiers: the persistent dir +, for campaign content, the embedded map).
+/// TIER SHADOWING: a persistent candidate for the uuid makes every
+/// embedded candidate UNREACHABLE - FileSource's persistent-first read
+/// order means the embedded files can never load - so the embedded tier
+/// is skipped entirely and the pair is NOT a duplicate. This is the
+/// normal state after a save of official content materializes a
+/// persistent copy (and the deliberate hand-installed override path).
+/// Duplicate uuids resolve
 /// LATEST-MTIME WINS, name-ascending on exact ties (see DESIGN →
 /// Campaigns & the Campaign Editor → Uuid→dir resolution). Returns the
 /// winning dir (caller-owned) + true when duplicates were seen, so the
@@ -258,8 +263,11 @@ pub fn resolveUuidDir(
         }
     }
 
-    // Tier 2: the embedded dirs (campaign content - mtime 0).
-    for (embedded_dirs) |embedded_dir| {
+    // Tier 2: the embedded dirs - SKIPPED when the persistent tier
+    // matched this uuid: the persistent copy shadows the embedded
+    // original (unreachable through the read order), so it contributes
+    // neither a candidate nor a duplicate (see the doc comment above).
+    if (candidates.items.len == 0) for (embedded_dirs) |embedded_dir| {
         const config_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ embedded_dir, config_name }) catch
             @panic("failed to build candidate config path");
         defer allocator.free(config_path);
@@ -271,12 +279,14 @@ pub fn resolveUuidDir(
             .uuid = allocator.dupe(u8, found_uuid) catch @panic("failed to dupe candidate uuid"),
             .mtime_ns = 0,
         }) catch @panic("failed to append candidate");
-    }
+    };
 
     if (candidates.items.len == 0) return null;
 
-    // Latest mtime wins; name-ascending breaks exact ties. Deterministic
-    // under all inputs (the settle's requirement).
+    // Latest mtime wins; name-ascending breaks exact ties. All surviving
+    // candidates are same-tier (the shadow rule above), so the duplicate
+    // flag is a genuine same-tier collision. Deterministic under all
+    // inputs (the settle's requirement).
     var best: usize = 0;
     var index: usize = 1;
     while (index < candidates.items.len) : (index += 1) {
@@ -1765,6 +1775,92 @@ test "listOfficialCampaigns: the shipped campaign with uuid + metadata" {
     try testing.expectEqualStrings("campaigns/main_campaign", list[0].dir);
     try testing.expectEqualStrings("Main Campaign", list[0].name);
     try testing.expectEqualStrings("8ecb3f44-9a3d-497c-95a9-a000b8517b7d", list[0].uuid);
+}
+
+test "resolveUuidDir: a persistent copy shadows its embedded namesake; same-tier duplicates flag" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-resolve-uuid-dir-tiers";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    const uuid = "11111111-1111-1111-1111-111111111111";
+    const hub_txt = "Metadata\nhub_uuid " ++ uuid ++ "\n";
+    const sections = [_][]const u8{"Metadata"};
+    const free_resolution = struct {
+        fn free(alloc: std.mem.Allocator, resolution: UuidDirResolution) void {
+            alloc.free(resolution.dir);
+        }
+    }.free;
+
+    // The save outcome: the persistent copy (under the scanned parent) +
+    // the embedded original (outside it - reachable only through the
+    // caller-passed embedded dirs, like the real embedded tier) share
+    // the uuid. The persistent copy shadows: resolves to it, NO
+    // duplicate flag.
+    file_source.writeFile("campaigns/alpha/hubs/aaa/hub.txt", hub_txt) catch @panic("w1");
+    file_source.writeFile("campaigns/embedded_mirror/hubs/orig/hub.txt", hub_txt) catch @panic("w2");
+    {
+        const resolution = resolveUuidDir(
+            &file_source,
+            allocator,
+            "campaigns/alpha/hubs",
+            &.{"campaigns/embedded_mirror/hubs/orig"},
+            "hub.txt",
+            &sections,
+            "hub_uuid",
+            uuid,
+        ).?;
+        defer free_resolution(allocator, resolution);
+        try testing.expectEqualStrings("campaigns/alpha/hubs/aaa", resolution.dir);
+        try testing.expectEqual(false, resolution.duplicate);
+    }
+
+    // A same-tier fork: a second persistent dir with the same uuid. The
+    // duplicate flag fires + latest-mtime wins (bbb written after aaa).
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
+    file_source.writeFile("campaigns/alpha/hubs/bbb/hub.txt", hub_txt) catch @panic("w3");
+    {
+        const resolution = resolveUuidDir(
+            &file_source,
+            allocator,
+            "campaigns/alpha/hubs",
+            &.{"campaigns/embedded_mirror/hubs/orig"},
+            "hub.txt",
+            &sections,
+            "hub_uuid",
+            uuid,
+        ).?;
+        defer free_resolution(allocator, resolution);
+        try testing.expectEqualStrings("campaigns/alpha/hubs/bbb", resolution.dir);
+        try testing.expectEqual(true, resolution.duplicate);
+    }
+
+    // Embedded-only collisions (a shipped-content bug): no persistent
+    // tier at all, two embedded dirs with the uuid - duplicate flags,
+    // name-ascending picks the winner.
+    file_source.writeFile("campaigns/embedded_mirror/hubs/second/hub.txt", hub_txt) catch @panic("w4");
+    {
+        const resolution = resolveUuidDir(
+            &file_source,
+            allocator,
+            "campaigns/beta/hubs",
+            &.{ "campaigns/embedded_mirror/hubs/second", "campaigns/embedded_mirror/hubs/orig" },
+            "hub.txt",
+            &sections,
+            "hub_uuid",
+            uuid,
+        ).?;
+        defer free_resolution(allocator, resolution);
+        try testing.expectEqualStrings("campaigns/embedded_mirror/hubs/orig", resolution.dir);
+        try testing.expectEqual(true, resolution.duplicate);
+    }
 }
 
 test "listSaveFiles: empty when saves/ absent" {

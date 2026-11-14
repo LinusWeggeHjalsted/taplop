@@ -3020,11 +3020,13 @@ pub fn resolveCampaignHubs(
     defer allocator.free(hubs_dir);
     var resolved_hubs: std.ArrayList(types.CampaignHub) = .empty;
     for (campaign.hubs) |hub| {
+        const embedded_dirs = embeddedHubDirs(campaign.dir, allocator);
+        defer allocator.free(embedded_dirs);
         const resolved = file_source_mod.resolveUuidDir(
             file_source,
             allocator,
             hubs_dir,
-            embeddedHubDirs(campaign.dir, allocator),
+            embedded_dirs,
             "hub.txt",
             &hub_sections,
             "hub_uuid",
@@ -3043,7 +3045,7 @@ pub fn resolveCampaignHubs(
         };
         defer allocator.free(resolved.dir);
         if (resolved.duplicate) {
-            appendWarning(warnings, allocator, "duplicate hub uuid '{s}': resolved to {s} (latest-updated wins; open one in the editor and Save As Copy to split)", .{ hub.uuid, resolved.dir });
+            appendWarning(warnings, allocator, "duplicate hub uuid '{s}': resolved to {s} (latest-updated wins; delete one of the copies to split them)", .{ hub.uuid, resolved.dir });
         }
         resolved_hubs.append(allocator, .{
             .uuid = dupeString(allocator, hub.uuid),
@@ -3065,7 +3067,11 @@ fn embeddedHubDirs(campaign_dir: []const u8, allocator: std.mem.Allocator) []con
     const prefix = std.fmt.allocPrint(allocator, "data/campaigns/{s}/hubs/", .{campaign_dir}) catch
         @panic("failed to build embedded hubs prefix");
     defer allocator.free(prefix);
-    for (file_source_mod.embeddedMapKeys(allocator)) |key| {
+    // The keys slice is owned (the elements are static map keys - never
+    // freed); only the outer slice is heap-owned.
+    const keys = file_source_mod.embeddedMapKeys(allocator);
+    defer allocator.free(keys);
+    for (keys) |key| {
         if (!std.mem.startsWith(u8, key, prefix)) continue;
         if (!std.mem.endsWith(u8, key, "/hub.txt")) continue;
         const hub_dir = key["data/".len .. key.len - "/hub.txt".len];
@@ -3096,11 +3102,15 @@ pub fn resolveCampaignBackgroundDims(
 
 /// Build the campaign's mission table (scan every mission dir in the
 /// campaign's `missions/` - persistent + embedded - read each
-/// mission.txt's uuid + name). Duplicates resolve latest-mtime-wins +
-/// a warning (see DESIGN → Campaigns & the Campaign Editor →
-/// Uuid→dir resolution). Returns a caller-owned table, empty when the
-/// campaign has no missions dir. The LOADING side only - replay reads
-/// the table from state.
+/// mission.txt's uuid + name). A uuid resolved in the persistent tier
+/// SHADOWS its embedded namesake (unreachable through the read order -
+/// the normal state after a save materializes a persistent copy; see
+/// DESIGN → Campaigns & the Campaign Editor → Uuid→dir resolution),
+/// so cross-tier repeats are silent; duplicates warn only SAME-TIER
+/// (two persistent dirs - a hand fork; two embedded dirs - a shipped
+/// collision), resolving latest-mtime-wins. Returns a caller-owned
+/// table, empty when the campaign has no missions dir. The LOADING side
+/// only - replay reads the table from state.
 pub fn resolveCampaignMissions(
     campaign: types.Campaign,
     file_source: *const FileSource,
@@ -3113,11 +3123,12 @@ pub fn resolveCampaignMissions(
     defer allocator.free(missions_dir);
 
     // The candidate dirs: the persistent scan + the embedded campaign's
-    // mission dirs (mtime 0). One pass, then dedupe by uuid keeping the
-    // latest-mtime candidate.
+    // mission dirs (tier flag; mtime only orders within a tier). One
+    // pass, then dedupe by uuid with the shadow rule.
     const Candidate = struct {
         dir: []const u8,
         mtime_ns: i128,
+        persistent: bool,
     };
     var candidates: std.ArrayList(Candidate) = .empty;
     defer {
@@ -3138,29 +3149,44 @@ pub fn resolveCampaignMissions(
             candidates.append(allocator, .{
                 .dir = dir,
                 .mtime_ns = file_source_mod.dirMtime(file_source, dir),
+                .persistent = true,
             }) catch @panic("failed to append mission candidate");
         }
     }
 
-    for (file_source_mod.officialMissionDirPathsForCampaign(missions_dir, allocator)) |embedded_dir| {
+    const embedded_mission_dirs = file_source_mod.officialMissionDirPathsForCampaign(missions_dir, allocator);
+    defer allocator.free(embedded_mission_dirs);
+    for (embedded_mission_dirs) |embedded_dir| {
         defer allocator.free(embedded_dir);
         candidates.append(allocator, .{
             .dir = allocator.dupe(u8, embedded_dir) catch @panic("failed to dupe embedded mission dir"),
             .mtime_ns = 0,
+            .persistent = false,
         }) catch @panic("failed to append mission candidate");
     }
 
-    // Read uuid + name per candidate; first-wins on duplicate uuid UNLESS
-    // a later candidate is strictly newer (latest-updated wins; the sort
-    // by mtime descending makes the first-seen the winner).
+    // Persistent tier first (so a persistent candidate always claims a
+    // uuid before its embedded shadow - mtime alone can't guarantee that
+    // when a persistent dir stamps 0), then mtime descending within a
+    // tier (latest-updated wins), then name ascending (copied folders
+    // carry identical mtimes - deterministic under all inputs).
     std.mem.sort(Candidate, candidates.items, {}, struct {
         fn before(_: void, a: Candidate, b: Candidate) bool {
+            if (a.persistent != b.persistent) return a.persistent;
             if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
             return std.mem.lessThan(u8, a.dir, b.dir);
         }
     }.before);
-    var seen_uuids = std.StringHashMap(void).init(allocator);
-    defer seen_uuids.deinit();
+    const ClaimTier = enum { persistent, embedded };
+    var seen_uuids = std.StringHashMap(ClaimTier).init(allocator);
+    // The map owns duped keys - mission_uuid borrows the per-candidate
+    // probe arena, which dies at each iteration's end; a borrowed key
+    // is a dangling pointer the next get() would compare against.
+    defer {
+        var key_it = seen_uuids.keyIterator();
+        while (key_it.next()) |key| allocator.free(key.*);
+        seen_uuids.deinit();
+    }
     for (candidates.items) |candidate| {
         var probe_arena = std.heap.ArenaAllocator.init(allocator);
         defer probe_arena.deinit();
@@ -3172,11 +3198,17 @@ pub fn resolveCampaignMissions(
         if (metadata.entry_groups.len == 0) continue;
         const pairs = metadata.entry_groups[0].pairs;
         const mission_uuid = findValue(pairs, "mission_uuid") orelse continue;
-        if (seen_uuids.contains(mission_uuid)) {
-            appendWarning(warnings, allocator, "duplicate mission uuid '{s}' ({s} shadows an earlier copy - latest-updated wins; open one in the editor and Save As Copy to split)", .{ mission_uuid, candidate.dir });
+        if (seen_uuids.get(mission_uuid)) |claim_tier| {
+            // A persistent claim shadowing an embedded candidate is the
+            // normal save outcome - silent. Same-tier repeats are the
+            // genuine forks; the sort guarantees a persistent candidate
+            // never arrives after an embedded claim of its uuid.
+            if (claim_tier == .persistent and !candidate.persistent) continue;
+            appendWarning(warnings, allocator, "duplicate mission uuid '{s}': {s} shadows an earlier copy - latest-updated wins; delete one of the copies to split them", .{ mission_uuid, candidate.dir });
             continue;
         }
-        seen_uuids.put(mission_uuid, {}) catch @panic("failed to insert seen mission uuid");
+        const owned_uuid = dupeString(allocator, mission_uuid);
+        seen_uuids.put(owned_uuid, if (candidate.persistent) ClaimTier.persistent else ClaimTier.embedded) catch @panic("failed to insert seen mission uuid");
         const name = findValue(pairs, "name") orelse "";
         entries.append(allocator, .{
             .uuid = dupeString(allocator, mission_uuid),
@@ -5455,6 +5487,77 @@ test "loadCampaign without name/start_hub/background/hubs defaults to empty and 
     // The empty defaults are the static empty slice - freeCampaign must
     // treat them as a no-op, not a double-free or a leak.
     freeCampaign(campaign, allocator);
+}
+
+test "official campaign: a saved persistent copy loads clean (shadow, not duplicate)" {
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const scratch = "zig-cache/test-official-campaign-save-shadow";
+    const temp_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = file_source_mod.FileSource.init(io, temp_dir);
+
+    // The save-then-load repro against REAL shipped content: materialize
+    // the official campaign's hub + mission config files into the
+    // persistent tier at the same content-relative paths (what a
+    // campaign-editor save of the official campaign produces). Loading
+    // then sees every uuid in BOTH tiers - the persistent copy must
+    // shadow the embedded original silently, not warn "duplicate".
+    const hub_dirs = embeddedHubDirs("main_campaign", allocator);
+    defer allocator.free(hub_dirs);
+    for (hub_dirs) |hub_dir| {
+        const hub_txt_path = std.fmt.allocPrint(allocator, "{s}/hub.txt", .{hub_dir}) catch
+            @panic("failed to build hub.txt path");
+        defer allocator.free(hub_txt_path);
+        const hub_txt = file_source.readFile(allocator, hub_txt_path) catch
+            @panic("failed to read the embedded hub.txt");
+        defer allocator.free(hub_txt);
+        file_source.writeFile(hub_txt_path, hub_txt) catch @panic("failed to write the persistent hub copy");
+    }
+    const mission_dirs = file_source_mod.officialMissionDirPathsForCampaign("campaigns/main_campaign/missions", allocator);
+    defer {
+        for (mission_dirs) |mission_dir| allocator.free(mission_dir);
+        allocator.free(mission_dirs);
+    }
+    for (mission_dirs) |mission_dir| {
+        const mission_txt_path = std.fmt.allocPrint(allocator, "{s}/mission.txt", .{mission_dir}) catch
+            @panic("failed to build mission.txt path");
+        defer allocator.free(mission_txt_path);
+        const mission_txt = file_source.readFile(allocator, mission_txt_path) catch
+            @panic("failed to read the embedded mission.txt");
+        defer allocator.free(mission_txt);
+        file_source.writeFile(mission_txt_path, mission_txt) catch @panic("failed to write the persistent mission copy");
+    }
+
+    const campaign_txt = file_source.readFile(allocator, "campaigns/main_campaign/campaign.txt") catch
+        @panic("failed to read the embedded campaign.txt");
+    defer allocator.free(campaign_txt);
+    const sections = try parseConfigFile(campaign_txt, allocator, &campaign_sections);
+    defer freeParsedSections(sections, allocator);
+    var campaign = try loadCampaign(sections, "campaigns/main_campaign", allocator, null);
+    defer freeCampaign(campaign, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |warning| allocator.free(warning);
+        warnings.deinit(allocator);
+    }
+
+    resolveCampaignHubs(&campaign, &file_source, allocator, &warnings);
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try std.testing.expectEqual(hub_dirs.len, campaign.hubs.len);
+    for (campaign.hubs) |hub| try std.testing.expect(hub.dir.len > 0);
+
+    campaign.missions = resolveCampaignMissions(campaign, &file_source, allocator, &warnings);
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    // Every shipped mission resolved (the count derived from the same
+    // scan the copies came from), each to a non-empty dir.
+    try std.testing.expectEqual(mission_dirs.len, campaign.missions.len);
+    for (campaign.missions) |mission| try std.testing.expect(mission.dir.len > 0);
 }
 
 test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per defect" {
