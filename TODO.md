@@ -425,13 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] Hub tool palette cell: the hub icon graphic should draw
-          128x128 (it currently fits tool_graphic_tile_size 256).
-    - [ ] Mission tool palette cell: the graphic is broken - the
-          world/flag sprite (a 256x512 sheet) renders as inconsistently
-          tall whiteish lines in the cell. Replace with the mission
-          EDGE ARROW: a 128px-long arrow pointing right (the drawn-edge
-          visual, likely procedural rects/lines rather than a sprite).
     - [ ] Keybinds 1/2/3 = select/hub/mission tool in the campaign
           editor (the mission editor's 1-5 tool binds are the wiring
           model; the shortcut-number surfacing polish item at the top

@@ -56,6 +56,11 @@ const sidebar_width: i32 = 1024;
 /// convention).
 const tool_graphic_tile_size: i32 = 256;
 
+/// The mission tool's palette graphic: the drawn-edge arrow's length
+/// (reference px, horizontal, pointing right - the preview's arrow at
+/// rest).
+const mission_tool_arrow_length: i32 = 128;
+
 /// The mission's resolved END: the live hub's map position when the end
 /// is wired, else the frozen ghost position (an orphan renders in
 /// place); null when the end is neither (the dangling case). The origin
@@ -488,7 +493,7 @@ pub fn buildCampaignEditorView(
             .highlighted = editor.active_tool == .hub,
             .tooltip = .{ .header = try spanRow(allocator, text("Place Hub")) },
         } });
-        const hub_graphic = editor_shell.scaleToFit(hub_cell, tool_graphic_tile_size, tool_graphic_tile_size);
+        const hub_graphic = hub_cell.placeCenter(128, 128);
         try elements.append(allocator, .{ .image = .{
             .sprite_id = hub_icon_sprite_id,
             .screen_position = hub_graphic.position(),
@@ -497,8 +502,10 @@ pub fn buildCampaignEditorView(
             .blocks_input = false,
         } });
         cell_x += ui_element.slot_size + ui_element.ui_gap;
-        // The mission tool: the flag graphic (the mission-start marker's
-        // sprite family).
+        // The mission tool: the EDGE ARROW graphic - the drawn-edge visual
+        // (a 128px-long stroke pair pointing right, the preview's arrow at
+        // rest), not a sprite: the flag sheet renders as broken lines in
+        // a cell.
         const mission_cell = Rectangle{
             .x = cell_x,
             .y = cell_y,
@@ -516,12 +523,45 @@ pub fn buildCampaignEditorView(
             .highlighted = editor.active_tool == .mission,
             .tooltip = .{ .header = try spanRow(allocator, text("Draw Mission Edge")) },
         } });
-        const mission_graphic = editor_shell.scaleToFit(mission_cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = "world/flag",
-            .screen_position = mission_graphic.position(),
-            .width = mission_graphic.width,
-            .height = mission_graphic.height,
+        const arrow_center_x = mission_cell.x + @divFloor(mission_cell.width, 2);
+        const arrow_center_y = mission_cell.y + @divFloor(mission_cell.height, 2);
+        const arrow_start = types.ScreenPosition{
+            .x = arrow_center_x - @divFloor(mission_tool_arrow_length, 2),
+            .y = arrow_center_y,
+        };
+        const arrow_end = types.ScreenPosition{
+            .x = arrow_center_x + @divFloor(mission_tool_arrow_length, 2),
+            .y = arrow_center_y,
+        };
+        // A straight curve: the control points on the segment at thirds.
+        const arrow_control_start = types.ScreenPosition{
+            .x = arrow_start.x + @divFloor(mission_tool_arrow_length, 3),
+            .y = arrow_center_y,
+        };
+        const arrow_control_end = types.ScreenPosition{
+            .x = arrow_start.x + @divFloor(2 * mission_tool_arrow_length, 3),
+            .y = arrow_center_y,
+        };
+        // The stroke pair (the map edge's look): the black under-stroke +
+        // the lightest stroke, both with the arrowhead at the right end.
+        try elements.append(allocator, .{ .curve = .{
+            .start = arrow_start,
+            .control_start = arrow_control_start,
+            .control_end = arrow_control_end,
+            .end = arrow_end,
+            .width = edge_width + 2 * edge_outline_width,
+            .color = black,
+            .arrowhead = true,
+            .blocks_input = false,
+        } });
+        try elements.append(allocator, .{ .curve = .{
+            .start = arrow_start,
+            .control_start = arrow_control_start,
+            .control_end = arrow_control_end,
+            .end = arrow_end,
+            .width = edge_width,
+            .color = lightest,
+            .arrowhead = true,
             .blocks_input = false,
         } });
     }
@@ -1309,13 +1349,14 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
 
     // Derived total: the map (1 surface + 1 background + per hub an icon
     // + a select button + per mission 2 curves + 1 edge button - the
-    // select tool is the fixture's default) + the tool palette (3 cells x
-    // button + graphic) + the inspector (toggle strip 3 + open panel 1 +
-    // the Mission section strip 3 - nothing selected, sections collapsed,
-    // so no content) + the metadata (toggle strip 3; CLOSED by default -
-    // the mission editor's default).
+    // select tool is the fixture's default) + the tool palette (the
+    // select + hub cells x button + graphic, the mission cell's button +
+    // the two-curve arrow graphic) + the inspector (toggle strip 3 + open
+    // panel 1 + the Mission section strip 3 - nothing selected, sections
+    // collapsed, so no content) + the metadata (toggle strip 3; CLOSED by
+    // default - the mission editor's default).
     const expected_total = 1 + 1 + 2 * editor.hubs.len + 3 * editor.missions.len +
-        6 + (3 + 1 + 3) + 3;
+        7 + (3 + 1 + 3) + 3;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
     // The map surface is the FIRST solid_rect - NON-blocking by design
@@ -1543,6 +1584,44 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     try std.testing.expect(select_cell.?.highlighted);
     try std.testing.expect(!hub_cell.?.highlighted);
 
+    // The hub cell's graphic: the hub icon drawn 128x128 - half the cell,
+    // not edge to edge (the map icons stay 64).
+    var palette_hub_icon: ?ui_element.Image = null;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, hub_icon_sprite_id) and
+                image.width == 128 and image.height == 128)
+            {
+                palette_hub_icon = image;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(palette_hub_icon != null);
+
+    // The mission cell's graphic: the 128px stroke-pair arrow pointing
+    // right - the black under-stroke + the lightest stroke, both with the
+    // arrowhead at the right end (the drawn-edge visual, not a sprite).
+    var palette_arrow_strokes: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .curve => |curve| {
+            const is_palette_arrow = curve.start.y == curve.end.y and
+                curve.end.x > curve.start.x and
+                curve.end.x - curve.start.x == mission_tool_arrow_length and
+                curve.arrowhead;
+            if (!is_palette_arrow) continue;
+            palette_arrow_strokes += 1;
+            if (curve.width == edge_width) {
+                try std.testing.expectEqual(test_theme.lightest, curve.color);
+            } else {
+                try std.testing.expectEqual(edge_width + 2 * edge_outline_width, curve.width);
+                try std.testing.expectEqual(black, curve.color);
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), palette_arrow_strokes);
+
     // The hub select buttons: one per hub, the selected one highlighted.
     var hub_buttons: usize = 0;
     var highlighted_hubs: usize = 0;
@@ -1755,11 +1834,11 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     );
     // Derived total for the preview build: the map (1 surface + 1
     // background + 2/hub + 2 curves/mission - NO edge buttons under the
-    // mission tool - + 2 preview curves) + palette 6 + the inspector
+    // mission tool - + 2 preview curves) + palette 7 + the inspector
     // (nothing selected, sections collapsed: strip 3 + panel 1 + section
     // strip 3) + the metadata (open, collapsed: strip 3 + panel 1 +
     // section strip 3).
     const expected_preview_total = 1 + 1 + 2 * editor.hubs.len + 2 * editor.missions.len + 2 +
-        6 + 7 + 7;
+        7 + 7 + 7;
     try std.testing.expectEqual(expected_preview_total, preview_elements.items.len);
 }

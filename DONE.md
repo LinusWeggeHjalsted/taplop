@@ -342,6 +342,7 @@ working rules).
 - [campaign identity: cross-tier shadows silent + saving official content forks (punch-list item 1 - the duplicate-hub-uuid load bug)](#campaign-identity-cross-tier-shadows-silent--saving-official-content-forks-punch-list-item-1---the-duplicate-hub-uuid-load-bug)
 - [campaign editor: Save As Copy removed (punch-list item 9)](#campaign-editor-save-as-copy-removed-punch-list-item-9)
 - [campaign editor: the picker batch (punch-list items 2-4)](#campaign-editor-the-picker-batch-punch-list-items-2-4)
+- [campaign editor: the tool palette graphics (punch-list items 5-6)](#campaign-editor-the-tool-palette-graphics-punch-list-items-5-6)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21133,3 +21134,21 @@ index moves); the None-then-rescan repro against the real embedded
 official campaign (stems == ["map"] with an empty stem, and still one
 row after a persistent namesake lands); the background picker view test
 pins the row text color against the theme.
+
+## campaign editor: the tool palette graphics (punch-list items 5-6)
+
+The two map-tool cells' graphics rebuilt: the hub tool's icon draws
+128x128 (half the 256 cell - it previously filled the cell edge to
+edge), and the mission tool's broken world/flag sheet (a 256x512
+sprite that rendered as inconsistently tall whitish lines in a cell)
+is replaced with the DRAWN-EDGE visual: a 128px-long stroke-pair arrow
+pointing right (the black under-stroke + the lightest stroke, both with
+the arrowhead at the right end - the map edge's exact visual language,
+the preview's arrow at rest), built from the shared curve machinery
+rather than a sprite.
+
+Tests: the palette structure test pins both graphics (an icon image at
+exactly 128x128; exactly two horizontal 128px arrowhead curves in the
+palette - the lightest stroke at edge_width over the black under-stroke
+at edge_width + 2*edge_outline_width), and the derived-total tests
+count the mission cell's two-curve graphic.
