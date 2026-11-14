@@ -21593,7 +21593,10 @@ repro itself was confounded twice more (the real mouse overriding the
 synthetic pointer during waits; one-shot first-frame exports while the
 sustained view was what was broken). The full method record is the
 commit trail; the honest summary: the one-big-triangle-strip approach
-renders unreliably in this raylib fork in ways that resisted diagnosis,
+renders unreliably under the official raylib 6.2 (raysan5/raylib, the
+raylib-zig 6.2.0 pin - not a fork; the diagnosis session initially
+misread raylib 6.x's single-header rlgl as one) in ways that resisted
+diagnosis,
 and it is gone.
 
 THE SETTLED SHAPE: per-segment `drawLineEx` quads over the same
