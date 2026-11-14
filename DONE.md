@@ -348,6 +348,7 @@ working rules).
 - [editor inspectors: empty-when-unselected + the topmost group expanded by default (punch-list items 10-11)](#editor-inspectors-empty-when-unselected--the-topmost-group-expanded-by-default-punch-list-items-10-11)
 - [both editors: Tab / shift+Tab tool cycling (punch-list items 13-14, the punch list complete)](#both-editors-tab--shifttab-tool-cycling-punch-list-items-13-14-the-punch-list-complete)
 - [mission editor: Tab cycling reworked to the SPATIAL model (a playtest revision of items 13-14)](#mission-editor-tab-cycling-reworked-to-the-spatial-model-a-playtest-revision-of-items-13-14)
+- [content hash v2 - the artifact-scope extension (the two-axis design settle + listDirFiles)](#content-hash-v2---the-artifact-scope-extension-the-two-axis-design-settle--listdirfiles)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21285,3 +21286,70 @@ region instead of defaulting to the last slot. The pure tests pin the
 playtest scenario + every orphan case (entity/decoration/item, both
 directions); the handler test's comment follows the new model (its
 all-collapsed behavior is unchanged).
+
+## content hash v2 - the artifact-scope extension (the two-axis design settle + listDirFiles)
+
+Found during the main-campaign map 2x upscale session: the content hash
+hashed configs only, so an art-only edit left a validation replay looking
+"validated" - the staleness gate was blind to half the artifact. The fix
+session first SETTLED the identity doctrine (see DESIGN → Custom Missions
+& Online Services → Content identity, rewritten in the same session):
+
+- Two hash axes: the CONTENT hash (the challenge identity - the artifact
+  minus game-written records; pins replays, keys leaderboards by
+  `(mission_uuid, content_hash)`, gates staleness + the personal best)
+  and the VERSION hash (the whole-artifact identity, validation replay
+  included - the server seam's version-dedup key; never stored inside
+  the artifact, so there is no circularity). The motivating case: keying
+  server versions by the content hash would reject a re-validation
+  re-upload as a duplicate and strand the author's improved PB on their
+  own machine. The replay's embedded `created` timestamp means every
+  re-validation is a new version even for an identical run - accepted
+  (a new replay is a new artifact).
+- The artifact-scope rule: hashes cover the canonical ARTIFACT - exactly
+  what the export bundles (configs + the mission folder's PNGs + the
+  replay), not the raw folder. The server only ever sees the artifact,
+  so the client's notion of "what changed" must match the server's
+  byte-for-byte; stray folder files re-keying versions the server cannot
+  see was the rejected alternative. DESIGN's old text claimed custom
+  assets were hashed (written as settled fact) while v1 hashed configs
+  only - the deferral lived in the code header + AGENTS and nothing in
+  TODO tracked it; the rewrite closed that drift.
+- Campaign hashing follows the same axes over the campaign artifact
+  tree: the campaign VERSION hash is the server-side versioning key for
+  uploaded campaigns; the campaign CONTENT hash defers until full
+  campaign validation or campaign leaderboards need it.
+
+Implementation (slices 1 + 2 of the TODO item):
+
+- `FileSource.listDirFiles` (file_source.zig): the two-tier direct-file
+  listing (persistent-dir iterate + embedded `data/<dir>/` map scan,
+  deduped, sorted) - the same two tiers `readFile` resolves between, so
+  a listed name always reads back. Plus `freeDirFiles` (the
+  `freePersistentDirFiles` pattern, pub for cross-file callers).
+- The two FILE-walk sites of the NEXT UP embedded-dir item now ride it:
+  `copyDirFiles` (campaign_editor/io.zig; one behavior change: a
+  non-FileNotFound persistent open failure now aborts the carry with the
+  save's popup instead of silently skipping the tier - an unreadable
+  source dir was already fatal for the forked copy) and
+  `rescanCampaignBackgroundStems` (the two tier loops collapse into one
+  listing + a .png filter; the stems now come out in one sorted order
+  instead of persistent-sorted-then-embedded-map-order; the per-rescan
+  element leak of the old listing is also gone). The remaining two walk
+  sites (`embeddedHubDirs`, `officialMissionDirPaths*`) are file-anchored
+  DIR scans (extract the dir containing hub.txt/mission.txt) - a
+  different shape, deliberately not forced through the file-listing
+  helper (`embeddedMapKeys` stays their seam).
+- `computeMissionHash` now folds in every direct PNG of the mission
+  folder (both read tiers via `listDirFiles`). Official missions ship no
+  PNGs, so their hashes are unchanged; custom missions with art re-hash
+  (the accepted one-time wipe - the change invalidates existing
+  validation replays by design, no migration; pre-release there are no
+  real players, the cheapest window this could ever land in).
+- Contract tests: `listDirFiles` (both tiers unioned against the real
+  embedded campaign, same-name shadow dedupe, subdirs excluded,
+  absent-dir empty) and the hash (a PNG add + a PNG byte change re-hash;
+  stray notes.txt + validation_replay.txt do not).
+
+The mission + campaign version hashes land with the server seam (TODO
+keeps the remaining slice pointer).

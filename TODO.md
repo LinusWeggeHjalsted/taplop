@@ -62,18 +62,17 @@ Test by running `zig build run` and clicking through.
       Not urgent - a line to keep it visible.
 - **The embedded-dir file scan is hand-rolled in four places
       (punch-list session rider, same family as the mission-scan item
-      above)** - `embeddedHubDirs` (loaders.zig),
-      `officialMissionDirPathsForCampaign` (file_source.zig),
-      `copyDirFiles` + `rescanCampaignBackgroundStems`
-      (campaign_editor) each walk `embeddedMapKeys` with a
-      `data/<dir>/` prefix + a direct-file filter (the fork-on-save
-      session added two of the four). A shared
-      `embeddedDirFiles(allocator, dir)` helper would freeze it; watch
-      the comptime-materialization gotcha (runtime slicing of the map
-      keys is the reliable shape - AGENTS → Zig Gotchas). The
-      content-hash v2 slice (Content Loading / Custom Missions) is the
-      fifth consumer - it lands the helper, so fold this item's
-      resolution into that pass.
+      above)** - PARTIALLY RESOLVED by the content-hash v2 session (DONE.md,
+      "content hash v2"): the two FILE-walk sites (`copyDirFiles`,
+      `rescanCampaignBackgroundStems`) now ride `FileSource.listDirFiles`
+      (the two-tier union). The remaining two (`embeddedHubDirs`,
+      `officialMissionDirPaths*`) are a DIFFERENT shape - file-anchored
+      DIR scans (extract the dir containing `hub.txt`/`mission.txt`), not
+      file listings; `embeddedMapKeys` is their shared seam, and forcing
+      them through a file-listing helper would fit, not belong. Watch
+      the comptime-materialization gotcha if they ever grow a shared
+      helper (runtime slicing of the map keys is the reliable shape -
+      AGENTS → Zig Gotchas).
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
@@ -746,19 +745,8 @@ looking:
   start_mission.
 
 - **Content hash v2 - artifact scope (design settled - DESIGN → Custom
-  Missions & Online Services → Content identity):** the mission content
-  hash covers configs + the mission folder's PNGs (the artifact set minus
-  records), not configs alone - today an art-only edit leaves a validation
-  replay looking "validated" (the staleness gate misses it). The hash
-  change invalidates existing validation replays - accepted one-time
-  wipe, no migration. Slices:
-  1. FileSource dir listing for a content path (embedded map-key scan +
-     persistent iterate, resolution matching readFile) - the shared
-     `embeddedDirFiles` helper that also resolves the hand-rolled
-     embedded-dir walks item in NEXT UP.
-  2. `computeMissionHash` over configs + PNGs; contract tests (PNG byte
-     change re-hashes; a stray non-artifact file does not; a validation
-     replay change does not).
+  Missions & Online Services → Content identity):** slices 1 + 2 DONE
+  (DONE.md, "content hash v2 - the artifact-scope extension"). Remaining:
   3. The mission version hash + campaign version hash land with the
      server seam (no local consumer yet - dead code until upload exists).
 

@@ -547,6 +547,73 @@ pub const FileSource = struct {
         return names.toOwnedSlice(allocator);
     }
 
+    /// Direct-file names of one content dir, BOTH read tiers unioned
+    /// (persistent-dir iterate + embedded `data/<dir>/` map scan - the
+    /// same two tiers `readFile` resolves between, so every name listed
+    /// here reads back through `readFile`). Subdirectories are not
+    /// listed (a subdir's files belong to their own dir listing); a name
+    /// present in both tiers appears once (its bytes resolve
+    /// persistent-first, exactly as `readFile` does). Sorted
+    /// lexicographically. The names are caller-owned (free each + the
+    /// slice). A dir absent from the persistent tier lists the embedded
+    /// tier alone; absent from both, it lists empty.
+    pub fn listDirFiles(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        dir_path: []const u8,
+    ) ![][]const u8 {
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (names.items) |name| allocator.free(name);
+            names.deinit(allocator);
+        }
+
+        // Tier 1: the persistent dir's direct files.
+        if (self.persistent_dir.openDir(self.io, dir_path, .{ .iterate = true })) |sub_dir| {
+            defer std.Io.Dir.close(sub_dir, self.io);
+            var iterator = sub_dir.iterate();
+            while (try iterator.next(self.io)) |entry| {
+                if (entry.kind == .directory) continue;
+                try names.append(allocator, try allocator.dupe(u8, entry.name));
+            }
+        } else |open_error| switch (open_error) {
+            error.FileNotFound => {},
+            else => return open_error,
+        }
+
+        // Tier 2: the embedded map's direct files under data/<dir_path>/.
+        // The keys slice is owned (the elements are static map keys -
+        // runtime slicing, never comptime arrays over them; see AGENTS →
+        // Zig Gotchas).
+        const keys = embeddedMapKeys(allocator);
+        defer allocator.free(keys);
+        const embedded_prefix = std.fmt.allocPrint(allocator, "data/{s}/", .{dir_path}) catch
+            @panic("failed to build embedded dir listing prefix");
+        defer allocator.free(embedded_prefix);
+        for (keys) |key| {
+            if (!std.mem.startsWith(u8, key, embedded_prefix)) continue;
+            const file_name = key[embedded_prefix.len..];
+            if (std.mem.indexOfScalar(u8, file_name, '/') != null) continue;
+            var already_listed = false;
+            for (names.items) |existing| {
+                if (std.mem.eql(u8, existing, file_name)) {
+                    already_listed = true;
+                    break;
+                }
+            }
+            if (already_listed) continue;
+            try names.append(allocator, try allocator.dupe(u8, file_name));
+        }
+
+        const SortContext = struct {
+            fn lessThan(_: void, first: []const u8, second: []const u8) bool {
+                return std.mem.lessThan(u8, first, second);
+            }
+        };
+        std.mem.sort([]const u8, names.items, {}, SortContext.lessThan);
+        return names.toOwnedSlice(allocator);
+    }
+
     /// Write a file to the persistent dir only. Rejects `data/`/`assets/`
     /// prefixes - shipped content is immutable from the game's perspective
     /// (players may still drop override files into the persistent dir by hand;
@@ -1122,6 +1189,12 @@ pub const FileSource = struct {
 fn freePersistentDirFiles(allocator: std.mem.Allocator, paths: [][]const u8) void {
     for (paths) |path| allocator.free(path);
     allocator.free(paths);
+}
+
+/// Free a `listDirFiles` result (each owned name + the slice).
+pub fn freeDirFiles(allocator: std.mem.Allocator, files: [][]const u8) void {
+    for (files) |file| allocator.free(file);
+    allocator.free(files);
 }
 
 /// Deterministic listing order: lexicographic path order.
@@ -1937,6 +2010,41 @@ test "listSaveFiles: only .txt files, newest first, non-txt excluded" {
 }
 
 // --- tests for readAudioFile ---
+
+test "listDirFiles: both tiers unioned, deduped, direct files only, sorted" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-dir-files";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // A dir in neither tier lists empty.
+    const absent = try file_source.listDirFiles(allocator, "no/such/dir");
+    defer freeDirFiles(allocator, absent);
+    try testing.expectEqual(@as(usize, 0), absent.len);
+
+    // The official campaign dir is embedded: campaign.txt + map.png at
+    // the root, hubs/ + missions/ subdirs (never listed). Scratch
+    // shadows join the union (sorted in); a same-name shadow of an
+    // embedded file dedupes to one entry.
+    file_source.writeFile("campaigns/main_campaign/campaign.txt", "shadow campaign") catch @panic("write campaign shadow");
+    file_source.writeFile("campaigns/main_campaign/zz_shadow.png", "shadow png") catch @panic("write png shadow");
+    const files = try file_source.listDirFiles(allocator, "campaigns/main_campaign");
+    defer freeDirFiles(allocator, files);
+    try testing.expectEqual(@as(usize, 3), files.len);
+    try testing.expectEqualStrings("campaign.txt", files[0]);
+    try testing.expectEqualStrings("map.png", files[1]);
+    try testing.expectEqualStrings("zz_shadow.png", files[2]);
+    for (files) |name| {
+        try testing.expect(std.mem.indexOfScalar(u8, name, '/') == null);
+    }
+}
 
 test "readAudioFile: embedded .ogg fallback, .wav shadow wins, priority order" {
     const allocator = testing.allocator;

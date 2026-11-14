@@ -781,10 +781,11 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/game_zip.zig` - the game-folder zip round trip (Export Game's
   writer + Import Game's overlay machinery + marker poll - see DESIGN →
   File System & IO → Web storage model)
-- `src/content_hash.zig` - mission content identity (SHA-256 over the
-  mission's config files; see DESIGN → Custom Missions & Online Services → Content
-  identity). v1 hashes config files only; extends to custom assets when the
-  VFS lands with directory listing.
+- `src/content_hash.zig` - mission content identity (the challenge hash
+  over the artifact set minus records - configs + the mission folder's PNGs;
+  see DESIGN → Custom Missions & Online Services → Content identity for the
+  artifact-scope rule + the two-axis doctrine). The whole-artifact version
+  hash lands with the server seam.
 - `src/crash_dump.zig` - custom panic namespace installed in both entry files;
   dumps the live session as a session-log bundle to `crashes/crash_*/`
   before `@trap`. See

@@ -11,12 +11,14 @@
 //! validation replay's staleness (a mission edited since its replay was
 //! recorded shows "unvalidated").
 //!
-//! v1 scope: hashes CONFIG files only (mission.txt + player.txt if present +
-//! level_1..level_{count}.txt). Custom assets (sprites/audio under the
-//! mission folder) are not hashed - FileSource has no directory-listing API.
-//! The canonicalization scheme (path-sorted, path-prefixed entries) is stable
-//! and already handles an arbitrary file set, so extending to custom assets is
-//! additive.
+//! Scope: the mission's ARTIFACT set minus the game-written records (the
+//! challenge identity - see DESIGN → Custom Missions & Online Services →
+//! Content identity for the artifact-scope rule + the two-axis doctrine):
+//! mission.txt + player.txt if present + level_1..level_{count}.txt + every
+//! PNG in the mission folder. Stray non-bundled files (author notes) and
+//! validation_replay.txt are outside the artifact's content tier and are
+//! never hashed. The whole-artifact version hash (records included) is the
+//! server seam's axis and lands there.
 
 const std = @import("std");
 const file_source_mod = @import("file_source.zig");
@@ -37,6 +39,12 @@ pub const ContentHash = [32]u8;
 /// 1 - a gap truncates); mission.txt no longer declares it. This is a
 /// side-effect context (not the reconstruction cache), so the probe reads
 /// file_source directly.
+///
+/// The file set also includes every direct PNG in the mission folder (the
+/// artifact's custom-sprite tier, both read tiers via `listDirFiles`) - an
+/// art edit changes the hash exactly like a config edit, so the staleness
+/// gate catches art-only edits too. Non-PNG files in the folder are outside
+/// the artifact's content tier and contribute nothing.
 ///
 /// Canonicalization: the file set is sorted lexicographically by path. Each
 /// file is fed into the hash as a path-prefixed entry - `<path>\n` then the
@@ -91,6 +99,18 @@ pub fn computeMissionHash(
     // A mission with no level_1.txt is broken (the required-file
     // contract): fail fast rather than hashing a levelless mission.
     if (level_index == 1) return error.MissingRequiredMissionLevel;
+
+    // The artifact's custom-sprite tier: every direct PNG in the mission
+    // folder, both read tiers (persistent + embedded - `listDirFiles`
+    // unions exactly the tiers readFile resolves between). Non-PNG files
+    // (author notes, the validation replay) are outside the artifact's
+    // content tier and contribute nothing.
+    const dir_names = try file_source.listDirFiles(allocator, mission_path);
+    defer file_source_mod.freeDirFiles(allocator, dir_names);
+    for (dir_names) |file_name| {
+        if (!std.mem.endsWith(u8, file_name, ".png")) continue;
+        try paths.append(allocator, try std.fmt.allocPrint(allocator, "{s}/{s}", .{ mission_path, file_name }));
+    }
 
     // Sort lexicographically by path for a canonical, order-independent hash.
     std.mem.sort([]u8, paths.items, {}, struct {
@@ -247,6 +267,71 @@ test "computeMissionHash: missing required file errors" {
         error.MissingRequiredMissionLevel,
         computeMissionHash(&file_source, arena, "m"),
     );
+}
+
+test "computeMissionHash: art is content - PNG changes re-hash" {
+    const allocator = testing.allocator;
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-content-hash-art";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\n") catch @panic("w1");
+    file_source.writeFile("m/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
+
+    const h1 = try computeMissionHash(&file_source, arena, "m");
+
+    // A new PNG joins the artifact's sprite tier: the hash moves.
+    file_source.writeFile("m/sprite.png", "fake png one") catch @panic("w3");
+    const h2 = try computeMissionHash(&file_source, arena, "m");
+    try testing.expect(!std.mem.eql(u8, &h1, &h2));
+
+    // An art byte change alone (no config touched) re-hashes - the
+    // art-only-edit gap this extension exists to close.
+    file_source.writeFile("m/sprite.png", "fake png two") catch @panic("w4");
+    const h3 = try computeMissionHash(&file_source, arena, "m");
+    try testing.expect(!std.mem.eql(u8, &h2, &h3));
+}
+
+test "computeMissionHash: the artifact scope - stray files + the validation replay are not hashed" {
+    const allocator = testing.allocator;
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-content-hash-scope";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\n") catch @panic("w1");
+    file_source.writeFile("m/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
+
+    const h1 = try computeMissionHash(&file_source, arena, "m");
+
+    // Stray non-bundled files + the game-written record are outside the
+    // artifact's content tier (DESIGN → Content identity): neither moves
+    // the hash.
+    file_source.writeFile("m/notes.txt", "author notes") catch @panic("w3");
+    file_source.writeFile("m/validation_replay.txt", "Metadata\ncontent_hash deadbeef\n") catch @panic("w4");
+    const h2 = try computeMissionHash(&file_source, arena, "m");
+    try testing.expect(std.mem.eql(u8, &h1, &h2));
 }
 
 test "hashToHex: encodes 32 bytes as 64 lowercase hex chars" {

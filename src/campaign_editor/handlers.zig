@@ -398,34 +398,21 @@ pub fn rescanCampaignBackgroundStems(history: *GameStateHistory) void {
         }
     }.append;
 
-    // Tier 1: the persistent dir's direct PNGs (a forked session's own
-    // art; a local campaign's dir).
+    // Both read tiers of the effective campaign dir's direct PNGs in one
+    // listing (a forked session scans the fork, the campaign save memo's
+    // dir, not the opened original; the official campaign's shipped
+    // background is offered whatever the current stem is, so choosing
+    // None never hides it - subdirs are not backgrounds, `listDirFiles`
+    // lists direct files only). An IO failure degrades to an empty
+    // listing (recoverable-degrade - a popup would interrupt the click
+    // flow).
     const campaign_dir = campaign_io.effectiveCampaignDir(history, editor);
-    const names = history.file_source.listPersistentPngFiles(
+    const names: [][]const u8 = history.file_source.listDirFiles(
         allocator,
         campaign_dir,
     ) catch &[_][]const u8{};
-    defer allocator.free(names);
+    defer file_source_mod.freeDirFiles(allocator, names);
     for (names) |file_name| {
-        const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-        appendStem(&stems, allocator, stem);
-    }
-
-    // Tier 2: the EMBEDDED campaign dir's direct PNGs (the official
-    // campaign's shipped background - offered whatever the current stem
-    // is, so choosing None never hides the shipped art). The map keys'
-    // outer slice is owned; the elements are static strings.
-    const keys = file_source_mod.embeddedMapKeys(allocator);
-    defer allocator.free(keys);
-    const embedded_prefix = std.fmt.allocPrint(allocator, "data/{s}/", .{campaign_dir}) catch
-        @panic("failed to build embedded background prefix");
-    defer allocator.free(embedded_prefix);
-    for (keys) |key| {
-        if (!std.mem.startsWith(u8, key, embedded_prefix)) continue;
-        const file_name = key[embedded_prefix.len..];
-        // Direct files only (hubs/ + missions/ subdirs are not
-        // backgrounds) + PNGs only.
-        if (std.mem.indexOfScalar(u8, file_name, '/') != null) continue;
         if (!std.mem.endsWith(u8, file_name, ".png")) continue;
         const stem = file_name[0 .. file_name.len - ".png".len];
         appendStem(&stems, allocator, stem);

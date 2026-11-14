@@ -138,30 +138,15 @@ fn copyDirFiles(
     source_dir: []const u8,
     destination_dir: []const u8,
 ) bool {
-    if (history.file_source.persistent_dir.openDir(history.file_source.io, source_dir, .{
-        .access_sub_paths = true,
-        .iterate = true,
-    }) catch null) |source_opened| {
-        defer std.Io.Dir.close(source_opened, history.file_source.io);
-        var it = source_opened.iterate();
-        while (it.next(history.file_source.io) catch null) |dir_entry| {
-            if (dir_entry.kind == .directory) continue;
-            if (!copyOneDirFile(history, allocator, source_dir, destination_dir, dir_entry.name)) return false;
-        }
-    }
-    // The embedded tier: content-root-relative keys under
-    // data/<source_dir>/ - direct files only (subdirs belong to their
-    // own carries). The elements are static map keys; only the outer
-    // slice is owned.
-    const keys = file_source_mod.embeddedMapKeys(allocator);
-    defer allocator.free(keys);
-    const embedded_prefix = std.fmt.allocPrint(allocator, "data/{s}/", .{source_dir}) catch
-        @panic("failed to build embedded carry prefix");
-    defer allocator.free(embedded_prefix);
-    for (keys) |key| {
-        if (!std.mem.startsWith(u8, key, embedded_prefix)) continue;
-        const file_name = key[embedded_prefix.len..];
-        if (std.mem.indexOfScalar(u8, file_name, '/') != null) continue;
+    // Both read tiers of the source dir's direct files in one listing
+    // (persistent + embedded; subdirs belong to their own carries - see
+    // `listDirFiles`). Each copy reads through `readFile`, which resolves
+    // the same tiers, so the listing and the byte source can't disagree.
+    // A listing failure aborts the carry (the save surfaces its popup) -
+    // an unreadable source dir is already fatal for the forked copy.
+    const file_names = history.file_source.listDirFiles(allocator, source_dir) catch return false;
+    defer file_source_mod.freeDirFiles(allocator, file_names);
+    for (file_names) |file_name| {
         if (!copyOneDirFile(history, allocator, source_dir, destination_dir, file_name)) return false;
     }
     return true;
