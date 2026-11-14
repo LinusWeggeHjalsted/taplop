@@ -535,7 +535,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         .{ .error_popup = true }
     else switch (history.current_state.screen) {
         .level, .hub => .{ .anytime = true, .game = true },
-        .editor, .campaign_editor => .{ .anytime = true, .editor = true },
+        .editor => .{ .anytime = true, .editor = true },
+        .campaign_editor => .{ .anytime = true, .campaign_editor = true },
         .main_menu => .{ .anytime = true, .menu = true },
         .replay_viewer => .{ .anytime = true },
     };

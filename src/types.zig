@@ -941,6 +941,7 @@ pub const BindingContext = enum {
     anytime,
     game,
     editor,
+    campaign_editor,
     menu,
     error_popup,
 };
@@ -955,6 +956,7 @@ pub const BindingContextSet = struct {
     anytime: bool = false,
     game: bool = false,
     editor: bool = false,
+    campaign_editor: bool = false,
     menu: bool = false,
     error_popup: bool = false,
 
@@ -963,6 +965,7 @@ pub const BindingContextSet = struct {
             .anytime => self.anytime,
             .game => self.game,
             .editor => self.editor,
+            .campaign_editor => self.campaign_editor,
             .menu => self.menu,
             .error_popup => self.error_popup,
         };
@@ -974,6 +977,7 @@ pub const BindingContextSet = struct {
         return (self.anytime and other.anytime) or
             (self.game and other.game) or
             (self.editor and other.editor) or
+            (self.campaign_editor and other.campaign_editor) or
             (self.menu and other.menu) or
             (self.error_popup and other.error_popup);
     }
@@ -983,19 +987,20 @@ pub const BindingContextSet = struct {
 /// same-combo pair on them would co-fire - the binding-CONFLICT predicate
 /// at load + in the keybind UI's steal scan). NOT plain intersection: the
 /// activation model (see DESIGN → Input → Binding contexts) has exactly
-/// one of game/editor/menu active with `anytime` riding along (everywhere
-/// except the modal error popup), so {anytime} ∩ {game} is empty YET both
-/// are active in-game - intersection would miss the conflict. Cross-screen
-/// sets (game vs editor) never co-fire; `error_popup` is active ALONE
-/// (co-fires only with itself).
+/// one of game/editor/campaign_editor/menu active with `anytime` riding
+/// along (everywhere except the modal error popup), so {anytime} ∩ {game}
+/// is empty YET both are active in-game - intersection would miss the
+/// conflict. Cross-screen sets (game vs editor vs campaign_editor) never
+/// co-fire; `error_popup` is active ALONE (co-fires only with itself).
 pub fn bindingContextsCoFire(a: BindingContextSet, b: BindingContextSet) bool {
     if (a.error_popup or b.error_popup) {
         return a.error_popup and b.error_popup;
     }
     if (a.anytime and b.anytime) return true;
-    if (a.anytime and (b.game or b.editor or b.menu)) return true;
-    if (b.anytime and (a.game or a.editor or a.menu)) return true;
-    return (a.game and b.game) or (a.editor and b.editor) or (a.menu and b.menu);
+    if (a.anytime and (b.game or b.editor or b.campaign_editor or b.menu)) return true;
+    if (b.anytime and (a.game or a.editor or a.campaign_editor or a.menu)) return true;
+    return (a.game and b.game) or (a.editor and b.editor) or
+        (a.campaign_editor and b.campaign_editor) or (a.menu and b.menu);
 }
 
 /// The single `BindingContext` written to a binding's settings-file line -
@@ -1008,6 +1013,7 @@ pub fn primaryBindingContext(action: Action) BindingContext {
     if (contexts.anytime) return .anytime;
     if (contexts.game) return .game;
     if (contexts.editor) return .editor;
+    if (contexts.campaign_editor) return .campaign_editor;
     if (contexts.menu) return .menu;
     return .error_popup;
 }
@@ -1138,18 +1144,28 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .delete_editor_selection,
         .clear_editor_selection,
         .select_editor_all,
-        // The editor browser + its in-window controls. The browser OPENS
-        // from the main menu too (its buttons - clicks bypass the context
-        // gate; the consumption sites keep their
-        // `editorBrowserReachableScreen` gate for those), but the
-        // keyboard shortcuts are EDITOR-ONLY: a main-menu surface has no
-        // editor semantics for them.
+        => .{ .editor = true },
+        // The editor browser + its in-window controls - EDITOR-FAMILY:
+        // the browser opens over BOTH editors (the keyboard shortcuts
+        // fire on either editor screen; from the main menu only its
+        // buttons reach it - clicks bypass the context gate, the
+        // consumption sites keep their `editorBrowserReachableScreen`
+        // gate for those).
         .toggle_editor_browser,
         .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
+        .import_editor_mission,
+        .new_editor_mission,
+        .new_editor_campaign,
+        => .{ .editor = true, .campaign_editor = true },
+        // The campaign editor's own surface (its screen's context -
+        // separate from `editor` so same-combo bindings coexist across
+        // the two editors: ctrl+S is save_editor_mission on the mission
+        // editor and save_campaign here, Digit1 is the mission palette's
+        // select tool there and the campaign map's select tool here).
         .select_editor_campaign_tool,
         .select_editor_campaign_hub,
         .set_editor_campaign_start_hub,
@@ -1165,9 +1181,8 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_import,
         .save_campaign,
         .save_campaign_as_copy,
-        .import_editor_mission,
-        .new_editor_mission,
-        .new_editor_campaign,
+        => .{ .campaign_editor = true },
+        // The mission editor's own surface.
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,

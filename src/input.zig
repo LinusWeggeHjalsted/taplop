@@ -1711,3 +1711,66 @@ test "translateInput: cursor_press_direction - real press edges only (the rollov
         try std.testing.expectEqual(@as(i32, 0), in_game.cursor_press_direction.x);
     }
 }
+
+test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_editor_mission on the editor set" {
+    // The two editors' save chords share ONE combo across SEPARATE
+    // contexts (the derived-context rule: a combo may be bound once per
+    // context, and the campaign editor screen activates campaign_editor -
+    // not editor - so neither binding shadows the other). The 3e wiring
+    // shipped both bindings in the editor context, where first-listed
+    // wins made save_campaign dead on the campaign editor screen (the
+    // options-menu button worked; the chord didn't).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_campaign },
+        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const chord = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyS" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const new_chord = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyN" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+
+    // The mission editor screen: its own save fires, the campaign's is
+    // dormant (the campaign_editor context is inactive).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
+        try std.testing.expect(result.anytime.save_editor_mission);
+        try std.testing.expect(!result.anytime.save_campaign);
+    }
+    // The campaign editor screen: the campaign save fires, the mission's
+    // is dormant (the editor context is inactive).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expect(result.anytime.save_campaign);
+        try std.testing.expect(!result.anytime.save_editor_mission);
+    }
+    // The browser family fires on BOTH editor screens (the browser opens
+    // over either).
+    {
+        var input_state: InputState = .{};
+        const editor_result = translateInput(new_chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
+        try std.testing.expect(editor_result.anytime.new_editor_mission);
+    }
+    {
+        var input_state: InputState = .{};
+        const campaign_result = translateInput(new_chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expect(campaign_result.anytime.new_editor_mission);
+    }
+    // The cross-editor same-combo pair is legal (never co-fires - the
+    // load-time conflict predicate).
+    try std.testing.expect(!types.bindingContextsCoFire(.{ .editor = true }, .{ .campaign_editor = true }));
+}

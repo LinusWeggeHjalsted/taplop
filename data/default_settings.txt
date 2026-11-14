@@ -48,7 +48,7 @@ input_type key
 input_name KeyS
 ctrl true
 action save_campaign
-context editor
+context campaign_editor
 
 input_type key
 input_name KeyE

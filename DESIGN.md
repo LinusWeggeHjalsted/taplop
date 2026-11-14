@@ -1500,15 +1500,22 @@ that true (`src/session_log_bundle.zig`):
   `move_cursor_*`; the handler-side pending_error gate remains as the
   wheel-redirect + defense-in-depth). Otherwise the screen picks its
   context and `anytime` rides along (level/hub → game, editor → editor,
-  main_menu → menu, replay_viewer → none yet). An editor
+  campaign_editor → campaign_editor - the TWO EDITORS have SEPARATE
+  contexts, so the same combo can bind once per editor (ctrl+S is
+  save_editor_mission on the mission editor, save_campaign on the
+  campaign editor; Digit1 is the mission palette's select tool there, the
+  campaign map's here) without shadowing - the derived gate keeps each
+  dormant on the other's screen; main_menu → menu, replay_viewer → none
+  yet). An editor
   playtest/validation run is a `.level` screen, so the game set activates
   and the editor set goes dormant - the run plays like gameplay with zero
   special cases (`save_editor_mission` is editor-only so ctrl+S is dead
   mid-run; `save_game` is game-context and additionally handler-gated
   against editor runs - the run's player_data is throwaway, same reasoning
   as the view hiding Export Save mid-run). The editor-browser family
-  (toggle_editor_browser, tabs, rows, import, new mission) is EDITOR-ONLY
-  for keys: the browser still OPENS from the main menu via its buttons
+  (toggle_editor_browser, tabs, rows, import, new mission, new campaign)
+  fires on BOTH editor screens (editor + campaign_editor contexts): the
+  browser still OPENS from the main menu via its buttons
   (clicks bypass the context gate; the consumption sites keep their
   `editorBrowserReachableScreen` gate for those), but a main-menu surface
   has no editor semantics for the shortcuts. Button clicks bypass the gate

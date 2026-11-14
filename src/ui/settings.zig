@@ -691,14 +691,15 @@ fn contextSetDisplayLabel(set: types.BindingContextSet) []const u8 {
     if (set.anytime) mask |= 1 << 0;
     if (set.game) mask |= 1 << 1;
     if (set.editor) mask |= 1 << 2;
-    if (set.menu) mask |= 1 << 3;
-    if (set.error_popup) mask |= 1 << 4;
+    if (set.campaign_editor) mask |= 1 << 3;
+    if (set.menu) mask |= 1 << 4;
+    if (set.error_popup) mask |= 1 << 5;
     return labels[mask];
 }
 
 /// The context members' display names, indexed by the mask bit each occupies
 /// in `contextSetDisplayLabel`'s pack.
-const context_set_member_names = [_][]const u8{ "Anytime", "Game", "Editor", "Menu", "Error popup" };
+const context_set_member_names = [_][]const u8{ "Anytime", "Game", "Editor", "Campaign editor", "Menu", "Error popup" };
 
 /// One subset's label, built by comptime string concatenation (see
 /// `makePrettifiedLabel` for why concatenation, not comptime-var buffers).
