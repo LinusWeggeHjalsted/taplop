@@ -892,12 +892,6 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    {
-        const debug_editor = history.current_state.campaign_editor.?;
-        std.debug.print("PRE-FINAL-SAVE: start={?d} hubs={d} names:", .{ debug_editor.start_hub, debug_editor.hubs.len });
-        for (debug_editor.hubs) |hub| std.debug.print(" {s}({d})", .{ hub.name, hub.handle });
-        std.debug.print("\n", .{});
-    }
     // The second delete leaves the start on Beta (the reload resolved
     // it); the save + reopen confirm the deletion stuck.
     campaign_editor_io.saveCampaignEditor(&history);
