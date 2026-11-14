@@ -353,6 +353,7 @@ working rules).
 - [campaign editor: the ctrl+N split (punch-list item 2)](#campaign-editor-the-ctrln-split-punch-list-item-2)
 - [map edges: one-strip curve batching (punch-list item 3, the fps fix)](#map-edges-one-strip-curve-batching-punch-list-item-3-the-fps-fix)
 - [campaign editor: right-click deletes mission edges (punch-list item 5)](#campaign-editor-right-click-deletes-mission-edges-punch-list-item-5)
+- [campaign editor: the selected edge keeps its highlight across tools (punch-list item 6)](#campaign-editor-the-selected-edge-keeps-its-highlight-across-tools-punch-list-item-6)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21521,3 +21522,27 @@ threshold cancels into the map pan, a transient mode (the armed draw /
 the re-attach pick) still owns the right-click (cancel, never delete).
 Test: press + clean release over a mission button deletes the mission
 + its marker (the surviving marker untouched) and undo restores both.
+
+## campaign editor: the selected edge keeps its highlight across tools (punch-list item 6)
+
+The just-placed mission edge never showed the selection rim even though
+placement selects it (the last-placed-object rule) and the view set the
+mission button's `.highlighted` flag: the edge BUTTON - the element the
+spriteless hit-curve highlight renders from - was emitted ONLY under the
+select tool, and after placing with the mission tool the tool is still
+`.mission`. The backend path was never the problem (the spriteless
+hit-curve button's stripe rim existed); the flag just never reached a
+drawn element.
+
+Fix: the selected mission's button (+ its rim) emits under ANY tool -
+`active_tool == .select or selected_mission` - while unselected edges
+keep their buttons select-tool-only (the mission tool's surface stays
+the draw gesture). The `.highlighted` flag now reads the same
+`selected_mission` local. Placement highlights immediately, mid-tool;
+switching to select restores the full click surface. Test: under the
+mission tool exactly ONE edge button emits - the selected mission's,
+highlighted; the select-tool case (all buttons, one highlighted) keeps
+its assertions.
+
+Stale comment cleaned in passing (the edges loop still said "no click
+targets yet - the mission inspector is 3d").

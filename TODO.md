@@ -427,22 +427,6 @@ work:
           authored graph (the graph checks + unstartable missions -
           outgoing with no marker placed - + the orphan findings);
           findings through the standard warning surface.
-    - [ ] Playtest punch list, round three (the full-graph authoring
-          round - a 48-mission stress session + the save/reopen path;
-          fix one at a time, each its own commit). Item 1 (the campaign
-          format v5 settle - DONE.md, "campaign format v5") + item 2
-          (the ctrl+N split - DONE.md, "campaign editor: the ctrl+N
-          split") + item 3 (the curve-batching fix - DONE.md, "map edges:
-          one-strip curve batching") are DONE; item 4 dissolved into the
-          settle (an absent direction = the auto-spread default, a
-          defined value):
-      6. The just-placed mission edge should stay highlighted (the
-         placement selects it - the last-placed-object rule - and the
-         view sets a mission-selection highlighted flag), but nothing is
-         visible in practice. Investigate whether the highlighted flag
-         has any effect on curve elements (vs sprite buttons) or whether
-         the tint is too subtle; the inspector's focus must be
-         unmistakable on the map.
   - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
         & the Campaign Editor → The hub editor surface): the level-editor
         mirror over the level-shaped hub grid (select / tile / NPC group

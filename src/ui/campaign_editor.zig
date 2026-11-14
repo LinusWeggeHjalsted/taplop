@@ -326,8 +326,8 @@ pub fn buildCampaignEditorView(
     // Edges: one stroke pair per mission (black outline under the
     // lightest stroke), derived through the shared geometry (panned).
     // An orphaned mission (either end missing) renders GHOSTED (reduced
-    // light-stroke alpha) from its frozen ghost positions. No click
-    // targets yet - the mission inspector is 3d.
+    // light-stroke alpha) from its frozen ghost positions. The edge
+    // click targets + the selection rim live in the loop below.
     const lightest = active_theme.lightest;
     for (editor.missions) |mission| {
         const geometry = missionGeometry(editor, mission, drag_override);
@@ -343,10 +343,16 @@ pub fn buildCampaignEditorView(
 
         // The select tool's click target over the DRAWN arrow (the world
         // map's hit_curve seam: the hit region IS the drawn stroke, so
-        // they cannot disagree). Emitted only under the select tool (the
+        // they cannot disagree). Emitted under the select tool (the
         // mission tool's surface is the draw gesture; the hub tool's is
-        // placement).
-        if (editor.active_tool == .select) {
+        // placement), PLUS for the SELECTED mission under any tool: the
+        // selection rim is what shows the inspector's focus on the map,
+        // and placement selects (the last-placed-object rule) - a
+        // just-placed edge must highlight immediately, mid-mission-tool.
+        const selected_mission = editor.selection != null and
+            editor.selection.? == .mission and
+            editor.selection.?.mission == mission.handle;
+        if (editor.active_tool == .select or selected_mission) {
             const hit_curve = ui_element.Curve{
                 .start = panned.start,
                 .control_start = panned.control_start,
@@ -364,9 +370,7 @@ pub fn buildCampaignEditorView(
                 .height = bounds.height,
                 .action = .select_editor_campaign_mission,
                 .payload = .{ .editor_campaign_mission = mission.handle },
-                .highlighted = editor.selection != null and
-                    editor.selection.? == .mission and
-                    editor.selection.?.mission == mission.handle,
+                .highlighted = selected_mission,
                 .hit_curve = hit_curve,
                 .tooltip = .{ .header = try spanRow(allocator, text(mission.name)) },
             } });
@@ -1841,6 +1845,46 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     };
     try std.testing.expectEqual(editor.missions.len, edge_buttons);
     try std.testing.expectEqual(@as(usize, 1), highlighted_edges);
+
+    // The selection follows ACROSS tools: under the mission tool the
+    // unselected edges lose their buttons (the draw gesture owns the
+    // surface), but the SELECTED edge keeps its button + rim - a
+    // just-placed edge highlights immediately, mid-mission-tool (the
+    // placement-selects rule).
+    {
+        editor.active_tool = .mission;
+        var mission_tool_elements: UiElementList = .empty;
+        defer mission_tool_elements.deinit(arena.allocator());
+        try buildCampaignEditorView(
+            &mission_tool_elements,
+            arena.allocator(),
+            test_font_metrics,
+            ui_element.screenRect(),
+            editor,
+            test_theme,
+            test_button_color,
+            null,
+            null,
+            null,
+            &.{},
+            &test_sections_expanded,
+            null,
+            null,
+            null,
+            &.{},
+        );
+        var mission_tool_edge_buttons: usize = 0;
+        for (mission_tool_elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_campaign_mission) {
+                mission_tool_edge_buttons += 1;
+                try std.testing.expectEqual(@as(u32, 3), button.payload.?.editor_campaign_mission);
+                try std.testing.expect(button.highlighted);
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), mission_tool_edge_buttons);
+        editor.active_tool = .select;
+    }
 
     // The draw preview: an armed mission tool renders TWO extra curves
     // (the stroke pair) from the armed hub toward the pointer position.
