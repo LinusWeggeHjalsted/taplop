@@ -356,6 +356,7 @@ working rules).
 - [campaign editor: the selected edge keeps its highlight across tools (punch-list item 6)](#campaign-editor-the-selected-edge-keeps-its-highlight-across-tools-punch-list-item-6)
 - [map edges: the shapes-texture bind (the one-strip rewrite's render fix)](#map-edges-the-shapes-texture-bind-the-one-strip-rewrites-render-fix)
 - [map edges: back to per-segment lines (the one-strip experiment abandoned)](#map-edges-back-to-per-segment-lines-the-one-strip-experiment-abandoned)
+- [map edges: capped segments (the join + end-cap follow-up)](#map-edges-capped-segments-the-join--end-cap-follow-up)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21616,3 +21617,23 @@ scaffolding for an abandoned approach.
 Next lever if debug-build fps ever needs more: halve
 `curve_sample_count` (48 -> 24) - halves both draw and hit-test
 resolution; one constant, tests derive expectations from it.
+
+## map edges: capped segments (the join + end-cap follow-up)
+
+The per-segment rewrite rendered but looked broken: butt-ended quads
+leave wedge notches at every join (aggravated by integer-rounded samples
+jittering the segment directions), and the arrow ends stopped dead -
+only the sides were outlined, because the old round end caps had also
+been what let the outline layer wrap past the inner stroke's tip.
+
+Fix: one operation - every segment (stroke segments, dashes, chevron
+arms) is drawn EXTENDED by half its thickness at both endpoints before
+the drawLineEx. The overlap fills the join notches (opaque strokes make
+the overdraw invisible), the extension at the stroke's two ends is the
+squared cap (the wide outline extends 12px past the sample, the narrow
+inner stroke 4px - the black wraps the tip), and the arms' tips get the
+same squared cap so the chevron's rim survives. Zero-length segments
+(coinciding integer-rounded samples) draw nothing. Known accepted
+artifact: ghosted strokes (reduced alpha) show faint double-drawn seams
+inside the overlaps - the old per-sample circles had the same artifact
+at dot scale.

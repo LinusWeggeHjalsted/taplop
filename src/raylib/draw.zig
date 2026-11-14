@@ -553,10 +553,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// batch draw entry - the pre-rewrite slowness was never the lines, it
 /// was the per-sample drawCircleV join caps (each switched the batch to
 /// QUADS + the shapes texture = a flush, ~5000/frame on a 48-mission
-/// map). No caps here: at 48 samples per map-scale bezier the join
-/// notches between nearly-collinear segments are sub-pixel, and the
-/// stroke's ends abut the hub icons / the chevron. The dashed variant
-/// alternates segments. Shared by the `.curve` draw arm and the
+/// map). The join + end-cap jobs those circles did are handled by
+/// `drawCappedSegment` instead (segment overlap - no extra primitives,
+/// no flushes). The dashed variant alternates segments. Shared by the
+/// `.curve` draw arm and the
 /// hit-curve button's hover highlight, so the highlight is the SAME
 /// arrow, just wider.
 fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
@@ -574,7 +574,7 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
     var index: usize = 0;
     while (index + 1 < samples.len) : (index += 1) {
         if (curve.dashed and index % 2 == 1) continue;
-        rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
+        drawCappedSegment(samples[index], samples[index + 1], thickness, raylib_color);
     }
     if (curve.arrowhead) {
         // The directionality chevron: two arms from the end point, drawn
@@ -587,9 +587,41 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
             .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
         };
         for (arm_vectors) |arm| {
-            rl.drawLineEx(end, arm, thickness, raylib_color);
+            drawCappedSegment(end, arm, thickness, raylib_color);
         }
     }
+}
+
+/// One stroke segment as an OVERLAPPED quad: both endpoints extend by
+/// half the thickness along the segment direction before the drawLineEx.
+/// One operation, three jobs: (a) interior joins - a turn fans
+/// consecutive butt-ended quads apart on the outer side (the notch the
+/// old per-sample join circles papered over); the mutual overlap fills
+/// it, and opaque strokes make the overdraw invisible. (b) the stroke's
+/// two ends - the extension is a squared cap; the outline layer (wide)
+/// extends further than the inner stroke (narrow), so the black wraps
+/// past the tip and the arrow no longer stops dead with bare ends (the
+/// old round caps' job; squared reads fine at these sizes, and the end
+/// cap hides under the chevron). (c) the chevron arms' tips get the same
+/// squared cap, keeping the outline rim visible at the arm points.
+/// Ghosted strokes (reduced alpha) show faint double-drawn seams inside
+/// the overlaps - the old circles had the same artifact at dot scale.
+/// A zero-length segment (integer-rounded samples can coincide) draws
+/// nothing.
+fn drawCappedSegment(start: rl.Vector2, end: rl.Vector2, thickness: f32, raylib_color: rl.Color) void {
+    const delta_x = end.x - start.x;
+    const delta_y = end.y - start.y;
+    const length = @sqrt(delta_x * delta_x + delta_y * delta_y);
+    if (length <= 0) return;
+    const extend = thickness / 2;
+    const unit_x = delta_x / length;
+    const unit_y = delta_y / length;
+    rl.drawLineEx(
+        .{ .x = start.x - unit_x * extend, .y = start.y - unit_y * extend },
+        .{ .x = end.x + unit_x * extend, .y = end.y + unit_y * extend },
+        thickness,
+        raylib_color,
+    );
 }
 
 fn drawHighlightOutline(backend: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {

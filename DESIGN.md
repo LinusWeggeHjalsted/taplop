@@ -137,7 +137,10 @@ unbinds the shapes texture - a batch flush each way, and the map views
 once drew one per bezier sample (~5000 flushes/frame, 6 fps debug / 33
 fast-release on a large graph); consecutive same-mode `drawLineEx`
 submissions batch into ONE draw entry, so the lines alone were never the
-cost. (b) Consolidating a multi-part shape into ONE large untextured
+cost. The join + end-cap jobs the circles did are handled by drawing each
+segment EXTENDED by half its thickness at both endpoints (overlap fills
+the join notches; the wider outline layer extends past the inner stroke's
+end as the squared cap) - no extra primitives, no flushes. (b) Consolidating a multi-part shape into ONE large untextured
 `drawTriangleStrip` (98 points per curve) RENDERS on small graphs and
 VANISHES in real sessions in a way that resisted two falsified theories
 (leftover-texture-state, batch-buffer-rollover) and a falsified
