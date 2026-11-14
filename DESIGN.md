@@ -129,28 +129,21 @@ next session meets it as a surprise instead of a known.
 - raylib is linked into the native AND web exes (never the test build). Keep
   it out of the test build by never importing raylib from any file the
   test-root scan pulls in.
-- **Untextured shape submissions must not switch the render batch's mode
-  or texture per call** (the curve-batching lesson): raylib batches
-  consecutive same-mode/same-texture primitives into one GL draw, but a
-  call that switches draw mode (TRIANGLES vs QUADS) or binds another
-  texture (e.g. `drawCircleV`: QUADS + the shapes texture bound/unbound
-  per call) FORCES a batch flush each way. The map views once drew a
-  `drawCircleV` join cap at every bezier sample - ~5000 circles/frame on
-  a 48-mission graph, thousands of flushes, 6 fps debug / 33 fast-release.
-  The rule in practice: draw multi-part untextured shapes through ONE
-  submission (a `drawTriangleStrip` over a caller-built array) or plain
-  `drawLineEx`/`drawRectangle` sequences - never interleave `drawCircleV`
-  with them. The pure strip builders (`element.sampleCurveStrokeStrip` +
-  `element.capStrip`) are the headless-tested pattern. THE SECOND HALF of
-  the rule (the one-strip rewrite shipped broken until it was learned):
-  untextured submissions must ALSO bind the WHITE shapes texture around
-  themselves (`rlSetTexture(GetShapesTexture().id)` ... `rlSetTexture(0)`)
-  - the batch records the CURRENT texture into the draw entry and
-  untextured vertices inherit stale texcoords, so with a sprite/font
-  atlas left current the submission samples transparent texels and
-  vanishes (frame-to-frame, depending on what drew before). The white
-  1x1 makes every UV sample white; it is raylib's own shape-function
-  convention.
+- **Untextured shape drawing: plain `drawLineEx`/`drawRectangle`
+sequences, never interleaved with `drawCircleV`, and no big
+`drawTriangleStrip` submissions** (the curve-batching lesson, twice
+learned): (a) every `drawCircleV` switches the batch to QUADS + binds +
+unbinds the shapes texture - a batch flush each way, and the map views
+once drew one per bezier sample (~5000 flushes/frame, 6 fps debug / 33
+fast-release on a large graph); consecutive same-mode `drawLineEx`
+submissions batch into ONE draw entry, so the lines alone were never the
+cost. (b) Consolidating a multi-part shape into ONE large untextured
+`drawTriangleStrip` (98 points per curve) RENDERS on small graphs and
+VANISHES in real sessions in a way that resisted two falsified theories
+(leftover-texture-state, batch-buffer-rollover) and a falsified
+shapes-texture-bind "fix" - the one-strip approach is abandoned (the
+record is in DONE.md); the short per-segment quads always rendered.
+The pre-strip code's fps was fixed by (a) alone.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
   - `frame(backend, *FrameState)` is the deterministic core: poll input,
@@ -3710,12 +3703,10 @@ sprite-backed convention) all derive from the one curve, so they cannot
 disagree. No new element contract for input.
 - **One sampling function for the curve.** `sampleCurve` in
 element.zig is the single deterministic bezier sampler (fixed
-segment count in v1): the backend draws the sampled stroke (a mitered
-TRIANGLE STRIP built from the same samples - `sampleCurveStrokeStrip`,
-one untextured submission per curve, see the Platform Seam's batching
-note) and hit-testing is distance-to-polyline against the SAME
-samples, so the drawn edge and its hit region cannot disagree.
-Headless-testable.
+segment count in v1): the backend draws the sampled stroke (per-segment
+`drawLineEx` quads over the same samples) and hit-testing is
+distance-to-polyline against the SAME samples, so the drawn edge and its
+hit region cannot disagree. Headless-testable.
 - **Dimming**: undiscovered hubs dim + edges whose start hub is
 undiscovered dim (the clickable rule is exactly start-hub
 discovered); a never-entered campaign's view shows the start hub +

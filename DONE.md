@@ -355,6 +355,7 @@ working rules).
 - [campaign editor: right-click deletes mission edges (punch-list item 5)](#campaign-editor-right-click-deletes-mission-edges-punch-list-item-5)
 - [campaign editor: the selected edge keeps its highlight across tools (punch-list item 6)](#campaign-editor-the-selected-edge-keeps-its-highlight-across-tools-punch-list-item-6)
 - [map edges: the shapes-texture bind (the one-strip rewrite's render fix)](#map-edges-the-shapes-texture-bind-the-one-strip-rewrites-render-fix)
+- [map edges: back to per-segment lines (the one-strip experiment abandoned)](#map-edges-back-to-per-segment-lines-the-one-strip-experiment-abandoned)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21576,3 +21577,42 @@ white shapes texture around itself, then resets to texture 0 - raylib's
 own shape-function convention, made explicit. Settled into the Platform
 Seam batching rule (DESIGN → Platform Seam): untextured shape submissions
 must never rely on the leftover texture state.
+
+## map edges: back to per-segment lines (the one-strip experiment abandoned)
+
+The one-strip curve rewrite stayed broken in real sessions: arrow bodies
+vanished in a 5-mission campaign (the player's report) while every
+console-driven repro rendered - including a late-frame render-target
+export validating the shapes-texture-bind "fix" that then did not fix
+the player's view. Two theories were falsified along the way (the
+leftover-texture-state theory, whose fix worked only below the
+confound threshold; the batch-buffer-rollover theory, killed by the
+5-mission report - nowhere near any rollover count), and the console
+repro itself was confounded twice more (the real mouse overriding the
+synthetic pointer during waits; one-shot first-frame exports while the
+sustained view was what was broken). The full method record is the
+commit trail; the honest summary: the one-big-triangle-strip approach
+renders unreliably in this raylib fork in ways that resisted diagnosis,
+and it is gone.
+
+THE SETTLED SHAPE: per-segment `drawLineEx` quads over the same
+`sampleCurve` samples (48 per curve) + the chevron arms - the exact
+submission class that rendered correctly everywhere pre-rewrite. The fps
+problem was never the lines: it was the per-sample `drawCircleV` join
+caps (each switched the batch mode + texture = a flush, ~5000/frame on a
+large graph). Removing the caps alone fixes the fps; the lines batch
+into one draw entry (consecutive untextured TRIANGLES, same state).
+Visual delta vs the old code: no round caps at stroke ends/joins - at
+48 samples per map-scale bezier the join notches are sub-pixel, and the
+stroke ends abut the hub icons / the chevron. The dashed variant keeps
+its alternating segments.
+
+The Platform Seam rule in DESIGN is rewritten accordingly: plain line/
+rect sequences, never drawCircleV interleaving, no big untextured
+triangle strips. The pure strip builders (element.sampleCurveStrokeStrip
++ capStrip + FloatVec) and their tests are removed - no dead
+scaffolding for an abandoned approach.
+
+Next lever if debug-build fps ever needs more: halve
+`curve_sample_count` (48 -> 24) - halves both draw and hit-test
+resolution; one constant, tests derive expectations from it.

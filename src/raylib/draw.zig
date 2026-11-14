@@ -540,44 +540,25 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// outline stripe shader (the marching flip between the highlight tint
 /// and the theme's darkest - see DESIGN → Platform Seam → Outline stripe
 /// shader).
-/// Draw one curve's full geometry as a handful of UNTEXTURED TRIANGLE
-/// submissions - the solid stroke is ONE mitered triangle strip built
-/// from the SAME samples hit-testing uses (`element.sampleCurveStrokeStrip`
-/// - the drawn/hit agreement by construction), the round caps are single
-/// strip submissions (`element.capStrip`), and the chevron's arms are
-/// line quads. Every submission keeps the render batch's TRIANGLES mode
-/// untouched, so a whole curve - and consecutive curves - land in ONE
-/// batch draw entry.
-/// TEXTURE STATE: the submissions are untextured, but raylib's batch
-/// records the CURRENT texture into each draw entry and untextured
-/// vertices inherit STALE texcoords from the vertex buffer - with a
-/// sprite/font atlas current (left by whatever drew before, frame to
-/// frame), the stale UVs sample transparent texels and the curve
-/// vanishes (rendered on some frames, not others - the sustained-view
-/// bug the one-strip rewrite shipped). Every submission here therefore
-/// binds the WHITE shapes texture around itself (any UV samples white),
-/// the exact convention raylib's own shape functions follow - and what
-/// the old per-sample drawCircleV caps did implicitly, which is why the
-/// pre-rewrite curves always rendered. See DESIGN → Platform Seam's
-/// batching rule. This is the 48-mission-map fix: the old
-/// path drew a drawCircleV join cap at EVERY sample, and every circle
-/// switched the batch to QUADS + bound/unbound the shapes texture -
-/// ~5000 circles per frame forced thousands of batch flushes (6 fps
-/// debug / 33 fast-release). The dashed variant (dangling stubs) keeps
-/// per-dash quads + round pill caps (the dash gaps need the breaks).
-/// Shared by the `.curve` draw arm and the hit-curve button's hover
-/// highlight, so the highlight is the SAME arrow, just wider.
-fn drawRoundCap(center: rl.Vector2, radius: f32, raylib_color: rl.Color) void {
-    if (radius <= 0) return;
-    var strip: [2 * ui.cap_slice_count + 2]rl.Vector2 = undefined;
-    var vectors: [2 * ui.cap_slice_count + 2]ui.FloatVec = undefined;
-    ui.capStrip(.{ .x = center.x, .y = center.y }, radius, &vectors);
-    for (vectors, 0..) |point, index| {
-        strip[index] = .{ .x = point.x, .y = point.y };
-    }
-    rl.drawTriangleStrip(&strip, raylib_color);
-}
-
+/// Draw one curve's full geometry: the sampled stroke as per-segment
+/// `drawLineEx` quads + the arrowhead chevron's two arm quads - the SAME
+/// short submissions the pre-batching-rewrite code used (rebuilt after
+/// the one-strip experiment; see below). All submissions are untextured
+/// TRIANGLES of at most 6 vertices: they never straddle raylib's internal
+/// batch-buffer rollover (~32k vertices/frame - the fork's rollover path
+/// loses LONG untextured strips that cross it, which is why the
+/// one-big-triangle-strip version rendered on small graphs and vanished
+/// on the 48-mission one, while these short quads always rendered).
+/// Performance: consecutive same-mode/same-texture submissions land in ONE
+/// batch draw entry - the pre-rewrite slowness was never the lines, it
+/// was the per-sample drawCircleV join caps (each switched the batch to
+/// QUADS + the shapes texture = a flush, ~5000/frame on a 48-mission
+/// map). No caps here: at 48 samples per map-scale bezier the join
+/// notches between nearly-collinear segments are sub-pixel, and the
+/// stroke's ends abut the hub icons / the chevron. The dashed variant
+/// alternates segments. Shared by the `.curve` draw arm and the
+/// hit-curve button's hover highlight, so the highlight is the SAME
+/// arrow, just wider.
 fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
     var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
     var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
@@ -589,68 +570,25 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
         };
     }
     const thickness: f32 = @floatFromInt(curve.width);
-    const half = thickness / 2;
 
-    if (curve.dashed) {
-        // The dashed stroke (dangling stubs): per-dash quads + round pill
-        // caps - the dash gaps need the breaks, so the strip cannot span
-        // the curve. Same untextured submissions; no mode/texture
-        // switches.
-        var index: usize = 0;
-        while (index + 1 < samples.len) : (index += 1) {
-            if (index % 2 == 1) continue;
-            rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
-            // Round caps per dash: each dash is a pill, and the outline
-            // element's cap (wider) extends past the inner stroke's at
-            // BOTH ends - with butt caps the two elements end flush and
-            // the outline vanishes at every dash tip.
-            // The white shapes texture around the caps (the texture-state
-            // note on drawCurveGeometry).
-            rl.gl.rlSetTexture(rl.getShapesTexture().id);
-            drawRoundCap(samples[index], half, raylib_color);
-            drawRoundCap(samples[index + 1], half, raylib_color);
-            rl.gl.rlSetTexture(0);
-        }
-    } else {
-        // The solid stroke: ONE mitered triangle strip from the same
-        // samples the hit region samples - round caps at both stroke
-        // ends (the start cap replaces the old per-sample join circle;
-        // the mitered joins need no per-sample caps at all).
-        var stroke: [2 * (ui.curve_sample_count + 1)]ui.FloatVec = undefined;
-        ui.sampleCurveStrokeStrip(ui.curve_sample_count + 1, &screen_samples, half, &stroke);
-        var strip: [2 * (ui.curve_sample_count + 1)]rl.Vector2 = undefined;
-        for (stroke, 0..) |point, index| {
-            strip[index] = .{ .x = point.x, .y = point.y };
-        }
-        // Bind the WHITE shapes texture around the whole submission (see
-        // the texture-state note on drawCurveGeometry).
-        rl.gl.rlSetTexture(rl.getShapesTexture().id);
-        rl.drawTriangleStrip(&strip, raylib_color);
-        drawRoundCap(samples[0], half, raylib_color);
-        drawRoundCap(samples[samples.len - 1], half, raylib_color);
-        rl.gl.rlSetTexture(0);
+    var index: usize = 0;
+    while (index + 1 < samples.len) : (index += 1) {
+        if (curve.dashed and index % 2 == 1) continue;
+        rl.drawLineEx(samples[index], samples[index + 1], thickness, raylib_color);
     }
     if (curve.arrowhead) {
         // The directionality chevron: two arms from the end point, drawn
         // at the curve's own width, so an outline+stroke pair renders an
-        // outlined chevron. Round cap at each arm's TIP: both elements'
-        // arms end at the same point, so butt caps ended flush (no outline
-        // at the tip); the caps leave the rim visible, same as the
-        // stroke's ends.
+        // outlined chevron.
         const arms = ui.arrowheadArms(curve);
         const end = samples[samples.len - 1];
         const arm_vectors = [2]rl.Vector2{
             .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },
             .{ .x = @floatFromInt(arms[1].x), .y = @floatFromInt(arms[1].y) },
         };
-        // The white shapes texture around the chevron (the texture-state
-        // note on drawCurveGeometry).
-        rl.gl.rlSetTexture(rl.getShapesTexture().id);
         for (arm_vectors) |arm| {
             rl.drawLineEx(end, arm, thickness, raylib_color);
-            drawRoundCap(arm, half, raylib_color);
         }
-        rl.gl.rlSetTexture(0);
     }
 }
 
