@@ -352,6 +352,7 @@ working rules).
 - [campaign format v5 - campaign.txt owns the graph (the punch-list-1 root fix)](#campaign-format-v5---campaigntxt-owns-the-graph-the-punch-list-1-root-fix)
 - [campaign editor: the ctrl+N split (punch-list item 2)](#campaign-editor-the-ctrln-split-punch-list-item-2)
 - [map edges: one-strip curve batching (punch-list item 3, the fps fix)](#map-edges-one-strip-curve-batching-punch-list-item-3-the-fps-fix)
+- [campaign editor: right-click deletes mission edges (punch-list item 5)](#campaign-editor-right-click-deletes-mission-edges-punch-list-item-5)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21502,3 +21503,21 @@ debug builds still pay per-call Zig wrapper overhead (~500 calls/frame
 now vs ~5000 before); if debug fps is still insufficient, the next
 lever is the sample count (48 -> 24), which halves both draw and
 hit-test polyline resolution.
+
+## campaign editor: right-click deletes mission edges (punch-list item 5)
+
+Right-click on a mission edge did nothing: `handleCampaignMapRightClick`
+armed only the pressed-HUB delete. The delete event + handler already
+existed (the inspector's delete path: `player_delete_campaign_mission`
+removes the entry + its exit marker in one step - the mission IS the
+edge) - the gesture just never reached it.
+
+Fix: a `campaign_mission_delete` pending right-click arm - the press
+records the pressed edge button's mission handle (the
+select_editor_campaign_mission payload), the clean release runs the
+stale-pending belt (the mission must still resolve) + pushes the delete
+player action. Same lifecycle as the hub arm: a right-drag beyond the
+threshold cancels into the map pan, a transient mode (the armed draw /
+the re-attach pick) still owns the right-click (cancel, never delete).
+Test: press + clean release over a mission button deletes the mission
++ its marker (the surviving marker untouched) and undo restores both.

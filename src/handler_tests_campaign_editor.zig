@@ -620,6 +620,59 @@ test "campaign editor mission events: place (anchor minting), re-attach, delete,
     try testing.expectEqual(@as(?types.CampaignEditorSelection, .{ .mission = imported.handle }), editor.selection);
 }
 
+test "campaign editor: right-click on a mission edge deletes the mission (the edge + its marker)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    const input_gestures_mod = @import("input_gestures.zig");
+    const ui = @import("ui.zig");
+
+    // The mission-edge button under the pointer: the same element the map
+    // view emits (a spriteless button carrying the mission handle).
+    const buttons = [_]ui.UiElement{.{ .button = .{
+        .screen_position = .{ .x = 2000, .y = 1000 },
+        .width = 100,
+        .height = 100,
+        .action = .select_editor_campaign_mission,
+        .payload = .{ .editor_campaign_mission = 2 },
+    } }};
+
+    // The press records the mission (a clean click acts on what was under
+    // the pointer when the button went down).
+    input_gestures_mod.handleCampaignMapRightClick(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 2050, .y = 1050 } },
+        &buttons,
+    );
+    // The clean release deletes: the mission entry + its exit marker in
+    // its start hub go together (the mission IS the edge).
+    input_gestures_mod.handleCampaignMapRightClick(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 2050, .y = 1050 } },
+        &buttons,
+    );
+    runToIdle(&history);
+
+    const editor = history.current_state.campaign_editor.?;
+    try testing.expectEqual(@as(usize, 3), editor.missions.len);
+    for (editor.missions) |mission| {
+        try testing.expect(mission.handle != 2);
+    }
+    // The deleted mission's marker left Alpha with it; the surviving
+    // marker for mission 5 stays.
+    try testing.expectEqual(@as(usize, 1), editor.hubs[0].exit_placements.len);
+    try testing.expectEqual(@as(u32, 5), editor.hubs[0].exit_placements[0].mission);
+    // The deletion is a recorded player action - undo restores the edge
+    // and its marker.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 4), history.current_state.campaign_editor.?.missions.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs[0].exit_placements.len);
+}
+
 test "campaign editor: the mission tool's draw gesture - arm, place, cancel via clean right-click" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

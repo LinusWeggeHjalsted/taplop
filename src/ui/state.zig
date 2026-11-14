@@ -398,6 +398,14 @@ pub const PendingRightClick = union(enum) {
         hub: u32,
         press_position: ScreenPosition,
     },
+    /// The pressed campaign-editor MISSION EDGE (the map's right-click
+    /// delete - clean release deletes the mission, the edge, and its
+    /// exit placement in one step; see PendingRightClick's other arms for
+    /// the shared lifecycle rules).
+    campaign_mission_delete: struct {
+        mission: u32,
+        press_position: ScreenPosition,
+    },
     /// A right-press while a transient campaign-editor mode is active
     /// (the armed mission draw / the re-attach pick): a CLEAN release
     /// cancels the mode (a right-drag pans - the mode survives the pan;

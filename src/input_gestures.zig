@@ -950,6 +950,7 @@ pub fn handleCampaignMapRightClick(
     // gesture must not fire later).
     if (current.screen != .campaign_editor or current.campaign_editor == null) {
         clearPendingRightClick(ui_state, .campaign_hub_delete);
+        clearPendingRightClick(ui_state, .campaign_mission_delete);
         return;
     }
 
@@ -969,6 +970,11 @@ pub fn handleCampaignMapRightClick(
                     .hub = button.payload.?.editor_campaign_hub,
                     .press_position = pointer.position.toScreenPosition(),
                 } };
+            } else if (button.action == .select_editor_campaign_mission and button.payload != null) {
+                ui_state.pending_right_click = .{ .campaign_mission_delete = .{
+                    .mission = button.payload.?.editor_campaign_mission,
+                    .press_position = pointer.position.toScreenPosition(),
+                } };
             }
         }
         return;
@@ -980,6 +986,13 @@ pub fn handleCampaignMapRightClick(
     if (ui_state.pending_right_click) |press| {
         switch (press) {
             .campaign_hub_delete => |pending| {
+                if (pointer.right_held) {
+                    if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
+                        ui_state.pending_right_click = null;
+                    }
+                }
+            },
+            .campaign_mission_delete => |pending| {
                 if (pointer.right_held) {
                     if (screenPositionsBeyondThreshold(pending.press_position, pointer.position.toScreenPosition())) {
                         ui_state.pending_right_click = null;
@@ -1030,10 +1043,26 @@ pub fn handleCampaignMapRightClick(
                         } }, arena);
                     }
                 },
+                .campaign_mission_delete => |pending| {
+                    const editor = current.campaign_editor.?;
+                    // The stale-pending belt: the mission must still
+                    // resolve (deleted mid-press by some other action).
+                    var resolves = false;
+                    for (editor.missions) |mission| {
+                        if (mission.handle == pending.mission) resolves = true;
+                    }
+                    if (resolves) {
+                        const arena = history.current_arena.allocator();
+                        event_push.pushPlayerAction(current, .{ .player_delete_campaign_mission = .{
+                            .mission = pending.mission,
+                        } }, arena);
+                    }
+                },
                 else => {},
             }
         }
         clearPendingRightClick(ui_state, .campaign_hub_delete);
+        clearPendingRightClick(ui_state, .campaign_mission_delete);
         clearPendingRightClick(ui_state, .campaign_cancel_mode);
     }
 }

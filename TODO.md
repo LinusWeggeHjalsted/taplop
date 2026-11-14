@@ -436,11 +436,6 @@ work:
           one-strip curve batching") are DONE; item 4 dissolved into the
           settle (an absent direction = the auto-spread default, a
           defined value):
-      5. Right-click delete does not work on mission edges:
-         handleCampaignMapRightClick arms only the pressed-HUB delete
-         (campaign_hub_delete); the pressed-edge case falls through.
-         editor_campaign_delete_mission exists (the inspector path) -
-         extend the gesture with a pressed-mission arm.
       6. The just-placed mission edge should stay highlighted (the
          placement selects it - the last-placed-object rule - and the
          view sets a mission-selection highlighted flag), but nothing is
