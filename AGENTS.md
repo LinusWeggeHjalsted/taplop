@@ -643,7 +643,7 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   CampaignEditor graph; the open-from-dir path of `open_campaign_editor`)
   + `io.zig` (the import copy + the save orchestration incl. the
   official-origin fork rule - see DESIGN → Campaigns & the Campaign
-  Editor → Rename + Save As Copy).
+  Editor → The editor save model).
   The state type is `types.CampaignEditor` (the parallel-editor settle).
 - `src/view.zig` - `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,

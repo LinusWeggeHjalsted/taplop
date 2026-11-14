@@ -218,14 +218,6 @@ pub fn buildOptionsMenu(
         };
         button_count += 1;
         buttons[button_count] = .{
-            .label = "Save As Copy",
-            .action = .save_campaign_as_copy,
-            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
-                "Mints a fresh identity - the original stays untouched behind",
-            ))}) },
-        };
-        button_count += 1;
-        buttons[button_count] = .{
             .label = "Open Browser",
             .action = .toggle_editor_browser,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(

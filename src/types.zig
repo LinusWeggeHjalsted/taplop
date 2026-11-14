@@ -404,9 +404,6 @@ pub const Action = enum {
     // full save projection, the reconciliation save). An input-layer side
     // effect, never a recorded event (the mission-save class).
     save_campaign,
-    // Save As Copy: mints a fresh campaign uuid + dir (an intentional
-    // fork is a new work); the session continues saving the copy.
-    save_campaign_as_copy,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1180,7 +1177,6 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_campaign_import_picker,
         .select_editor_campaign_import,
         .save_campaign,
-        .save_campaign_as_copy,
         => .{ .campaign_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1581,7 +1577,6 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
         .save_campaign,
-        .save_campaign_as_copy,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,

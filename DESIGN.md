@@ -74,7 +74,7 @@ next session meets it as a surprise instead of a known.
   - [The graph model](#the-graph-model)
   - [Content identity (uuids everywhere; SUPERSEDES the names-as-references settle)](#content-identity-uuids-everywhere-supersedes-the-names-as-references-settle)
   - [Uuid→dir resolution (scan-based loading)](#uuiddir-resolution-scan-based-loading)
-  - [Rename + Save As Copy (in-place identity; the editor save model)](#rename--save-as-copy-in-place-identity-the-editor-save-model)
+  - [The editor save model (in-place identity, official-origin forks)](#the-editor-save-model-in-place-identity-official-origin-forks)
   - [File formats (each change bumps its per-type file_format_version)](#file-formats-each-change-bumps-its-per-type-fileformatversion)
   - [Campaign content paths (content-root-relative, one shape)](#campaign-content-paths-content-root-relative-one-shape)
   - [The map coordinate model](#the-map-coordinate-model)
@@ -3199,8 +3199,9 @@ never asks for a uuid by hand.
   immutable); dir name = storage (arbitrary, never referenced); display
   name = label (just a field, freely editable, may collide).
 - **Minting policy**: rename-in-place NEVER re-mints (the uuid is the
-  identity); an explicit Save As Copy DOES mint a fresh uuid (an
-  intentional fork is a new work). Copy-at-pick campaign imports KEEP
+  identity); an OFFICIAL-ORIGIN save DOES mint a fresh uuid (the fork
+  rule - saving shipped content creates a new work; see The editor save
+  model). Copy-at-pick campaign imports KEEP
   the uuid (settled): an import is the same authored work, and the
   records that key on the uuid - leaderboards, clone records,
   personal bests - persist across an import into a campaign. A
@@ -3232,8 +3233,8 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   (FileSource's persistent-first read order), so cross-tier repeats
   resolve to the persistent copy silently - the deliberate
   hand-installed override path (the ONLY source of shadow pairs: the
-  editors' saves never shadow official content, they fork - see Rename +
-  Save As Copy). The duplicate warning is SAME-TIER
+  editors' saves never shadow official content, they fork - see The
+  editor save model). The duplicate warning is SAME-TIER
   only: two persistent dirs with one uuid (a hand fork), or two
   embedded dirs (a shipped-content collision). Either way uuid
   resolution and the read order can never disagree, and identity-keyed
@@ -3242,8 +3243,9 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   content-hash comparison (missions; campaigns when hashing lands)
   distinguishes redundant copies (same hash - silent-ish) from
   diverged versions (different hash - the warning says so) in the
-  warning text. **Save As Copy is the sanctioned split**; the editor
-  never creates duplicates itself.
+  warning text. A same-tier duplicate is hand-made content; the split
+  is deleting one of the copies (the warning's advice) - the editor
+  never creates duplicates or shadows itself.
 - **Replay purity**: scans are LISTINGS, not reconstruction reads, so
   the recorded events carry RESOLVED payloads (the mission-browser
   pattern): push sites resolve live (scan at click / new-game time) and
@@ -3253,7 +3255,7 @@ Loading resolves uuids to directories by SCANNING, never by convention:
   re-scans. `PlayerData` references identity only (`current_campaign_uuid`,
   `current_hub` as uuid) - never storage.
 
-### Rename + Save As Copy (in-place identity; the editor save model)
+### The editor save model (in-place identity, official-origin forks)
 
 Name is just a field: the editor's metadata sidebar edits it, save
 persists it into the content file, and nothing else happens - no
@@ -3267,9 +3269,8 @@ no rename in v1"): rename is free, for all three content kinds.
   persistent tier - `FileSource.persistentFileExists`): a rename-save
   writes the same files with a new `name` field, same dir, same uuid. A
   NEW dir is created when identity is genuinely new - a fresh
-  mission/hub/campaign's first save (mint), an explicit Save As Copy
-  (fresh uuid, `<uuid>_<name>` dir), or an OFFICIAL-ORIGIN fork (next
-  bullet).
+  mission/hub/campaign's first save (mint) or an OFFICIAL-ORIGIN fork
+  (next bullet).
 - **Saving official content FORKS** (the identity model's one rule
   everywhere): state identity naming content that exists ONLY embedded
   is ignored at save - the campaign mints a fresh uuid +
@@ -3716,7 +3717,7 @@ Consequences:
   tool creates a mission + its edge in one gesture; the mission
   inspector IMPORTS (copy-at-pick - the campaign owns a snapshot; the
   campaign dir is always the source of truth - uuid KEPT, duplicate
-  imports refused; see Rename + Save As Copy) and RE-ATTACHES
+  imports refused; see The editor save model) and RE-ATTACHES
   start/end. The hub editor only POSITIONS exit markers for missions
   already starting at its hub (see The hub editor surface). A
   mission's destination is picked on the map (click an end hub, or
@@ -3797,7 +3798,7 @@ The slice-3 interaction design. The state shape is settled separately
   object when it is a mission): editable name; Open Mission Editor
   (the slice-5 hand-off); Import from the player's local missions
   (copy-at-pick - the uuid is kept, duplicate-uuid imports refused;
-  see Rename + Save As Copy); start/end RE-ATTACH (click the button,
+  see The editor save model); start/end RE-ATTACH (click the button,
   then click a hub - re-wiring, for orphans and wired missions alike;
   moving the start re-homes the exit entry, pure data under the
   mission-centric model); the direction field for self-loops and

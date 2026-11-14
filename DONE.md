@@ -340,6 +340,7 @@ working rules).
 - [campaign-editor slice 3d: the mission tool, the mission inspector, orphan salvage + the import](#campaign-editor-slice-3d-the-mission-tool-the-mission-inspector-orphan-salvage--the-import)
 - [campaign-editor slice 3e: save + the identity model - the full save projection, minting, Save As Copy, the deletion reconciliation](#campaign-editor-slice-3e-save--the-identity-model---the-full-save-projection-minting-save-as-copy-the-deletion-reconciliation)
 - [campaign identity: cross-tier shadows silent + saving official content forks (punch-list item 1 - the duplicate-hub-uuid load bug)](#campaign-identity-cross-tier-shadows-silent--saving-official-content-forks-punch-list-item-1---the-duplicate-hub-uuid-load-bug)
+- [campaign editor: Save As Copy removed (punch-list item 9)](#campaign-editor-save-as-copy-removed-punch-list-item-9)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21075,3 +21076,29 @@ stem cleared, memo stability across saves, reopen compares identity);
 the mission-editor fork (fresh identity, the official campaign's
 mission table still resolves to the embedded original, memo stability);
 `campaignImportDir` both origins.
+
+## campaign editor: Save As Copy removed (punch-list item 9)
+
+Redundant under the fork rule - saving official content already creates
+a new work with fresh identity - and useless as a feature (the user's
+call; a copy of a local campaign is a hand-copy outside the editor, and
+the tier-scoping work had already reworded the duplicate warnings off
+"Save As Copy to split"). Removed wholesale: the options-menu entry,
+the `save_campaign_as_copy` action (the Action enum variant, its
+context classification + payload-map entry, the AnytimeInput field, the
+applyAction arm, the consumption arm), and the `CampaignSaveMode` enum -
+`saveCampaignEditor` is single-mode, `resolveCampaignIdentity`'s state
+arm is unconditional, and the deletion reconciliation always runs (its
+in-place-only gate existed for the copy). The gold round-trip test's
+copy section went with it; the memo LAST-WINS behavior it pinned is
+still covered by the official-origin fork test (a fork mint + a second
+save hitting the memo).
+
+En route note: the copy was latently half-broken anyway - its
+campaign.txt referenced mission dirs that still lived in the ORIGINAL
+campaign, so reopening the copy found unresolvable missions (never
+caught: the gold test only reopened to count hubs). DESIGN's section is
+renamed "The editor save model (in-place identity, official-origin
+forks)" with every mention reworded (the minting policy, the
+duplicate-split advice, the cross-references); AGENTS + TODO pointers
+followed.

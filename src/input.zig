@@ -365,8 +365,6 @@ pub const AnytimeInput = struct {
     /// campaign editor screen only (the consumption site gates; the
     /// mission's ctrl+S no-ops there and vice versa).
     save_campaign: bool = false,
-    /// Save As Copy (the menu button).
-    save_campaign_as_copy: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -588,7 +586,6 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         .new_editor_campaign => player_input.anytime.new_editor_campaign = true,
         .save_campaign => player_input.anytime.save_campaign = true,
-        .save_campaign_as_copy => player_input.anytime.save_campaign_as_copy = true,
         // Keyboard-only editor shortcuts - no button carries these (the
         // palette cells use the payload-carrying click actions). The
         // keybind→click-action BRIDGE lives here: the keyboard action folds

@@ -686,7 +686,7 @@ test "campaign editor: the mission tool's draw gesture - arm, place, cancel via 
     try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs.len);
 }
 
-test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; the deletion reconciliation" {
+test "saveCampaignEditor: the full round trip - save, reopen, compare; the deletion reconciliation" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -754,7 +754,7 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; t
     const campaign_editor_io = @import("campaign_editor/io.zig");
 
     // The in-place save of a FRESH campaign: everything mints.
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    campaign_editor_io.saveCampaignEditor(&history);
     try testing.expect(history.session.pending_error == null);
     // The memo values are SNAPSHOT into the test's arena: the reopen
     // below clears the memos (freeing their backing strings), and the
@@ -832,25 +832,9 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; t
     try testing.expectEqual(types.Vector2{ .x = -600, .y = -300 }, salvage.?.orphan_start_position.?);
     try testing.expect(salvage.?.destination != null);
 
-    // Save As Copy: a fresh campaign identity, last-wins - the session
-    // continues saving the copy (a third in-place save reuses the COPY's
-    // memo, not the original's).
-    campaign_editor_io.saveCampaignEditor(&history, .as_copy);
-    const copy_memo_raw = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
-    const copy_memo = types.CampaignSaveMemo{
-        .handle = copy_memo_raw.handle,
-        .uuid = backing.allocator().dupe(u8, copy_memo_raw.uuid) catch unreachable,
-        .dir = backing.allocator().dupe(u8, copy_memo_raw.dir) catch unreachable,
-    };
-    const copy_campaign_dir = backing.allocator().dupe(u8, copy_memo.dir) catch unreachable;
-    try testing.expect(!std.mem.eql(u8, copy_memo.uuid, campaign_memo.uuid));
-    try testing.expect(!std.mem.eql(u8, copy_memo.dir, campaign_memo.dir));
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
-    try testing.expectEqualStrings(
-        copy_memo.dir,
-        campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir,
-    );
-
+    // The reopen dir for the deletion assertions below (the first save's
+    // dir, backing-owned - the reopens span current-arena frames).
+    const reopen_dir = backing.allocator().dupe(u8, campaign_memo.dir) catch unreachable;
     // The deletion reconciliation: move the start hub to Beta first
     // (the input layer vetoes deleting the start hub - the raw event
     // here would otherwise leave a dangling start_hub the save rejects),
@@ -887,13 +871,13 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; t
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    campaign_editor_io.saveCampaignEditor(&history);
     // The reopen still finds Alpha's dir (delete-then-undo-then-save kept
-    // it): reopen from the copy dir (the session's current identity).
+    // it).
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .open_campaign_editor = .{
-            .campaign_dir = copy_campaign_dir,
+            .campaign_dir = reopen_dir,
         } } }},
         history.current_arena.allocator(),
     );
@@ -916,11 +900,11 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; a copy; t
     }
     // The second delete leaves the start on Beta (the reload resolved
     // it); the save + reopen confirm the deletion stuck.
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    campaign_editor_io.saveCampaignEditor(&history);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .open_campaign_editor = .{
-            .campaign_dir = copy_campaign_dir,
+            .campaign_dir = reopen_dir,
         } } }},
         history.current_arena.allocator(),
     );
@@ -957,7 +941,7 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
 
     // The save FORKS: a fresh campaign identity + dir, never the official
     // path.
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    campaign_editor_io.saveCampaignEditor(&history);
     try testing.expect(history.session.pending_error == null);
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const fork_dir = try arena.dupe(u8, campaign_memo.dir);
@@ -1056,7 +1040,7 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     runToIdle(&history);
 
     // A second save in the session is stable (the memo - no re-fork).
-    campaign_editor_io.saveCampaignEditor(&history, .in_place);
+    campaign_editor_io.saveCampaignEditor(&history);
     try testing.expectEqualStrings(fork_dir, campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir);
 
     // The reopen through the ordinary open path: the fork loads with its

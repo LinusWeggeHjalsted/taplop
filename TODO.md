@@ -358,7 +358,7 @@ work:
 - **Campaign editor (hub editing inside) - design SETTLED including the
   slice-2 identity model (uuids everywhere, scan loading, rename-in-place,
   the viewing model - see DESIGN → Campaigns & the Campaign Editor, esp.
-  Content identity / Uuid→dir resolution / Rename + Save As Copy /
+  Content identity / Uuid→dir resolution / The editor save model /
   Campaign switching / Edge geometry / The map surface), build not
   started.** TWO editors, not three (see DESIGN → Campaigns & the
   Campaign Editor for the full model): the mission editor (built) + the
@@ -373,7 +373,7 @@ work:
   hub editor surface, and the mission editor's campaign context (see
   DESIGN → Campaigns & the Campaign Editor). (The hub-rename question
   DISSOLVED - rename is free under uuid references: see DESIGN →
-  Rename + Save As Copy.)
+  The editor save model.)
   Future surfaces riding this work: the pre-mission briefing overlay
   (leaderboards, clone info + medal - before ANY mission start, map
   edge / exit tile / re-run alike); fog-of-war hiding as a possible
@@ -455,12 +455,6 @@ work:
     - [ ] A selected mission shows the animated highlight (selected
           hubs already do; the mission select buttons over the
           hit_curve arrows need the same selected-state render).
-    - [ ] REMOVE Save As Copy (the campaign options-menu entry). The
-          removal also drops the session-saves-the-COPY memo
-          redirection (the LAST-WINS memo precedence exists only for
-          it - campaign_editor/io.zig) and rewords the duplicate-hub
-          warning text that tells the player to "Save As Copy to split"
-          (loaders.zig).
     - [ ] Nothing selected → an EMPTY inspector panel. Today the
           default view is an empty MISSION inspector; nothing should
           show when no hub/mission is selected. The empty-inspector

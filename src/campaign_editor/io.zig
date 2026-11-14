@@ -186,59 +186,46 @@ fn copyOneDirFile(
     return true;
 }
 
-/// The save mode: an in-place save keeps the campaign's identity (the
-/// memo stabilizes minted uuids across saves); a Save As Copy mints a
-/// FRESH campaign uuid + dir (an intentional fork is a new work) and the
-/// session continues saving THE COPY (the original dir stays untouched
-/// behind).
-pub const CampaignSaveMode = enum {
-    in_place,
-    as_copy,
-};
-
-/// Resolve the campaign's identity for the save: the state's uuid (a
-/// loaded campaign), else the session memo (a prior save), else a fresh
-/// mint (memo'd). `as_copy` always mints fresh (a new work). Returns the
-/// uuid + the content dir.
+/// Resolve the campaign's identity for the save: the session memo (a
+/// fork minted earlier this session), else the state's uuid (a loaded
+/// LOCAL campaign - the official-origin check below), else a fresh mint
+/// (memo'd). Returns the uuid + the content dir.
 fn resolveCampaignIdentity(
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
     editor: types.CampaignEditor,
-    mode: CampaignSaveMode,
 ) types.CampaignSaveMemo {
     // The MEMO wins over the state identity (LAST-WINS): a minted
-    // identity (a fork from a prior save this session, or Save As Copy)
-    // is the session's current one - the state still carries the
-    // original's identity (a side effect never mutates replayed state),
-    // so state-first precedence would keep writing the original forever.
-    // The memos are cleared at every campaign open (see
-    // clearCampaignSaveState), so they can never leak across campaigns.
+    // identity (a fork from a prior save this session) is the session's
+    // current one - the state still carries the original's identity (a
+    // side effect never mutates replayed state), so state-first
+    // precedence would keep writing the original forever. The memos are
+    // cleared at every campaign open (see clearCampaignSaveState), so
+    // they can never leak across campaigns.
     var latest: ?types.CampaignSaveMemo = null;
     for (history.session.campaign_save_memos) |memo| {
         if (memo.handle == types.campaign_save_memo_handle) latest = memo;
     }
     if (latest) |memo| return memo;
-    if (mode == .in_place) {
-        if (editor.campaign_uuid.len > 0) {
-            // OFFICIAL-ORIGIN check: the state identity is honored only
-            // when the opened campaign exists in the persistent tier.
-            // Content that lives only in the embedded map is official -
-            // saving it FORKS (a fresh identity + dir below; the
-            // campaign-dir carry in saveCampaignEditor re-creates its
-            // root files) so the editor never shadows shipped content.
-            const campaign_txt_path = std.fmt.allocPrint(
-                allocator,
-                "{s}/campaign.txt",
-                .{editor.campaign_dir},
-            ) catch @panic("failed to build campaign.txt origin path");
-            defer allocator.free(campaign_txt_path);
-            if (file_source_mod.persistentFileExists(history.file_source, campaign_txt_path)) {
-                return .{
-                    .handle = types.campaign_save_memo_handle,
-                    .uuid = allocator.dupe(u8, editor.campaign_uuid) catch @panic("failed to dupe campaign uuid"),
-                    .dir = allocator.dupe(u8, editor.campaign_dir) catch @panic("failed to dupe campaign dir"),
-                };
-            }
+    if (editor.campaign_uuid.len > 0) {
+        // OFFICIAL-ORIGIN check: the state identity is honored only
+        // when the opened campaign exists in the persistent tier.
+        // Content that lives only in the embedded map is official -
+        // saving it FORKS (a fresh identity + dir below; the
+        // campaign-dir carry in saveCampaignEditor re-creates its
+        // root files) so the editor never shadows shipped content.
+        const campaign_txt_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/campaign.txt",
+            .{editor.campaign_dir},
+        ) catch @panic("failed to build campaign.txt origin path");
+        defer allocator.free(campaign_txt_path);
+        if (file_source_mod.persistentFileExists(history.file_source, campaign_txt_path)) {
+            return .{
+                .handle = types.campaign_save_memo_handle,
+                .uuid = allocator.dupe(u8, editor.campaign_uuid) catch @panic("failed to dupe campaign uuid"),
+                .dir = allocator.dupe(u8, editor.campaign_dir) catch @panic("failed to dupe campaign dir"),
+            };
         }
     }
     const uuid = generateCampaignUuid(history, allocator);
@@ -275,7 +262,7 @@ pub fn campaignImportDir(
     allocator: std.mem.Allocator,
     editor: types.CampaignEditor,
 ) []const u8 {
-    return resolveCampaignIdentity(history, allocator, editor, .in_place).dir;
+    return resolveCampaignIdentity(history, allocator, editor).dir;
 }
 
 /// Where a content entry's files live + where this session's saves put
@@ -435,8 +422,8 @@ pub fn recordCampaignContentDeletion(history: *GameStateHistory, dir: []const u8
 }
 
 /// Save the campaign editor's authored graph (the full save projection,
-/// ctrl+S / Save Campaign / Save As Copy). THE reconciliation save - the
-/// only write path that deletes anything:
+/// ctrl+S / the options menu's Save Campaign). THE reconciliation save -
+/// the only write path that deletes anything:
 ///   1. resolve identities (state -> memo -> fresh mint, memo'd);
 ///   2. missions first (mission.txt name sync always; a FRESH mission
 ///      additionally gets level_1.txt - the default template, verbatim -
@@ -448,24 +435,21 @@ pub fn recordCampaignContentDeletion(history: *GameStateHistory, dir: []const u8
 ///   4. campaign.txt (v4: Metadata + Hubs + Orphans);
 ///   5. the deletion reconciliation: each deleted dir from this session
 ///      whose content is NOT in the current graph (an undo restored it)
-///      is removed, directory-level. An `as_copy` save never deletes
-///      (the copy's dir starts clean; the deletions belong to the
-///      original).
+///      is removed, directory-level.
 /// A pure input-layer side effect (the mission save's class): no
 /// recorded event, never replayed.
 pub fn saveCampaignEditor(
     history: *GameStateHistory,
-    mode: CampaignSaveMode,
 ) void {
     const allocator = history.current_arena.allocator();
     const editor = history.current_state.campaign_editor orelse return;
 
-    const campaign_memo = resolveCampaignIdentity(history, allocator, editor, mode);
+    const campaign_memo = resolveCampaignIdentity(history, allocator, editor);
 
     // The campaign-root carry (the fork's own files - the background PNG
     // + anything else at the campaign root): when the save target is NOT
-    // the opened dir (a minted fork - official-origin, fresh, or Save As
-    // Copy), the opened dir's direct files re-create under the target
+    // the opened dir (a minted fork - official-origin content, or a fresh
+    // campaign), the opened dir's direct files re-create under the target
     // once; the fresh campaign.txt write below lands on top. Gated on
     // the target lacking campaign.txt, so repeated saves skip it.
     if (!std.mem.eql(u8, campaign_memo.dir, editor.campaign_dir)) {
@@ -650,43 +634,39 @@ pub fn saveCampaignEditor(
         return;
     };
 
-    // 4. The deletion reconciliation (in-place saves only - a copy's dir
-    // starts clean).
-    if (mode == .in_place) {
-        for (history.session.campaign_deleted_dirs) |deleted_dir| {
-            // An undo restored the content - skip. The presence check
-            // resolves each entry's CURRENT dir: the state's, else the
-            // save memo's (fresh content's state dir is still empty -
-            // the write-only mint).
-            var present = false;
-            for (editor.hubs) |hub| {
-                const dir = if (hub.dir.len > 0) hub.dir else if (campaignSaveMemoFor(history, hub.handle)) |memo| memo.dir else &.{};
-                if (std.mem.eql(u8, dir, deleted_dir)) present = true;
-            }
-            for (editor.missions) |mission| {
-                const dir = if (mission.dir.len > 0) mission.dir else if (campaignSaveMemoFor(history, mission.handle)) |memo| memo.dir else &.{};
-                if (std.mem.eql(u8, dir, deleted_dir)) present = true;
-            }
-            if (present) continue;
-            const hub_path = std.fmt.allocPrint(
-                allocator,
-                "{s}/hubs/{s}",
-                .{ campaign_memo.dir, deleted_dir },
-            ) catch @panic("failed to format hub deletion path");
-            history.file_source.deleteDir(hub_path) catch {};
-            const mission_path = std.fmt.allocPrint(
-                allocator,
-                "{s}/missions/{s}",
-                .{ campaign_memo.dir, deleted_dir },
-            ) catch @panic("failed to format mission deletion path");
-            history.file_source.deleteDir(mission_path) catch {};
+    // 4. The deletion reconciliation.
+    for (history.session.campaign_deleted_dirs) |deleted_dir| {
+        // An undo restored the content - skip. The presence check
+        // resolves each entry's CURRENT dir: the state's, else the
+        // save memo's (fresh content's state dir is still empty -
+        // the write-only mint).
+        var present = false;
+        for (editor.hubs) |hub| {
+            const dir = if (hub.dir.len > 0) hub.dir else if (campaignSaveMemoFor(history, hub.handle)) |memo| memo.dir else &.{};
+            if (std.mem.eql(u8, dir, deleted_dir)) present = true;
         }
+        for (editor.missions) |mission| {
+            const dir = if (mission.dir.len > 0) mission.dir else if (campaignSaveMemoFor(history, mission.handle)) |memo| memo.dir else &.{};
+            if (std.mem.eql(u8, dir, deleted_dir)) present = true;
+        }
+        if (present) continue;
+        const hub_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/hubs/{s}",
+            .{ campaign_memo.dir, deleted_dir },
+        ) catch @panic("failed to format hub deletion path");
+        history.file_source.deleteDir(hub_path) catch {};
+        const mission_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/missions/{s}",
+            .{ campaign_memo.dir, deleted_dir },
+        ) catch @panic("failed to format mission deletion path");
+        history.file_source.deleteDir(mission_path) catch {};
     }
 
-    // The session continues under the SAVED identity (a copy's saves hit
-    // the copy; the original stays behind) - the memo carries it; ALSO
-    // the browser lists need a rescan next open (they rescan on open
-    // anyway).
+    // The session continues under the SAVED identity (a fork's saves hit
+    // the fork) - the memo carries it; ALSO the browser lists need a
+    // rescan next open (they rescan on open anyway).
 }
 
 /// Whether a memo for `handle` existed BEFORE this save's resolution
