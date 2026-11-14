@@ -8913,7 +8913,9 @@ test "Tab chords: the mission editor cycles the fixed tools + the expanded group
     try testing.expectEqual(types.EditorToolId{ .entity_type = 1 }, history.current_state.editor.?.active_tool);
 
     // A tool whose group is COLLAPSED (closing Entities with entity 1
-    // active) acts as the rightmost: forward wraps to Select.
+    // active) keeps its REGION position - with nothing else expanded,
+    // forward wraps past it to Select (the spatial cycle; the
+    // region-skip cases are pinned in planning.zig's tests).
     history.session.ui_state.editor_palette_collapsed = .{ true, true, true };
     input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);

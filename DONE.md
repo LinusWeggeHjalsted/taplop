@@ -347,6 +347,7 @@ working rules).
 - [campaign editor: selection highlight + the inspector rows' text (punch-list items 8 + 12)](#campaign-editor-selection-highlight--the-inspector-rows-text-punch-list-items-8--12)
 - [editor inspectors: empty-when-unselected + the topmost group expanded by default (punch-list items 10-11)](#editor-inspectors-empty-when-unselected--the-topmost-group-expanded-by-default-punch-list-items-10-11)
 - [both editors: Tab / shift+Tab tool cycling (punch-list items 13-14, the punch list complete)](#both-editors-tab--shifttab-tool-cycling-punch-list-items-13-14-the-punch-list-complete)
+- [mission editor: Tab cycling reworked to the SPATIAL model (a playtest revision of items 13-14)](#mission-editor-tab-cycling-reworked-to-the-spatial-model-a-playtest-revision-of-items-13-14)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21258,3 +21259,29 @@ collapsed-group wrap, undo restoring the prior tool).
 
 The post-3e punch list is now COMPLETE - all fourteen items landed
 across this session's commits; the block is deleted from TODO.
+
+## mission editor: Tab cycling reworked to the SPATIAL model (a playtest revision of items 13-14)
+
+The first implementation treated a tool orphaned by its group's
+collapse as "the rightmost entry" (the original punch-list wording,
+read literally). The playtest found the hole: an entity tool active
+with Entities collapsed and Decorations EXPANDED - forward should land
+on the FIRST decoration cell (Decorations sits right of Entities in
+the palette layout; the chord should feel like cycling rightwards),
+not wrap to Select.
+
+The settled model: the palette is a fixed REGION layout
+([Select][Tile][Entities][Decorations][Items]); Tab moves to the
+nearest PRESENT tool in the direction (collapsed regions skipped),
+wrapping at the ends - and an orphaned active tool KEEPS ITS REGION'S
+POSITION, so the cycle steps past that region. Edges confirmed with
+the author: everything-else-collapsed forward wraps to Select and
+backward lands on Tile; forward past the Items region always wraps to
+Select (never "the nearest group to the left").
+
+Implementation: the cycle list carries a per-entry region ordinal
+(`CycleEntry`), and `nextMissionEditorTool`'s not-found path scans by
+region instead of defaulting to the last slot. The pure tests pin the
+playtest scenario + every orphan case (entity/decoration/item, both
+directions); the handler test's comment follows the new model (its
+all-collapsed behavior is unchanged).
