@@ -705,6 +705,16 @@ pub const Action = enum {
     // (one start hub at 0 0, the single-'!'-tile default grid; files only
     // at save). Same reachable-screen discipline as the browser itself.
     new_editor_campaign,
+    // The campaign editor's tool keybinds (Digit1-3, context
+    // campaign_editor - the same combos as the mission palette's tools,
+    // cross-context, never co-firing). The mission editor's
+    // editor_select_tool discipline: payload-less keybind-only actions
+    // bridged onto the palette cell's click path
+    // (select_editor_campaign_tool + the `editor_campaign_tool` payload
+    // variant), so keybind and click share the consumption site exactly.
+    campaign_select_tool,
+    campaign_hub_tool,
+    campaign_mission_tool,
     // Editor tool/palette keyboard shortcuts (Digit1-5, context editor -
     // the first same-combo cross-context pair: Digit1-8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
@@ -1177,6 +1187,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_campaign_import_picker,
         .select_editor_campaign_import,
         .save_campaign,
+        .campaign_select_tool,
+        .campaign_hub_tool,
+        .campaign_mission_tool,
         => .{ .campaign_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1577,6 +1590,9 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
         .save_campaign,
+        .campaign_select_tool,
+        .campaign_hub_tool,
+        .campaign_mission_tool,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,

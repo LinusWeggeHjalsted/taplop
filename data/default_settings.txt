@@ -239,14 +239,29 @@ action editor_select_tool
 context editor
 
 input_type key
+input_name Digit1
+action campaign_select_tool
+context campaign_editor
+
+input_type key
 input_name Digit2
 action editor_tile_tool
 context editor
 
 input_type key
+input_name Digit2
+action campaign_hub_tool
+context campaign_editor
+
+input_type key
 input_name Digit3
 action toggle_editor_entity_group
 context editor
+
+input_type key
+input_name Digit3
+action campaign_mission_tool
+context campaign_editor
 
 input_type key
 input_name Digit4

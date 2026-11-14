@@ -596,6 +596,18 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // runtime payload to ride along. A same-frame keypress + button
         // release on the same action is degenerate (the button's payload
         // lands last, at main.zig's release dispatch, and wins).
+        .campaign_select_tool => {
+            player_input.anytime.options_action = .select_editor_campaign_tool;
+            player_input.clicked_payload = .{ .editor_campaign_tool = .select };
+        },
+        .campaign_hub_tool => {
+            player_input.anytime.options_action = .select_editor_campaign_tool;
+            player_input.clicked_payload = .{ .editor_campaign_tool = .hub };
+        },
+        .campaign_mission_tool => {
+            player_input.anytime.options_action = .select_editor_campaign_tool;
+            player_input.clicked_payload = .{ .editor_campaign_tool = .mission };
+        },
         .editor_select_tool => {
             player_input.anytime.options_action = .select_editor_tool;
             player_input.clicked_payload = .{ .editor_tool = .select };
@@ -1770,4 +1782,65 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
     // The cross-editor same-combo pair is legal (never co-fires - the
     // load-time conflict predicate).
     try std.testing.expect(!types.bindingContextsCoFire(.{ .editor = true }, .{ .campaign_editor = true }));
+}
+
+test "translateInput: campaign tool keybinds bridge onto the campaign cell's click action" {
+    // Digit1-3 across BOTH editors (the campaign_editor context - the
+    // same combos as the mission palette's tools, never co-firing): on
+    // the campaign editor set the keys land on
+    // options_action=.select_editor_campaign_tool with the right
+    // campaign tool payloads (the exact pairs the palette cell's click
+    // dispatch produces, so the click consumption site serves both); on
+    // the editor set the mission palette's own Digit1-3 fire and nothing
+    // campaign-side does.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool },
+        .{ .input = .{ .key = "Digit2" }, .action = .editor_tile_tool },
+        .{ .input = .{ .key = "Digit1" }, .action = .campaign_select_tool },
+        .{ .input = .{ .key = "Digit2" }, .action = .campaign_hub_tool },
+        .{ .input = .{ .key = "Digit3" }, .action = .campaign_mission_tool },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const press_one = PlatformInput{
+        .events = &.{.{ .key_down = "Digit1" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const press_two = PlatformInput{
+        .events = &.{.{ .key_down = "Digit2" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const press_three = PlatformInput{
+        .events = &.{.{ .key_down = "Digit3" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+
+    // Campaign editor screen: Digit1 -> select, Digit2 -> hub, Digit3 ->
+    // mission (all bridged onto the cell's click action + payload).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_campaign_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.CampaignEditorToolId.select, result.clicked_payload.?.editor_campaign_tool);
+    }
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_two, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_campaign_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.CampaignEditorToolId.hub, result.clicked_payload.?.editor_campaign_tool);
+    }
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_three, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_campaign_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.CampaignEditorToolId.mission, result.clicked_payload.?.editor_campaign_tool);
+    }
+    // Mission editor screen: the same keys are the MISSION palette's
+    // tools - no campaign bridge.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.EditorToolId.select, result.clicked_payload.?.editor_tool);
+    }
 }

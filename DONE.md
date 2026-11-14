@@ -343,6 +343,7 @@ working rules).
 - [campaign editor: Save As Copy removed (punch-list item 9)](#campaign-editor-save-as-copy-removed-punch-list-item-9)
 - [campaign editor: the picker batch (punch-list items 2-4)](#campaign-editor-the-picker-batch-punch-list-items-2-4)
 - [campaign editor: the tool palette graphics (punch-list items 5-6)](#campaign-editor-the-tool-palette-graphics-punch-list-items-5-6)
+- [campaign editor: tool keybinds 1/2/3 (punch-list item 7)](#campaign-editor-tool-keybinds-123-punch-list-item-7)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21152,3 +21153,24 @@ exactly 128x128; exactly two horizontal 128px arrowhead curves in the
 palette - the lightest stroke at edge_width over the black under-stroke
 at edge_width + 2*edge_outline_width), and the derived-total tests
 count the mission cell's two-curve graphic.
+
+## campaign editor: tool keybinds 1/2/3 (punch-list item 7)
+
+Digit1/2/3 switch the select/hub/mission tools - the mission editor's
+editor_select_tool discipline (payload-less keybind-only actions
+bridged in applyAction onto the palette cell's click path:
+options_action=.select_editor_campaign_tool + the
+`editor_campaign_tool` payload, so keybind and click share the one
+consumption site). The bindings live in the campaign_editor context -
+the cross-editor same-combo rule the new context enables (Digit1-3 are
+the mission palette's tools on the editor set, the campaign map's tools
+on the campaign set, the in-game skill slots on the game set; never
+co-firing).
+
+Tests: the translateInput bridge on both editor sets (each key lands on
+the click action with the right payload, and the mission palette's
+Digit1 still bridges its own pair); the end-to-end keybind path through
+handleAnytimeInput (the tool switches + the switch rides the undo
+timeline). Note en route: the click arm had no handler-level coverage
+before - the new test covers keybind and cell click through the one
+site.

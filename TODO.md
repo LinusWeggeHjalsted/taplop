@@ -425,10 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] Keybinds 1/2/3 = select/hub/mission tool in the campaign
-          editor (the mission editor's 1-5 tool binds are the wiring
-          model; the shortcut-number surfacing polish item at the top
-          of this file rides it).
     - [ ] A selected mission shows the animated highlight (selected
           hubs already do; the mission select buttons over the
           hit_curve arrows need the same selected-state render).

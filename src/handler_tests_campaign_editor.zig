@@ -1204,3 +1204,32 @@ test "campaign editor background scan: the embedded campaign dir's PNGs are offe
     try testing.expectEqual(@as(usize, 1), history.session.campaign_background_stems.len);
     try testing.expectEqualStrings("map", history.session.campaign_background_stems[0]);
 }
+
+test "campaign editor: the tool keybind path - the bridged click switches the active tool, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // Digit2's bridged pair - exactly what translateInput produces for
+    // the campaign_hub_tool keybind (the click arm serves keybind and
+    // cell click through the same options_action + payload).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_campaign_tool },
+        .{ .editor_campaign_tool = .hub },
+        .{ .x = 0, .y = 0 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .hub);
+
+    // The switch rides the undo timeline (the tool cell's click
+    // convention).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .select);
+}
