@@ -5977,27 +5977,39 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.highlighted_tiles.len);
 }
 
-test "hub exit click rides the exit's destination_hub on start_mission (dangling passes null)" {
+test "hub exit click resolves the destination through the campaign edge table (dangling passes null)" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
 
-    // Two exits to the same real mission: one with a destination (the
-    // campaign edge's to-end), one dangling (empty destination_hub - a
-    // forward reference, legal by design).
+    // Two markers for the same mission (both start it - the destination
+    // is the campaign EDGE's, resolved through the loaded campaign's
+    // edge table by mission uuid; the marker itself carries no edge
+    // data). Static strings are fine: the handler only reads the table.
     const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
     const exits = [_]types.MissionExit{
-        .{ .mission_uuid = "beginnings-uuid", .destination_hub = "far_camp", .position = .{ .x = 1, .y = 0 } },
-        .{ .mission_uuid = "beginnings-uuid", .destination_hub = "", .position = .{ .x = 2, .y = 0 } },
+        .{ .mission_uuid = "beginnings-uuid", .position = .{ .x = 1, .y = 0 } },
+        .{ .mission_uuid = "beginnings-uuid", .position = .{ .x = 2, .y = 0 } },
     };
-    // The loaded campaign the exit click resolves through (the mission
-    // table: beginnings-uuid -> dir). Static strings are fine here: the
-    // handler only reads the table.
-    const campaign = types.Campaign{
+    const campaign_missions = [_]types.CampaignMissionEntry{
+        .{ .uuid = "beginnings-uuid", .dir = "campaigns/main_campaign/missions/beginnings", .name = "Beginnings" },
+    };
+    const campaign_with_destination = types.Campaign{
         .uuid = "campaign-uuid",
         .dir = "main_campaign",
-        .missions = &.{
-            .{ .uuid = "beginnings-uuid", .dir = "campaigns/main_campaign/missions/beginnings", .name = "Beginnings" },
+        .missions = &campaign_missions,
+        .edges = &.{
+            .{ .from = "camp_at_the_crossroads", .destination = "far_camp", .mission_uuid = "beginnings-uuid", .mission_dir = "campaigns/main_campaign/missions/beginnings", .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
+        },
+    };
+    // The dangling shape: the edge exists (started) but names no
+    // destination - a forward reference, legal by design.
+    const campaign_dangling = types.Campaign{
+        .uuid = "campaign-uuid",
+        .dir = "main_campaign",
+        .missions = &campaign_missions,
+        .edges = &.{
+            .{ .from = "camp_at_the_crossroads", .destination = "", .mission_uuid = "beginnings-uuid", .mission_dir = "campaigns/main_campaign/missions/beginnings", .mission_name = "Beginnings", .direction_degrees = 0, .exit_index = 0 },
         },
     };
 
@@ -6011,7 +6023,7 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
             .camera = null,
             .editor = null,
             .replay_viewer = null,
-            .campaign = campaign,
+            .campaign = campaign_with_destination,
             .mission = null,
             .level = null,
             .hub = .{
@@ -6047,7 +6059,7 @@ test "hub exit click rides the exit's destination_hub on start_mission (dangling
             .camera = null,
             .editor = null,
             .replay_viewer = null,
-            .campaign = campaign,
+            .campaign = campaign_dangling,
             .mission = null,
             .level = null,
             .hub = .{

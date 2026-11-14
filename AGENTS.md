@@ -639,8 +639,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/campaign_editor/` - the campaign editor's module family (the
   src/editor/ sibling): `handlers.zig` (the open/close framing + the
   fresh-campaign default) + `load.zig` (the INVERSE PROJECTION -
-  campaign.txt v4 + every hub.txt + the mission table into the authored
-  CampaignEditor graph; the open-from-dir path of `open_campaign_editor`)
+  campaign.txt v5 (the Missions edge table) + every hub.txt + the mission
+  table into the authored CampaignEditor graph; the open-from-dir path of
+  `open_campaign_editor`)
   + `io.zig` (the import copy + the save orchestration incl. the
   official-origin fork rule - see DESIGN → Campaigns & the Campaign
   Editor → The editor save model).

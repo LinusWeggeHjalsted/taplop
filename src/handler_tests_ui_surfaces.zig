@@ -258,11 +258,11 @@ test "campaign browser: opens from the map, picks view (cache), the active pick 
     // scan-side fixtures the graph derivation reads).
     history.file_source.writeFile(
         "campaigns/zeta_lands/campaign.txt",
-        "Metadata\nfile_format_version 3\ncampaign_uuid zeta-uuid\nname Zeta Lands\nstart_hub zeta-hub\n\nHubs\nhub_uuid zeta-hub\nposition 0 0\n",
+        "Metadata\nfile_format_version 5\ncampaign_uuid zeta-uuid\nname Zeta Lands\nstart_hub zeta-hub\n\nHubs\nhub_uuid zeta-hub\nposition 0 0\n",
     ) catch @panic("write zeta campaign");
     history.file_source.writeFile(
         "campaigns/zeta_lands/hubs/zeta_hub/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid zeta-hub\nname Zeta Hub\n",
+        "Metadata\nfile_format_version 5\nhub_uuid zeta-hub\nname Zeta Hub\n",
     ) catch @panic("write zeta hub");
 
     // The browser opens from the map (the top-left campaign button's

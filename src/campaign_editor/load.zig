@@ -1,8 +1,10 @@
 //! The campaign editor's INVERSE PROJECTION - the open-from-dir path
 //! (`open_campaign_editor` with a campaign dir): campaign.txt + every
 //! placed hub's hub.txt + the campaign's mission table, projected into
-//! the AUTHORED CampaignEditor graph (the mission-centric model - hub.txt
-//! Exits are the forward projection at save, 3e). campaign.txt and the
+//! the AUTHORED CampaignEditor graph (the mission-centric model -
+//! campaign.txt's Missions section is the on-disk edge table, hub.txt
+//! Exits are the MARKER projection at save; see DESIGN → File formats).
+//! campaign.txt and the
 //! hub files read through the RECONSTRUCTION CACHE (the open_editor
 //! convention - the editor state is GameState, so its reads are
 //! replay-relevant); the uuid resolution scans run LIVE (the
@@ -138,6 +140,74 @@ pub fn loadCampaignEditorIntoState(
         next_handle += 1;
     }
 
+    // The Missions section (campaign.txt v5): THE first-class edge table
+    // - one entry per mission group with its full edge data. Any authored
+    // state is representable (the total-round-trip rule): a markerless
+    // mission (start + destination but no exit marker anywhere) projects
+    // verbatim; unstartable is a validation finding, not a load problem.
+    // Identity (dir + name) fills from the resolved mission table.
+    if (parser.findSection(campaign_sections, "Missions")) |section| {
+        for (section.entry_groups) |group| {
+            const pairs = group.pairs;
+            const mission_uuid = parser.findValue(pairs, "mission_uuid") orelse {
+                warn(warnings, allocator, "a Missions entry has no mission_uuid - dropped", .{});
+                continue;
+            };
+            if (mission_uuid.len == 0) {
+                warn(warnings, allocator, "a Missions entry has an empty mission_uuid - dropped", .{});
+                continue;
+            }
+            var duplicate = false;
+            for (mission_entries.items) |mission| {
+                if (mission.uuid.len > 0 and std.mem.eql(u8, mission.uuid, mission_uuid)) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) {
+                warn(warnings, allocator, "mission '{s}' appears more than once in the Missions section - the duplicate is dropped", .{mission_uuid});
+                continue;
+            }
+            mission_entries.append(allocator, .{
+                .handle = next_handle,
+                .uuid = allocator.dupe(u8, mission_uuid) catch
+                    @panic("failed to dupe mission uuid"),
+            }) catch @panic("failed to append campaign mission entry");
+            const index = mission_entries.items.len - 1;
+            next_handle += 1;
+            if (!fillMissionIdentityFromTable(&mission_entries.items[index], campaign.missions)) {
+                warn(warnings, allocator, "a Missions entry names mission '{s}' which the campaign's missions/ does not resolve - it loads unresolved", .{mission_uuid});
+            }
+            const start_uuid = parser.findValue(pairs, "start_hub") orelse &.{};
+            const start = resolveHubHandle(hub_entries.items, start_uuid);
+            mission_entries.items[index].start = start;
+            if (start_uuid.len > 0 and start == null) {
+                warn(warnings, allocator, "mission '{s}' start_hub '{s}' names no placed hub - the start loads unwired", .{ mission_uuid, start_uuid });
+            }
+            const destination_uuid = parser.findValue(pairs, "destination_hub") orelse &.{};
+            const destination = resolveHubHandle(hub_entries.items, destination_uuid);
+            mission_entries.items[index].destination = destination;
+            if (destination_uuid.len > 0 and destination == null) {
+                warn(warnings, allocator, "mission '{s}' destination_hub '{s}' names no placed hub - dangling (legal by design; attach the hub or re-wire the mission)", .{ mission_uuid, destination_uuid });
+            }
+            if (parser.findValue(pairs, "direction")) |direction_value| {
+                if (parser.asU32(direction_value)) |direction| {
+                    mission_entries.items[index].direction = direction;
+                } else {
+                    warn(warnings, allocator, "mission '{s}' has an unparsable direction '{s}' - loaded unauthored (the auto-spread default)", .{ mission_uuid, direction_value });
+                }
+            }
+            // Ghost positions: parsed whenever present (state-faithful -
+            // the writer writes whatever is set; a live end ignores its
+            // ghost, an unwired end renders through it or the view's
+            // fallback when absent).
+            mission_entries.items[index].orphan_start_position =
+                parseGhostPosition(pairs, "start_position", mission_uuid, warnings, allocator);
+            mission_entries.items[index].orphan_destination_position =
+                parseGhostPosition(pairs, "destination_position", mission_uuid, warnings, allocator);
+        }
+    }
+
     // Hub files: grid content + exits + NPCs. Indexed mutation throughout
     // (no pointers held across list appends - the ArrayList stability
     // lock). Fields MOVE out of the loaded Hub (arena-absorbed, nothing
@@ -227,14 +297,18 @@ pub fn loadCampaignEditorIntoState(
             decoration_placements.toOwnedSlice(allocator) catch
                 @panic("failed to own decoration placements slice");
 
-        // Exits -> mission entries + this hub's exit placements. One
-        // mission entry per uuid (find-or-create); a second exit naming
-        // an already-started mission is the one-edge-rule violation -
-        // warn + drop (the duplicate check the settle requires at load).
+        // Exits -> this hub's exit MARKERS (pure tile materialization -
+        // the edge data is the Missions section's, projected above). A
+        // marker naming a mission the Missions section lacks is a
+        // hand-edit: warn + create the entry with this hub as start (the
+        // marker implies start; the save self-heals it into the Missions
+        // section). A marker for a mission started at another hub, or a
+        // second marker in this hub, is the one-marker-per-mission
+        // violation - warn + drop.
         var exit_placements: std.ArrayList(types.ExitPlacement) = .empty;
         for (hub.mission_exits) |exit| {
             if (exit.mission_uuid.len == 0) {
-                warn(warnings, allocator, "{s}: an exit has no mission_uuid - dropped", .{hub_path});
+                warn(warnings, allocator, "{s}: an exit marker has no mission_uuid - dropped", .{hub_path});
                 continue;
             }
             var mission_index: ?usize = null;
@@ -245,6 +319,7 @@ pub fn loadCampaignEditorIntoState(
                 }
             }
             if (mission_index == null) {
+                warn(warnings, allocator, "{s}: an exit marker names mission '{s}' which the Missions section lacks - the mission is created with this hub as start (the save writes it into the Missions section)", .{ hub_path, exit.mission_uuid });
                 mission_entries.append(allocator, .{
                     .handle = next_handle,
                     .uuid = exit.mission_uuid,
@@ -252,20 +327,34 @@ pub fn loadCampaignEditorIntoState(
                 mission_index = mission_entries.items.len - 1;
                 next_handle += 1;
                 if (!fillMissionIdentityFromTable(&mission_entries.items[mission_index.?], campaign.missions)) {
-                    warn(warnings, allocator, "an exit names mission '{s}' which the campaign's missions/ does not resolve - the edge loads unresolved", .{exit.mission_uuid});
+                    warn(warnings, allocator, "mission '{s}' does not resolve in the campaign's missions/ - it loads unresolved", .{exit.mission_uuid});
                 }
             }
             const index = mission_index.?;
-            if (mission_entries.items[index].start != null) {
-                warn(warnings, allocator, "mission '{s}' is referenced by exits in more than one place (the one-edge rule) - the duplicate is dropped", .{exit.mission_uuid});
+            const hub_handle = hub_entries.items[hub_index].handle;
+            // One marker per mission, per hub: a SECOND marker in this
+            // hub is dropped (tracked against the placements already
+            // collected - the mission entry's `start` cannot serve as
+            // that signal, it is already set by the Missions section).
+            var already_marked = false;
+            for (exit_placements.items) |placement| {
+                if (placement.mission == mission_entries.items[index].handle) {
+                    already_marked = true;
+                    break;
+                }
+            }
+            if (already_marked) {
+                warn(warnings, allocator, "hub '{s}' has more than one marker for mission '{s}' - the first is kept", .{ hub_entries.items[hub_index].uuid, exit.mission_uuid });
                 continue;
             }
-            mission_entries.items[index].start = hub_entries.items[hub_index].handle;
-            mission_entries.items[index].destination = resolveHubHandle(hub_entries.items, exit.destination_hub);
-            if (exit.destination_hub.len > 0 and mission_entries.items[index].destination == null) {
-                warn(warnings, allocator, "an exit names unplaced destination hub '{s}' - dangling (legal by design; attach the hub or re-wire the mission)", .{exit.destination_hub});
+            if (mission_entries.items[index].start == null) {
+                // An orphan's marker wires its start to this hub (the
+                // marker implies start - hand-edit recovery).
+                mission_entries.items[index].start = hub_handle;
+            } else if (mission_entries.items[index].start.? != hub_handle) {
+                warn(warnings, allocator, "mission '{s}' has a marker in more than one hub (the one-edge rule) - the duplicate is dropped", .{exit.mission_uuid});
+                continue;
             }
-            mission_entries.items[index].direction = exit.direction;
             exit_placements.append(allocator, .{
                 .mission = mission_entries.items[index].handle,
                 .position = exit.position,
@@ -274,61 +363,6 @@ pub fn loadCampaignEditorIntoState(
         hub_entries.items[hub_index].exit_placements =
             exit_placements.toOwnedSlice(allocator) catch
                 @panic("failed to own exit placements slice");
-    }
-
-    // The Orphans section (campaign.txt v4): unwired missions, frozen in
-    // place. An entry naming an already-WIRED mission is the
-    // both-wired-and-orphaned conflict - warn + ignore (the exit wins).
-    if (parser.findSection(campaign_sections, "Orphans")) |section| {
-        for (section.entry_groups) |group| {
-            const pairs = group.pairs;
-            const mission_uuid = parser.findValue(pairs, "mission_uuid") orelse {
-                warn(warnings, allocator, "an Orphans entry has no mission_uuid - dropped", .{});
-                continue;
-            };
-            if (mission_uuid.len == 0) {
-                warn(warnings, allocator, "an Orphans entry has an empty mission_uuid - dropped", .{});
-                continue;
-            }
-            var mission_index: ?usize = null;
-            for (mission_entries.items, 0..) |mission, entry_index| {
-                if (mission.uuid.len > 0 and std.mem.eql(u8, mission.uuid, mission_uuid)) {
-                    mission_index = entry_index;
-                    break;
-                }
-            }
-            if (mission_index) |index| {
-                if (mission_entries.items[index].start != null) {
-                    warn(warnings, allocator, "mission '{s}' is both wired and orphaned - the Orphans entry is ignored", .{mission_uuid});
-                    continue;
-                }
-            } else {
-                mission_entries.append(allocator, .{
-                    .handle = next_handle,
-                    .uuid = allocator.dupe(u8, mission_uuid) catch
-                        @panic("failed to dupe orphan mission uuid"),
-                }) catch @panic("failed to append orphan mission entry");
-                mission_index = mission_entries.items.len - 1;
-                next_handle += 1;
-                if (!fillMissionIdentityFromTable(&mission_entries.items[mission_index.?], campaign.missions)) {
-                    warn(warnings, allocator, "an Orphans entry names mission '{s}' which the campaign's missions/ does not resolve - it loads unresolved", .{mission_uuid});
-                }
-            }
-            const index = mission_index.?;
-            const destination_uuid = parser.findValue(pairs, "destination_hub") orelse &.{};
-            const destination = resolveHubHandle(hub_entries.items, destination_uuid);
-            mission_entries.items[index].destination = destination;
-            // Ghost positions: expected ONLY for ends that do not resolve
-            // to a live hub (a live destination supplies its own geometry;
-            // the save writes ghosts only for missing ends - a live
-            // destination with no ghost is the normal state, not a warn).
-            mission_entries.items[index].orphan_start_position =
-                parseGhostPosition(pairs, "start_position", mission_uuid, warnings, allocator);
-            if (destination == null) {
-                mission_entries.items[index].orphan_destination_position =
-                    parseGhostPosition(pairs, "destination_position", mission_uuid, warnings, allocator);
-            }
-        }
     }
 
     // The start hub: resolve the uuid against the projected entries (null
@@ -358,21 +392,18 @@ pub fn loadCampaignEditorIntoState(
     return true;
 }
 
-/// One Orphans ghost position: warn + default to the map origin when
-/// missing or unparsable (see the caller).
+/// One Missions-section ghost position: null when the key is absent (a
+/// ghostless unwired end is a normal state - the view's fallback renders
+/// it), warn + null when present but unparsable (a defect).
 fn parseGhostPosition(
     pairs: []const parser.KeyValuePair,
     key: []const u8,
     mission_uuid: []const u8,
     warnings: *std.ArrayList([]const u8),
     allocator: std.mem.Allocator,
-) types.Vector2 {
-    const value = parser.findValue(pairs, key) orelse {
-        warn(warnings, allocator, "orphaned mission '{s}' has no {s} - defaults to the map origin", .{ mission_uuid, key });
-        return .{ .x = 0, .y = 0 };
-    };
-    return loaders.parseVector2Pair(value) orelse {
-        warn(warnings, allocator, "orphaned mission '{s}' has an unparsable {s} '{s}' - defaults to the map origin", .{ mission_uuid, key, value });
-        return .{ .x = 0, .y = 0 };
-    };
+) ?types.Vector2 {
+    const value = parser.findValue(pairs, key) orelse return null;
+    if (loaders.parseVector2Pair(value)) |position| return position;
+    warn(warnings, allocator, "mission '{s}' has an unparsable {s} '{s}' - ignored", .{ mission_uuid, key, value });
+    return null;
 }

@@ -429,30 +429,11 @@ work:
           findings through the standard warning surface.
     - [ ] Playtest punch list, round three (the full-graph authoring
           round - a 48-mission stress session + the save/reopen path;
-          fix one at a time, each its own commit):
-      1. Tool-placed mission edges do not persist: a started mission
-         with no exit marker is UNREPRESENTABLE on disk (hub.txt's
-         Exits entries are keyed by a grid-cell code, campaign.txt's
-         Orphans section covers only missions with NO start). SETTLED
-         FIX - campaign.txt v5 owns the graph (a first-class Missions
-         section, one group per mission with the full edge data;
-         hub.txt v6 Exits reduce to marker materialization - code +
-         mission_uuid; the Orphans section is subsumed): DESIGN →
-         Campaigns & the Campaign Editor → File formats + The campaign
-         editor surface + The map surface (markerless edges render,
-         not enterable). The round trip is TOTAL over editor-reachable
-         state; unstartable missions are 3f validation findings. Also
-         fixes the adjacent direction-loss bug (an unmaterialized
-         mission's authored direction was never saved anywhere).
-         Implementation order: parser sections + version bumps →
-         writers (writeCampaignFile Missions; writeCampaignHub slim
-         Exits) → runtime loaders (deriveCampaignEdges over the
-         Missions section + the marker join; exit consumers resolve
-         destination through the edge table) → editor load.zig inverse
-         projection → migrate the shipped campaign's files → the
-         round-trip tests. The punch item 4 direction-default question
-         rides this work (under the settle, an absent direction = the
-         auto-spread default - a defined value, not a gap).
+          fix one at a time, each its own commit). Item 1 is DONE (the
+          campaign format v5 settle - DONE.md, "campaign format v5";
+          the direction-default question (old item 4) dissolved into it:
+          an absent direction = the auto-spread default, a defined
+          value):
       2. ctrl+N in the campaign editor opens a fresh MISSION, not a
          fresh campaign: the new_editor_mission binding (context
          editor) fires on the campaign_editor screen too (input.zig's
@@ -467,11 +448,6 @@ work:
          per-edge outline-stroke batching. Measure before fixing - the
          likely shape is a session-side geometry memo invalidated on
          graph change/drag.
-      4. New mission edges have no defined direction (null, the
-         CampaignMissionEdit default). Rendering already defaults to 0
-         (a self-loop shows at 0), but the authored value should default
-         to 0 so the inspector field + the save write a defined
-         direction.
       5. Right-click delete does not work on mission edges:
          handleCampaignMapRightClick arms only the pressed-HUB delete
          (campaign_hub_delete); the pressed-edge case falls through.

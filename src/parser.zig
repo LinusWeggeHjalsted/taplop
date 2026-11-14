@@ -43,10 +43,14 @@ pub const oldest_supported_level_file_format_version: u32 = 1;
 /// v4 (campaign-editor slice 2a): Metadata gains `hub_uuid`; Exits carry
 /// `mission_uuid` + `destination_hub` (a uuid) + `direction` (degrees -
 /// see DESIGN → Campaigns & the Campaign Editor → Edge geometry).
-pub const hub_file_format_version: u32 = 4;
-/// The range floor: v2 hub files (bare `Layout`) still load under the
-/// legacy grammar.
-pub const oldest_supported_hub_file_format_version: u32 = 2;
+/// v5 (the campaign-format settle): Exits entries REDUCE to
+/// `character_code` + `mission_uuid` - pure tile materialization. Edge
+/// data (destination, direction) moves to campaign.txt v5's Missions
+/// section (DESIGN → Campaigns & the Campaign Editor → File formats).
+pub const hub_file_format_version: u32 = 5;
+/// The range floor: v5 hub files only (the Exits reduction + the campaign
+/// v5 settle landed together - older hub files are pre-release artifacts).
+pub const oldest_supported_hub_file_format_version: u32 = 5;
 /// v3 (campaign-editor slice 1): drops `start_hub`/`end_hub` (the campaign
 /// graph owns the edge - the exit's destination_hub rides
 /// start_mission.end_hub_id) + `level_count` (derived - count the mission
@@ -62,10 +66,16 @@ pub const mission_file_format_version: u32 = 3;
 /// per unwired mission: mission_uuid + optional destination_hub + the
 /// ghost positions of deleted start/destination hubs - the campaign
 /// editor's orphan model; editor-authored, runtime-ignored).
-pub const campaign_file_format_version: u32 = 4;
-/// The range floor: v3 campaign files (no Orphans section) load - the
-/// section is optional and nothing else changed.
-pub const oldest_supported_campaign_file_format_version: u32 = 3;
+/// v5 (the campaign-format settle): the `Missions` section replaces
+/// Orphans - THE first-class edge table, one group per mission
+/// (`mission_uuid` + optional `start_hub`/`destination_hub`/`direction`/
+/// ghost positions). campaign.txt owns the graph; hub.txt Exits reduce
+/// to markers (DESIGN → Campaigns & the Campaign Editor → File formats).
+pub const campaign_file_format_version: u32 = 5;
+/// The range floor: v5 campaign files only (the Missions settle landed
+/// pre-release - older files are dev artifacts, invalidating them is
+/// free and keeps the loader legacy-free).
+pub const oldest_supported_campaign_file_format_version: u32 = 5;
 /// v3 (campaign-editor slice 2a): Info gains `current_campaign_uuid`;
 /// `current_hub` is a hub uuid; DiscoveredHubs entries carry a
 /// `campaign_uuid` key (groups: one campaign_uuid per group of names).
@@ -509,7 +519,7 @@ pub const settings_sections = [_][]const u8{ "Metadata", "Audio", "Display", "Ga
 pub const weapon_type_sections = [_][]const u8{"Skills"};
 pub const level_sections = [_][]const u8{ "Metadata", "Layout", "Entities", "Decorations", "Items" };
 pub const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
-pub const campaign_sections = [_][]const u8{ "Metadata", "Hubs", "Orphans" };
+pub const campaign_sections = [_][]const u8{ "Metadata", "Hubs", "Missions" };
 pub const mission_sections = [_][]const u8{"Metadata"};
 pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
 
@@ -690,15 +700,15 @@ pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).
 //
 // Metadata carries hub metadata. NPCs entries are character_code + npc_type
 // (the type is the whole identity - the sprite derives from it). Exits
-// entries carry character_code + mission_id + destination_hub (empty = a
-// dangling forward reference, legal by design). Decorations share the
-// level decoration key set. Layout is a raw grid (excluded).
+// entries are pure tile materialization: character_code + mission_uuid
+// (edge data lives in campaign.txt's Missions section). Decorations share
+// the level decoration key set. Layout is a raw grid (excluded).
 
 const hub_metadata_keys = [_][]const u8{ "file_format_version", "hub_uuid", "name", "color_wheel_index" };
 
 const hub_npcs_keys = [_][]const u8{ "character_code", "npc_type" };
 
-const hub_exits_keys = [_][]const u8{ "character_code", "mission_uuid", "destination_hub", "direction" };
+const hub_exits_keys = [_][]const u8{ "character_code", "mission_uuid" };
 
 /// Hub file key map: section header → valid keys. Decorations share the
 /// level decoration key set (same format). Layout is excluded (raw grid).
@@ -731,19 +741,19 @@ const campaign_metadata_keys = [_][]const u8{ "file_format_version", "campaign_u
 
 const campaign_hubs_keys = [_][]const u8{ "hub_uuid", "position" };
 
-/// The Orphans section's keys - one entry per unwired mission (the
-/// campaign editor's orphan model: mission files that belong to this
-/// campaign but are not wired to the graph, frozen in place via the
-/// ghost positions of their deleted start/destination hubs - see
-/// DESIGN → Campaigns & the Campaign Editor → The campaign editor
-/// surface). Editor-authored, runtime-ignored (orphans are not
-/// gameplay). v4.
-const campaign_orphans_keys = [_][]const u8{ "mission_uuid", "destination_hub", "start_position", "destination_position" };
+/// The Missions section's keys - THE first-class edge table, one group per
+/// mission: the identity + the optional edge data (start/destination hub
+/// uuids, the authored direction, the ghost positions of deleted ends -
+/// see DESIGN → Campaigns & the Campaign Editor → File formats). A
+/// mission in ANY authored state is representable; a missing marker is a
+/// validation finding, not a save blocker. v5 (subsumes v4's Orphans:
+/// an unwired mission is a group with no start_hub).
+const campaign_missions_keys = [_][]const u8{ "mission_uuid", "start_hub", "destination_hub", "direction", "start_position", "destination_position" };
 
 pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &campaign_metadata_keys },
     .{ "Hubs", &campaign_hubs_keys },
-    .{ "Orphans", &campaign_orphans_keys },
+    .{ "Missions", &campaign_missions_keys },
 });
 
 // --- Settings file key whitelists ---

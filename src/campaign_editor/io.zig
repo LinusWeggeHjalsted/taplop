@@ -449,8 +449,8 @@ pub fn saveCampaignEditor(
         }
     }
 
-    // Resolve EVERY identity first (the Exits projection references any
-    // hub's uuid from any hub's file - the incremental order a
+    // Resolve EVERY identity first (the Missions section references any
+    // hub's uuid from campaign.txt - the incremental order a
     // hub-by-hub resolution would give runs out of bounds on forward
     // references).
     var mission_ids: std.ArrayList([]const u8) = .empty;

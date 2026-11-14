@@ -65,7 +65,11 @@ fn parallelSpread(edges: []const types.CampaignEdgeEntry, edge: types.CampaignEd
         const same_pair = std.mem.eql(u8, other.from, edge.from) and
             std.mem.eql(u8, other.destination, edge.destination);
         if (!same_pair) continue;
-        if (other.exit_index <= edge.exit_index) index += 1;
+        // Markerless edges sort after marked ones in the spread (a stable
+        // deterministic order; the marker index is the tiebreak).
+        const other_index: i64 = if (other.exit_index) |marker_index| marker_index else std.math.maxInt(i64);
+        const own_index: i64 = if (edge.exit_index) |marker_index| marker_index else std.math.maxInt(i64);
+        if (other_index <= own_index) index += 1;
         count += 1;
     }
     return .{ .index = index, .count = count };
@@ -257,8 +261,12 @@ pub fn buildWorldMap(
         // bezier bbox). An edge with no resolvable mission is never
         // clickable (the consumption site's popup names the broken exit) -
         // a dangling DESTINATION is still clickable (it is a placed hub +
-        // mission, only the to-end forward reference is missing).
-        if (lit and edge.mission_dir.len > 0) {
+        // mission, only the to-end forward reference is missing). A
+        // MARKERLESS edge (no exit marker in its start hub - exit_index
+        // null) renders but is never clickable: mission entry is
+        // equivalent to the exit tile, and there is no tile (the 3f
+        // validation finding; DESIGN → The map surface).
+        if (lit and edge.mission_dir.len > 0 and edge.exit_index != null) {
             const hit_curve = ui_element.Curve{
                 .start = geometry.start,
                 .control_start = geometry.control_start,

@@ -3738,7 +3738,13 @@ pub const CampaignEdgeEntry = struct {
     mission_dir: []const u8,
     mission_name: []const u8,
     direction_degrees: i32,
-    exit_index: u32,
+    /// The exit marker's index among the start hub's Exits entries, or
+    /// NULL for a MARKERLESS edge (started + destination but no exit
+    /// marker placed in the start hub - the validation finding, never a
+    /// save blocker): the edge renders on the map but is not enterable
+    /// (mission entry is equivalent to the exit tile - see DESIGN →
+    /// Campaigns & the Campaign Editor → The map surface).
+    exit_index: ?u32,
 };
 
 /// The loaded campaign. Self-owned: `name`, `start_hub`, `campaign_uuid`,
@@ -4090,17 +4096,13 @@ pub const Level = struct {
 
 pub const MissionExit = struct {
     mission_uuid: []const u8,
-    /// The hub this mission's edge ends at (hub uuid), or empty for a
-    /// dangling forward reference - legal by design, caught by the
-    /// load-time campaign integrity checks. The campaign graph owns the
-    /// edge; mission.txt carries no hub metadata. See DESIGN → Campaigns
-    /// & the Campaign Editor.
-    destination_hub: []const u8 = &.{},
-    /// The self-loop / dangling-stub departure bearing in degrees
-    /// (compass: 0 = north, clockwise). Unauthored exits carry `null` and
-    /// the view auto-spreads them by index (see DESIGN → Campaigns & the
-    /// Campaign Editor → Edge geometry).
-    direction: ?u32 = null,
+    /// Pure tile materialization: WHERE the mission's exit marker sits in
+    /// the hub grid (hub.txt's Exits entry = this + the character code).
+    /// The edge data (destination, direction) is campaign.txt's Missions
+    /// section - runtime consumers resolve it through the campaign's edge
+    /// table by mission_uuid (see DESIGN → Campaigns & the Campaign
+    /// Editor → File formats). See types.zig's ExitPlacement for the
+    /// editor-side marker.
     position: Vector2,
 };
 

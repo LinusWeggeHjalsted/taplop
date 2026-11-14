@@ -168,7 +168,7 @@ pub fn installCampaignGraph(
     // The derived edge table + hub display names (the graph the map view
     // renders + map-acting legality reads - one walk over the resolved
     // hubs' hub.txt, missions resolved through the table above).
-    loaders.deriveCampaignEdges(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
+    loaders.deriveCampaignEdges(&current.campaign.?, campaign_sections, history.file_source, allocator, &campaign_warnings);
     loaders.resolveCampaignBackgroundDims(&current.campaign.?, history.file_source, allocator, &campaign_warnings);
 
     // Graph integrity checks (dangling destinations, unresolvable
@@ -258,7 +258,7 @@ pub fn loadCampaignGraph(
     errdefer loaders.freeCampaign(campaign, allocator);
     loaders.resolveCampaignHubs(&campaign, history.file_source, allocator, &warnings);
     campaign.missions = loaders.resolveCampaignMissions(campaign, history.file_source, allocator, &warnings);
-    loaders.deriveCampaignEdges(&campaign, history.file_source, allocator, &warnings);
+    loaders.deriveCampaignEdges(&campaign, sections, history.file_source, allocator, &warnings);
     loaders.resolveCampaignBackgroundDims(&campaign, history.file_source, allocator, &warnings);
     loaders.checkCampaignGraph(campaign, allocator, &warnings);
 
@@ -406,6 +406,21 @@ pub fn missionDirForUuid(current: *GameState, mission_uuid: []const u8) ?[]const
     const campaign = current.campaign orelse return null;
     for (campaign.missions) |mission| {
         if (std.mem.eql(u8, mission.uuid, mission_uuid)) return std.fs.path.basename(mission.dir);
+    }
+    return null;
+}
+
+/// Resolve a mission uuid to its CAMPAIGN EDGE (the loaded campaign's
+/// edge table - campaign.txt's Missions section, the first-class edge
+/// data). Runtime consumers that used to read an exit's
+/// destination_hub/direction now resolve through here: the hub's exit
+/// marker is pure tile materialization, the edge is the graph's (see
+/// DESIGN → Campaigns & the Campaign Editor → File formats). Null when
+/// no edge matches (an orphaned marker, or a hand-edit).
+pub fn campaignEdgeForMissionUuid(current: *GameState, mission_uuid: []const u8) ?*const types.CampaignEdgeEntry {
+    const campaign = current.campaign orelse return null;
+    for (campaign.edges) |*edge| {
+        if (std.mem.eql(u8, edge.mission_uuid, mission_uuid)) return edge;
     }
     return null;
 }

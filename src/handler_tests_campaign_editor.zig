@@ -1088,7 +1088,7 @@ test "campaignImportDir: an official-origin campaign imports into the minted for
     // A local campaign: its own dir, nothing minted.
     harness.file_source.writeFile(
         "campaigns/local_test/campaign.txt",
-        "Metadata\nfile_format_version 3\ncampaign_uuid 99999999-9999-9999-9999-999999999999\nname Local Test\n",
+        "Metadata\nfile_format_version 5\ncampaign_uuid 99999999-9999-9999-9999-999999999999\nname Local Test\n",
     ) catch @panic("write local campaign");
     event_push.pushEvents(
         &history.current_state,

@@ -1,5 +1,5 @@
 Metadata
-file_format_version 4
+file_format_version 5
 hub_uuid 03aeefda-c68b-4853-b65a-d46edb9790f1
 name Camp at the Crossroads
 
@@ -71,22 +71,14 @@ Exits
 
 character_code 0
 mission_uuid 436ab363-3588-42ce-950a-0bc813069c3d
-destination_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
-direction 0
 
 character_code 1
 mission_uuid f2c9beaf-486c-42bd-a584-b45f0e4f877b
-destination_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
-direction 90
 
 character_code 2
 mission_uuid 6c19598d-157c-4390-90d8-dceaf626b52f
-destination_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
-direction 180
 
 character_code 3
 mission_uuid e30e91c5-7abc-4208-b3b2-3130208a788b
-destination_hub 03aeefda-c68b-4853-b65a-d46edb9790f1
-direction 270
 
 NPCs

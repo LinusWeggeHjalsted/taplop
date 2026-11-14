@@ -349,6 +349,7 @@ working rules).
 - [both editors: Tab / shift+Tab tool cycling (punch-list items 13-14, the punch list complete)](#both-editors-tab--shifttab-tool-cycling-punch-list-items-13-14-the-punch-list-complete)
 - [mission editor: Tab cycling reworked to the SPATIAL model (a playtest revision of items 13-14)](#mission-editor-tab-cycling-reworked-to-the-spatial-model-a-playtest-revision-of-items-13-14)
 - [content hash v2 - the artifact-scope extension (the two-axis design settle + listDirFiles)](#content-hash-v2---the-artifact-scope-extension-the-two-axis-design-settle--listdirfiles)
+- [campaign format v5 - campaign.txt owns the graph (the punch-list-1 root fix)](#campaign-format-v5---campaigntxt-owns-the-graph-the-punch-list-1-root-fix)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21353,3 +21354,77 @@ Implementation (slices 1 + 2 of the TODO item):
 
 The mission + campaign version hashes land with the server seam (TODO
 keeps the remaining slice pointer).
+
+## campaign format v5 - campaign.txt owns the graph (the punch-list-1 root fix)
+
+Found in the round-three playtest: tool-placed mission edges did not
+survive save/reopen. Root cause was structural, not a missed write: the
+disk format scattered edge data by PROJECTION - a mission's start was
+implied by which hub's Exits section mentioned it, destination +
+direction lived inside that Exits entry, and the entry was keyed by a
+grid-cell character code - so an edge with no exit marker had NO home on
+disk at all. Since the hub editor (slice 4, the marker-placing tool) does
+not exist yet, every tool-placed edge was silently unrepresentable AND
+unstartable. Adjacent instance of the same disease: an unmaterialized
+mission's authored direction (the inspector field for exactly the
+dangling-stub case) was never written anywhere.
+
+THE SETTLE (discussion record: the auto-place-marker proposal was
+REJECTED in favor of the format refactor - the principle the owner set:
+the save/load round trip must be TOTAL over campaign-editor-reachable
+state; validation is the only place that judges it, and "we render as
+much as we can" - markerless edges render on the world map, they are
+just not enterable since mission entry is equivalent to the exit tile):
+
+- campaign.txt v5 gains the first-class `Missions` section - one group
+  per mission (`mission_uuid` + optional `start_hub`/`destination_hub`/
+  `direction`/ghost positions), subsuming v4's Orphans section (an
+  unwired mission is a group with no start_hub). Any authored state is
+  representable; unstartable (started, no marker) is a 3f validation
+  finding, never a save blocker.
+- hub.txt v5 Exits entries reduce to pure TILE MATERIALIZATION
+  (`character_code` + `mission_uuid`). The marker join supplies
+  startability: `CampaignEdgeEntry.exit_index` became optional (null =
+  markerless - rendered, not clickable on the world map).
+- Both version floors raised to current (5) - older files are dev
+  artifacts, invalidating them is free (the no-legacy preference); the
+  shipped campaign + hub were migrated in the same change (the four
+  self-loop missions moved verbatim into the new Missions section).
+
+Implementation:
+
+- parser: `campaign_sections` gains Missions (Orphans removed), the hub
+  Exits key set drops destination_hub/direction, versions 4->5 with
+  floors at 5.
+- writers: `writeCampaignFile` writes the Missions section (all
+  missions, full edge data); `writeCampaignHub` Exits groups are
+  code + uuid.
+- loaders: `deriveCampaignEdges` builds the edge table from the Missions
+  rows (auto-spread scoped per start hub over the rows, not the exits)
+  + the per-hub marker join (duplicate markers: warn + first wins;
+  unplaced start_hub: warn + drop the edge); `loadHub` exits are
+  markers only (`MissionExit` lost `destination_hub`/`direction`); the
+  exit-click + replay-mission consumers resolve destinations through
+  the new `shared.campaignEdgeForMissionUuid` (the edge table by
+  mission uuid); `checkCampaignGraph` re-targeted at the Missions
+  edges.
+- campaign_editor/load.zig: the inverse projection reads the Missions
+  section into mission entries FIRST, then hub files contribute only
+  markers (an orphan's marker wires its start - hand-edit recovery; a
+  marker naming an unknown mission creates the entry with this hub as
+  start, warned - the save self-heals it; duplicate markers in one hub
+  warn + keep the first). Ghost positions parse whenever present
+  (state-faithful; ghostless unwired ends are normal, not warned).
+- world map: markerless edges emit the stroke pair without a button.
+- Tests: the derive/check test rewritten around hand-authored Missions
+  fixtures (markerless contract, unplaced-start drop, duplicate
+  markers); the loadHub/writer/exit-click/version-range/map-acting/
+  campaign-editor fixtures migrated; the markerless bug itself is
+  regression-covered by the markerless run (edge derives with
+  exit_index null, zero warnings).
+
+Also fixed in passing (found by the suite): the first marker for a
+Missions-section-started mission was being dropped as a "duplicate"
+(the marker loop inferred already-marked from `entry.start`, which the
+Missions section had already set - replaced with an explicit
+per-hub seen check).

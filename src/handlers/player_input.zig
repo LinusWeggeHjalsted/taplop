@@ -40,6 +40,7 @@ const failReconstructionRead = shared.failReconstructionRead;
 const surfaceWarnings = shared.surfaceWarnings;
 const validateConfigKeys = shared.validateConfigKeys;
 const missionDirForUuid = shared.missionDirForUuid;
+const campaignEdgeForMissionUuid = shared.campaignEdgeForMissionUuid;
 const getPlayerEntity = shared.getPlayerEntity;
 const getLevelEntity = shared.getLevelEntity;
 const loadCampaignAndPushHub = shared.loadCampaignAndPushHub;
@@ -677,18 +678,15 @@ pub fn handlePlayerInputEvent(
             const info = current.last_completed_mission orelse return;
             const mission_path = allocator.dupe(u8, info.path) catch
                 @panic("failed to allocate replay mission path");
-            // Return destination: the hub exit whose mission this is (the
-            // exit IS the edge - matched by mission uuid, not path).
-            // No matching exit, or a dangling destination (a dream, or a
-            // hand-edited hub) -> null -> the entering-hub fallback.
+            // Return destination: the campaign edge for this mission (the
+            // edge IS the graph data - campaign.txt's Missions section,
+            // matched by mission uuid, not path; the hub's exit marker is
+            // pure tile materialization). No edge, or a dangling
+            // destination (a dream, or a hand-edit) -> null -> the
+            // entering-hub fallback.
             var end_hub_id: ?[]const u8 = null;
-            if (current.hub) |hub| {
-                for (hub.mission_exits) |exit| {
-                    if (std.mem.eql(u8, exit.mission_uuid, info.uuid) and exit.destination_hub.len > 0) {
-                        end_hub_id = exit.destination_hub;
-                        break;
-                    }
-                }
+            if (campaignEdgeForMissionUuid(current, info.uuid)) |edge| {
+                if (edge.destination.len > 0) end_hub_id = edge.destination;
             }
             pushEvents(current, &.{
                 .{ .meta_event = .{ .start_mission = .{
@@ -1365,14 +1363,18 @@ pub fn handlePlayerInputEvent(
                             "campaigns/{s}/missions/{s}",
                             .{ current.player_data.current_campaign, mission_dir },
                         ) catch @panic("failed to allocate mission path");
-                        // The campaign edge's to-end: the exit's
-                        // destination_hub rides the event (a dangling/
-                        // empty destination passes null - the mission
-                        // returns to this hub, the entering-hub
-                        // fallback). See DESIGN → Campaigns & the
-                        // Campaign Editor → The graph model.
-                        const end_hub_id: ?[]const u8 =
-                            if (exit.destination_hub.len > 0) exit.destination_hub else null;
+                        // The campaign edge's to-end: the edge table's
+                        // destination for this mission rides the event (a
+                        // dangling/empty destination passes null - the
+                        // mission returns to this hub, the entering-hub
+                        // fallback; the exit marker itself carries no
+                        // edge data - DESIGN → File formats). See DESIGN →
+                        // Campaigns & the Campaign Editor → The graph
+                        // model.
+                        var end_hub_id: ?[]const u8 = null;
+                        if (campaignEdgeForMissionUuid(current, exit.mission_uuid)) |edge| {
+                            if (edge.destination.len > 0) end_hub_id = edge.destination;
+                        }
                         pushEvents(current, &.{
                             .{ .meta_event = .{ .start_mission = .{
                                 .mission_path = mission_path,

@@ -1778,7 +1778,9 @@ pub fn writeCampaignHub(
         }
     }
 
-    // Exits - the graph projection.
+    // Exits - the MARKER projection (pure tile materialization: the
+    // marker's grid cell + the mission it starts; edge data lives in
+    // campaign.txt's Missions section).
     if (codes.exit.len > 0) {
         try buffer.appendSlice(allocator, "\nExits\n");
         var written_exits: usize = 0;
@@ -1789,13 +1791,6 @@ pub fn writeCampaignHub(
                 if (written_exits > 0) try buffer.appendSlice(allocator, "\n");
                 try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{codes.exit[written_exits]}});
                 try buffer.print(allocator, "mission_uuid {s}\n", .{ids.mission_uuids[mission_index]});
-                if (mission.destination) |destination_handle| {
-                    const destination_index = hubIndexForHandle(editor, destination_handle) orelse continue;
-                    try buffer.print(allocator, "destination_hub {s}\n", .{ids.hub_uuids[destination_index]});
-                }
-                if (mission.direction) |direction| {
-                    try buffer.print(allocator, "direction {d}\n", .{direction});
-                }
                 written_exits += 1;
             }
         }
@@ -1811,12 +1806,15 @@ fn hubIndexForHandle(editor: types.CampaignEditor, handle: u32) ?usize {
     return null;
 }
 
-/// Write campaign.txt (v4): Metadata (name, campaign uuid, the start
+/// Write campaign.txt (v5): Metadata (name, campaign uuid, the start
 /// hub's uuid, the background stem) + the Hubs section (uuid + position
-/// per placed hub) + the Orphans section (each mission with NO start - a
-/// deleted/unwired start - with its live destination when wired + the
-/// frozen ghost positions; the ghosts are written only for MISSING ends,
-/// which is the only case the loader expects them for).
+/// per placed hub) + the Missions section - THE first-class edge table,
+/// one group per mission with its full edge data (start/destination hub
+/// uuids when wired, the authored direction when set, the frozen ghost
+/// positions when set). Any authored state is representable (subsumes
+/// v4's Orphans: an unwired mission is a group with no start_hub; a
+/// markerless mission saves identically - unstartable is a validation
+/// finding, never a save blocker; see DESIGN → File formats).
 pub fn writeCampaignFile(
     editor: types.CampaignEditor,
     ids: CampaignSaveIds,
@@ -1843,23 +1841,25 @@ pub fn writeCampaignFile(
         try buffer.print(allocator, "position {d} {d}\n", .{ hub.position.x, hub.position.y });
     }
 
-    // Orphans: missions with no start hub (nothing to project into a
-    // hub.txt Exits group). The ghosts are the frozen positions of the
-    // DELETED ends - written only when that end is missing (a live
-    // destination supplies its own position on reload). The section is
-    // omitted entirely when there are none.
-    var orphan_count: usize = 0;
+    // Missions - the first-class edge table: one group per mission, the
+    // full edge data. Ghost positions are written whenever set (faithful
+    // state; the editor clears them on re-attach).
+    if (editor.missions.len > 0) {
+        try buffer.appendSlice(allocator, "\nMissions\n");
+    }
     for (editor.missions, 0..) |mission, index| {
-        if (mission.start != null) continue;
-        if (orphan_count == 0) {
-            try buffer.appendSlice(allocator, "\nOrphans\n");
-        } else {
-            try buffer.appendSlice(allocator, "\n");
-        }
+        if (index > 0) try buffer.appendSlice(allocator, "\n");
         try buffer.print(allocator, "mission_uuid {s}\n", .{ids.mission_uuids[index]});
+        if (mission.start) |start_handle| {
+            const start_index = hubIndexForHandle(editor, start_handle) orelse continue;
+            try buffer.print(allocator, "start_hub {s}\n", .{ids.hub_uuids[start_index]});
+        }
         if (mission.destination) |destination_handle| {
             const destination_index = hubIndexForHandle(editor, destination_handle) orelse continue;
             try buffer.print(allocator, "destination_hub {s}\n", .{ids.hub_uuids[destination_index]});
+        }
+        if (mission.direction) |direction| {
+            try buffer.print(allocator, "direction {d}\n", .{direction});
         }
         if (mission.orphan_start_position) |position| {
             try buffer.print(allocator, "start_position {d} {d}\n", .{ position.x, position.y });
@@ -1867,7 +1867,6 @@ pub fn writeCampaignFile(
         if (mission.orphan_destination_position) |position| {
             try buffer.print(allocator, "destination_position {d} {d}\n", .{ position.x, position.y });
         }
-        orphan_count += 1;
     }
 
     return try buffer.toOwnedSlice(allocator);
@@ -2006,20 +2005,17 @@ test "writeCampaignHub: the round trip through loadHub" {
     try std.testing.expectEqual(types.NpcType.gear_upgrader, hub.npcs[0].npc_type);
     try std.testing.expectEqual(types.NpcType.gear_upgrader, hub.npcs[1].npc_type);
     try std.testing.expectEqual(types.NpcType.dream_guide, hub.npcs[2].npc_type);
-    // The exits: the graph projection - m1 (wired to Beta, authored
-    // direction 90) + m2 (dangling - empty destination, no direction).
+    // The exits: the MARKER projection - the mission + the tile, no edge
+    // data (destination + direction live in campaign.txt's Missions
+    // section; DESIGN → File formats).
     try std.testing.expectEqual(@as(usize, 2), hub.mission_exits.len);
     try std.testing.expectEqualStrings("u1", hub.mission_exits[0].mission_uuid);
-    try std.testing.expectEqualStrings("b", hub.mission_exits[0].destination_hub);
-    try std.testing.expectEqual(@as(?u32, 90), hub.mission_exits[0].direction);
     try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 1 }, hub.mission_exits[0].position);
     try std.testing.expectEqualStrings("u2", hub.mission_exits[1].mission_uuid);
-    try std.testing.expectEqual(@as(usize, 0), hub.mission_exits[1].destination_hub.len);
-    try std.testing.expectEqual(@as(?u32, null), hub.mission_exits[1].direction);
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, hub.mission_exits[1].position);
 }
 
-test "writeCampaignFile: the round trip through loadCampaign + the Orphans section" {
+test "writeCampaignFile: the round trip through loadCampaign + the Missions section" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -2040,20 +2036,34 @@ test "writeCampaignFile: the round trip through loadCampaign + the Orphans secti
     try std.testing.expectEqual(types.Vector2{ .x = -200, .y = 0 }, campaign.hubs[0].position);
     try std.testing.expectEqualStrings("b", campaign.hubs[1].uuid);
 
-    // The Orphans section: the two no-start missions, with the live
-    // destination uuid + the ghosts for the missing ends (u3 keeps its
-    // start ghost only - its destination is live; u4 both ghosts).
-    const orphan_section = parser.findSection(sections, "Orphans").?;
-    try std.testing.expectEqual(@as(usize, 2), orphan_section.entry_groups.len);
-    const first = orphan_section.entry_groups[0].pairs;
-    try std.testing.expectEqualStrings("u3", parser.findValue(first, "mission_uuid").?);
+    // The Missions section: THE first-class edge table, one group per
+    // mission in authored order - u1 (wired a -> b, authored direction),
+    // u2 (started + dangling), u3 (unwired, live destination + its start
+    // ghost), u4 (fully orphaned, both ghosts).
+    const missions_section = parser.findSection(sections, "Missions").?;
+    try std.testing.expectEqual(@as(usize, 4), missions_section.entry_groups.len);
+    const first = missions_section.entry_groups[0].pairs;
+    try std.testing.expectEqualStrings("u1", parser.findValue(first, "mission_uuid").?);
+    try std.testing.expectEqualStrings("a", parser.findValue(first, "start_hub").?);
     try std.testing.expectEqualStrings("b", parser.findValue(first, "destination_hub").?);
-    try std.testing.expect(parser.findValue(first, "start_position") != null);
-    try std.testing.expect(parser.findValue(first, "destination_position") == null);
-    const second = orphan_section.entry_groups[1].pairs;
-    try std.testing.expectEqualStrings("u4", parser.findValue(second, "mission_uuid").?);
-    try std.testing.expect(parser.findValue(second, "start_position") != null);
-    try std.testing.expect(parser.findValue(second, "destination_position") != null);
+    try std.testing.expectEqualStrings("90", parser.findValue(first, "direction").?);
+    const second = missions_section.entry_groups[1].pairs;
+    try std.testing.expectEqualStrings("u2", parser.findValue(second, "mission_uuid").?);
+    try std.testing.expectEqualStrings("a", parser.findValue(second, "start_hub").?);
+    try std.testing.expect(parser.findValue(second, "destination_hub") == null);
+    try std.testing.expect(parser.findValue(second, "direction") == null);
+    const third = missions_section.entry_groups[2].pairs;
+    try std.testing.expectEqualStrings("u3", parser.findValue(third, "mission_uuid").?);
+    try std.testing.expect(parser.findValue(third, "start_hub") == null);
+    try std.testing.expectEqualStrings("b", parser.findValue(third, "destination_hub").?);
+    try std.testing.expect(parser.findValue(third, "start_position") != null);
+    try std.testing.expect(parser.findValue(third, "destination_position") == null);
+    const fourth = missions_section.entry_groups[3].pairs;
+    try std.testing.expectEqualStrings("u4", parser.findValue(fourth, "mission_uuid").?);
+    try std.testing.expect(parser.findValue(fourth, "start_hub") == null);
+    try std.testing.expect(parser.findValue(fourth, "destination_hub") == null);
+    try std.testing.expect(parser.findValue(fourth, "start_position") != null);
+    try std.testing.expect(parser.findValue(fourth, "destination_position") != null);
 }
 
 test "writeCampaignMissionFile: the identity round trip through loadMission" {

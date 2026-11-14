@@ -41,15 +41,15 @@ fn enterFixtureCampaign(history: *state.GameStateHistory) void {
     const fs = history.file_source;
     fs.writeFile(
         "campaigns/test_campaign/campaign.txt",
-        "Metadata\nfile_format_version 3\nname Test Campaign\ncampaign_uuid " ++ campaign_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_a_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_b_uuid ++ "\nposition 900 0\n",
+        "Metadata\nfile_format_version 5\nname Test Campaign\ncampaign_uuid " ++ campaign_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_a_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_b_uuid ++ "\nposition 900 0\n\nMissions\n\nmission_uuid " ++ mission_uuid ++ "\nstart_hub " ++ hub_a_uuid ++ "\ndestination_hub " ++ hub_b_uuid ++ "\n",
     ) catch @panic("write fixture campaign");
     fs.writeFile(
         "campaigns/test_campaign/hubs/hub_a/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!.\n...\n\nExits\n\nmission_uuid " ++ mission_uuid ++ "\ndestination_hub " ++ hub_b_uuid ++ "\n",
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_a_uuid ++ "\nname Hub A\n\nLayout 3\n...\n.!E\n...\n\nExits\ncharacter_code E\nmission_uuid " ++ mission_uuid ++ "\n",
     ) catch @panic("write fixture hub a");
     fs.writeFile(
         "campaigns/test_campaign/hubs/hub_b/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_b_uuid ++ "\nname Hub B\n\nLayout 3\n...\n.!.\n...\n",
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_b_uuid ++ "\nname Hub B\n\nLayout 3\n...\n.!.\n...\n",
     ) catch @panic("write fixture hub b");
     fs.writeFile(
         "campaigns/test_campaign/missions/m1/mission.txt",
@@ -222,15 +222,15 @@ fn writeSecondCampaign(history: *state.GameStateHistory) void {
     const fs = history.file_source;
     fs.writeFile(
         "campaigns/second_campaign/campaign.txt",
-        "Metadata\nfile_format_version 3\nname Second Campaign\ncampaign_uuid " ++ campaign2_uuid ++ "\nstart_hub " ++ hub_x_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_x_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_y_uuid ++ "\nposition 900 0\n",
+        "Metadata\nfile_format_version 5\nname Second Campaign\ncampaign_uuid " ++ campaign2_uuid ++ "\nstart_hub " ++ hub_x_uuid ++ "\n\nHubs\n\nhub_uuid " ++ hub_x_uuid ++ "\nposition 0 0\n\nhub_uuid " ++ hub_y_uuid ++ "\nposition 900 0\n",
     ) catch @panic("write second campaign");
     fs.writeFile(
         "campaigns/second_campaign/hubs/hub_x/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_x_uuid ++ "\nname Hub X\n\nLayout 3\n...\n.!.\n...\n",
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_x_uuid ++ "\nname Hub X\n\nLayout 3\n...\n.!.\n...\n",
     ) catch @panic("write hub x");
     fs.writeFile(
         "campaigns/second_campaign/hubs/hub_y/hub.txt",
-        "Metadata\nfile_format_version 4\nhub_uuid " ++ hub_y_uuid ++ "\nname Hub Y\n\nLayout 3\n...\n.!.\n...\n",
+        "Metadata\nfile_format_version 5\nhub_uuid " ++ hub_y_uuid ++ "\nname Hub Y\n\nLayout 3\n...\n.!.\n...\n",
     ) catch @panic("write hub y");
     fs.writeFile(
         "campaigns/second_campaign/missions/m2/mission.txt",

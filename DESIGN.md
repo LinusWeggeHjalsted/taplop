@@ -3383,9 +3383,10 @@ no rename in v1"): rename is free, for all three content kinds.
   files through `file_source` directly, NOT the reconstruction cache:
   warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
   advisory-only), so replay purity is unaffected.
-- **hub.txt** (v3 landed; v4 adds the uuid sweep; v5 - the hub editor
-  - adds the three gradient keys, mirroring level Metadata; v6 reduces
-  the Exits entries): `Exits` entries are pure TILE MATERIALIZATION -
+- **hub.txt** (v3 landed; v4 adds the uuid sweep; v5 - the campaign-format
+  settle - reduces the Exits entries to pure tile materialization; v6 -
+  the hub editor - will add the three gradient keys, mirroring level
+  Metadata): `Exits` entries are pure TILE MATERIALIZATION -
   `character_code` + `mission_uuid` (the marker's grid cell + the
   mission it starts). Edge data (destination, direction) lives in
   campaign.txt's Missions section, NOT here: a marker is the playable
@@ -3601,8 +3602,9 @@ DANGLING edge (destination not placed yet) are the two degenerate
 one-anchor cases, and that is exactly when the author supplies the
 missing information:
 
-- **`direction <degrees>`** on the exit entry in hub.txt - compass
-  convention (0 = north, clockwise), integer, PER-EXIT (a hub's four
+- **`direction <degrees>`** on the mission's Missions entry in
+  campaign.txt - compass
+  convention (0 = north, clockwise), integer, PER-EDGE (a hub's four
   self-loops need four distinct click targets, so collision control is
   per-edge granularity). It positions both degenerate cases: the
   self-loop's departure angle AND the dangling stub's bearing.
@@ -3911,7 +3913,8 @@ The slice-3 interaction design. The state shape is settled separately
   seam input_gestures already arbitrates for the editor viewport) -
   right-drag pans, a sub-threshold release stays a clean right-click
   (delete). No new gesture machinery.
-- **Auto-spread with authored directions**: unauthored exits spread
+- **Auto-spread with authored directions**: unauthored EDGES (missions
+  from the same start hub) spread
   evenly among THEMSELVES over the full circle; authored ones sit
   where placed. No gap bookkeeping.
 - **Validation**: a Validate button (next to Save) runs the
