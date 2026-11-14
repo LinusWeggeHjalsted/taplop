@@ -3348,34 +3348,52 @@ no rename in v1"): rename is free, for all three content kinds.
 
 ### File formats (each change bumps its per-type file_format_version)
 
-- **campaign.txt carries the map layer** (v2, landed): `background` (a
+- **campaign.txt owns the graph** (v5): `background` (a
   bare stem naming a PNG in the campaign's OWN directory - official and
   custom campaigns author it identically; the loader mints it into the
   content-addressed sprite id at load, so the render side resolves it
   through the standard custom-asset rule) + a `Hubs` section, one group
-  per hub (`hub_uuid` + `position`). Positions live HERE, not in hub.txt -
+  per hub (`hub_uuid` + `position`) + a `Missions` section, one group
+  per mission - THE first-class edge table: `mission_uuid` + optional
+  `start_hub`/`destination_hub` (hub uuids) + optional `direction` +
+  the optional ghost positions (`start_position`/`destination_position`,
+  the frozen map positions of deleted ends - the editor's orphan
+  rendering). A mission in ANY authored state (markerless, dangling,
+  orphaned, self-loop) is one group carrying its whole edge data: the
+  save/load round trip is TOTAL over campaign-editor-reachable state,
+  and a markerless mission is a VALIDATION finding (3f), never a save
+  blocker. Subsumes v4's Orphans section (an unwired mission is a
+  Missions group with no `start_hub`). Both sides read it: the editor
+  rebuilds its authored graph from it, the runtime builds the edge
+  table from it (the exit-marker join in hub.txt supplies startability
+  - see the hub.txt bullet). Positions live HERE, not in hub.txt -
   the map is campaign-level data: moving a hub edits one file, and the
   world map loads the whole graph geometry in one read without touching
   every hub file. The coordinate model: see The map coordinate model
-  below. v4 (the campaign-editor slice) adds an Orphans section - one
-  group per unwired mission (`mission_uuid` + ghost positions; see
-  The campaign editor surface) - editor-authored, runtime-ignored.
+  below.
 - **Load-time graph integrity checks** (landed -
   `loaders.checkCampaignGraph`, called from `loadCampaignAndPushHub`,
   warn-only through the standard surfaceWarnings popup): start hub not
-  placed; a placed hub with no readable/parsable hub.txt; an exit's
-  `destination_hub` naming an unplaced hub (the dangling forward
-  reference - save-legal by design, caught at load); an exit naming a
-  mission dir that doesn't exist; unreachable hubs (BFS from the start
-  hub over hub → exit → destination edges). The checks read hub + mission
+  placed; a placed hub with no readable/parsable hub.txt; a Missions
+  entry's `start_hub`/`destination_hub` naming an unplaced hub (the
+  dangling forward reference - save-legal by design, caught at load);
+  a Missions entry whose uuid resolves to no mission dir; unreachable
+  hubs (BFS from the start hub over the Missions edges). The checks read
+  campaign.txt/hub + mission
   files through `file_source` directly, NOT the reconstruction cache:
   warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
   advisory-only), so replay purity is unaffected.
 - **hub.txt** (v3 landed; v4 adds the uuid sweep; v5 - the hub editor
-  - adds the three gradient keys, mirroring level Metadata): `Exits`
-  entries carry
-  `destination_hub` (a uuid), `mission_uuid`, + `direction` (see Edge
-  geometry below); the `NPCs` section
+  - adds the three gradient keys, mirroring level Metadata; v6 reduces
+  the Exits entries): `Exits` entries are pure TILE MATERIALIZATION -
+  `character_code` + `mission_uuid` (the marker's grid cell + the
+  mission it starts). Edge data (destination, direction) lives in
+  campaign.txt's Missions section, NOT here: a marker is the playable
+  materialization of an edge, and an edge with no marker is
+  representable + rendered, just not startable (a validation finding,
+  never a save blocker - see The map surface). Runtime consumers that
+  used to read an exit's destination/direction resolve through the
+  campaign's edge table by mission_uuid instead. The `NPCs` section
   becomes `character_code` + `npc_type`. Hubs bundle their own custom
   decoration art - `hubs/<hub>/` gains the art folder, custom stems
   content-addressed as `custom/campaigns/<campaign>/hubs/<hub>/<stem>`
@@ -3651,7 +3669,12 @@ action + payload + tooltip. Hubs: `travel_to_map_hub` + the hub index
 travel legality - what the map lights is what is clickable). Edges:
 `start_mission_from_map_edge` + the edge index (`map_edge` payload),
 emitted only for LIT edges with a resolvable mission, BEFORE the stroke
-pair (painter order - the hover rim renders beneath the art). The
+pair (painter order - the hover rim renders beneath the art). A
+MARKERLESS edge (started + destination but no exit marker in its
+start hub - the edge table's `exit_index` is null) renders the stroke
+WITHOUT a button: the map renders as much of the graph as the data
+defines, but mission entry stays equivalent to the exit tile (no
+marker, no entry - the 3f validation finding closes the loop). The
 button's `hit_curve` carries the DRAWN ARROW's geometry at its
 outline-inclusive width (black outline + inner stroke + dashed/
 arrowhead flags): the hit region (sampled polyline), the tooltip
@@ -3792,12 +3815,14 @@ The slice-3 interaction design. The state shape is settled separately
   (uuid, dir, name, position) + mission entries - identity (the uuid
   for on-disk missions, an in-editor handle for unsaved ones), name,
   start hub?, destination hub?, direction, ghost positions (see
-  Deletion below). hub.txt's Exits sections are a SAVE PROJECTION:
-  every mission with a start hub writes its exit entry into that hub's
-  file (destination = the end hub, or empty = the dangling stub);
-  loading a campaign into the editor runs the inverse projection
-  (exits → mission entries). The one-edge rule becomes STRUCTURAL: a
-  mission is one entry, so it cannot be referenced by two hubs -
+  Deletion below). campaign.txt's Missions section is the ON-DISK EDGE
+  TABLE (one group per mission, full edge data); hub.txt's Exits
+  sections are the MARKER projection (one entry per placed exit
+  marker: its tile + the mission). Loading a campaign into the editor
+  runs the inverse projection (Missions groups → mission entries;
+  hub exits → marker placements). The one-edge rule becomes
+  STRUCTURAL: a mission is one entry, so it cannot be referenced by
+  two hubs -
   nothing to enforce.
 - **Unsaved missions: in-editor handles + session-scoped minting.** A
   fresh mission has no uuid until save (the write-only mint rule);
@@ -3866,14 +3891,15 @@ The slice-3 interaction design. The state shape is settled separately
   delete seam is DIRECTORY-level, never per-file: readFile's per-file
   persistent→embedded fallback would resurrect a deleted hub.txt from
   the embedded campaign while its dir lingered.
-- **Orphans persist in campaign.txt (v4)**: an Orphans section, one
-  group per unwired mission (`mission_uuid` + the ghost positions).
-  Honest campaign data - these mission files belong to this campaign
-  but are not wired to the graph - read/written by the editor's save
-  projection, ignored by the runtime loader (orphans are not
-  gameplay). Validation findings, machine-checkable: an orphan whose
-  uuid resolves to no `missions/` dir (files deleted by hand); a uuid
-  both wired and orphaned (hand-edit conflict).
+- **Unwired missions persist in campaign.txt's Missions section (v5)**:
+  a mission group with no `start_hub` + the ghost positions. Honest
+  campaign data - these mission files belong to this campaign but are
+  not wired to the graph - read/written by the editor's save projection,
+  ignored by the runtime edge table (orphans are not gameplay).
+  Validation findings, machine-checkable: an orphan whose uuid resolves
+  to no `missions/` dir (files deleted by hand); a mission started at a
+  hub with no exit marker placed there (unstartable - the 3f finding);
+  more than one marker naming one mission (hand-edit).
 - **Default templates**: a new hub = a SINGLE tile with the player
   spawn ('!') - empty exits/NPCs, name "New Hub", uuid minted at save
   (the hub editor's default grid: see The hub editor surface). A new

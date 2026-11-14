@@ -430,21 +430,29 @@ work:
     - [ ] Playtest punch list, round three (the full-graph authoring
           round - a 48-mission stress session + the save/reopen path;
           fix one at a time, each its own commit):
-      1. Tool-placed mission edges do not persist: place a hub + a
-         mission from the start hub to it, save, reopen - the hub
-         survives, the edge is gone. Root cause: the save projection
-         materializes a started mission ONLY through its start hub's
-         Exits section, which pairs `hub.exit_placements` with missions
-         - and `editor_campaign_place_mission` creates the mission
-         entry with start/destination handles but NO exit placement, so
-         the edge is written nowhere (campaign.txt's Orphans section
-         covers only missions with NO start; hub.txt's Hubs-section
-         listing is unconditional, which is why the hub survives).
-         OPEN - the fix shape: auto-place a default exit marker in the
-         start hub at placement (the marker is the edge's materialization
-         - the mission IS the edge; needs a default-position rule) vs
-         write started-but-markerless missions into Orphans so they
-         survive (stays unstartable - the 3f validation finding).
+      1. Tool-placed mission edges do not persist: a started mission
+         with no exit marker is UNREPRESENTABLE on disk (hub.txt's
+         Exits entries are keyed by a grid-cell code, campaign.txt's
+         Orphans section covers only missions with NO start). SETTLED
+         FIX - campaign.txt v5 owns the graph (a first-class Missions
+         section, one group per mission with the full edge data;
+         hub.txt v6 Exits reduce to marker materialization - code +
+         mission_uuid; the Orphans section is subsumed): DESIGN →
+         Campaigns & the Campaign Editor → File formats + The campaign
+         editor surface + The map surface (markerless edges render,
+         not enterable). The round trip is TOTAL over editor-reachable
+         state; unstartable missions are 3f validation findings. Also
+         fixes the adjacent direction-loss bug (an unmaterialized
+         mission's authored direction was never saved anywhere).
+         Implementation order: parser sections + version bumps →
+         writers (writeCampaignFile Missions; writeCampaignHub slim
+         Exits) → runtime loaders (deriveCampaignEdges over the
+         Missions section + the marker join; exit consumers resolve
+         destination through the edge table) → editor load.zig inverse
+         projection → migrate the shipped campaign's files → the
+         round-trip tests. The punch item 4 direction-default question
+         rides this work (under the settle, an absent direction = the
+         auto-spread default - a defined value, not a gap).
       2. ctrl+N in the campaign editor opens a fresh MISSION, not a
          fresh campaign: the new_editor_mission binding (context
          editor) fires on the campaign_editor screen too (input.zig's
