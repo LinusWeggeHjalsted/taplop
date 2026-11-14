@@ -415,12 +415,86 @@ work:
         only the save target (the campaign's missions/) + the
         world-map return button differ; export unchanged - DESIGN →
         The campaign editor) + campaign save/export bundling (the
-        STORE-zip pattern). OPEN: autosave a hub / mission on exit
-        back to the campaign map view, or explicit save only?
+        STORE-zip pattern; autosave-on-exit settled NO - explicit save
+        only - DONE.md).
   - future (post-slice-3 polish): multi-select + multi-reposition of
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
         field is the v1 path).
+  - **Post-3e playtest punch list (first real authoring pass)** -
+    findings from saving + reopening the main campaign and clicking
+    through both editors. Bugs first, then polish; the BOTH-editors
+    items touch the mission editor too:
+    - [ ] BUG: save the main campaign from the editor, then load it
+          (the persistent copy OR the embedded original) → the
+          "duplicate hub uuid" warning (loadCampaign's hub resolution,
+          loaders.zig; surfaced as the error popup). Suspected seam: a
+          save materializes hub copies into the persistent dir, and
+          resolveUuidDir (which scans persistent + embedded hub dirs)
+          then sees the same uuid in BOTH tiers - a persistent copy
+          SHADOWING its embedded original is the normal save outcome,
+          not a fork. Pin the repro in a test once diagnosed.
+    - [ ] BUG: the Import Mission picker + the Background picker render
+          entry text BLACK; every other list row in the game is theme
+          lightest. Fix the picker row emitters (campaign_editor.zig).
+    - [ ] BUG: with the Import Mission picker open, clicking the
+          Background button does nothing - both open-picker actions
+          gate `if (editor.picker != null) return;` (input_handlers.zig).
+          An already-open picker should be SWITCHED to the newly
+          requested one (opening the same picker stays the no-op).
+    - [ ] BUG: the Background picker loses map.png after choosing None -
+          open the main campaign, set the background to None, close +
+          reopen the picker: map.png is gone despite being in the
+          campaign dir. Cause: the embedded background is offered only
+          via the CURRENT-stem append in rescanCampaignBackgroundStems
+          (campaign_editor/handlers.zig) - with the stem cleared, the
+          embedded-only art drops out of the list. The offering must
+          not depend on the current selection.
+    - [ ] Hub tool palette cell: the hub icon graphic should draw
+          128x128 (it currently fits tool_graphic_tile_size 256).
+    - [ ] Mission tool palette cell: the graphic is broken - the
+          world/flag sprite (a 256x512 sheet) renders as inconsistently
+          tall whiteish lines in the cell. Replace with the mission
+          EDGE ARROW: a 128px-long arrow pointing right (the drawn-edge
+          visual, likely procedural rects/lines rather than a sprite).
+    - [ ] Keybinds 1/2/3 = select/hub/mission tool in the campaign
+          editor (the mission editor's 1-5 tool binds are the wiring
+          model; the shortcut-number surfacing polish item at the top
+          of this file rides it).
+    - [ ] A selected mission shows the animated highlight (selected
+          hubs already do; the mission select buttons over the
+          hit_curve arrows need the same selected-state render).
+    - [ ] REMOVE Save As Copy (the campaign options-menu entry). The
+          removal also drops the session-saves-the-COPY memo
+          redirection (the LAST-WINS memo precedence exists only for
+          it - campaign_editor/io.zig) and rewords the duplicate-hub
+          warning text that tells the player to "Save As Copy to split"
+          (loaders.zig).
+    - [ ] Nothing selected → an EMPTY inspector panel. Today the
+          default view is an empty MISSION inspector; nothing should
+          show when no hub/mission is selected. Decision at
+          implementation: the empty-inspector slot is currently the
+          Import affordance's entry point (3d) - it needs a new home
+          (e.g. the mission inspector proper) or a deliberate drop.
+    - [ ] BOTH editors: the TOPMOST group of the inspector + metadata
+          panels should be EXPANDED by default (today every section
+          strip starts collapsed - mission editor AND campaign editor).
+          Per-section default at the strip-emission sites; the user's
+          collapse state stays as-is otherwise.
+    - [ ] BOTH editors: the Start Hub / End Hub re-attach button text
+          (mission inspector) + the Start Hub toggle (hub inspector)
+          render BLACK - theme lightest like every other button label
+          (campaign_editor.zig row emitters).
+    - [ ] BOTH editors: Tab cycles the tools. Campaign editor: the
+          three tools left-to-right (select → hub → mission → select).
+          Mission editor: the always-active fixed tools plus any
+          EXPANDED group's tools, in palette order; a group closed
+          while its tool is active makes Tab act as if the active tool
+          were the rightmost - i.e. wrap to Select. Needs a binding
+          (the text-input capture seam must win over Tab inside a text
+          field) + the input arm.
+    - [ ] BOTH editors: shift+Tab cycles the tools the other way (the
+          same machinery, reverse direction).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
