@@ -429,18 +429,11 @@ work:
           findings through the standard warning surface.
     - [ ] Playtest punch list, round three (the full-graph authoring
           round - a 48-mission stress session + the save/reopen path;
-          fix one at a time, each its own commit). Item 1 is DONE (the
-          campaign format v5 settle - DONE.md, "campaign format v5";
-          the direction-default question (old item 4) dissolved into it:
-          an absent direction = the auto-spread default, a defined
-          value):
-      2. ctrl+N in the campaign editor opens a fresh MISSION, not a
-         fresh campaign: the new_editor_mission binding (context
-         editor) fires on the campaign_editor screen too (input.zig's
-         test asserts it). new_editor_campaign exists as an action with
-         no binding - the fix is the context split (campaign_editor
-         screen → ctrl+N = new_editor_campaign), watching the
-         same-combo conflict lint (NEXT UP).
+          fix one at a time, each its own commit). Item 1 (the campaign
+          format v5 settle - DONE.md, "campaign format v5") + item 2
+          (the ctrl+N split - DONE.md, "campaign editor: the ctrl+N
+          split") are DONE; item 4 dissolved into the settle (an absent
+          direction = the auto-spread default, a defined value):
       3. Campaign editor FPS degrades on the full planned graph (48
          missions): 6 fps debug / 33 fast-release viewing the whole
          graph. Suspects: the per-frame view rebuild (missionGeometry +

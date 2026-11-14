@@ -895,7 +895,8 @@ fn actionLayerRidesConsumptionSite(action: types.Action) bool {
 /// (New Mission, tabs, rows) are consumed: the editor screen (with the
 /// editor state populated - the save_editor_mission discipline) and the
 /// main menu (the Editor button's entry point). Button-only from the
-/// main menu: the browser keybinds ship editor-context, so on the main
+/// main menu: the browser/New keybinds ship editor-screen contexts
+/// (either editor, split per screen for the New pair), so on the main
 /// menu only the button path reaches these consumption sites.
 fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
     if (current_state.screen == .editor) return current_state.editor != null;
@@ -1424,7 +1425,9 @@ pub fn handleAnytimeInput(
 
     if (anytime.new_editor_mission) {
         // The fresh-mission open (the editor browser's New Mission button,
-        // the options-menu New Mission button, ctrl+N): a RECORDED player
+        // the options-menu New Mission button, ctrl+N - editor-context
+        // only: the campaign editor's ctrl+N is the fresh-campaign open
+        // below, the New pair split by editor screen): a RECORDED player
         // action (`open_editor` with a null path, the same event the
         // browser rows fire with a path), so replay + undo reproduce the
         // open/swap. The open_editor handler bumps world_generation, so
@@ -1438,7 +1441,9 @@ pub fn handleAnytimeInput(
 
     if (anytime.new_editor_campaign) {
         // The fresh-campaign open (the editor browser's Campaign tab's New
-        // Campaign button): the same recorded-action shape as the mission
+        // Campaign button + ctrl+N on the campaign editor screen - the
+        // New pair split by editor screen): the same recorded-action
+        // shape as the mission
         // New - `open_campaign_editor` with a null dir (one start hub at
         // 0 0, the single-'!'-tile default grid; files only at save). Same
         // reachable-screen discipline.

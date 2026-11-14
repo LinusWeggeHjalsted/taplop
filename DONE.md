@@ -350,6 +350,7 @@ working rules).
 - [mission editor: Tab cycling reworked to the SPATIAL model (a playtest revision of items 13-14)](#mission-editor-tab-cycling-reworked-to-the-spatial-model-a-playtest-revision-of-items-13-14)
 - [content hash v2 - the artifact-scope extension (the two-axis design settle + listDirFiles)](#content-hash-v2---the-artifact-scope-extension-the-two-axis-design-settle--listdirfiles)
 - [campaign format v5 - campaign.txt owns the graph (the punch-list-1 root fix)](#campaign-format-v5---campaigntxt-owns-the-graph-the-punch-list-1-root-fix)
+- [campaign editor: the ctrl+N split (punch-list item 2)](#campaign-editor-the-ctrln-split-punch-list-item-2)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21428,3 +21429,26 @@ Missions-section-started mission was being dropped as a "duplicate"
 (the marker loop inferred already-marked from `entry.start`, which the
 Missions section had already set - replaced with an explicit
 per-hub seen check).
+
+## campaign editor: the ctrl+N split (punch-list item 2)
+
+ctrl+N in the campaign editor opened a fresh MISSION instead of a fresh
+campaign: `new_editor_mission` sat in the editor-browser family's
+derived contexts (`editor` + `campaign_editor` both), so the chord fired
+on either editor screen, while `new_editor_campaign` existed as an
+action with no binding at all.
+
+Fix: the New pair is SPLIT by editor screen in the derived-context
+switch (`types.zig`) - `new_editor_mission` is editor-context only,
+`new_editor_campaign` campaign_editor-context only - plus a shipped
+`ctrl+N -> new_editor_campaign` binding in default_settings.txt. Same
+chord, different contexts, so the pair never co-fires (the Digit1/
+ctrl+S precedent) and the load-time same-combo-per-context conflict
+predicate stays clean (the shipped-defaults load test covers it). The
+browser's New BUTTONS are unchanged (clicks bypass the context gate;
+the consumption sites keep the `editorBrowserReachableScreen` gates).
+
+The split is test-pinned twice in input.zig: the dispatch-pin test
+(renamed to the split behavior, all four context sets asserted) and the
+ctrl+S cross-editor test's New section (each editor screen fires its own
+sibling, the other dormant).

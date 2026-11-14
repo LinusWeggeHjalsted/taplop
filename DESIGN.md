@@ -5196,7 +5196,9 @@ shape). Three settled points:
 
 **The fresh-mission open (New Mission - LANDED).** The browser's New
 Mission button, the options menu's New Mission button (+ ctrl+N, the
-`new_editor_mission` action) fire `open_editor` with a null path,
+`new_editor_mission` action - editor-context only: the New pair is
+SPLIT by editor screen, ctrl+N on the campaign editor fires the
+campaign sibling `new_editor_campaign`) fire `open_editor` with a null path,
 consumed in the anytime block behind the editor + main-menu gate
 (`editorBrowserReachableScreen` - every other screen no-ops, the
 save_editor_mission discipline; the keybind ships editor-context, so on

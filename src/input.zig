@@ -1578,15 +1578,19 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
 }
 
-test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
-    // The New Mission keybind's dispatch pin (the ctrl+S lesson: a binding
-    // with every other site wired but no checkAction line is dead).
-    // new_editor_mission is in the editor-browser family - EDITOR-ONLY
-    // by classification (the browser still opens from the main menu via
-    // its buttons; the keyboard shortcuts are editor-only). Dormant on
-    // level/hub (a playtest/validation run) + the main menu.
+test "translateInput: ctrl+N is split by editor screen (new mission / new campaign)" {
+    // The New pair's dispatch pin (the ctrl+S lesson: a binding with
+    // every other site wired but no checkAction line is dead). The pair
+    // is SPLIT by editor screen (the round-three punch fix): ctrl+N
+    // fires new_editor_mission on the mission editor set and
+    // new_editor_campaign on the campaign editor set - same chord,
+    // different contexts, never co-firing. The browser still opens from
+    // the main menu via its buttons; the keyboard shortcuts are
+    // editor-screens-only. Dormant on level/hub (a playtest/validation
+    // run) + the main menu.
     const bindings = [_]InputBinding{
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
+        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_campaign },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1597,25 +1601,36 @@ test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
         },
         .viewport = .{ .width = 2560, .height = 2160 },
     };
-    // Editor screen: fires.
+    // Mission editor screen: the fresh mission fires, the campaign's is
+    // dormant.
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expect(result.anytime.new_editor_mission);
+        try std.testing.expect(!result.anytime.new_editor_campaign);
     }
-    // Main menu: no fire (the browser opens there via its BUTTONS; the
-    // keyboard shortcut is editor-only).
+    // Campaign editor screen: the fresh campaign fires, the mission's is
+    // dormant.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
+        try std.testing.expect(result.anytime.new_editor_campaign);
+        try std.testing.expect(!result.anytime.new_editor_mission);
+    }
+    // Main menu: neither fires (the browser opens there via its BUTTONS).
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .menu = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
+        try std.testing.expect(!result.anytime.new_editor_campaign);
     }
-    // Level/hub (a playtest/validation run - the binding must go dormant
-    // there): no fire.
+    // Level/hub (a playtest/validation run - the bindings must go
+    // dormant there): neither fires.
     {
         var input_state: InputState = .{};
         const result = translateInput(platform, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
         try std.testing.expect(!result.anytime.new_editor_mission);
+        try std.testing.expect(!result.anytime.new_editor_campaign);
     }
 }
 
@@ -1740,6 +1755,7 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
         .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_campaign },
         .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission },
+        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_campaign },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1774,17 +1790,19 @@ test "translateInput: ctrl+S is save_campaign on the campaign editor set, save_e
         try std.testing.expect(result.anytime.save_campaign);
         try std.testing.expect(!result.anytime.save_editor_mission);
     }
-    // The browser family fires on BOTH editor screens (the browser opens
-    // over either).
+    // The New pair is split by editor screen (ctrl+N is a fresh mission
+    // on the mission editor, a fresh campaign on the campaign editor).
     {
         var input_state: InputState = .{};
         const editor_result = translateInput(new_chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expect(editor_result.anytime.new_editor_mission);
+        try std.testing.expect(!editor_result.anytime.new_editor_campaign);
     }
     {
         var input_state: InputState = .{};
         const campaign_result = translateInput(new_chord, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .campaign_editor = true });
-        try std.testing.expect(campaign_result.anytime.new_editor_mission);
+        try std.testing.expect(campaign_result.anytime.new_editor_campaign);
+        try std.testing.expect(!campaign_result.anytime.new_editor_mission);
     }
     // The cross-editor same-combo pair is legal (never co-fires - the
     // load-time conflict predicate).

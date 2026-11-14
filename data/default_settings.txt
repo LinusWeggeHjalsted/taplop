@@ -283,3 +283,9 @@ input_type key
 input_name Digit5
 action toggle_editor_item_group
 context editor
+
+input_type key
+input_name KeyN
+ctrl true
+action new_editor_campaign
+context campaign_editor

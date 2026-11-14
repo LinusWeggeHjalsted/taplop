@@ -1171,11 +1171,20 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         .import_editor_mission,
-        .new_editor_mission,
-        .new_editor_campaign,
         .cycle_editor_tool_forward,
         .cycle_editor_tool_backward,
         => .{ .editor = true, .campaign_editor = true },
+        // The New pair is SPLIT by editor screen (the round-three punch
+        // fix): ctrl+N makes a fresh mission on the mission editor, a
+        // fresh campaign on the campaign editor - same chord, different
+        // contexts, so the pair never co-fires (the Digit1/ctrl+S
+        // precedent). The browser's New BUTTONS still work from either
+        // screen (clicks bypass the context gate; the consumption gates
+        // keep `editorBrowserReachableScreen`).
+        .new_editor_mission,
+        => .{ .editor = true },
+        .new_editor_campaign,
+        => .{ .campaign_editor = true },
         // The campaign editor's own surface (its screen's context -
         // separate from `editor` so same-combo bindings coexist across
         // the two editors: ctrl+S is save_editor_mission on the mission
