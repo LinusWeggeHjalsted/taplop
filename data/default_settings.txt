@@ -239,6 +239,17 @@ action editor_select_tool
 context editor
 
 input_type key
+input_name Tab
+action cycle_editor_tool_forward
+context editor
+
+input_type key
+input_name Tab
+shift true
+action cycle_editor_tool_backward
+context editor
+
+input_type key
 input_name Digit1
 action campaign_select_tool
 context campaign_editor

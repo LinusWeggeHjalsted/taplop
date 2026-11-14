@@ -365,6 +365,11 @@ pub const AnytimeInput = struct {
     /// campaign editor screen only (the consumption site gates; the
     /// mission's ctrl+S no-ops there and vice versa).
     save_campaign: bool = false,
+    /// The tool-cycling chords (Tab / shift+Tab) - both editors: the
+    /// consumption site computes the next tool over the live palette
+    /// state and pushes the tool-switch event.
+    cycle_editor_tool_forward: bool = false,
+    cycle_editor_tool_backward: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -596,6 +601,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // runtime payload to ride along. A same-frame keypress + button
         // release on the same action is degenerate (the button's payload
         // lands last, at main.zig's release dispatch, and wins).
+        .cycle_editor_tool_forward => player_input.anytime.cycle_editor_tool_forward = true,
+        .cycle_editor_tool_backward => player_input.anytime.cycle_editor_tool_backward = true,
         .campaign_select_tool => {
             player_input.anytime.options_action = .select_editor_campaign_tool;
             player_input.clicked_payload = .{ .editor_campaign_tool = .select };
@@ -1842,5 +1849,51 @@ test "translateInput: campaign tool keybinds bridge onto the campaign cell's cli
         const result = translateInput(press_one, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .editor = true });
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
         try std.testing.expectEqual(types.EditorToolId.select, result.clicked_payload.?.editor_tool);
+    }
+}
+
+test "translateInput: Tab / shift+Tab fire the tool-cycling chords on both editor sets" {
+    // The cycling actions are dual-context (editor + campaign_editor) -
+    // one binding pair serves both editors. While a text field is
+    // focused, ALL binding translation is suppressed (the text-input
+    // capture seam), so the chords never fight the field buffer.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Tab" }, .action = .cycle_editor_tool_forward },
+        .{ .input = .{ .key = "Tab" }, .modifiers = .{ .shift = true }, .action = .cycle_editor_tool_backward },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const press_tab = PlatformInput{
+        .events = &.{.{ .key_down = "Tab" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const press_shift_tab = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ShiftLeft" },
+            .{ .key_down = "Tab" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+
+    for ([_]types.BindingContextSet{
+        .{ .anytime = true, .editor = true },
+        .{ .anytime = true, .campaign_editor = true },
+    }) |contexts| {
+        var forward_state: InputState = .{};
+        const forward_result = translateInput(press_tab, &forward_state, settings, camera, 0, null, null, contexts);
+        try std.testing.expect(forward_result.anytime.cycle_editor_tool_forward);
+        try std.testing.expect(!forward_result.anytime.cycle_editor_tool_backward);
+
+        var backward_state: InputState = .{};
+        const backward_result = translateInput(press_shift_tab, &backward_state, settings, camera, 0, null, null, contexts);
+        try std.testing.expect(backward_result.anytime.cycle_editor_tool_backward);
+        try std.testing.expect(!backward_result.anytime.cycle_editor_tool_forward);
+    }
+
+    // Outside the editors the chords are dormant.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_tab, &input_state, settings, camera, 0, null, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(!result.anytime.cycle_editor_tool_forward);
     }
 }

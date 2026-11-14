@@ -1264,3 +1264,175 @@ fn appendSelectEntryIfNew(
     plan.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
         @panic("failed to allocate editor selection plan");
 }
+
+/// The mission editor's Tab-cycle order: the always-active fixed tools
+/// (Select, Tile), then each EXPANDED palette group's type tools in
+/// palette order (Entities, Decorations, Items). A group's cells are in
+/// the cycle only while the group is expanded - collapsing a group
+/// removes its tools. Pure; allocates the (small) cycle list into
+/// `allocator`.
+fn missionEditorToolCycle(
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    palette_collapsed: [3]bool,
+) []const types.EditorToolId {
+    var cycle: std.ArrayList(types.EditorToolId) = .empty;
+    cycle.append(allocator, .select) catch @panic("failed to append the select tool");
+    cycle.append(allocator, .tile) catch @panic("failed to append the tile tool");
+    if (!palette_collapsed[0]) {
+        for (editor.entity_types, 0..) |_, index| {
+            cycle.append(allocator, .{ .entity_type = @intCast(index) }) catch
+                @panic("failed to append an entity tool");
+        }
+    }
+    if (!palette_collapsed[1]) {
+        for (editor.decoration_types, 0..) |_, index| {
+            cycle.append(allocator, .{ .decoration_type = @intCast(index) }) catch
+                @panic("failed to append a decoration tool");
+        }
+    }
+    if (!palette_collapsed[2]) {
+        for (editor.item_types, 0..) |_, index| {
+            cycle.append(allocator, .{ .item_type = @intCast(index) }) catch
+                @panic("failed to append an item tool");
+        }
+    }
+    return cycle.toOwnedSlice(allocator) catch @panic("failed to own the tool cycle");
+}
+
+/// The next mission-editor tool in the Tab cycle (see
+/// `missionEditorToolCycle`): forward steps right (wrapping at the end),
+/// backward steps left (wrapping at the start). A tool NOT in the cycle
+/// (its group collapsed while it was active) acts as if it were the
+/// RIGHTMOST entry - forward wraps to Select, backward steps to the
+/// entry before the rightmost. Pure.
+pub fn nextMissionEditorTool(
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    palette_collapsed: [3]bool,
+    forward: bool,
+) types.EditorToolId {
+    const cycle = missionEditorToolCycle(allocator, editor, palette_collapsed);
+    var active_index: ?usize = null;
+    for (cycle, 0..) |tool, index| {
+        if (std.meta.eql(tool, editor.active_tool)) active_index = index;
+    }
+    const current_index = active_index orelse cycle.len - 1;
+    const next_index = if (forward)
+        (current_index + 1) % cycle.len
+    else
+        (current_index + cycle.len - 1) % cycle.len;
+    const next = cycle[next_index];
+    allocator.free(cycle);
+    return next;
+}
+
+/// The campaign editor's Tab cycle: the three map tools left-to-right
+/// (select -> hub -> mission), wrapping. Pure.
+pub fn nextCampaignEditorTool(
+    active: types.CampaignEditorToolId,
+    forward: bool,
+) types.CampaignEditorToolId {
+    const order = [_]types.CampaignEditorToolId{ .select, .hub, .mission };
+    var active_index: usize = 0;
+    for (order, 0..) |tool, index| {
+        if (tool == active) active_index = index;
+    }
+    const next_index = if (forward)
+        (active_index + 1) % order.len
+    else
+        (active_index + order.len - 1) % order.len;
+    return order[next_index];
+}
+
+test "nextMissionEditorTool: the fixed tools cycle when every group is collapsed" {
+    const allocator = std.testing.allocator;
+    const editor = types.Editor{};
+    const all_collapsed = [3]bool{ true, true, true };
+
+    // The cycle is [select, tile]: forward wraps tile -> select, backward
+    // wraps select -> tile.
+    try std.testing.expectEqual(
+        types.EditorToolId.tile,
+        nextMissionEditorTool(allocator, editor, all_collapsed, true),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId.select,
+        nextMissionEditorTool(allocator, .{ .active_tool = .tile }, all_collapsed, true),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId.tile,
+        nextMissionEditorTool(allocator, .{ .active_tool = .select }, all_collapsed, false),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId.select,
+        nextMissionEditorTool(allocator, .{ .active_tool = .tile }, all_collapsed, false),
+    );
+}
+
+test "nextMissionEditorTool: expanded groups' tools ride the cycle in palette order" {
+    const allocator = std.testing.allocator;
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+        .{ .id = "Brute", .template = .{ .name = "Brute", .team = 1 } },
+    };
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    // Entities + decorations expanded, items collapsed: the cycle is
+    // [select, tile, entity 0, entity 1, decoration 0].
+    const groups = [3]bool{ false, false, true };
+
+    // Forward steps through the expanded entities, then the decoration,
+    // then wraps to select.
+    try std.testing.expectEqual(
+        types.EditorToolId{ .entity_type = 0 },
+        nextMissionEditorTool(allocator, .{ .active_tool = .tile, .entity_types = &entity_types, .decoration_types = &decoration_types }, groups, true),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId{ .entity_type = 1 },
+        nextMissionEditorTool(allocator, .{ .active_tool = .{ .entity_type = 0 }, .entity_types = &entity_types, .decoration_types = &decoration_types }, groups, true),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId{ .decoration_type = 0 },
+        nextMissionEditorTool(allocator, .{ .active_tool = .{ .entity_type = 1 }, .entity_types = &entity_types, .decoration_types = &decoration_types }, groups, true),
+    );
+    try std.testing.expectEqual(
+        types.EditorToolId.select,
+        nextMissionEditorTool(allocator, .{ .active_tool = .{ .decoration_type = 0 }, .entity_types = &entity_types, .decoration_types = &decoration_types }, groups, true),
+    );
+    // Backward wraps select -> the last entry (the decoration).
+    try std.testing.expectEqual(
+        types.EditorToolId{ .decoration_type = 0 },
+        nextMissionEditorTool(allocator, .{ .active_tool = .select, .entity_types = &entity_types, .decoration_types = &decoration_types }, groups, false),
+    );
+}
+
+test "nextMissionEditorTool: a tool in a collapsed group acts as the rightmost entry" {
+    const allocator = std.testing.allocator;
+    // Items collapsed with the ITEM tool active: the tool is not in the
+    // cycle ([select, tile]) - it acts as the rightmost entry, so forward
+    // wraps to Select and backward steps to the entry before the rightmost
+    // (Tile).
+    const editor = types.Editor{ .active_tool = .{ .item_type = 0 } };
+    const items_collapsed = [3]bool{ true, true, true };
+    try std.testing.expectEqual(
+        types.EditorToolId.select,
+        nextMissionEditorTool(allocator, editor, items_collapsed, true),
+    );
+    // Backward from the not-found tool steps to the entry BEFORE the
+    // rightmost - in the 2-cycle that is Select (the rightmost itself is
+    // Tile).
+    try std.testing.expectEqual(
+        types.EditorToolId.select,
+        nextMissionEditorTool(allocator, editor, items_collapsed, false),
+    );
+}
+
+test "nextCampaignEditorTool: the three tools wrap both ways" {
+    try std.testing.expectEqual(types.CampaignEditorToolId.hub, nextCampaignEditorTool(.select, true));
+    try std.testing.expectEqual(types.CampaignEditorToolId.mission, nextCampaignEditorTool(.hub, true));
+    try std.testing.expectEqual(types.CampaignEditorToolId.select, nextCampaignEditorTool(.mission, true));
+    try std.testing.expectEqual(types.CampaignEditorToolId.mission, nextCampaignEditorTool(.select, false));
+    try std.testing.expectEqual(types.CampaignEditorToolId.hub, nextCampaignEditorTool(.mission, false));
+}

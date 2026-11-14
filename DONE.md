@@ -346,6 +346,7 @@ working rules).
 - [campaign editor: tool keybinds 1/2/3 (punch-list item 7)](#campaign-editor-tool-keybinds-123-punch-list-item-7)
 - [campaign editor: selection highlight + the inspector rows' text (punch-list items 8 + 12)](#campaign-editor-selection-highlight--the-inspector-rows-text-punch-list-items-8--12)
 - [editor inspectors: empty-when-unselected + the topmost group expanded by default (punch-list items 10-11)](#editor-inspectors-empty-when-unselected--the-topmost-group-expanded-by-default-punch-list-items-10-11)
+- [both editors: Tab / shift+Tab tool cycling (punch-list items 13-14, the punch list complete)](#both-editors-tab--shifttab-tool-cycling-punch-list-items-13-14-the-punch-list-complete)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21221,3 +21222,39 @@ their fields present, the sections below still "+"); the team-gradient
 test follows the default ("- Identity"); the campaign editor's derived
 totals drop the unselected Mission strip (and the blocking-panel count
 with it).
+
+## both editors: Tab / shift+Tab tool cycling (punch-list items 13-14, the punch list complete)
+
+One dual-context action pair (editor + campaign_editor - the
+browser-family pattern, so ONE binding pair serves both editors) with
+dedicated AnytimeInput flags; the consumption computes the next tool
+over the live state and pushes the tool-set orchestrator, so every
+switch rides the undo timeline through the tool cell's exact click
+path.
+
+- **Campaign editor** (`nextCampaignEditorTool`): select -> hub ->
+  mission -> select, both directions.
+- **Mission editor** (`nextMissionEditorTool`): the always-active fixed
+  tools (Select, Tile) plus each EXPANDED palette group's type tools in
+  palette order (Entities, Decorations, Items). A tool whose group is
+  collapsed while active is not in the cycle - it acts as the RIGHTMOST
+  entry: forward wraps to Select (the user's stated rule); backward
+  steps to the entry BEFORE the rightmost (the symmetric reading - the
+  one judgment call; in the fixed-only 2-cycle both directions land on
+  Select). The cycle list is the fn's own temporary (freed before the
+  value return; the production frame-arena free is a no-op).
+
+The Tab binding loses to focused text fields for free - while a field
+is focused ALL binding translation is suppressed (the text-input
+capture seam, DESIGN → UI Framework → Text input widget), no extra
+gate needed.
+
+Tests: the pure cycle fns (fixed-only wrap both ways; expanded groups
+riding in palette order; the collapsed-group-active rule both
+directions; the campaign three-tool wrap); translateInput firing the
+chords on both editor sets + dormancy outside the editors; the
+end-to-end consumption on both editors (multi-step cycles, the
+collapsed-group wrap, undo restoring the prior tool).
+
+The post-3e punch list is now COMPLETE - all fourteen items landed
+across this session's commits; the block is deleted from TODO.

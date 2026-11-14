@@ -1233,3 +1233,37 @@ test "campaign editor: the tool keybind path - the bridged click switches the ac
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(history.current_state.campaign_editor.?.active_tool == .select);
 }
+
+test "campaign editor: the Tab chords cycle the three map tools, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(campaignEditorEventFixtureState());
+    runToIdle(&history);
+
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    // Forward: select -> hub -> mission -> select (wraps).
+    input_handlers_mod.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .hub);
+    input_handlers_mod.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .mission);
+    input_handlers_mod.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .select);
+
+    // Backward: select -> mission (wraps) -> hub.
+    input_handlers_mod.handleAnytimeInput(&history, .{ .cycle_editor_tool_backward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .mission);
+    input_handlers_mod.handleAnytimeInput(&history, .{ .cycle_editor_tool_backward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .hub);
+
+    // Each switch rides the undo timeline.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.campaign_editor.?.active_tool == .mission);
+}

@@ -8874,3 +8874,53 @@ test "editor save: an official mission forks - a fresh identity, the original un
     try testing.expectEqualStrings(saved.uuid, second_save.uuid);
     try testing.expectEqualStrings(fork_dir, second_save.dir_path);
 }
+
+test "Tab chords: the mission editor cycles the fixed tools + the expanded groups' tools" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Two entity types; the Entities group EXPANDED, Decorations + Items
+    // collapsed - the cycle is [select, tile, entity 0, entity 1].
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+        .{ .id = "Brute", .template = .{ .name = "Brute", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+    history.session.ui_state.editor_palette_collapsed = .{ false, true, true };
+
+    // Forward from the tile tool steps INTO the expanded group, through
+    // its cells, then wraps to select.
+    history.current_state.editor.?.active_tool = .tile;
+    input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(types.EditorToolId{ .entity_type = 0 }, history.current_state.editor.?.active_tool);
+    input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(types.EditorToolId{ .entity_type = 1 }, history.current_state.editor.?.active_tool);
+    input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
+
+    // Backward wraps select -> the LAST entry (entity 1).
+    input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_backward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(types.EditorToolId{ .entity_type = 1 }, history.current_state.editor.?.active_tool);
+
+    // A tool whose group is COLLAPSED (closing Entities with entity 1
+    // active) acts as the rightmost: forward wraps to Select.
+    history.session.ui_state.editor_palette_collapsed = .{ true, true, true };
+    input_handlers.handleAnytimeInput(&history, .{ .cycle_editor_tool_forward = true }, null, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
+
+    // The switch rides the undo timeline (the tool cell's click
+    // convention).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(types.EditorToolId{ .entity_type = 1 }, history.current_state.editor.?.active_tool);
+}

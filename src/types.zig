@@ -715,6 +715,12 @@ pub const Action = enum {
     campaign_select_tool,
     campaign_hub_tool,
     campaign_mission_tool,
+    // The tool-cycling keybinds (Tab / shift+Tab, both EDITORS - the
+    // dual-context editor family): payload-less, the next tool computed
+    // at the consumption site (the cycle depends on live palette state,
+    // unlike the static tool bridges below).
+    cycle_editor_tool_forward,
+    cycle_editor_tool_backward,
     // Editor tool/palette keyboard shortcuts (Digit1-5, context editor -
     // the first same-combo cross-context pair: Digit1-8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
@@ -1167,6 +1173,8 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .import_editor_mission,
         .new_editor_mission,
         .new_editor_campaign,
+        .cycle_editor_tool_forward,
+        .cycle_editor_tool_backward,
         => .{ .editor = true, .campaign_editor = true },
         // The campaign editor's own surface (its screen's context -
         // separate from `editor` so same-combo bindings coexist across
@@ -1593,6 +1601,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
+        .cycle_editor_tool_forward,
+        .cycle_editor_tool_backward,
         .editor_select_tool,
         .editor_tile_tool,
         .toggle_editor_entity_group,

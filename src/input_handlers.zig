@@ -1458,6 +1458,33 @@ pub fn handleAnytimeInput(
         }
     }
 
+    if (anytime.cycle_editor_tool_forward or anytime.cycle_editor_tool_backward) {
+        // The tool-cycling chords (Tab / shift+Tab) - both editors. The
+        // next tool is computed over the live state (the mission editor's
+        // cycle depends on the palette's group expansion) and the switch
+        // rides the undo timeline through the tool-set orchestrator (the
+        // tool cell's click convention).
+        const forward = anytime.cycle_editor_tool_forward;
+        if (history.current_state.screen == .campaign_editor) {
+            if (history.current_state.campaign_editor) |editor| {
+                pushPlayerActionAndDrain(history, .{ .player_set_campaign_tool = .{
+                    .tool = planning.nextCampaignEditorTool(editor.active_tool, forward),
+                } });
+            }
+        } else if (history.current_state.screen == .editor) {
+            if (history.current_state.editor) |editor| {
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_tool = .{
+                    .tool = planning.nextMissionEditorTool(
+                        history.current_arena.allocator(),
+                        editor,
+                        history.session.ui_state.editor_palette_collapsed,
+                        forward,
+                    ),
+                } });
+            }
+        }
+    }
+
     if (anytime.escape) {
         handleEscapeKey(history);
     }

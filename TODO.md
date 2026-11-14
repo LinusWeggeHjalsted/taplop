@@ -421,20 +421,6 @@ work:
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
         field is the v1 path).
-  - **Post-3e playtest punch list (first real authoring pass)** -
-    findings from saving + reopening the main campaign and clicking
-    through both editors. Bugs first, then polish; the BOTH-editors
-    items touch the mission editor too:
-    - [ ] BOTH editors: Tab cycles the tools. Campaign editor: the
-          three tools left-to-right (select → hub → mission → select).
-          Mission editor: the always-active fixed tools plus any
-          EXPANDED group's tools, in palette order; a group closed
-          while its tool is active makes Tab act as if the active tool
-          were the rightmost - i.e. wrap to Select. Needs a binding
-          (the text-input capture seam must win over Tab inside a text
-          field) + the input arm.
-    - [ ] BOTH editors: shift+Tab cycles the tools the other way (the
-          same machinery, reverse direction).
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
