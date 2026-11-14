@@ -4314,17 +4314,18 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
     // Select tool, empty selection: the open panel carries the PLAYER
-    // content (the fallback target) - ALL SECTIONS COLLAPSED by default:
-    // five headers (+ markers) + spacers, everything fits, no scrollbar.
+    // content (the fallback target). The census block drives the
+    // all-COLLAPSED state explicitly (a reachable user state - the DEFAULT
+    // expands the topmost group, see the default block below).
     const editor: types.Editor = .{};
 
-    // Open (the default): the toggle trio + background panel + five
-    // collapsed section strips. The exhaustive census over the single
+    // Open, all sections collapsed: the toggle trio + background panel +
+    // five collapsed section strips. The exhaustive census over the single
     // window (all-collapsed content fits - max scroll 0) pins the exact
     // ordered content.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{};
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = @splat(false) };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         // toggle 3 + background 1 + one strip (panel + button + label)
         // per section header.
@@ -4367,6 +4368,26 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
                 .height = panel.height,
             },
         );
+    }
+
+    // The DEFAULT state: the panel's topmost group (Player, the player
+    // content's first section) renders EXPANDED - the "- " marker + its
+    // fields - while everything below stays collapsed.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var player_expanded = false;
+        var weapons_collapsed = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "- Player")) player_expanded = true;
+                if (std.mem.eql(u8, label.text, "+ Weapons")) weapons_collapsed = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(player_expanded);
+        try std.testing.expect(weapons_collapsed);
     }
 
     // Closed: just the toggle (3 elements), no longer highlighted.
@@ -4906,11 +4927,11 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expectEqual(types.reference_width, toggle_panel.screen_position.x + toggle_panel.width);
     }
 
-    // Open + COLLAPSED (the default): the background panel + two section
-    // headers only - the inspector's all-collapsed convention.
+    // Open + COLLAPSED (an explicit user state - collapse everything):
+    // the background panel + two section headers only.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{};
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = @splat(false) };
         try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, definitions, true, &ui_state);
         // The strips are the shared collapsible headers (+ marker, the
         // toggle action, the section id payload).
@@ -4937,6 +4958,30 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expect(headers_seen[1]);
         // No fields while collapsed.
         for (elements.items) |element| try std.testing.expect(element != .text_field);
+    }
+
+    // The DEFAULT state: the sidebar's topmost group (Mission) renders
+    // EXPANDED - the mission name field present, Current level collapsed.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, definitions, true, &ui_state);
+        var mission_expanded = false;
+        var level_collapsed = false;
+        var mission_field = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "- Mission")) mission_expanded = true;
+                if (std.mem.eql(u8, label.text, "+ Current level")) level_collapsed = true;
+            },
+            .text_field => |field| {
+                if (field.ref.id == .mission_name) mission_field = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(mission_expanded);
+        try std.testing.expect(level_collapsed);
+        try std.testing.expect(mission_field);
     }
 
     // Open + EXPANDED: the entries window like the inspector's. The
@@ -5287,10 +5332,11 @@ test "inspector team gradient: a team-0 entity type tints with the player gradie
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, case.editor, theme, true, &ui_state);
-        // All sections collapsed by default - the first content element
-        // (index 4, after the toggle's 3 + the background panel) is the
-        // Identity strip; its panel tint is the team gradient's index 5.
-        try std.testing.expectEqualStrings("+ Identity", elements.items[6].text_label.text);
+        // The default expands the entity content's topmost group: the
+        // first content element (index 4, after the toggle's 3 + the
+        // background panel) is the Identity strip; its panel tint is the
+        // team gradient's index 5.
+        try std.testing.expectEqualStrings("- Identity", elements.items[6].text_label.text);
         try std.testing.expectEqual(case.expected, elements.items[4].nine_slice_panel.color);
     }
 }

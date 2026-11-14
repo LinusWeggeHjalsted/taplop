@@ -345,6 +345,7 @@ working rules).
 - [campaign editor: the tool palette graphics (punch-list items 5-6)](#campaign-editor-the-tool-palette-graphics-punch-list-items-5-6)
 - [campaign editor: tool keybinds 1/2/3 (punch-list item 7)](#campaign-editor-tool-keybinds-123-punch-list-item-7)
 - [campaign editor: selection highlight + the inspector rows' text (punch-list items 8 + 12)](#campaign-editor-selection-highlight--the-inspector-rows-text-punch-list-items-8--12)
+- [editor inspectors: empty-when-unselected + the topmost group expanded by default (punch-list items 10-11)](#editor-inspectors-empty-when-unselected--the-topmost-group-expanded-by-default-punch-list-items-10-11)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21192,3 +21193,31 @@ site.
 Tests: the mission-inspector view test pins the selected edge button's
 highlight (exactly one, the selected handle) + the re-attach row colors;
 the hub-inspector test pins the toggle's control color.
+
+## editor inspectors: empty-when-unselected + the topmost group expanded by default (punch-list items 10-11)
+
+- **The campaign editor's inspector is EMPTY when nothing is selected**
+  - no section strip, nothing to inspect (it previously rendered an
+  empty Mission section whose only content was the Import affordance;
+  the import entry point lives in the SELECTED mission's section, per
+  the earlier punch-list settle).
+- **The TOPMOST group of every inspector/metadata panel starts
+  EXPANDED** (both editors): the mission editor's inspector opens its
+  first section per content (Identity for entities + decorations,
+  Player for the loadout, Item for items), the metadata sidebar opens
+  Mission, and the campaign editor's singleton sections (hub, mission,
+  campaign metadata) open expanded. Implemented as the
+  section-expansion array's DEFAULT (`defaultInspectorSectionExpansion`
+  in ui/state.zig) - a user collapse of a default-expanded section
+  persists like any other (false can only mean an explicit toggle
+  now), and everything below the topmost group still starts collapsed.
+
+Tests: the toggle-state handler test pins the default array (the
+topmost ids expanded, the rest collapsed - plus the independent
+expand/collapse flow); the inspector panel + metadata sidebar tests
+drive the all-collapsed shape EXPLICITLY (a reachable user state) and
+add default-shape blocks (the "- Player" / "- Mission" markers with
+their fields present, the sections below still "+"); the team-gradient
+test follows the default ("- Identity"); the campaign editor's derived
+totals drop the unselected Mission strip (and the blocking-panel count
+with it).

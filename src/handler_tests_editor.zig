@@ -7195,19 +7195,25 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     }));
     runToIdle(&history);
 
-    // DEFAULT: every section collapsed - the panel shows only headers.
+    // DEFAULT: the TOPMOST group of each panel expanded (the entity
+    // inspector's Identity, the loadout's Player, the item inspector's
+    // Item, the metadata sidebar's Mission, the campaign editor's
+    // singleton sections) - everything else collapsed.
     input_handlers.handleAnytimeInput(&history, .{}, null, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expectEqual(
-        @as([@typeInfo(types.EditorInspectorSectionId).@"enum".field_names.len]bool, @splat(false)),
-        history.session.ui_state.editor_inspector_section_expanded,
-    );
+    for ([_]types.EditorInspectorSectionId{
+        .identity, .player, .item, .mission, .campaign_hub, .campaign_mission, .campaign_metadata,
+    }) |section_id| {
+        try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@backingInt(section_id)]);
+    }
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.stats)]);
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.weapons)]);
 
     // Expand Weapons (the section id rides the click payload).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector_section,
     }, .{ .editor_section = .weapons }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.weapons)]);
-    // Independent: nothing else expanded, no event recorded (view state,
+    // Independent: nothing else flips, no event recorded (view state,
     // off the undo timeline).
     try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.gear)]);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);

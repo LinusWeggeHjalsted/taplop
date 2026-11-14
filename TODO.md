@@ -425,17 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] Nothing selected → an EMPTY inspector panel. Today the
-          default view is an empty MISSION inspector; nothing should
-          show when no hub/mission is selected. The empty-inspector
-          import affordance just goes - the Import button at the
-          bottom of any selected mission's inspector is the entry
-          point.
-    - [ ] BOTH editors: the TOPMOST group of the inspector + metadata
-          panels should be EXPANDED by default (today every section
-          strip starts collapsed - mission editor AND campaign editor).
-          Per-section default at the strip-emission sites; the user's
-          collapse state stays as-is otherwise.
     - [ ] BOTH editors: Tab cycles the tools. Campaign editor: the
           three tools left-to-right (select → hub → mission → select).
           Mission editor: the always-active fixed tools plus any

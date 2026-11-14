@@ -33,6 +33,28 @@ pub const editor_footprint_grid_cell_limit: usize = 64;
 pub const editor_inspector_section_count: usize =
     @typeInfo(types.EditorInspectorSectionId).@"enum".field_names.len;
 
+/// The section-expansion array's default: the TOPMOST group of each
+/// panel EXPANDED - the inspector's first section per content (Identity
+/// for entities + decorations, Player for the loadout, Item for items),
+/// the metadata sidebar's Mission section, and the campaign editor's
+/// singleton sections. Everything else collapsed (the panel starts
+/// minimal below its first group).
+fn defaultInspectorSectionExpansion() [editor_inspector_section_count]bool {
+    var expanded: [editor_inspector_section_count]bool = @splat(false);
+    for ([_]types.EditorInspectorSectionId{
+        .identity,
+        .player,
+        .item,
+        .mission,
+        .campaign_hub,
+        .campaign_mission,
+        .campaign_metadata,
+    }) |section_id| {
+        expanded[@backingInt(section_id)] = true;
+    }
+    return expanded;
+}
+
 pub const UiState = struct {
     /// Which content tab the open settings screen shows (Settings /
     /// Keybinds). A view affordance - direct UiState write, off the undo
@@ -163,15 +185,17 @@ pub const UiState = struct {
     editor_palette_collapsed: [3]bool = .{ true, true, true },
 
     /// Editor inspector section expansion: true = expanded (children
-    /// emitted), false = collapsed (header only). ALL COLLAPSED by default -
-    /// the panel starts minimal. Independent toggles (no accordion - the
-    /// palette groups are one-at-a-time; inspector sections are per-topic
-    /// and often wanted together, e.g. Weapons + Gear). Off the undo
-    /// timeline (view-side display state, same class as
+    /// emitted), false = collapsed (header only). The TOPMOST group of
+    /// each panel starts EXPANDED (see `defaultInspectorSectionExpansion`);
+    /// the rest start collapsed. A user collapse of a default-expanded
+    /// section persists like any other. Independent toggles (no accordion -
+    /// the palette groups are one-at-a-time; inspector sections are
+    /// per-topic and often wanted together, e.g. Weapons + Gear). Off the
+    /// undo timeline (view-side display state, same class as
     /// `editor_palette_collapsed`). Keyed by `EditorInspectorSectionId` -
     /// shared across the enemy + player contents.
     editor_inspector_section_expanded: [editor_inspector_section_count]bool =
-        @splat(false),
+        defaultInspectorSectionExpansion(),
 
     /// Editor inspector: the player loadout inventory's selected slot (the
     /// Inventory section's detail rows insert below this slot's row).

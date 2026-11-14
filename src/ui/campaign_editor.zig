@@ -736,11 +736,11 @@ pub fn buildCampaignEditorView(
                         .blocks_input = false,
                     } });
                 }
-            } else {
-                // The Mission section: the full mission inspector when a
-                // mission is selected; the Import affordance alone
-                // otherwise (an import lands UNWIRED and selected - the
-                // author re-attaches it).
+            } else if (selected_mission != null) {
+                // The Mission section: the selected mission's inspector
+                // (nothing selected → the panel stays EMPTY - no section
+                // strip, nothing to inspect; the Import affordance lives
+                // here, in the selected mission's section).
                 const content = Rectangle{
                     .x = panel_rect.x + ui_element.ui_gap,
                     .y = panel_rect.y + ui_element.ui_gap,
@@ -760,29 +760,81 @@ pub fn buildCampaignEditorView(
                 );
                 if (mission_section_expanded) {
                     var entry_index: i32 = 1;
-                    if (selected_mission) |mission| {
-                        // The name field (the sidebar's exact two-unit
-                        // entry).
-                        try inspector.emitSidebarNameField(
-                            elements,
-                            allocator,
-                            font_metrics,
-                            text_edit,
-                            .{ .id = .campaign_mission_name, .target = .{ .campaign_mission = mission.handle } },
-                            mission.name,
-                            .{
-                                .x = content.x,
-                                .y = content.y + entry_index * editor_shell.editor_header_strip_height,
-                                .width = content.width,
-                                .height = 2 * editor_shell.editor_header_strip_height,
-                            },
-                            active_theme,
-                        );
-                        entry_index += 2;
-                        // The direction field (self-loops + dangling stubs;
-                        // empty = the auto-spread default).
+                    const mission = selected_mission.?;
+                    // The name field (the sidebar's exact two-unit
+                    // entry).
+                    try inspector.emitSidebarNameField(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        .{ .id = .campaign_mission_name, .target = .{ .campaign_mission = mission.handle } },
+                        mission.name,
+                        .{
+                            .x = content.x,
+                            .y = content.y + entry_index * editor_shell.editor_header_strip_height,
+                            .width = content.width,
+                            .height = 2 * editor_shell.editor_header_strip_height,
+                        },
+                        active_theme,
+                    );
+                    entry_index += 2;
+                    // The direction field (self-loops + dangling stubs;
+                    // empty = the auto-spread default).
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = "Direction",
+                        .screen_position = .{
+                            .x = content.x,
+                            .y = content.y + entry_index * editor_shell.editor_header_strip_height +
+                                editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
+                        },
+                        .font_size = editor_shell.editor_group_header_font_size,
+                        .color = active_theme.lightest,
+                        .blocks_input = false,
+                    } });
+                    const direction_value = if (mission.direction) |direction|
+                        try std.fmt.allocPrint(allocator, "{d}", .{direction})
+                    else
+                        "";
+                    try inspector.emitTextFieldUi(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        .{ .id = .campaign_mission_direction, .target = .{ .campaign_mission = mission.handle } },
+                        direction_value,
+                        inspector.inspectorControlRect(.{
+                            .x = content.x,
+                            .y = content.y + entry_index * editor_shell.editor_header_strip_height,
+                            .width = content.width,
+                            .height = 2 * editor_shell.editor_header_strip_height,
+                        }),
+                        active_theme,
+                    );
+                    entry_index += 2;
+                    // The re-attach rows: each end's control button
+                    // names the attached hub (or Unattached); entering
+                    // the pick-mode prompts for the hub click.
+                    for ([_]struct {
+                        end: types.CampaignMissionEnd,
+                        label: []const u8,
+                        action: types.Action,
+                    }{
+                        .{ .end = .start, .label = "Start Hub", .action = .reattach_campaign_mission_start },
+                        .{ .end = .destination, .label = "End Hub", .action = .reattach_campaign_mission_destination },
+                    }) |row| {
+                        const attached: ?u32 = if (row.end == .start) mission.start else mission.destination;
+                        var attached_name: []const u8 = "Unattached - click to attach";
+                        if (attached) |handle| {
+                            for (editor.hubs) |hub| {
+                                if (hub.handle == handle) attached_name = hub.name;
+                            }
+                        }
+                        if (reattach_end) |armed_end| {
+                            if (armed_end == row.end) attached_name = "Click a hub on the map...";
+                        }
                         try elements.append(allocator, .{ .text_label = .{
-                            .text = "Direction",
+                            .text = row.label,
                             .screen_position = .{
                                 .x = content.x,
                                 .y = content.y + entry_index * editor_shell.editor_header_strip_height +
@@ -792,98 +844,45 @@ pub fn buildCampaignEditorView(
                             .color = active_theme.lightest,
                             .blocks_input = false,
                         } });
-                        const direction_value = if (mission.direction) |direction|
-                            try std.fmt.allocPrint(allocator, "{d}", .{direction})
-                        else
-                            "";
-                        try inspector.emitTextFieldUi(
-                            elements,
-                            allocator,
-                            font_metrics,
-                            text_edit,
-                            .{ .id = .campaign_mission_direction, .target = .{ .campaign_mission = mission.handle } },
-                            direction_value,
-                            inspector.inspectorControlRect(.{
-                                .x = content.x,
-                                .y = content.y + entry_index * editor_shell.editor_header_strip_height,
-                                .width = content.width,
-                                .height = 2 * editor_shell.editor_header_strip_height,
-                            }),
-                            active_theme,
-                        );
+                        const row_rect = inspector.inspectorControlRect(.{
+                            .x = content.x,
+                            .y = content.y + entry_index * editor_shell.editor_header_strip_height,
+                            .width = content.width,
+                            .height = 2 * editor_shell.editor_header_strip_height,
+                        });
+                        try elements.append(allocator, .{ .nine_slice_panel = .{
+                            .sprite_id = "ui/panel",
+                            .screen_position = row_rect.position(),
+                            .width = row_rect.width,
+                            .height = row_rect.height,
+                            .color = button_color,
+                            .blocks_input = false,
+                        } });
+                        try elements.append(allocator, .{ .button = .{
+                            .sprite_id = null,
+                            .screen_position = row_rect.position(),
+                            .width = row_rect.width,
+                            .height = row_rect.height,
+                            .action = row.action,
+                        } });
+                        try elements.append(allocator, .{ .text_label = .{
+                            .text = attached_name,
+                            .screen_position = .{
+                                .x = row_rect.x + ui_element.ui_gap,
+                                .y = row_rect.y + @divFloor(
+                                    row_rect.height - editor_shell.editor_group_header_font_size,
+                                    2,
+                                ),
+                            },
+                            .font_size = editor_shell.editor_group_header_font_size,
+                            .color = lightest,
+                            .blocks_input = false,
+                        } });
                         entry_index += 2;
-                        // The re-attach rows: each end's control button
-                        // names the attached hub (or Unattached); entering
-                        // the pick-mode prompts for the hub click.
-                        for ([_]struct {
-                            end: types.CampaignMissionEnd,
-                            label: []const u8,
-                            action: types.Action,
-                        }{
-                            .{ .end = .start, .label = "Start Hub", .action = .reattach_campaign_mission_start },
-                            .{ .end = .destination, .label = "End Hub", .action = .reattach_campaign_mission_destination },
-                        }) |row| {
-                            const attached: ?u32 = if (row.end == .start) mission.start else mission.destination;
-                            var attached_name: []const u8 = "Unattached - click to attach";
-                            if (attached) |handle| {
-                                for (editor.hubs) |hub| {
-                                    if (hub.handle == handle) attached_name = hub.name;
-                                }
-                            }
-                            if (reattach_end) |armed_end| {
-                                if (armed_end == row.end) attached_name = "Click a hub on the map...";
-                            }
-                            try elements.append(allocator, .{ .text_label = .{
-                                .text = row.label,
-                                .screen_position = .{
-                                    .x = content.x,
-                                    .y = content.y + entry_index * editor_shell.editor_header_strip_height +
-                                        editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
-                                },
-                                .font_size = editor_shell.editor_group_header_font_size,
-                                .color = active_theme.lightest,
-                                .blocks_input = false,
-                            } });
-                            const row_rect = inspector.inspectorControlRect(.{
-                                .x = content.x,
-                                .y = content.y + entry_index * editor_shell.editor_header_strip_height,
-                                .width = content.width,
-                                .height = 2 * editor_shell.editor_header_strip_height,
-                            });
-                            try elements.append(allocator, .{ .nine_slice_panel = .{
-                                .sprite_id = "ui/panel",
-                                .screen_position = row_rect.position(),
-                                .width = row_rect.width,
-                                .height = row_rect.height,
-                                .color = button_color,
-                                .blocks_input = false,
-                            } });
-                            try elements.append(allocator, .{ .button = .{
-                                .sprite_id = null,
-                                .screen_position = row_rect.position(),
-                                .width = row_rect.width,
-                                .height = row_rect.height,
-                                .action = row.action,
-                            } });
-                            try elements.append(allocator, .{ .text_label = .{
-                                .text = attached_name,
-                                .screen_position = .{
-                                    .x = row_rect.x + ui_element.ui_gap,
-                                    .y = row_rect.y + @divFloor(
-                                        row_rect.height - editor_shell.editor_group_header_font_size,
-                                        2,
-                                    ),
-                                },
-                                .font_size = editor_shell.editor_group_header_font_size,
-                                .color = lightest,
-                                .blocks_input = false,
-                            } });
-                            entry_index += 2;
-                        }
                     }
-                    // The Import affordance (always present in the
-                    // expanded section - with or without a selected
-                    // mission).
+                    // The Import affordance - the mission inspector's
+                    // import entry point (a picked import lands UNWIRED
+                    // and selected - the author re-attaches it).
                     try elements.append(allocator, .{ .text_label = .{
                         .text = "Import",
                         .screen_position = .{
@@ -1355,11 +1354,11 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
     // select tool is the fixture's default) + the tool palette (the
     // select + hub cells x button + graphic, the mission cell's button +
     // the two-curve arrow graphic) + the inspector (toggle strip 3 + open
-    // panel 1 + the Mission section strip 3 - nothing selected, sections
-    // collapsed, so no content) + the metadata (toggle strip 3; CLOSED by
-    // default - the mission editor's default).
+    // panel 1 - NOTHING selected: no section strip, the panel is empty)
+    // + the metadata (toggle strip 3; CLOSED by default - the mission
+    // editor's default).
     const expected_total = 1 + 1 + 2 * editor.hubs.len + 3 * editor.missions.len +
-        7 + (3 + 1 + 3) + 3;
+        7 + (3 + 1) + 3;
     try std.testing.expectEqual(expected_total, elements.items.len);
 
     // The map surface is the FIRST solid_rect - NON-blocking by design
@@ -1381,7 +1380,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 4), blocking_panels); // the two toggle strips + the open inspector panel + its Mission section strip (metadata closed)
+    try std.testing.expectEqual(@as(usize, 3), blocking_panels); // the two toggle strips + the open inspector panel (nothing selected - no section strip)
 
     // The background: the stem minted into the content-addressed id,
     // native size, centered on the origin.
@@ -1870,10 +1869,9 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     // Derived total for the preview build: the map (1 surface + 1
     // background + 2/hub + 2 curves/mission - NO edge buttons under the
     // mission tool - + 2 preview curves) + palette 7 + the inspector
-    // (nothing selected, sections collapsed: strip 3 + panel 1 + section
-    // strip 3) + the metadata (open, collapsed: strip 3 + panel 1 +
-    // section strip 3).
+    // (toggle strip 3 + open panel 1 - nothing selected, empty) + the
+    // metadata (open, collapsed: strip 3 + panel 1 + section strip 3).
     const expected_preview_total = 1 + 1 + 2 * editor.hubs.len + 2 * editor.missions.len + 2 +
-        7 + 7 + 7;
+        7 + 4 + 7;
     try std.testing.expectEqual(expected_preview_total, preview_elements.items.len);
 }
