@@ -425,9 +425,6 @@ work:
     findings from saving + reopening the main campaign and clicking
     through both editors. Bugs first, then polish; the BOTH-editors
     items touch the mission editor too:
-    - [ ] A selected mission shows the animated highlight (selected
-          hubs already do; the mission select buttons over the
-          hit_curve arrows need the same selected-state render).
     - [ ] Nothing selected → an EMPTY inspector panel. Today the
           default view is an empty MISSION inspector; nothing should
           show when no hub/mission is selected. The empty-inspector
@@ -439,10 +436,6 @@ work:
           strip starts collapsed - mission editor AND campaign editor).
           Per-section default at the strip-emission sites; the user's
           collapse state stays as-is otherwise.
-    - [ ] BOTH editors: the Start Hub / End Hub re-attach button text
-          (mission inspector) + the Start Hub toggle (hub inspector)
-          render BLACK - theme lightest like every other button label
-          (campaign_editor.zig row emitters).
     - [ ] BOTH editors: Tab cycles the tools. Campaign editor: the
           three tools left-to-right (select → hub → mission → select).
           Mission editor: the always-active fixed tools plus any

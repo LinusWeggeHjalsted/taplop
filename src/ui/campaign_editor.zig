@@ -364,6 +364,9 @@ pub fn buildCampaignEditorView(
                 .height = bounds.height,
                 .action = .select_editor_campaign_mission,
                 .payload = .{ .editor_campaign_mission = mission.handle },
+                .highlighted = editor.selection != null and
+                    editor.selection.? == .mission and
+                    editor.selection.?.mission == mission.handle,
                 .hit_curve = hit_curve,
                 .tooltip = .{ .header = try spanRow(allocator, text(mission.name)) },
             } });
@@ -729,7 +732,7 @@ pub fn buildCampaignEditorView(
                             ),
                         },
                         .font_size = editor_shell.editor_group_header_font_size,
-                        .color = .{ .r = 0, .g = 0, .b = 0 },
+                        .color = lightest,
                         .blocks_input = false,
                     } });
                 }
@@ -872,7 +875,7 @@ pub fn buildCampaignEditorView(
                                     ),
                                 },
                                 .font_size = editor_shell.editor_group_header_font_size,
-                                .color = .{ .r = 0, .g = 0, .b = 0 },
+                                .color = lightest,
                                 .blocks_input = false,
                             } });
                             entry_index += 2;
@@ -1570,6 +1573,19 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     try std.testing.expectEqual(@as(u32, 0), start_toggle.?.payload.?.editor_campaign_hub);
     try std.testing.expect(start_toggle_label.?.len > "Start Hub".len); // "(toggle another to move)" rides the label
 
+    // The toggle's CONTROL text is theme lightest (the row shipped
+    // literal black once - the entry label above was already lightest).
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.startsWith(u8, label.text, "Start Hub (toggle") or
+                std.mem.eql(u8, label.text, "Set as Start Hub"))
+            {
+                try std.testing.expectEqual(test_theme.lightest, label.color);
+            }
+        },
+        else => {},
+    };
+
     // The tool palette: two cells carrying the campaign tool payloads,
     // the active tool highlighted.
     var select_cell: ?ui_element.Button = null;
@@ -1797,16 +1813,35 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
     try std.testing.expect(alpha_row); // m2's start hub named on the start row
     try std.testing.expect(beta_row); // its destination on the end row
 
-    // The select tool's edge buttons: one per mission, handle payloads.
+    // The re-attach rows' control text is theme lightest (the rows
+    // shipped literal black once).
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "Alpha") or std.mem.eql(u8, label.text, "Beta") or
+                std.mem.startsWith(u8, label.text, "Unattached"))
+            {
+                try std.testing.expectEqual(test_theme.lightest, label.color);
+            }
+        },
+        else => {},
+    };
+
+    // The select tool's edge buttons: one per mission, handle payloads;
+    // the SELECTED mission's button carries the animated highlight (the
+    // hub icons' selection treatment).
     var edge_buttons: usize = 0;
+    var highlighted_edges: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_editor_campaign_mission) {
             edge_buttons += 1;
-            _ = button.payload.? == .editor_campaign_mission;
+            const is_selected = button.payload.?.editor_campaign_mission == 3;
+            if (is_selected != button.highlighted) return error.TestUnexpectedResult;
+            if (button.highlighted) highlighted_edges += 1;
         },
         else => {},
     };
     try std.testing.expectEqual(editor.missions.len, edge_buttons);
+    try std.testing.expectEqual(@as(usize, 1), highlighted_edges);
 
     // The draw preview: an armed mission tool renders TWO extra curves
     // (the stroke pair) from the armed hub toward the pointer position.

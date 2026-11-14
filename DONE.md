@@ -344,6 +344,7 @@ working rules).
 - [campaign editor: the picker batch (punch-list items 2-4)](#campaign-editor-the-picker-batch-punch-list-items-2-4)
 - [campaign editor: the tool palette graphics (punch-list items 5-6)](#campaign-editor-the-tool-palette-graphics-punch-list-items-5-6)
 - [campaign editor: tool keybinds 1/2/3 (punch-list item 7)](#campaign-editor-tool-keybinds-123-punch-list-item-7)
+- [campaign editor: selection highlight + the inspector rows' text (punch-list items 8 + 12)](#campaign-editor-selection-highlight--the-inspector-rows-text-punch-list-items-8--12)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21174,3 +21175,20 @@ handleAnytimeInput (the tool switches + the switch rides the undo
 timeline). Note en route: the click arm had no handler-level coverage
 before - the new test covers keybind and cell click through the one
 site.
+
+## campaign editor: selection highlight + the inspector rows' text (punch-list items 8 + 12)
+
+- The SELECTED mission's edge button now carries the `highlighted` flag
+  (the hub icons' selection treatment - the animated highlight; the
+  edge buttons over the hit_curve arrows previously never set it, so a
+  selected mission looked identical to the rest).
+- The two remaining literal-black text labels in the campaign editor's
+  inspector are theme lightest like every other control: the hub
+  inspector's Start Hub toggle ("Start Hub (toggle another to move)" /
+  "Set as Start Hub") + the mission inspector's re-attach rows (the
+  attached hub names / "Unattached - click to attach" / the armed
+  "Click a hub on the map..." prompt).
+
+Tests: the mission-inspector view test pins the selected edge button's
+highlight (exactly one, the selected handle) + the re-attach row colors;
+the hub-inspector test pins the toggle's control color.
