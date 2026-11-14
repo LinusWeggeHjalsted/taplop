@@ -407,7 +407,7 @@ test "campaign editor events: start-hub radio + campaign name + background dims"
 
     // The background pick: stem stored + dims resolved against the REAL
     // embedded content (the official campaign's map.png - the current art
-    // is 994x998).
+    // is 1988x1996, the 2x Lanczos upscale for the 4k reference space).
     var history_two = harness.newHistory(campaignEditorEventFixtureState());
     history_two.current_state.campaign_editor.?.campaign_dir = "campaigns/main_campaign";
     event_push.pushEvents(
@@ -420,7 +420,7 @@ test "campaign editor events: start-hub radio + campaign name + background dims"
     runToIdle(&history_two);
     const with_background = history_two.current_state.campaign_editor.?;
     try testing.expectEqualStrings("map", with_background.background_stem);
-    try testing.expectEqual(types.Vector2{ .x = 994, .y = 998 }, with_background.background_dims.?);
+    try testing.expectEqual(types.Vector2{ .x = 1988, .y = 1996 }, with_background.background_dims.?);
 }
 
 test "campaign editor background picker: open, pick (stem + dims + close in one undo step), undo restores" {
@@ -453,7 +453,7 @@ test "campaign editor background picker: open, pick (stem + dims + close in one 
     runToIdle(&history);
     const editor = history.current_state.campaign_editor.?;
     try testing.expectEqualStrings("map", editor.background_stem);
-    try testing.expectEqual(types.Vector2{ .x = 994, .y = 998 }, editor.background_dims.?);
+    try testing.expectEqual(types.Vector2{ .x = 1988, .y = 1996 }, editor.background_dims.?);
     // The pick + close are ONE undo step: undo restores the open picker
     // AND the pre-pick background.
     try testing.expect(history.undo(event_handlers.processEvent));
