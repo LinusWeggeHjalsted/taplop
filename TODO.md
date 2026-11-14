@@ -70,7 +70,10 @@ Test by running `zig build run` and clicking through.
       session added two of the four). A shared
       `embeddedDirFiles(allocator, dir)` helper would freeze it; watch
       the comptime-materialization gotcha (runtime slicing of the map
-      keys is the reliable shape - AGENTS → Zig Gotchas).
+      keys is the reliable shape - AGENTS → Zig Gotchas). The
+      content-hash v2 slice (Content Loading / Custom Missions) is the
+      fifth consumer - it lands the helper, so fold this item's
+      resolution into that pass.
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
@@ -741,6 +744,23 @@ looking:
 - Async wrinkle: online fetch / zip read is async on web. Acquisition must
   fully populate the source ("loading mission...") before emitting
   start_mission.
+
+- **Content hash v2 - artifact scope (design settled - DESIGN → Custom
+  Missions & Online Services → Content identity):** the mission content
+  hash covers configs + the mission folder's PNGs (the artifact set minus
+  records), not configs alone - today an art-only edit leaves a validation
+  replay looking "validated" (the staleness gate misses it). The hash
+  change invalidates existing validation replays - accepted one-time
+  wipe, no migration. Slices:
+  1. FileSource dir listing for a content path (embedded map-key scan +
+     persistent iterate, resolution matching readFile) - the shared
+     `embeddedDirFiles` helper that also resolves the hand-rolled
+     embedded-dir walks item in NEXT UP.
+  2. `computeMissionHash` over configs + PNGs; contract tests (PNG byte
+     change re-hashes; a stray non-artifact file does not; a validation
+     replay change does not).
+  3. The mission version hash + campaign version hash land with the
+     server seam (no local consumer yet - dead code until upload exists).
 
 ## Online Services
 

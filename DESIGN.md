@@ -2813,26 +2813,61 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
 
 ### Content identity
 
-Two distinct IDs, serving different needs:
+Three identity axes here - the hash scope, the challenge identity, the
+version identity - plus a server-assigned publishable ID. (The authored
+uuid, the cross-version identity, is the fourth axis: Campaigns & the
+Campaign Editor → Content identity (uuids everywhere).)
 
-- **Content hash (local, derived):** SHA-256 over the mission's raw file
-  bytes - `mission.txt`, `player.txt`, all `level_N.txt`, and any custom
-  assets under the mission's folder. Canonicalization for v1: sort file
-  paths lexicographically, hash each file as a path-prefixed entry
-  (`<path>\n<bytes>`), concatenate, SHA-256. NO line-ending normalization
-  for now (our files are authored consistently); tighten only if
-  cross-platform drift shows up. The hash is a DERIVED property (computed
-  on demand), not a stored field on Mission. It is load-bearing for replay
-  pinning in two places: the session-log bundle's manifest carries a
-  PER-FILE SHA-256 (the integrity check + dedup key of the embedded copies
-  - see Logging & Replay → Session-log bundle), and this mission-level
-  content hash gates the validation replay's staleness (a mission edited
-  since its replay was recorded shows "unvalidated" - see Validation
-  replay below). This is pure local, no server needed.
+- **The artifact file set (what every hash below covers):** the canonical
+  ARTIFACT - exactly the file set the export bundles and a downloader
+  receives: `mission.txt`, `player.txt` (optional), `level_1..level_N.txt`,
+  every PNG in the mission folder, and `validation_replay.txt` (when
+  present). The manifest IS the export list; it grows only with what
+  export bundles (audio when it exists). Stray files in the folder
+  (author notes, OS junk) are in NO hash: identity follows the artifact,
+  not the raw folder - the server only ever sees the artifact, so the
+  client's "what changed" must match the server's byte-for-byte.
+  Invariant: the version-hash set = the content-hash set + the record
+  files.
+- **Content hash (local, derived - the CHALLENGE identity):** SHA-256 over
+  the artifact MINUS the game-written records (`validation_replay.txt`).
+  Canonicalization: sort file paths lexicographically, hash each file as a
+  path-prefixed entry (`<path>\n<bytes>`), concatenate, SHA-256. NO
+  line-ending normalization for now (our files are authored consistently);
+  tighten only if cross-platform drift shows up. The hash is a DERIVED
+  property (computed on demand), not a stored field on Mission. The record
+  exclusion is what makes replay pinning non-circular: the content hash is
+  stored INSIDE the validation replay (the staleness gate), so hashing the
+  replay into it would make every just-written replay stale on arrival.
+  Load-bearing for replay pinning in two places: the session-log bundle's
+  manifest carries a PER-FILE SHA-256 (the integrity check + dedup key of
+  the embedded copies - see Logging & Replay → Session-log bundle), and
+  this mission-level content hash gates the validation replay's staleness
+  (a mission edited since its replay was recorded shows "unvalidated" -
+  see Validation replay below) + the personal-best overwrite decision.
+  Mission leaderboards key by `(mission_uuid, content_hash)`: boards
+  re-key on content edits ONLY - an author re-validating unchanged
+  content keeps the same key (the medal targets update under it). Pure
+  local, no server needed.
+- **Version hash (the WHOLE-ARTIFACT identity, for server versioning):**
+  SHA-256 over the ENTIRE artifact set, no exclusions - the validation
+  replay included. NEVER stored inside the artifact (computed at upload
+  time); nothing inside the artifact pins it, so there is no circularity.
+  The server's version-dedup key: an upload under an existing uuid
+  creates a new version iff the version hash differs. Content-hash-equal
+  + version-hash-different is exactly the re-validation case (new author
+  medal targets, unchanged gameplay content) - keying versions by the
+  content hash would reject that upload as a duplicate and strand the
+  author's improved PB on their own machine. The replay's embedded
+  `created` timestamp means every re-validation changes bytes even for an
+  identical run - one version per re-validation is ACCEPTED (a new replay
+  is a new artifact; version histories show "content unchanged, medals
+  updated" entries).
 - **Publishable ID (server-assigned, stable across versions):** a UUID/slug
-  assigned at publish time, with each version carrying its own content hash.
-  A leaderboard entry pins to a version (content hash); a mission's profile
-  page aggregates versions. Out of scope until the server seam lands.
+  assigned at publish time, with each version carrying its own version
+  hash. A leaderboard entry pins to a challenge (content hash); a
+  mission's profile page aggregates versions. Out of scope until the
+  server seam lands.
 
 ### Turn counters + author medals
 
@@ -3190,11 +3225,16 @@ never asks for a uuid by hand.
   convention, extended): the uuid is the CROSS-VERSION identity - random
   v4, minted WRITE-ONLY at the file's birth (the save path; never into
   GameState - `generateMissionUuid`'s replay rule), persistent across
-  edits and renames; the content hash (SHA-256 over the config files,
-  `computeMissionHash`) is the EXACT-VERSION identity for the server seam
-  (leaderboards, revalidation). Campaign content hashing is deferred
-  until that seam needs it (full campaign validation + server-side
-  versioning are the known consumers).
+  edits and renames; the content hash (the CHALLENGE identity - the
+  two-axis doctrine + the artifact-scope rule live in Custom Missions &
+  Online Services → Content identity) pins replays and leaderboard keys.
+  Campaign hashing follows the same axes over the whole campaign
+  artifact tree: the campaign VERSION hash (no exclusions - mission
+  validation replays included; a re-validated mission IS a changed
+  distributed artifact) is the server-side versioning key for uploaded
+  campaigns; the campaign CONTENT hash (the same tree minus record
+  files) is deferred until full campaign validation or campaign
+  leaderboards need it.
 - **Three attributes, cleanly separated**: uuid = identity (authored,
   immutable); dir name = storage (arbitrary, never referenced); display
   name = label (just a field, freely editable, may collide).
