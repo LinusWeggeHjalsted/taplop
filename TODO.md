@@ -16,6 +16,19 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered - pick what progresses)
 
+- **HIGH PRIORITY - the shipped default_settings.txt carries no conflict
+  lint** (found in the punch-list session): the 3e wiring shipped
+  save_campaign's ctrl+S on the SAME combo + SAME context as
+  save_editor_mission's - first-listed-wins made the binding dead on
+  arrival, and the only detection was the runtime load warning + drop
+  + repair (silent to devs: the chord was "just dead" rather than
+  erroring). Nothing prevents the class from shipping again. Fix: a
+  test that loads the SHIPPED defaults (data/default_settings.txt
+  through the real loadSettings) + asserts ZERO binding warnings - a
+  same-combo co-firing pair in the shipped file becomes a test failure
+  instead of a silent runtime repair. (The runtime machinery itself is
+  sound - USER files are warned + repaired; the gap is only over our
+  own shipped file.)
 - **No-op clicks still play the action sound (session reflection,
       accepted-for-now)** - the fired-actions sound choke point queues at
       the ACTION layer, but a consumption arm can no-op silently (the
@@ -47,6 +60,17 @@ Test by running `zig build run` and clicking through.
       through a mission-shaped helper would fit, not belong; revisit if a
       fourth scanner appears). A shared scan helper would freeze the rest.
       Not urgent - a line to keep it visible.
+- **The embedded-dir file scan is hand-rolled in four places
+      (punch-list session rider, same family as the mission-scan item
+      above)** - `embeddedHubDirs` (loaders.zig),
+      `officialMissionDirPathsForCampaign` (file_source.zig),
+      `copyDirFiles` + `rescanCampaignBackgroundStems`
+      (campaign_editor) each walk `embeddedMapKeys` with a
+      `data/<dir>/` prefix + a direct-file filter (the fork-on-save
+      session added two of the four). A shared
+      `embeddedDirFiles(allocator, dir)` helper would freeze it; watch
+      the comptime-materialization gotcha (runtime slicing of the map
+      keys is the reliable shape - AGENTS → Zig Gotchas).
 - **Campaign editor + world map** - the next major work: design SETTLED
   (DESIGN → Campaigns & the Campaign Editor - the hub/mission graph,
   discovery + travel, the world-map mirror, the campaign view + hub
@@ -421,6 +445,21 @@ work:
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
         field is the v1 path).
+  - **The campaign editor's UI files mirror the mission editor's
+        structure** (session-reflection note): the two editors are
+        parallel systems - keep the FILES parallel where sensible.
+        src/campaign_editor/{handlers,io,load}.zig already mirror
+        src/editor/{handlers,mission_io}.zig; the gap is the UI:
+        src/ui/campaign_editor.zig carries the map view + BOTH pickers
+        + the inspector + the metadata sidebar + the palette + ~900
+        lines of tests (~1,900 total - the editor_inspector drift
+        pattern; see the split note in Tech Debt). Split along the
+        mission editor's seams: the tool palette → an editor_shell
+        sibling, the inspector + metadata sidebar → an
+        editor_inspector sibling, the centered pickers → an
+        editor_pickers sibling (campaign_geometry stays shared with
+        the world map - the one data-model-two-renderers file). Do it
+        as its own session, not a rider on feature work.
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
