@@ -72,6 +72,25 @@ pub fn handleHubEditorEvent(
 
     switch (event) {
         .hub_set_tool => |set| {
+            // Defensive against crafted logs (the editor_set_tool posture):
+            // a mission tool must address an OUTGOING mission (start ==
+            // this hub - the palette's live membership); an NPC tool is
+            // always valid (the fixed enum).
+            switch (set.tool) {
+                .mission => |mission_handle| {
+                    var outgoing = false;
+                    for (campaign_editor.missions) |mission| {
+                        if (mission.handle == mission_handle and
+                            mission.start != null and mission.start.? == hub_editor.hub)
+                        {
+                            outgoing = true;
+                            break;
+                        }
+                    }
+                    if (!outgoing) return;
+                },
+                .select, .tile, .npc => {},
+            }
             hub_editor.active_tool = set.tool;
             // Invariant: selection nonempty <=> active tool is select - a
             // switch away takes the selection with it (same event, one
@@ -165,6 +184,126 @@ pub fn handleHubEditorEvent(
             );
             campaign_editor.hubs = hubs;
         },
+        .hub_place_npc => |place| {
+            const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
+            var hubs = mutableHubCopy(campaign_editor, allocator);
+            const grid = &hubs[index].grid;
+            // One thing per cell (the entity-placement posture): the
+            // planner clears occupants first, so reaching here occupied
+            // is a logic bug - fail fast.
+            for (grid.npc_placements) |placement| {
+                if (placement.position.x == place.position.x and placement.position.y == place.position.y) {
+                    @panic("hub_place_npc onto an occupied cell");
+                }
+            }
+            for (grid.exit_placements) |placement| {
+                if (placement.position.x == place.position.x and placement.position.y == place.position.y) {
+                    @panic("hub_place_npc onto an exit marker");
+                }
+            }
+            const placements = allocator.alloc(types.NPC, grid.npc_placements.len + 1) catch
+                @panic("failed to allocate hub npc placements");
+            @memcpy(placements[0..grid.npc_placements.len], grid.npc_placements);
+            placements[grid.npc_placements.len] = .{
+                .npc_type = place.npc_type,
+                .position = place.position,
+            };
+            grid.npc_placements = placements;
+            campaign_editor.hubs = hubs;
+        },
+        .hub_delete_npc_placement => |delete| {
+            const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
+            var hubs = mutableHubCopy(campaign_editor, allocator);
+            const grid = &hubs[index].grid;
+            if (delete.placement_index >= grid.npc_placements.len) {
+                @panic("hub_delete_npc_placement: placement index out of range");
+            }
+            // Order-preserving removal - placement indices are the identity
+            // the move/delete events address.
+            const removal: usize = @intCast(delete.placement_index);
+            const placements = allocator.alloc(
+                types.NPC,
+                grid.npc_placements.len - 1,
+            ) catch @panic("failed to allocate hub npc placements");
+            @memcpy(placements[0..removal], grid.npc_placements[0..removal]);
+            @memcpy(placements[removal..], grid.npc_placements[removal + 1 ..]);
+            grid.npc_placements = placements;
+            hub_editor.selection = editor_handlers.reconcileSelectionAfterPlacementDelete(
+                hub_editor.selection,
+                .npc_placement,
+                delete.placement_index,
+                allocator,
+            );
+            campaign_editor.hubs = hubs;
+        },
+        .hub_set_exit_marker => |set| {
+            const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
+            var hubs = mutableHubCopy(campaign_editor, allocator);
+            const grid = &hubs[index].grid;
+            // The UPSERT: replace the mission's own entry in place, or
+            // append when it has none (one marker per mission - the
+            // layout format's one digit per cell). Another mission's
+            // marker on the same cell is a crafted-log shape the planner
+            // never produces - fail fast (the one-marker-per-cell rule).
+            var upserted = false;
+            const placements = allocator.alloc(types.ExitPlacement, grid.exit_placements.len + @intFromBool(!upserted)) catch
+                @panic("failed to allocate hub exit placements");
+            var length: usize = 0;
+            for (grid.exit_placements) |placement| {
+                if (placement.mission == set.mission) {
+                    placements[length] = .{ .mission = set.mission, .position = set.position };
+                    length += 1;
+                    upserted = true;
+                    continue;
+                }
+                if (placement.position.x == set.position.x and placement.position.y == set.position.y) {
+                    @panic("hub_set_exit_marker onto another mission's marker");
+                }
+                placements[length] = placement;
+                length += 1;
+            }
+            if (!upserted) {
+                placements[length] = .{ .mission = set.mission, .position = set.position };
+                length += 1;
+            }
+            grid.exit_placements = placements[0..length];
+            campaign_editor.hubs = hubs;
+        },
+        .hub_delete_exit_marker => |delete| {
+            const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
+            var hubs = mutableHubCopy(campaign_editor, allocator);
+            const grid = &hubs[index].grid;
+            // Keyed removal (the mission handle); the selection reconcile
+            // is index-keyed, so a selected exit entry is dropped the
+            // conservative way: any selected exit index beyond the new
+            // list is stale by the next plan's validation - the live
+            // path deletes via the plan's own selection fan, which
+            // reconciles inside the generic delete arms. Simplest sound
+            // shape: drop ALL selected exit entries (a marker deletion
+            // rarely coincides with a multi-marker selection, and a
+            // stale index would address the WRONG mission).
+            var length: usize = 0;
+            const placements = allocator.alloc(types.ExitPlacement, grid.exit_placements.len) catch
+                @panic("failed to allocate hub exit placements");
+            for (grid.exit_placements) |placement| {
+                if (placement.mission == delete.mission) continue;
+                placements[length] = placement;
+                length += 1;
+            }
+            grid.exit_placements = placements[0..length];
+            {
+                var kept: usize = 0;
+                const rebuilt = allocator.alloc(types.Selectable, hub_editor.selection.len) catch
+                    @panic("failed to allocate hub editor selection");
+                for (hub_editor.selection) |selected| {
+                    if (selected == .exit_placement) continue;
+                    rebuilt[kept] = selected;
+                    kept += 1;
+                }
+                hub_editor.selection = rebuilt[0..kept];
+            }
+            campaign_editor.hubs = hubs;
+        },
         .hub_set_player_start => |set| {
             const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
             var hubs = mutableHubCopy(campaign_editor, allocator);
@@ -179,6 +318,8 @@ pub fn handleHubEditorEvent(
             const hub = drilledHub(current) orelse return;
             const entry_valid = switch (select.entry) {
                 .decoration_placement => |placement_index| placement_index < hub.grid.decoration_placements.len,
+                .npc_placement => |placement_index| placement_index < hub.grid.npc_placements.len,
+                .exit_placement => |placement_index| placement_index < hub.grid.exit_placements.len,
                 .tile, .player_start => true,
                 // Mission vocabulary a hub selection never carries (the
                 // hub grid has no entities/items/level_end).
@@ -224,6 +365,24 @@ pub fn handleHubEditorEvent(
                     plan.appendSlice(
                         allocator,
                         planning.planHubTilePaintActions(hub, campaign_editor.decoration_types, position, allocator),
+                    ) catch @panic("failed to allocate hub editor selection move plan");
+                },
+                .npc => |move_entry| {
+                    plan.appendSlice(
+                        allocator,
+                        planning.gridStepsToHubEvents(
+                            planning.planGridNpcPlacement(&hub.grid, campaign_editor.decoration_types, move_entry.npc_type, move_entry.position, allocator),
+                            allocator,
+                        ),
+                    ) catch @panic("failed to allocate hub editor selection move plan");
+                },
+                .exit_marker => |move_entry| {
+                    plan.appendSlice(
+                        allocator,
+                        planning.gridStepsToHubEvents(
+                            planning.planGridExitPlacement(&hub.grid, campaign_editor.decoration_types, move_entry.mission, move_entry.position, allocator),
+                            allocator,
+                        ),
                     ) catch @panic("failed to allocate hub editor selection move plan");
                 },
                 .player_start => |position| {

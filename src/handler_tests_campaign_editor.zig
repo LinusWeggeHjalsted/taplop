@@ -83,10 +83,10 @@ test "open_campaign_editor: the official campaign projects into the authored gra
         seen_directions[@intCast(direction / 90)] = true;
     }
     try testing.expect(seen_directions[0] and seen_directions[1] and seen_directions[2] and seen_directions[3]);
-    try testing.expectEqual(@as(usize, 4), hub.exit_placements.len);
+    try testing.expectEqual(@as(usize, 4), hub.grid.exit_placements.len);
     // Each placement addresses a distinct mission (one marker per mission).
-    for (hub.exit_placements, 0..) |placement, index| {
-        for (hub.exit_placements[index + 1 ..]) |other| {
+    for (hub.grid.exit_placements, 0..) |placement, index| {
+        for (hub.grid.exit_placements[index + 1 ..]) |other| {
             try testing.expect(placement.mission != other.mission);
         }
     }
@@ -225,9 +225,11 @@ fn campaignEditorEventFixtureState() state.GameState {
                     .uuid = "a",
                     .name = "Alpha",
                     .position = .{ .x = -200, .y = 0 },
-                    .exit_placements = &.{
-                        .{ .mission = 2, .position = .{ .x = 1, .y = 1 } },
-                        .{ .mission = 5, .position = .{ .x = 2, .y = 2 } },
+                    .grid = .{
+                        .exit_placements = &.{
+                            .{ .mission = 2, .position = .{ .x = 1, .y = 1 } },
+                            .{ .mission = 5, .position = .{ .x = 2, .y = 2 } },
+                        },
                     },
                 },
                 .{ .handle = 1, .uuid = "b", .name = "Beta", .position = .{ .x = 400, .y = 300 } },
@@ -580,7 +582,7 @@ test "campaign editor mission events: place (anchor minting), re-attach, delete,
     editor = history.current_state.campaign_editor.?;
     try testing.expectEqual(@as(?u32, 1), editor.missions[0].start);
     try testing.expect(editor.missions[0].orphan_start_position == null);
-    try testing.expectEqual(@as(usize, 1), editor.hubs[0].exit_placements.len); // m1's marker gone, m4's stays
+    try testing.expectEqual(@as(usize, 1), editor.hubs[0].grid.exit_placements.len); // m1's marker gone, m4's stays
 
     // Delete m4 (its start IS hub 0 - its marker lives there): the entry
     // + its marker in the start hub go together.
@@ -593,7 +595,7 @@ test "campaign editor mission events: place (anchor minting), re-attach, delete,
     );
     runToIdle(&history);
     editor = history.current_state.campaign_editor.?;
-    try testing.expectEqual(@as(usize, 0), editor.hubs[0].exit_placements.len);
+    try testing.expectEqual(@as(usize, 0), editor.hubs[0].grid.exit_placements.len);
     var found_m4 = false;
     for (editor.missions) |mission| {
         if (mission.handle == 5) found_m4 = true;
@@ -664,13 +666,13 @@ test "campaign editor: right-click on a mission edge deletes the mission (the ed
     }
     // The deleted mission's marker left Alpha with it; the surviving
     // marker for mission 5 stays.
-    try testing.expectEqual(@as(usize, 1), editor.hubs[0].exit_placements.len);
-    try testing.expectEqual(@as(u32, 5), editor.hubs[0].exit_placements[0].mission);
+    try testing.expectEqual(@as(usize, 1), editor.hubs[0].grid.exit_placements.len);
+    try testing.expectEqual(@as(u32, 5), editor.hubs[0].grid.exit_placements[0].mission);
     // The deletion is a recorded player action - undo restores the edge
     // and its marker.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(usize, 4), history.current_state.campaign_editor.?.missions.len);
-    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs[0].exit_placements.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs[0].grid.exit_placements.len);
 }
 
 test "campaign editor: the mission tool's draw gesture - arm, place, cancel via clean right-click" {
@@ -769,11 +771,11 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
                         },
                         .player_start = .{ .x = 0, .y = 0 },
                         .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 2, .y = 0 } }},
-                    },
-                    .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 1 } }},
-                    .exit_placements = &.{
-                        .{ .mission = 2, .position = .{ .x = 1, .y = 0 } },
-                        .{ .mission = 3, .position = .{ .x = 0, .y = 1 } },
+                        .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 1 } }},
+                        .exit_placements = &.{
+                            .{ .mission = 2, .position = .{ .x = 1, .y = 0 } },
+                            .{ .mission = 3, .position = .{ .x = 0, .y = 1 } },
+                        },
                     },
                 },
                 .{
@@ -857,9 +859,9 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     try testing.expectEqualStrings("Alpha", reloaded.hubs[0].name);
     try testing.expectEqualStrings(hub_memo.uuid, reloaded.hubs[0].uuid);
     try testing.expectEqual(types.Vector2{ .x = -200, .y = 0 }, reloaded.hubs[0].position);
-    try testing.expectEqual(@as(usize, 1), reloaded.hubs[0].npc_placements.len);
+    try testing.expectEqual(@as(usize, 1), reloaded.hubs[0].grid.npc_placements.len);
     try testing.expectEqual(@as(usize, 1), reloaded.hubs[0].grid.decoration_placements.len);
-    try testing.expectEqual(@as(usize, 2), reloaded.hubs[0].exit_placements.len);
+    try testing.expectEqual(@as(usize, 2), reloaded.hubs[0].grid.exit_placements.len);
     try testing.expectEqual(@as(usize, 1), reloaded.decoration_types.len);
 
     try testing.expectEqual(@as(usize, 3), reloaded.missions.len);
@@ -989,10 +991,10 @@ test "validateSavedCampaign: the file-level findings popup + the clean success" 
                     .grid = .{
                         .level_tiles = &.{.{ .x = 0, .y = 0 }},
                         .player_start = .{ .x = 0, .y = 0 },
-                    },
-                    .exit_placements = &.{
-                        .{ .mission = 2, .position = .{ .x = 0, .y = 0 } },
-                        .{ .mission = 3, .position = .{ .x = 0, .y = 0 } },
+                        .exit_placements = &.{
+                            .{ .mission = 2, .position = .{ .x = 0, .y = 0 } },
+                            .{ .mission = 3, .position = .{ .x = 0, .y = 0 } },
+                        },
                     },
                 },
             },
@@ -1090,9 +1092,9 @@ test "validateSavedCampaign: the file-level findings popup + the clean success" 
                     .grid = .{
                         .level_tiles = &.{.{ .x = 0, .y = 0 }},
                         .player_start = .{ .x = 0, .y = 0 },
-                    },
-                    .exit_placements = &.{
-                        .{ .mission = 1, .position = .{ .x = 0, .y = 0 } },
+                        .exit_placements = &.{
+                            .{ .mission = 1, .position = .{ .x = 0, .y = 0 } },
+                        },
                     },
                 },
             },
@@ -1519,9 +1521,9 @@ test "hub editor framing: open drills in, close returns, the scope rule owns the
                     .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 2 } },
                     .player_start = .{ .x = 0, .y = 0 },
                     .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 3, .y = 2 } }},
+                    .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
+                    .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
                 },
-                .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
-                .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
             }},
             .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
             .decoration_types = &.{
@@ -1813,4 +1815,121 @@ test "hub editor events: the decoration placement + delete + selection reconcile
     // (Asserted by the panic path - not unit-testable per the no-
     // expectPanics convention; the hub-readiness planning test pins the
     // no-op ordering that keeps it unreachable.)
+}
+
+test "hub editor events: the NPC placement, the exit-marker upsert + delete over the drilled-in hub" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
+            .next_handle = 6,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .select },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The NPC tool click (the orchestrator): places the NPC + its ground
+    // tile in one plan.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_hub_npc = .{
+            .npc_type = .dream_guide,
+            .position = .{ .x = 3, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+        try testing.expectEqual(@as(usize, 1), grid.npc_placements.len);
+        try testing.expectEqual(types.NpcType.dream_guide, grid.npc_placements[0].npc_type);
+        try testing.expectEqual(@as(usize, 2), grid.level_tiles.len); // the ground ensured
+    }
+
+    // The mission tool click (the orchestrator): the upsert creates the
+    // marker + its ground; the co-located NPC yields.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_hub_exit_marker = .{
+            .mission = 5,
+            .position = .{ .x = 3, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+        try testing.expectEqual(@as(usize, 1), grid.exit_placements.len);
+        try testing.expectEqual(types.Vector2{ .x = 3, .y = 0 }, grid.exit_placements[0].position);
+        try testing.expectEqual(@as(usize, 0), grid.npc_placements.len); // yielded to the marker
+    }
+
+    // Placing the same mission elsewhere MOVES the marker (the upsert).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_hub_exit_marker = .{
+            .mission = 5,
+            .position = .{ .x = 4, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+        try testing.expectEqual(@as(usize, 1), grid.exit_placements.len);
+        try testing.expectEqual(types.Vector2{ .x = 4, .y = 0 }, grid.exit_placements[0].position);
+    }
+
+    // The right-click delete's marker tier (the orchestrator): the
+    // marker goes, the graph wiring survives, the ground stays.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_hub_at = .{
+            .position = .{ .x = 4, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 0), editor.hubs[0].grid.exit_placements.len);
+        try testing.expectEqual(@as(usize, 1), editor.missions.len); // the mission survives
+        try testing.expectEqual(@as(usize, 3), editor.hubs[0].grid.level_tiles.len); // the ground survives ((0,0) + both marker grounds)
+    }
+
+    // A crafted mission tool for a NON-outgoing mission is rejected at
+    // the tool switch (the editor_set_tool posture).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_hub_tool = .{
+            .tool = .{ .mission = 99 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.hub_editor.?.active_tool == .select);
 }

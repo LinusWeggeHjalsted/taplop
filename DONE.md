@@ -365,6 +365,7 @@ working rules).
 - [campaign-editor slice 4-2: the planner extraction - the neutral grid core under the mission editor's facades](#campaign-editor-slice-4-2-the-planner-extraction---the-neutral-grid-core-under-the-mission-editors-facades)
 - [campaign-editor slice 4-3a: hub grid editing - the event family, handlers, facades, palette](#campaign-editor-slice-4-3a-hub-grid-editing---the-event-family-handlers-facades-palette)
 - [campaign-editor slice 4-3b: the hub editor's gestures + view overlays](#campaign-editor-slice-4-3b-the-hub-editors-gestures--view-overlays)
+- [campaign-editor slice 4-4a: the NPC + exit-marker tools - the placements join the grid](#campaign-editor-slice-4-4a-the-npc--exit-marker-tools---the-placements-join-the-grid)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22126,3 +22127,51 @@ mission editor:
   assumption.
 
 1010 green.
+
+## campaign-editor slice 4-4a: the NPC + exit-marker tools - the placements join the grid
+
+The hub editor's content tools (the first half of 4-4; the inspector
+panel is 4-4b):
+
+- **THE STATE MOVE that paid for everything**: `npc_placements` +
+  `exit_placements` migrated from CampaignHubEdit into its EditorLevel
+  grid (hub-only kinds, empty in mission levels by invariant). The
+  entire slice-4 investment - click groups, delete fans, region select,
+  move chains, selection overlays - now covers NPCs + exit markers with
+  zero new machinery; the migration touched 5 files + fixtures and the
+  suite stayed green.
+- **The vocabulary**: Selectable += `npc_placement` / `exit_placement`;
+  EditorSelectionMoveEntry += `npc` / `exit_marker` (the exit keyed by
+  its MISSION HANDLE - the upsert rule); GridStep += place/delete NPC +
+  set/delete exit marker. Every exhaustive switch extended (the
+  compiler drove all 12 sites); the mission mapper's hub arms are
+  unreachable by construction and say so.
+- **The planners** (planning.zig, core-level): planGridNpcPlacement
+  (the entity tool's occupant semantics over the hub kinds: retype =
+  delete + place in one plan, ground ensured, covering decorations
+  replaced) + planGridExitPlacement (the UPSERT: placing moves the
+  mission's marker wherever it was; the '!' / '=' protected; ANOTHER
+  mission's marker pins the cell - one layout char per cell; a
+  co-located NPC YIELDS - content vs markers). The delete chain gains
+  the marker tier FIRST (progressive: the marker goes alone - removing
+  one is the deliberate unstartable-mission act); the click group makes
+  the marker its own singleton group (graph wiring, like the '!') and
+  the NPC joins the tile group.
+- **The events + handlers**: hub_place/delete_npc_placement,
+  hub_set_exit_marker (the upsert: replace-in-place or append; a
+  same-cell foreign marker is the fail-fast class),
+  hub_delete_exit_marker (keyed removal; the selected exit entries drop
+  whole - an index-keyed reconcile would address the WRONG mission
+  after a keyed removal). hub_set_tool validates a mission tool against
+  the live outgoing membership (the editor_set_tool posture).
+- **The palette**: the NPCs group (the two fixed NpcType cells, sprites
+  derived) + the Missions group (one cell per outgoing mission, LIVE
+  membership - the one coupling; the flag graphic + the mission name).
+  The Tab cycle grows through the arms (the mission editor's spatial
+  cycle). Row.advance joins the Row algebra (the group-header offset).
+- **Runtime-verified end to end**: a self-loop mission CREATED ON THE
+  CAMPAIGN MAP appears in the drilled-in palette (the live coupling),
+  its marker places with the ground ensured, and the spawn's tile
+  refuses it (the protection rules) - all over the console channel.
+
+1014 green.

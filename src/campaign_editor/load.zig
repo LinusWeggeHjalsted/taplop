@@ -242,7 +242,7 @@ pub fn loadCampaignEditorIntoState(
         hub_entries.items[hub_index].grid.level_tiles = hub.hub_tiles;
         hub_entries.items[hub_index].grid.player_start = hub.player.position;
         hub_entries.items[hub_index].grid.color_wheel_index = hub.color_wheel_index;
-        hub_entries.items[hub_index].npc_placements = hub.npcs;
+        hub_entries.items[hub_index].grid.npc_placements = hub.npcs;
 
         // Decorations -> the campaign-SHARED palette: dedup by the full
         // visual identity (the buildEditorMission pattern), placements
@@ -360,7 +360,7 @@ pub fn loadCampaignEditorIntoState(
                 .position = exit.position,
             }) catch @panic("failed to append exit placement");
         }
-        hub_entries.items[hub_index].exit_placements =
+        hub_entries.items[hub_index].grid.exit_placements =
             exit_placements.toOwnedSlice(allocator) catch
                 @panic("failed to own exit placements slice");
     }

@@ -960,6 +960,35 @@ pub const HubEditorEvent = union(enum) {
         placement_index: u32,
     },
 
+    // ── NPCs + exit markers (the 4-4 kinds) ──
+    // Place an NPC of `npc_type` at `position` (the NPC tool / the move
+    // chain's re-placement). Enforces the one-thing-per-cell exclusivity
+    // (panic on an occupied cell - the delete-first ordering is the
+    // planner's contract); the tile under it is a separate set_tile.
+    hub_place_npc: struct {
+        npc_type: types.NpcType,
+        position: Vector2,
+    },
+    // Order-preserving NPC removal; reconciles the selection like the
+    // decoration removal.
+    hub_delete_npc_placement: struct {
+        placement_index: u32,
+    },
+    // UPSERT the mission's exit marker at `position` (the mission tool's
+    // click): creates the marker or MOVES the mission's existing one,
+    // wherever it was (one marker per mission - the layout format's one
+    // digit per cell). The mission is a campaign HANDLE.
+    hub_set_exit_marker: struct {
+        mission: u32,
+        position: Vector2,
+    },
+    // Remove the mission's exit marker (the right-click delete's marker
+    // tier). The mission becomes unstartable - a validation finding, a
+    // deliberate act; the graph wiring is untouched.
+    hub_delete_exit_marker: struct {
+        mission: u32,
+    },
+
     // ── The spawn ──
     // Move the player-spawn marker ('!'). Singleton by construction - a
     // hub grid has no level_end, so the mission editor's marker-overlap
@@ -1475,6 +1504,18 @@ pub const PlayerInputEvent = union(enum) {
     // tile, covering decorations replaced (the player_paint_editor_tile
     // contract).
     player_paint_hub_tile: struct {
+        position: Vector2,
+    },
+    // NPC-tool click over the hub grid (the player_place_editor_entity
+    // contract over the hub kinds).
+    player_place_hub_npc: struct {
+        npc_type: types.NpcType,
+        position: Vector2,
+    },
+    // Mission-tool click over the hub grid: upsert that mission's exit
+    // marker at the position (the move-or-create rule).
+    player_place_hub_exit_marker: struct {
+        mission: u32,
         position: Vector2,
     },
     // Select-tool plain click over the hub grid: REPLACE the selection

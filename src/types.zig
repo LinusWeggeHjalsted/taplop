@@ -2874,6 +2874,18 @@ pub const EditorLevel = struct {
     /// placement points into Editor.item_types. See DESIGN → Architecture →
     /// Level Editor → Editor UI layout (Ground items - the Items palette).
     item_placements: []const ItemPlacement = &.{},
+    /// HUB-GRID-only placement kinds (a hub's NPCs + its outgoing exit
+    /// markers - DESIGN → Campaigns & the Campaign Editor → The hub
+    /// editor surface): a mission level NEVER populates them (empty by
+    /// default; nothing in the mission editor reads or writes them), so
+    /// the whole slice-4 grid machinery - click groups, delete fans,
+    /// region select, move chains - operates on one level-shaped shape
+    /// for both surfaces. An NPC placement's identity is its list index
+    /// (the type derives the sprite); an exit placement is keyed by its
+    /// MISSION HANDLE (one marker per mission - the upsert rule), which
+    /// is why the two kinds ride separate lists.
+    npc_placements: []const NPC = &.{},
+    exit_placements: []const ExitPlacement = &.{},
 };
 
 pub const EntityPlacement = struct {
@@ -3018,6 +3030,12 @@ pub const Selectable = union(enum) {
     entity_placement: u32,
     decoration_placement: u32,
     ground_item_placement: u32,
+    /// A hub-grid NPC placement (index into `EditorLevel.npc_placements`
+    /// - the hub-only kinds; empty in mission levels, so the mission
+    /// editor's validation rejects these naturally).
+    npc_placement: u32,
+    /// A hub-grid exit marker (index into `EditorLevel.exit_placements`).
+    exit_placement: u32,
     /// The '!' - singleton, movable never deletable.
     player_start: void,
     /// The '=' - singleton, movable never deletable.
@@ -3039,6 +3057,19 @@ pub const EditorSelectionMoveEntry = union(enum) {
     },
     decoration: struct {
         type_id: u32,
+        position: Vector2,
+    },
+    /// A hub-grid NPC placement moving with the selection (the mission
+    /// arms' shape - the concrete backup the clear phase needs).
+    npc: struct {
+        npc_type: NpcType,
+        position: Vector2,
+    },
+    /// A hub-grid exit marker moving with the selection: keyed by its
+    /// MISSION HANDLE (the upsert rule), so the move re-places the
+    /// marker at the translated position whatever its list index.
+    exit_marker: struct {
+        mission: u32,
         position: Vector2,
     },
     item: struct {
@@ -3860,10 +3891,11 @@ pub const ExitPlacement = struct {
 /// loaded dir, empty until saved). `grid` is the level-shaped hub grid -
 /// tiles, player spawn, decoration placements, and the gradient metadata
 /// trio (color wheel + enemy/player overrides, edited by the metadata
-/// sidebar like level metadata) - with the entity/item/level-end/name
-/// fields unused by invariant (no hub tool places them; EditorLevel is
-/// reused so the slice-4 grid machinery operates on it unchanged).
-/// `npc_placements`/`exit_placements` are the hub-only placement kinds.
+/// sidebar like level metadata), plus the hub-only NPC + exit-marker
+/// placements - with the entity/item/level-end/name fields unused by
+/// invariant (no hub tool places them; EditorLevel is reused so the
+/// slice-4 grid machinery operates on it unchanged, NPCs + exit markers
+/// included).
 pub const CampaignHubEdit = struct {
     handle: u32,
     uuid: []const u8 = &.{},
@@ -3873,8 +3905,6 @@ pub const CampaignHubEdit = struct {
     /// `CampaignHub.position`).
     position: Vector2,
     grid: EditorLevel = .{},
-    npc_placements: []const NPC = &.{},
-    exit_placements: []const ExitPlacement = &.{},
 };
 
 /// One mission in the campaign editor's AUTHORED graph - the
@@ -4027,6 +4057,14 @@ pub const CampaignEditor = struct {
 pub const HubEditorToolId = union(enum) {
     select,
     tile,
+    /// One of the two fixed NPC tools (the sprite derives from the type -
+    /// nothing to author).
+    npc: NpcType,
+    /// One tool per OUTGOING mission (the missions whose start is this
+    /// hub - membership is live from the campaign graph and changes when
+    /// starts are re-wired on the map, the one live coupling between the
+    /// two surfaces). The payload is the mission's campaign handle.
+    mission: u32,
 };
 
 /// The hub editor drill-in state (the slice-4 surface - DESIGN →

@@ -476,6 +476,13 @@ pub const Row = struct {
         self.cursor_x += width + self.gap;
         return rect;
     }
+
+    /// Skip `distance` forward WITHOUT emitting a cell (the row's own gap
+    /// applies after the last cell; `advance` adds a standalone gap or
+    /// spacer width - the group-header offset inside a palette row).
+    pub fn advance(self: *Row, distance: i32) void {
+        self.cursor_x += distance;
+    }
 };
 
 /// A uniform grid of cells (e.g. the inventory). `cell(index)` returns

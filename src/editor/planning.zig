@@ -43,6 +43,8 @@ fn selectableEqual(a: types.Selectable, b: types.Selectable) bool {
         .entity_placement => |index| b == .entity_placement and b.entity_placement == index,
         .decoration_placement => |index| b == .decoration_placement and b.decoration_placement == index,
         .ground_item_placement => |index| b == .ground_item_placement and b.ground_item_placement == index,
+        .npc_placement => |index| b == .npc_placement and b.npc_placement == index,
+        .exit_placement => |index| b == .exit_placement and b.exit_placement == index,
         .player_start => b == .player_start,
         .level_end => b == .level_end,
     };
@@ -145,6 +147,14 @@ pub const GridStep = union(enum) {
     delete_item: u32,
     place_decoration: struct { type_id: u32, position: Vector2 },
     delete_decoration: u32,
+    /// Hub-grid kinds: an NPC placement (the type is the whole identity -
+    /// the sprite derives from it; retype = delete + place in one plan)
+    /// and the exit marker's UPSERT (keyed by mission handle - placing
+    /// moves the mission's existing marker, wherever it was).
+    place_npc: struct { npc_type: types.NpcType, position: Vector2 },
+    delete_npc: u32,
+    set_exit_marker: struct { mission: u32, position: Vector2 },
+    delete_exit_marker: u32,
 };
 
 /// One step of a neutral SELECTION plan: the select / deselect / clear
@@ -296,6 +306,9 @@ fn gridStepsToEditorEvents(
                 .level_index = level_index,
                 .placement_index = placement_index,
             } },
+            // Hub-grid kinds: a mission level never produces these steps
+            // (its npc/exit lists are empty by invariant).
+            .place_npc, .delete_npc, .set_exit_marker, .delete_exit_marker => unreachable,
         };
         events_out.append(allocator, .{ .editor_event = variant }) catch
             @panic("failed to allocate editor plan");
@@ -685,6 +698,155 @@ pub fn planEditorItemPlacementActions(
     );
 }
 
+/// NPC-tool click over a hub grid: place the NPC type at the clicked
+/// tile - the entity tool's occupant semantics over the hub kinds. The
+/// '!' / '=' -> no-op (never overwritten); a tile with an EXIT MARKER ->
+/// no-op (markers are graph wiring - content never overwrites them; move
+/// the marker first); an existing NPC -> RETYPED in place (delete +
+/// place in one plan - the type is the whole identity); a missing tile
+/// -> placed (an NPC's tile is walkable at load); covering decorations
+/// -> deleted (replace). The plan is ordered for LIFO draining (the
+/// place steps first, the deletes ascending -> processing descending -
+/// index-stable). A mission level never calls this (no NPC tools).
+pub fn planGridNpcPlacement(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    npc_type: types.NpcType,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const GridStep {
+    // The '!' / '=' are singletons, movable never deletable.
+    if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
+    }
+    // An exit marker pins its cell (one layout char per cell - the save
+    // format cannot represent an NPC under a marker).
+    for (level.exit_placements) |placement| {
+        if (placement.position.x == position.x and placement.position.y == position.y) return &.{};
+    }
+
+    var tile_present = false;
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) {
+            tile_present = true;
+            break;
+        }
+    }
+
+    // Co-located NPC placement, if any.
+    var occupant_index: ?usize = null;
+    for (level.npc_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            occupant_index = placement_index;
+            break;
+        }
+    }
+
+    var steps: std.ArrayList(GridStep) = .empty;
+    if (occupant_index == null) {
+        steps.append(allocator, .{ .place_npc = .{
+            .npc_type = npc_type,
+            .position = position,
+        } }) catch @panic("failed to allocate editor place plan");
+    } else if (level.npc_placements[occupant_index.?].npc_type != npc_type) {
+        // Same type already there - no branch taken (nothing to do).
+        // Retype = delete the old + place the new (one plan, one idle
+        // point - the type is the whole identity, no stable index to
+        // preserve).
+        steps.append(allocator, .{ .place_npc = .{
+            .npc_type = npc_type,
+            .position = position,
+        } }) catch @panic("failed to allocate editor place plan");
+        steps.append(allocator, .{ .delete_npc = @intCast(occupant_index.?) }) catch
+            @panic("failed to allocate editor place plan");
+    }
+    if (!tile_present) {
+        steps.append(allocator, .{ .set_tile = .{
+            .position = position,
+            .is_floor = true,
+        } }) catch @panic("failed to allocate editor place plan");
+    }
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
+        }
+    }
+    return steps.items;
+}
+
+/// Exit-marker-tool click over a hub grid: put/move THE mission's marker
+/// (the tool's payload) at the clicked tile - the UPSERT rule (one
+/// marker per mission; placing at a new position moves it wherever it
+/// was). The '!' / '=' -> no-op; ANOTHER mission's marker on the cell ->
+/// no-op (one marker per cell - the layout format's one char; move that
+/// marker first); a co-located NPC -> deleted (content yields to
+/// markers); covering decorations -> deleted; a missing tile -> placed
+/// (an exit's tile is walkable at load). The plan is ordered for LIFO
+/// draining (the upsert first, then the place/delete steps). A mission
+/// level never calls this (no mission tools).
+pub fn planGridExitPlacement(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    mission: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const GridStep {
+    // The '!' / '=' are singletons, movable never deletable.
+    if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
+    }
+    // Another mission's marker pins its cell; THIS mission's own marker
+    // elsewhere simply moves (the upsert).
+    for (level.exit_placements) |placement| {
+        if (placement.position.x == position.x and placement.position.y == position.y and
+            placement.mission != mission) return &.{};
+    }
+
+    var tile_present = false;
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) {
+            tile_present = true;
+            break;
+        }
+    }
+
+    var steps: std.ArrayList(GridStep) = .empty;
+    steps.append(allocator, .{ .set_exit_marker = .{
+        .mission = mission,
+        .position = position,
+    } }) catch @panic("failed to allocate editor place plan");
+    if (!tile_present) {
+        steps.append(allocator, .{ .set_tile = .{
+            .position = position,
+            .is_floor = true,
+        } }) catch @panic("failed to allocate editor place plan");
+    }
+    // A co-located NPC yields (content vs markers - the save format's
+    // one char per cell).
+    for (level.npc_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            steps.append(allocator, .{ .delete_npc = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
+        }
+    }
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
+        }
+    }
+    return steps.items;
+}
+
 /// One-step plan for the delete cascade's early-return arms.
 fn singleGridStepPlan(
     step: GridStep,
@@ -721,6 +883,16 @@ pub fn planGridDelete(
         if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
     }
 
+    // The exit marker first (progressive delete: the marker goes alone -
+    // the ground and any wiring elsewhere survive; removing a marker
+    // makes its mission unstartable, a deliberate act).
+    for (level.exit_placements) |placement| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            return singleGridStepPlan(.{ .delete_exit_marker = placement.mission }, allocator);
+        }
+    }
     // Occupant first (progressive delete: the item/enemy goes, the tile
     // survives for the next click).
     for (level.entity_placements, 0..) |placement, placement_index| {
@@ -735,6 +907,13 @@ pub fn planGridDelete(
             placement.position.y == position.y)
         {
             return singleGridStepPlan(.{ .delete_item = @intCast(placement_index) }, allocator);
+        }
+    }
+    for (level.npc_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            return singleGridStepPlan(.{ .delete_npc = @intCast(placement_index) }, allocator);
         }
     }
     // Covering decoration(s): ascending list → descending processing
@@ -812,7 +991,7 @@ pub fn gridClickGroup(
     position: Vector2,
     allocator: std.mem.Allocator,
 ) []const types.Selectable {
-    var group: [3]types.Selectable = undefined;
+    var group: [4]types.Selectable = undefined;
     var group_length: usize = 0;
 
     if (level.player_start.x == position.x and level.player_start.y == position.y) {
@@ -822,6 +1001,17 @@ pub fn gridClickGroup(
         if (level_end_position.x == position.x and level_end_position.y == position.y) {
             group[0] = .level_end;
             group_length = 1;
+        }
+    }
+    // An exit marker is its OWN singleton group (graph wiring, like the
+    // '!' - clicking it addresses the marker, not the ground under it).
+    if (group_length == 0) {
+        for (level.exit_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[0] = .{ .exit_placement = @intCast(placement_index) };
+                group_length = 1;
+                break;
+            }
         }
     }
     if (group_length == 0) {
@@ -854,6 +1044,12 @@ pub fn gridClickGroup(
         for (level.item_placements, 0..) |placement, placement_index| {
             if (placement.position.x == position.x and placement.position.y == position.y) {
                 group[group_length] = .{ .ground_item_placement = @intCast(placement_index) };
+                group_length += 1;
+            }
+        }
+        for (level.npc_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[group_length] = .{ .npc_placement = @intCast(placement_index) };
                 group_length += 1;
             }
         }
@@ -1106,6 +1302,18 @@ pub fn gridSelectionContainsPosition(
                     if (placement.position.x == position.x and placement.position.y == position.y) return true;
                 }
             },
+            .npc_placement => |index| {
+                if (index < level.npc_placements.len) {
+                    const placement = level.npc_placements[index];
+                    if (placement.position.x == position.x and placement.position.y == position.y) return true;
+                }
+            },
+            .exit_placement => |index| {
+                if (index < level.exit_placements.len) {
+                    const placement = level.exit_placements[index];
+                    if (placement.position.x == position.x and placement.position.y == position.y) return true;
+                }
+            },
             .decoration_placement => |index| {
                 if (index < level.decoration_placements.len) {
                     const placement = level.decoration_placements[index];
@@ -1229,6 +1437,24 @@ pub fn gridSelectionMoveEntries(
                     } }) catch @panic("failed to allocate editor selection move entries");
                 }
             },
+            .npc_placement => |index| {
+                if (index < level.npc_placements.len) {
+                    const placement = level.npc_placements[index];
+                    entries.append(allocator, .{ .npc = .{
+                        .npc_type = placement.npc_type,
+                        .position = translatedPosition(placement.position, delta),
+                    } }) catch @panic("failed to allocate editor selection move entries");
+                }
+            },
+            .exit_placement => |index| {
+                if (index < level.exit_placements.len) {
+                    const placement = level.exit_placements[index];
+                    entries.append(allocator, .{ .exit_marker = .{
+                        .mission = placement.mission,
+                        .position = translatedPosition(placement.position, delta),
+                    } }) catch @panic("failed to allocate editor selection move entries");
+                }
+            },
             .tile => |position| {
                 entries.append(allocator, .{ .tile = translatedPosition(position, delta) }) catch
                     @panic("failed to allocate editor selection move entries");
@@ -1316,6 +1542,8 @@ pub fn planGridSelectionDelete(
     var entity_indices: std.ArrayList(u32) = .empty;
     var item_indices: std.ArrayList(u32) = .empty;
     var decoration_indices: std.ArrayList(u32) = .empty;
+    var npc_indices: std.ArrayList(u32) = .empty;
+    var exit_missions: std.ArrayList(u32) = .empty;
     var tile_positions: std.ArrayList(Vector2) = .empty;
 
     for (selection) |selected| {
@@ -1323,6 +1551,14 @@ pub fn planGridSelectionDelete(
             .entity_placement => |index| appendIndexIfNew(&entity_indices, index, allocator),
             .ground_item_placement => |index| appendIndexIfNew(&item_indices, index, allocator),
             .decoration_placement => |index| appendIndexIfNew(&decoration_indices, index, allocator),
+            .npc_placement => |index| appendIndexIfNew(&npc_indices, index, allocator),
+            .exit_placement => |index| {
+                // The exit delete is keyed by MISSION HANDLE (the upsert
+                // rule - index-stability does not apply), deduped.
+                if (index < level.exit_placements.len) {
+                    appendMissionIfNew(&exit_missions, level.exit_placements[index].mission, allocator);
+                }
+            },
             .player_start, .level_end => {
                 // The Delete key never touches markers - and their tiles
                 // stay (the marker isn't going anywhere; see the tile arm's
@@ -1386,6 +1622,12 @@ pub fn planGridSelectionDelete(
                             break;
                         }
                     }
+                    for (level.npc_placements, 0..) |placement, placement_index| {
+                        if (placement.position.x == position.x and placement.position.y == position.y) {
+                            appendIndexIfNew(&npc_indices, @intCast(placement_index), allocator);
+                            break;
+                        }
+                    }
                 }
             },
         }
@@ -1398,6 +1640,11 @@ pub fn planGridSelectionDelete(
     appendPlacementDeletesDescending(&plan, level, &entity_indices, .entity, allocator);
     appendPlacementDeletesDescending(&plan, level, &item_indices, .item, allocator);
     appendPlacementDeletesDescending(&plan, level, &decoration_indices, .decoration, allocator);
+    appendPlacementDeletesDescending(&plan, level, &npc_indices, .npc, allocator);
+    for (exit_missions.items) |mission| {
+        plan.append(allocator, .{ .delete_exit_marker = mission }) catch
+            @panic("failed to allocate editor selection delete plan");
+    }
     for (tile_positions.items) |position| {
         plan.append(allocator, .{ .set_tile = .{
             .position = position,
@@ -1431,6 +1678,21 @@ fn selectionMoveOccupantPinsTile(
     return false;
 }
 
+/// Append `mission` unless already collected (the exit-delete set's
+/// dedup - a crafted log can carry duplicate exit entries; the keyed
+/// delete would otherwise fire twice).
+fn appendMissionIfNew(
+    missions: *std.ArrayList(u32),
+    mission: u32,
+    allocator: std.mem.Allocator,
+) void {
+    for (missions.items) |existing| {
+        if (existing == mission) return;
+    }
+    missions.append(allocator, mission) catch
+        @panic("failed to allocate editor selection delete plan");
+}
+
 /// Append `index` unless already collected (a crafted log can carry
 /// duplicate selection entries; a duplicate delete would panic in the
 /// delete arm's bounds check after the first removal shifts the list).
@@ -1452,6 +1714,7 @@ const GridPlacementKind = enum {
     entity,
     item,
     decoration,
+    npc,
 };
 
 /// Emit one placement-kind's deletes in DESCENDING index order - the
@@ -1470,6 +1733,7 @@ fn appendPlacementDeletesDescending(
         .entity => level.entity_placements.len,
         .item => level.item_placements.len,
         .decoration => level.decoration_placements.len,
+        .npc => level.npc_placements.len,
     };
     var index = indices.items.len;
     while (index > 0) {
@@ -1480,6 +1744,7 @@ fn appendPlacementDeletesDescending(
             .entity => .{ .delete_entity = placement_index },
             .item => .{ .delete_item = placement_index },
             .decoration => .{ .delete_decoration = placement_index },
+            .npc => .{ .delete_npc = placement_index },
         };
         plan.append(allocator, step) catch
             @panic("failed to allocate editor selection delete plan");
@@ -1680,8 +1945,10 @@ fn appendSelectEntryIfNew(
 // ============================================================
 
 /// Map a neutral grid plan onto the hub editor's event family, 1:1 in
-/// order. No level_index - the events address the drilled-in hub.
-fn gridStepsToHubEvents(
+/// order. No level_index - the events address the drilled-in hub. Pub for
+/// the hub commit-chain handler (the move worklist plans directly against
+/// the neutral core).
+pub fn gridStepsToHubEvents(
     steps: []const GridStep,
     allocator: std.mem.Allocator,
 ) []const Event {
@@ -1699,6 +1966,20 @@ fn gridStepsToHubEvents(
             } },
             .delete_decoration => |placement_index| .{ .hub_delete_decoration_placement = .{
                 .placement_index = placement_index,
+            } },
+            .place_npc => |place| .{ .hub_place_npc = .{
+                .npc_type = place.npc_type,
+                .position = place.position,
+            } },
+            .delete_npc => |placement_index| .{ .hub_delete_npc_placement = .{
+                .placement_index = placement_index,
+            } },
+            .set_exit_marker => |set| .{ .hub_set_exit_marker = .{
+                .mission = set.mission,
+                .position = set.position,
+            } },
+            .delete_exit_marker => |mission| .{ .hub_delete_exit_marker = .{
+                .mission = mission,
             } },
             // The hub grid has no entities or items - those core arms are
             // mission-only vocabulary a hub plan never contains.
@@ -2238,4 +2519,119 @@ test "grid core: the hub-readiness contract - tile paint, decoration, delete ove
 
     // The move veto never fires on a hub grid (no level_end).
     try std.testing.expect(!gridSelectionMoveVetoed(&hub_grid, &.{.player_start}, .{ .x = 1, .y = 0 }));
+}
+
+test "grid core: the NPC placement planner - occupant retype, marker protection, tile placement" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    const hub_grid = types.EditorLevel{
+        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+        .player_start = .{ .x = 0, .y = 0 },
+        .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } }},
+        .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 2, .y = 0 } }},
+    };
+
+    // The spawn is never overwritten.
+    try std.testing.expectEqual(@as(usize, 0), planGridNpcPlacement(&hub_grid, &decoration_types, .gear_upgrader, .{ .x = 0, .y = 0 }, allocator).len);
+
+    // An exit marker pins its cell (content never overwrites markers).
+    try std.testing.expectEqual(@as(usize, 0), planGridNpcPlacement(&hub_grid, &decoration_types, .gear_upgrader, .{ .x = 2, .y = 0 }, allocator).len);
+
+    // Same type on the occupant: no place/retype - but the missing tile
+    // under the position is still ensured (an NPC's tile is walkable at
+    // load; the ground completes regardless).
+    {
+        const same_type = planGridNpcPlacement(&hub_grid, &decoration_types, .dream_guide, .{ .x = 1, .y = 0 }, allocator);
+        try std.testing.expectEqual(@as(usize, 1), same_type.len);
+        try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 1, .y = 0 }, .is_floor = true } }, same_type[0]);
+    }
+
+    // A different type: retype = place + delete (the LIFO order processes
+    // the delete first), plus the missing tile under the position.
+    const retype = planGridNpcPlacement(&hub_grid, &decoration_types, .gear_upgrader, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 3), retype.len);
+    try std.testing.expectEqual(GridStep{ .place_npc = .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 0 } } }, retype[0]);
+    try std.testing.expectEqual(GridStep{ .delete_npc = 0 }, retype[1]);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 1, .y = 0 }, .is_floor = true } }, retype[2]);
+
+    // Empty ground: place + tile.
+    const place = planGridNpcPlacement(&hub_grid, &decoration_types, .gear_upgrader, .{ .x = 5, .y = 5 }, allocator);
+    try std.testing.expectEqual(@as(usize, 2), place.len);
+    try std.testing.expectEqual(GridStep{ .place_npc = .{ .npc_type = .gear_upgrader, .position = .{ .x = 5, .y = 5 } } }, place[0]);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 5, .y = 5 }, .is_floor = true } }, place[1]);
+}
+
+test "grid core: the exit placement planner - the upsert, cell conflicts, content yielding" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    const hub_grid = types.EditorLevel{
+        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+        .player_start = .{ .x = 0, .y = 0 },
+        .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } }},
+        .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 2, .y = 0 } }},
+    };
+
+    // The spawn is never overwritten.
+    try std.testing.expectEqual(@as(usize, 0), planGridExitPlacement(&hub_grid, &decoration_types, 7, .{ .x = 0, .y = 0 }, allocator).len);
+
+    // ANOTHER mission's marker pins the cell; this mission's own marker
+    // elsewhere moves (the upsert - the marker's old cell is irrelevant).
+    try std.testing.expectEqual(@as(usize, 0), planGridExitPlacement(&hub_grid, &decoration_types, 7, .{ .x = 2, .y = 0 }, allocator).len);
+    const move_own = planGridExitPlacement(&hub_grid, &decoration_types, 5, .{ .x = 3, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 2), move_own.len);
+    try std.testing.expectEqual(GridStep{ .set_exit_marker = .{ .mission = 5, .position = .{ .x = 3, .y = 0 } } }, move_own[0]);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 3, .y = 0 }, .is_floor = true } }, move_own[1]);
+
+    // A co-located NPC yields (content vs markers) + the tile.
+    const over_npc = planGridExitPlacement(&hub_grid, &decoration_types, 7, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 3), over_npc.len);
+    try std.testing.expectEqual(GridStep{ .set_exit_marker = .{ .mission = 7, .position = .{ .x = 1, .y = 0 } } }, over_npc[0]);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 1, .y = 0 }, .is_floor = true } }, over_npc[1]);
+    try std.testing.expectEqual(GridStep{ .delete_npc = 0 }, over_npc[2]);
+}
+
+test "grid core: the delete chain over the hub kinds - marker first, then the NPC, then decoration, then tile" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    const hub_grid = types.EditorLevel{
+        .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+        .player_start = .{ .x = 0, .y = 0 },
+        .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } }},
+        .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 2, .y = 0 } }},
+    };
+
+    // The marker tier: one click removes exactly the marker.
+    const marker = planGridDelete(&hub_grid, &decoration_types, .{ .x = 2, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), marker.len);
+    try std.testing.expectEqual(GridStep{ .delete_exit_marker = 5 }, marker[0]);
+
+    // The NPC occupant tier.
+    const npc = planGridDelete(&hub_grid, &decoration_types, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), npc.len);
+    try std.testing.expectEqual(GridStep{ .delete_npc = 0 }, npc[0]);
+
+    // The click group over the hub kinds: the marker singleton group; the
+    // tile + its NPC together.
+    const marker_group = gridClickGroup(&hub_grid, &decoration_types, .{ .x = 2, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), marker_group.len);
+    try std.testing.expectEqual(types.Selectable{ .exit_placement = 0 }, marker_group[0]);
+    const tile_group = gridClickGroup(&hub_grid, &decoration_types, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 2), tile_group.len);
+    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 0 } }, tile_group[0]);
+    try std.testing.expectEqual(types.Selectable{ .npc_placement = 0 }, tile_group[1]);
 }

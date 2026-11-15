@@ -1508,15 +1508,44 @@ pub fn handleAnytimeInput(
                 } });
             }
         } else if (history.current_state.screen == .hub_editor) {
-            // The drill-in's two-tool cycle (select <-> tile); the palette
-            // grows arms at 4-4/4-5 and the cycle grows with them.
-            if (history.current_state.hub_editor != null) {
-                pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
-                    .tool = switch (history.current_state.hub_editor.?.active_tool) {
-                        .select => types.HubEditorToolId.tile,
-                        .tile => types.HubEditorToolId.select,
-                    },
-                } });
+            // The drill-in's cycle over the live palette: the fixed pair,
+            // then the NPC cells, then the outgoing-mission cells (the
+            // palette order - the mission editor's spatial cycle, grown
+            // one arm family at a time; the decoration tools join at
+            // 4-5).
+            if (history.current_state.hub_editor) |hub_editor_state| {
+                if (history.current_state.campaign_editor) |campaign_editor| {
+                    const next_tool: types.HubEditorToolId = switch (hub_editor_state.active_tool) {
+                        .select => .tile,
+                        .tile => .{ .npc = .gear_upgrader },
+                        .npc => |npc_type| switch (npc_type) {
+                            .gear_upgrader => .{ .npc = .dream_guide },
+                            .dream_guide => first: {
+                                for (campaign_editor.missions) |mission| {
+                                    if (mission.start != null and mission.start.? == hub_editor_state.hub) {
+                                        break :first .{ .mission = mission.handle };
+                                    }
+                                }
+                                break :first .select;
+                            },
+                        },
+                        .mission => |mission_handle| next: {
+                            var seen = false;
+                            for (campaign_editor.missions) |mission| {
+                                if (mission.start == null or mission.start.? != hub_editor_state.hub) continue;
+                                if (mission.handle == mission_handle) {
+                                    seen = true;
+                                    continue;
+                                }
+                                if (seen) break :next .{ .mission = mission.handle };
+                            }
+                            break :next .select;
+                        },
+                    };
+                    pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
+                        .tool = next_tool,
+                    } });
+                }
             }
         } else if (history.current_state.screen == .editor) {
             if (history.current_state.editor) |editor| {
@@ -4236,6 +4265,24 @@ pub fn handleIdleInput(
                             const plan = planning.planHubTilePaintActions(hub, current.campaign_editor.?.decoration_types, clicked_position, allocator);
                             if (plan.len > 0) {
                                 event_push.pushPlayerAction(current, .{ .player_paint_hub_tile = .{
+                                    .position = clicked_position,
+                                } }, allocator);
+                            }
+                        },
+                        .npc => |npc_type| {
+                            const plan = planning.planGridNpcPlacement(&hub.grid, current.campaign_editor.?.decoration_types, npc_type, clicked_position, allocator);
+                            if (plan.len > 0) {
+                                event_push.pushPlayerAction(current, .{ .player_place_hub_npc = .{
+                                    .npc_type = npc_type,
+                                    .position = clicked_position,
+                                } }, allocator);
+                            }
+                        },
+                        .mission => |mission_handle| {
+                            const plan = planning.planGridExitPlacement(&hub.grid, current.campaign_editor.?.decoration_types, mission_handle, clicked_position, allocator);
+                            if (plan.len > 0) {
+                                event_push.pushPlayerAction(current, .{ .player_place_hub_exit_marker = .{
+                                    .mission = mission_handle,
                                     .position = clicked_position,
                                 } }, allocator);
                             }

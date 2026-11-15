@@ -2364,6 +2364,8 @@ pub const GameStateHistory = struct {
                     // clicks are legal in a recorded session).
                     .player_set_hub_tool,
                     .player_paint_hub_tile,
+                    .player_place_hub_npc,
+                    .player_place_hub_exit_marker,
                     .player_toggle_hub_selection,
                     .player_replace_hub_selection,
                     .player_select_hub_region,

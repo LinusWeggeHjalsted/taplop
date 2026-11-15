@@ -904,6 +904,10 @@ pub fn handleEditorEvent(
                 .decoration_placement => |index| index < level.decoration_placements.len,
                 .ground_item_placement => |index| index < level.item_placements.len,
                 .tile, .player_start, .level_end => true,
+                // Hub-grid kinds: a mission level's lists are empty by
+                // invariant, so the bounds check rejects naturally.
+                .npc_placement => |index| index < level.npc_placements.len,
+                .exit_placement => |index| index < level.exit_placements.len,
             };
             if (!entry_valid) return;
             if (planning.selectionContains(editor.selection, select.entry)) return;
@@ -1269,6 +1273,10 @@ pub fn handleEditorEvent(
                         planning.planEditorTilePaintActions(editor, position, allocator),
                     ) catch @panic("failed to allocate editor selection move plan");
                 },
+                // Hub-grid kinds: a mission worklist never carries them
+                // (the mission move plan derives entries from mission
+                // levels, whose hub lists are empty by invariant).
+                .npc, .exit_marker => {},
                 .player_start, .level_end => |position| {
                     // Defensive (a crafted worklist - the live plan is vetoed
                     // upstream in planning.planEditorSelectionMoveActions): a

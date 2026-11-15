@@ -587,7 +587,8 @@ pub fn view(
         // (flush top-right - the primary-actions spot). The tool palette,
         // inspector, and metadata sidebar land with the editing slices;
         // the world scene is the world pass's hub_editor arm above.
-        if (current_state.hub_editor) |hub_editor| {
+        if (current_state.hub_editor) |hub_editor_value| {
+            const hub_editor = &hub_editor_value;
             ui.buildHubEditorTopBar(
                 &ui_elements,
                 frame_allocator,
@@ -596,8 +597,10 @@ pub fn view(
             ui.buildHubEditorBottomBar(
                 &ui_elements,
                 frame_allocator,
+                font_metrics,
                 ui.screenRect(),
-                hub_editor.active_tool,
+                current_state.campaign_editor.?,
+                hub_editor.*,
                 active_theme,
             ) catch @panic("failed to build hub editor bottom bar");
         }
@@ -2945,6 +2948,8 @@ fn buildEditorSelectionOverlay(
                 appendSingleTileOutline(list, allocator, translated(level.entity_placements[placement_index].position, delta), outline_color, camera, zoom);
             }
         },
+        // Hub-grid kinds: never in a mission selection (empty lists).
+        .npc_placement, .exit_placement => {},
         .ground_item_placement => |placement_index| {
             if (placement_index < level.item_placements.len) {
                 appendSingleTileOutline(list, allocator, translated(level.item_placements[placement_index].position, delta), outline_color, camera, zoom);
@@ -3146,6 +3151,16 @@ fn buildHubEditorSelectionOverlay(
                     allocator,
                 );
                 appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);
+            }
+        },
+        .npc_placement => |placement_index| {
+            if (placement_index < hub.grid.npc_placements.len) {
+                appendSingleTileOutline(list, allocator, translated(hub.grid.npc_placements[placement_index].position, delta), outline_color, camera, zoom);
+            }
+        },
+        .exit_placement => |placement_index| {
+            if (placement_index < hub.grid.exit_placements.len) {
+                appendSingleTileOutline(list, allocator, translated(hub.grid.exit_placements[placement_index].position, delta), outline_color, camera, zoom);
             }
         },
         // Mission vocabulary a hub selection never carries.
@@ -3423,7 +3438,7 @@ fn buildHubEditorScene(
 
     // NPC placements: plain {npc_type, position} - the runtime hub
     // render's drawable (semantics arrive with NPC interaction).
-    for (hub.npc_placements) |npc| {
+    for (hub.grid.npc_placements) |npc| {
         ground_entries.append(allocator, .{
             .sort_y = npc.position.y,
             .sort_x = npc.position.x,
@@ -3435,7 +3450,7 @@ fn buildHubEditorScene(
     // Exit markers: the mission-start banner style (the runtime hub's
     // exit block - one marker per outgoing mission, positions are this
     // hub's edit surface).
-    for (hub.exit_placements) |exit| {
+    for (hub.grid.exit_placements) |exit| {
         ground_entries.append(allocator, .{
             .sort_y = exit.position.y,
             .sort_x = exit.position.x,
@@ -6309,9 +6324,9 @@ test "hub editor: the world scene projects the hub grid + the return button" {
                 .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 2 } },
                 .player_start = .{ .x = 0, .y = 0 },
                 .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 3, .y = 2 } }},
+                .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
+                .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
             },
-            .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
-            .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
         }},
         .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
         .decoration_types = &.{

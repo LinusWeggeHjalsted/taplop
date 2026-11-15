@@ -779,8 +779,9 @@ pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
     for (editor.selection) |selected| {
         const referenced: ?EditorInspectorTarget = switch (selected) {
             // Legitimately uninspectable - contributes nothing (mixing
-            // tiles / the '=' with enemies still shows the enemy).
-            .tile, .level_end => null,
+            // tiles / the '=' with enemies still shows the enemy). The
+            // hub-grid kinds never appear in a mission selection.
+            .tile, .level_end, .npc_placement, .exit_placement => null,
             .player_start => .player,
             .entity_placement => |index| blk: {
                 // An out-of-range placement index or a stale palette type

@@ -1569,7 +1569,7 @@ fn assignHubLayoutCodes(
     // hub is a crafted state; the writer skips it rather than
     // laundering it into the file).
     var exit_codes: std.ArrayList(u8) = .empty;
-    for (hub.exit_placements) |placement| {
+    for (hub.grid.exit_placements) |placement| {
         for (editor.missions) |mission| {
             if (mission.handle != placement.mission) continue;
             if (mission.start == null or mission.start.? != hub.handle) continue;
@@ -1597,7 +1597,7 @@ fn assignHubLayoutCodes(
 
     // NPCs: letters per distinct used type, in first-use order.
     var npc_codes: std.ArrayList(HubNpcCodeAssignment) = .empty;
-    for (hub.npc_placements) |npc| {
+    for (hub.grid.npc_placements) |npc| {
         var seen = false;
         for (npc_codes.items) |existing| {
             if (existing.npc_type == npc.npc_type) seen = true;
@@ -1666,8 +1666,8 @@ pub fn writeCampaignHub(
         }
     };
     for (hub.grid.level_tiles) |tile| expand.bounds(&min_x, &min_y, &max_x, &max_y, tile);
-    for (hub.npc_placements) |npc| expand.bounds(&min_x, &min_y, &max_x, &max_y, npc.position);
-    for (hub.exit_placements) |placement| expand.bounds(&min_x, &min_y, &max_x, &max_y, placement.position);
+    for (hub.grid.npc_placements) |npc| expand.bounds(&min_x, &min_y, &max_x, &max_y, npc.position);
+    for (hub.grid.exit_placements) |placement| expand.bounds(&min_x, &min_y, &max_x, &max_y, placement.position);
     for (hub.grid.decoration_placements) |placement| {
         const footprint_tiles = loaders.decorationFootprintWorldTiles(
             editor.decoration_types[placement.type_id].footprint,
@@ -1695,7 +1695,7 @@ pub fn writeCampaignHub(
             hubCodeForType(codes.decoration, placement.type_id).?,
         );
     }
-    for (hub.npc_placements) |npc| {
+    for (hub.grid.npc_placements) |npc| {
         var npc_code: ?u8 = null;
         for (codes.npc) |assignment| {
             if (assignment.npc_type == npc.npc_type) npc_code = assignment.code;
@@ -1705,7 +1705,7 @@ pub fn writeCampaignHub(
     // The exit cells + their mission-resolution (only start-here
     // placements - the code assignment's rule).
     var exit_index: usize = 0;
-    for (hub.exit_placements) |placement| {
+    for (hub.grid.exit_placements) |placement| {
         for (editor.missions) |mission| {
             if (mission.handle != placement.mission) continue;
             if (mission.start == null or mission.start.? != hub.handle) continue;
@@ -1784,7 +1784,7 @@ pub fn writeCampaignHub(
     if (codes.exit.len > 0) {
         try buffer.appendSlice(allocator, "\nExits\n");
         var written_exits: usize = 0;
-        for (hub.exit_placements) |placement| {
+        for (hub.grid.exit_placements) |placement| {
             for (editor.missions, 0..) |mission, mission_index| {
                 if (mission.handle != placement.mission) continue;
                 if (mission.start == null or mission.start.? != hub.handle) continue;
@@ -1925,15 +1925,15 @@ fn campaignWriterFixture() types.CampaignEditor {
                         .{ .type_id = 1, .position = .{ .x = 0, .y = 2 } },
                         .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
                     },
-                },
-                .npc_placements = &.{
-                    .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 1 } },
-                    .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 2 } },
-                    .{ .npc_type = .gear_upgrader, .position = .{ .x = 0, .y = 1 } },
-                },
-                .exit_placements = &.{
-                    .{ .mission = 2, .position = .{ .x = 2, .y = 1 } },
-                    .{ .mission = 3, .position = .{ .x = 1, .y = 2 } },
+                    .npc_placements = &.{
+                        .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 1 } },
+                        .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 2 } },
+                        .{ .npc_type = .gear_upgrader, .position = .{ .x = 0, .y = 1 } },
+                    },
+                    .exit_placements = &.{
+                        .{ .mission = 2, .position = .{ .x = 2, .y = 1 } },
+                        .{ .mission = 3, .position = .{ .x = 1, .y = 2 } },
+                    },
                 },
             },
             .{

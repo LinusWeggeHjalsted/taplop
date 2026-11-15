@@ -1351,6 +1351,30 @@ pub fn handlePlayerInputEvent(
                 pushEvents(current, planning.planHubTilePaintActions(hub, current.campaign_editor.?.decoration_types, paint.position, allocator), allocator);
             }
         },
+        .player_place_hub_npc => |place| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(
+                    current,
+                    planning.gridStepsToHubEvents(
+                        planning.planGridNpcPlacement(&hub.grid, current.campaign_editor.?.decoration_types, place.npc_type, place.position, allocator),
+                        allocator,
+                    ),
+                    allocator,
+                );
+            }
+        },
+        .player_place_hub_exit_marker => |place| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(
+                    current,
+                    planning.gridStepsToHubEvents(
+                        planning.planGridExitPlacement(&hub.grid, current.campaign_editor.?.decoration_types, place.mission, place.position, allocator),
+                        allocator,
+                    ),
+                    allocator,
+                );
+            }
+        },
         .player_toggle_hub_selection => |toggle| {
             if (hub_editor_handlers.drilledHub(current)) |hub| {
                 pushEvents(current, planning.planHubToggleSelectionActions(hub, current.campaign_editor.?.decoration_types, current.hub_editor.?.selection, toggle.position, allocator), allocator);

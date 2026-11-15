@@ -500,13 +500,13 @@ fn removeExitPlacement(
         var updated = hub;
         if (hub.handle == hub_handle) {
             var placements: std.ArrayList(types.ExitPlacement) = .empty;
-            for (hub.exit_placements) |placement| {
+            for (hub.grid.exit_placements) |placement| {
                 if (placement.mission != mission_handle) {
                     placements.append(allocator, placement) catch
                         @panic("failed to copy surviving exit placements");
                 }
             }
-            updated.exit_placements = placements.toOwnedSlice(allocator) catch
+            updated.grid.exit_placements = placements.toOwnedSlice(allocator) catch
                 @panic("failed to own surviving exit placements slice");
         }
         hubs.append(allocator, updated) catch
