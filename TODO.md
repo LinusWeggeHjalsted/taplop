@@ -474,13 +474,13 @@ work:
              events on .hub_editor; the hub-specific actions + player
              events + arms deleted; the emission-identity contract test
              arrives with step 3).
-          3. THE HUB INSPECTOR'S DECORATION ARM becomes:
-             editorInspectorDecorationEntries (the mission's own fn,
-             over the campaign palette's def) + renderInspectorEntries
-             (the mission's own renderer) - spacing, section strips,
-             row units identical by construction. The hub-only arms
-             (exit summary / NPC placeholder / empty default) stay
-             hub-local in buildHubEditorInspector.
+          3. THE HUB INSPECTOR'S DECORATION ARM becomes: DONE
+             (editorInspectorDecorationEntries + renderInspectorEntries
+             over the campaign palette's def; the footprint + layers
+             rows render in the mission's live shapes - their picks
+             no-op on .hub_editor until 4-5c(ii) wires them; the hub-only
+             arms stayed hub-local; the emission-identity contract test
+             pins element-for-element equality via expectEqualDeep).
           4. EXTRACT THE SPRITE PICKER'S GENERIC CORE (editor_pickers.
              zig): the cells -> grid emission (tabs, close, the
              6-column grid, per-cell button + images incl. the prefab
