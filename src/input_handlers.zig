@@ -511,6 +511,78 @@ fn footprintFromDraft(
     return footprint.items;
 }
 
+/// The hub editor drill-in's inspector target: the ACTIVE TOOL's
+/// decoration type id, bounds-checked against the campaign palette (the
+/// mission's editorInspectorTarget analogue for the tool-driven content
+/// rule).
+fn hubDecorationToolTypeId(
+    hub_editor_state: types.HubEditor,
+    campaign_editor_state: types.CampaignEditor,
+) ?u32 {
+    const type_id = switch (hub_editor_state.active_tool) {
+        .decoration_type => |resolved_type_id| resolved_type_id,
+        else => return null,
+    };
+    if (type_id >= campaign_editor_state.decoration_types.len) return null;
+    return type_id;
+}
+
+/// A registry prefab's authored layer color for a stem, else 0 - a NEW
+/// layer adopts the authored value on a registry-stem pick (the layer
+/// pick arm's shared half, both editor surfaces).
+fn registryLayerColor(
+    registry: []const types.DecorationTypeDef,
+    sprite: []const u8,
+) u32 {
+    for (registry) |definition| {
+        for (definition.layers) |layer| {
+            if (std.mem.eql(u8, layer.sprite, sprite)) return layer.color_index;
+        }
+    }
+    return 0;
+}
+
+/// A registry prefab's authored layer draw side for a stem, else false
+/// (an overlay) - the layer pick arm's other shared half.
+fn registryLayerBehind(
+    registry: []const types.DecorationTypeDef,
+    sprite: []const u8,
+) bool {
+    for (registry) |definition| {
+        for (definition.layers) |layer| {
+            if (std.mem.eql(u8, layer.sprite, sprite)) return layer.behind;
+        }
+    }
+    return false;
+}
+
+/// The hub editor drill-in's whole-def commit (the layer + footprint
+/// edits' route - the base sprite pick's event): dupes the def's owned
+/// fields into the current arena BEFORE pushing (the mission commit's
+/// ordering rule); the orchestrator chains the picker close as its child
+/// (one undo step).
+fn pushHubDecorationDefCommit(
+    history: *GameStateHistory,
+    type_id: u32,
+    definition: types.DecorationTypeDef,
+    footprint: []const types.Vector2,
+    layers: []const types.DecorationLayer,
+) void {
+    const arena = history.current_arena.allocator();
+    pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_def = .{
+        .type_id = type_id,
+        .sprite = arena.dupe(u8, definition.sprite) catch
+            @panic("failed to allocate decoration sprite commit value"),
+        .footprint = arena.dupe(types.Vector2, footprint) catch
+            @panic("failed to allocate decoration footprint commit value"),
+        .pixel_dims = definition.pixel_dims,
+        .color_index = definition.color_index,
+        .keep_original_colors = definition.keep_original_colors,
+        .layers = arena.dupe(types.DecorationLayer, layers) catch
+            @panic("failed to allocate decoration layers commit value"),
+    } });
+}
+
 pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     if (history.session.ui_state.text_edit == null) return;
     const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
@@ -2317,6 +2389,21 @@ pub fn handleAnytimeInput(
                 } });
             },
             .open_editor_decoration_layer_picker => {
+                // Surface-polymorphic (the inspector reuse): the hub editor
+                // drill-in rescans its own content dir + ensures the
+                // registry (the sprite-row open branch's convention - the
+                // ADD pick's adoption reads it) + opens the HUB picker.
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    rescanHubSprites(history, campaign_editor_state, hub_editor_state);
+                    editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
+                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                    pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
+                        .target = .{ .decoration_layer = payloadAs(.editor_layer, clicked_payload) },
+                    } });
+                    return;
+                }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
@@ -2423,20 +2510,13 @@ pub fn handleAnytimeInput(
                         pushPlayerActionAndDrain(history, .player_close_hub_picker);
                         return;
                     }
-                    // Dupe the def's other fields into the current arena
-                    // BEFORE pushing (the mission commit's ordering rule).
-                    const arena = history.current_arena.allocator();
-                    pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_def = .{
-                        .type_id = type_id,
-                        .sprite = arena.dupe(u8, definition.sprite) catch
-                            @panic("failed to allocate decoration sprite commit value"),
-                        .footprint = footprint,
-                        .pixel_dims = definition.pixel_dims,
-                        .color_index = definition.color_index,
-                        .keep_original_colors = definition.keep_original_colors,
-                        .layers = arena.dupe(types.DecorationLayer, definition.layers) catch
-                            @panic("failed to allocate decoration layers commit value"),
-                    } });
+                    pushHubDecorationDefCommit(
+                        history,
+                        type_id,
+                        definition,
+                        footprint,
+                        definition.layers,
+                    );
                     return;
                 }
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
@@ -2826,9 +2906,86 @@ pub fn handleAnytimeInput(
             // side (tree_1's grass_back is true), else false; a re-pick
             // keeps the layer's.
             .select_editor_decoration_layer => {
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
+                // Surface-polymorphic (the inspector reuse): the hub
+                // editor drill-in resolves a custom stem through the HUB's
+                // content path + commits through the WHOLE-DEF event (the
+                // layer/footprint route); the mission editor keeps its
+                // content path + layer events. The dims gate, the registry
+                // adoption, and the unchanged re-pick rule are shared.
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const layer_index = switch (hub_editor_state.picker orelse return) {
+                        .decoration_layer => |picker_layer_index| picker_layer_index,
+                        else => return,
+                    };
+                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const current_definition = campaign_editor_state.decoration_types[type_id];
+                    const arena = history.current_arena.allocator();
+
+                    // Resolve the picked sprite's dims: the HUB's content
+                    // path for a custom stem (an unsaved hub has none - no
+                    // resolution, the pick visibly doesn't take), else the
+                    // shipped resolver.
+                    const pixel_dims = blk: {
+                        if (std.mem.startsWith(u8, sprite, "custom/")) {
+                            const hub_content_path = hubContentPath(campaign_editor_state, hub_editor_state, arena) orelse return;
+                            const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return;
+                            break :blk loaders.resolveMissionSpriteDimensions(
+                                history.file_source,
+                                hub_content_path,
+                                sprite[slash + 1 ..],
+                                arena,
+                            ) orelse return;
+                        }
+                        break :blk loaders.resolveShippedDecorationSpriteDimensions(sprite, arena) orelse return;
+                    };
+                    if (pixel_dims.x != current_definition.pixel_dims.x or
+                        pixel_dims.y != current_definition.pixel_dims.y) return;
+
+                    const color_index: u32 = if (layer_index) |index| blk: {
+                        if (index >= current_definition.layers.len) return;
+                        break :blk current_definition.layers[index].color_index;
+                    } else registryLayerColor(history.session.editor_decoration_registry, sprite);
+                    const behind: bool = if (layer_index) |index| blk: {
+                        if (index >= current_definition.layers.len) return;
+                        break :blk current_definition.layers[index].behind;
+                    } else registryLayerBehind(history.session.editor_decoration_registry, sprite);
+                    const new_layer: types.DecorationLayer = .{
+                        .sprite = arena.dupe(u8, sprite) catch
+                            @panic("failed to allocate layer sprite commit value"),
+                        .color_index = color_index,
+                        .behind = behind,
+                        .pixel_dims = pixel_dims,
+                    };
+
+                    var layers: std.ArrayList(types.DecorationLayer) = .empty;
+                    layers.appendSlice(arena, current_definition.layers) catch
+                        @panic("failed to allocate decoration layers commit value");
+                    if (layer_index) |index| {
+                        // An unchanged re-pick closes without committing
+                        // (the base pick's rule).
+                        if (std.mem.eql(u8, current_definition.layers[index].sprite, sprite)) {
+                            pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                            return;
+                        }
+                        layers.items[index] = new_layer;
+                    } else {
+                        layers.append(arena, new_layer) catch
+                            @panic("failed to allocate decoration layers commit value");
+                    }
+                    pushHubDecorationDefCommit(
+                        history,
+                        type_id,
+                        current_definition,
+                        current_definition.footprint,
+                        layers.items,
+                    );
+                    return;
+                }
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const layer_index = expectPickerKind(editor, .decoration_layer) orelse return;
-                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
@@ -2855,29 +3012,11 @@ pub fn handleAnytimeInput(
                 const color_index: u32 = if (layer_index) |index| blk: {
                     if (index >= current_definition.layers.len) return;
                     break :blk current_definition.layers[index].color_index;
-                } else blk: {
-                    // A registry prefab's authored layer color, if the stem
-                    // is one; else 0.
-                    for (history.session.editor_decoration_registry) |definition| {
-                        for (definition.layers) |layer| {
-                            if (std.mem.eql(u8, layer.sprite, sprite)) break :blk layer.color_index;
-                        }
-                    }
-                    break :blk 0;
-                };
+                } else registryLayerColor(history.session.editor_decoration_registry, sprite);
                 const behind: bool = if (layer_index) |index| blk: {
                     if (index >= current_definition.layers.len) return;
                     break :blk current_definition.layers[index].behind;
-                } else blk: {
-                    // A registry prefab's authored layer draw side, if the
-                    // stem is one; else false (an overlay).
-                    for (history.session.editor_decoration_registry) |definition| {
-                        for (definition.layers) |layer| {
-                            if (std.mem.eql(u8, layer.sprite, sprite)) break :blk layer.behind;
-                        }
-                    }
-                    break :blk false;
-                };
+                } else registryLayerBehind(history.session.editor_decoration_registry, sprite);
                 const sprite_value = arena.dupe(u8, sprite) catch
                     @panic("failed to allocate layer sprite commit value");
                 const new_layer: types.DecorationLayer = .{
@@ -3271,6 +3410,30 @@ pub fn handleAnytimeInput(
             },
             .delete_editor_decoration_layer => {
                 const layer_index = payloadAs(.editor_layer, clicked_payload) orelse return;
+                // Surface-polymorphic (the inspector reuse): the hub
+                // editor drill-in commits the def with the layer list
+                // minus the index (the whole-def route).
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const definition = campaign_editor_state.decoration_types[type_id];
+                    if (layer_index >= definition.layers.len) return;
+                    var layers: std.ArrayList(types.DecorationLayer) = .empty;
+                    for (definition.layers, 0..) |layer, index| {
+                        if (index == layer_index) continue;
+                        layers.append(history.current_arena.allocator(), layer) catch
+                            @panic("failed to allocate decoration layers commit value");
+                    }
+                    pushHubDecorationDefCommit(
+                        history,
+                        type_id,
+                        definition,
+                        definition.footprint,
+                        layers.items,
+                    );
+                    return;
+                }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
@@ -3308,6 +3471,33 @@ pub fn handleAnytimeInput(
                 const swatch = payloadAs(.editor_layer_color, clicked_payload) orelse return;
                 const layer_index = swatch.layer_index;
                 const color_index = swatch.color_index;
+                // Surface-polymorphic (the inspector reuse): the hub
+                // editor drill-in commits the def with the layer's color
+                // swapped (the whole-def route); the mission editor keeps
+                // its layer event. Same-color picks never fire on either.
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const type_id = hubDecorationToolTypeId(hub_editor_state, campaign_editor_state) orelse return;
+                    const definition = campaign_editor_state.decoration_types[type_id];
+                    if (layer_index >= definition.layers.len) return;
+                    const current_layer = definition.layers[layer_index];
+                    if (current_layer.color_index == color_index) return;
+                    var updated_layer = current_layer;
+                    updated_layer.color_index = color_index;
+                    var layers: std.ArrayList(types.DecorationLayer) = .empty;
+                    layers.appendSlice(history.current_arena.allocator(), definition.layers) catch
+                        @panic("failed to allocate decoration layers commit value");
+                    layers.items[layer_index] = updated_layer;
+                    pushHubDecorationDefCommit(
+                        history,
+                        type_id,
+                        definition,
+                        definition.footprint,
+                        layers.items,
+                    );
+                    return;
+                }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,

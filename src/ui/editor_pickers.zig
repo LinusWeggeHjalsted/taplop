@@ -442,52 +442,50 @@ pub fn buildEditorSpritePicker(
     var hidden_sprite_count: usize = 0;
     switch (tab) {
         .mission_local => {
-            for (mission_sprites) |mission_sprite| {
-                const file_name = mission_sprite.file_name;
-                const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-                // The scan minted the namespaced id (session-owned -
-                // MissionSprite.stored_id); the cell REFERENCES it. This
-                // slice is what rides the pick payload
-                // (`clicked_payload`'s editor_sprite variant), so it must
-                // outlive the frame -
-                // the per-frame allocPrint it replaced died at the render
-                // reset. The kind-prefixed graphic_id below is
-                // render-scoped (view-internal, dies with the frame) -
-                // kind-dependent, so it cannot be pre-minted at the scan.
-                const stored_id = mission_sprite.stored_id;
-                const graphic_id = try std.fmt.allocPrint(
+            if (picker_kind == .decoration_base or picker_kind == .decoration_layer) {
+                // The decoration kinds: the SHARED local arm (the hub
+                // editor's picker is the same fn) - spec-gated, with the
+                // layer mode's base-dims match (a stale open with no
+                // decoration context skips the match; every pick no-ops
+                // at the commit gate).
+                const base_dims: ?types.Vector2 = if (picker_kind == .decoration_layer)
+                    if (decoration_context) |context| context.type_definition.pixel_dims else null
+                else
+                    null;
+                hidden_sprite_count += try appendLocalDecorationCells(
                     allocator,
-                    "{s}{s}",
-                    .{ mission_kind_prefix, stored_id },
+                    &cells,
+                    mission_sprites,
+                    base_dims,
                 );
-                const dims_conform = types.customSpriteDimsPassGate(graphic_id, mission_sprite.pixel_dims);
-                const base_dims_match = if (picker_kind == .decoration_layer)
-                    if (decoration_context) |context|
-                        mission_sprite.pixel_dims.x == context.type_definition.pixel_dims.x and
-                            mission_sprite.pixel_dims.y == context.type_definition.pixel_dims.y
-                    else
-                        true
-                else
-                    true;
-                if (!dims_conform or !base_dims_match) {
-                    hidden_sprite_count += 1;
-                    continue;
+            } else {
+                // Entity art: the fixed 512x640 frame convention. The
+                // stored ids are the scan's namespaced ids (session-owned
+                // - MissionSprite.stored_id; the slice rides the pick
+                // payload, so it must outlive the frame); the
+                // kind-prefixed graphic ids are render-scoped.
+                for (mission_sprites) |mission_sprite| {
+                    const file_name = mission_sprite.file_name;
+                    const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+                    const stored_id = mission_sprite.stored_id;
+                    const graphic_id = try std.fmt.allocPrint(
+                        allocator,
+                        "{s}{s}",
+                        .{ mission_kind_prefix, stored_id },
+                    );
+                    if (!types.customSpriteDimsPassGate(graphic_id, mission_sprite.pixel_dims)) {
+                        hidden_sprite_count += 1;
+                        continue;
+                    }
+                    try cells.append(allocator, .{
+                        .stored_id = stored_id,
+                        .label = stem,
+                        .graphic_id = graphic_id,
+                        .frame_width = editor_entity_frame_width,
+                        .frame_height = editor_entity_frame_height,
+                        .untinted = true,
+                    });
                 }
-                // Entity art follows the fixed 512x640 frame
-                // convention; decoration art's dims come from the scan's
-                // IHDR read.
-                const frame = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
-                    mission_sprite.pixel_dims
-                else
-                    types.Vector2{ .x = editor_entity_frame_width, .y = editor_entity_frame_height };
-                try cells.append(allocator, .{
-                    .stored_id = stored_id,
-                    .label = stem,
-                    .graphic_id = graphic_id,
-                    .frame_width = frame.x,
-                    .frame_height = frame.y,
-                    .untinted = true,
-                });
             }
         },
         .official => switch (picker_kind) {
@@ -511,21 +509,11 @@ pub fn buildEditorSpritePicker(
                 // A stale open on a non-decoration target: no base dims to
                 // match against - no cells ("No sprites"), picks no-op.
                 if (decoration_context) |context| {
-                    const base_dims = context.type_definition.pixel_dims;
-                    for (official_decoration_sprites) |sprite| {
-                        if (sprite.width != base_dims.x or sprite.height != base_dims.y) continue;
-                        try cells.append(allocator, .{
-                            .stored_id = sprite.stem,
-                            .label = sprite.stem,
-                            .graphic_id = try std.fmt.allocPrint(
-                                allocator,
-                                "decorations/{s}",
-                                .{sprite.stem},
-                            ),
-                            .frame_width = sprite.width,
-                            .frame_height = sprite.height,
-                        });
-                    }
+                    try appendOfficialDecorationSpriteCells(
+                        allocator,
+                        &cells,
+                        context.type_definition.pixel_dims,
+                    );
                 }
             },
         },
@@ -556,6 +544,73 @@ pub fn buildEditorSpritePicker(
         },
         active_theme,
     );
+}
+
+/// The local-tab DECORATION arm shared by both pickers: one cell per
+/// spec-conforming local sprite (whole 256px tiles - the same gate the
+/// render side applies), additionally dims-MATCHED to the base in layer
+/// mode (base_dims non-null; layer art must equal its base - the
+/// load-time invariant). Returns the hidden count (the never-silent
+/// note's input). The stored ids are the scan's namespaced ids
+/// (session-owned - the slice rides the pick payload, so it must outlive
+/// the frame); the graphic ids are render-scoped.
+pub fn appendLocalDecorationCells(
+    allocator: std.mem.Allocator,
+    cells: *std.ArrayList(SpritePickerCell),
+    local_sprites: []const state.MissionSprite,
+    base_dims: ?types.Vector2,
+) !usize {
+    var hidden_count: usize = 0;
+    for (local_sprites) |local_sprite| {
+        const file_name = local_sprite.file_name;
+        const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+        const stored_id = local_sprite.stored_id;
+        const graphic_id = try std.fmt.allocPrint(
+            allocator,
+            "decorations/{s}",
+            .{stored_id},
+        );
+        const dims_conform = types.customSpriteDimsPassGate(graphic_id, local_sprite.pixel_dims);
+        const base_dims_match = if (base_dims) |dims|
+            local_sprite.pixel_dims.x == dims.x and local_sprite.pixel_dims.y == dims.y
+        else
+            true;
+        if (!dims_conform or !base_dims_match) {
+            hidden_count += 1;
+            continue;
+        }
+        // Decoration art's dims come from the scan's IHDR read.
+        try cells.append(allocator, .{
+            .stored_id = stored_id,
+            .label = stem,
+            .graphic_id = graphic_id,
+            .frame_width = local_sprite.pixel_dims.x,
+            .frame_height = local_sprite.pixel_dims.y,
+            .untinted = true,
+        });
+    }
+    return hidden_count;
+}
+
+/// The official-tab LAYER arm shared by both decoration pickers: the
+/// shipped decoration sprites FILTERED to the base's dims (layer art
+/// must match its base - the load-time invariant; mismatched art is
+/// never offered).
+pub fn appendOfficialDecorationSpriteCells(
+    allocator: std.mem.Allocator,
+    cells: *std.ArrayList(SpritePickerCell),
+    base_dims: types.Vector2,
+) !void {
+    for (official_decoration_sprites) |sprite| {
+        if (sprite.width != base_dims.x or sprite.height != base_dims.y) continue;
+        try cells.append(allocator, .{
+            .stored_id = sprite.stem,
+            .label = sprite.stem,
+            .graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{sprite.stem}),
+            .frame_width = sprite.width,
+            .frame_height = sprite.height,
+        });
+    }
 }
 
 /// The official-tab registry arm shared by both decoration pickers: one

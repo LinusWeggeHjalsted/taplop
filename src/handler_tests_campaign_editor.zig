@@ -2385,3 +2385,145 @@ test "hub editor: the footprint editor flow - open seeds the draft, tile toggles
     // doesn't take.
     try testing.expect(history.current_state.hub_editor.?.picker != null);
 }
+
+test "hub editor: the layer machinery - add adopts the registry authoring, color swaps, delete removes, all via the whole-def commit" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{} }},
+            // A tree_1-shaped base: 768x768 (the real shipped dims), so
+            // a shipped layer stem resolves + matches.
+            .decoration_types = &.{.{
+                .id = "tree_1",
+                .sprite = "tree_1",
+                .footprint = &.{.{ .x = 0, .y = 2 }},
+                .pixel_dims = .{ .x = 768, .y = 768 },
+            }},
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // A recorded event first: the reconstruction-cache reads below (the
+    // registry load) key against the PREVIOUS event index, and the
+    // fixture starts with none (at runtime a session always has history
+    // by the time an editor opens).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_hub_inspector },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+
+    // The add-layer open (the surface-polymorphic layer button, null
+    // payload): the HUB picker opens in layer-ADD mode + the registry is
+    // ensured (the adoption source).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_decoration_layer_picker },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const hub_editor = &(history.current_state.hub_editor.?);
+        try testing.expect(hub_editor.picker != null);
+        try testing.expect(hub_editor.picker.? == .decoration_layer);
+        try testing.expect(hub_editor.picker.?.decoration_layer == null);
+    }
+    try testing.expect(history.session.editor_decoration_registry.len > 0);
+
+    // The ADD pick (a real shipped layer stem): the registry's authored
+    // color + draw side for the stem, else the defaults; committed via
+    // the whole-def event (the close is its child).
+    const picked_sprite = "tree_1_canopy";
+    const expected_color: u32 = blk: {
+        for (history.session.editor_decoration_registry) |definition| {
+            for (definition.layers) |layer| {
+                if (std.mem.eql(u8, layer.sprite, picked_sprite)) break :blk layer.color_index;
+            }
+        }
+        break :blk 0;
+    };
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_decoration_layer },
+        .{ .editor_sprite = picked_sprite },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.decoration_types[0].layers.len);
+        const added = editor.decoration_types[0].layers[0];
+        try testing.expectEqualStrings(picked_sprite, added.sprite);
+        try testing.expectEqual(expected_color, added.color_index);
+        try testing.expectEqual(@as(i32, 768), added.pixel_dims.x);
+        // The base + footprint ride along unchanged (the whole-def route).
+        try testing.expectEqualStrings("tree_1", editor.decoration_types[0].sprite);
+        try testing.expectEqual(@as(usize, 1), editor.decoration_types[0].footprint.len);
+        // The picker closed (the commit's close child).
+        try testing.expect(history.current_state.hub_editor.?.picker == null);
+    }
+
+    // The layer's color swatch: the whole-def route again; a same-color
+    // pick never fires.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_decoration_layer_color },
+        .{ .editor_layer_color = .{ .layer_index = 0, .color_index = 4 } },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 4), history.current_state.campaign_editor.?.decoration_types[0].layers[0].color_index);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_decoration_layer_color },
+        .{ .editor_layer_color = .{ .layer_index = 0, .color_index = 4 } },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 4), history.current_state.campaign_editor.?.decoration_types[0].layers[0].color_index);
+
+    // The layer delete: the def with the layer list minus the index.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .delete_editor_decoration_layer },
+        .{ .editor_layer = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.campaign_editor.?.decoration_types[0].layers.len);
+
+    // Each commit is its own undo step (the whole-def events).
+    try testing.expect(history.undo(event_handlers.processEvent)); // the delete
+    try testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.decoration_types[0].layers.len);
+    try testing.expect(history.undo(event_handlers.processEvent)); // the color swap
+    try testing.expectEqual(expected_color, history.current_state.campaign_editor.?.decoration_types[0].layers[0].color_index);
+    try testing.expect(history.undo(event_handlers.processEvent)); // the add
+    try testing.expectEqual(@as(usize, 0), history.current_state.campaign_editor.?.decoration_types[0].layers.len);
+}

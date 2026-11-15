@@ -505,7 +505,16 @@ pub fn buildHubSpritePicker(
     active_theme: types.ActiveColorTheme,
     ui_state: *ui_state_mod.UiState,
 ) !void {
-    if (hub_editor.picker == null or hub_editor.picker.? != .decoration_sprite) return;
+    if (hub_editor.picker == null) return;
+    // The mode: the BASE sprite (a whole-def adoption) or a LAYER sprite
+    // (the payload is the edited layer index, null = add) - the mission
+    // picker's two decoration kinds over the campaign palette.
+    const layer_mode = hub_editor.picker.? == .decoration_layer;
+    const layer_index: ?u32 = switch (hub_editor.picker.?) {
+        .decoration_sprite => null,
+        .decoration_layer => |picker_layer_index| picker_layer_index,
+        else => return,
+    };
     const type_id = switch (hub_editor.active_tool) {
         .decoration_type => |resolved| resolved,
         else => return,
@@ -513,33 +522,52 @@ pub fn buildHubSpritePicker(
     if (type_id >= campaign_editor.decoration_types.len) return;
     const type_definition = campaign_editor.decoration_types[type_id];
 
-    // The cells: the hub-local scan (spec-gated, untinted custom art) +
-    // the shared registry-prefab arm (the composed appearance an
-    // official pick adopts whole).
+    // The cells: the SHARED arms - the local scan (spec-gated, untinted
+    // custom art; the layer mode's base-dims match) + the registry
+    // prefabs (base) or the dims-filtered shipped sprites (layer).
     var cells: std.ArrayList(editor_pickers.SpritePickerCell) = .empty;
     var hidden_count: usize = 0;
     switch (ui_state.editor_picker_sprite_tab) {
         .mission_local => {
-            for (hub_sprites) |hub_sprite| {
-                const file_name = hub_sprite.file_name;
-                const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-                const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{hub_sprite.stored_id});
-                if (!types.customSpriteDimsPassGate(graphic_id, hub_sprite.pixel_dims)) {
-                    hidden_count += 1;
-                    continue;
-                }
-                try cells.append(allocator, .{
-                    .stored_id = hub_sprite.stored_id,
-                    .label = stem,
-                    .graphic_id = graphic_id,
-                    .frame_width = hub_sprite.pixel_dims.x,
-                    .frame_height = hub_sprite.pixel_dims.y,
-                    .untinted = true,
-                });
+            hidden_count += try editor_pickers.appendLocalDecorationCells(
+                allocator,
+                &cells,
+                hub_sprites,
+                if (layer_mode) type_definition.pixel_dims else null,
+            );
+        },
+        .official => {
+            if (layer_mode) {
+                try editor_pickers.appendOfficialDecorationSpriteCells(
+                    allocator,
+                    &cells,
+                    type_definition.pixel_dims,
+                );
+            } else {
+                try editor_pickers.appendDecorationRegistryCells(allocator, &cells, decoration_registry);
             }
         },
-        .official => try editor_pickers.appendDecorationRegistryCells(allocator, &cells, decoration_registry),
     }
+
+    // The mission picker's layer conventions (buildEditorSpritePicker):
+    // the EDITED layer is the highlight target + tint source; ADD mode
+    // highlights nothing + tints with the base; a stale index (out of
+    // range) likewise falls back to the base values, and every pick
+    // no-ops at the commit gate.
+    const edited_layer_sprite: ?[]const u8 = blk: {
+        const index = layer_index orelse break :blk null;
+        if (!layer_mode or index >= type_definition.layers.len) break :blk null;
+        break :blk type_definition.layers[index].sprite;
+    };
+    const edited_layer_color_index: ?u32 = blk: {
+        const index = layer_index orelse break :blk null;
+        if (!layer_mode or index >= type_definition.layers.len) break :blk null;
+        break :blk type_definition.layers[index].color_index;
+    };
+    const current_sprite: ?[]const u8 = if (layer_mode)
+        edited_layer_sprite
+    else
+        type_definition.sprite;
 
     // The shared emission core (the mission editor's own): tabs, close,
     // the 6-column grid, the prefab cells' composed appearance, the
@@ -557,13 +585,21 @@ pub fn buildHubSpritePicker(
         .{
             .tab = ui_state.editor_picker_sprite_tab,
             .local_tab_label = "Hub",
-            .pick_action = .select_hub_decoration_sprite,
-            .current_sprite = type_definition.sprite,
-            .graphic_color = world[@min(type_definition.color_index, types.gradient_color_count - 1)],
+            .pick_action = if (layer_mode)
+                .select_editor_decoration_layer
+            else
+                .select_hub_decoration_sprite,
+            .current_sprite = current_sprite,
+            .graphic_color = world[
+                @min(edited_layer_color_index orelse type_definition.color_index, types.gradient_color_count - 1)
+            ],
             .gradient = world,
             .button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)],
             .hidden_count = hidden_count,
-            .hidden_spec_note = "decoration art must be whole multiples of 256",
+            .hidden_spec_note = if (layer_mode)
+                "layer art must match the base sprite's dims"
+            else
+                "decoration art must be whole multiples of 256",
             .empty_note = empty_note,
         },
         active_theme,
@@ -1250,4 +1286,113 @@ test "hub editor inspector: the decoration arm emits the mission editor's exact 
         else => {},
     };
     try std.testing.expect(sprite_label_seen);
+}
+
+test "buildHubSpritePicker layer mode: local cells match the base dims, add mode highlights nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+    // A 768x768 base + two hub-local PNGs: one matching, one not (a
+    // layer must equal its base's dims - the load-time invariant).
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{} }},
+        .decoration_types = &.{.{
+            .id = "tree_1",
+            .sprite = "tree_1",
+            .footprint = &.{.{ .x = 0, .y = 2 }},
+            .pixel_dims = .{ .x = 768, .y = 768 },
+        }},
+        .next_handle = 1,
+    };
+    const hub_sprites = [_]state.MissionSprite{
+        .{ .file_name = "moss.png", .stored_id = "custom/campaigns/c/hubs/h/moss", .pixel_dims = .{ .x = 768, .y = 768 } },
+        .{ .file_name = "bush.png", .stored_id = "custom/campaigns/c/hubs/h/bush", .pixel_dims = .{ .x = 512, .y = 256 } },
+    };
+    var ui_state = ui_state_mod.UiState{};
+
+    // Layer-ADD mode (a null layer index): the local tab offers only the
+    // matching sprite; the mismatch is counted in the hidden note;
+    // nothing is highlighted (no current layer).
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubSpritePicker(
+            &elements,
+            allocator,
+            test_metrics,
+            campaign_editor,
+            .{ .hub = 0, .active_tool = .{ .decoration_type = 0 }, .picker = .{ .decoration_layer = null } },
+            &hub_sprites,
+            &.{},
+            test_theme,
+            &ui_state,
+        );
+        var pick_buttons: usize = 0;
+        var highlighted: usize = 0;
+        var hidden_note_seen = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .select_editor_decoration_layer) {
+                    pick_buttons += 1;
+                    if (button.highlighted) highlighted += 1;
+                }
+            },
+            .text_label => |label| {
+                if (std.mem.indexOf(u8, label.text, "1 sprites hidden - layer art must match the base sprite's dims") != null) {
+                    hidden_note_seen = true;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), pick_buttons);
+        try std.testing.expectEqual(@as(usize, 0), highlighted);
+        try std.testing.expect(hidden_note_seen);
+    }
+
+    // Layer-EDIT mode (index 0 over a one-layer def): the edited layer's
+    // sprite is the highlight target.
+    {
+        const layers = [_]types.DecorationLayer{.{
+            .sprite = "custom/campaigns/c/hubs/h/moss",
+            .color_index = 1,
+            .pixel_dims = .{ .x = 768, .y = 768 },
+        }};
+        var campaign_with_layer = campaign_editor;
+        var types_with_layer = [_]types.DecorationTypeDef{campaign_editor.decoration_types[0]};
+        types_with_layer[0].layers = &layers;
+        campaign_with_layer.decoration_types = &types_with_layer;
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubSpritePicker(
+            &elements,
+            allocator,
+            test_metrics,
+            campaign_with_layer,
+            .{ .hub = 0, .active_tool = .{ .decoration_type = 0 }, .picker = .{ .decoration_layer = 0 } },
+            &hub_sprites,
+            &.{},
+            test_theme,
+            &ui_state,
+        );
+        var highlighted: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .select_editor_decoration_layer and button.highlighted) highlighted += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), highlighted);
+    }
 }
