@@ -941,7 +941,8 @@ pub const arrowhead_arm_angle_degrees: i32 = 15;
 /// A cubic bezier stroke - the world map's mission-edge rendering (see
 /// DESIGN → Campaigns & the Campaign Editor → Edge geometry): straight
 /// edges are the degenerate case (all controls on the segment), self-loops
-/// the teardrop control placement, dangling stubs render `dashed`. Purely
+/// the teardrop control placement, dangling stubs the straight family
+/// at a fixed reach (faded - the orphan/incomplete marker). Purely
 /// decorative by default (`blocks_input = false`): the clickable edge is a
 /// spriteless Button whose `hit_curve` carries THIS curve's geometry, so
 /// the hit region is the drawn stroke.
@@ -953,9 +954,6 @@ pub const Curve = struct {
     width: i32,
     color: Color = default_tint,
     alpha: u8 = 255,
-    /// Dashed stroke - the dangling-stub rendering class (destination hub
-    /// not placed; the map mirror and the campaign editor both render it).
-    dashed: bool = false,
     /// Draw a directionality chevron at the curve's END: two short arms
     /// from the end point, `arrowhead_arm_angle_degrees` off the reversed
     /// end tangent, `arrowhead_arm_length` long (see `arrowheadArms` - the

@@ -405,7 +405,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             } else if (button.highlighted) {
                 if (button.hit_curve) |hit_curve| {
                     // A hit-curve button's hover outline is the FULL ARROW
-                    // (stroke + chevron + the dashed variant), drawn from
+                    // (stroke + chevron), drawn from
                     // the SAME curve widened by one outline thickness per
                     // side - the black outline is part of the arrow art,
                     // so the rim sits OUTSIDE it (the sprite-backed
@@ -609,7 +609,7 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.
 /// QUADS + the shapes texture = a flush, ~5000/frame on a 48-mission
 /// map). The join + end-cap jobs those circles did are handled by
 /// `drawCappedSegment` instead (segment overlap - no extra primitives,
-/// no flushes). The dashed variant alternates segments. Shared by the
+/// no flushes). Shared by the
 /// `.curve` arm's FALLBACK path and the
 /// hit-curve button's hover highlight, so the highlight is the SAME
 /// arrow, just wider.
@@ -627,7 +627,6 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
 
     var index: usize = 0;
     while (index + 1 < samples.len) : (index += 1) {
-        if (curve.dashed and index % 2 == 1) continue;
         drawCappedSegment(samples[index], samples[index + 1], thickness, raylib_color);
     }
     if (curve.arrowhead) {

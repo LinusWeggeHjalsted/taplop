@@ -3700,8 +3700,8 @@ WITHOUT a button: the map renders as much of the graph as the data
 defines, but mission entry stays equivalent to the exit tile (no
 marker, no entry - the 3f validation finding closes the loop). The
 button's `hit_curve` carries the DRAWN ARROW's geometry at its
-outline-inclusive width (black outline + inner stroke + dashed/
-arrowhead flags): the hit region (sampled polyline), the tooltip
+outline-inclusive width (black outline + inner stroke + the
+arrowhead flag): the hit region (sampled polyline), the tooltip
 bounds (`curveBounds` - the bbox incl. the chevron, so the tooltip
 frames the whole arrow), and the hover highlight (the same geometry
 widened by one `outline_thickness` per side, stripe-treated - the rim

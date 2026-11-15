@@ -357,6 +357,7 @@ working rules).
 - [map edges: the shapes-texture bind (the one-strip rewrite's render fix)](#map-edges-the-shapes-texture-bind-the-one-strip-rewrites-render-fix)
 - [map edges: back to per-segment lines (the one-strip experiment abandoned)](#map-edges-back-to-per-segment-lines-the-one-strip-experiment-abandoned)
 - [map edges: capped segments (the join + end-cap follow-up)](#map-edges-capped-segments-the-join--end-cap-follow-up)
+- [map edges: baked arrow textures (the edge rendering rework)](#map-edges-baked-arrow-textures-the-edge-rendering-rework)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21640,3 +21641,93 @@ same squared cap so the chevron's rim survives. Zero-length segments
 artifact: ghosted strokes (reduced alpha) show faint double-drawn seams
 inside the overlaps - the old per-sample circles had the same artifact
 at dot scale.
+
+## map edges: baked arrow textures (the edge rendering rework)
+
+The arrow-edge rendering saga's structural resolution: instead of
+drawing ~48 capped segments x2 layers per edge per frame (the class
+that produced the one-strip failure, the join-notch + ghosted-seam
+artifacts, and the unmeasured curve-draw-cost watch item), every map
+edge now draws as ONE rotated TEXTURED quad - the submission class
+every sprite rides. Settled in the session discussion, landed in four
+slices:
+
+- **The classify is a FIT, not a shape enumeration**
+  (campaign_geometry.zig - the home decision: every consumed constant
+  already lived there; element.zig only contributes the generic curve
+  family, with `distanceToSegment` newly pub - its clamped projection
+  IS the round-cap property). A curve un-rotates into canonical local
+  space, snaps to the cache families (straight with 8px length + bow
+  buckets - parallel siblings BOW apart, endpoints shared, so the
+  spread offset is a cache axis, not a straight-line assumption; the
+  fixed teardrop; the stub at its fixed reach), and the bucketed
+  reconstruction must verify within 8px of the curve's own samples -
+  anything farther falls back to the per-segment draw. The fit compares
+  samples point-to-point IN TRAVERSAL ORDER: swapped controls reverse
+  traversal and flip the chevron onto the other side of the anchor - a
+  different drawn arrow, correctly rejected (pinned by a fallback
+  test).
+- **The rasterizer is the hit-test math run per pixel**: the distance-
+  to-polyline sausage (round caps + round joins by construction, the
+  old per-sample-circle silhouette made exact) + a ~1px anti-aliased
+  falloff. The "drawn edge and hit region cannot disagree" invariant
+  strengthened into identity: the baked art IS the hit region's shape.
+  One texture per cache entry - the BLACK outline + WHITE inner stroke
+  rasterized together, so the draw-site multiply tint recolors the
+  white while black stays black, and dim/ghost alpha fades the whole
+  arrow uniformly (the deliberate visual delta: the black outline used
+  to stay full-alpha when dimmed).
+- **The bake is CPU pixel-buffer generation** - the outline/inset-mask
+  pattern, no GPU readback: `TextureStore.arrow_cache` beside its
+  siblings (`arrow|{variant}|{length}|{bow}|{width}|{arrowhead}`),
+  premultiplied + trilinear via the shared upload path. The backend
+  queries GL_MAX_TEXTURE_SIZE once at init (the glGetString extern
+  precedent; raylib itself links glGetIntegerv everywhere incl. web)
+  and `maxBakedArrowLength` floors it to the bucket grid (4064 on a
+  4096 platform; longer edges draw clamped - the accepted shortening).
+- **The emission flipped pair -> single**: both builders (world map,
+  campaign editor incl. the palette-cell arrow + the mission-tool drag
+  preview, which re-bakes per 8px bucket - trivially cheap) emit ONE
+  decorative curve per edge at the outline-inclusive width carrying
+  color + dim/ghost state; `drawBakedArrow` lands the texture's pivot
+  texel on the curve's start point (raylib's origin texel maps exactly
+  to the destination position). `drawCurveGeometry` survives as the
+  fallback + the hover/selected rim. DESIGN updated (Edge geometry, The
+  map surface, the Platform Seam batching rule).
+
+Two hands-on findings fixed en route:
+
+- **Short off-axis edges fell back erroneously** (the user's campaign:
+  fat monochrome arrows at certain angles below some length). Root
+  cause: the fit check compared chevron arms from the SAMPLED end
+  tangent - below ~100px the sample step (~length/48) is under the
+  integer rounding grain, so the last segment's direction is
+  quantization noise (coinciding samples make `arrowheadArms` fall
+  back to east outright). Fix: the chevron check compares end tangents
+  ANALYTICALLY (3(p3 - p2) from the control points, un-rotated into
+  the canonical frame) as an angular test (30 degrees) - the stroke's
+  sample fit remains the strict shape gate. Repro test verified the
+  deliberate-break way (fails pre-fix).
+- **Dashes removed entirely** (author decision): the dash pattern was
+  skip-every-other-sampled-segment - 6.25px gaps at the stub's fixed
+  300px, fully bridged by the 12px caps, so dashes were SUB-VISIBLE at
+  exactly the scale they existed for (the dangling stub rendered as a
+  solid ghosted line; only the fade read). Rather than rescale the
+  pattern, the dash class was deleted from the codebase: `Curve.
+  dashed`, `EdgeGeometry.dashed`, the cache-key axis, and the
+  per-segment dash branch are gone; the FADED arrow is the incomplete
+  marker (the editor's orphaned_alpha ghosting, the map's
+  undiscovered-start-hub dim rule). DESIGN's dashed mentions cleaned
+  in the same commit.
+
+Rider: the NEXT UP hit-curve bounds-coherence item landed with the
+emission flip - both builders' structure tests assert every hit-curve
+button's rect == curveBounds of its curve; the TODO item deleted.
+
+Tests: the classification contracts (three families, bucket snapping,
+clamp, parallel bows, mirror/traversal-order rejection, the
+short-angle repro), the raster contracts (layering, round cap, canvas
+padding, hull containment), maxBakedArrowLength bounds, and both
+builders' structure tests re-derived for the single-curve emission +
+the bounds-coherence scan. Full suite PASS, web compile OK, boot
+smoke + the user's hands-on pass clean.

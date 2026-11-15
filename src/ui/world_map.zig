@@ -207,7 +207,7 @@ pub fn buildWorldMap(
     //   self-loop (destination == from): the teardrop control placement;
     //   straight (destination placed): the degenerate bezier, parallel
     //     same-pair edges spread perpendicular by exit index;
-    //   dangling stub (destination unplaced/empty): a dash along the
+    //   dangling stub (destination unplaced/empty): a faded stub along
     //     direction bearing.
     const lightest = active_theme.lightest;
     for (campaign.edges, 0..) |edge, edge_index| {
@@ -251,7 +251,7 @@ pub fn buildWorldMap(
         // stroke (painter order; the curves are hit-test-transparent, so
         // emission order only affects paint). The hit_curve carries the
         // drawn arrow's OUTLINE-INCLUSIVE width (black outline + inner
-        // stroke) + the dashed/arrowhead flags - hit-testing, the tooltip
+        // stroke) + the arrowhead flag - hit-testing, the tooltip
         // bounds (curveBounds), and the highlight rim all derive from it.
         // Clickable exactly when the edge is lit (its start hub
         // discovered-or-start = the mission-entry legality); the mission
@@ -273,7 +273,6 @@ pub fn buildWorldMap(
                 .control_end = geometry.control_end,
                 .end = geometry.end,
                 .width = edge_width + 2 * edge_outline_width,
-                .dashed = geometry.dashed,
                 .arrowhead = true,
             };
             const bounds = ui_element.curveBounds(hit_curve);
@@ -305,7 +304,6 @@ pub fn buildWorldMap(
             .width = edge_width + 2 * edge_outline_width,
             .color = lightest,
             .alpha = if (lit) 255 else dimmed_alpha,
-            .dashed = geometry.dashed,
             .arrowhead = true,
             .blocks_input = false,
         } });
@@ -387,8 +385,7 @@ fn curveGeometryMatches(curve: ui_element.Curve, geometry: campaign_geometry.Edg
     return screenPositionEqual(curve.start, geometry.start) and
         screenPositionEqual(curve.control_start, geometry.control_start) and
         screenPositionEqual(curve.control_end, geometry.control_end) and
-        screenPositionEqual(curve.end, geometry.end) and
-        curve.dashed == geometry.dashed;
+        screenPositionEqual(curve.end, geometry.end);
 }
 
 /// Find the first element matching `matches`, failing loudly (naming
@@ -587,17 +584,15 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // is the start hub).
     const straight_geometry = fixtureEdgeGeometry(campaign, 1);
     const straight_curve = elements.items[try findLightCurve(elements.items, straight_geometry)].curve;
-    try std.testing.expect(!straight_curve.dashed);
     try std.testing.expectEqual(@as(u8, 255), straight_curve.alpha);
     const straight_button = elements.items[try findEdgeButton(elements.items, 1)].button;
     try std.testing.expect(straight_button.screen_position.x <= straight_curve.start.x);
 
-    // Edge 2: the dangling stub from b (direction 180 = south) - dashed,
-    // lit ('b' is in the discovered set; the dimming case is asserted in
+    // Edge 2: the dangling stub from b (direction 180 = south) - lit
+    // ('b' is in the discovered set; the dimming case is asserted in
     // the dedicated test below).
     const stub_geometry = fixtureEdgeGeometry(campaign, 2);
     const stub_curve = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
-    try std.testing.expect(stub_curve.dashed);
     try std.testing.expect(stub_curve.arrowhead);
     try std.testing.expectEqual(@as(u8, 255), stub_curve.alpha);
     _ = try findEdgeButton(elements.items, 2);

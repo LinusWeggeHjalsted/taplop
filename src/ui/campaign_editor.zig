@@ -337,7 +337,6 @@ pub fn buildCampaignEditorView(
             .control_start = .{ .x = geometry.control_start.x + pan_offset.x, .y = geometry.control_start.y + pan_offset.y },
             .control_end = .{ .x = geometry.control_end.x + pan_offset.x, .y = geometry.control_end.y + pan_offset.y },
             .end = .{ .x = geometry.end.x + pan_offset.x, .y = geometry.end.y + pan_offset.y },
-            .dashed = geometry.dashed,
         };
 
         // The select tool's click target over the DRAWN arrow (the world
@@ -358,7 +357,6 @@ pub fn buildCampaignEditorView(
                 .control_end = panned.control_end,
                 .end = panned.end,
                 .width = edge_width + 2 * edge_outline_width,
-                .dashed = panned.dashed,
                 .arrowhead = true,
             };
             const bounds = ui_element.curveBounds(hit_curve);
@@ -388,7 +386,6 @@ pub fn buildCampaignEditorView(
             .width = edge_width + 2 * edge_outline_width,
             .color = lightest,
             .alpha = if (orphaned) orphaned_alpha else 255,
-            .dashed = panned.dashed,
             .arrowhead = true,
             .blocks_input = false,
         } });
@@ -1240,8 +1237,7 @@ fn curveGeometryMatches(curve: ui_element.Curve, geometry: campaign_geometry.Edg
     return screenPositionEqual(curve.start, geometry.start) and
         screenPositionEqual(curve.control_start, geometry.control_start) and
         screenPositionEqual(curve.control_end, geometry.control_end) and
-        screenPositionEqual(curve.end, geometry.end) and
-        curve.dashed == geometry.dashed;
+        screenPositionEqual(curve.end, geometry.end);
 }
 
 fn findLightCurve(
@@ -1397,7 +1393,6 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
     );
     const loop_light = elements.items[try findLightCurve(elements.items, loop_geometry)].curve;
     try std.testing.expectEqual(@as(u8, 255), loop_light.alpha);
-    try std.testing.expect(!loop_light.dashed);
 
     // The straight edge Alpha -> Beta.
     const straight_geometry = campaign_geometry.deriveEdgeGeometry(
@@ -1409,7 +1404,8 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
     const straight_light = elements.items[try findLightCurve(elements.items, straight_geometry)].curve;
     try std.testing.expectEqual(@as(u8, 255), straight_light.alpha);
 
-    // The end-orphan: a dashed stub from Alpha, GHOSTED (reduced alpha).
+    // The end-orphan: a stub from Alpha, GHOSTED (reduced alpha) - the
+    // fade IS the incomplete marker.
     // Unauthored + sharing Alpha with m2: auto-spread among themselves -
     // m2 index 1, m3 index 2 over count 2 -> 0 and 180 degrees.
     try std.testing.expectEqual(@as(u32, 0), effectiveDirection(editor, editor.missions[1]));
@@ -1421,7 +1417,6 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         .{ .index = 1, .count = 1 },
     );
     const stub_light = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
-    try std.testing.expect(stub_light.dashed);
     try std.testing.expectEqual(orphaned_alpha, stub_light.alpha);
 
     // The start-orphan: the complete edge from the frozen ghost start

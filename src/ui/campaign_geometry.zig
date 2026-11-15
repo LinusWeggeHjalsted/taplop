@@ -90,7 +90,7 @@ pub const EdgeEndpoint = union(enum) {
     self_loop,
     /// The destination hub's map position.
     hub: Vector2,
-    /// Destination unplaced or unresolvable - the dashed stub along the
+    /// Destination unplaced or unresolvable - the stub along the
     /// direction bearing.
     dangling,
 };
@@ -107,16 +107,14 @@ pub const ParallelSpread = struct {
 };
 
 /// One derived edge shape: the four bezier points (straight edges are the
-/// degenerate bezier - all controls on the segment) + the dashed flag
-/// (the dangling-stub class). Both renderers draw the stroke pair from
-/// this and the clickable button's hit_curve copies it, so the drawn
+/// degenerate bezier - all controls on the segment). Both renderers draw
+/// from this and the clickable button's hit_curve copies it, so the drawn
 /// edge, its hit region, and its tooltip bounds cannot disagree.
 pub const EdgeGeometry = struct {
     start: ScreenPosition,
     control_start: ScreenPosition,
     control_end: ScreenPosition,
     end: ScreenPosition,
-    dashed: bool,
 };
 
 /// Derive an edge's on-screen shape. `from_position` is the from hub's
@@ -159,7 +157,6 @@ pub fn deriveEdgeGeometry(
                     anchor_y + direction.y * length - py * half_width,
                 ),
                 .end = screenPoint(anchor_x, anchor_y),
-                .dashed = false,
             };
         },
         .hub => |to_position| {
@@ -198,12 +195,11 @@ pub fn deriveEdgeGeometry(
                 .control_start = screenPoint(start_x + dx / 3.0 + ox, start_y + dy / 3.0 + oy),
                 .control_end = screenPoint(start_x + 2.0 * dx / 3.0 + ox, start_y + 2.0 * dy / 3.0 + oy),
                 .end = screenPoint(end_x, end_y),
-                .dashed = false,
             };
         },
         .dangling => {
             // Dangling stub: along the direction bearing from the hub's
-            // boundary, dashed.
+            // boundary.
             const direction = directionUnitVector(direction_degrees);
             const radius: f32 = @floatFromInt(hub_edge_anchor_radius);
             const length: f32 = @floatFromInt(stub_length);
@@ -222,7 +218,6 @@ pub fn deriveEdgeGeometry(
                     anchor_y + 2.0 * direction.y * length / 3.0,
                 ),
                 .end = screenPoint(anchor_x + direction.x * length, anchor_y + direction.y * length),
-                .dashed = true,
             };
         },
     }
@@ -287,8 +282,8 @@ fn bucketToMultiple(value: f32, granularity: i32) i32 {
 
 /// The baked-arrow families: which canonical shape a curve bakes as. The
 /// straight family covers plain straight edges, the parallel-spread bow,
-/// and the dashed dangling stub (dashed is a cache-key axis, not a shape);
-/// the self_loop family is the fixed-constant teardrop.
+/// and the dangling stub (the same shape at the fixed stub reach); the
+/// self_loop family is the fixed-constant teardrop.
 pub const BakedArrowVariant = enum { straight, self_loop };
 
 /// One curve's baked-arrow identity: everything the render seam needs to
@@ -307,7 +302,6 @@ pub const BakedArrowParams = struct {
     /// bow. Always 0 for self_loop.
     bow: i32,
     width: i32,
-    dashed: bool,
     arrowhead: bool,
     /// Clockwise degrees in screen space (y-down); the canonical bake
     /// points east (+x).
@@ -377,7 +371,6 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .length = length_bucket,
         .bow = bow_bucket,
         .width = curve.width,
-        .dashed = curve.dashed,
         .arrowhead = curve.arrowhead,
         .rotation_degrees = 0,
     });
@@ -391,7 +384,6 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .length = @min(length_bucket, max_baked_length),
         .bow = bow_bucket,
         .width = curve.width,
-        .dashed = curve.dashed,
         .arrowhead = curve.arrowhead,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
@@ -416,7 +408,6 @@ fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
         .length = self_loop_length,
         .bow = 0,
         .width = curve.width,
-        .dashed = curve.dashed,
         .arrowhead = curve.arrowhead,
         .rotation_degrees = 0,
     });
@@ -426,7 +417,6 @@ fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
         .length = self_loop_length,
         .bow = 0,
         .width = curve.width,
-        .dashed = curve.dashed,
         .arrowhead = curve.arrowhead,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
@@ -446,7 +436,6 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
             .control_end = .{ .x = @divTrunc(2 * params.length, 3), .y = params.bow },
             .end = .{ .x = params.length, .y = 0 },
             .width = params.width,
-            .dashed = params.dashed,
             .arrowhead = params.arrowhead,
         },
         .self_loop => element.Curve{
@@ -455,7 +444,6 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
             .control_end = .{ .x = self_loop_length, .y = -self_loop_half_width },
             .end = .{ .x = 0, .y = 0 },
             .width = params.width,
-            .dashed = params.dashed,
             .arrowhead = params.arrowhead,
         },
     };
@@ -546,9 +534,8 @@ const max_baked_arrow_segments = element.curve_sample_count + 2;
 const BakedArrowSegment = struct { start: FloatVec, end: FloatVec };
 
 /// The local segments the raster strokes: the canonical's sampled polyline
-/// (dashed keeps every other segment - the same rule as the per-segment
-/// draw) + the chevron arms. Derived from the same samples the hit region
-/// uses, so the baked silhouette IS the hit region's shape.
+/// + the chevron arms. Derived from the same samples the hit region uses,
+/// so the baked silhouette IS the hit region's shape.
 fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segments]BakedArrowSegment) usize {
     const canonical = bakedArrowCanonical(params);
     var samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
@@ -557,7 +544,6 @@ fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segm
     var count: usize = 0;
     var index: usize = 0;
     while (index + 1 < samples.len) : (index += 1) {
-        if (params.dashed and index % 2 == 1) continue;
         segments[count] = .{ .start = floatVec(samples[index]), .end = floatVec(samples[index + 1]) };
         count += 1;
     }
@@ -694,7 +680,6 @@ test "deriveEdgeGeometry: self-loop teardrop anchors on the bearing, controls mi
     };
     try expectScreenPositionEqual(anchor, geometry.start);
     try expectScreenPositionEqual(anchor, geometry.end);
-    try std.testing.expect(!geometry.dashed);
 
     // The teardrop is symmetric about the direction axis: both controls
     // at the same reach along it, mirrored across it by the half-width.
@@ -730,7 +715,6 @@ test "deriveEdgeGeometry: straight edge endpoints displace to each hub boundary"
         .{ .x = to_center.x - hub_edge_anchor_radius, .y = to_center.y },
         geometry.end,
     );
-    try std.testing.expect(!geometry.dashed);
 
     // A lone edge's controls sit on the segment at 1/3 + 2/3.
     const segment_length = geometry.end.x - geometry.start.x;
@@ -776,7 +760,7 @@ fn expectEqualInt(expected: i32, actual: i32) !void {
     try std.testing.expectEqual(expected, actual);
 }
 
-test "deriveEdgeGeometry: dangling stub dashes along the bearing" {
+test "deriveEdgeGeometry: dangling stub extends along the bearing" {
     // A stub authored south (180 degrees) from the hub at the origin.
     const geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .dangling, 180, .{ .index = 1, .count = 1 });
 
@@ -789,7 +773,6 @@ test "deriveEdgeGeometry: dangling stub dashes along the bearing" {
         .{ .x = center.x, .y = center.y + hub_edge_anchor_radius + stub_length },
         geometry.end,
     );
-    try std.testing.expect(geometry.dashed);
     // The controls sit on the stub's segment (at 1/3 + 2/3 of its reach).
     try std.testing.expect(geometry.control_start.y > geometry.start.y);
     try std.testing.expect(geometry.control_end.y > geometry.control_start.y);
@@ -806,12 +789,11 @@ test "deriveEdgeGeometry: coincident hubs fall back to east" {
     const center = mapToScreen(position);
     try expectScreenPositionEqual(.{ .x = center.x + hub_edge_anchor_radius, .y = center.y }, geometry.start);
     try expectScreenPositionEqual(.{ .x = center.x - hub_edge_anchor_radius, .y = center.y }, geometry.end);
-    try std.testing.expect(!geometry.dashed);
 }
 
 // ============================================================
 // Baked arrow tests - classification (the three families + the fit
-// gate) and rasterization (layering, round caps, dash gaps, canvas
+// gate) and rasterization (layering, round caps, canvas
 // padding). Fixtures derive through deriveEdgeGeometry wherever
 // possible so the tests assert the REAL emission shapes, not
 // hand-built near-misses.
@@ -827,7 +809,6 @@ fn drawnCurve(geometry: EdgeGeometry) element.Curve {
         .control_end = geometry.control_end,
         .end = geometry.end,
         .width = edge_width + 2 * edge_outline_width,
-        .dashed = geometry.dashed,
         .arrowhead = true,
     };
 }
@@ -846,7 +827,6 @@ test "bakedArrowParams: straight edge classifies with the chord rotation + exact
     try expectEqualInt(672, params.length);
     try expectEqualInt(0, params.bow);
     try expectEqualInt(edge_width + 2 * edge_outline_width, params.width);
-    try std.testing.expect(!params.dashed);
     try std.testing.expect(params.arrowhead);
     try std.testing.expectEqual(@as(f32, 0), params.rotation_degrees);
 }
@@ -905,9 +885,9 @@ test "bakedArrowParams: self-loop classifies as the fixed teardrop" {
     try std.testing.expectEqual(@as(f32, -90), params.rotation_degrees);
 }
 
-test "bakedArrowParams: dangling stub classifies dashed at the fixed reach" {
+test "bakedArrowParams: dangling stub classifies as the straight family at the fixed reach" {
     // A stub authored south: the chord is the fixed 300px reach along
-    // the bearing, rendered dashed. 300 is NOT a multiple of the 8px
+    // the bearing. 300 is NOT a multiple of the 8px
     // bucket (37.5 buckets rounds up), so the drawn stub snaps to 304.
     const geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .dangling, 180, .{ .index = 1, .count = 1 });
     const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
@@ -915,7 +895,6 @@ test "bakedArrowParams: dangling stub classifies dashed at the fixed reach" {
 
     try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
     try expectEqualInt(304, params.length);
-    try std.testing.expect(params.dashed);
     try std.testing.expectEqual(@as(f32, 90), params.rotation_degrees);
 }
 
@@ -1027,7 +1006,6 @@ test "rasterizeBakedArrow: the straight arrow layers white inner + black outline
         .length = 128,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .dashed = false,
         .arrowhead = false,
         .rotation_degrees = 0,
     };
@@ -1069,7 +1047,6 @@ test "rasterizeBakedArrow: the chevron arms rasterize with the stroke" {
         .length = 128,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .dashed = false,
         .arrowhead = true,
         .rotation_degrees = 0,
     };
@@ -1088,42 +1065,12 @@ test "rasterizeBakedArrow: the chevron arms rasterize with the stroke" {
     try std.testing.expectEqual([4]u8{ 255, 255, 255, 255 }, pixelColor(pixels, canvas, arm_midpoint_x, arm_midpoint_y));
 }
 
-test "rasterizeBakedArrow: dash gaps render empty at map-scale lengths" {
-    // 48 segments over 2400px = 50px per segment, so the skipped
-    // odd segments leave 50px gaps that the 12px round caps cannot
-    // bridge (at the 300px stub scale the gaps are 6.25px and the caps
-    // DO bridge them - the current segment draw has the same property).
-    const params = BakedArrowParams{
-        .variant = .straight,
-        .length = 2400,
-        .bow = 0,
-        .width = edge_width + 2 * edge_outline_width,
-        .dashed = true,
-        .arrowhead = false,
-        .rotation_degrees = 0,
-    };
-    const canvas = bakedArrowCanvas(params);
-    const pixels = try rasterBuffer(canvas);
-    defer std.testing.allocator.free(pixels);
-    rasterizeBakedArrow(params, canvas, pixels);
-
-    const pivot_x: usize = @intCast(canvas.pivot_x);
-    const pivot_y: usize = @intCast(canvas.pivot_y);
-
-    // Kept segment 0 spans local x [0, 50]: its midpoint is white.
-    try std.testing.expectEqual([4]u8{ 255, 255, 255, 255 }, pixelColor(pixels, canvas, pivot_x + 25, pivot_y));
-    // Skipped segment 1 spans local x [50, 100]: its midpoint sits 24.5px
-    // from either kept segment - past outline + falloff, transparent.
-    try std.testing.expectEqual([4]u8{ 0, 0, 0, 0 }, pixelColor(pixels, canvas, pivot_x + 75, pivot_y));
-}
-
 test "rasterizeBakedArrow: the teardrop silhouette stays inside its control hull" {
     const params = BakedArrowParams{
         .variant = .self_loop,
         .length = self_loop_length,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .dashed = false,
         .arrowhead = true,
         .rotation_degrees = 0,
     };

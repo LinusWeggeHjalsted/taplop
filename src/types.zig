@@ -3732,7 +3732,7 @@ pub const CampaignMissionEntry = struct {
 /// & the Campaign Editor → The map surface). Derived by the load scan
 /// (`loaders.deriveCampaignEdges`) from each hub's Exits; every string is
 /// owned by the campaign. `destination` is the exit's destination_hub
-/// uuid - EMPTY means a dangling forward reference (renders as a dashed
+/// uuid - EMPTY means a dangling forward reference (renders as a faded
 /// stub bearing `direction_degrees`; save-legal by design, warned by the
 /// load-time graph checks). `mission_dir` + `mission_name` are the
 /// mission's scan-resolved identity (empty when no mission in the campaign
