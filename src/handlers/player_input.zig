@@ -22,6 +22,7 @@ const editor_handlers = @import("../editor/handlers.zig");
 const campaign_editor_handlers = @import("../campaign_editor/handlers.zig");
 const campaign_editor_load = @import("../campaign_editor/load.zig");
 const planning = @import("../editor/planning.zig");
+const hub_editor_handlers = @import("../campaign_editor/hub_handlers.zig");
 const session_log = @import("../session_log.zig");
 const validation_replay = @import("../validation_replay.zig");
 const event_handlers = @import("../event_handlers.zig");
@@ -1331,6 +1332,62 @@ pub fn handlePlayerInputEvent(
         .player_delete_editor_at => |delete| {
             if (current.editor) |*editor| {
                 pushEvents(current, planning.planEditorDeleteActions(editor, delete.position, allocator), allocator);
+            }
+        },
+
+        // --- Hub editor viewport verbs (the slice-4 drill-in; thin over
+        // the shared planning facades - the input layer fires only
+        // nonempty plans, so a dead-handle or no-op click records
+        // nothing) ---
+        .player_set_hub_tool => |set| {
+            const hub_editor = &(current.hub_editor orelse return);
+            if (std.meta.eql(set.tool, hub_editor.active_tool)) return;
+            pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_set_tool = .{
+                .tool = set.tool,
+            } } }}, allocator);
+        },
+        .player_paint_hub_tile => |paint| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubTilePaintActions(hub, current.campaign_editor.?.decoration_types, paint.position, allocator), allocator);
+            }
+        },
+        .player_toggle_hub_selection => |toggle| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubToggleSelectionActions(hub, current.campaign_editor.?.decoration_types, current.hub_editor.?.selection, toggle.position, allocator), allocator);
+            }
+        },
+        .player_replace_hub_selection => |replace| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubReplaceSelectionActions(hub, current.campaign_editor.?.decoration_types, current.hub_editor.?.selection, replace.position, allocator), allocator);
+            }
+        },
+        .player_select_hub_region => |region| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubRegionSelectActions(hub, current.campaign_editor.?.decoration_types, current.hub_editor.?.selection, region.start_position, region.end_position, allocator), allocator);
+            }
+        },
+        .player_select_hub_all => {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubSelectAllActions(hub, current.hub_editor.?.selection, allocator), allocator);
+            }
+        },
+        .player_delete_hub_selection => {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubSelectionDeleteActions(hub, current.hub_editor.?.selection, allocator), allocator);
+            }
+        },
+        .player_clear_hub_selection => {
+            if (current.hub_editor == null) return;
+            pushEvents(current, &.{.{ .hub_editor_event = .hub_clear_selection }}, allocator);
+        },
+        .player_move_hub_selection => |move| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubSelectionMoveActions(hub, current.hub_editor.?.selection, move.delta, allocator), allocator);
+            }
+        },
+        .player_delete_hub_at => |delete| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubDeleteActions(hub, current.campaign_editor.?.decoration_types, delete.position, allocator), allocator);
             }
         },
         .player_overwrite_clone => {

@@ -135,7 +135,7 @@ pub fn selectionWithoutTile(
 /// list ascends in the slice so it processes DESCENDING (index-stable
 /// removal). A surface that maps steps in order inherits both rules by
 /// construction.
-const GridStep = union(enum) {
+pub const GridStep = union(enum) {
     set_tile: struct { position: Vector2, is_floor: bool },
     place_entity: struct { type_id: u32, position: Vector2 },
     set_entity_type: struct { placement_index: u32, type_id: u32 },
@@ -152,7 +152,7 @@ const GridStep = union(enum) {
 /// decide the ops over `Selectable`; each surface maps them to its own
 /// selection events, 1:1 in order. Same LIFO order contract as
 /// `GridStep`.
-const SelectionOp = union(enum) {
+pub const SelectionOp = union(enum) {
     select: types.Selectable,
     deselect: types.Selectable,
     clear,
@@ -160,7 +160,7 @@ const SelectionOp = union(enum) {
 
 /// Which selection-deletion policy a plan runs - see
 /// `planGridSelectionDelete`.
-const SelectionDeleteMode = enum {
+pub const SelectionDeleteMode = enum {
     /// The Delete key: a selected tile's OCCUPANT is swept with it (an
     /// occupant can't stand on nothing).
     delete_key,
@@ -204,7 +204,7 @@ pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel 
 /// NEUTRAL CORE (the slice-4 extraction): pure over a level-shaped grid +
 /// the decoration palette; the mission editor's `planEditorTilePaintActions`
 /// and the hub editor's tile tool both map its steps to their own events.
-fn planGridTilePaint(
+pub fn planGridTilePaint(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -462,7 +462,7 @@ pub fn planEditorEntityPlacementActions(
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
 /// `planEditorDecorationPlacementActions` and the hub editor's decoration
 /// tool (the campaign-SHARED decoration palette).
-fn planGridDecorationPlacement(
+pub fn planGridDecorationPlacement(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     type_id: u32,
@@ -708,7 +708,7 @@ fn singleGridStepPlan(
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
 /// `planEditorDeleteActions` and the hub editor's right-click delete (the
 /// hub grid has no entities/items - those arms simply never fire there).
-fn planGridDelete(
+pub fn planGridDelete(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -806,7 +806,7 @@ pub fn planEditorDeleteActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor and
 /// the hub editor's select tool.
-fn gridClickGroup(
+pub fn gridClickGroup(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
@@ -923,7 +923,7 @@ fn selectionOpsToEditorEvents(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
 /// tools.
-fn planGridSelectionToggle(
+pub fn planGridSelectionToggle(
     selection: []const types.Selectable,
     group: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -985,7 +985,7 @@ pub fn planEditorSelectionActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
 /// tools.
-fn planGridSelectionReplace(
+pub fn planGridSelectionReplace(
     selection: []const types.Selectable,
     group: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1082,7 +1082,7 @@ pub fn planEditorSelectionDeleteActions(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
 /// move-drag gestures.
-fn gridSelectionContainsPosition(
+pub fn gridSelectionContainsPosition(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     selection: []const types.Selectable,
@@ -1156,7 +1156,7 @@ fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
 /// selection the move will actually plan against - the current one, or
 /// the click group an unselected-claim drag's replace will have installed
 /// by the time the move runs (the move-drag gate's two call sites).
-fn gridSelectionMoveVetoed(
+pub fn gridSelectionMoveVetoed(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     delta: Vector2,
@@ -1193,7 +1193,7 @@ pub fn editorSelectionMoveVetoed(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): the hub editor's move lands as
 /// its own commit event over the same entry shape (hub arms join at 4-3).
-fn gridSelectionMoveEntries(
+pub fn gridSelectionMoveEntries(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     delta: Vector2,
@@ -1305,7 +1305,7 @@ pub fn planEditorSelectionMoveActions(
 /// (`planEditorSelectionDeleteActions`) and the selection move's clear
 /// phase (inside `planEditorSelectionMoveActions`) both map it; the hub
 /// editor maps it for its delete + move at 4-3.
-fn planGridSelectionDelete(
+pub fn planGridSelectionDelete(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1501,7 +1501,7 @@ fn appendPlacementDeletesDescending(
 ///
 /// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
 /// marquee gestures.
-fn planGridRegionSelect(
+pub fn planGridRegionSelect(
     level: *const types.EditorLevel,
     decoration_types: []const types.DecorationTypeDef,
     selection: []const types.Selectable,
@@ -1602,7 +1602,7 @@ fn selectEntriesToEditorEvents(
 /// the '!' / '='), skipping entries already in the selection - the
 /// marquee's membership rule with no region bound. The adds share the
 /// action's idle point, so one undo step reverts the whole batch.
-fn planGridSelectAll(
+pub fn planGridSelectAll(
     level: *const types.EditorLevel,
     selection: []const types.Selectable,
     allocator: std.mem.Allocator,
@@ -1669,6 +1669,244 @@ fn appendSelectEntryIfNew(
     if (selectionContains(selection, entry)) return;
     entries.append(allocator, entry) catch
         @panic("failed to allocate editor selection plan");
+}
+
+// ============================================================
+// The hub editor facades (slice 4-3) - the mission facades' mirror
+// over the same neutral core: resolve nothing (the CALLER passes the
+// drilled-in hub + the campaign decoration palette), run the core,
+// map onto HubEditorEvent 1:1 in order. The target hub's handle is
+// never carried per event (the drill-in IS the address).
+// ============================================================
+
+/// Map a neutral grid plan onto the hub editor's event family, 1:1 in
+/// order. No level_index - the events address the drilled-in hub.
+fn gridStepsToHubEvents(
+    steps: []const GridStep,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (steps.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (steps) |step| {
+        const variant: events.HubEditorEvent = switch (step) {
+            .set_tile => |tile| .{ .hub_set_tile = .{
+                .position = tile.position,
+                .is_floor = tile.is_floor,
+            } },
+            .place_decoration => |place| .{ .hub_place_decoration = .{
+                .type_id = place.type_id,
+                .position = place.position,
+            } },
+            .delete_decoration => |placement_index| .{ .hub_delete_decoration_placement = .{
+                .placement_index = placement_index,
+            } },
+            // The hub grid has no entities or items - those core arms are
+            // mission-only vocabulary a hub plan never contains.
+            .place_entity, .set_entity_type, .delete_entity, .place_item, .set_item_type, .delete_item => unreachable,
+        };
+        events_out.append(allocator, .{ .hub_editor_event = variant }) catch
+            @panic("failed to allocate hub editor plan");
+    }
+    return events_out.items;
+}
+
+/// Map a neutral selection plan onto the hub editor's selection events,
+/// 1:1 in order.
+fn selectionOpsToHubEvents(
+    ops: []const SelectionOp,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (ops.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (ops) |op| {
+        const variant: events.HubEditorEvent = switch (op) {
+            .select => |entry| .{ .hub_select = .{ .entry = entry } },
+            .deselect => |entry| .{ .hub_deselect = .{ .entry = entry } },
+            .clear => .hub_clear_selection,
+        };
+        events_out.append(allocator, .{ .hub_editor_event = variant }) catch
+            @panic("failed to allocate hub editor selection plan");
+    }
+    return events_out.items;
+}
+
+/// Map a neutral list of new selection entries onto the hub editor's
+/// select events, 1:1 in order.
+fn selectEntriesToHubEvents(
+    entries: []const types.Selectable,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (entries.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (entries) |entry| {
+        events_out.append(allocator, .{ .hub_editor_event = .{ .hub_select = .{ .entry = entry } } }) catch
+            @panic("failed to allocate hub editor selection plan");
+    }
+    return events_out.items;
+}
+
+/// The hub grid of the drilled-in hub (the caller resolves the hub; this
+/// is the shared dereference so every facade reads the same shape).
+fn hubGrid(hub: *const types.CampaignHubEdit) *const types.EditorLevel {
+    return &hub.grid;
+}
+
+/// Tile-paint click over the drilled-in hub (the tile tool). The plan is
+/// the neutral core's, mapped onto the hub events.
+pub fn planHubTilePaintActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return gridStepsToHubEvents(
+        planGridTilePaint(hubGrid(hub), decoration_types, position, allocator),
+        allocator,
+    );
+}
+
+/// Decoration placement over the drilled-in hub (the move chain's
+/// decoration re-placement; the decoration TOOL palette lands at 4-5 and
+/// calls the same facade).
+pub fn planHubDecorationPlacementActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return gridStepsToHubEvents(
+        planGridDecorationPlacement(hubGrid(hub), decoration_types, type_id, position, allocator),
+        allocator,
+    );
+}
+
+/// The tool-independent right-click delete over the drilled-in hub.
+pub fn planHubDeleteActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return gridStepsToHubEvents(
+        planGridDelete(hubGrid(hub), decoration_types, position, allocator),
+        allocator,
+    );
+}
+
+/// The hub editor's click group at `position` (pub for the gesture arms).
+pub fn hubClickGroup(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    return gridClickGroup(hubGrid(hub), decoration_types, position, allocator);
+}
+
+/// Select-tool shift+click over the drilled-in hub: toggle the clicked
+/// group.
+pub fn planHubToggleSelectionActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return selectionOpsToHubEvents(
+        planGridSelectionToggle(selection, hubClickGroup(hub, decoration_types, position, allocator), allocator),
+        allocator,
+    );
+}
+
+/// Select-tool plain click over the drilled-in hub: replace the selection
+/// with the clicked group.
+pub fn planHubReplaceSelectionActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return selectionOpsToHubEvents(
+        planGridSelectionReplace(selection, hubClickGroup(hub, decoration_types, position, allocator), allocator),
+        allocator,
+    );
+}
+
+/// Select-tool marquee over the drilled-in hub.
+pub fn planHubRegionSelectActions(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
+    start_position: Vector2,
+    end_position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return selectEntriesToHubEvents(
+        planGridRegionSelect(hubGrid(hub), decoration_types, selection, start_position, end_position, allocator),
+        allocator,
+    );
+}
+
+/// ctrl+A over the drilled-in hub.
+pub fn planHubSelectAllActions(
+    hub: *const types.CampaignHubEdit,
+    selection: []const types.Selectable,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return selectEntriesToHubEvents(
+        planGridSelectAll(hubGrid(hub), selection, allocator),
+        allocator,
+    );
+}
+
+/// Select-tool Delete key over the drilled-in hub.
+pub fn planHubSelectionDeleteActions(
+    hub: *const types.CampaignHubEdit,
+    selection: []const types.Selectable,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return gridStepsToHubEvents(
+        planGridSelectionDelete(hubGrid(hub), selection, allocator, .delete_key),
+        allocator,
+    );
+}
+
+/// Does the hub selection cover `position` (the move-drag claim)?
+pub fn hubSelectionContainsPosition(
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    return gridSelectionContainsPosition(hubGrid(hub), decoration_types, selection, position, allocator);
+}
+
+/// The hub selection-move plan: the translated selection as the chained
+/// worklist (hub_commit_selection_move), then the clear phase mapped onto
+/// hub events. A hub grid has no level_end, so the marker veto never
+/// fires. EMPTY only on a dead hub (the mission version's veto path is
+/// structurally unreachable here).
+pub fn planHubSelectionMoveActions(
+    hub: *const types.CampaignHubEdit,
+    selection: []const types.Selectable,
+    delta: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const entries = gridSelectionMoveEntries(hubGrid(hub), selection, delta, allocator);
+
+    var plan: std.ArrayList(Event) = .empty;
+    plan.append(allocator, .{ .hub_editor_event = .{ .hub_commit_selection_move = .{
+        .entries = entries,
+        .next_index = 0,
+    } } }) catch @panic("failed to allocate hub editor selection move plan");
+    plan.appendSlice(allocator, gridStepsToHubEvents(
+        planGridSelectionDelete(hubGrid(hub), selection, allocator, .selection_move),
+        allocator,
+    )) catch @panic("failed to allocate hub editor selection move plan");
+    return plan.items;
 }
 
 /// One entry of the mission editor's Tab cycle: a tool + the palette

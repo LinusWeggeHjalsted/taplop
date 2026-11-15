@@ -631,7 +631,23 @@ pub fn applyFrameCommand(
     const game_is_idle = history.current_state.event_stack.len == 0 and
         history.current_state.waiting == null and
         history.session.pending_error == null;
-    const command = queue.takeFrameCommand(game_is_idle) orelse return backend_input;
+    const command = queue.takeFrameCommand(game_is_idle) orelse {
+        // No command this frame (a wait's idle frames, or an empty queue):
+        // the scripted pointer position persists ONLY while a mouse button
+        // is held - the console is mid-gesture, and the hardware pointer
+        // bleeding into a held frame would phantom-promote a drag (the
+        // press stays at the scripted position, the hold reads the
+        // hardware's, the threshold trips - observed live as the console
+        // hub-click swallow). Outside a held gesture the frames stay on
+        // the hardware position (a human at the window never loses the
+        // pointer).
+        if (queue.pointer_position) |position| {
+            if (anyMouseButtonDown(history.session.input_state)) {
+                return mergeIntoPlatformInput(.{ .move = position }, backend_input, arena);
+            }
+        }
+        return backend_input;
+    };
     const merged: PlatformInput = switch (command) {
         .quit => blk: {
             history.session.quit_requested = true;
@@ -660,6 +676,7 @@ pub fn applyFrameCommand(
         // `move` both remembers the position and applies it this frame.
         .move => |position| blk: {
             queue.pointer_position = position;
+            history.session.force_render_next = true;
             break :blk mergeIntoPlatformInput(command, backend_input, arena);
         },
         // Press/release/scroll/type/action: re-apply the remembered pointer
@@ -673,6 +690,7 @@ pub fn applyFrameCommand(
             if (queue.pointer_position) |position| {
                 merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
             }
+            history.session.force_render_next = true;
             break :blk mergeIntoPlatformInput(command, merged_input, arena);
         },
     };
@@ -681,6 +699,16 @@ pub fn applyFrameCommand(
     // `promptDue`.
     if (promptDue(queue, command)) printPrompt(queue);
     return merged;
+}
+
+/// Whether any mouse button is currently held (the game-side held model -
+/// the console's press/release pair completes it). Reads the SESSION's
+/// input state, so this is the live held set the gestures saw last frame.
+fn anyMouseButtonDown(input_state: input.InputState) bool {
+    for (input_state.mouse_buttons_held) |held| {
+        if (held != null) return true;
+    }
+    return false;
 }
 
 /// Merge one input command into the frame's PlatformInput. Key/mouse ids

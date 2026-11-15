@@ -912,6 +912,90 @@ pub const CampaignEditorEvent = union(enum) {
     },
 };
 
+/// One hub-editor edit (the slice-4 drill-in's event family - scope:
+/// hub_editor; replay validates screen == .hub_editor + hub_editor != null,
+/// the campaign_editor/hub_handlers arms). The TARGET hub is the drill-in's
+/// own handle (HubEditor.hub) - never carried per event, the drill-in IS
+/// the address; every arm resolves it against the live authored graph and
+/// no-ops on a dead handle (the crafted-log convention). All events write
+/// through into current.campaign_editor.?.hubs[] by handle (the grid is
+/// never copied) - pure state transforms captured by deepCopy, so undo/redo
+/// and replay work by construction. One event per player action (the
+/// orchestrator convention); the exception is hub_commit_selection_move,
+/// the self-chaining worklist (the editor_commit_selection_move mirror).
+/// The shapes mirror EditorEvent one-for-one minus the mission-only verbs
+/// (entities, items, level tabs, level_end): a hub grid is an EditorLevel
+/// with tiles + player start + decorations (+ NPC/exit placements, whose
+/// verbs land with 4-4).
+pub const HubEditorEvent = union(enum) {
+    // ── Active tool ──
+    // Switch the active tool (the palette cell click / the Tab cycle). A
+    // switch away from select clears the selection in the same event (the
+    // editor_set_tool invariant).
+    hub_set_tool: struct {
+        tool: types.HubEditorToolId,
+    },
+
+    // ── Tiles + decorations ──
+    // Paint/erase one floor tile (the tile tool's click / the move chain's
+    // ground-ensuring paint). Idempotent on the current state (an erase of
+    // an absent tile no-ops); an erase prunes a selected tile entry at the
+    // same position.
+    hub_set_tile: struct {
+        position: Vector2,
+        is_floor: bool,
+    },
+    // Place a palette decoration with its ANCHOR tile at `position` (the
+    // decoration tool at 4-5 + the move chain's decoration re-placement).
+    // Enforces footprint-tile exclusivity (panic on a covered placement -
+    // the delete-first ordering is the planners' contract).
+    hub_place_decoration: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    // Order-preserving removal (placement indices are the identity the
+    // move/delete events address); reconciles the selection (a higher
+    // selected index shifts down, a selected index leaves).
+    hub_delete_decoration_placement: struct {
+        placement_index: u32,
+    },
+
+    // ── The spawn ──
+    // Move the player-spawn marker ('!'). Singleton by construction - a
+    // hub grid has no level_end, so the mission editor's marker-overlap
+    // veto never applies.
+    hub_set_player_start: struct {
+        position: Vector2,
+    },
+
+    // ── Selection ──
+    // The select tool's granular ops (one entry per event - the selection
+    // model). Entries address the hub grid: tile, decoration placement,
+    // player start (NPC/exit arms join at 4-4).
+    hub_select: struct {
+        entry: types.Selectable,
+    },
+    hub_deselect: struct {
+        entry: types.Selectable,
+    },
+    hub_clear_selection: void,
+
+    // ── The move chain ──
+    // The selection-move worklist (the editor_commit_selection_move
+    // mirror): backs the selection up as concrete things
+    // (`EditorSelectionMoveEntry` - the shared entry type; its hub-relevant
+    // arms are tile / player_start / decoration), then the clear phase's
+    // deletes run before the first link processes. Each link plans ONE
+    // entry against the live post-delete state (the placement planners are
+    // the current rules) and pushes the next link - the chain exists so
+    // each entry sees the fully-processed state. The final link clears the
+    // selection (nothing is reselected).
+    hub_commit_selection_move: struct {
+        entries: []const types.EditorSelectionMoveEntry,
+        next_index: u32,
+    },
+};
+
 /// Player-input events - the ONLY events input handlers can push (via
 /// `pushPlayerAction`). Each maps 1:1 to a user action (keybind/click).
 /// The replay whitelist (`isPlayerAction`) is just `activeTag ==
@@ -1376,6 +1460,58 @@ pub const PlayerInputEvent = union(enum) {
     // the handler). The gesture (click-vs-pan disambiguation) lives in
     // `handleRightClickEditorDelete`.
     player_delete_editor_at: struct {
+        position: Vector2,
+    },
+
+    // --- Hub editor viewport verbs (the slice-4 drill-in; the handlers
+    // re-plan from live state and push the HubEditorEvent children - the
+    // mission editor's orchestrator convention, one mirror per verb) ---
+    // Switch the hub editor's active tool (the palette cell click / the
+    // Tab cycle).
+    player_set_hub_tool: struct {
+        tool: types.HubEditorToolId,
+    },
+    // Tile-paint click over the hub grid (the tile tool): one click = one
+    // tile, covering decorations replaced (the player_paint_editor_tile
+    // contract).
+    player_paint_hub_tile: struct {
+        position: Vector2,
+    },
+    // Select-tool plain click over the hub grid: REPLACE the selection
+    // with the clicked thing's group (the player_replace_editor_selection
+    // contract).
+    player_replace_hub_selection: struct {
+        position: Vector2,
+    },
+    // Select-tool shift+click: TOGGLE the clicked thing's group (the
+    // player_toggle_editor_selection contract).
+    player_toggle_hub_selection: struct {
+        position: Vector2,
+    },
+    // Select-tool shift+drag release: ADD everything inside the rectangle
+    // (the player_select_editor_region contract).
+    player_select_hub_region: struct {
+        start_position: Vector2,
+        end_position: Vector2,
+    },
+    // ctrl+A over the hub grid: add every selectable thing (the
+    // player_select_editor_all contract).
+    player_select_hub_all: void,
+    // Select-tool Delete key: delete the hub selection (the
+    // player_delete_editor_selection contract).
+    player_delete_hub_selection: void,
+    // Select-tool ctrl+D: clear the hub selection.
+    player_clear_hub_selection: void,
+    // Select-tool move-drag release: move the hub selection by `delta`
+    // (the player_move_editor_selection contract - the chained
+    // hub_commit_selection_move worklist; a hub grid has no level_end, so
+    // the marker-overlap veto never fires).
+    player_move_hub_selection: struct {
+        delta: Vector2,
+    },
+    // The tool-independent right-click delete over the hub grid (the
+    // player_delete_editor_at contract).
+    player_delete_hub_at: struct {
         position: Vector2,
     },
 
@@ -1965,6 +2101,7 @@ pub const Event = union(enum) {
     super_event: SuperEvent,
     editor_event: EditorEvent,
     campaign_editor_event: CampaignEditorEvent,
+    hub_editor_event: HubEditorEvent,
     player_input_event: PlayerInputEvent,
     player_event: PlayerEvent,
     level_event: LevelEvent,

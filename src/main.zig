@@ -848,7 +848,9 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const drain_in_progress = history.current_state.event_stack.len > 0 and
         history.current_state.waiting == null and
         history.session.pending_error == null;
-    if (!drain_in_progress and since_last_render >= render_interval) {
+    const console_forces_render = history.session.force_render_next;
+    if (!drain_in_progress and (since_last_render >= render_interval or console_forces_render)) {
+        history.session.force_render_next = false;
         // Smoothed FPS: an EMA over the actual rendered frame interval
         // (`since_last_render` IS the time between this render and the last).
         // Advanced here, in `frame()` only - never in handlers, so the

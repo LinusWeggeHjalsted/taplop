@@ -185,6 +185,17 @@ pub const SessionState = struct {
     pub const save_files_never_scanned: u64 = std.math.maxInt(u64);
 
     input_state: input.InputState = .{},
+
+    /// Set by the console channel when an INPUT command merged this frame
+    /// (press/release/move/scroll/type/action): the render gate honors it
+    /// alongside the vsync interval, so the NEXT frame renders before any
+    /// further scripted command can act. Without it, console commands land
+    /// per uncapped game-loop frame while views refresh only per render
+    /// interval - a scripted click could hit-test the view from BEFORE the
+    /// previous command's effect (observed live as the intermittent
+    /// hub-click swallow). Cleared by the render gate after the forced
+    /// render. Never replayed (the input layer never runs during replay).
+    force_render_next: bool = false,
     ui_state: UiState = .{},
     tile_cursor: ?types.Vector2 = null,
     /// Whether an autosave exists in the persistent dir at session start.
@@ -1626,6 +1637,7 @@ pub const GameStateHistory = struct {
             .super_event => |m| std.fmt.bufPrint(buf, "super_event.{s}", .{@tagName(m)}) catch "super_event.?",
             .editor_event => |m| std.fmt.bufPrint(buf, "editor_event.{s}", .{@tagName(m)}) catch "editor_event.?",
             .campaign_editor_event => |m| std.fmt.bufPrint(buf, "campaign_editor_event.{s}", .{@tagName(m)}) catch "campaign_editor_event.?",
+            .hub_editor_event => |m| std.fmt.bufPrint(buf, "hub_editor_event.{s}", .{@tagName(m)}) catch "hub_editor_event.?",
             .player_event => |m| std.fmt.bufPrint(buf, "player_event.{s}", .{@tagName(m)}) catch "player_event.?",
             .player_input_event => |m| std.fmt.bufPrint(buf, "player_input_event.{s}", .{@tagName(m)}) catch "player_input_event.?",
             .level_event => |m| std.fmt.bufPrint(buf, "level_event.{s}", .{@tagName(m)}) catch "level_event.?",
@@ -1787,6 +1799,29 @@ pub const GameStateHistory = struct {
             if (hub.handle == handle) return;
         }
         self.rejectReplay("replay validation: campaign-editor action hub handle does not resolve");
+    }
+
+    /// Structural legality for the hub editor drill-in's orchestrators:
+    /// the hub_editor screen + the drill-in state + its target handle
+    /// resolving in the live authored graph (the validateCampaignEditorAction
+    /// mirror).
+    fn validateHubEditorAction(self: *GameStateHistory) void {
+        if (self.current_state.screen != .hub_editor) {
+            self.rejectReplay("replay validation: hub-editor action outside hub editor screen");
+            return;
+        }
+        const hub_editor = self.current_state.hub_editor orelse {
+            self.rejectReplay("replay validation: hub-editor action with no drill-in state");
+            return;
+        };
+        const campaign_editor = self.current_state.campaign_editor orelse {
+            self.rejectReplay("replay validation: hub-editor action with no campaign editor");
+            return;
+        };
+        for (campaign_editor.hubs) |hub| {
+            if (hub.handle == hub_editor.hub) return;
+        }
+        self.rejectReplay("replay validation: hub-editor action target hub handle does not resolve");
     }
 
     fn validateEditorLevelMetadataCommit(
@@ -2323,6 +2358,21 @@ pub const GameStateHistory = struct {
                     .player_set_campaign_tool,
                     .player_set_campaign_name,
                     => self.validateCampaignEditorAction(null),
+                    // The hub editor drill-in's orchestrators: structural
+                    // legality only (the handlers no-op defensively; the
+                    // positions/types are unrestricted - occupant no-op
+                    // clicks are legal in a recorded session).
+                    .player_set_hub_tool,
+                    .player_paint_hub_tile,
+                    .player_toggle_hub_selection,
+                    .player_replace_hub_selection,
+                    .player_select_hub_region,
+                    .player_select_hub_all,
+                    .player_delete_hub_selection,
+                    .player_clear_hub_selection,
+                    .player_move_hub_selection,
+                    .player_delete_hub_at,
+                    => self.validateHubEditorAction(),
                     .player_select_campaign_hub => |set| {
                         if (set.hub) |hub| self.validateCampaignEditorAction(hub);
                     },

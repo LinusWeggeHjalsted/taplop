@@ -543,6 +543,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_campaign_import,
         .open_hub_editor,
         .close_hub_editor,
+        .select_hub_tool,
         => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

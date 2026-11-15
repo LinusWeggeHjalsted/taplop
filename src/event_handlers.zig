@@ -19,6 +19,7 @@ const state = @import("state.zig");
 const shared = @import("handlers/shared.zig");
 const editor_handlers = @import("editor/handlers.zig");
 const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
+const hub_editor_handlers = @import("campaign_editor/hub_handlers.zig");
 
 const player_handlers = @import("handlers/player.zig");
 const player_input = @import("handlers/player_input.zig");
@@ -140,6 +141,16 @@ pub fn processEvent(
                 history,
                 current,
                 campaign_editor_event,
+                allocator,
+            );
+        },
+        .hub_editor_event => |hub_editor_event| {
+            // The hub editor drill-in's category (the slice-4 family):
+            // pure transforms writing through into
+            // current.campaign_editor.?.hubs by the drill-in's handle.
+            hub_editor_handlers.handleHubEditorEvent(
+                current,
+                hub_editor_event,
                 allocator,
             );
         },

@@ -418,6 +418,9 @@ pub const Action = enum {
     // campaign map - the recorded close drops the drill-in state via
     // the scope rule.
     close_hub_editor,
+    // The hub editor's tool palette cell click: the HubEditorToolId
+    // rides the `hub_tool` payload (the select_editor_tool convention).
+    select_hub_tool,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1231,6 +1234,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // action context, so hub-editor bindings can never co-fire with
         // either sibling editor's).
         .close_hub_editor,
+        .select_hub_tool,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1389,6 +1393,9 @@ pub const ButtonPayload = union(enum) {
     editor_sprite_tab: EditorSpritePickerTab,
     /// An editor tool cell (make it the active tool).
     editor_tool: EditorToolId,
+    /// A hub editor tool cell (make it the hub editor's active tool - the
+    /// `editor_tool` convention over HubEditorToolId).
+    hub_tool: HubEditorToolId,
     /// An editor level tab.
     editor_level: u32,
     /// An entity/decoration color swatch (the gradient index).
@@ -1486,6 +1493,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         => .editor_group,
         .delete_editor_palette_type => .editor_tool,
         .select_editor_tool => .editor_tool,
+        .select_hub_tool => .hub_tool,
         .select_editor_level => .editor_level,
         .delete_editor_level => .editor_level,
         .toggle_editor_inspector_section => .editor_section,
@@ -4009,6 +4017,18 @@ pub const CampaignEditor = struct {
     picker: ?CampaignEditorPicker = null,
 };
 
+/// The hub editor's tool union (the active-tool model over the hub grid
+/// - DESIGN → Campaigns & the Campaign Editor → The hub editor
+/// surface). The fixed pair lands with 4-3; the per-mission Missions
+/// group + the two fixed NPC tools join at 4-4 (arms: `npc` carrying the
+/// NpcType, `mission` carrying the outgoing mission's campaign handle -
+/// membership is live from the campaign graph), the decoration type
+/// tools at 4-5.
+pub const HubEditorToolId = union(enum) {
+    select,
+    tile,
+};
+
 /// The hub editor drill-in state (the slice-4 surface - DESIGN →
 /// Campaigns & the Campaign Editor → The hub editor surface): the
 /// level-editor mirror over ONE hub's grid. The grid is NOT copied -
@@ -4024,6 +4044,15 @@ pub const HubEditor = struct {
     /// against the live graph at open; the editing events re-check it
     /// defensively (the crafted-log convention).
     hub: u32,
+    /// The active tool (the active-tool model; a switch away from select
+    /// clears the selection in the same event - the editor_set_tool
+    /// invariant).
+    active_tool: HubEditorToolId = .select,
+    /// The select tool's selection over the hub grid (the Selectable
+    /// arms that exist on a hub: tile, decoration placement, player
+    /// start; NPC/exit arms join at 4-4). Replaced wholesale, never
+    /// mutated in place (the Editor.selection convention).
+    selection: []const Selectable = &.{},
     /// The camera-clamp snapshot over the hub grid's tiles (the
     /// `Editor.clamp_bounds` convention - taken at open, never re-taken
     /// mid-edit so painting never reframes the camera; see DESIGN →
@@ -4034,8 +4063,6 @@ pub const HubEditor = struct {
     /// at open through the reconstruction cache). Hubs carry no
     /// player.txt; the '!' is a POSITION, the body is preview art.
     player_def: EntityTypeDef = .{ .id = "Player" },
-    // The active tool + selection + palette state land with the editing
-    // slices (TODO → Level Editor → campaign editor, slice 4 recut).
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

@@ -35,6 +35,7 @@ const editor_handlers = @import("editor/handlers.zig");
 const mission_io = @import("editor/mission_io.zig");
 const campaign_editor_handlers = @import("campaign_editor/handlers.zig");
 const campaign_editor_io = @import("campaign_editor/io.zig");
+const hub_editor_handlers = @import("campaign_editor/hub_handlers.zig");
 const shared = @import("handlers/shared.zig");
 const input_gestures = @import("input_gestures.zig");
 const skillsSlotUnderPointer = input_gestures.skillsSlotUnderPointer;
@@ -1506,6 +1507,17 @@ pub fn handleAnytimeInput(
                     .tool = planning.nextCampaignEditorTool(editor.active_tool, forward),
                 } });
             }
+        } else if (history.current_state.screen == .hub_editor) {
+            // The drill-in's two-tool cycle (select <-> tile); the palette
+            // grows arms at 4-4/4-5 and the cycle grows with them.
+            if (history.current_state.hub_editor != null) {
+                pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
+                    .tool = switch (history.current_state.hub_editor.?.active_tool) {
+                        .select => types.HubEditorToolId.tile,
+                        .tile => types.HubEditorToolId.select,
+                    },
+                } });
+            }
         } else if (history.current_state.screen == .editor) {
             if (history.current_state.editor) |editor| {
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_tool = .{
@@ -2688,6 +2700,16 @@ pub fn handleAnytimeInput(
                 if (current.editor == null) return;
                 if (std.meta.eql(tool, current.editor.?.active_tool)) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_tool = .{
+                    .tool = tool,
+                } });
+            },
+            // The hub editor's tool palette cell (the select_editor_tool
+            // convention over the drill-in's tool union).
+            .select_hub_tool => {
+                const tool = payloadAs(.hub_tool, clicked_payload) orelse return;
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                if (std.meta.eql(tool, current.hub_editor.?.active_tool)) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
                     .tool = tool,
                 } });
             },
@@ -4170,6 +4192,69 @@ pub fn handleIdleInput(
                             } }, allocator);
                         }
                     },
+                }
+            }
+        }
+        return;
+    }
+
+    if (current.screen == .hub_editor) {
+        // The drill-in's idle arms (the .editor branch's mirror over the
+        // drilled hub): the select-tool keys + the tool click. The
+        // gesture-owned paths (shift+click toggle, marquee, move-drag,
+        // right-click delete, drag-painting) are the input_gestures hub
+        // arms.
+        if (current.hub_editor != null) {
+            if (idle.delete_editor_selection) {
+                if (hub_editor_handlers.drilledHub(current)) |hub| {
+                    const plan = planning.planHubSelectionDeleteActions(hub, current.hub_editor.?.selection, allocator);
+                    if (plan.len > 0) {
+                        event_push.pushPlayerAction(current, .player_delete_hub_selection, allocator);
+                    }
+                }
+            }
+            if (idle.clear_editor_selection) {
+                if (current.hub_editor.?.selection.len > 0) {
+                    event_push.pushPlayerAction(current, .player_clear_hub_selection, allocator);
+                }
+            }
+            if (idle.select_editor_all) {
+                if (hub_editor_handlers.drilledHub(current)) |hub| {
+                    if (planning.planHubSelectAllActions(hub, current.hub_editor.?.selection, allocator).len > 0) {
+                        event_push.pushPlayerAction(current, .player_select_hub_all, allocator);
+                    }
+                }
+            }
+            if (idle.tile_clicked) |clicked_position| {
+                if (hub_editor_handlers.drilledHub(current)) |hub| {
+                    switch (current.hub_editor.?.active_tool) {
+                        .tile => {
+                            // The paint-drag gesture owns the pointer press
+                            // (the .editor arm's deferral); the keyboard
+                            // confirm-at-cursor path still lands here.
+                            if (history.session.ui_state.editor_tile_drag) return;
+                            const plan = planning.planHubTilePaintActions(hub, current.campaign_editor.?.decoration_types, clicked_position, allocator);
+                            if (plan.len > 0) {
+                                event_push.pushPlayerAction(current, .{ .player_paint_hub_tile = .{
+                                    .position = clicked_position,
+                                } }, allocator);
+                            }
+                        },
+                        .select => {
+                            // Shift is the marquee gesture's (the toggle
+                            // fires there); a move drag owns the press. An
+                            // unclaimed plain press REPLACES the selection
+                            // with the clicked group.
+                            if (modifiers.shift) return;
+                            if (history.session.ui_state.editor_move_drag != null) return;
+                            const plan = planning.planHubReplaceSelectionActions(hub, current.campaign_editor.?.decoration_types, current.hub_editor.?.selection, clicked_position, allocator);
+                            if (plan.len > 0) {
+                                event_push.pushPlayerAction(current, .{ .player_replace_hub_selection = .{
+                                    .position = clicked_position,
+                                } }, allocator);
+                            }
+                        },
+                    }
                 }
             }
         }

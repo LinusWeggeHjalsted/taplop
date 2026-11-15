@@ -1597,3 +1597,220 @@ test "hub editor framing: open drills in, close returns, the scope rule owns the
     try testing.expect(history.current_state.hub_editor == null);
     try testing.expect(history.current_state.campaign_editor == null);
 }
+
+test "hub editor events: tile paint, selection, the move chain over the drilled-in hub grid" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .next_handle = 1,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // Drill in.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_hub_editor = .{ .hub = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.hub_editor, history.current_state.screen);
+
+    // Tile paint on empty ground: the tile lands in the AUTHORED graph (the
+    // write-through - the hub grid in campaign_editor, not a copy).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_paint_hub_tile = .{
+            .position = .{ .x = 5, .y = 5 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(@as(usize, 3), hubs[0].grid.level_tiles.len);
+    }
+
+    // The tool switch: tile -> select clears nothing (no selection yet);
+    // a switch away from select with a selection takes it along.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_hub_tool = .{
+            .tool = .select,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // Select the spawn ('!' singleton group).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_replace_hub_selection = .{
+            .position = .{ .x = 0, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.hub_editor.?.selection.len);
+    try testing.expectEqual(types.Selectable.player_start, history.current_state.hub_editor.?.selection[0]);
+
+    // Move the selection (the spawn) by one tile: the chained
+    // hub_commit_selection_move paints the ground at the target, moves the
+    // spawn, and clears the selection. One undo step reverts the whole
+    // move.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_move_hub_selection = .{
+            .delta = .{ .x = 1, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, hubs[0].grid.player_start);
+        try testing.expectEqual(@as(usize, 0), history.current_state.hub_editor.?.selection.len);
+    }
+
+    // Undo the move: the spawn returns, the selection returns.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, hubs[0].grid.player_start);
+        try testing.expectEqual(@as(usize, 1), history.current_state.hub_editor.?.selection.len);
+    }
+
+    // The crafted-log belt: a dead drill-in handle no-ops every edit (the
+    // state is untouched, no panic).
+    history.current_state.hub_editor.?.hub = 99;
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_paint_hub_tile = .{
+            .position = .{ .x = 9, .y = 9 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(@as(usize, 3), hubs[0].grid.level_tiles.len);
+    }
+}
+
+test "hub editor events: the decoration placement + delete + selection reconcile over the hub grid" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .select },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // Place two decorations (the move chain's re-placement path + 4-5's
+    // tool call the same event) at tile-free ground. The stack is LIFO -
+    // the batch is pushed in REVERSE so the placements land in authoring
+    // order [tree, rock].
+    event_push.pushEvents(
+        &history.current_state,
+        &.{
+            .{ .hub_editor_event = .{ .hub_place_decoration = .{ .type_id = 1, .position = .{ .x = 4, .y = 0 } } } },
+            .{ .hub_editor_event = .{ .hub_place_decoration = .{ .type_id = 0, .position = .{ .x = 3, .y = 0 } } } },
+        },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(@as(usize, 2), hubs[0].grid.decoration_placements.len);
+    }
+
+    // Select BOTH decorations (the replace plan over the first's tile
+    // grabs its group), then delete the LOWER one: the selection's higher
+    // index shifts down (the reconcile) - the surviving entry still points
+    // at the right placement.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{
+            .{ .hub_editor_event = .{ .hub_select = .{ .entry = .{ .decoration_placement = 0 } } } },
+            .{ .hub_editor_event = .{ .hub_select = .{ .entry = .{ .decoration_placement = 1 } } } },
+        },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .hub_editor_event = .{ .hub_delete_decoration_placement = .{
+            .placement_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const hubs = history.current_state.campaign_editor.?.hubs;
+        try testing.expectEqual(@as(usize, 1), hubs[0].grid.decoration_placements.len);
+        try testing.expectEqual(@as(u32, 1), hubs[0].grid.decoration_placements[0].type_id);
+        const selection = history.current_state.hub_editor.?.selection;
+        try testing.expectEqual(@as(usize, 1), selection.len);
+        try testing.expectEqual(@as(u32, 0), selection[0].decoration_placement);
+    }
+
+    // The placement invariant: placing onto a TILE is the fail-fast class
+    // (the planners clear occupants first - reaching here occupied is a
+    // logic bug).
+    // (Asserted by the panic path - not unit-testable per the no-
+    // expectPanics convention; the hub-readiness planning test pins the
+    // no-op ordering that keeps it unreachable.)
+}

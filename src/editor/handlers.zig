@@ -1351,7 +1351,7 @@ fn markerMovesLater(
 /// Idempotent: painting an existing tile / erasing an absent one returns
 /// the input unchanged. Inserts keep `tileBefore` (row-major) order so the
 /// list stays canonical with the parser's layout-scan order.
-fn setLevelTile(
+pub fn setLevelTile(
     tiles: []const Vector2,
     position: Vector2,
     is_floor: bool,
@@ -1396,7 +1396,7 @@ fn setLevelTile(
 /// Callers gate on the removal targeting the ACTIVE level (selection
 /// entries are active-level-relative). Returns the original slice when no
 /// entry of `kind` is present.
-fn reconcileSelectionAfterPlacementDelete(
+pub fn reconcileSelectionAfterPlacementDelete(
     selection: []const types.Selectable,
     kind: std.meta.Tag(types.Selectable),
     removed_index: u32,

@@ -533,12 +533,19 @@ pub fn view(
         // (flush top-right - the primary-actions spot). The tool palette,
         // inspector, and metadata sidebar land with the editing slices;
         // the world scene is the world pass's hub_editor arm above.
-        if (current_state.hub_editor != null) {
+        if (current_state.hub_editor) |hub_editor| {
             ui.buildHubEditorTopBar(
                 &ui_elements,
                 frame_allocator,
                 active_theme,
             ) catch @panic("failed to build hub editor top bar");
+            ui.buildHubEditorBottomBar(
+                &ui_elements,
+                frame_allocator,
+                ui.screenRect(),
+                hub_editor.active_tool,
+                active_theme,
+            ) catch @panic("failed to build hub editor bottom bar");
         }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either

@@ -420,7 +420,14 @@ work:
           player spawn, select/marquee/move-drag + the hub
           `hub_editor_event` family (screen-gated on .hub_editor,
           writing through into CampaignEditor.hubs by handle) + the
-          hub editor binding set.
+          hub editor binding set. Part A DONE (DONE.md, "campaign-editor
+          slice 4-3a"): the event family + handlers + planning facades +
+          orchestrators + the Select/Tile palette + Tab cycle + the
+          select-tool keys + click-driven paint/select/move (verified
+          end to end over the console channel). REMAINING (4-3b): the
+          gesture arms (drag-painting, marquee, move-drag, right-click
+          delete - the input_gestures hub branches) + the view overlays
+          (cursor/selection/marquee outlines).
     - [ ] 4-4. NPC + exit-marker tools: the two fixed NPC tools + the
           per-mission Missions palette group (live membership from the
           campaign graph - the one live coupling) + the inspectors

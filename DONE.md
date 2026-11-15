@@ -363,6 +363,7 @@ working rules).
 - [campaign-editor slice 3f: the Validate button - file-level campaign validation](#campaign-editor-slice-3f-the-validate-button---file-level-campaign-validation)
 - [campaign-editor slice 4-1: the hub editor framing - screen, state, open/close, the read-only scene](#campaign-editor-slice-4-1-the-hub-editor-framing---screen-state-openclose-the-read-only-scene)
 - [campaign-editor slice 4-2: the planner extraction - the neutral grid core under the mission editor's facades](#campaign-editor-slice-4-2-the-planner-extraction---the-neutral-grid-core-under-the-mission-editors-facades)
+- [campaign-editor slice 4-3a: hub grid editing - the event family, handlers, facades, palette](#campaign-editor-slice-4-3a-hub-grid-editing---the-event-family-handlers-facades-palette)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22025,3 +22026,61 @@ click groups; the move veto never firing without a level_end) - the
 fixture attempt violated the footprint-tiles-are-tile-free invariant
 (a decoration standing on its own tile) and the core caught it - the
 invariant holds at the planner layer too. 1003 green.
+
+## campaign-editor slice 4-3a: hub grid editing - the event family, handlers, facades, palette
+
+The hub editor's editing core (the first half of the recut's 4-3; the
+pointer-drag gestures + view overlays are 4-3b):
+
+- **The `hub_editor_event` family** (events.zig): the EditorEvent mirror
+  minus the mission-only verbs - hub_set_tool, hub_set_tile,
+  hub_place/delete_decoration_placement, hub_set_player_start,
+  hub_select/deselect/clear, and hub_commit_selection_move (the chained
+  worklist). No per-event hub handle - the drill-in IS the address; every
+  arm resolves the target hub against the live authored graph and no-ops
+  on a dead handle (the crafted-log convention). Replay legality:
+  `validateHubEditorAction` (screen + drill-in + handle resolution).
+- **The handlers** (`src/campaign_editor/hub_handlers.zig`, the
+  editor/handlers mirror): copy-on-write over the []const hub list (the
+  campaign editor's mutation convention) - one hub rebuilt per event,
+  the grid written through in place. The shared list helpers
+  (editor/handlers' setLevelTile + reconcileSelectionAfterPlacementDelete)
+  flipped pub for the reuse.
+- **The planning facades** (planning.zig): the mission facades' exact
+  mirror over the same neutral core (planHub*Actions + the hub event
+  mappers), the core flipping pub at its first external consumer as
+  planned in 4-2.
+- **The orchestrators** (player_*_hub_* - ten of them) + the thin
+  player_input arms + the idle arms (the tile click, the select keys,
+  Tab's two-tool cycle) + the hub_editor-context bindings (the
+  cross-context pair pattern: same combo, same action, second context).
+- **The palette** (`buildHubEditorBottomBar`): the Select + Tile fixed
+  pair, the mission editor's cell conventions; the groups land 4-4/4-5.
+
+**The runtime drive found and fixed two REAL console-channel bugs** (the
+drive scripts clicks over the piped stdin channel; both were invisible to
+the suite - the headless tests never exercise the live loop):
+1. **The held-gesture pointer bleed**: the console re-applies the
+   scripted pointer position only on INPUT-command frames; frames
+   BETWEEN commands (waits) fall back to the hardware pointer. With
+   press -> wait -> release, the hub-drag gesture read the HARDWARE
+   position on the held frames, phantom-promoted on the threshold, and
+   swallowed the click as a (zero-delta) move commit. Fix: the scripted
+   position persists through held frames (anyMouseButtonDown - the
+   console owns the gesture until its release).
+2. **The render-gate staleness**: console commands land per UNCAPPED
+   game-loop frame while the view refreshes only per render interval -
+   a scripted click could hit-test the view from BEFORE the previous
+   command's effect (the select click lands, the open-button click then
+   finds no button - the view never rendered the selection). The
+   run-to-run nondeterminism was real-time pacing. Fix: console INPUT
+   commands force the next render (`SessionState.force_render_next`,
+   honored + cleared by the render gate).
+After the fixes the full drive is 8/8 deterministic: fresh campaign ->
+hub click -> inspector -> Open Hub Editor -> the Tile tool cell -> a
+grid click -> the tile lands in CampaignEditor.hubs[0].grid (the
+write-through verified over the live pipeline). The console drive
+recipe: no `wait` padding needed; `report ui` lists every clickable
+surface with its center.
+
+1006 green.
