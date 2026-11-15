@@ -403,10 +403,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 drawSprite(backend, sprite_id, dest, null, button.color, 255, false);
                 if (button.highlighted) drawHighlightOutline(backend, sprite_id, dest, highlight_color);
             } else if (button.highlighted) {
-                if (button.hit_curve) |hit_curve| {
-                    // A hit-curve button's hover outline is the FULL ARROW
+                if (button.hit_arrow) |hit_arrow| {
+                    // A hit-arrow button's hover outline is the FULL ARROW
                     // (stroke + chevron), drawn from
-                    // the SAME curve widened by one outline thickness per
+                    // the SAME arrow widened by one outline thickness per
                     // side - the black outline is part of the arrow art,
                     // so the rim sits OUTSIDE it (the sprite-backed
                     // convention: the halo outlines the whole drawn
@@ -415,10 +415,10 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                     // button emits BEFORE the edge's stroke pair, so this
                     // wider draw renders beneath the black outline +
                     // lightest stroke.
-                    var outlined = hit_curve;
-                    outlined.width = hit_curve.width + 2 * types.outline_thickness;
+                    var outlined = hit_arrow;
+                    outlined.width = hit_arrow.width + 2 * types.outline_thickness;
                     backend.beginOutlineStripeScope();
-                    drawCurveGeometry(outlined, toRaylibColor(highlight_color, 255));
+                    drawArrowGeometry(outlined, toRaylibColor(highlight_color, 255));
                     backend.endOutlineStripeScope(backend.renderScale());
                 } else {
                     // Stroked rect OUTSIDE the bounds: inflate by the outline
@@ -504,7 +504,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 backend.endOutlineStripeScope(backend.renderScale());
             }
         },
-        .curve => |curve| {
+        .arrow => |arrow| {
             // The baked-arrow path: classify into the cache families and
             // draw ONE rotated textured quad (the sprite submission
             // class). Anything outside the families - or a failed bake
@@ -512,13 +512,13 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             // which is also the hover/selected rim's path (one edge at a
             // time, inside the outline-stripe scope).
             const max_baked_length = ui.maxBakedArrowLength(backend.max_texture_size);
-            if (ui.bakedArrowParams(curve, max_baked_length)) |params| {
+            if (ui.bakedArrowParams(arrow, max_baked_length)) |params| {
                 if (backend.textures.getArrowTexture(params)) |texture| {
-                    drawBakedArrow(texture, params, curve);
+                    drawBakedArrow(texture, params, arrow);
                     return;
                 }
             }
-            drawCurveGeometry(curve, toRaylibColor(curve.color, curve.alpha));
+            drawArrowGeometry(arrow, toRaylibColor(arrow.color, arrow.alpha));
         },
         .slider => |slider| {
             // Integer slider: track (dark) + fill (lightest, proportional)
@@ -557,12 +557,12 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// shader).
 /// The baked arrow as one rotated quad: the texture's pivot texel (the
 /// canonical shape's local origin - see `bakedArrowCanvas`) lands on the
-/// curve's start point, rotated by the classification's placement angle.
+/// arrow's start point, rotated by the classification's placement angle.
 /// The tint is PREMULTIPLIED (the texture is premultiplied and the render
 /// pass blends with BLEND_ALPHA_PREMULTIPLY): the white inner stroke
 /// becomes the edge color, the black outline stays black under any tint,
 /// and dim/ghost alpha fades the whole arrow uniformly.
-fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.Curve) void {
+fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, arrow: ui.Arrow) void {
     const canvas = ui.bakedArrowCanvas(params);
     const source = rl.Rectangle{
         .x = 0,
@@ -572,11 +572,11 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.
     };
     // raylib rotates the destination rect about the origin point and the
     // origin texel lands exactly at (destination.x, destination.y), so the
-    // destination position IS the pivot's world position: the curve's
+    // destination position IS the pivot's world position: the arrow's
     // start point.
     const destination = rl.Rectangle{
-        .x = @floatFromInt(curve.start.x),
-        .y = @floatFromInt(curve.start.y),
+        .x = @floatFromInt(arrow.start.x),
+        .y = @floatFromInt(arrow.start.y),
         .width = @floatFromInt(texture.width),
         .height = @floatFromInt(texture.height),
     };
@@ -590,11 +590,11 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.
         destination,
         origin,
         params.rotation_degrees,
-        conversions.toPremultipliedColor(curve.color, curve.alpha),
+        conversions.toPremultipliedColor(arrow.color, arrow.alpha),
     );
 }
 
-/// Draw one curve's full geometry: the sampled stroke as per-segment
+/// Draw one arrow's full geometry: the sampled stroke as per-segment
 /// `drawLineEx` quads + the arrowhead chevron's two arm quads - the SAME
 /// short submissions the pre-batching-rewrite code used (rebuilt after
 /// the one-strip experiment; see below). All submissions are untextured
@@ -610,20 +610,20 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.
 /// map). The join + end-cap jobs those circles did are handled by
 /// `drawCappedSegment` instead (segment overlap - no extra primitives,
 /// no flushes). Shared by the
-/// `.curve` arm's FALLBACK path and the
-/// hit-curve button's hover highlight, so the highlight is the SAME
+/// `.arrow` arm's FALLBACK path and the
+/// hit-arrow button's hover highlight, so the highlight is the SAME
 /// arrow, just wider.
-fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
-    var samples: [ui.curve_sample_count + 1]rl.Vector2 = undefined;
-    var screen_samples: [ui.curve_sample_count + 1]types.ScreenPosition = undefined;
-    ui.sampleCurve(curve, &screen_samples);
+fn drawArrowGeometry(arrow: ui.Arrow, raylib_color: rl.Color) void {
+    var samples: [ui.arrow_sample_count + 1]rl.Vector2 = undefined;
+    var screen_samples: [ui.arrow_sample_count + 1]types.ScreenPosition = undefined;
+    ui.sampleArrow(arrow, &screen_samples);
     for (screen_samples, 0..) |sample, index| {
         samples[index] = .{
             .x = @floatFromInt(sample.x),
             .y = @floatFromInt(sample.y),
         };
     }
-    const thickness: f32 = @floatFromInt(curve.width);
+    const thickness: f32 = @floatFromInt(arrow.width);
 
     var index: usize = 0;
     while (index + 1 < samples.len) : (index += 1) {
@@ -631,9 +631,9 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
     }
     {
         // The directionality chevron: two arms from the end point, drawn
-        // at the curve's own width, so an outlined stroke renders an
+        // at the arrow's own width, so an outlined stroke renders an
         // outlined chevron.
-        const arms = ui.arrowheadArms(curve);
+        const arms = ui.arrowheadArms(arrow);
         const end = samples[samples.len - 1];
         const arm_vectors = [2]rl.Vector2{
             .{ .x = @floatFromInt(arms[0].x), .y = @floatFromInt(arms[0].y) },

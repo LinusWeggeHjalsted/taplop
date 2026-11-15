@@ -141,7 +141,7 @@ cost. The join + end-cap jobs the circles did are handled by drawing each
 segment EXTENDED by half its thickness at both endpoints (overlap fills
 the join notches; the wider outline layer extends past the inner stroke's
 end as the squared cap) - no extra primitives, no flushes. (b) Consolidating a multi-part shape into ONE large untextured
-`drawTriangleStrip` (98 points per curve) RENDERS on small graphs and
+`drawTriangleStrip` (98 points per arrow) RENDERS on small graphs and
 VANISHES in real sessions in a way that resisted two falsified theories
 (leftover-texture-state, batch-buffer-rollover) and a falsified
 shapes-texture-bind "fix" - the one-strip approach is abandoned (the
@@ -3635,9 +3635,9 @@ missing information:
   vector, n = perpendicular; L, w = fixed view constants in v1 - style
   consistency; an authored length override is a later dial) - a narrow
   elliptical teardrop. Straight edges are the degenerate bezier (all
-  controls on the segment). One `curve` UiElement variant (two endpoints
+  controls on the segment). One `arrow` UiElement variant (two endpoints
   + two control points + width + color; ONE deterministic sampling
-  helper - `sampleCurve` in element.zig - feeds both hit-testing and
+  helper - `sampleArrow` in element.zig - feeds both hit-testing and
   the baked-arrow rasterizer, which is the distance-to-SAME-polyline
   test run per pixel, so the drawn edge and its hit region cannot
   disagree - see The map surface);
@@ -3685,7 +3685,7 @@ payloads read STATE; `view()` stays file-free.
 custom campaigns is a lie, so both shipped with the browser. Legality
   never reads the cache (see Campaign switching).
 - **Clickability rides the spriteless-Button seam.** The visual
-elements - hub icons (`image` or a filled shape) + `curve` edges -
+elements - hub icons (`image` or a filled shape) + `arrow` edges -
 are decorative (`blocks_input = false`); a spriteless `button`
 (`sprite_id = null`) overlays each clickable target carrying the
 action + payload + tooltip. Hubs: `travel_to_map_hub` + the hub index
@@ -3699,22 +3699,22 @@ start hub - the edge table's `exit_index` is null) renders the stroke
 WITHOUT a button: the map renders as much of the graph as the data
 defines, but mission entry stays equivalent to the exit tile (no
 marker, no entry - the 3f validation finding closes the loop). The
-button's `hit_curve` carries the DRAWN ARROW's geometry at its
+button's `hit_arrow` carries the DRAWN ARROW's geometry at its
 outline-inclusive width (black outline + inner stroke): the hit region (sampled polyline), the tooltip
-bounds (`curveBounds` - the bbox incl. the chevron, so the tooltip
+bounds (`arrowBounds` - the bbox incl. the chevron, so the tooltip
 frames the whole arrow), and the hover highlight (the same geometry
 widened by one `outline_thickness` per side, stripe-treated - the rim
 sits OUTSIDE the black outline, which is part of the arrow art, the
-sprite-backed convention) all derive from the one curve, so they cannot
+sprite-backed convention) all derive from the one arrow, so they cannot
 disagree. No new element contract for input.
-- **One sampling function + one baked texture per shape.** `sampleCurve`
+- **One sampling function + one baked texture per shape.** `sampleArrow`
 in element.zig is the single deterministic bezier sampler (fixed
 segment count in v1): hit-testing is distance-to-polyline against its
 samples, and the DRAWN edge is the same distance test rasterized once
-per shape - campaign_geometry classifies a curve into a canonical
+per shape - campaign_geometry classifies an arrow into a canonical
 east-pointing arrow (a FIT, not a shape enumeration: the bucketed
-reconstruction must stay within an 8px tolerance of the curve's own
-samples + chevron arms, else the curve falls back to the per-segment
+reconstruction must stay within an 8px tolerance of the arrow's own
+samples + chevron arms, else the arrow falls back to the per-segment
 draw), bakes the black outline + WHITE inner stroke into one texture
 (the render seam's `arrow_cache`, the outline/inset-mask pattern), and
 every edge of that shape draws ONE rotated textured quad - tinted so
@@ -3724,7 +3724,7 @@ length + bow buckets (parallel siblings bow apart - the spread offset
 is a cache axis, not a straight-line assumption); the teardrop and the
 stub are fixed shapes, one entry each. Lengths clamp to the platform
 texture limit (`maxBakedArrowLength`). The builders emit ONE decorative
-curve per edge at the outline-inclusive width carrying color + dim
+arrow per edge at the outline-inclusive width carrying color + dim
 state; the per-segment `drawLineEx` path survives as the fallback and
 as the hover/selected rim (widened, stripe-treated). Headless-testable
 end to end: the classifier + rasterizer are pure, in campaign_geometry.

@@ -322,7 +322,7 @@ pub fn buildCampaignEditorView(
         } });
     }
 
-    // Edges: one baked-arrow curve per mission (the outline baked into
+    // Edges: one baked-arrow arrow per mission (the outline baked into
     // the texture), derived through the shared geometry (panned).
     // An orphaned mission (either end missing) renders GHOSTED (reduced
     // alpha) from its frozen ghost positions. The edge
@@ -340,7 +340,7 @@ pub fn buildCampaignEditorView(
         };
 
         // The select tool's click target over the DRAWN arrow (the world
-        // map's hit_curve seam: the hit region IS the drawn stroke, so
+        // map's hit_arrow seam: the hit region IS the drawn stroke, so
         // they cannot disagree). Emitted under the select tool (the
         // mission tool's surface is the draw gesture; the hub tool's is
         // placement), PLUS for the SELECTED mission under any tool: the
@@ -351,14 +351,14 @@ pub fn buildCampaignEditorView(
             editor.selection.? == .mission and
             editor.selection.?.mission == mission.handle;
         if (editor.active_tool == .select or selected_mission) {
-            const hit_curve = ui_element.Curve{
+            const hit_arrow = ui_element.Arrow{
                 .start = panned.start,
                 .control_start = panned.control_start,
                 .control_end = panned.control_end,
                 .end = panned.end,
                 .width = edge_width + 2 * edge_outline_width,
             };
-            const bounds = ui_element.curveBounds(hit_curve);
+            const bounds = ui_element.arrowBounds(hit_arrow);
             try elements.append(allocator, .{ .button = .{
                 .sprite_id = null,
                 .screen_position = bounds.position(),
@@ -367,17 +367,17 @@ pub fn buildCampaignEditorView(
                 .action = .select_editor_campaign_mission,
                 .payload = .{ .editor_campaign_mission = mission.handle },
                 .highlighted = selected_mission,
-                .hit_curve = hit_curve,
+                .hit_arrow = hit_arrow,
                 .tooltip = .{ .header = try spanRow(allocator, text(mission.name)) },
             } });
         }
 
-        // The drawn edge: ONE curve at the outline-inclusive width
+        // The drawn edge: ONE arrow at the outline-inclusive width
         // carrying the color + orphan-ghost state (the baked-arrow
         // rendering - see campaign_geometry's baked-arrow section; the
         // backend falls back to the per-segment draw outside the cache
         // families).
-        try elements.append(allocator, .{ .curve = .{
+        try elements.append(allocator, .{ .arrow = .{
             .start = panned.start,
             .control_start = panned.control_start,
             .control_end = panned.control_end,
@@ -406,10 +406,10 @@ pub fn buildCampaignEditorView(
                     .{ .index = 1, .count = 1 },
                 );
                 const pan_offset = pan orelse types.Vector2{ .x = 0, .y = 0 };
-                // One baked-arrow curve (the drag preview re-bakes per
+                // One baked-arrow arrow (the drag preview re-bakes per
                 // 8px length bucket - a straight bake is ~3 segments of
                 // pixel math, trivially cheap).
-                try elements.append(allocator, .{ .curve = .{
+                try elements.append(allocator, .{ .arrow = .{
                     .start = .{ .x = preview_geometry.start.x + pan_offset.x, .y = preview_geometry.start.y + pan_offset.y },
                     .control_start = .{ .x = preview_geometry.control_start.x + pan_offset.x, .y = preview_geometry.control_start.y + pan_offset.y },
                     .control_end = .{ .x = preview_geometry.control_end.x + pan_offset.x, .y = preview_geometry.control_end.y + pan_offset.y },
@@ -520,7 +520,7 @@ pub fn buildCampaignEditorView(
             .x = arrow_center_x + @divFloor(mission_tool_arrow_length, 2),
             .y = arrow_center_y,
         };
-        // A straight curve: the control points on the segment at thirds.
+        // A straight arrow: the control points on the segment at thirds.
         const arrow_control_start = types.ScreenPosition{
             .x = arrow_start.x + @divFloor(mission_tool_arrow_length, 3),
             .y = arrow_center_y,
@@ -530,8 +530,8 @@ pub fn buildCampaignEditorView(
             .y = arrow_center_y,
         };
         // The palette cell's graphic (the map edge's look): one
-        // baked-arrow curve, the arrowhead at the right end.
-        try elements.append(allocator, .{ .curve = .{
+        // baked-arrow arrow, the arrowhead at the right end.
+        try elements.append(allocator, .{ .arrow = .{
             .start = arrow_start,
             .control_start = arrow_control_start,
             .control_end = arrow_control_end,
@@ -1229,21 +1229,21 @@ fn screenPositionEqual(a: ScreenPosition, b: ScreenPosition) bool {
     return a.x == b.x and a.y == b.y;
 }
 
-fn curveGeometryMatches(curve: ui_element.Curve, geometry: campaign_geometry.EdgeGeometry) bool {
-    return screenPositionEqual(curve.start, geometry.start) and
-        screenPositionEqual(curve.control_start, geometry.control_start) and
-        screenPositionEqual(curve.control_end, geometry.control_end) and
-        screenPositionEqual(curve.end, geometry.end);
+fn arrowGeometryMatches(arrow: ui_element.Arrow, geometry: campaign_geometry.EdgeGeometry) bool {
+    return screenPositionEqual(arrow.start, geometry.start) and
+        screenPositionEqual(arrow.control_start, geometry.control_start) and
+        screenPositionEqual(arrow.control_end, geometry.control_end) and
+        screenPositionEqual(arrow.end, geometry.end);
 }
 
-fn findLightCurve(
+fn findLightArrow(
     elements: []const UiElement,
     geometry: campaign_geometry.EdgeGeometry,
 ) !usize {
     for (elements, 0..) |element, index| {
-        if (element != .curve) continue;
-        if (!colorEqual(element.curve.color, test_theme.lightest)) continue;
-        if (curveGeometryMatches(element.curve, geometry)) return index;
+        if (element != .arrow) continue;
+        if (!colorEqual(element.arrow.color, test_theme.lightest)) continue;
+        if (arrowGeometryMatches(element.arrow, geometry)) return index;
     }
     std.debug.print("predicate scan found no lightest stroke for the geometry\n", .{});
     return error.TestUnexpectedResult;
@@ -1322,10 +1322,10 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
     );
 
     // Derived total: the map (1 surface + 1 background + per hub an icon
-    // + a select button + per mission 1 curve + 1 edge button - the
+    // + a select button + per mission 1 arrow + 1 edge button - the
     // select tool is the fixture's default) + the tool palette (the
     // select + hub cells x button + graphic, the mission cell's button +
-    // the one-curve arrow graphic) + the inspector (toggle strip 3 + open
+    // the one-arrow arrow graphic) + the inspector (toggle strip 3 + open
     // panel 1 - NOTHING selected: no section strip, the panel is empty)
     // + the metadata (toggle strip 3; CLOSED by default - the mission
     // editor's default).
@@ -1387,7 +1387,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         0,
         .{ .index = 1, .count = 1 },
     );
-    const loop_light = elements.items[try findLightCurve(elements.items, loop_geometry)].curve;
+    const loop_light = elements.items[try findLightArrow(elements.items, loop_geometry)].arrow;
     try std.testing.expectEqual(@as(u8, 255), loop_light.alpha);
 
     // The straight edge Alpha -> Beta.
@@ -1397,7 +1397,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         0,
         .{ .index = 1, .count = 1 },
     );
-    const straight_light = elements.items[try findLightCurve(elements.items, straight_geometry)].curve;
+    const straight_light = elements.items[try findLightArrow(elements.items, straight_geometry)].arrow;
     try std.testing.expectEqual(@as(u8, 255), straight_light.alpha);
 
     // The end-orphan: a stub from Alpha, GHOSTED (reduced alpha) - the
@@ -1412,7 +1412,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         180,
         .{ .index = 1, .count = 1 },
     );
-    const stub_light = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
+    const stub_light = elements.items[try findLightArrow(elements.items, stub_geometry)].arrow;
     try std.testing.expectEqual(orphaned_alpha, stub_light.alpha);
 
     // The start-orphan: the complete edge from the frozen ghost start
@@ -1423,7 +1423,7 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         0,
         .{ .index = 1, .count = 1 },
     );
-    const salvage_light = elements.items[try findLightCurve(elements.items, salvage_geometry)].curve;
+    const salvage_light = elements.items[try findLightArrow(elements.items, salvage_geometry)].arrow;
     try std.testing.expectEqual(orphaned_alpha, salvage_light.alpha);
 
     // The fully-orphaned mission: the complete edge between both ghost
@@ -1434,16 +1434,16 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         0,
         .{ .index = 1, .count = 1 },
     );
-    const ghost_light = elements.items[try findLightCurve(elements.items, ghost_geometry)].curve;
+    const ghost_light = elements.items[try findLightArrow(elements.items, ghost_geometry)].arrow;
     try std.testing.expectEqual(orphaned_alpha, ghost_light.alpha);
 
-    // The hit-curve bounds-coherence contract, across every edge button
+    // The hit-arrow bounds-coherence contract, across every edge button
     // (the world-map test's rider, here over the editor's select-tool
-    // buttons): a button's rect == curveBounds of its hit_curve.
+    // buttons): a button's rect == arrowBounds of its hit_arrow.
     for (elements.items) |element| {
         if (element != .button) continue;
-        const hit_curve = element.button.hit_curve orelse continue;
-        const bounds = ui_element.curveBounds(hit_curve);
+        const hit_arrow = element.button.hit_arrow orelse continue;
+        const bounds = ui_element.arrowBounds(hit_arrow);
         try std.testing.expectEqual(bounds, Rectangle{
             .x = element.button.screen_position.x,
             .y = element.button.screen_position.y,
@@ -1600,19 +1600,19 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     };
     try std.testing.expect(palette_hub_icon != null);
 
-    // The mission cell's graphic: the 128px baked-arrow curve pointing
-    // right - one curve at the outline-inclusive width, lightest-colored
+    // The mission cell's graphic: the 128px baked-arrow arrow pointing
+    // right - one arrow at the outline-inclusive width, lightest-colored
     // (the outline is baked into the texture; the drawn-edge visual, not
     // a sprite).
     var palette_arrows: usize = 0;
     for (elements.items) |element| switch (element) {
-        .curve => |curve| {
-            const is_palette_arrow = curve.start.y == curve.end.y and
-                curve.end.x - curve.start.x == mission_tool_arrow_length;
+        .arrow => |arrow| {
+            const is_palette_arrow = arrow.start.y == arrow.end.y and
+                arrow.end.x - arrow.start.x == mission_tool_arrow_length;
             if (!is_palette_arrow) continue;
             palette_arrows += 1;
-            try std.testing.expectEqual(edge_width + 2 * edge_outline_width, curve.width);
-            try std.testing.expectEqual(test_theme.lightest, curve.color);
+            try std.testing.expectEqual(edge_width + 2 * edge_outline_width, arrow.width);
+            try std.testing.expectEqual(test_theme.lightest, arrow.color);
         },
         else => {},
     };
@@ -1863,7 +1863,7 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         editor.active_tool = .select;
     }
 
-    // The draw preview: an armed mission tool renders TWO extra curves
+    // The draw preview: an armed mission tool renders TWO extra arrows
     // (the stroke pair) from the armed hub toward the pointer position.
     editor.active_tool = .mission;
     editor.selection = null;
@@ -1888,8 +1888,8 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         &.{},
     );
     // Derived total for the preview build: the map (1 surface + 1
-    // background + 2/hub + 1 curve/mission - NO edge buttons under the
-    // mission tool - + 1 preview curve) + palette 6 + the inspector
+    // background + 2/hub + 1 arrow/mission - NO edge buttons under the
+    // mission tool - + 1 preview arrow) + palette 6 + the inspector
     // (toggle strip 3 + open panel 1 - nothing selected, empty) + the
     // metadata (open, collapsed: strip 3 + panel 1 + section strip 3).
     const expected_preview_total = 1 + 1 + 2 * editor.hubs.len + 1 * editor.missions.len + 1 +

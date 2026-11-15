@@ -808,14 +808,14 @@ pub const Button = struct {
     /// variant must be the one `actionButtonPayload(action)` names.
     payload: ?types.ButtonPayload = null,
     /// Optional non-rect hit region: when set, the button is clickable
-    /// along this curve's SAMPLED STROKE (distance to the polyline, not
+    /// along this arrow's SAMPLED STROKE (distance to the polyline, not
     /// the bounds rect) - the world map's edge buttons (the visual
-    /// `curve` element stays decorative; see Curve). The button's
-    /// rect remains its bounds/extents identity. The curve's `width` is
+    /// `arrow` element stays decorative; see Arrow). The button's
+    /// rect remains its bounds/extents identity. The arrow's `width` is
     /// the DRAWN arrow's (outline-inclusive) width: the hit tolerance,
-    /// the tooltip bounds (see `curveBounds`), and the hover-highlight
+    /// the tooltip bounds (see `arrowBounds`), and the hover-highlight
     /// rim all derive from it, so the three cannot disagree.
-    hit_curve: ?Curve = null,
+    hit_arrow: ?Arrow = null,
     blocks_input: bool = true,
 };
 
@@ -911,29 +911,29 @@ pub const UiElement = union(enum) {
     fill_sprite: FillSprite,
     image: Image,
     solid_rect: SolidRect,
-    curve: Curve,
+    arrow: Arrow,
     slider: Slider,
     text_field: TextFieldUi,
 };
 
 // ============================================================
-// Curve (the world map's mission edges)
+// Arrow (the world map's mission edges)
 // ============================================================
 
-/// Number of bezier segments `sampleCurve` emits (endpoints inclusive,
-/// `curve_sample_count + 1` points). Fixed, not length-derived: draw and
+/// Number of bezier segments `sampleArrow` emits (endpoints inclusive,
+/// `arrow_sample_count + 1` points). Fixed, not length-derived: draw and
 /// hit-testing must agree on the SAME samples (the drawn edge and its hit
 /// region cannot disagree - DESIGN → Campaigns & the Campaign Editor →
 /// The map surface), and one count keeps that agreement trivial.
-pub const curve_sample_count: usize = 48;
+pub const arrow_sample_count: usize = 48;
 
-/// Extra hit tolerance around a curve's stroke, in reference pixels - a
+/// Extra hit tolerance around an arrow's stroke, in reference pixels - a
 /// thin edge would be near-impossible to click at exactly `width / 2`.
-const curve_hit_tolerance: i32 = 12;
+const arrow_hit_tolerance: i32 = 12;
 
 /// The arrowhead chevron's arm length + half-angle (reference px /
 /// degrees off the REVERSED end tangent - the chevron opens backward
-/// into the curve). Directionality affordance on mission edges; drawn by
+/// into the arrow). Directionality affordance on mission edges; drawn by
 /// the backend from the same samples hit-testing uses.
 pub const arrowhead_arm_length: i32 = 48;
 pub const arrowhead_arm_angle_degrees: i32 = 15;
@@ -947,9 +947,9 @@ pub const arrowhead_arm_angle_degrees: i32 = 15;
 /// the teardrop control placement, dangling stubs the straight family
 /// at a fixed reach (faded - the orphan/incomplete marker). Purely
 /// decorative by default (`blocks_input = false`): the clickable edge is a
-/// spriteless Button whose `hit_curve` carries THIS curve's geometry, so
+/// spriteless Button whose `hit_arrow` carries THIS arrow's geometry, so
 /// the hit region is the drawn stroke.
-pub const Curve = struct {
+pub const Arrow = struct {
     start: ScreenPosition,
     control_start: ScreenPosition,
     control_end: ScreenPosition,
@@ -961,19 +961,19 @@ pub const Curve = struct {
     blocks_input: bool = false,
 };
 
-/// Sample a cubic bezier into `curve_sample_count + 1` reference-space
-/// points (segment endpoints, `t = i / curve_sample_count`). The ONE
+/// Sample a cubic bezier into `arrow_sample_count + 1` reference-space
+/// points (segment endpoints, `t = i / arrow_sample_count`). The ONE
 /// sampler: the backend's draw and `buttonAt`'s hit-testing both call it,
 /// so the drawn edge and its hit region agree by construction. The output
 /// buffer is caller-provided (a fixed-size array, no allocator) because
 /// both call sites sample per query.
-pub fn sampleCurve(curve: Curve, samples: *[curve_sample_count + 1]ScreenPosition) void {
-    const p0 = floatVec(curve.start);
-    const p1 = floatVec(curve.control_start);
-    const p2 = floatVec(curve.control_end);
-    const p3 = floatVec(curve.end);
+pub fn sampleArrow(arrow: Arrow, samples: *[arrow_sample_count + 1]ScreenPosition) void {
+    const p0 = floatVec(arrow.start);
+    const p1 = floatVec(arrow.control_start);
+    const p2 = floatVec(arrow.control_end);
+    const p3 = floatVec(arrow.end);
     for (samples, 0..) |*sample, index| {
-        const t = @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(curve_sample_count));
+        const t = @as(f32, @floatFromInt(index)) / @as(f32, @floatFromInt(arrow_sample_count));
         const one_minus = 1.0 - t;
         const a = one_minus * one_minus * one_minus;
         const b = 3.0 * one_minus * one_minus * t;
@@ -994,17 +994,17 @@ fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
     return .{ .x = @floatFromInt(position.x), .y = @floatFromInt(position.y) };
 }
 
-/// The curve's DRAWN extent as a bounds rect: the sampled polyline's
+/// The arrow's DRAWN extent as a bounds rect: the sampled polyline's
 /// min/max (plus the arrowhead chevron's arm endpoints), padded by
 // `width / 2` (the stroke's drawn reach). The world
 /// map's edge button carries this as its rect - the tooltip anchors to
 /// the FULL arrow (the 0x0-at-the-start-point rect put the tooltip's
 /// corner on the arrow tip), and the bounds are the truthful extents.
-/// Hit-testing is unaffected: a Button with a `hit_curve` hit-tests
+/// Hit-testing is unaffected: a Button with a `hit_arrow` hit-tests
 /// against the sampled stroke, never the bounds.
-pub fn curveBounds(curve: Curve) Rectangle {
-    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
-    sampleCurve(curve, &samples);
+pub fn arrowBounds(arrow: Arrow) Rectangle {
+    var samples: [arrow_sample_count + 1]ScreenPosition = undefined;
+    sampleArrow(arrow, &samples);
     var min_x = samples[0].x;
     var max_x = samples[0].x;
     var min_y = samples[0].y;
@@ -1016,14 +1016,14 @@ pub fn curveBounds(curve: Curve) Rectangle {
         max_y = @max(max_y, sample.y);
     }
     {
-        for (arrowheadArms(curve)) |arm| {
+        for (arrowheadArms(arrow)) |arm| {
             min_x = @min(min_x, arm.x);
             max_x = @max(max_x, arm.x);
             min_y = @min(min_y, arm.y);
             max_y = @max(max_y, arm.y);
         }
     }
-    const pad = @divTrunc(curve.width, 2);
+    const pad = @divTrunc(arrow.width, 2);
     return .{
         .x = min_x - pad,
         .y = min_y - pad,
@@ -1032,16 +1032,16 @@ pub fn curveBounds(curve: Curve) Rectangle {
     };
 }
 
-/// The arrowhead chevron's two arm endpoints for `curve` (every edge
-/// is an arrow - see Curve): from the END point, along the REVERSED end
+/// The arrowhead chevron's two arm endpoints for `arrow` (every edge
+/// is an arrow - see Arrow): from the END point, along the REVERSED end
 /// tangent rotated +/- `arrowhead_arm_angle_degrees`, at
 /// `arrowhead_arm_length`. The end tangent is ANALYTIC (3(p3 - p2), the
 /// direction from the last control into the endpoint) - the baked
 /// arrow, the fallback draw, the hover rim, and the bounds all derive
 /// their chevron from here, so the four cannot disagree.
-pub fn arrowheadArms(curve: Curve) [2]ScreenPosition {
-    const end = floatVec(curve.end);
-    const control_end = floatVec(curve.control_end);
+pub fn arrowheadArms(arrow: Arrow) [2]ScreenPosition {
+    const end = floatVec(arrow.end);
+    const control_end = floatVec(arrow.control_end);
 
     // The travel direction into the end is ANALYTIC - 3(p3 - p2), the
     // direction from the last control point into the endpoint - never
@@ -1055,7 +1055,7 @@ pub fn arrowheadArms(curve: Curve) [2]ScreenPosition {
     var travel_y = end.y - control_end.y;
     var length = @sqrt(travel_x * travel_x + travel_y * travel_y);
     if (length <= 0) {
-        const start = floatVec(curve.start);
+        const start = floatVec(arrow.start);
         travel_x = end.x - start.x;
         travel_y = end.y - start.y;
         length = @sqrt(travel_x * travel_x + travel_y * travel_y);
@@ -1086,13 +1086,13 @@ pub fn arrowheadArms(curve: Curve) [2]ScreenPosition {
     };
 }
 
-/// Whether `position` lies within the curve's stroke: distance to the
-/// sampled polyline <= `width / 2 + curve_hit_tolerance`. The hit region
-/// of a Button whose `hit_curve` is this curve.
-fn curveContains(curve: Curve, position: ScreenPosition) bool {
-    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
-    sampleCurve(curve, &samples);
-    const threshold = @as(f32, @floatFromInt(@divTrunc(curve.width, 2) + curve_hit_tolerance));
+/// Whether `position` lies within the arrow's stroke: distance to the
+/// sampled polyline <= `width / 2 + arrow_hit_tolerance`. The hit region
+/// of a Button whose `hit_arrow` is this arrow.
+fn arrowContains(arrow: Arrow, position: ScreenPosition) bool {
+    var samples: [arrow_sample_count + 1]ScreenPosition = undefined;
+    sampleArrow(arrow, &samples);
+    const threshold = @as(f32, @floatFromInt(@divTrunc(arrow.width, 2) + arrow_hit_tolerance));
     const point = floatVec(position);
     var index: usize = 0;
     while (index + 1 < samples.len) : (index += 1) {
@@ -1106,7 +1106,7 @@ fn curveContains(curve: Curve, position: ScreenPosition) bool {
 /// clamped to the segment - the reach past an endpoint is the distance to
 /// that endpoint, i.e. the ROUND-CAP property (the distance-to-polyline
 /// "sausage" has round caps + round joins by construction). Shared by
-/// curve hit-testing and the campaign-geometry baked-arrow rasterizer
+/// arrow hit-testing and the campaign-geometry baked-arrow rasterizer
 /// (the baked silhouette is this same distance test run per pixel - see
 /// campaign_geometry.zig).
 pub fn distanceToSegment(point: anytype, segment_start: anytype, segment_end: anytype) f32 {
@@ -1198,9 +1198,9 @@ pub fn boundsOf(element: UiElement) Rectangle {
         .fill_sprite => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .solid_rect => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
-        .curve => |e| .{
+        .arrow => |e| .{
             // The control-point hull's AABB - a superset of the actual
-            // curve, which is the right direction for an extent.
+            // arrow, which is the right direction for an extent.
             .x = @min(@min(e.start.x, e.control_start.x), @min(e.control_end.x, e.end.x)),
             .y = @min(@min(e.start.y, e.control_start.y), @min(e.control_end.y, e.end.y)),
             .width = @max(@max(e.start.x, e.control_start.x), @max(e.control_end.x, e.end.x)) -
@@ -1239,12 +1239,12 @@ fn blocksInputOf(element: UiElement) bool {
 /// opaque element on top both captures its own input and shields whatever it
 /// covers.
 /// Whether `position` lies inside the element's hit region: the bounds
-/// rect, EXCEPT a Button with a `hit_curve`, whose region is the curve's
-/// sampled stroke (see Curve).
+/// rect, EXCEPT a Button with a `hit_arrow`, whose region is the arrow's
+/// sampled stroke (see Arrow).
 fn containsPoint(element: UiElement, position: ScreenPosition) bool {
     return switch (element) {
-        .button => |button| if (button.hit_curve) |curve|
-            curveContains(curve, position)
+        .button => |button| if (button.hit_arrow) |arrow|
+            arrowContains(arrow, position)
         else
             boundsOf(element).contains(position),
         else => boundsOf(element).contains(position),
@@ -1742,48 +1742,48 @@ test "wrapRow: normal space wrapping still works" {
 // ============================================================
 
 // ============================================================
-// Curve (sample + hit-test)
+// Arrow (sample + hit-test)
 // ============================================================
 
-test "sampleCurve: endpoints exact, straight-line degenerate interpolates linearly" {
+test "sampleArrow: endpoints exact, straight-line degenerate interpolates linearly" {
     // All four points on one horizontal line: the bezier degenerates to
     // the segment, so every sample interpolates linearly (the straight
-    // mission edge - see Curve). Span 480 divides evenly by
-    // curve_sample_count (48), so exact integer steps avoid rounding.
-    const curve: Curve = .{
+    // mission edge - see Arrow). Span 480 divides evenly by
+    // arrow_sample_count (48), so exact integer steps avoid rounding.
+    const arrow: Arrow = .{
         .start = .{ .x = 0, .y = 100 },
         .control_start = .{ .x = 160, .y = 100 },
         .control_end = .{ .x = 320, .y = 100 },
         .end = .{ .x = 480, .y = 100 },
         .width = 8,
     };
-    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
-    sampleCurve(curve, &samples);
+    var samples: [arrow_sample_count + 1]ScreenPosition = undefined;
+    sampleArrow(arrow, &samples);
     try std.testing.expectEqual(ScreenPosition{ .x = 0, .y = 100 }, samples[0]);
     try std.testing.expectEqual(ScreenPosition{ .x = 480, .y = 100 }, samples[samples.len - 1]);
     for (samples, 0..) |sample, index| {
-        const expected_x = @divTrunc(480 * @as(i32, @intCast(index)), @as(i32, @intCast(curve_sample_count)));
+        const expected_x = @divTrunc(480 * @as(i32, @intCast(index)), @as(i32, @intCast(arrow_sample_count)));
         try std.testing.expectEqual(expected_x, sample.x);
         try std.testing.expectEqual(@as(i32, 100), sample.y);
     }
 }
 
-test "sampleCurve: a bent curve leaves the chord" {
+test "sampleArrow: a bent arrow leaves the chord" {
     // Control points pulled off-axis must bend the samples away from the
     // start-end chord (guards against a sampler that silently ignores the
     // controls).
-    const curve: Curve = .{
+    const arrow: Arrow = .{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 150, .y = 400 },
         .control_end = .{ .x = 150, .y = 400 },
         .end = .{ .x = 300, .y = 0 },
         .width = 8,
     };
-    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
-    sampleCurve(curve, &samples);
+    var samples: [arrow_sample_count + 1]ScreenPosition = undefined;
+    sampleArrow(arrow, &samples);
     // Symmetric tent: the midpoint sits at 3/4 of the control height
     // (bezier basis at t=1/2: 3/4 of the control offset).
-    try std.testing.expectEqual(@as(i32, 300), samples[curve_sample_count / 2].y);
+    try std.testing.expectEqual(@as(i32, 300), samples[arrow_sample_count / 2].y);
     var any_off_chord = false;
     for (samples) |sample| {
         if (sample.y != 0) any_off_chord = true;
@@ -1792,30 +1792,30 @@ test "sampleCurve: a bent curve leaves the chord" {
 }
 
 test "arrowheadArms: symmetric chevron opening backward from the end" {
-    // A straight curve traveling east: the chevron arms sit WEST of the
+    // A straight arrow traveling east: the chevron arms sit WEST of the
     // end point, mirrored across the travel axis, at arm_length and
     // arm_angle off the reversed tangent. 48*cos(15) = 46.4 -> 46,
     // 48*sin(15) = 12.4 -> 12.
-    const curve: Curve = .{
+    const arrow: Arrow = .{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 160, .y = 0 },
         .control_end = .{ .x = 320, .y = 0 },
         .end = .{ .x = 480, .y = 0 },
         .width = 8,
     };
-    const arms = arrowheadArms(curve);
+    const arms = arrowheadArms(arrow);
     try std.testing.expectEqual(@as(i32, 480 - 46), arms[0].x);
     try std.testing.expectEqual(@as(i32, 480 - 46), arms[1].x);
     try std.testing.expectEqual(@as(i32, -12), arms[0].y);
     try std.testing.expectEqual(@as(i32, 12), arms[1].y);
 
-    // A bent curve: the chevron follows the END tangent (the analytic
-    // control-point tangent), not the start-end chord. Curve heading east
+    // A bent arrow: the chevron follows the END tangent (the analytic
+    // control-point tangent), not the start-end chord. Arrow heading east
     // then bending down to south at the end (control_end distinct from
     // end, so the
     // end tangent is well-defined): arms open back up-and-sideways from
     // the end (the reversed south tangent rotated +/- 15 degrees).
-    const bent: Curve = .{
+    const bent: Arrow = .{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 300, .y = 0 },
         .control_end = .{ .x = 300, .y = 150 },
@@ -1831,7 +1831,7 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
     // Degenerate control (control_end == end): the analytic tangent is
     // zero, so it falls back to the CHORD direction - an east-traveling
     // arrow's chevron still opens west of the end, mirrored.
-    const degenerate_control: Curve = .{
+    const degenerate_control: Arrow = .{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 100, .y = 0 },
         .control_end = .{ .x = 200, .y = 0 },
@@ -1846,7 +1846,7 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
 
     // Fully degenerate (start == end == control_end): chord zero too -
     // east, so the chevron opens west of the point.
-    const fully_degenerate: Curve = .{
+    const fully_degenerate: Arrow = .{
         .start = .{ .x = 50, .y = 50 },
         .control_start = .{ .x = 50, .y = 50 },
         .control_end = .{ .x = 50, .y = 50 },
@@ -1858,9 +1858,9 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
     try std.testing.expectEqual(@as(i32, 50 - 46), point_arms[1].x);
 }
 
-test "buttonAt over a hit_curve button: the stroke is the hit region" {
-    // An edge button (drawn ON TOP) whose curve passes over a plain button
-    // (drawn BEHIND, filling the curve's AABB). The stroke clicks hit the
+test "buttonAt over a hit_arrow button: the stroke is the hit region" {
+    // An edge button (drawn ON TOP) whose arrow passes over a plain button
+    // (drawn BEHIND, filling the arrow's AABB). The stroke clicks hit the
     // edge button; clicks inside the AABB but off the stroke fall through
     // to the button behind.
     const behind: UiElement = .{ .button = .{
@@ -1874,7 +1874,7 @@ test "buttonAt over a hit_curve button: the stroke is the hit region" {
         .width = 400,
         .height = 200,
         .action = .cancel,
-        .hit_curve = .{
+        .hit_arrow = .{
             .start = .{ .x = 0, .y = 100 },
             .control_start = .{ .x = 133, .y = 100 },
             .control_end = .{ .x = 266, .y = 100 },
@@ -1902,8 +1902,8 @@ test "buttonAt over a hit_curve button: the stroke is the hit region" {
     try std.testing.expectEqual(Action.cancel, near_hit.action);
 }
 
-test "buttonAt: a decorative curve never occludes" {
-    // The visual curve element (blocks_input = false) drawn OVER a button:
+test "buttonAt: a decorative arrow never occludes" {
+    // The visual arrow element (blocks_input = false) drawn OVER a button:
     // clicks pass through it to the button.
     const button: UiElement = .{ .button = .{
         .screen_position = .{ .x = 0, .y = 0 },
@@ -1911,7 +1911,7 @@ test "buttonAt: a decorative curve never occludes" {
         .height = 100,
         .action = .confirm,
     } };
-    const overlay: UiElement = .{ .curve = .{
+    const overlay: UiElement = .{ .arrow = .{
         .start = .{ .x = 0, .y = 50 },
         .control_start = .{ .x = 33, .y = 50 },
         .control_end = .{ .x = 66, .y = 50 },
@@ -1923,21 +1923,21 @@ test "buttonAt: a decorative curve never occludes" {
     try std.testing.expectEqual(Action.confirm, clicked.action);
 }
 
-test "curveBounds: the sampled extent incl. arrowhead, padded by the stroke" {
+test "arrowBounds: the sampled extent incl. arrowhead, padded by the stroke" {
     // A straight horizontal segment: the bounds span the sampled
     // polyline, padded by width/2 on every side (the drawn stroke's
     // reach), PLUS the chevron arms - every edge is an arrow, and the
-    // arms open backward into the curve at 15 degrees off the reversed
+    // arms open backward into the arrow at 15 degrees off the reversed
     // tangent, 48 long, so they extend beyond the stroke's perpendicular
     // (the tooltip anchors to the FULL arrow).
-    const arrow = Curve{
+    const arrow = Arrow{
         .start = .{ .x = 100, .y = 200 },
         .control_start = .{ .x = 200, .y = 200 },
         .control_end = .{ .x = 300, .y = 200 },
         .end = .{ .x = 400, .y = 200 },
         .width = 24,
     };
-    const arrow_bounds = curveBounds(arrow);
+    const arrow_bounds = arrowBounds(arrow);
     const arms = arrowheadArms(arrow);
     for (arms) |arm| {
         try std.testing.expect(arrow_bounds.contains(arm));
@@ -1954,27 +1954,27 @@ test "curveBounds: the sampled extent incl. arrowhead, padded by the stroke" {
     }, arrow_bounds);
     // On a SHORT edge the arms also reach backward past the start (the
     // 48px arm reach vs the 30px segment).
-    const short = Curve{
+    const short = Arrow{
         .start = .{ .x = 100, .y = 200 },
         .control_start = .{ .x = 110, .y = 200 },
         .control_end = .{ .x = 120, .y = 200 },
         .end = .{ .x = 130, .y = 200 },
         .width = 24,
     };
-    const short_bounds = curveBounds(short);
+    const short_bounds = arrowBounds(short);
     try std.testing.expect(short_bounds.x < 130 - 12 - 40);
 
     // A self-loop (start == end, the teardrop controls): the bounds are
-    // the CONTROL extent (the curve bulges toward its controls), not a
+    // the CONTROL extent (the arrow bulges toward its controls), not a
     // zero-size box at the anchor.
-    const loop = Curve{
+    const loop = Arrow{
         .start = .{ .x = 500, .y = 500 },
         .control_start = .{ .x = 620, .y = 380 },
         .control_end = .{ .x = 380, .y = 380 },
         .end = .{ .x = 500, .y = 500 },
         .width = 24,
     };
-    const loop_bounds = curveBounds(loop);
+    const loop_bounds = arrowBounds(loop);
     try std.testing.expect(loop_bounds.contains(loop.start));
     try std.testing.expect(loop_bounds.y < 500 - 12);
     try std.testing.expect(loop_bounds.x < 500 - 12);

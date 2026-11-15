@@ -6,7 +6,7 @@
 //! derivations (self-loop teardrop, straight + parallel spread, dangling
 //! stub), the shared view constants (geometry + arrow stroke style), and
 //! the baked-arrow classification + rasterization (the edge rendering
-//! rework: a curve's identity in the baked-texture cache + the pixel math
+//! rework: an arrow's identity in the baked-texture cache + the pixel math
 //! that paints it). Pure over its inputs: no file access, no session
 //! state, no renderer dependencies.
 //! See DESIGN → Campaigns & the Campaign Editor → Edge geometry and
@@ -41,7 +41,7 @@ const parallel_edge_spacing: i32 = 64;
 /// The mission-edge stroke width + its pure-black outline (each side adds
 /// `edge_outline_width`, so the under-stroke is
 /// `edge_width + 2 * edge_outline_width` wide). Shared by both renderers'
-/// stroke pairs AND the clickable button's hit_curve width (the hit
+/// stroke pairs AND the clickable button's hit_arrow width (the hit
 /// region is the drawn arrow, outline-inclusive).
 pub const edge_width: i32 = 8;
 pub const edge_outline_width: i32 = 8;
@@ -108,7 +108,7 @@ pub const ParallelSpread = struct {
 
 /// One derived edge shape: the four bezier points (straight edges are the
 /// degenerate bezier - all controls on the segment). Both renderers draw
-/// from this and the clickable button's hit_curve copies it, so the drawn
+/// from this and the clickable button's hit_arrow copies it, so the drawn
 /// edge, its hit region, and its tooltip bounds cannot disagree.
 pub const EdgeGeometry = struct {
     start: ScreenPosition,
@@ -227,7 +227,7 @@ pub fn deriveEdgeGeometry(
 // Baked arrow textures (the edge rendering rework)
 // ============================================================
 // A map edge draws as ONE rotated textured quad instead of ~48 capped
-// segments x2 layers per frame: the curve is classified into a canonical
+// segments x2 layers per frame: the arrow is classified into a canonical
 // east-pointing arrow, rasterized once into the texture cache (black
 // outline + white inner stroke), and every edge of that shape reuses the
 // texture. Everything here is pure + headless; the raylib seam owns the
@@ -243,12 +243,12 @@ const baked_arrow_length_bucket: i32 = 8;
 /// straight family's cache key).
 const baked_arrow_bow_bucket: i32 = 8;
 
-/// How far a curve's samples may deviate from its bucketed canonical
+/// How far an arrow's samples may deviate from its bucketed canonical
 /// reconstruction and still bake as it (reference px). The classification
 /// is a FIT, not a shape enumeration: anything within this distance of a
 /// family member renders as that member; anything farther falls back to
 /// the per-segment draw. Generous against integer-rounded control points,
-/// tight enough that a genuinely foreign curve keeps the exact path.
+/// tight enough that a genuinely foreign arrow keeps the exact path.
 const baked_arrow_fit_tolerance: f32 = 8.0;
 
 /// The anti-aliased falloff at the baked silhouette's outer edge (px).
@@ -280,18 +280,18 @@ fn bucketToMultiple(value: f32, granularity: i32) i32 {
     return @as(i32, @intFromFloat(@round(value / @as(f32, @floatFromInt(granularity))))) * granularity;
 }
 
-/// The baked-arrow families: which canonical shape a curve bakes as. The
+/// The baked-arrow families: which canonical shape an arrow bakes as. The
 /// straight family covers plain straight edges, the parallel-spread bow,
 /// and the dangling stub (the same shape at the fixed stub reach); the
 /// self_loop family is the fixed-constant teardrop.
 pub const BakedArrowVariant = enum { straight, self_loop };
 
-/// One curve's baked-arrow identity: everything the render seam needs to
+/// One arrow's baked-arrow identity: everything the render seam needs to
 /// look up (or bake) the texture and place it. `length`/`bow` are the
 /// cache-key axes (bucketed); `rotation_degrees` rotates the canonical
-/// east-pointing bake onto the curve's placement about the curve's START
+/// east-pointing bake onto the arrow's placement about the arrow's START
 /// point (the draw pivot). The width is the outline-INCLUSIVE stroke width
-/// (the single decorative curve per edge), so the raster's black outline
+/// (the single decorative arrow per edge), so the raster's black outline
 /// reaches width/2 and the white inner stroke width/2 - edge_outline_width.
 pub const BakedArrowParams = struct {
     variant: BakedArrowVariant,
@@ -307,21 +307,21 @@ pub const BakedArrowParams = struct {
     rotation_degrees: f32,
 };
 
-/// Classify `curve` into its baked-arrow params, or null when it fits no
+/// Classify `arrow` into its baked-arrow params, or null when it fits no
 /// family (the render seam falls back to the per-segment draw). The fit
-/// check is the honest gate: a curve bakes only when its bucketed
+/// check is the honest gate: an arrow bakes only when its bucketed
 /// canonical reconstruction draws within `baked_arrow_fit_tolerance` of
-/// the curve's own samples, with the chevron's orientation pinned by an
+/// the arrow's own samples, with the chevron's orientation pinned by an
 /// analytic end-tangent comparison. `max_baked_length` bounds the
 /// straight family's baked length (the platform texture limit, expected
 /// bucket-rounded): longer edges draw CLAMPED - the accepted shortening -
 /// rather than falling back. The self_loop family ignores the bound (its
-/// canvas is small). Pure: identical curves give identical params.
-pub fn bakedArrowParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowParams {
+/// canvas is small). Pure: identical arrows give identical params.
+pub fn bakedArrowParams(arrow: element.Arrow, max_baked_length: i32) ?BakedArrowParams {
     if (max_baked_length < baked_arrow_length_bucket) return null;
-    if (curve.start.x == curve.end.x and curve.start.y == curve.end.y)
-        return bakedLoopParams(curve);
-    return bakedStraightParams(curve, max_baked_length);
+    if (arrow.start.x == arrow.end.x and arrow.start.y == arrow.end.y)
+        return bakedLoopParams(arrow);
+    return bakedStraightParams(arrow, max_baked_length);
 }
 
 /// The longest straight-arrow length bakeable against a platform texture
@@ -338,20 +338,20 @@ pub fn maxBakedArrowLength(max_texture_size: i32) i32 {
     return @divTrunc(bounded, baked_arrow_length_bucket) * baked_arrow_length_bucket;
 }
 
-fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowParams {
-    const start = floatVec(curve.start);
-    const end = floatVec(curve.end);
+fn bakedStraightParams(arrow: element.Arrow, max_baked_length: i32) ?BakedArrowParams {
+    const start = floatVec(arrow.start);
+    const end = floatVec(arrow.end);
     const chord = FloatVec{ .x = end.x - start.x, .y = end.y - start.y };
     const length = floatLength(chord);
     if (length < @as(f32, @floatFromInt(baked_arrow_length_bucket))) return null;
 
     const angle_radians = std.math.atan2(chord.y, chord.x);
     const control_start = unrotate(
-        .{ .x = floatVec(curve.control_start).x - start.x, .y = floatVec(curve.control_start).y - start.y },
+        .{ .x = floatVec(arrow.control_start).x - start.x, .y = floatVec(arrow.control_start).y - start.y },
         angle_radians,
     );
     const control_end = unrotate(
-        .{ .x = floatVec(curve.control_end).x - start.x, .y = floatVec(curve.control_end).y - start.y },
+        .{ .x = floatVec(arrow.control_end).x - start.x, .y = floatVec(arrow.control_end).y - start.y },
         angle_radians,
     );
 
@@ -369,10 +369,10 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .variant = .straight,
         .length = length_bucket,
         .bow = bow_bucket,
-        .width = curve.width,
+        .width = arrow.width,
         .rotation_degrees = 0,
     });
-    if (!bakedArrowFits(curve, canonical, angle_radians)) return null;
+    if (!bakedArrowFits(arrow, canonical, angle_radians)) return null;
 
     // The clamp is policy, not classification: the fit was verified
     // against the unclamped bucket, then the drawn length shortens to the
@@ -381,15 +381,15 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .variant = .straight,
         .length = @min(length_bucket, max_baked_length),
         .bow = bow_bucket,
-        .width = curve.width,
+        .width = arrow.width,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
 }
 
-fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
-    const start = floatVec(curve.start);
-    const control_start = floatVec(curve.control_start);
-    const control_end = floatVec(curve.control_end);
+fn bakedLoopParams(arrow: element.Arrow) ?BakedArrowParams {
+    const start = floatVec(arrow.start);
+    const control_start = floatVec(arrow.control_start);
+    const control_end = floatVec(arrow.control_end);
     // The teardrop's axis runs through the control midpoint: both controls
     // sit at the same reach along the departure direction, mirrored across
     // the axis by the half-width, so their midpoint is exactly on the axis.
@@ -404,35 +404,35 @@ fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
         .variant = .self_loop,
         .length = self_loop_length,
         .bow = 0,
-        .width = curve.width,
+        .width = arrow.width,
         .rotation_degrees = 0,
     });
-    if (!bakedArrowFits(curve, canonical, angle_radians)) return null;
+    if (!bakedArrowFits(arrow, canonical, angle_radians)) return null;
     return .{
         .variant = .self_loop,
         .length = self_loop_length,
         .bow = 0,
-        .width = curve.width,
+        .width = arrow.width,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
 }
 
-/// The canonical LOCAL curve a params set bakes: oriented east (+x) with
-/// the curve's start point at the local origin (0, 0). Straight family:
+/// The canonical LOCAL arrow a params set bakes: oriented east (+x) with
+/// the arrow's start point at the local origin (0, 0). Straight family:
 /// controls at the chord thirds carrying the bow; self_loop family: the
 /// fixed teardrop constants (the east-oriented twin of `deriveEdgeGeometry`'s
 /// self-loop arm). The rasterizer and the fit check both consume this, so
 /// the baked art and the verified shape are the same thing.
-fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
+fn bakedArrowCanonical(params: BakedArrowParams) element.Arrow {
     return switch (params.variant) {
-        .straight => element.Curve{
+        .straight => element.Arrow{
             .start = .{ .x = 0, .y = 0 },
             .control_start = .{ .x = @divTrunc(params.length, 3), .y = params.bow },
             .control_end = .{ .x = @divTrunc(2 * params.length, 3), .y = params.bow },
             .end = .{ .x = params.length, .y = 0 },
             .width = params.width,
         },
-        .self_loop => element.Curve{
+        .self_loop => element.Arrow{
             .start = .{ .x = 0, .y = 0 },
             .control_start = .{ .x = self_loop_length, .y = self_loop_half_width },
             .control_end = .{ .x = self_loop_length, .y = -self_loop_half_width },
@@ -442,7 +442,7 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
     };
 }
 
-/// The chevron-orientation fit tolerance: the angle between the curve's
+/// The chevron-orientation fit tolerance: the angle between the arrow's
 /// and the canonical's end tangents (see `bakedArrowFits`). Generous by
 /// design - the stroke's sample fit is the shape gate, and the residual
 /// error sources here (integer-rounded controls on the shortest chords)
@@ -454,38 +454,38 @@ const baked_arrow_tangent_tolerance_radians = std.math.degreesToRadians(baked_ar
 /// The unit direction of a cubic's end tangent from its last control +
 /// endpoint (3(p3 - p2), magnitude dropped), or null when the tangent is
 /// degenerate (control_end == end).
-fn endTangentDirection(curve: element.Curve) ?FloatVec {
-    const end = floatVec(curve.end);
-    const control_end = floatVec(curve.control_end);
+fn endTangentDirection(arrow: element.Arrow) ?FloatVec {
+    const end = floatVec(arrow.end);
+    const control_end = floatVec(arrow.control_end);
     const vec = FloatVec{ .x = end.x - control_end.x, .y = end.y - control_end.y };
     const length = floatLength(vec);
     if (length <= 0) return null;
     return .{ .x = vec.x / length, .y = vec.y / length };
 }
 
-/// Whether `curve` (un-rotated by `angle_radians` about its start point)
+/// Whether `arrow` (un-rotated by `angle_radians` about its start point)
 /// stays within `baked_arrow_fit_tolerance` of the canonical's samples,
 /// with the chevron's orientation pinned by an analytic end-tangent
 /// comparison (see the tangent block for why never the sampled one).
-/// Corresponding samples are compared point-to-point (both curves are
+/// Corresponding samples are compared point-to-point (both arrows are
 /// the same family up to a rigid transform, so corresponding points are
 /// the near ones).
-fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians: f32) bool {
-    var curve_samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
-    var canonical_samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
-    element.sampleCurve(curve, &curve_samples);
-    element.sampleCurve(canonical, &canonical_samples);
+fn bakedArrowFits(arrow: element.Arrow, canonical: element.Arrow, angle_radians: f32) bool {
+    var arrow_samples: [element.arrow_sample_count + 1]ScreenPosition = undefined;
+    var canonical_samples: [element.arrow_sample_count + 1]ScreenPosition = undefined;
+    element.sampleArrow(arrow, &arrow_samples);
+    element.sampleArrow(canonical, &canonical_samples);
 
-    const origin = floatVec(curve.start);
-    for (curve_samples, canonical_samples) |curve_sample, canonical_sample| {
+    const origin = floatVec(arrow.start);
+    for (arrow_samples, canonical_samples) |arrow_sample, canonical_sample| {
         const local = unrotate(.{
-            .x = @as(f32, @floatFromInt(curve_sample.x)) - origin.x,
-            .y = @as(f32, @floatFromInt(curve_sample.y)) - origin.y,
+            .x = @as(f32, @floatFromInt(arrow_sample.x)) - origin.x,
+            .y = @as(f32, @floatFromInt(arrow_sample.y)) - origin.y,
         }, angle_radians);
         if (floatDistance(local, floatVec(canonical_sample)) > baked_arrow_fit_tolerance) return false;
     }
 
-    // The chevron check compares the curves' end tangents computed from
+    // The chevron check compares the arrows' end tangents computed from
     // their CONTROL POINTS, never from the sampled last segment: at
     // short lengths the sample step (~length/48) is below the integer
     // rounding grain, so the sampled tangent is quantization noise
@@ -498,8 +498,8 @@ fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians:
     // the angle between the two directions. A degenerate tangent cannot
     // be compared - conservatively reject.
     {
-        const curve_tangent = endTangentDirection(curve) orelse return false;
-        const local_tangent = unrotate(curve_tangent, angle_radians);
+        const arrow_tangent = endTangentDirection(arrow) orelse return false;
+        const local_tangent = unrotate(arrow_tangent, angle_radians);
         const canonical_tangent = endTangentDirection(canonical) orelse return false;
         const dot = std.math.clamp(
             local_tangent.x * canonical_tangent.x + local_tangent.y * canonical_tangent.y,
@@ -512,7 +512,7 @@ fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians:
 }
 
 /// The baked texture's dimensions + the draw pivot (the local origin,
-/// i.e. the curve's start point) in canvas pixels.
+/// i.e. the arrow's start point) in canvas pixels.
 pub const BakedArrowCanvas = struct {
     width: u32,
     height: u32,
@@ -521,8 +521,8 @@ pub const BakedArrowCanvas = struct {
 };
 
 /// The rasterizer's segment budget: the sampled stroke (worst case all
-/// `curve_sample_count` segments) + the chevron's two arms.
-const max_baked_arrow_segments = element.curve_sample_count + 2;
+/// `arrow_sample_count` segments) + the chevron's two arms.
+const max_baked_arrow_segments = element.arrow_sample_count + 2;
 
 const BakedArrowSegment = struct { start: FloatVec, end: FloatVec };
 
@@ -531,8 +531,8 @@ const BakedArrowSegment = struct { start: FloatVec, end: FloatVec };
 /// so the baked silhouette IS the hit region's shape.
 fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segments]BakedArrowSegment) usize {
     const canonical = bakedArrowCanonical(params);
-    var samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
-    element.sampleCurve(canonical, &samples);
+    var samples: [element.arrow_sample_count + 1]ScreenPosition = undefined;
+    element.sampleArrow(canonical, &samples);
 
     var count: usize = 0;
     var index: usize = 0;
@@ -577,7 +577,7 @@ pub fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
     max_x += pad;
     max_y += pad;
 
-    // The local origin (the curve's start point, the draw pivot) sits at
+    // The local origin (the arrow's start point, the draw pivot) sits at
     // (0, 0); its canvas position is the negated bbox minimum. Every
     // variant's first segment starts at the origin, so the bbox always
     // contains it and both pivots are non-negative.
@@ -645,7 +645,7 @@ pub fn rasterizeBakedArrow(params: BakedArrowParams, canvas: BakedArrowCanvas, p
 
 // ============================================================
 // Pure geometry tests - the three classes' shape contracts, asserted
-// here in isolation so the builder tests can assert "the drawn curve
+// here in isolation so the builder tests can assert "the drawn arrow
 // equals deriveEdgeGeometry's output" instead of restating geometry.
 // ============================================================
 
@@ -792,10 +792,10 @@ test "deriveEdgeGeometry: coincident hubs fall back to east" {
 // hand-built near-misses.
 // ============================================================
 
-/// The decorative curve the builders emit for a derived edge, in its
-/// post-rework single-curve shape: one curve per edge at the
+/// The decorative arrow the builders emit for a derived edge, in its
+/// post-rework single-arrow shape: one arrow per edge at the
 /// outline-inclusive width carrying the color/alpha state.
-fn drawnCurve(geometry: EdgeGeometry) element.Curve {
+fn drawnArrow(geometry: EdgeGeometry) element.Arrow {
     return .{
         .start = geometry.start,
         .control_start = geometry.control_start,
@@ -812,7 +812,7 @@ test "bakedArrowParams: straight edge classifies with the chord rotation + exact
     const from_position = Vector2{ .x = -400, .y = 0 };
     const to_position = Vector2{ .x = 400, .y = 0 };
     const geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 1, .count = 1 });
-    const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+    const params = bakedArrowParams(drawnArrow(geometry), 4096) orelse
         return error.TestUnexpectedResult;
 
     try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
@@ -829,7 +829,7 @@ test "bakedArrowParams: diagonal chord rounds the length bucket + derives rotati
     const from_position = Vector2{ .x = 0, .y = 0 };
     const to_position = Vector2{ .x = 300, .y = 400 };
     const geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 1, .count = 1 });
-    const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+    const params = bakedArrowParams(drawnArrow(geometry), 4096) orelse
         return error.TestUnexpectedResult;
 
     try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
@@ -849,9 +849,9 @@ test "bakedArrowParams: parallel siblings bow into opposite buckets, same length
     const to_position = Vector2{ .x = 400, .y = 0 };
     const first_geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 1, .count = 2 });
     const second_geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 2, .count = 2 });
-    const first = bakedArrowParams(drawnCurve(first_geometry), 4096) orelse
+    const first = bakedArrowParams(drawnArrow(first_geometry), 4096) orelse
         return error.TestUnexpectedResult;
-    const second = bakedArrowParams(drawnCurve(second_geometry), 4096) orelse
+    const second = bakedArrowParams(drawnArrow(second_geometry), 4096) orelse
         return error.TestUnexpectedResult;
 
     // East chord, so the perpendicular offsets land purely on the bow
@@ -867,7 +867,7 @@ test "bakedArrowParams: self-loop classifies as the fixed teardrop" {
     // A loop authored north: the axis points north (rotation -90 in
     // screen space), the shape is the fixed-constant teardrop.
     const geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .self_loop, 0, .{ .index = 1, .count = 1 });
-    const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+    const params = bakedArrowParams(drawnArrow(geometry), 4096) orelse
         return error.TestUnexpectedResult;
 
     try std.testing.expectEqual(BakedArrowVariant.self_loop, params.variant);
@@ -881,7 +881,7 @@ test "bakedArrowParams: dangling stub classifies as the straight family at the f
     // the bearing. 300 is NOT a multiple of the 8px
     // bucket (37.5 buckets rounds up), so the drawn stub snaps to 304.
     const geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .dangling, 180, .{ .index = 1, .count = 1 });
-    const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+    const params = bakedArrowParams(drawnArrow(geometry), 4096) orelse
         return error.TestUnexpectedResult;
 
     try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
@@ -895,19 +895,19 @@ test "bakedArrowParams: long straight edges clamp to the max baked length" {
     const from_position = Vector2{ .x = -400, .y = 0 };
     const to_position = Vector2{ .x = 400, .y = 0 };
     const geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 1, .count = 1 });
-    const params = bakedArrowParams(drawnCurve(geometry), 400) orelse
+    const params = bakedArrowParams(drawnArrow(geometry), 400) orelse
         return error.TestUnexpectedResult;
     try expectEqualInt(400, params.length);
 }
 
-test "bakedArrowParams: near-family curves snap to their bucket" {
+test "bakedArrowParams: near-family arrows snap to their bucket" {
     // Controls nudged by 3px (within the fit tolerance): the bow snaps
-    // to the 0 bucket and the curve still bakes - the fit, not exact
+    // to the 0 bucket and the arrow still bakes - the fit, not exact
     // control equality, is the gate.
     const from_position = Vector2{ .x = -400, .y = 0 };
     const to_position = Vector2{ .x = 400, .y = 0 };
     const geometry = deriveEdgeGeometry(from_position, .{ .hub = to_position }, 0, .{ .index = 1, .count = 1 });
-    var nudged = drawnCurve(geometry);
+    var nudged = drawnArrow(geometry);
     nudged.control_start.y += 3;
     nudged.control_end.y += 3;
     const params = bakedArrowParams(nudged, 4096) orelse
@@ -915,19 +915,19 @@ test "bakedArrowParams: near-family curves snap to their bucket" {
     try expectEqualInt(0, params.bow);
 }
 
-test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
-    // An S-curve: unequal control bows - outside every family.
-    const s_curve = element.Curve{
+test "bakedArrowParams: foreign arrows fall back to the per-segment draw" {
+    // An S-arrow: unequal control bows - outside every family.
+    const s_arrow = element.Arrow{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 30, .y = 40 },
         .control_end = .{ .x = 70, .y = -40 },
         .end = .{ .x = 100, .y = 0 },
         .width = edge_width + 2 * edge_outline_width,
     };
-    try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(s_curve, 4096));
+    try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(s_arrow, 4096));
 
     // A chord shorter than one bucket: degenerate, not bakeable.
-    const tiny = element.Curve{
+    const tiny = element.Arrow{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 1, .y = 0 },
         .control_end = .{ .x = 3, .y = 0 },
@@ -936,9 +936,9 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
     };
     try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(tiny, 4096));
 
-    // A closed curve that is not the standard teardrop: the reach is
+    // A closed arrow that is not the standard teardrop: the reach is
     // 500, not the fixed 300 - the sample fit rejects it.
-    const foreign_loop = element.Curve{
+    const foreign_loop = element.Arrow{
         .start = .{ .x = 0, .y = 0 },
         .control_start = .{ .x = 500, .y = 100 },
         .control_end = .{ .x = 500, .y = -100 },
@@ -954,7 +954,7 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
     // point-to-point in traversal order precisely because the chevron is
     // order-sensitive, so the swap must fall back.
     const north_loop = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .self_loop, 0, .{ .index = 1, .count = 1 });
-    const swapped = element.Curve{
+    const swapped = element.Arrow{
         .start = north_loop.end,
         .control_start = north_loop.control_end,
         .control_end = north_loop.control_start,
@@ -1072,7 +1072,7 @@ test "rasterizeBakedArrow: the teardrop silhouette stays inside its control hull
     const pivot_x: usize = @intCast(canvas.pivot_x);
     const pivot_y: usize = @intCast(canvas.pivot_y);
 
-    // The anchor (the local origin) is the curve's start + end: white.
+    // The anchor (the local origin) is the arrow's start + end: white.
     try std.testing.expectEqual([4]u8{ 255, 255, 255, 255 }, pixelColor(pixels, canvas, pivot_x, pivot_y));
     // The mid-bulb axis point (225, 0): white.
     try std.testing.expectEqual([4]u8{ 255, 255, 255, 255 }, pixelColor(pixels, canvas, pivot_x + 225, pivot_y));
@@ -1098,7 +1098,7 @@ test "bakedArrowParams: short edges at awkward angles bake (the sampled-tangent 
             0,
             .{ .index = 1, .count = 1 },
         );
-        const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+        const params = bakedArrowParams(drawnArrow(geometry), 4096) orelse
             return error.TestUnexpectedResult;
         try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
         try expectEqualInt(24, params.length);
@@ -1108,7 +1108,7 @@ test "bakedArrowParams: short edges at awkward angles bake (the sampled-tangent 
     // spacing) dominates the end-tangent vector, which is even better
     // conditioned - must also bake.
     const first_geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .{ .hub = .{ .x = 140, .y = 60 } }, 0, .{ .index = 1, .count = 2 });
-    const first = bakedArrowParams(drawnCurve(first_geometry), 4096) orelse
+    const first = bakedArrowParams(drawnArrow(first_geometry), 4096) orelse
         return error.TestUnexpectedResult;
     try expectEqualInt(-@divTrunc(parallel_edge_spacing, 2), first.bow);
 }

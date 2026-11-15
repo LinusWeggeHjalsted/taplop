@@ -2,12 +2,12 @@
 //! graph - see DESIGN → Campaigns & the Campaign Editor → The map surface +
 //! Discovery + travel). Renders the ACTIVE campaign's derived edge table +
 //! hubs as pure state reads: background (native size, centered on the
-//! origin), hub icons, mission edges as one `curve` per edge (the
+//! origin), hub icons, mission edges as one `arrow` per edge (the
 //! baked-arrow rendering: one rotated texture, outline + inner stroke
 //! baked together, tinted per edge). No hub/mission name labels - names
 //! live in tooltips only. Visuals are decorative; the clickable surface
 //! (travel + mission start) lands with slice 2d riding the spriteless-Button
-//! + `hit_curve` seam.
+//! + `hit_arrow` seam.
 
 const std = @import("std");
 const types = @import("../types.zig");
@@ -201,7 +201,7 @@ pub fn buildWorldMap(
         }
     }
 
-    // Edges: one curve per edge (the baked-arrow rendering - see the
+    // Edges: one arrow per edge (the baked-arrow rendering - see the
     // emission site below). Lit iff the edge's start hub is lit (the
     // clickable rule applied to the view). Three geometric classes:
     //   self-loop (destination == from): the teardrop control placement;
@@ -244,18 +244,18 @@ pub fn buildWorldMap(
             null;
 
         // The clickable edge: a spriteless button whose hit region is the
-        // DRAWN ARROW's sampled stroke (the hit_curve seam - distance to
+        // DRAWN ARROW's sampled stroke (the hit_arrow seam - distance to
         // the polyline, not the bounds rect), emitted BEFORE the stroke
         // pair so the hover-highlight rim (drawn by the backend from the
-        // same curve, wider) renders BENEATH the black outline + lightest
-        // stroke (painter order; the curves are hit-test-transparent, so
-        // emission order only affects paint). The hit_curve carries the
+        // same arrow, wider) renders BENEATH the black outline + lightest
+        // stroke (painter order; the arrows are hit-test-transparent, so
+        // emission order only affects paint). The hit_arrow carries the
         // drawn arrow's OUTLINE-INCLUSIVE width (black outline + inner
         // stroke) - hit-testing, the tooltip
-        // bounds (curveBounds), and the highlight rim all derive from it.
+        // bounds (arrowBounds), and the highlight rim all derive from it.
         // Clickable exactly when the edge is lit (its start hub
         // discovered-or-start = the mission-entry legality); the mission
-        // tooltip rides the button too (containsPoint respects hit_curve,
+        // tooltip rides the button too (containsPoint respects hit_arrow,
         // so the tooltip shows exactly where a click would work - a
         // bounds-rect hover on the decorative stroke would cover the whole
         // bezier bbox). An edge with no resolvable mission is never
@@ -267,14 +267,14 @@ pub fn buildWorldMap(
         // equivalent to the exit tile, and there is no tile (the 3f
         // validation finding; DESIGN → The map surface).
         if (lit and edge.mission_dir.len > 0 and edge.exit_index != null) {
-            const hit_curve = ui_element.Curve{
+            const hit_arrow = ui_element.Arrow{
                 .start = geometry.start,
                 .control_start = geometry.control_start,
                 .control_end = geometry.control_end,
                 .end = geometry.end,
                 .width = edge_width + 2 * edge_outline_width,
             };
-            const bounds = ui_element.curveBounds(hit_curve);
+            const bounds = ui_element.arrowBounds(hit_arrow);
             try elements.append(allocator, .{ .button = .{
                 .sprite_id = null,
                 .screen_position = bounds.position(),
@@ -282,20 +282,20 @@ pub fn buildWorldMap(
                 .height = bounds.height,
                 .action = .start_mission_from_map_edge,
                 .payload = .{ .map_edge = @intCast(edge_index) },
-                .hit_curve = hit_curve,
+                .hit_arrow = hit_arrow,
                 .tooltip = tooltip,
             } });
         }
 
-        // The drawn edge: ONE curve at the outline-inclusive width
+        // The drawn edge: ONE arrow at the outline-inclusive width
         // carrying the color + dim state. The backend classifies it into
         // the baked-arrow cache (black outline + white inner stroke in
         // one rotated texture - see campaign_geometry's baked-arrow
         // section) and falls back to the per-segment draw for anything
         // outside the cache families. The hit region (above) samples the
-        // SAME curve, so the drawn edge and its click target agree by
+        // SAME arrow, so the drawn edge and its click target agree by
         // construction.
-        try elements.append(allocator, .{ .curve = .{
+        try elements.append(allocator, .{ .arrow = .{
             .start = geometry.start,
             .control_start = geometry.control_start,
             .control_end = geometry.control_end,
@@ -314,7 +314,7 @@ pub fn buildWorldMap(
 // flat-list index: the 2d/2e sessions re-indexed these tests four
 // times on emission-order changes (icon resize, clickable buttons,
 // emission reorder), each pass slow and error-prone. A predicate scan
-// survives any reorder; edge curves are found by their FULL geometry,
+// survives any reorder; edge arrows are found by their FULL geometry,
 // derived through the SAME shared helper the builder uses - so the
 // tests assert the builder draws exactly deriveEdgeGeometry's output
 // (the one-implementation contract), not restated geometry math.
@@ -379,11 +379,11 @@ fn colorEqual(a: Color, b: Color) bool {
     return a.r == b.r and a.g == b.g and a.b == b.b;
 }
 
-fn curveGeometryMatches(curve: ui_element.Curve, geometry: campaign_geometry.EdgeGeometry) bool {
-    return screenPositionEqual(curve.start, geometry.start) and
-        screenPositionEqual(curve.control_start, geometry.control_start) and
-        screenPositionEqual(curve.control_end, geometry.control_end) and
-        screenPositionEqual(curve.end, geometry.end);
+fn arrowGeometryMatches(arrow: ui_element.Arrow, geometry: campaign_geometry.EdgeGeometry) bool {
+    return screenPositionEqual(arrow.start, geometry.start) and
+        screenPositionEqual(arrow.control_start, geometry.control_start) and
+        screenPositionEqual(arrow.control_end, geometry.control_end) and
+        screenPositionEqual(arrow.end, geometry.end);
 }
 
 /// Find the first element matching `matches`, failing loudly (naming
@@ -436,12 +436,12 @@ fn findEdgeButton(elements: []const UiElement, edge_index: u32) !usize {
     return error.TestUnexpectedResult;
 }
 
-/// The lightest-colored curve drawing `geometry`.
-fn findLightCurve(elements: []const UiElement, geometry: campaign_geometry.EdgeGeometry) !usize {
+/// The lightest-colored arrow drawing `geometry`.
+fn findLightArrow(elements: []const UiElement, geometry: campaign_geometry.EdgeGeometry) !usize {
     for (elements, 0..) |element, index| {
-        if (element != .curve) continue;
-        if (!colorEqual(element.curve.color, test_theme.lightest)) continue;
-        if (curveGeometryMatches(element.curve, geometry)) return index;
+        if (element != .arrow) continue;
+        if (!colorEqual(element.arrow.color, test_theme.lightest)) continue;
+        if (arrowGeometryMatches(element.arrow, geometry)) return index;
     }
     std.debug.print("predicate scan found no lightest stroke for the edge geometry\n", .{});
     return error.TestUnexpectedResult;
@@ -471,7 +471,7 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // button's 3 elements (panel + button + label - emitPanelButton) +
     // per hub 1 icon + 1 clickable button (BOTH fixture hubs are lit:
     // the start hub by the start rule, Beta by the discovered set) +
-    // per LIT edge 1 curve + 1 clickable button (all three fixture
+    // per LIT edge 1 arrow + 1 clickable button (all three fixture
     // edges have a resolvable mission_dir + lit start hubs). Derived
     // from the fixture lists, not a magic number snapshot.
     var lit_hub_count: usize = 0;
@@ -544,31 +544,31 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expect(alpha_travel.sprite_id == null);
     _ = try findHubTravelButton(elements.items, 1);
 
-    // Edge 0: the self-loop on a (authored north). The drawn curve IS
+    // Edge 0: the self-loop on a (authored north). The drawn arrow IS
     // deriveEdgeGeometry's output (the scan matches the full geometry);
-    // the emission-level facts are the single curve's color +
+    // the emission-level facts are the single arrow's color +
     // outline-inclusive width (the outline is baked into the texture).
     const loop_geometry = fixtureEdgeGeometry(campaign, 0);
-    const loop_curve = elements.items[try findLightCurve(elements.items, loop_geometry)].curve;
-    try std.testing.expectEqual(test_theme.lightest, loop_curve.color);
-    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_curve.width);
-    // The decorative curve carries NO tooltip (its bounds-rect hover
+    const loop_arrow = elements.items[try findLightArrow(elements.items, loop_geometry)].arrow;
+    try std.testing.expectEqual(test_theme.lightest, loop_arrow.color);
+    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_arrow.width);
+    // The decorative arrow carries NO tooltip (its bounds-rect hover
     // would cover the whole bezier bbox); the mission tooltip rides the
     // clickable button, whose hit region is the stroke's samples - the
     // tooltip shows exactly where a click would work.
-    try std.testing.expect(loop_curve.tooltip == null);
-    // The button's hit_curve carries the drawn arrow's geometry at the
+    try std.testing.expect(loop_arrow.tooltip == null);
+    // The button's hit_arrow carries the drawn arrow's geometry at the
     // outline-inclusive width, and its rect is the
-    // drawn arrow's bbox (curveBounds) - the tooltip anchors to the FULL
+    // drawn arrow's bbox (arrowBounds) - the tooltip anchors to the FULL
     // arrow, not a corner on the start point.
     const loop_button = elements.items[try findEdgeButton(elements.items, 0)].button;
     try std.testing.expectEqualStrings("Loop", loop_button.tooltip.?.header.?[0].text);
-    try std.testing.expectEqual(loop_geometry.start, loop_button.hit_curve.?.start);
-    try std.testing.expectEqual(loop_geometry.control_start, loop_button.hit_curve.?.control_start);
-    try std.testing.expectEqual(loop_geometry.control_end, loop_button.hit_curve.?.control_end);
-    try std.testing.expectEqual(loop_geometry.end, loop_button.hit_curve.?.end);
-    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_button.hit_curve.?.width);
-    const loop_bounds = ui_element.curveBounds(loop_button.hit_curve.?);
+    try std.testing.expectEqual(loop_geometry.start, loop_button.hit_arrow.?.start);
+    try std.testing.expectEqual(loop_geometry.control_start, loop_button.hit_arrow.?.control_start);
+    try std.testing.expectEqual(loop_geometry.control_end, loop_button.hit_arrow.?.control_end);
+    try std.testing.expectEqual(loop_geometry.end, loop_button.hit_arrow.?.end);
+    try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_button.hit_arrow.?.width);
+    const loop_bounds = ui_element.arrowBounds(loop_button.hit_arrow.?);
     try std.testing.expectEqual(loop_bounds, Rectangle{
         .x = loop_button.screen_position.x,
         .y = loop_button.screen_position.y,
@@ -579,27 +579,27 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // Edge 1: the straight edge a -> b - solid, lit (its start hub 'a'
     // is the start hub).
     const straight_geometry = fixtureEdgeGeometry(campaign, 1);
-    const straight_curve = elements.items[try findLightCurve(elements.items, straight_geometry)].curve;
-    try std.testing.expectEqual(@as(u8, 255), straight_curve.alpha);
+    const straight_arrow = elements.items[try findLightArrow(elements.items, straight_geometry)].arrow;
+    try std.testing.expectEqual(@as(u8, 255), straight_arrow.alpha);
     const straight_button = elements.items[try findEdgeButton(elements.items, 1)].button;
-    try std.testing.expect(straight_button.screen_position.x <= straight_curve.start.x);
+    try std.testing.expect(straight_button.screen_position.x <= straight_arrow.start.x);
 
     // Edge 2: the dangling stub from b (direction 180 = south) - lit
     // ('b' is in the discovered set; the dimming case is asserted in
     // the dedicated test below).
     const stub_geometry = fixtureEdgeGeometry(campaign, 2);
-    const stub_curve = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
-    try std.testing.expectEqual(@as(u8, 255), stub_curve.alpha);
+    const stub_arrow = elements.items[try findLightArrow(elements.items, stub_geometry)].arrow;
+    try std.testing.expectEqual(@as(u8, 255), stub_arrow.alpha);
     _ = try findEdgeButton(elements.items, 2);
 
-    // The hit-curve bounds-coherence contract, across every edge button:
-    // a button's rect == curveBounds of its hit_curve (the 0x0-rect bug
+    // The hit-arrow bounds-coherence contract, across every edge button:
+    // a button's rect == arrowBounds of its hit_arrow (the 0x0-rect bug
     // class - a mismatched rect misplaces the tooltip + hover
     // highlight).
     for (elements.items) |element| {
         if (element != .button) continue;
-        const hit_curve = element.button.hit_curve orelse continue;
-        const bounds = ui_element.curveBounds(hit_curve);
+        const hit_arrow = element.button.hit_arrow orelse continue;
+        const bounds = ui_element.arrowBounds(hit_arrow);
         try std.testing.expectEqual(bounds, Rectangle{
             .x = element.button.screen_position.x,
             .y = element.button.screen_position.y,
@@ -641,10 +641,10 @@ test "buildWorldMap: undiscovered hubs + edges dim; a fresh campaign shows only 
     // stub from b ('b' undiscovered) dims - both found by geometry.
     try std.testing.expectEqual(
         @as(u8, 255),
-        elements.items[try findLightCurve(elements.items, fixtureEdgeGeometry(campaign, 1))].curve.alpha,
+        elements.items[try findLightArrow(elements.items, fixtureEdgeGeometry(campaign, 1))].arrow.alpha,
     );
     try std.testing.expectEqual(
         dimmed_alpha,
-        elements.items[try findLightCurve(elements.items, fixtureEdgeGeometry(campaign, 2))].curve.alpha,
+        elements.items[try findLightArrow(elements.items, fixtureEdgeGeometry(campaign, 2))].arrow.alpha,
     );
 }

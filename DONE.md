@@ -358,6 +358,7 @@ working rules).
 - [map edges: back to per-segment lines (the one-strip experiment abandoned)](#map-edges-back-to-per-segment-lines-the-one-strip-experiment-abandoned)
 - [map edges: capped segments (the join + end-cap follow-up)](#map-edges-capped-segments-the-join--end-cap-follow-up)
 - [map edges: baked arrow textures (the edge rendering rework)](#map-edges-baked-arrow-textures-the-edge-rendering-rework)
+- [map edges: session follow-ups - the analytic chevron tangent + the Arrow rename (session reflection)](#map-edges-session-follow-ups---the-analytic-chevron-tangent--the-arrow-rename-session-reflection)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21731,3 +21732,54 @@ padding, hull containment), maxBakedArrowLength bounds, and both
 builders' structure tests re-derived for the single-curve emission +
 the bounds-coherence scan. Full suite PASS, web compile OK, boot
 smoke + the user's hands-on pass clean.
+
+## map edges: session follow-ups - the analytic chevron tangent + the Arrow rename (session reflection)
+
+Two follow-ups from the session-reflection pass, plus the lessons
+worth keeping:
+
+- **`arrowheadArms` (now `arrowArms` under the rename) derives the
+  chevron tangent ANALYTICALLY** - 3(p3 - p2), the direction from the
+  last control point into the endpoint, with a chord-then-east
+  fallback chain for degenerate tangents. It previously used the last
+  SAMPLED segment's direction, the same quantization trap the baked-
+  arrow fit check hit (below ~100px lengths the sample step is under
+  the integer rounding grain); the baked arrow + classification had
+  already been fixed to the analytic tangent, leaving the fallback
+  draw, the hover/selected rim, and the tooltip bounds as the wobbly
+  sibling paths. Now every chevron derivation in the codebase agrees
+  by construction.
+- **`Curve` renamed to `Arrow`** (with the full vocabulary: the
+  `arrow` UiElement variant, `hit_arrow`, `arrowBounds`,
+  `sampleArrow`, `arrow_sample_count`, `drawArrowGeometry`, the
+  builders' test helpers). The general-purpose-curve fiction was
+  already dead - the arrowhead flag removal made every edge an arrow
+  unconditionally, and a type whose every instance is an arrow should
+  say so. Pure rename, no behavior change; DESIGN's edge/map sections
+  updated in the same commit (AGENTS/TODO had no references).
+
+Session-reflection lessons:
+
+- **Contract tests assert what the code says, never what the player
+  sees.** The dash class shipped sub-visible for its entire life
+  (6.25px gaps bridged by 12px caps) while its test faithfully
+  asserted `dashed == true`; the user's "it renders dimmed, not
+  dashed" observation - not the 996-test suite - exposed it. A visual
+  feature's hands-on check is not optional polish; it is the only
+  test the feature has.
+- **Dead generality accumulates silently.** `arrowhead` (and `dashed`
+  before it) threaded an abstraction through five layers while every
+  caller passed the same value - nothing flags "a flag consumed
+  uniformly is a constant". The cheap discipline: a new flag needs
+  two consumers with different values on day one, else it is a
+  constant pretending to be a knob.
+- **The doc system carried the session.** DONE's arrow-saga record
+  (the one-strip experiment's two falsified theories) settled the
+  CPU-bake decision without relitigation; the sampleCurve/distance
+  primitives gave the rasterizer for free; the predicate-scan test
+  convention survived the emission flip with only derived-total
+  updates. The conventions are the compounding asset.
+- Harness lesson (agent-side): when the harness cannot see the
+  screen, hand the human a checklist immediately - the synthetic-
+  event browser driving cost far more than the 30-second human look
+  it tried to replace.

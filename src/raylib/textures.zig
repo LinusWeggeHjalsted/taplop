@@ -210,7 +210,7 @@ pub const TextureStore = struct {
     }
 
     /// The baked arrow texture for `params` (the black outline + white
-    /// inner stroke rasterized from the curve family's canonical shape -
+    /// inner stroke rasterized from the arrow families' canonical shape -
     /// see campaign_geometry.zig): drawn once per distinct shape and
     /// reused by every edge of that shape, tinted + rotated at the draw
     /// site. Lazily baked via `ensureArrowBaked`. null if the bake failed
