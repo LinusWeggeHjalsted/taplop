@@ -4004,6 +4004,19 @@ planners + selection algebra over the level-shaped hub grid;
 `Selectable`'s hub arms: tile, decoration placement, NPC placement,
 exit placement, player start).
 
+**The landed state + framing shape (4-1)**: a parallel `?HubEditor`
+on GameState (the editor-state split's own pattern, extended one level:
+the drill-in is screen-local, not a sibling editor) holding the target
+hub's CampaignEditor HANDLE + the camera-clamp snapshot + the
+spawn-preview template - the grid is never copied, edits write
+through into `CampaignEditor.hubs`. The `.hub_editor` screen's scope
+carries `campaign_editor` (the graph survives the round-trip) and the
+scope rule clears the drill-in state on every transition away. A
+dedicated `hub_editor` binding context. Open = the recorded
+`open_hub_editor` orchestrator; return = the recorded `close_hub_editor`
+meta event (pure transition). The hub-grid edit events land with 4-3
+as their own screen-gated family.
+
 - **The grid**: one tile grid per hub (no level tabs). A new hub's
   default grid is a SINGLE tile with the player spawn ('!') - the
   spawn keeps its mission-editor semantics (singleton, movable,

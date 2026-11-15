@@ -638,7 +638,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   end_validation success path calls it gated `!replaying`).
 - `src/campaign_editor/` - the campaign editor's module family (the
   src/editor/ sibling): `handlers.zig` (the open/close framing + the
-  fresh-campaign default) + `load.zig` (the INVERSE PROJECTION -
+  fresh-campaign default + the hub-editor drill-in open
+  `openHubEditor`) + `load.zig` (the INVERSE PROJECTION -
   campaign.txt v5 (the Missions edge table) + every hub.txt + the mission
   table into the authored CampaignEditor graph; the open-from-dir path of
   `open_campaign_editor`)
@@ -771,6 +772,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   static slice-3b render of the authored graph; the mission-geometry
   resolution - endpoint classes, ghost fallbacks, auto-spread, orphan
   ghosting - feeds campaign_geometry)
+- `src/ui/hub_editor.zig` - the hub editor drill-in's structural UI
+  (the world-map return button; the palette/inspector/metadata mirror
+  their src/ui/ siblings as the editing slices land). The world scene
+  is view.zig's `buildHubEditorScene`
 - `src/ui/credits.zig` + `src/ui/tips.zig` - the credits screen + the
   tips overlay
 - `src/ui/settings.zig` - the settings screen (two tabs: controls + the

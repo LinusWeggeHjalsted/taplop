@@ -120,12 +120,22 @@ fn update(
                 std.meta.eql(pressed_field.?.ref, history.session.ui_state.text_edit.?.field);
             if (!pressing_focused_field) {
                 input_handlers.commitFocusedTextEdit(history);
+                // The press-arbitration panel flags are per-editor: the
+                // mission editor's own panels, else the campaign editor's
+                // (the same panel geometry - editorInspectorPanelRect - so
+                // one region check serves both; the campaign editor's
+                // name fields live in the same panels). The hub editor
+                // joins as its editing slices land.
                 const inspector_open = if (history.current_state.editor) |editor|
                     editor.inspector_open
+                else if (history.current_state.campaign_editor) |campaign_editor|
+                    campaign_editor.inspector_open
                 else
                     false;
                 const metadata_sidebar_open = if (history.current_state.editor) |editor|
                     editor.metadata_sidebar_open
+                else if (history.current_state.campaign_editor) |campaign_editor|
+                    campaign_editor.metadata_sidebar_open
                 else
                     false;
                 const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
@@ -537,6 +547,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         .level, .hub => .{ .anytime = true, .game = true },
         .editor => .{ .anytime = true, .editor = true },
         .campaign_editor => .{ .anytime = true, .campaign_editor = true },
+        // The hub editor drill-in has its own context (the settled
+        // per-surface action contexts - hub-editor bindings can never
+        // co-fire with either sibling editor's).
+        .hub_editor => .{ .anytime = true, .hub_editor = true },
         .main_menu => .{ .anytime = true, .menu = true },
         .replay_viewer => .{ .anytime = true },
     };

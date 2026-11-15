@@ -411,15 +411,36 @@ work:
         button's file-level design superseded the original
         parameterized-graph-view plan mid-slice - see DONE.md, slice 3f).
   - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
-        & the Campaign Editor → The hub editor surface): the level-editor
-        mirror over the level-shaped hub grid (select / tile / NPC group
-        / per-mission exits group / decorations group; the
-        campaign-shared decoration palette; read-only exit summary;
-        empty player + NPC inspectors; hub name + three gradients in
-        metadata; hub-only ctrl+S with the skip-unsaved-references rule;
-        hub validation findings). Edge creation stays on the campaign
-        map (the original exit-inspector pick/import/new flow is
-        superseded - DESIGN → The campaign editor).
+        & the Campaign Editor → The hub editor surface; the state +
+        event settle: the parallel `?HubEditor` on GameState scoped
+        `{ .hub_editor }` + a dedicated `hub_editor` binding context +
+        the screen-scope rule owning the drill-in lifetime). Recut
+        (4-1 framing DONE - DONE.md, "campaign-editor slice 4-1"):
+    - [ ] 4-2. The planner extraction: the click planners in
+          editor/planning.zig take the level-shaped GRID (+ placements
+          + Selectable) and return NEUTRAL plans (a small action union:
+          set tile / delete placement i / move player start...); the
+          mission editor rebases onto the extraction (all existing
+          tests stay green); each surface maps plans to its own events
+          at the push site. The one big refactor - the ordering rules
+          (LIFO draining, index-stable descending deletes,
+          footprint-replace) must exist ONCE.
+    - [ ] 4-3. Grid editing over the hub grid: the tile tool, the
+          player spawn, select/marquee/move-drag + the hub
+          `hub_editor_event` family (screen-gated on .hub_editor,
+          writing through into CampaignEditor.hubs by handle) + the
+          hub editor binding set.
+    - [ ] 4-4. NPC + exit-marker tools: the two fixed NPC tools + the
+          per-mission Missions palette group (live membership from the
+          campaign graph - the one live coupling) + the inspectors
+          (NPC empty, exit read-only summary).
+    - [ ] 4-5. Decorations group + pickers + the
+          custom/campaigns/<c>/hubs/<hub>/ art stem rule.
+    - [ ] 4-6. Metadata sidebar (hub name + the three gradients) +
+          hub-only ctrl+S (skip-unsaved-references rule, never
+          deletes).
+    - [ ] 4-7. Hub-content validation findings (overlapping
+          placements, off-grid) folded into the campaign Validate.
   - [ ] 5. The mission-editor hand-off (campaign context - SETTLED:
         only the save target (the campaign's missions/) + the
         world-map return button differ; export unchanged - DESIGN →

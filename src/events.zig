@@ -167,6 +167,13 @@ pub const MetaEvent = union(enum) {
     // HUB drill-in and the mission hand-off are in-editor screen states,
     // not separate framings.
     close_campaign_editor: void,
+    // Close the hub editor drill-in and return to the campaign map. The
+    // handler only transitions (the scope rule clears hub_editor - old
+    // scope .hub_editor, new scope .campaign_editor lacks it); the
+    // campaign graph was never left. The world-map return button fires
+    // it. Edits already landed in the authored graph; navigation is
+    // side-effect-free (the settled no-autosave rule).
+    close_hub_editor: void,
     start_playtest: struct {
         level_index: u32, // 0-based into editor.levels
     },
@@ -942,6 +949,18 @@ pub const PlayerInputEvent = union(enum) {
     // precedent: the world_generation bump resets stale view state).
     open_campaign_editor: struct {
         campaign_dir: ?[]const u8,
+    },
+    // Drill into the hub editor (the hub inspector's Open Hub Editor
+    // button): `hub` is the target hub's CampaignEditor handle. The
+    // handler resolves it against the live authored graph (a crafted
+    // dead handle no-ops), snapshots the camera clamp over the hub
+    // grid, loads the spawn-preview template through the reconstruction
+    // cache (the open_editor convention - the orchestrator is recorded,
+    // so replay re-reads the same bytes), and transitions to the
+    // .hub_editor screen (whose scope keeps campaign_editor alive -
+    // DESIGN → The editor-state split).
+    open_hub_editor: struct {
+        hub: u32,
     },
     // Orchestrates a save: syncs PlayerData from the working entity (in a
     // hub/level) via build_data_from_player, then writes via write_save.

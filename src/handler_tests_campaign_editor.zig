@@ -1493,3 +1493,107 @@ test "campaign editor: the Tab chords cycle the three map tools, undo restores" 
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(history.current_state.campaign_editor.?.active_tool == .mission);
 }
+
+test "hub editor framing: open drills in, close returns, the scope rule owns the state" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A campaign with one placed hub carrying a real grid (two tiles +
+    // the spawn + an NPC + an exit marker + a decoration), so the
+    // drill-in has content to snapshot against.
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 2 } },
+                    .player_start = .{ .x = 0, .y = 0 },
+                    .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 3, .y = 2 } }},
+                },
+                .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
+                .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
+            }},
+            .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 6,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The open orchestrator (the hub inspector's button): drills in. The
+    // clamp snapshot covers the grid's tiles (0,0 .. 3,2); the campaign
+    // graph SURVIVES (the .hub_editor scope carries campaign_editor -
+    // edits write through into it by handle).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+            .hub = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.hub_editor, history.current_state.screen);
+    const hub_editor = history.current_state.hub_editor orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(u32, 0), hub_editor.hub);
+    try testing.expectEqual(types.TileBounds{ .min_x = 0, .min_y = 0, .max_x = 3, .max_y = 2 }, hub_editor.clamp_bounds.?);
+    try testing.expect(history.current_state.campaign_editor != null);
+
+    // A crafted dead handle no-ops (the defensive convention - no
+    // transition, no state).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_hub_editor = .{
+            .hub = 99,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.hub_editor, history.current_state.screen);
+
+    // The close (the world-map return button): back to the campaign map,
+    // the scope rule dropping the drill-in state; the graph untouched.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .close_hub_editor }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.campaign_editor, history.current_state.screen);
+    try testing.expect(history.current_state.hub_editor == null);
+    try testing.expect(history.current_state.campaign_editor != null);
+    try testing.expect(history.current_state.campaign_editor.?.hubs.len == 1);
+
+    // Undo restores the drill-in (the close is a plain timeline event).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(state.Screen.hub_editor, history.current_state.screen);
+    try testing.expect(history.current_state.hub_editor != null);
+
+    // Exit-to-menu from the drill-in discards the whole editing session
+    // (the scope swap clears hub_editor AND campaign_editor).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_exit_to_menu }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try testing.expect(history.current_state.hub_editor == null);
+    try testing.expect(history.current_state.campaign_editor == null);
+}

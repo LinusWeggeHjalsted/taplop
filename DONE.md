@@ -361,6 +361,7 @@ working rules).
 - [map edges: session follow-ups - the analytic chevron tangent + the Arrow rename (session reflection)](#map-edges-session-follow-ups---the-analytic-chevron-tangent--the-arrow-rename-session-reflection)
 - [map edges: the hover rim rides the baked-arrow outline mask (the jagged-rim fix)](#map-edges-the-hover-rim-rides-the-baked-arrow-outline-mask-the-jagged-rim-fix)
 - [campaign-editor slice 3f: the Validate button - file-level campaign validation](#campaign-editor-slice-3f-the-validate-button---file-level-campaign-validation)
+- [campaign-editor slice 4-1: the hub editor framing - screen, state, open/close, the read-only scene](#campaign-editor-slice-4-1-the-hub-editor-framing---screen-state-openclose-the-read-only-scene)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21913,3 +21914,66 @@ sink accumulates across pipeline runs - each counting run must clear
 first) and a fixture written under the old silence doctrine (the
 direction run carried a stub + markerless missions); both fixed by
 making fixtures doctrine-clean rather than relaxing assertions.
+
+## campaign-editor slice 4-1: the hub editor framing - screen, state, open/close, the read-only scene
+
+The hub editor drill-in's skeleton (the first slice-4 commit; the
+state/event settles from the session that recut the slice):
+
+- **The parallel `?HubEditor` on GameState** (the editor-state split's
+  pattern extended one level: the drill-in is screen-LOCAL, not a
+  sibling editor): the target hub's CampaignEditor HANDLE + the
+  camera-clamp snapshot (the refreshEditorClampBounds math, taken once
+  at open) + the spawn-preview template (max player, through the
+  reconstruction cache - the orchestrator is recorded, replay re-reads
+  the same bytes). The grid is NEVER copied - edits will write through
+  into CampaignEditor.hubs by handle, the authored graph staying the
+  single truth. The `.hub_editor` screen's scope carries
+  campaign_editor (the graph survives the round trip); the scope rule
+  clears the drill-in state on every transition away, return included
+  - no teardown event exists or needs to.
+- **A dedicated `hub_editor` binding context** (the user's call, with
+  the split settle): hub-editor bindings can never co-fire with either
+  sibling editor's. main.zig derives it from the screen.
+- **Open** = the recorded `open_hub_editor` PlayerInput orchestrator
+  (the open_campaign_editor pattern; defensive against a crafted dead
+  handle); **return** = the recorded `close_hub_editor` meta event, a
+  pure transitionScreen. Exit-to-menu from the drill-in discards the
+  whole editing session (open_main_menu's plain transition).
+- **The UI**: the hub inspector's Open Hub Editor button (units 5-6
+  below the start-hub toggle) + the world-map return button (flush
+  top-right, `ui/icon_world_map` placeholder art, src/ui/hub_editor.zig
+  - the mission editor's shell-mirror file for the surface; slice 5's
+  mission-editor world-map button is the same concept and will reuse
+  the shape). Export Save hides on the screen (an editor screen - the
+  mission/campaign editor line, third screen).
+- **The read-only world scene** (`buildHubEditorScene` in view.zig,
+  the buildEditorScene mirror minus entities/items/level-end): floor
+  tiles, the spawn preview, NPC placements (the runtime hub render's
+  drawable), exit markers (mission-start banners), decorations through
+  the campaign-SHARED palette. The camera ports: playerPosition,
+  screenWorldBounds (the clamp snapshot arm), the free-pan editor
+  viewport condition, and cameraViewRegion all grew the hub_editor arm.
+
+Tests: the framing round trip (open -> clamp snapshot + graph survival,
+the crafted dead handle no-op, close -> scope drop, undo restore,
+exit-to-menu teardown), the inspector button + return button structure
+tests, and the scene projection test (tiles + spawn + NPC + exit
+marker + decoration drawables). 1002 green.
+
+Runtime verification: the console channel drove the real binary
+end to end (new_editor_campaign -> hub click -> inspector -> Open Hub
+Editor -> the hub editor screen with ONLY the return button + top bar
+-> the return click -> back to the campaign map), plus a web boot
+check. The drive caught two bugs the suite could not see:
+- the tips `?` gate covered .editor/.campaign_editor but NOT
+  .hub_editor - the `?` rendered exactly under the return button
+  (fixed in view's gate);
+- a PRE-EXISTING 3c press-arbitration gap: main.zig's
+  textEditPressProceeds wiring read the panel flags from the mission
+  editor's state (null on the campaign editor screen), so a focused
+  hub/campaign name field ATE the first click on any sibling control
+  in its own panel (the mission editor proceeds inside its panels).
+  The wiring now resolves the flags per-editor, and the campaign
+  sidebar toggles joined the proceed list - the fix rides this commit
+  (the exposed-by-4-1 rider; the console repro is the record).

@@ -16,6 +16,7 @@ const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 const CampaignEditorEvent = events.CampaignEditorEvent;
 const campaign_io = @import("io.zig");
+const editor_handlers = @import("../editor/handlers.zig");
 
 /// Handle a campaign-editor event (the handleEditorEvent mirror - pure
 /// state transforms on current.campaign_editor.?, mutably in place via
@@ -322,6 +323,64 @@ pub fn handleCampaignEditorEvent(
             editor.selection = .{ .mission = handle };
         },
     }
+}
+
+/// The hub editor drill-in open (the hub inspector's Open Hub Editor
+/// button -> the `open_hub_editor` orchestrator): resolve the target
+/// handle against the live authored graph (a crafted dead handle no-ops
+/// - the defensive convention), snapshot the camera clamp over the hub
+/// grid, load the spawn-preview template (max player, through the
+/// reconstruction cache - the orchestrator is recorded, so replay
+/// re-reads the same bytes), and install the drill-in state. The CALLER
+/// transitions to .hub_editor (whose scope keeps campaign_editor alive;
+/// the scope rule drops the drill-in state on the way back out - DESIGN
+/// → The editor-state split). A failed template read surfaces the
+/// recoverable error + leaves hub_editor unset (the arm's null check
+/// skips the transition - the openFreshEditorMission contract).
+pub fn openHubEditor(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+    balance_warnings: *std.ArrayList([]const u8),
+    target_handle: u32,
+) void {
+    const editor = current.campaign_editor orelse return;
+    var target: ?types.CampaignHubEdit = null;
+    for (editor.hubs) |hub| {
+        if (hub.handle == target_handle) {
+            target = hub;
+            break;
+        }
+    }
+    const hub = target orelse return;
+    const player_entity = editor_handlers.loadMaxPlayerLoadout(history, allocator, balance_warnings) orelse
+        return;
+    current.hub_editor = .{
+        .hub = hub.handle,
+        .clamp_bounds = hubGridClampBounds(hub),
+        .player_def = .{ .id = "Player", .template = player_entity },
+    };
+}
+
+/// The camera-clamp snapshot over a hub grid's tiles (the
+/// refreshEditorClampBounds math): taken once at drill-in open, never
+/// re-taken mid-edit, so painting never reframes the camera (see DESIGN
+/// → Platform Seam → Camera clamping). Null on an empty tile list (the
+/// unclamped camera).
+fn hubGridClampBounds(hub: types.CampaignHubEdit) ?types.TileBounds {
+    const tiles = hub.grid.level_tiles;
+    if (tiles.len == 0) return null;
+    var min_x = tiles[0].x;
+    var max_x = tiles[0].x;
+    var min_y = tiles[0].y;
+    var max_y = tiles[0].y;
+    for (tiles[1..]) |tile| {
+        if (tile.x < min_x) min_x = tile.x;
+        if (tile.x > max_x) max_x = tile.x;
+        if (tile.y < min_y) min_y = tile.y;
+        if (tile.y > max_y) max_y = tile.y;
+    }
+    return .{ .min_x = min_x, .min_y = min_y, .max_x = max_x, .max_y = max_y };
 }
 
 /// Open a FRESH campaign (the editor browser's New Campaign button /

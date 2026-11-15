@@ -751,6 +751,46 @@ pub fn buildCampaignEditorView(
                         .color = lightest,
                         .blocks_input = false,
                     } });
+                    // The drill-in entry (units 5-6): the slice-4 Open Hub
+                    // Editor button - a plain panel-button row (the
+                    // mission editor's action-row emission), the handle
+                    // riding the editor_campaign_hub payload.
+                    const open_entry_y = content.y + 5 * editor_shell.editor_header_strip_height;
+                    const open_rect = inspector.inspectorControlRect(.{
+                        .x = content.x,
+                        .y = open_entry_y,
+                        .width = content.width,
+                        .height = 2 * editor_shell.editor_header_strip_height,
+                    });
+                    try elements.append(allocator, .{ .nine_slice_panel = .{
+                        .sprite_id = "ui/panel",
+                        .screen_position = open_rect.position(),
+                        .width = open_rect.width,
+                        .height = open_rect.height,
+                        .color = button_color,
+                        .blocks_input = false,
+                    } });
+                    try elements.append(allocator, .{ .button = .{
+                        .sprite_id = null,
+                        .screen_position = open_rect.position(),
+                        .width = open_rect.width,
+                        .height = open_rect.height,
+                        .action = .open_hub_editor,
+                        .payload = .{ .editor_campaign_hub = hub.handle },
+                    } });
+                    try elements.append(allocator, .{ .text_label = .{
+                        .text = "Open Hub Editor",
+                        .screen_position = .{
+                            .x = open_rect.x + ui_element.ui_gap,
+                            .y = open_rect.y + @divFloor(
+                                open_rect.height - editor_shell.editor_group_header_font_size,
+                                2,
+                            ),
+                        },
+                        .font_size = editor_shell.editor_group_header_font_size,
+                        .color = lightest,
+                        .blocks_input = false,
+                    } });
                 }
             } else if (selected_mission != null) {
                 // The Mission section: the selected mission's inspector
@@ -1629,6 +1669,24 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     };
     try std.testing.expectEqual(@as(u32, 0), start_toggle.?.payload.?.editor_campaign_hub);
     try std.testing.expect(start_toggle_label.?.len > "Start Hub".len); // "(toggle another to move)" rides the label
+
+    // The drill-in entry: the Open Hub Editor button (units 5-6, below
+    // the toggle), the hub handle riding the editor_campaign_hub
+    // payload.
+    var open_button: ?ui_element.Button = null;
+    var open_label: ?[]const u8 = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_hub_editor) {
+            open_button = button;
+        },
+        .text_label => |label| if (std.mem.eql(u8, label.text, "Open Hub Editor")) {
+            open_label = label.text;
+        },
+        else => {},
+    };
+    try std.testing.expect(open_button != null);
+    try std.testing.expectEqual(@as(u32, 0), open_button.?.payload.?.editor_campaign_hub);
+    try std.testing.expect(open_label != null);
 
     // The toggle's CONTROL text is theme lightest (the row shipped
     // literal black once - the entry label above was already lightest).

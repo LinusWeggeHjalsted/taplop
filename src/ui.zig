@@ -30,6 +30,7 @@ const ui_tips = @import("ui/tips.zig");
 const ui_world_map = @import("ui/world_map.zig");
 const ui_campaign_geometry = @import("ui/campaign_geometry.zig");
 const ui_campaign_editor = @import("ui/campaign_editor.zig");
+const ui_hub_editor = @import("ui/hub_editor.zig");
 const ui_settings = @import("ui/settings.zig");
 
 pub const SlotRef = ui_element.SlotRef;
@@ -222,6 +223,7 @@ pub const BakedArrowCanvas = ui_campaign_geometry.BakedArrowCanvas;
 pub const bakedArrowCanvas = ui_campaign_geometry.bakedArrowCanvas;
 pub const rasterizeBakedArrow = ui_campaign_geometry.rasterizeBakedArrow;
 pub const buildCampaignEditorView = ui_campaign_editor.buildCampaignEditorView;
+pub const buildHubEditorTopBar = ui_hub_editor.buildHubEditorTopBar;
 pub const buildCampaignEditorPrimaryActions = ui_campaign_editor.buildCampaignEditorPrimaryActions;
 pub const HubPositionOverride = ui_campaign_editor.HubPositionOverride;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;

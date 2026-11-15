@@ -541,6 +541,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
         .select_editor_campaign_import,
+        .open_hub_editor,
+        .close_hub_editor,
         => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

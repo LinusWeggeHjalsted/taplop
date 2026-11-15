@@ -399,6 +399,21 @@ pub fn handlePlayerInputEvent(
             current.transitionScreen(.campaign_editor);
         },
 
+        // --- Meta: open the hub editor drill-in ---
+        .open_hub_editor => |start| {
+            // The hub inspector's Open Hub Editor button. A failed open
+            // surfaced the recoverable error and left hub_editor unset -
+            // skip the transition (the drain loop reverts). No
+            // world_generation bump: the drill-in views part of the SAME
+            // world (the authored graph), and the screen change itself
+            // resets the classes-2-4 view state.
+            var balance_warnings: std.ArrayList([]const u8) = .empty;
+            campaign_editor_handlers.openHubEditor(history, current, allocator, &balance_warnings, start.hub);
+            if (current.hub_editor == null) return;
+            surfaceWarnings(history, &balance_warnings, allocator);
+            current.transitionScreen(.hub_editor);
+        },
+
         // --- Meta: open editor ---
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
@@ -672,6 +687,12 @@ pub fn handlePlayerInputEvent(
                 // The same shape for the campaign editor:
                 // close_campaign_editor owns the teardown + transition.
                 pushEvents(current, &.{.{ .meta_event = .close_campaign_editor }}, allocator);
+            } else if (current.screen == .hub_editor) {
+                // Exit to the main menu from the hub editor discards the
+                // whole editing session (the scope swap clears hub_editor
+                // AND campaign_editor) - open_main_menu's plain
+                // transition, no teardown event needed.
+                pushEvents(current, &.{.{ .meta_event = .open_main_menu }}, allocator);
             }
         },
         .player_replay_mission => {

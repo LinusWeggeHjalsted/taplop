@@ -57,6 +57,7 @@ pub const Screen = enum {
     level,
     editor,
     campaign_editor,
+    hub_editor,
     replay_viewer,
 
     const Scope = struct {
@@ -66,6 +67,7 @@ pub const Screen = enum {
         hub: bool = false,
         editor: bool = false,
         campaign_editor: bool = false,
+        hub_editor: bool = false,
         replay_viewer: bool = false,
     };
 
@@ -82,6 +84,13 @@ pub const Screen = enum {
             .level => .{ .campaign = true, .mission = true, .level = true, .editor = true },
             .editor => .{ .editor = true, .campaign_editor = true },
             .campaign_editor => .{ .campaign_editor = true },
+            // The hub editor drill-in: the campaign graph stays alive
+            // (edits write through into CampaignEditor.hubs by handle),
+            // the drill-in state is screen-local (the scope rule clears
+            // it on every transition away - the return to the campaign
+            // map included). DESIGN → Campaigns & the Campaign Editor →
+            // The editor-state split.
+            .hub_editor => .{ .campaign_editor = true, .hub_editor = true },
             .replay_viewer => .{ .replay_viewer = true },
         };
     }
@@ -806,6 +815,9 @@ pub const GameState = struct {
     camera: ?Camera,
     editor: ?Editor,
     campaign_editor: ?types.CampaignEditor = null,
+    /// The hub editor drill-in (screen .hub_editor - see
+    /// `types.HubEditor`). Null except on that screen.
+    hub_editor: ?types.HubEditor = null,
     replay_viewer: ?ReplayViewer,
     campaign: ?Campaign,
     mission: ?Mission,
@@ -861,6 +873,7 @@ pub const GameState = struct {
         if (old_scope.hub and !new_scope.hub) self.hub = null;
         if (old_scope.editor and !new_scope.editor) self.editor = null;
         if (old_scope.campaign_editor and !new_scope.campaign_editor) self.campaign_editor = null;
+        if (old_scope.hub_editor and !new_scope.hub_editor) self.hub_editor = null;
         if (old_scope.replay_viewer and !new_scope.replay_viewer) self.replay_viewer = null;
 
         self.screen = new_screen;
@@ -2782,6 +2795,7 @@ pub const GameStateHistory = struct {
                     .start_new_game,
                     .open_editor,
                     .open_campaign_editor,
+                    .open_hub_editor,
                     .save_game,
                     .export_game,
                     .dismiss_mission_complete,

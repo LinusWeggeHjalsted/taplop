@@ -108,6 +108,7 @@ pub fn buildOptionsMenu(
     // that screen's save workflow. `save_game` is button-only (no
     // keybind), so hiding the button removes the path entirely.
     if (current_screen != .editor and current_screen != .campaign_editor and
+        current_screen != .hub_editor and
         current_screen != .main_menu and editor_run == null)
     {
         const export_save_body = if (persistent_dir_path) |dir|

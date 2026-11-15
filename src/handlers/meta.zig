@@ -284,6 +284,15 @@ pub fn handleMetaEvent(
             // Campaign Editor → The editor-state split.
             current.transitionScreen(.main_menu);
         },
+        .close_hub_editor => {
+            // Return to the campaign map: the scope swap clears the
+            // drill-in state (old scope .hub_editor, new scope
+            // .campaign_editor has none); the campaign graph was never
+            // left, and edits already landed in it. Navigation is
+            // side-effect-free (the settled no-autosave rule - DESIGN →
+            // The hub editor surface).
+            current.transitionScreen(.campaign_editor);
+        },
         .start_playtest => |start| {
             // Instantiate the chosen level from the editor's palette +
             // player_def into a concrete gameplay Level. Discard

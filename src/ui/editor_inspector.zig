@@ -3070,6 +3070,11 @@ pub fn textEditPressProceeds(
     if (pressed_button) |action| {
         if (action == .toggle_editor_inspector) return true;
         if (action == .toggle_editor_metadata_sidebar) return true;
+        // The campaign editor's own sidebar toggles (the same
+        // commit-and-proceed class - its name fields live in the same
+        // panel geometry).
+        if (action == .toggle_campaign_inspector) return true;
+        if (action == .toggle_campaign_metadata_sidebar) return true;
         // A picker surface (a skill cell, a sprite cell, a picker tab, or
         // the close button): the picker is the ACTIVE interaction - commit
         // the field and let the pick fire in the same click (it floats
@@ -4281,6 +4286,11 @@ test "textEditPressProceeds: M2 region is the open inspector panel + its toggle"
     // Panel closed → only the toggle button itself proceeds.
     try std.testing.expect(!textEditPressProceeds(false, false, inside_panel, null));
     try std.testing.expect(textEditPressProceeds(false, false, inside_panel, .toggle_editor_inspector));
+    // The campaign editor's sidebar toggles are the same class (its
+    // name fields live in the same panel geometry - the call site passes
+    // the per-editor panel flags).
+    try std.testing.expect(textEditPressProceeds(false, false, inside_panel, .toggle_campaign_inspector));
+    try std.testing.expect(textEditPressProceeds(false, false, inside_panel, .toggle_campaign_metadata_sidebar));
     // Outside the panel → pure dismissal, even over other UI (Undo).
     try std.testing.expect(!textEditPressProceeds(true, false, outside_panel, .undo));
     try std.testing.expect(!textEditPressProceeds(true, false, over_viewport, null));

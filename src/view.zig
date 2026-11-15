@@ -240,6 +240,28 @@ pub fn view(
             camera,
             camera_zoom,
         );
+    } else if (current_state.hub_editor) |*hub_editor| {
+        // The hub editor drill-in: the hub's grid projected into the same
+        // drawable kinds (read-only for now - the editing tools land with
+        // the later slice-4 slices). The hub resolves by handle against
+        // the live authored graph (in scope on this screen); a dead
+        // handle (a crafted log) renders nothing.
+        if (current_state.campaign_editor) |*campaign_editor| {
+            buildHubEditorScene(
+                &tiles,
+                &ground_entries,
+                frame_allocator,
+                hub_editor,
+                campaign_editor,
+                active_theme,
+                settings.player_color_index,
+                camera,
+                camera_zoom,
+                render.sprite_bounds,
+                session.animation_clock,
+                settings.animation_fps,
+            );
+        }
     }
 
     // Unified y-sort (ascending sort_y, then sort_x) and extract into the
@@ -505,6 +527,18 @@ pub fn view(
                 frame_allocator,
                 active_theme,
             ) catch @panic("failed to build campaign editor primary actions");
+        }
+    } else if (current_state.screen == .hub_editor) {
+        // The hub editor drill-in's top bar: the world-map return button
+        // (flush top-right - the primary-actions spot). The tool palette,
+        // inspector, and metadata sidebar land with the editing slices;
+        // the world scene is the world pass's hub_editor arm above.
+        if (current_state.hub_editor != null) {
+            ui.buildHubEditorTopBar(
+                &ui_elements,
+                frame_allocator,
+                active_theme,
+            ) catch @panic("failed to build hub editor top bar");
         }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either
@@ -814,7 +848,8 @@ pub fn view(
         active_theme,
         render.can_undo,
         render.can_redo,
-        tips.len > 0 and current_state.screen != .editor and current_state.screen != .campaign_editor,
+        tips.len > 0 and current_state.screen != .editor and current_state.screen != .campaign_editor and
+            current_state.screen != .hub_editor,
         current_state.screen == .level or current_state.screen == .hub,
     ) catch @panic("failed to build global top bar");
 
@@ -1125,6 +1160,15 @@ fn playerPosition(current_state: *const GameState) types.Vector2 {
         if (editor.levels.len == 0) return .{ .x = 0, .y = 0 };
         return editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].player_start;
     }
+    // The hub editor drill-in: the edited hub's grid player start is the
+    // camera anchor (the editor arm's convention).
+    if (current_state.hub_editor) |hub_editor| {
+        if (current_state.campaign_editor) |campaign_editor| {
+            for (campaign_editor.hubs) |hub| {
+                if (hub.handle == hub_editor.hub) return hub.grid.player_start;
+            }
+        }
+    }
     return .{ .x = 0, .y = 0 };
 }
 
@@ -1156,6 +1200,16 @@ fn screenWorldBounds(
         return tileListWorldBounds(hub.hub_tiles, tile_pixels);
     } else if (current_state.editor) |editor| {
         const snapshot = editor.clamp_bounds orelse return null;
+        return .{
+            .min_x = @as(f32, @floatFromInt(snapshot.min_x)) * tile_pixels,
+            .max_x = @as(f32, @floatFromInt(snapshot.max_x + 1)) * tile_pixels,
+            .min_y = @as(f32, @floatFromInt(snapshot.min_y)) * tile_pixels,
+            .max_y = @as(f32, @floatFromInt(snapshot.max_y + 1)) * tile_pixels,
+        };
+    } else if (current_state.hub_editor) |hub_editor| {
+        // The drill-in arm: the hub grid's clamp snapshot (the Editor arm's
+        // convention - taken at open, never mid-edit).
+        const snapshot = hub_editor.clamp_bounds orelse return null;
         return .{
             .min_x = @as(f32, @floatFromInt(snapshot.min_x)) * tile_pixels,
             .max_x = @as(f32, @floatFromInt(snapshot.max_x + 1)) * tile_pixels,
@@ -1277,8 +1331,10 @@ pub fn computeCamera(
         // The editor viewport's pan is completely free (no flush bounds, no
         // wiggle). The level==null guard matters: during playtest/validate
         // the editor state persists on a `.level` screen, and there the
-        // LEVEL clamp (with wiggle) applies.
-        const editor_viewport = current_state.editor != null and current_state.level == null;
+        // LEVEL clamp (with wiggle) applies. The hub editor drill-in is
+        // the same free-pan viewport class.
+        const editor_viewport = (current_state.editor != null or current_state.hub_editor != null) and
+            current_state.level == null;
         if (editor_viewport and pan != null) return .{ .position = pos };
         const bounds = screenWorldBounds(current_state, tile_pixels) orelse
             return .{ .position = pos };
@@ -1355,6 +1411,10 @@ pub fn cameraViewRegion(
 ) ?Rectangle {
     if (current_state.screen == .editor) {
         if (current_state.editor == null) return null;
+        return cameraViewRegionFor(0, zoom);
+    }
+    if (current_state.screen == .hub_editor) {
+        if (current_state.hub_editor == null) return null;
         return cameraViewRegionFor(0, zoom);
     }
     if (current_state.screen != .level and current_state.screen != .hub) return null;
@@ -3108,6 +3168,89 @@ fn buildInspectedAggroOutline(
 /// the '=' marker. Health bars are hidden - runtime state, not definition
 /// state (max health shows in the inspector instead). Ground-item bags group
 /// co-located placements into one drawable with the placement count.
+/// The hub editor drill-in's world scene: the edited hub's grid projected
+/// into the same drawable kinds (the buildEditorScene mirror minus the
+/// entity/item/level-end machinery - hubs have none of those): floor
+/// tiles, the player-spawn preview (the drill-in state's max-player
+/// template at the grid's '!'), NPC placements (the runtime hub render's
+/// drawable), exit markers (the mission-start banner style), and
+/// decorations resolved through the campaign-SHARED palette. The hub
+/// resolves by handle against the live authored graph; a dead handle
+/// renders nothing (the crafted-log belt).
+fn buildHubEditorScene(
+    tiles: *std.ArrayList(types.TileDrawable),
+    ground_entries: *std.ArrayList(GroundEntry),
+    allocator: std.mem.Allocator,
+    hub_editor: *const types.HubEditor,
+    campaign_editor: *const types.CampaignEditor,
+    active_theme: types.ActiveColorTheme,
+    player_color_index: u32,
+    camera: types.Camera,
+    camera_zoom: f32,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+    animation_clock: u64,
+    animation_fps: u32,
+) void {
+    var target: ?types.CampaignHubEdit = null;
+    for (campaign_editor.hubs) |hub| {
+        if (hub.handle == hub_editor.hub) {
+            target = hub;
+            break;
+        }
+    }
+    const hub = target orelse return;
+
+    buildTiles(tiles, allocator, hub.grid.level_tiles, active_theme, camera, camera_zoom);
+
+    // The player-spawn preview: the drill-in state's template at the
+    // grid's '!' (the buildEditorScene player block - shallow copy with
+    // the borrowed strings, frame-arena lifetime).
+    {
+        var player = hub_editor.player_def.template;
+        player.position = hub.grid.player_start;
+        const player_ptrs = [_]*const Entity{&player};
+        collectEntityEntries(ground_entries, allocator, &player_ptrs, active_theme, player_color_index, camera, camera_zoom, sprite_bounds, false);
+    }
+
+    // NPC placements: plain {npc_type, position} - the runtime hub
+    // render's drawable (semantics arrive with NPC interaction).
+    for (hub.npc_placements) |npc| {
+        ground_entries.append(allocator, .{
+            .sort_y = npc.position.y,
+            .sort_x = npc.position.x,
+            .drawable = .{ .entity = npcEntityDrawable(npc, active_theme, camera, camera_zoom) },
+            .entity_sprite = npc.npc_type.spriteId(),
+        }) catch @panic("failed to append hub editor npc entry");
+    }
+
+    // Exit markers: the mission-start banner style (the runtime hub's
+    // exit block - one marker per outgoing mission, positions are this
+    // hub's edit surface).
+    for (hub.exit_placements) |exit| {
+        ground_entries.append(allocator, .{
+            .sort_y = exit.position.y,
+            .sort_x = exit.position.x,
+            .drawable = .{ .level_end = levelEndDrawable(exit.position, active_theme, camera, camera_zoom, animation_clock, animation_fps, true) },
+        }) catch @panic("failed to append hub editor exit entry");
+    }
+
+    // Decorations: resolve each placement through the campaign-SHARED
+    // palette (the buildEditorScene decoration block).
+    for (hub.grid.decoration_placements) |placement| {
+        const type_definition = campaign_editor.decoration_types[placement.type_id];
+        const pieces = buildDecorationPieces(.{
+            .name = type_definition.sprite,
+            .position = placement.position,
+            .footprint = type_definition.footprint,
+            .pixel_dims = type_definition.pixel_dims,
+            .color_index = type_definition.color_index,
+            .layers = type_definition.layers,
+        }, active_theme, camera, camera_zoom, allocator);
+        for (pieces) |entry| ground_entries.append(allocator, entry) catch
+            @panic("failed to append hub editor decoration piece entry");
+    }
+}
+
 fn buildEditorScene(
     tiles: *std.ArrayList(types.TileDrawable),
     ground_entries: *std.ArrayList(GroundEntry),
@@ -5935,4 +6078,111 @@ test "outlineStripePhase: steps at animation_fps, wraps per cycle" {
     try std.testing.expectEqual(0.25, outlineStripePhase(250_000, 0));
     // Fractional frames floor to the stepped frame (750ms at 2fps = frame 1).
     try std.testing.expectEqual(0.125, outlineStripePhase(750_000, 2));
+}
+
+test "hub editor: the world scene projects the hub grid + the return button" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const harness = test_harness.Harness.init(arena);
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+    // A drilled-in hub with content: two tiles, the spawn, an NPC, an
+    // exit marker, one decoration through the campaign palette.
+    const campaign_editor = types.CampaignEditor{
+        .campaign_name = "Drill",
+        .start_hub = 0,
+        .hubs = &.{.{
+            .handle = 0,
+            .name = "Alpha",
+            .position = .{ .x = 0, .y = 0 },
+            .grid = .{
+                .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 2 } },
+                .player_start = .{ .x = 0, .y = 0 },
+                .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 3, .y = 2 } }},
+            },
+            .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 3, .y = 2 } }},
+            .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 0, .y = 0 } }},
+        }},
+        .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
+        .decoration_types = &.{
+            .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }}, .pixel_dims = .{ .x = 256, .y = 256 } },
+        },
+        .next_handle = 6,
+    };
+    const hub_editor_state = GameState{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = campaign_editor,
+        .hub_editor = .{ .hub = 0, .clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 3, .max_y = 2 } },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var session = state.SessionState{};
+    const view_state = view(
+        &hub_editor_state,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        &.{},
+        .{
+            .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = font_metrics,
+            .sprite_bounds = .{},
+            .can_undo = false,
+            .can_redo = false,
+        },
+    );
+
+    // The world scene: one checkerboard tile drawable per grid tile.
+    try std.testing.expectEqual(@as(usize, 2), view_state.tiles.len);
+
+    // The ground entries: the spawn preview (an entity drawable), the NPC
+    // (the dream_guide sprite id), the exit marker (a level-end banner),
+    // and the decoration (the palette type's sprite) - five drawables in
+    // the y-sorted list.
+    var saw_player = false;
+    var saw_npc = false;
+    var saw_exit_marker = false;
+    var saw_decoration = false;
+    for (view_state.ground_drawables) |drawable| switch (drawable) {
+        .entity => |entity| {
+            if (std.mem.eql(u8, entity.base_sprite.sprite_id, "npcs/dream_guide")) {
+                saw_npc = true;
+            } else {
+                saw_player = true;
+            }
+        },
+        .level_end => saw_exit_marker = true,
+        .decoration_piece => saw_decoration = true,
+        else => {},
+    };
+    try std.testing.expect(saw_player);
+    try std.testing.expect(saw_npc);
+    try std.testing.expect(saw_exit_marker);
+    try std.testing.expect(saw_decoration);
+
+    // The UI: the world-map return button (flush top-right).
+    var return_button_x: ?i32 = null;
+    for (view_state.ui_elements) |element| switch (element) {
+        .button => |button| if (button.action == .close_hub_editor) {
+            return_button_x = button.screen_position.x;
+        },
+        else => {},
+    };
+    try std.testing.expect(return_button_x != null);
+    try std.testing.expectEqual(types.reference_width - ui.top_bar_slot_size, return_button_x.?);
 }

@@ -409,6 +409,15 @@ pub const Action = enum {
     // contract) - the graph findings + every mission's validation
     // replay. An input-layer side effect, never a recorded event.
     validate_campaign,
+    // The hub inspector's Open Hub Editor button: drills into the hub
+    // editor (the slice-4 surface). The hub handle rides the
+    // `editor_campaign_hub` payload; the orchestrator event is recorded
+    // (undo returns to the campaign map).
+    open_hub_editor,
+    // The hub editor's world-map return button (top-right): back to the
+    // campaign map - the recorded close drops the drill-in state via
+    // the scope rule.
+    close_hub_editor,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -960,6 +969,7 @@ pub const BindingContext = enum {
     game,
     editor,
     campaign_editor,
+    hub_editor,
     menu,
     error_popup,
 };
@@ -975,6 +985,7 @@ pub const BindingContextSet = struct {
     game: bool = false,
     editor: bool = false,
     campaign_editor: bool = false,
+    hub_editor: bool = false,
     menu: bool = false,
     error_popup: bool = false,
 
@@ -984,6 +995,7 @@ pub const BindingContextSet = struct {
             .game => self.game,
             .editor => self.editor,
             .campaign_editor => self.campaign_editor,
+            .hub_editor => self.hub_editor,
             .menu => self.menu,
             .error_popup => self.error_popup,
         };
@@ -1213,7 +1225,13 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
+        .open_hub_editor,
         => .{ .campaign_editor = true },
+        // The hub editor's own surface (the drill-in screen - its own
+        // action context, so hub-editor bindings can never co-fire with
+        // either sibling editor's).
+        .close_hub_editor,
+        => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
         .editor_select_tool,
@@ -1511,6 +1529,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_campaign_tool => .editor_campaign_tool,
         .select_editor_campaign_hub,
         .set_editor_campaign_start_hub,
+        .open_hub_editor,
         => .editor_campaign_hub,
         .select_editor_campaign_background => .editor_campaign_background,
         .select_editor_campaign_mission => .editor_campaign_mission,
@@ -1614,6 +1633,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .open_campaign_import_picker,
         .save_campaign,
         .validate_campaign,
+        .close_hub_editor,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
@@ -3987,6 +4007,35 @@ pub const CampaignEditor = struct {
     /// child of the commit - one undo step for pick + close, the
     /// editor-picker convention).
     picker: ?CampaignEditorPicker = null,
+};
+
+/// The hub editor drill-in state (the slice-4 surface - DESIGN →
+/// Campaigns & the Campaign Editor → The hub editor surface): the
+/// level-editor mirror over ONE hub's grid. The grid is NOT copied -
+/// `hub` is the target hub's CampaignEditor handle, and edits write
+/// through into `CampaignEditor.hubs` (the authored graph stays the
+/// single truth; the shared undo timeline snapshots it either way -
+/// DESIGN → The editor-state split, the parallel-state settle).
+/// Scoped `{ .hub_editor }`: the scope rule clears it on every
+/// transition away (the return to the campaign map included), so the
+/// drill-in state never outlives its screen.
+pub const HubEditor = struct {
+    /// The edited hub's CampaignEditor handle. The handle is checked
+    /// against the live graph at open; the editing events re-check it
+    /// defensively (the crafted-log convention).
+    hub: u32,
+    /// The camera-clamp snapshot over the hub grid's tiles (the
+    /// `Editor.clamp_bounds` convention - taken at open, never re-taken
+    /// mid-edit so painting never reframes the camera; see DESIGN →
+    /// Platform Seam → Camera clamping).
+    clamp_bounds: ?TileBounds = null,
+    /// The player-spawn preview template (the mission editor's
+    /// `player_def` convention - max player, the author preview, loaded
+    /// at open through the reconstruction cache). Hubs carry no
+    /// player.txt; the '!' is a POSITION, the body is preview art.
+    player_def: EntityTypeDef = .{ .id = "Player" },
+    // The active tool + selection + palette state land with the editing
+    // slices (TODO → Level Editor → campaign editor, slice 4 recut).
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for
