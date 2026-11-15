@@ -362,6 +362,7 @@ working rules).
 - [map edges: the hover rim rides the baked-arrow outline mask (the jagged-rim fix)](#map-edges-the-hover-rim-rides-the-baked-arrow-outline-mask-the-jagged-rim-fix)
 - [campaign-editor slice 3f: the Validate button - file-level campaign validation](#campaign-editor-slice-3f-the-validate-button---file-level-campaign-validation)
 - [campaign-editor slice 4-1: the hub editor framing - screen, state, open/close, the read-only scene](#campaign-editor-slice-4-1-the-hub-editor-framing---screen-state-openclose-the-read-only-scene)
+- [campaign-editor slice 4-2: the planner extraction - the neutral grid core under the mission editor's facades](#campaign-editor-slice-4-2-the-planner-extraction---the-neutral-grid-core-under-the-mission-editors-facades)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21977,3 +21978,50 @@ check. The drive caught two bugs the suite could not see:
   The wiring now resolves the flags per-editor, and the campaign
   sidebar toggles joined the proceed list - the fix rides this commit
   (the exposed-by-4-1 rider; the console repro is the record).
+
+## campaign-editor slice 4-2: the planner extraction - the neutral grid core under the mission editor's facades
+
+The big refactor the slice-4 settle opted into: editor/planning.zig now
+has two layers.
+
+- **The NEUTRAL GRID CORE**: `GridStep` (set_tile / place-retype-delete
+  entity / item / decoration) + `SelectionOp` (select / deselect / clear)
+  + the grid-parameterized planners (`planGridTilePaint`,
+  `planGridDecorationPlacement`, `planGridEntityPlacement`,
+  `planGridItemPlacement`, `planGridDelete`, `planGridSelectionDelete`,
+  `planGridSelectionToggle` / `planGridSelectionReplace`,
+  `planGridRegionSelect`, `planGridSelectAll`, `gridClickGroup`,
+  `gridSelectionContainsPosition`, `gridSelectionMoveVetoed`,
+  `gridSelectionMoveEntries`) - pure decision logic over a level-shaped
+  grid + placements + `Selectable`, returning surface-independent steps
+  ordered for LIFO draining. NO Editor, NO events, no level_index.
+- **The mission-editor facades**: every historical `planEditor*Actions` /
+  `editor*` pub fn kept its exact signature and became resolve-level ->
+  run-core -> map (`gridStepsToEditorEvents` /
+  `selectionOpsToEditorEvents` / `selectEntriesToEditorEvents`, 1:1 in
+  order). Every call site and every existing test is unchanged - the
+  planner/selection tests in handler_tests_editor assert exact event
+  sequences, so the suite staying green is strong verification that the
+  ordering rules (LIFO draining, index-stable descending deletes,
+  footprint-replace, the toggle/replace/marquee orders) survived
+  byte-for-byte.
+
+The key design choice: the ORDER CONTRACT lives in the core. The neutral
+plans come back in final PUSH order (the reversals the old code did at
+its tails moved inside the core), so a surface maps 1:1 with zero
+ordering logic of its own - the drift-prone duplication the extraction
+exists to prevent cannot reappear at a facade.
+
+The minimize-pub discipline: the core is FILE-PRIVATE today (nothing
+outside planning.zig consumes it yet); slice 4-3's hub facades import it
+and flip it pub at that moment - the same sequencing as a seam born with
+its consumer.
+
+New coverage: the hub-readiness contract test - the core over a
+HUB-shaped EditorLevel (no entities/items/level_end: those arms never
+fire; the spawn never overwritten/deleted; the delete priority; the
+click groups; the move veto never firing without a level_end) - the
+4-3 preview, locking the shape the hub facades will consume. The first
+fixture attempt violated the footprint-tiles-are-tile-free invariant
+(a decoration standing on its own tile) and the core caught it - the
+invariant holds at the planner layer too. 1003 green.

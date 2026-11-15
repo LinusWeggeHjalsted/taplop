@@ -1,13 +1,29 @@
-//! Pure editor click/selection planning: the `planEditor*Actions`
-//! planners (one per tool), the selection algebra (value equality,
-//! contains, with-entry / without-entry / without-tile), and
-//! `activeEditorLevel`. Everything here is a pure function of the Editor
-//! state - a planner computes the sub-event list its click would push;
-//! the editor event handlers push the plan, and the input layer fires
-//! the player action only when the plan is nonempty, so a click that
-//! would change nothing never reaches the event log (no undo/replay
-//! step). See DESIGN → Level Editor → Active-tool model + Selection
-//! model.
+//! Pure editor click/selection planning, in two layers (the slice-4
+//! extraction):
+//!
+//! - The NEUTRAL GRID CORE (`GridStep` / `SelectionOp` + the `planGrid*`
+//! / `grid*` fns): pure decision logic over a level-shaped grid +
+//! placements + `Selectable` - what a click would mutate, in a
+//! surface-independent vocabulary ordered for LIFO draining. No Editor,
+//! no events. File-private today; the hub editor's tool facades (slice
+//! 4-3) import it and flip it pub - the mission editor and the hub
+//! editor then share every ordering rule (LIFO draining, index-stable
+//! descending deletes, footprint-replace) by construction, once.
+//!
+//! - The MISSION-EDITOR FACADES (`planEditor*Actions`, `editorClickGroup`,
+//! `editorSelection*`): resolve the active level, run the neutral core,
+//! and map steps/ops onto `editor_event` 1:1 in order. These keep the
+//! historical signatures - every call site (the input-side click
+//! orchestrators + the gesture arms) and test is unchanged.
+//!
+//! Also here: the selection algebra (value equality, contains,
+//! with-entry / without-entry / without-tile), `activeEditorLevel`, and
+//! the two editors' tool-cycle steps. A planner computes the sub-event
+//! list its click would push; the editor event handlers push the plan,
+//! and the input layer fires the player action only when the plan is
+//! nonempty, so a click that would change nothing never reaches the
+//! event log (no undo/replay step). See DESIGN → Level Editor →
+//! Active-tool model + Selection model.
 
 const std = @import("std");
 const types = @import("../types.zig");
@@ -108,6 +124,52 @@ pub fn selectionWithoutTile(
     return rebuilt[0..length];
 }
 
+/// One step of a NEUTRAL grid plan - the surface-independent mutation
+/// vocabulary shared by the mission editor's level grids and the hub
+/// editor's hub grids (the slice-4 extraction: the planners decide WHAT
+/// to mutate over a level-shaped grid; each surface maps steps to its
+/// own event family at the push site, 1:1 in order). Steps that address
+/// placements by INDEX assume the processing convention the planners
+/// encode: the plan is ordered for LIFO draining (the event stack pops
+/// from the end - the REVERSE of processing order), and each delete
+/// list ascends in the slice so it processes DESCENDING (index-stable
+/// removal). A surface that maps steps in order inherits both rules by
+/// construction.
+const GridStep = union(enum) {
+    set_tile: struct { position: Vector2, is_floor: bool },
+    place_entity: struct { type_id: u32, position: Vector2 },
+    set_entity_type: struct { placement_index: u32, type_id: u32 },
+    delete_entity: u32,
+    place_item: struct { type_id: u32, position: Vector2 },
+    set_item_type: struct { placement_index: u32, type_id: u32 },
+    delete_item: u32,
+    place_decoration: struct { type_id: u32, position: Vector2 },
+    delete_decoration: u32,
+};
+
+/// One step of a neutral SELECTION plan: the select / deselect / clear
+/// vocabulary. The toggle, replace, region, and select-all planners
+/// decide the ops over `Selectable`; each surface maps them to its own
+/// selection events, 1:1 in order. Same LIFO order contract as
+/// `GridStep`.
+const SelectionOp = union(enum) {
+    select: types.Selectable,
+    deselect: types.Selectable,
+    clear,
+};
+
+/// Which selection-deletion policy a plan runs - see
+/// `planGridSelectionDelete`.
+const SelectionDeleteMode = enum {
+    /// The Delete key: a selected tile's OCCUPANT is swept with it (an
+    /// occupant can't stand on nothing).
+    delete_key,
+    /// A selection move's clear phase: an UNSELECTED occupant PINS its
+    /// tile - the tile stays underneath it and the moved tile lands at
+    /// the target instead.
+    selection_move,
+};
+
 /// The active level, or null when the editor has no levels or the active
 /// index is out of range - the click planners no-op on null (defensive:
 /// live input can't produce it, crafted session logs can).
@@ -134,37 +196,111 @@ pub fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel 
 /// (entities / items / the '!' / '=' sit ON tiles, so they never block a
 /// paint); every decoration whose footprint covers the position is deleted
 /// first (replace, not block - see DESIGN → Decorations & Footprint →
-/// Placement invariant). The array is ordered for LIFO draining (set_tile
-/// first, deletes in ascending placement order → the deletes process in
-/// DESCENDING order - required for index-stable removal, since deleting a
-/// lower index first would shift the pending higher ones - and the tile
-/// lands last). All sub-events land between two idle points, so one undo
-/// reverts the whole click.
+/// Placement invariant). The plan is ordered for LIFO draining (set_tile
+/// first, deletes in ascending placement order → processing DESCENDING -
+/// index-stable removal; the tile lands last). All steps share one idle
+/// point, so one undo reverts the whole click.
+///
+/// NEUTRAL CORE (the slice-4 extraction): pure over a level-shaped grid +
+/// the decoration palette; the mission editor's `planEditorTilePaintActions`
+/// and the hub editor's tile tool both map its steps to their own events.
+fn planGridTilePaint(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const GridStep {
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) return &.{};
+    }
+    var steps: std.ArrayList(GridStep) = .empty;
+    steps.append(allocator, .{ .set_tile = .{
+        .position = position,
+        .is_floor = true,
+    } }) catch @panic("failed to allocate editor paint plan");
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor paint plan");
+        }
+    }
+    return steps.items;
+}
+
+/// The mission editor's tile-paint façade: resolve the active level, run
+/// the neutral planner, map the steps onto `editor_event` (1:1 in order).
 pub fn planEditorTilePaintActions(
     editor: *const types.Editor,
     position: Vector2,
     allocator: std.mem.Allocator,
 ) []const Event {
     const level = activeEditorLevel(editor) orelse return &.{};
-    for (level.level_tiles) |tile| {
-        if (tile.x == position.x and tile.y == position.y) return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridTilePaint(level, editor.decoration_types, position, allocator),
+        allocator,
+    );
+}
+
+/// Map a neutral grid plan onto the mission editor's `editor_event` family,
+/// 1:1 in order (the plan's LIFO order is the contract - see `GridStep`).
+fn gridStepsToEditorEvents(
+    level_index: u32,
+    steps: []const GridStep,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (steps.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (steps) |step| {
+        const variant: events.EditorEvent = switch (step) {
+            .set_tile => |tile| .{ .editor_set_tile = .{
+                .level_index = level_index,
+                .position = tile.position,
+                .is_floor = tile.is_floor,
+            } },
+            .place_entity => |place| .{ .editor_place_entity = .{
+                .level_index = level_index,
+                .type_id = place.type_id,
+                .position = place.position,
+            } },
+            .set_entity_type => |retype| .{ .editor_set_entity_placement_type = .{
+                .level_index = level_index,
+                .placement_index = retype.placement_index,
+                .type_id = retype.type_id,
+            } },
+            .delete_entity => |placement_index| .{ .editor_delete_entity_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+            .place_item => |place| .{ .editor_place_item = .{
+                .level_index = level_index,
+                .type_id = place.type_id,
+                .position = place.position,
+            } },
+            .set_item_type => |retype| .{ .editor_set_item_placement_type = .{
+                .level_index = level_index,
+                .placement_index = retype.placement_index,
+                .type_id = retype.type_id,
+            } },
+            .delete_item => |placement_index| .{ .editor_delete_item_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+            .place_decoration => |place| .{ .editor_place_decoration = .{
+                .level_index = level_index,
+                .type_id = place.type_id,
+                .position = place.position,
+            } },
+            .delete_decoration => |placement_index| .{ .editor_delete_decoration_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+        };
+        events_out.append(allocator, .{ .editor_event = variant }) catch
+            @panic("failed to allocate editor plan");
     }
-    var pushes: std.ArrayList(Event) = .empty;
-    pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-        .level_index = @intCast(editor.active_level_index),
-        .position = position,
-        .is_floor = true,
-    } } }) catch @panic("failed to allocate editor paint plan");
-    for (level.decoration_placements, 0..) |placement, placement_index| {
-        const type_definition = editor.decoration_types[placement.type_id];
-        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor paint plan");
-        }
-    }
-    return pushes.items;
+    return events_out.items;
 }
 
 /// Enemy-tool click: place the palette entity type at the clicked tile,
@@ -181,14 +317,33 @@ pub fn planEditorTilePaintActions(
 /// whole click. The one-thing-per-tile invariant is enforced at
 /// `editor_place_entity` (panic on an occupied tile) - the deletes above run
 /// first, so the place lands on a cleared tile.
-pub fn planEditorEntityPlacementActions(
-    editor: *const types.Editor,
+/// Enemy-tool click: place the palette entity type at the clicked tile,
+/// replacing whatever occupies it. Occupant semantics (see DESIGN →
+/// Level Editor → Active-tool model, placement tools): player start / level end →
+/// no-op (never overwritten); covering decorations → deleted; missing tile
+/// → placed; co-located ground item → deleted; existing enemy → RETYPED in
+/// place (set_entity_type, not delete + re-place - stable identity); same
+/// type already there → nothing to do (the plan is empty only when the tile
+/// is also present and nothing needs clearing). The plan is ordered for LIFO
+/// draining (the REVERSE of processing order; the per-kind delete lists
+/// ascend so they process descending - index-stable removal). All steps
+/// share one idle point - one undo reverts the whole click. The
+/// one-thing-per-tile invariant is enforced at the place handler (panic on
+/// an occupied tile) - the deletes above run first, so the place lands on a
+/// cleared tile.
+///
+/// NEUTRAL CORE (the slice-4 extraction): the mission editor maps it via
+/// `planEditorEntityPlacementActions`; the hub editor has no entity tools
+/// and never calls it.
+fn planGridEntityPlacement(
+    level: *const types.EditorLevel,
+    entity_types: []const types.EntityTypeDef,
+    decoration_types: []const types.DecorationTypeDef,
     type_id: u32,
     position: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
-    if (type_id >= editor.entity_types.len) return &.{};
-    const level = activeEditorLevel(editor) orelse return &.{};
+) []const GridStep {
+    if (type_id >= entity_types.len) return &.{};
 
     // The '!' and '=' are singletons, movable never deletable - an enemy
     // never overwrites them.
@@ -219,48 +374,56 @@ pub fn planEditorEntityPlacementActions(
         }
     }
 
-    var pushes: std.ArrayList(Event) = .empty;
+    var steps: std.ArrayList(GridStep) = .empty;
     if (occupant_index == null) {
-        pushes.append(allocator, .{ .editor_event = .{ .editor_place_entity = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .place_entity = .{
             .type_id = type_id,
             .position = position,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     } else if (level.entity_placements[occupant_index.?].type_id != type_id) {
         // Same type already there - no branch taken (nothing to do).
-        pushes.append(allocator, .{ .editor_event = .{ .editor_set_entity_placement_type = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .set_entity_type = .{
             .placement_index = @intCast(occupant_index.?),
             .type_id = type_id,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     }
     if (!tile_present) {
-        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .set_tile = .{
             .position = position,
             .is_floor = true,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     }
     for (level.item_placements, 0..) |placement, placement_index| {
         if (placement.position.x == position.x and
             placement.position.y == position.y)
         {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_item = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
     for (level.decoration_placements, 0..) |placement, placement_index| {
-        const type_definition = editor.decoration_types[placement.type_id];
+        const type_definition = decoration_types[placement.type_id];
         if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
-    return pushes.items;
+    return steps.items;
+}
+
+/// The mission editor's enemy-tool façade over the neutral planner.
+pub fn planEditorEntityPlacementActions(
+    editor: *const types.Editor,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridEntityPlacement(level, editor.entity_types, editor.decoration_types, type_id, position, allocator),
+        allocator,
+    );
 }
 
 /// Decoration-tool click: place the palette decoration with its ANCHOR tile
@@ -279,21 +442,41 @@ pub fn planEditorEntityPlacementActions(
 /// array is ordered for LIFO draining (the REVERSE of processing order; each
 /// delete list ascends so it processes descending - index-stable). All
 /// sub-events share one idle point - one undo reverts the whole click.
-pub fn planEditorDecorationPlacementActions(
-    editor: *const types.Editor,
+/// Decoration-tool click: place the palette decoration with its ANCHOR tile
+/// (bottom-most-then-left-most footprint tile) at the clicked position,
+/// replacing whatever occupies the footprint's world tiles. The INVERSE of
+/// the tile/enemy placements - a decoration's footprint tiles are TILE-FREE,
+/// so covered tiles are ERASED rather than placed: the '!' / '=' under ANY
+/// footprint tile → no-op (never overwritten); an EXACT DUPLICATE (same type
+/// at the same anchor → identical footprint) already satisfies the
+/// placement - the plan skips the place and the duplicate's own delete, so
+/// no duplicate ever stacks (other overlapping decorations still get
+/// deleted); tiles under footprint tiles → erased, along with the entities /
+/// ground items standing on them; other decorations whose footprints overlap
+/// ANY footprint tile → deleted; then the placement lands (the place handler
+/// enforces footprint-tile exclusivity). The plan is ordered for LIFO
+/// draining (the REVERSE of processing order; each delete list ascends so it
+/// processes descending - index-stable). All steps share one idle point -
+/// one undo reverts the whole click.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
+/// `planEditorDecorationPlacementActions` and the hub editor's decoration
+/// tool (the campaign-SHARED decoration palette).
+fn planGridDecorationPlacement(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
     type_id: u32,
     position: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
-    if (type_id >= editor.decoration_types.len) return &.{};
-    const type_definition = editor.decoration_types[type_id];
+) []const GridStep {
+    if (type_id >= decoration_types.len) return &.{};
+    const type_definition = decoration_types[type_id];
     const footprint_tiles = loaders.decorationFootprintWorldTiles(
         type_definition.footprint,
         position,
         allocator,
     );
     if (footprint_tiles.len == 0) return &.{};
-    const level = activeEditorLevel(editor) orelse return &.{};
 
     // The '!' / '=' under any footprint tile → never overwritten.
     for (footprint_tiles) |tile| {
@@ -317,22 +500,20 @@ pub fn planEditorDecorationPlacementActions(
         }
     }
 
-    var pushes: std.ArrayList(Event) = .empty;
+    var steps: std.ArrayList(GridStep) = .empty;
     if (!duplicate_present) {
-        pushes.append(allocator, .{ .editor_event = .{ .editor_place_decoration = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .place_decoration = .{
             .type_id = type_id,
             .position = position,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     }
     // Erase every covered tile that has one.
     for (footprint_tiles) |tile| {
         if (functions.tileListContains(level.level_tiles, tile)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-                .level_index = @intCast(editor.active_level_index),
+            steps.append(allocator, .{ .set_tile = .{
                 .position = tile,
                 .is_floor = false,
-            } } }) catch @panic("failed to allocate editor place plan");
+            } }) catch @panic("failed to allocate editor place plan");
         }
     }
     // Entities + items standing on covered tiles (they sit ON tiles, so
@@ -340,18 +521,14 @@ pub fn planEditorDecorationPlacementActions(
     // tiles is robust either way).
     for (level.entity_placements, 0..) |placement, placement_index| {
         if (functions.tileListContains(footprint_tiles, placement.position)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_entity = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
     for (level.item_placements, 0..) |placement, placement_index| {
         if (functions.tileListContains(footprint_tiles, placement.position)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_item = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
     // Overlapping other decorations: an existing footprint covering any of
@@ -363,7 +540,7 @@ pub fn planEditorDecorationPlacementActions(
             placement.type_id == type_id and
             placement.position.x == position.x and
             placement.position.y == position.y) continue;
-        const other_definition = editor.decoration_types[placement.type_id];
+        const other_definition = decoration_types[placement.type_id];
         var overlaps = false;
         for (footprint_tiles) |tile| {
             if (loaders.decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
@@ -372,13 +549,26 @@ pub fn planEditorDecorationPlacementActions(
             }
         }
         if (overlaps) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
-    return pushes.items;
+    return steps.items;
+}
+
+/// The mission editor's decoration-tool façade over the neutral planner.
+pub fn planEditorDecorationPlacementActions(
+    editor: *const types.Editor,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridDecorationPlacement(level, editor.decoration_types, type_id, position, allocator),
+        allocator,
+    );
 }
 
 /// Ground-item-tool click: place the palette item type at the clicked tile
@@ -391,14 +581,28 @@ pub fn planEditorDecorationPlacementActions(
 /// order; each delete list ascends so it processes descending - index-
 /// stable). All sub-events share one idle point - one undo reverts the
 /// whole click.
-pub fn planEditorItemPlacementActions(
-    editor: *const types.Editor,
+/// Ground-item-tool click: place the palette item type at the clicked tile
+/// - the same occupant replacement as the entity tool, with the roles swapped
+/// for the two placement kinds: an existing ground item is RETYPED in place
+/// (set_item_type) and an enemy on the tile is DELETED (the item can't
+/// coexist with it). The '!' / '=' → no-op; covering decorations → deleted; a
+/// missing tile → placed (the item sits ON a tile). The plan is ordered for
+/// LIFO draining (the REVERSE of processing order; each delete list ascends
+/// so it processes descending - index-stable). All steps share one idle
+/// point - one undo reverts the whole click.
+///
+/// NEUTRAL CORE (the slice-4 extraction): the mission editor maps it via
+/// `planEditorItemPlacementActions`; the hub editor has no item tools and
+/// never calls it.
+fn planGridItemPlacement(
+    level: *const types.EditorLevel,
+    item_types: []const types.ItemTypeDef,
+    decoration_types: []const types.DecorationTypeDef,
     type_id: u32,
     position: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
-    if (type_id >= editor.item_types.len) return &.{};
-    const level = activeEditorLevel(editor) orelse return &.{};
+) []const GridStep {
+    if (type_id >= item_types.len) return &.{};
 
     // The '!' and '=' are singletons, movable never deletable - a ground
     // item never overwrites them.
@@ -427,27 +631,24 @@ pub fn planEditorItemPlacementActions(
         }
     }
 
-    var pushes: std.ArrayList(Event) = .empty;
+    var steps: std.ArrayList(GridStep) = .empty;
     if (occupant_index == null) {
-        pushes.append(allocator, .{ .editor_event = .{ .editor_place_item = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .place_item = .{
             .type_id = type_id,
             .position = position,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     } else if (level.item_placements[occupant_index.?].type_id != type_id) {
         // Same type already there - no branch taken (nothing to do).
-        pushes.append(allocator, .{ .editor_event = .{ .editor_set_item_placement_type = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .set_item_type = .{
             .placement_index = @intCast(occupant_index.?),
             .type_id = type_id,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     }
     if (!tile_present) {
-        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-            .level_index = @intCast(editor.active_level_index),
+        steps.append(allocator, .{ .set_tile = .{
             .position = position,
             .is_floor = true,
-        } } }) catch @panic("failed to allocate editor place plan");
+        } }) catch @panic("failed to allocate editor place plan");
     }
     // An enemy on the tile is deleted (an item can't coexist with it - one
     // thing per placed tile).
@@ -455,49 +656,64 @@ pub fn planEditorItemPlacementActions(
         if (placement.position.x == position.x and
             placement.position.y == position.y)
         {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_entity = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
     for (level.decoration_placements, 0..) |placement, placement_index| {
-        const type_definition = editor.decoration_types[placement.type_id];
+        const type_definition = decoration_types[placement.type_id];
         if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor place plan");
+            steps.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor place plan");
         }
     }
-    return pushes.items;
+    return steps.items;
 }
 
-/// One-event plan for the delete cascade's early-return arms.
-fn singleEditorDeletePlan(
-    editor_event: events.EditorEvent,
-    allocator: std.mem.Allocator,
-) []const Event {
-    return allocator.dupe(Event, &.{.{ .editor_event = editor_event }}) catch
-        @panic("failed to allocate editor delete plan");
-}
-
-/// Editor right-click: the tool-independent delete - ONE thing per click,
-/// priority: enemy / ground-item occupant (at most one by the one-thing-per-
-/// tile invariant; an entity wins if both are somehow present), then
-/// covering decoration(s) (all of them - consistent with every other editor
-/// flow; overlapping footprints are a degenerate hand-authored case), then
-/// the bare tile. The '!' / '=' are never deleted (checked first - they sit
-/// ON tiles, so the bare-tile erase must not fire under them), and empty
-/// ground is a no-op (empty plan). One delete = one undo step by
-/// construction.
-pub fn planEditorDeleteActions(
+/// The mission editor's item-tool façade over the neutral planner.
+pub fn planEditorItemPlacementActions(
     editor: *const types.Editor,
+    type_id: u32,
     position: Vector2,
     allocator: std.mem.Allocator,
 ) []const Event {
     const level = activeEditorLevel(editor) orelse return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridItemPlacement(level, editor.item_types, editor.decoration_types, type_id, position, allocator),
+        allocator,
+    );
+}
 
+/// One-step plan for the delete cascade's early-return arms.
+fn singleGridStepPlan(
+    step: GridStep,
+    allocator: std.mem.Allocator,
+) []const GridStep {
+    const steps = allocator.alloc(GridStep, 1) catch
+        @panic("failed to allocate editor delete plan");
+    steps[0] = step;
+    return steps;
+}
+
+/// Right-click delete (tool-independent): ONE thing per click, priority:
+/// enemy / ground-item occupant (at most one by the one-thing-per-tile
+/// invariant; an entity wins if both are somehow present), then covering
+/// decoration(s) (all of them - consistent with every other editor flow;
+/// overlapping footprints are a degenerate hand-authored case), then the
+/// bare tile. The '!' / '=' are never deleted (checked first - they sit ON
+/// tiles, so the bare-tile erase must not fire under them), and empty ground
+/// is a no-op (empty plan). One delete = one undo step by construction.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor's
+/// `planEditorDeleteActions` and the hub editor's right-click delete (the
+/// hub grid has no entities/items - those arms simply never fire there).
+fn planGridDelete(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const GridStep {
     // The '!' / '=' are singletons, movable never deletable - and their
     // tiles survive too.
     if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
@@ -511,45 +727,50 @@ pub fn planEditorDeleteActions(
         if (placement.position.x == position.x and
             placement.position.y == position.y)
         {
-            return singleEditorDeletePlan(.{ .editor_delete_entity_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } }, allocator);
+            return singleGridStepPlan(.{ .delete_entity = @intCast(placement_index) }, allocator);
         }
     }
     for (level.item_placements, 0..) |placement, placement_index| {
         if (placement.position.x == position.x and
             placement.position.y == position.y)
         {
-            return singleEditorDeletePlan(.{ .editor_delete_item_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } }, allocator);
+            return singleGridStepPlan(.{ .delete_item = @intCast(placement_index) }, allocator);
         }
     }
-    // Covering decoration(s): ascending array → descending processing
+    // Covering decoration(s): ascending list → descending processing
     // (index-stable).
-    var covering: std.ArrayList(Event) = .empty;
+    var covering: std.ArrayList(GridStep) = .empty;
     for (level.decoration_placements, 0..) |placement, placement_index| {
-        const type_definition = editor.decoration_types[placement.type_id];
+        const type_definition = decoration_types[placement.type_id];
         if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-            covering.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                .level_index = @intCast(editor.active_level_index),
-                .placement_index = @intCast(placement_index),
-            } } }) catch @panic("failed to allocate editor delete plan");
+            covering.append(allocator, .{ .delete_decoration = @intCast(placement_index) }) catch
+                @panic("failed to allocate editor delete plan");
         }
     }
     if (covering.items.len > 0) return covering.items;
     // Bare tile.
     if (functions.tileListContains(level.level_tiles, position)) {
-        return singleEditorDeletePlan(.{ .editor_set_tile = .{
-            .level_index = @intCast(editor.active_level_index),
+        return singleGridStepPlan(.{ .set_tile = .{
             .position = position,
             .is_floor = false,
         } }, allocator);
     }
     // Nothing there - no-op.
     return &.{};
+}
+
+/// The mission editor's right-click-delete façade over the neutral planner.
+pub fn planEditorDeleteActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridDelete(level, editor.decoration_types, position, allocator),
+        allocator,
+    );
 }
 
 /// Select-tool click planner: toggle the clicked thing's GROUP in the
@@ -573,13 +794,24 @@ pub fn planEditorDeleteActions(
 /// would-be POST-REPLACE selection the move-drag gate evaluates an
 /// unselected-claim drag against (see `editorSelectionMoveVetoed`) - pub
 /// for that import.
-pub fn editorClickGroup(
-    editor: *const types.Editor,
+/// The select tool's click GROUP at `position` over a level-shaped grid:
+/// everything that acts as one unit - the '!' / '=' singletons; a covering
+/// decoration (the FIRST - exactly what the hover preview outlines); or the
+/// tile INCLUDING anything standing on it (entity / ground-item
+/// placements). Empty ground → an empty group. Shared by the toggle
+/// (shift+click) and replace (plain click) planners; the group order is
+/// tile, entity, item. Also the would-be POST-REPLACE selection the
+/// move-drag gate evaluates an unselected-claim drag against (see
+/// `editorSelectionMoveVetoed`).
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by the mission editor and
+/// the hub editor's select tool.
+fn gridClickGroup(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
     position: Vector2,
     allocator: std.mem.Allocator,
 ) []const types.Selectable {
-    const level = activeEditorLevel(editor) orelse return &.{};
-
     var group: [3]types.Selectable = undefined;
     var group_length: usize = 0;
 
@@ -595,7 +827,7 @@ pub fn editorClickGroup(
     if (group_length == 0) {
         // A covering decoration (the first - matching the hover preview).
         for (level.decoration_placements, 0..) |placement, placement_index| {
-            const type_definition = editor.decoration_types[placement.type_id];
+            const type_definition = decoration_types[placement.type_id];
             if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
                 group[0] = .{ .decoration_placement = @intCast(placement_index) };
                 group_length = 1;
@@ -633,6 +865,17 @@ pub fn editorClickGroup(
     return entries;
 }
 
+/// The mission editor's click-group façade over the neutral core (pub for
+/// the move-drag gesture's import).
+pub fn editorClickGroup(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return gridClickGroup(level, editor.decoration_types, position, allocator);
+}
+
 /// Would a select-tool click at `position` grab anything - i.e. is the
 /// click group there nonempty (a tile, an entity / item placement, a
 /// covering decoration, or a '!' / '=' singleton; empty ground is not)?
@@ -647,38 +890,80 @@ pub fn editorClickGroupNonempty(
     return editorClickGroup(editor, position, allocator).len > 0;
 }
 
+/// Map a neutral selection plan onto the mission editor's selection events,
+/// 1:1 in order (the plan's LIFO order is the contract - see
+/// `SelectionOp`).
+fn selectionOpsToEditorEvents(
+    ops: []const SelectionOp,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (ops.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (ops) |op| {
+        const variant: events.EditorEvent = switch (op) {
+            .select => |entry| .{ .editor_select = .{ .entry = entry } },
+            .deselect => |entry| .{ .editor_deselect = .{ .entry = entry } },
+            .clear => .editor_clear_selection,
+        };
+        events_out.append(allocator, .{ .editor_event = variant }) catch
+            @panic("failed to allocate editor selection plan");
+    }
+    return events_out.items;
+}
+
+/// Toggle-plan core (shift+click): the clicked group's entries toggle as
+/// one unit. Anything from the group already selected -> deselect every
+/// PRESENT entry (clicking a selected tile deselects the tile AND its
+/// occupant); nothing selected -> select the whole group. One op per entry
+/// (granular by design - see DESIGN -> Architecture -> Level Editor ->
+/// Selection model); they share the click's idle point, so one undo step
+/// reverts the whole click. The ops are ordered for LIFO draining - the
+/// group REVERSED - so the entries process (and land in the recorded log)
+/// in group order: tile, then entity, then item.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
+/// tools.
+fn planGridSelectionToggle(
+    selection: []const types.Selectable,
+    group: []const types.Selectable,
+    allocator: std.mem.Allocator,
+) []const SelectionOp {
+    if (group.len == 0) return &.{};
+
+    // Toggle direction: anything present -> deselect every present entry;
+    // nothing present -> select the whole group.
+    var any_present = false;
+    for (group) |entry| {
+        if (selectionContains(selection, entry)) {
+            any_present = true;
+            break;
+        }
+    }
+    var ops: std.ArrayList(SelectionOp) = .empty;
+    var group_index = group.len;
+    while (group_index > 0) {
+        group_index -= 1;
+        const entry = group[group_index];
+        const op: SelectionOp = if (any_present)
+            .{ .deselect = entry }
+        else
+            .{ .select = entry };
+        ops.append(allocator, op) catch @panic("failed to allocate editor selection plan");
+    }
+    return ops.items;
+}
+
+/// The mission editor's shift+click toggle facade over the neutral core.
 pub fn planEditorSelectionActions(
     editor: *const types.Editor,
     position: Vector2,
     allocator: std.mem.Allocator,
 ) []const Event {
     const group = editorClickGroup(editor, position, allocator);
-    if (group.len == 0) return &.{};
-
-    // Toggle direction: anything present → deselect every present entry;
-    // nothing present → select the whole group.
-    var any_present = false;
-    for (group) |entry| {
-        if (selectionContains(editor.selection, entry)) {
-            any_present = true;
-            break;
-        }
-    }
-    // The event stack is LIFO - push the group REVERSED so the entries
-    // process (and land in the recorded log) in group order: tile, then
-    // entity, then item.
-    var plan: std.ArrayList(Event) = .empty;
-    var group_index = group.len;
-    while (group_index > 0) {
-        group_index -= 1;
-        const entry = group[group_index];
-        const variant = if (any_present)
-            Event{ .editor_event = .{ .editor_deselect = .{ .entry = entry } } }
-        else
-            Event{ .editor_event = .{ .editor_select = .{ .entry = entry } } };
-        plan.append(allocator, variant) catch @panic("failed to allocate editor selection plan");
-    }
-    return plan.items;
+    return selectionOpsToEditorEvents(
+        planGridSelectionToggle(editor.selection, group, allocator),
+        allocator,
+    );
 }
 
 /// Plain-click (no Shift) planner: REPLACE the selection with the clicked
@@ -689,19 +974,28 @@ pub fn planEditorSelectionActions(
 /// fires. Built forward in processing order (clear first, then the
 /// group's selects in group order) and reversed for the LIFO push, so the
 /// clear processes first and the final selection reads in group order.
-pub fn planEditorReplaceSelectionActions(
-    editor: *const types.Editor,
-    position: Vector2,
+/// Replace-plan core (plain click): REPLACE the selection with the clicked
+/// group - the whole selection is cleared, then the group is selected.
+/// Empty ground -> the clear alone (the clicky deselect-all). A click that
+/// would change nothing (the selection IS exactly the group, or empty
+/// ground with an already-empty selection) plans empty - no player action
+/// fires. Built forward in processing order (clear first, then the group's
+/// selects in group order) and reversed for the LIFO push, so the clear
+/// processes first and the final selection reads in group order.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by both editors' select
+/// tools.
+fn planGridSelectionReplace(
+    selection: []const types.Selectable,
+    group: []const types.Selectable,
     allocator: std.mem.Allocator,
-) []const Event {
-    const group = editorClickGroup(editor, position, allocator);
-
+) []const SelectionOp {
     // The selection is already exactly the group (also covers empty
-    // ground + empty selection) → nothing to do.
-    if (group.len == editor.selection.len) {
+    // ground + empty selection) -> nothing to do.
+    if (group.len == selection.len) {
         var all_present = true;
         for (group) |entry| {
-            if (!selectionContains(editor.selection, entry)) {
+            if (!selectionContains(selection, entry)) {
                 all_present = false;
                 break;
             }
@@ -709,17 +1003,30 @@ pub fn planEditorReplaceSelectionActions(
         if (all_present) return &.{};
     }
 
-    var plan: std.ArrayList(Event) = .empty;
-    if (editor.selection.len > 0) {
-        plan.append(allocator, .{ .editor_event = .editor_clear_selection }) catch
+    var ops: std.ArrayList(SelectionOp) = .empty;
+    if (selection.len > 0) {
+        ops.append(allocator, .clear) catch
             @panic("failed to allocate editor selection plan");
     }
     for (group) |entry| {
-        plan.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
+        ops.append(allocator, .{ .select = entry }) catch
             @panic("failed to allocate editor selection plan");
     }
-    std.mem.reverse(Event, plan.items);
-    return plan.items;
+    std.mem.reverse(SelectionOp, ops.items);
+    return ops.items;
+}
+
+/// The mission editor's plain-click replace facade over the neutral core.
+pub fn planEditorReplaceSelectionActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const group = editorClickGroup(editor, position, allocator);
+    return selectionOpsToEditorEvents(
+        planGridSelectionReplace(editor.selection, group, allocator),
+        allocator,
+    );
 }
 
 /// Select-tool marquee planner: ADD every selectable thing inside the
@@ -755,43 +1062,34 @@ pub fn planEditorReplaceSelectionActions(
 /// range indices, absent tiles) are skipped defensively. Everything shares
 /// the player action's idle point - one undo step reverts the whole
 /// deletion.
-/// Which selection-deletion policy a plan runs - see
-/// `planEditorSelectionDeleteActions` / `planEditorSelectionMoveDeleteActions`.
-const SelectionDeleteMode = enum {
-    /// The Delete key: a selected tile's OCCUPANT is swept with it (an
-    /// occupant can't stand on nothing).
-    delete_key,
-    /// A selection move's clear phase: an UNSELECTED occupant PINS its
-    /// tile - the tile stays underneath it and the moved tile lands at
-    /// the target instead (only selected things are backed up + moved;
-    /// a selected occupant is deleted via its own entry, so the erase
-    /// proceeds normally under it).
-    selection_move,
-};
-
 pub fn planEditorSelectionDeleteActions(
     editor: *const types.Editor,
     allocator: std.mem.Allocator,
 ) []const Event {
-    return planSelectionDelete(editor, allocator, .delete_key);
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridSelectionDelete(level, editor.selection, allocator, .delete_key),
+        allocator,
+    );
 }
 
-/// The selection move's clear phase (see `player_move_editor_selection`):
-/// same shape as the Delete key's plan, but a selected tile with an
-/// UNSELECTED occupant is not erased at all (the occupant pins its
-/// ground) and no occupants are swept.
-/// Does the select tool's selection cover `position` - i.e. would a plain
-/// press there start a MOVE drag? Mirrors the click group resolution: a
-/// selected tile / entity / item at the position, a selected decoration
-/// whose footprint covers it, or a selected '!' / '=' at it. Used by the
-/// move-drag gesture (`handleEditorMoveDrag`).
-pub fn editorSelectionContainsPosition(
-    editor: *const types.Editor,
+/// Does the select tool's selection cover `position` over a level-shaped
+/// grid - i.e. would a plain press there start a MOVE drag? Mirrors the
+/// click group resolution: a selected tile / entity / item at the
+/// position, a selected decoration whose footprint covers it, or a
+/// selected '!' / '=' at it.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
+/// move-drag gestures.
+fn gridSelectionContainsPosition(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
     position: Vector2,
     allocator: std.mem.Allocator,
 ) bool {
-    const level = activeEditorLevel(editor) orelse return false;
-    for (editor.selection) |selected| {
+    for (selection) |selected| {
         switch (selected) {
             .tile => |tile_position| {
                 if (tile_position.x == position.x and tile_position.y == position.y) return true;
@@ -812,7 +1110,7 @@ pub fn editorSelectionContainsPosition(
                 if (index < level.decoration_placements.len) {
                     const placement = level.decoration_placements[index];
                     if (loaders.decorationFootprintCovers(
-                        editor.decoration_types[placement.type_id].footprint,
+                        decoration_types[placement.type_id].footprint,
                         placement.position,
                         position,
                         allocator,
@@ -832,6 +1130,17 @@ pub fn editorSelectionContainsPosition(
     return false;
 }
 
+/// The mission editor's move-drag-claim facade over the neutral core
+/// (used by `handleEditorMoveDrag`).
+pub fn editorSelectionContainsPosition(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    const level = activeEditorLevel(editor) orelse return false;
+    return gridSelectionContainsPosition(level, editor.decoration_types, editor.selection, position, allocator);
+}
+
 fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
     return .{ .x = position.x + delta.x, .y = position.y + delta.y };
 }
@@ -847,12 +1156,11 @@ fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
 /// selection the move will actually plan against - the current one, or
 /// the click group an unselected-claim drag's replace will have installed
 /// by the time the move runs (the move-drag gate's two call sites).
-pub fn editorSelectionMoveVetoed(
-    editor: *const types.Editor,
+fn gridSelectionMoveVetoed(
+    level: *const types.EditorLevel,
     selection: []const types.Selectable,
     delta: Vector2,
 ) bool {
-    const level = activeEditorLevel(editor) orelse return false;
     const level_end_position = level.level_end orelse return false;
     const final_player_start = if (selectionContains(selection, .player_start))
         translatedPosition(level.player_start, delta)
@@ -866,27 +1174,33 @@ pub fn editorSelectionMoveVetoed(
         final_player_start.y == final_level_end.y;
 }
 
-/// The selection-move plan - the move orchestrator's whole push list: the
-/// translated selection as the commit-chain worklist
-/// (`editor_commit_selection_move`), then the clear phase
-/// (`planEditorSelectionMoveDeleteActions`). Shared by the
-/// `player_move_editor_selection` handler (the entries build lives here,
-/// not inline in the handler - the other tools' shape) and the input-side
-/// no-op gate (via `editorSelectionMoveVetoed`). EMPTY when the move is
-/// vetoed - the drag never fires (no dead undo step), not a partial move
-/// (the flag silently staying behind while the rest moves would be easy
-/// to miss).
-pub fn planEditorSelectionMoveActions(
+/// The mission editor's move-veto facade over the neutral core.
+pub fn editorSelectionMoveVetoed(
     editor: *const types.Editor,
+    selection: []const types.Selectable,
+    delta: Vector2,
+) bool {
+    const level = activeEditorLevel(editor) orelse return false;
+    return gridSelectionMoveVetoed(level, selection, delta);
+}
+
+/// The translated selection as a selection-move worklist over a
+/// level-shaped grid: each selected thing's move entry (type_id + TARGET
+/// position - the concrete backup the delete phase needs because it
+/// destroys the placements the selection addressed). Ordered like the
+/// selection itself; the commit chain places them sequentially against
+/// the live post-delete state.
+///
+/// NEUTRAL CORE (the slice-4 extraction): the hub editor's move lands as
+/// its own commit event over the same entry shape (hub arms join at 4-3).
+fn gridSelectionMoveEntries(
+    level: *const types.EditorLevel,
+    selection: []const types.Selectable,
     delta: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
-    const level = activeEditorLevel(editor) orelse return &.{};
-
-    if (editorSelectionMoveVetoed(editor, editor.selection, delta)) return &.{};
-
+) []const types.EditorSelectionMoveEntry {
     var entries: std.ArrayList(types.EditorSelectionMoveEntry) = .empty;
-    for (editor.selection) |selected| {
+    for (selection) |selected| {
         switch (selected) {
             .entity_placement => |index| {
                 if (index < level.entity_placements.len) {
@@ -931,32 +1245,72 @@ pub fn planEditorSelectionMoveActions(
             },
         }
     }
+    return entries.items;
+}
+
+/// The mission editor's selection-move facade over the neutral cores: the
+/// translated selection as the commit-chain worklist
+/// (`editor_commit_selection_move`), then the clear phase mapped onto
+/// `editor_event`. Shared by the `player_move_editor_selection` handler
+/// (the entries build lives in the neutral core - the other tools' shape)
+/// and the input-side no-op gate (via `editorSelectionMoveVetoed`). EMPTY
+/// when the move is vetoed - the drag never fires (no dead undo step),
+/// not a partial move (the flag silently staying behind while the rest
+/// moves would be easy to miss).
+pub fn planEditorSelectionMoveActions(
+    editor: *const types.Editor,
+    delta: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    if (editorSelectionMoveVetoed(editor, editor.selection, delta)) return &.{};
+
+    const entries = gridSelectionMoveEntries(level, editor.selection, delta, allocator);
 
     var plan: std.ArrayList(Event) = .empty;
     plan.append(allocator, .{ .editor_event = .{ .editor_commit_selection_move = .{
-        .entries = entries.items,
+        .entries = entries,
         .next_index = 0,
     } } }) catch @panic("failed to allocate editor selection move plan");
-    plan.appendSlice(allocator, planEditorSelectionMoveDeleteActions(editor, allocator)) catch
-        @panic("failed to allocate editor selection move plan");
+    plan.appendSlice(allocator, gridStepsToEditorEvents(
+        @intCast(editor.active_level_index),
+        planGridSelectionDelete(level, editor.selection, allocator, .selection_move),
+        allocator,
+    )) catch @panic("failed to allocate editor selection move plan");
     return plan.items;
 }
 
-fn planEditorSelectionMoveDeleteActions(
-    editor: *const types.Editor,
-    allocator: std.mem.Allocator,
-) []const Event {
-    return planSelectionDelete(editor, allocator, .selection_move);
-}
-
-fn planSelectionDelete(
-    editor: *const types.Editor,
+/// Selection-deletion core: fan a selection out into the per-entry grid
+/// steps (the same machinery the right-click delete composes). The
+/// '!' / '=' entries are NEVER deletable (skipped) and the tiles under
+/// them survive too (a marker needs its ground). A selected tile takes
+/// its OCCUPANT with it under `delete_key` - an entity/item placement
+/// standing on it is deleted even when unselected (unreachable via
+/// today's UI - clicks and marquees always grab tile + occupants
+/// together - but craftable in a log and reachable once deselect
+/// features land; an occupant can't stand on nothing).
+///
+/// Index stability: the delete set is computed from the ORIGINAL state
+/// (selected placements + swept occupants, deduped per kind), and the
+/// processing order - the reversed LIFO plan - runs each placement kind
+/// HIGH-BEFORE-LOW, so a removal never shifts an index a later step still
+/// addresses. Tile erases are position-keyed (safe any time) and process
+/// last. Stale entries (out-of-range indices, absent tiles) are skipped
+/// defensively. The selection reconcile runs inside each delete arm of
+/// the surface event handlers, keeping the selection consistent
+/// mid-batch.
+///
+/// NEUTRAL CORE (the slice-4 extraction): the Delete key
+/// (`planEditorSelectionDeleteActions`) and the selection move's clear
+/// phase (inside `planEditorSelectionMoveActions`) both map it; the hub
+/// editor maps it for its delete + move at 4-3.
+fn planGridSelectionDelete(
+    level: *const types.EditorLevel,
+    selection: []const types.Selectable,
     allocator: std.mem.Allocator,
     mode: SelectionDeleteMode,
-) []const Event {
-    const level = activeEditorLevel(editor) orelse return &.{};
-    const level_index: u32 = @intCast(editor.active_level_index);
-
+) []const GridStep {
     // The delete set per placement kind (selected entries + swept
     // occupants, deduped) + the erasable tile positions.
     var entity_indices: std.ArrayList(u32) = .empty;
@@ -964,7 +1318,7 @@ fn planSelectionDelete(
     var decoration_indices: std.ArrayList(u32) = .empty;
     var tile_positions: std.ArrayList(Vector2) = .empty;
 
-    for (editor.selection) |selected| {
+    for (selection) |selected| {
         switch (selected) {
             .entity_placement => |index| appendIndexIfNew(&entity_indices, index, allocator),
             .ground_item_placement => |index| appendIndexIfNew(&item_indices, index, allocator),
@@ -984,21 +1338,21 @@ fn planSelectionDelete(
                     (level.level_end orelse continue);
                 if (!functions.tileListContains(level.level_tiles, marker_position)) continue;
                 // The OTHER marker still standing on the same tile keeps
-                // its ground (both markers selected → both moving →
+                // its ground (both markers selected -> both moving ->
                 // neither remains; the marker's own tile arm protection
                 // already skipped this erase, so no duplicate).
                 if (selected == .player_start) {
                     if (level.level_end) |level_end_position| {
                         if (level_end_position.x == marker_position.x and level_end_position.y == marker_position.y and
-                            !selectionContains(editor.selection, .level_end)) continue;
+                            !selectionContains(selection, .level_end)) continue;
                     }
                 } else {
                     if (level.player_start.x == marker_position.x and level.player_start.y == marker_position.y and
-                        !selectionContains(editor.selection, .player_start)) continue;
+                        !selectionContains(selection, .player_start)) continue;
                 }
                 // An unselected occupant pins its ground (defensive - the
                 // placement rules never put anything on a marker tile).
-                if (selectionMoveOccupantPinsTile(level, editor.selection, marker_position)) continue;
+                if (selectionMoveOccupantPinsTile(level, selection, marker_position)) continue;
                 tile_positions.append(allocator, marker_position) catch
                     @panic("failed to allocate editor selection delete plan");
             },
@@ -1013,7 +1367,7 @@ fn planSelectionDelete(
                 // A move keeps the ground under an UNSELECTED occupant
                 // (the occupant stays, the moved tile lands at its target
                 // instead - nothing is swept).
-                if (mode == .selection_move and selectionMoveOccupantPinsTile(level, editor.selection, position)) continue;
+                if (mode == .selection_move and selectionMoveOccupantPinsTile(level, selection, position)) continue;
                 tile_positions.append(allocator, position) catch
                     @panic("failed to allocate editor selection delete plan");
                 // Delete-key mode sweeps the occupant (at most one - one
@@ -1039,21 +1393,20 @@ fn planSelectionDelete(
 
     // Processing order: entity deletes, item deletes, decoration deletes
     // (each descending), then the tile erases. The whole list is reversed
-    // for the LIFO push below.
-    var plan: std.ArrayList(Event) = .empty;
-    appendPlacementDeletesDescending(&plan, level, level_index, &entity_indices, .entity_placement, allocator);
-    appendPlacementDeletesDescending(&plan, level, level_index, &item_indices, .ground_item_placement, allocator);
-    appendPlacementDeletesDescending(&plan, level, level_index, &decoration_indices, .decoration_placement, allocator);
+    // for the LIFO plan below.
+    var plan: std.ArrayList(GridStep) = .empty;
+    appendPlacementDeletesDescending(&plan, level, &entity_indices, .entity, allocator);
+    appendPlacementDeletesDescending(&plan, level, &item_indices, .item, allocator);
+    appendPlacementDeletesDescending(&plan, level, &decoration_indices, .decoration, allocator);
     for (tile_positions.items) |position| {
-        plan.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-            .level_index = level_index,
+        plan.append(allocator, .{ .set_tile = .{
             .position = position,
             .is_floor = false,
-        } } }) catch @panic("failed to allocate editor selection delete plan");
+        } }) catch @panic("failed to allocate editor selection delete plan");
     }
 
     // LIFO: reverse so processing + log order = plan order.
-    std.mem.reverse(Event, plan.items);
+    std.mem.reverse(GridStep, plan.items);
     return plan.items;
 }
 
@@ -1093,86 +1446,98 @@ fn appendIndexIfNew(
         @panic("failed to allocate editor selection delete plan");
 }
 
+/// The placement-kind a `GridStep` delete addresses - the delete core's
+/// per-kind axis (mirrors the Selectable placement arms).
+const GridPlacementKind = enum {
+    entity,
+    item,
+    decoration,
+};
+
 /// Emit one placement-kind's deletes in DESCENDING index order - the
 /// processing order (the caller reverses the whole plan for the LIFO
-/// push, which flips it back to ascending in the slice). Out-of-range
+/// contract, which flips it back to ascending in the slice). Out-of-range
 /// (stale) indices are skipped defensively.
 fn appendPlacementDeletesDescending(
-    plan: *std.ArrayList(Event),
+    plan: *std.ArrayList(GridStep),
     level: *const types.EditorLevel,
-    level_index: u32,
     indices: *std.ArrayList(u32),
-    kind: std.meta.Tag(types.Selectable),
+    kind: GridPlacementKind,
     allocator: std.mem.Allocator,
 ) void {
     std.mem.sort(u32, indices.items, {}, std.sort.asc(u32));
     const placement_count: usize = switch (kind) {
-        .entity_placement => level.entity_placements.len,
-        .ground_item_placement => level.item_placements.len,
-        .decoration_placement => level.decoration_placements.len,
-        else => return,
+        .entity => level.entity_placements.len,
+        .item => level.item_placements.len,
+        .decoration => level.decoration_placements.len,
     };
     var index = indices.items.len;
     while (index > 0) {
         index -= 1;
         const placement_index = indices.items[index];
         if (@as(usize, placement_index) >= placement_count) continue;
-        const variant: events.EditorEvent = switch (kind) {
-            .entity_placement => .{ .editor_delete_entity_placement = .{
-                .level_index = level_index,
-                .placement_index = placement_index,
-            } },
-            .ground_item_placement => .{ .editor_delete_item_placement = .{
-                .level_index = level_index,
-                .placement_index = placement_index,
-            } },
-            .decoration_placement => .{ .editor_delete_decoration_placement = .{
-                .level_index = level_index,
-                .placement_index = placement_index,
-            } },
-            else => unreachable,
+        const step: GridStep = switch (kind) {
+            .entity => .{ .delete_entity = placement_index },
+            .item => .{ .delete_item = placement_index },
+            .decoration => .{ .delete_decoration = placement_index },
         };
-        plan.append(allocator, .{ .editor_event = variant }) catch
+        plan.append(allocator, step) catch
             @panic("failed to allocate editor selection delete plan");
     }
 }
 
-pub fn planEditorRegionSelectActions(
-    editor: *const types.Editor,
+/// Marquee core: every selectable thing inside the inclusive rectangle
+/// spanned by the two corner tiles over a level-shaped grid (order-
+/// independent), skipping entries already in the selection (an add,
+/// never a remove - the plain click toggles). Region membership: level
+/// tiles / entity / item placements by position; a decoration when ANY
+/// of its footprint tiles is inside (matching the click hit-testing - if
+/// you can click it, you can marquee it); the '!' / '=' singletons by
+/// their tile. Deterministic order - tiles, entities, items, decorations,
+/// singletons, each in stored order - and the list is REVERSED before
+/// returning (the LIFO order contract) so the entries process + land in
+/// the log in plan order. An empty result (nothing in the region, or
+/// everything already selected) means no player action fires.
+///
+/// NEUTRAL CORE (the slice-4 extraction): shared by both editors'
+/// marquee gestures.
+fn planGridRegionSelect(
+    level: *const types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    selection: []const types.Selectable,
     start_position: Vector2,
     end_position: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
-    const level = activeEditorLevel(editor) orelse return &.{};
+) []const types.Selectable {
     const min_x = @min(start_position.x, end_position.x);
     const max_x = @max(start_position.x, end_position.x);
     const min_y = @min(start_position.y, end_position.y);
     const max_y = @max(start_position.y, end_position.y);
 
-    var plan: std.ArrayList(Event) = .empty;
+    var entries: std.ArrayList(types.Selectable) = .empty;
     for (level.level_tiles) |tile| {
         if (tile.x >= min_x and tile.x <= max_x and tile.y >= min_y and tile.y <= max_y) {
-            appendSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
+            appendSelectEntryIfNew(&entries, selection, .{ .tile = tile }, allocator);
         }
     }
     for (level.entity_placements, 0..) |placement, placement_index| {
         if (placement.position.x >= min_x and placement.position.x <= max_x and
             placement.position.y >= min_y and placement.position.y <= max_y)
         {
-            appendSelectEntryIfNew(&plan, editor.selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
+            appendSelectEntryIfNew(&entries, selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
         }
     }
     for (level.item_placements, 0..) |placement, placement_index| {
         if (placement.position.x >= min_x and placement.position.x <= max_x and
             placement.position.y >= min_y and placement.position.y <= max_y)
         {
-            appendSelectEntryIfNew(&plan, editor.selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
+            appendSelectEntryIfNew(&entries, selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
         }
     }
     for (level.decoration_placements, 0..) |placement, placement_index| {
         // Any footprint tile inside the region grabs the decoration.
         const world_tiles = loaders.decorationFootprintWorldTiles(
-            editor.decoration_types[placement.type_id].footprint,
+            decoration_types[placement.type_id].footprint,
             placement.position,
             allocator,
         );
@@ -1180,7 +1545,7 @@ pub fn planEditorRegionSelectActions(
             if (world_tile.x >= min_x and world_tile.x <= max_x and
                 world_tile.y >= min_y and world_tile.y <= max_y)
             {
-                appendSelectEntryIfNew(&plan, editor.selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
+                appendSelectEntryIfNew(&entries, selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
                 break;
             }
         }
@@ -1188,19 +1553,48 @@ pub fn planEditorRegionSelectActions(
     if (level.player_start.x >= min_x and level.player_start.x <= max_x and
         level.player_start.y >= min_y and level.player_start.y <= max_y)
     {
-        appendSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
+        appendSelectEntryIfNew(&entries, selection, .player_start, allocator);
     }
     if (level.level_end) |level_end_position| {
         if (level_end_position.x >= min_x and level_end_position.x <= max_x and
             level_end_position.y >= min_y and level_end_position.y <= max_y)
         {
-            appendSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
+            appendSelectEntryIfNew(&entries, selection, .level_end, allocator);
         }
     }
 
     // LIFO: reverse so processing + log order = plan order.
-    std.mem.reverse(Event, plan.items);
-    return plan.items;
+    std.mem.reverse(types.Selectable, entries.items);
+    return entries.items;
+}
+
+/// The mission editor's marquee facade over the neutral core.
+pub fn planEditorRegionSelectActions(
+    editor: *const types.Editor,
+    start_position: Vector2,
+    end_position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return selectEntriesToEditorEvents(
+        planGridRegionSelect(level, editor.decoration_types, editor.selection, start_position, end_position, allocator),
+        allocator,
+    );
+}
+
+/// Map a neutral list of new selection entries onto the mission editor's
+/// select events, 1:1 in order (the list's LIFO order is the contract).
+fn selectEntriesToEditorEvents(
+    entries: []const types.Selectable,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (entries.len == 0) return &.{};
+    var events_out: std.ArrayList(Event) = .empty;
+    for (entries) |entry| {
+        events_out.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
+            @panic("failed to allocate editor selection plan");
+    }
+    return events_out.items;
 }
 
 /// Plan the ctrl+A select-all: one `editor_select` per selectable thing
@@ -1208,60 +1602,72 @@ pub fn planEditorRegionSelectActions(
 /// the '!' / '='), skipping entries already in the selection - the
 /// marquee's membership rule with no region bound. The adds share the
 /// action's idle point, so one undo step reverts the whole batch.
-pub fn planEditorSelectAllActions(
-    editor: *const types.Editor,
+fn planGridSelectAll(
+    level: *const types.EditorLevel,
+    selection: []const types.Selectable,
     allocator: std.mem.Allocator,
-) []const Event {
-    const level = activeEditorLevel(editor) orelse return &.{};
-    var plan: std.ArrayList(Event) = .empty;
+) []const types.Selectable {
+    var entries: std.ArrayList(types.Selectable) = .empty;
     for (level.level_tiles) |tile| {
-        appendSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
+        appendSelectEntryIfNew(&entries, selection, .{ .tile = tile }, allocator);
     }
     for (level.entity_placements, 0..) |_, placement_index| {
         appendSelectEntryIfNew(
-            &plan,
-            editor.selection,
+            &entries,
+            selection,
             .{ .entity_placement = @intCast(placement_index) },
             allocator,
         );
     }
     for (level.item_placements, 0..) |_, placement_index| {
         appendSelectEntryIfNew(
-            &plan,
-            editor.selection,
+            &entries,
+            selection,
             .{ .ground_item_placement = @intCast(placement_index) },
             allocator,
         );
     }
     for (level.decoration_placements, 0..) |_, placement_index| {
         appendSelectEntryIfNew(
-            &plan,
-            editor.selection,
+            &entries,
+            selection,
             .{ .decoration_placement = @intCast(placement_index) },
             allocator,
         );
     }
-    appendSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
+    appendSelectEntryIfNew(&entries, selection, .player_start, allocator);
     if (level.level_end != null) {
-        appendSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
+        appendSelectEntryIfNew(&entries, selection, .level_end, allocator);
     }
 
     // LIFO: reverse so processing + log order = plan order.
-    std.mem.reverse(Event, plan.items);
-    return plan.items;
+    std.mem.reverse(types.Selectable, entries.items);
+    return entries.items;
 }
 
-/// Append `entry`'s select event unless it is already in the selection
-/// (shared by the marquee region and the ctrl+A select-all - an add,
-/// never a remove, never a duplicate).
+/// The mission editor's ctrl+A facade over the neutral core.
+pub fn planEditorSelectAllActions(
+    editor: *const types.Editor,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    return selectEntriesToEditorEvents(
+        planGridSelectAll(level, editor.selection, allocator),
+        allocator,
+    );
+}
+
+/// Append `entry` unless it is already in the selection (shared by the
+/// marquee region and the ctrl+A select-all - an add, never a remove,
+/// never a duplicate).
 fn appendSelectEntryIfNew(
-    plan: *std.ArrayList(Event),
+    entries: *std.ArrayList(types.Selectable),
     selection: []const types.Selectable,
     entry: types.Selectable,
     allocator: std.mem.Allocator,
 ) void {
     if (selectionContains(selection, entry)) return;
-    plan.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
+    entries.append(allocator, entry) catch
         @panic("failed to allocate editor selection plan");
 }
 
@@ -1533,4 +1939,65 @@ test "nextCampaignEditorTool: the three tools wrap both ways" {
     try std.testing.expectEqual(types.CampaignEditorToolId.select, nextCampaignEditorTool(.mission, true));
     try std.testing.expectEqual(types.CampaignEditorToolId.mission, nextCampaignEditorTool(.select, false));
     try std.testing.expectEqual(types.CampaignEditorToolId.hub, nextCampaignEditorTool(.mission, false));
+}
+
+test "grid core: the hub-readiness contract - tile paint, decoration, delete over a hub-shaped grid" {
+    // The hub editor's grids are EditorLevels with NO entities, NO items,
+    // NO level_end - the neutral core must plan over exactly that shape
+    // (the entity/item arms simply never fire). This is the 4-3 preview:
+    // the hub facades will map these steps onto the hub event family.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+    };
+    // The invariant-respecting hub shape: the decoration's footprint tile
+    // (1,0) is TILE-FREE (footprint tiles erase their ground).
+    const hub_grid = types.EditorLevel{
+        .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 } },
+        .player_start = .{ .x = 0, .y = 0 },
+        .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 1, .y = 0 } }},
+    };
+
+    // Tile paint on empty ground: one step.
+    const paint = planGridTilePaint(&hub_grid, &decoration_types, .{ .x = 5, .y = 5 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), paint.len);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 5, .y = 5 }, .is_floor = true } }, paint[0]);
+
+    // Tile paint under the covering decoration: the paint + the covering
+    // delete (replace, not block).
+    const replace = planGridTilePaint(&hub_grid, &decoration_types, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 2), replace.len);
+    try std.testing.expectEqual(GridStep{ .set_tile = .{ .position = .{ .x = 1, .y = 0 }, .is_floor = true } }, replace[0]);
+    try std.testing.expectEqual(GridStep{ .delete_decoration = 0 }, replace[1]);
+
+    // The player spawn is never overwritten and never deleted.
+    try std.testing.expectEqual(@as(usize, 0), planGridDelete(&hub_grid, &decoration_types, .{ .x = 0, .y = 0 }, allocator).len);
+    const spawn_cover = planGridDecorationPlacement(&hub_grid, &decoration_types, 0, .{ .x = 0, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 0), spawn_cover.len);
+
+    // Delete priority over the hub shape: the covering decoration, then
+    // the bare tile.
+    const decoration_delete = planGridDelete(&hub_grid, &decoration_types, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), decoration_delete.len);
+    try std.testing.expectEqual(GridStep{ .delete_decoration = 0 }, decoration_delete[0]);
+    const tile_delete = planGridDelete(&hub_grid, &decoration_types, .{ .x = 0, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 0), tile_delete.len); // the spawn's ground survives
+    const empty = planGridDelete(&hub_grid, &decoration_types, .{ .x = 9, .y = 9 }, allocator);
+    try std.testing.expectEqual(@as(usize, 0), empty.len);
+
+    // The click group over the hub shape: the spawn singleton, the
+    // covering decoration, the bare tile - no entity/item arms.
+    const spawn_group = gridClickGroup(&hub_grid, &decoration_types, .{ .x = 0, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), spawn_group.len);
+    try std.testing.expectEqual(types.Selectable.player_start, spawn_group[0]);
+    const decoration_group = gridClickGroup(&hub_grid, &decoration_types, .{ .x = 1, .y = 0 }, allocator);
+    try std.testing.expectEqual(@as(usize, 1), decoration_group.len);
+    try std.testing.expectEqual(types.Selectable{ .decoration_placement = 0 }, decoration_group[0]);
+    try std.testing.expectEqual(@as(usize, 0), gridClickGroup(&hub_grid, &decoration_types, .{ .x = 9, .y = 9 }, allocator).len);
+
+    // The move veto never fires on a hub grid (no level_end).
+    try std.testing.expect(!gridSelectionMoveVetoed(&hub_grid, &.{.player_start}, .{ .x = 1, .y = 0 }));
 }

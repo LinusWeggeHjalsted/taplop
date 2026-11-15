@@ -415,16 +415,7 @@ work:
         event settle: the parallel `?HubEditor` on GameState scoped
         `{ .hub_editor }` + a dedicated `hub_editor` binding context +
         the screen-scope rule owning the drill-in lifetime). Recut
-        (4-1 framing DONE - DONE.md, "campaign-editor slice 4-1"):
-    - [ ] 4-2. The planner extraction: the click planners in
-          editor/planning.zig take the level-shaped GRID (+ placements
-          + Selectable) and return NEUTRAL plans (a small action union:
-          set tile / delete placement i / move player start...); the
-          mission editor rebases onto the extraction (all existing
-          tests stay green); each surface maps plans to its own events
-          at the push site. The one big refactor - the ordering rules
-          (LIFO draining, index-stable descending deletes,
-          footprint-replace) must exist ONCE.
+        (4-1 framing + 4-2 the planner extraction DONE - DONE.md, "campaign-editor slice 4-1" / "campaign-editor slice 4-2"):
     - [ ] 4-3. Grid editing over the hub grid: the tile tool, the
           player spawn, select/marquee/move-drag + the hub
           `hub_editor_event` family (screen-gated on .hub_editor,

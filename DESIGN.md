@@ -5942,6 +5942,15 @@ source of truth for both sides (no duplicated no-op conditions to drift)
 and directly unit-testable; the handlers keep the empty-plan return as the
 defensive path for crafted or pre-change session logs (they replay
 gracefully - a redundant event in a log is harmless, it just plans empty).
+**Two layers since the slice-4 extraction**: the NEUTRAL GRID CORE
+(the `planGrid*` / `grid*` fns + the `GridStep` / `SelectionOp`
+vocabularies - pure decision logic over a level-shaped grid, returning
+surface-independent steps ordered for LIFO draining) with the mission
+editor's `planEditor*Actions` as thin facades that map steps onto
+`editor_event` 1:1 in order; the hub editor's tool facades (slice 4-3)
+map the same core onto the hub event family, so every ordering rule
+(LIFO draining, index-stable descending deletes, footprint-replace)
+exists exactly once.
 - **Selection tool (click semantics LANDED):** a click's GROUP is
   everything that acts as one unit: the tile INCLUDING the entity / ground
   item standing on it, a covering decoration (the first, exactly what the
