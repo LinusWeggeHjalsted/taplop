@@ -1727,6 +1727,12 @@ pub fn writeCampaignHub(
     if (hub.grid.color_wheel_index != 0) {
         try buffer.print(allocator, "color_wheel_index {d}\n", .{hub.grid.color_wheel_index});
     }
+    if (hub.grid.enemy_gradient_index) |gradient_index| {
+        try buffer.print(allocator, "enemy_gradient_index {d}\n", .{gradient_index});
+    }
+    if (hub.grid.player_gradient_index) |gradient_index| {
+        try buffer.print(allocator, "player_gradient_index {d}\n", .{gradient_index});
+    }
 
     // Layout - the counted grammar, rows trimmed (the level writer's
     // convention).

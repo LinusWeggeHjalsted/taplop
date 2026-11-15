@@ -242,6 +242,8 @@ pub fn loadCampaignEditorIntoState(
         hub_entries.items[hub_index].grid.level_tiles = hub.hub_tiles;
         hub_entries.items[hub_index].grid.player_start = hub.player.position;
         hub_entries.items[hub_index].grid.color_wheel_index = hub.color_wheel_index;
+        hub_entries.items[hub_index].grid.enemy_gradient_index = hub.enemy_gradient_index;
+        hub_entries.items[hub_index].grid.player_gradient_index = hub.player_gradient_index;
         hub_entries.items[hub_index].grid.npc_placements = hub.npcs;
 
         // Decorations -> the campaign-SHARED palette: dedup by the full

@@ -2545,6 +2545,12 @@ pub fn loadHub(
             if (findValue(pairs, "color_wheel_index")) |value| {
                 hub.color_wheel_index = asU32(value) orelse 0;
             }
+            if (findValue(pairs, "enemy_gradient_index")) |value| {
+                hub.enemy_gradient_index = asU32(value);
+            }
+            if (findValue(pairs, "player_gradient_index")) |value| {
+                hub.player_gradient_index = asU32(value);
+            }
         }
     }
 

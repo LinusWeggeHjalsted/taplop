@@ -2527,3 +2527,130 @@ test "hub editor: the layer machinery - add adopts the registry authoring, color
     try testing.expect(history.undo(event_handlers.processEvent)); // the add
     try testing.expectEqual(@as(usize, 0), history.current_state.campaign_editor.?.decoration_types[0].layers.len);
 }
+
+test "hub editor: the metadata sidebar's gradient rows - world pick, enemy auto freeze + revert, all one-undo commits" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{} }},
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0 },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The world row's open: the HUB theme picker opens with the role.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_level_gradient_picker },
+        .{ .editor_gradient_role = .world },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const hub_editor = &(history.current_state.hub_editor.?);
+        try testing.expect(hub_editor.picker != null);
+        try testing.expect(hub_editor.picker.? == .hub_gradient);
+        try testing.expect(hub_editor.picker.?.hub_gradient.role == .world);
+    }
+
+    // The world pick: the grid's color wheel commits (the commit chains
+    // its close - pick + close is one undo step, the mission arm's rule).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_level_gradient },
+        .{ .editor_gradient = 3 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const hub = history.current_state.campaign_editor.?.hubs[0];
+        try testing.expectEqual(@as(u32, 3), hub.grid.color_wheel_index);
+        try testing.expect(history.current_state.hub_editor.?.picker == null);
+    }
+
+    // The enemy Auto toggle: a TRUE toggle both ways - manual freezes the
+    // derived index, a second click reverts to the null override.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_editor_level_gradient_auto },
+        .{ .editor_gradient_role = .enemy },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const loaders = @import("loaders.zig");
+        const derived_enemy_index: u32 = loaders.autoDerivedGradientIndex(
+            history.color_theme_definitions,
+            3,
+            .enemy,
+        );
+        const hub = history.current_state.campaign_editor.?.hubs[0];
+        try testing.expect(hub.grid.enemy_gradient_index != null);
+        // The frozen value is the DERIVED index for wheel 3 - derived
+        // through the same helper the arm uses (not a hand-picked number).
+        try testing.expectEqual(derived_enemy_index, hub.grid.enemy_gradient_index.?);
+    }
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_editor_level_gradient_auto },
+        .{ .editor_gradient_role = .enemy },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.hubs[0].grid.enemy_gradient_index == null);
+
+    // The enemy pick while on auto flips to manual in the same commit
+    // (the explicit pick IS the manual choice).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_level_gradient_picker },
+        .{ .editor_gradient_role = .enemy },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .select_editor_level_gradient },
+        .{ .editor_gradient = 5 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 5), history.current_state.campaign_editor.?.hubs[0].grid.enemy_gradient_index.?);
+
+    // The undo ladder: every recorded action (each open + each commit) is
+    // an idle point, walking back through the enemy pick's open, the
+    // revert, the freeze, the world commit, the world open.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.campaign_editor.?.hubs[0].grid.enemy_gradient_index == null);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.campaign_editor.?.hubs[0].grid.enemy_gradient_index == null);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.campaign_editor.?.hubs[0].grid.enemy_gradient_index != null);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 3), history.current_state.campaign_editor.?.hubs[0].grid.color_wheel_index);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.hubs[0].grid.color_wheel_index);
+}

@@ -704,7 +704,7 @@ pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).
 // (edge data lives in campaign.txt's Missions section). Decorations share
 // the level decoration key set. Layout is a raw grid (excluded).
 
-const hub_metadata_keys = [_][]const u8{ "file_format_version", "hub_uuid", "name", "color_wheel_index" };
+const hub_metadata_keys = [_][]const u8{ "file_format_version", "hub_uuid", "name", "color_wheel_index", "enemy_gradient_index", "player_gradient_index" };
 
 const hub_npcs_keys = [_][]const u8{ "character_code", "npc_type" };
 

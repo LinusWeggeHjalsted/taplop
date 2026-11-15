@@ -501,19 +501,38 @@ pub fn view(
                             ) catch @panic("failed to build editor footprint editor");
                         }
                     },
+                    // The hub drill-in's target never rides the mission
+                    // editor's picker (a crafted log) - nothing to draw.
+                    .hub_gradient => {},
                     // The metadata sidebar's theme picker: every gradient
                     // as a strip (the level index + role ride the picker
-                    // target; the list scrolls - see UiState).
-                    .level_gradient => |gradient_target| ui.buildEditorThemePicker(
-                        &ui_elements,
-                        frame_allocator,
-                        font_metrics,
-                        editor,
-                        color_theme_definitions,
-                        active_theme,
-                        .{ .level_index = gradient_target.level_index, .role = gradient_target.role },
-                        &session.ui_state.editor_theme_picker_scroll_offset,
-                    ) catch @panic("failed to build editor theme picker"),
+                    // target; the list scrolls - see UiState). The current
+                    // gradient resolves HERE (the picker's def-seam
+                    // parameterization): the level's effective index, null
+                    // on a stale index (nothing highlighted).
+                    .level_gradient => |gradient_target| {
+                        var current_gradient: ?u32 = null;
+                        if (gradient_target.level_index < editor.levels.len) {
+                            const level = editor.levels[gradient_target.level_index];
+                            current_gradient = loaders.effectiveGradientIndex(
+                                color_theme_definitions,
+                                level.color_wheel_index,
+                                level.enemy_gradient_index,
+                                level.player_gradient_index,
+                                gradient_target.role,
+                            );
+                        }
+                        ui.buildEditorThemePicker(
+                            &ui_elements,
+                            frame_allocator,
+                            font_metrics,
+                            current_gradient,
+                            color_theme_definitions,
+                            active_theme,
+                            gradient_target.role,
+                            &session.ui_state.editor_theme_picker_scroll_offset,
+                        ) catch @panic("failed to build editor theme picker");
+                    },
                 }
             }
         }
@@ -623,6 +642,20 @@ pub fn view(
                 &session.ui_state.hub_palette_collapsed,
                 &session.ui_state.hub_palette_scroll,
             ) catch @panic("failed to build hub editor bottom bar");
+            // The metadata sidebar (the mission editor's own machinery
+            // over the drilled hub - the 4-5d reuse).
+            if (current_state.campaign_editor) |campaign_editor| {
+                ui.buildHubEditorMetadataSidebar(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    campaign_editor,
+                    hub_editor.*,
+                    active_theme,
+                    color_theme_definitions,
+                    &session.ui_state,
+                ) catch @panic("failed to build hub editor metadata sidebar");
+            }
             // The centered pickers (the mission editor's dispatch - the
             // picker draws LAST, above every hub-editor surface). The
             // footprint editor is the mission editor's OWN builder over
@@ -642,6 +675,36 @@ pub fn view(
                                 &session.ui_state,
                             ) catch @panic("failed to build hub footprint editor");
                         }
+                    },
+                    // The metadata sidebar's theme picker over the drilled
+                    // hub's grid (the mission editor's own builder, the
+                    // def-seam parameterization - the 4-5d reuse).
+                    .hub_gradient => |gradient_target| {
+                        const campaign_editor = current_state.campaign_editor.?;
+                        var drilled: ?types.CampaignHubEdit = null;
+                        for (campaign_editor.hubs) |candidate_hub| {
+                            if (candidate_hub.handle == hub_editor.hub) drilled = candidate_hub;
+                        }
+                        const current_gradient: ?u32 = if (drilled) |hub|
+                            loaders.effectiveGradientIndex(
+                                color_theme_definitions,
+                                hub.grid.color_wheel_index,
+                                hub.grid.enemy_gradient_index,
+                                hub.grid.player_gradient_index,
+                                gradient_target.role,
+                            )
+                        else
+                            null;
+                        ui.buildEditorThemePicker(
+                            &ui_elements,
+                            frame_allocator,
+                            font_metrics,
+                            current_gradient,
+                            color_theme_definitions,
+                            active_theme,
+                            gradient_target.role,
+                            &session.ui_state.editor_theme_picker_scroll_offset,
+                        ) catch @panic("failed to build hub theme picker");
                     },
                     else => ui.buildHubSpritePicker(
                         &ui_elements,

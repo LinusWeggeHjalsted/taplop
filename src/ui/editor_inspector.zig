@@ -265,31 +265,6 @@ pub fn buildEditorMetadataSidebar(
 
     if (!metadata_sidebar_open) return;
 
-    const panel_rect = editorMetadataSidebarPanelRect();
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = panel_rect.position(),
-        .width = panel_rect.width,
-        .height = panel_rect.height,
-        .color = active_theme.darkest,
-    } });
-
-    // Content: the INSPECTOR'S EXACT MODEL - a per-frame entry list over
-    // the expansion state, view-relative windowed emission (only rows
-    // that FULLY fit), and a scrollbar when the content overflows. Both
-    // sections COLLAPSED by default; the strips are the shared
-    // collapsible section headers (`emitInspectorSectionStrip` - the +/-
-    // marker, the whole-strip click, the shared expansion array keyed by
-    // `EditorInspectorSectionId`).
-    const content: Rectangle = .{
-        .x = panel_rect.x + ui_gap,
-        .y = panel_rect.y + ui_gap,
-        .width = panel_rect.width - 2 * ui_gap,
-        .height = panel_rect.height - 2 * ui_gap,
-    };
-    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
-    const scroll_offset = &ui_state.editor_metadata_scroll;
-
     // The level the sidebar shows (the ACTIVE tab). The level index rides
     // the name field's ref target (a mid-edit tab switch can't retarget
     // the commit). A level-less editor (defensive - open_editor
@@ -302,11 +277,64 @@ pub fn buildEditorMetadataSidebar(
         null;
     const entries: []const EditorMetadataEntry = try editorMetadataEntries(
         allocator,
+        editor.mission.name,
+        active_level,
         level,
         active_theme,
         color_theme_definitions,
         &ui_state.editor_inspector_section_expanded,
     );
+
+    try renderMetadataEntries(
+        elements,
+        allocator,
+        font_metrics,
+        entries,
+        button_color,
+        active_theme,
+        ui_state,
+    );
+}
+
+/// The metadata sidebar's GENERIC half (the 4-5d reuse pattern): the
+/// background panel + the windowed entries -> elements emission (unit
+/// math + scroll clamp, section strips, name fields, gradient rows, the
+/// overflow scrollbar) - shared by the mission editor's sidebar and the
+/// hub editor drill-in's. The caller resolves the entries + owns the
+/// toggle button (a per-surface action + state).
+pub fn renderMetadataEntries(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    entries: []const EditorMetadataEntry,
+    button_color: Color,
+    active_theme: types.ActiveColorTheme,
+    ui_state: *UiState,
+) !void {
+    const panel_rect = editorMetadataSidebarPanelRect();
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = panel_rect.position(),
+        .width = panel_rect.width,
+        .height = panel_rect.height,
+        .color = active_theme.darkest,
+    } });
+
+    // Content: the INSPECTOR'S EXACT MODEL - a per-frame entry list over
+    // the expansion state, view-relative windowed emission (only rows
+    // that FULLY fit), and a scrollbar when the content overflows. The
+    // strips are the shared collapsible section headers
+    // (`emitInspectorSectionStrip` - the +/- marker, the whole-strip
+    // click, the shared expansion array keyed by
+    // `EditorInspectorSectionId`).
+    const content: Rectangle = .{
+        .x = panel_rect.x + ui_gap,
+        .y = panel_rect.y + ui_gap,
+        .width = panel_rect.width - 2 * ui_gap,
+        .height = panel_rect.height - 2 * ui_gap,
+    };
+    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
+    const scroll_offset = &ui_state.editor_metadata_scroll;
 
     // Unit math + scroll clamp - the inspector's (authoritative here: the
     // builder knows the content height).
@@ -347,23 +375,13 @@ pub fn buildEditorMetadataSidebar(
                 button_color,
                 active_theme,
             ),
-            .mission_name => try emitSidebarNameField(
+            .name_field => |name_field| try emitSidebarNameField(
                 elements,
                 allocator,
                 font_metrics,
                 text_edit,
-                .{ .id = .mission_name, .target = .mission },
-                editor.mission.name,
-                cell,
-                active_theme,
-            ),
-            .level_name => try emitSidebarNameField(
-                elements,
-                allocator,
-                font_metrics,
-                text_edit,
-                .{ .id = .level_name, .target = .{ .level = @intCast(active_level) } },
-                if (level) |some_level| some_level.name else "",
+                name_field.ref,
+                name_field.value,
                 cell,
                 active_theme,
             ),
@@ -412,11 +430,14 @@ pub fn buildEditorMetadataSidebar(
 /// entry model: a SECTION header (1 unit, the shared collapsible strip),
 /// a section-break SPACER (1 unit), or a two-unit field entry (label line
 /// above, control below).
-const EditorMetadataEntry = union(enum) {
+pub const EditorMetadataEntry = union(enum) {
     section: types.EditorInspectorSectionId,
     spacer: void,
-    mission_name: void,
-    level_name: void,
+    /// A name field: the field identity (the id + target pin the commit
+    /// against mid-edit retargeting) + the current value. The mission's
+    /// mission/level names + the hub editor's hub name ride the shared
+    /// emission.
+    name_field: struct { ref: types.TextFieldRef, value: []const u8 },
     /// One gradient row (see `EditorGradientRow`).
     gradient: EditorGradientRow,
 };
@@ -440,7 +461,7 @@ const EditorGradientRow = struct {
 fn editorMetadataEntryUnits(entry: EditorMetadataEntry) i32 {
     return switch (entry) {
         .section, .spacer => 1,
-        .mission_name, .level_name, .gradient => 2,
+        .name_field, .gradient => 2,
     };
 }
 
@@ -452,6 +473,8 @@ fn editorMetadataEntryUnits(entry: EditorMetadataEntry) i32 {
 /// belongs to the section ABOVE it (a collapsed section takes no gap).
 fn editorMetadataEntries(
     allocator: std.mem.Allocator,
+    mission_name: []const u8,
+    level_index: usize,
     level: ?types.EditorLevel,
     active_theme: types.ActiveColorTheme,
     color_theme_definitions: types.ColorThemeDefinitions,
@@ -461,54 +484,103 @@ fn editorMetadataEntries(
 
     try entries.append(allocator, .{ .section = .mission });
     if (expanded[@backingInt(types.EditorInspectorSectionId.mission)]) {
-        try entries.append(allocator, .mission_name);
+        try entries.append(allocator, .{ .name_field = .{
+            .ref = .{ .id = .mission_name, .target = .mission },
+            .value = mission_name,
+        } });
         try entries.append(allocator, .spacer);
     }
 
     try entries.append(allocator, .{ .section = .current_level });
     if (expanded[@backingInt(types.EditorInspectorSectionId.current_level)]) {
-        try entries.appendSlice(allocator, &.{
-            .level_name,
-            .{ .gradient = .{
-                .label = "World colors",
-                .role = .world,
-                .colors = active_theme.world_gradient.colors,
-                .gradient_override = null,
-                .effective_index = levelEffectiveGradientIndex(
-                    color_theme_definitions,
-                    level,
-                    .world,
-                ),
-            } },
-            .{ .gradient = .{
-                .label = "Enemy colors",
-                .role = .enemy,
-                .colors = active_theme.enemy_gradient.colors,
-                .gradient_override = if (level) |some_level|
-                    some_level.enemy_gradient_index
-                else
-                    null,
-                .effective_index = levelEffectiveGradientIndex(
-                    color_theme_definitions,
-                    level,
-                    .enemy,
-                ),
-            } },
-            .{ .gradient = .{
-                .label = "Player colors",
-                .role = .player,
-                .colors = active_theme.player_gradient.colors,
-                .gradient_override = if (level) |some_level|
-                    some_level.player_gradient_index
-                else
-                    null,
-                .effective_index = levelEffectiveGradientIndex(
-                    color_theme_definitions,
-                    level,
-                    .player,
-                ),
-            } },
-        });
+        try entries.append(allocator, .{ .name_field = .{
+            .ref = .{ .id = .level_name, .target = .{ .level = @intCast(level_index) } },
+            .value = if (level) |some_level| some_level.name else "",
+        } });
+        try appendGradientRows(allocator, &entries, level, active_theme, color_theme_definitions);
+    }
+
+    return entries.items;
+}
+
+/// The three gradient rows shared by both metadata sidebars (the mission
+/// editor's Current-level section + the hub editor drill-in's Hub
+/// section): world (always picked) + enemy/player (the optional
+/// overrides, null = auto-deriving) over the level-shaped gradient keys -
+/// the hub's authored grid carries the same fields.
+fn appendGradientRows(
+    allocator: std.mem.Allocator,
+    entries: *std.ArrayList(EditorMetadataEntry),
+    level: ?types.EditorLevel,
+    active_theme: types.ActiveColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
+) !void {
+    try entries.appendSlice(allocator, &.{
+        .{ .gradient = .{
+            .label = "World colors",
+            .role = .world,
+            .colors = active_theme.world_gradient.colors,
+            .gradient_override = null,
+            .effective_index = levelEffectiveGradientIndex(
+                color_theme_definitions,
+                level,
+                .world,
+            ),
+        } },
+        .{ .gradient = .{
+            .label = "Enemy colors",
+            .role = .enemy,
+            .colors = active_theme.enemy_gradient.colors,
+            .gradient_override = if (level) |some_level|
+                some_level.enemy_gradient_index
+            else
+                null,
+            .effective_index = levelEffectiveGradientIndex(
+                color_theme_definitions,
+                level,
+                .enemy,
+            ),
+        } },
+        .{ .gradient = .{
+            .label = "Player colors",
+            .role = .player,
+            .colors = active_theme.player_gradient.colors,
+            .gradient_override = if (level) |some_level|
+                some_level.player_gradient_index
+            else
+                null,
+            .effective_index = levelEffectiveGradientIndex(
+                color_theme_definitions,
+                level,
+                .player,
+            ),
+        } },
+    });
+}
+
+/// The hub editor drill-in's metadata content plan (the mission
+/// sidebar's own machinery over the drilled hub): one Hub section (the
+/// shared `campaign_hub` expansion id - one surface live at a time, the
+/// shared-scroll convention) with the hub's name field + the three
+/// gradient rows over the authored grid's gradient keys (the level
+/// metadata's exact set - the enemy override is carried for symmetry;
+/// see DESIGN → The hub editor surface).
+pub fn hubMetadataEntries(
+    allocator: std.mem.Allocator,
+    hub: types.CampaignHubEdit,
+    active_theme: types.ActiveColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
+    expanded: *const [editor_inspector_section_count]bool,
+) ![]const EditorMetadataEntry {
+    var entries: std.ArrayList(EditorMetadataEntry) = .empty;
+
+    try entries.append(allocator, .{ .section = .campaign_hub });
+    if (expanded[@backingInt(types.EditorInspectorSectionId.campaign_hub)]) {
+        try entries.append(allocator, .{ .name_field = .{
+            .ref = .{ .id = .campaign_hub_name, .target = .{ .campaign_hub = hub.handle } },
+            .value = hub.name,
+        } });
+        try appendGradientRows(allocator, &entries, hub.grid, active_theme, color_theme_definitions);
     }
 
     return entries.items;

@@ -545,6 +545,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .close_hub_editor,
         .select_hub_tool,
         .toggle_hub_inspector,
+        .toggle_hub_metadata_sidebar,
         .add_hub_decoration_type,
         .delete_hub_decoration_type,
         .toggle_hub_palette_group,

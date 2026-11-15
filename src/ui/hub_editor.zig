@@ -606,6 +606,85 @@ pub fn buildHubSpritePicker(
     );
 }
 
+/// The hub editor drill-in's METADATA SIDEBAR: the mission editor's own
+/// machinery (hubMetadataEntries + renderMetadataEntries - the 4-5d
+/// reuse) over the drilled hub - the name field (the campaign hub-name
+/// field identity, so the same commit event serves both surfaces) + the
+/// three gradient rows over the authored grid's gradient keys (the level
+/// metadata's exact set; see DESIGN → The hub editor surface).
+pub fn buildHubEditorMetadataSidebar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: ui_element.FontMetrics,
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    active_theme: types.ActiveColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
+    ui_state: *ui_state_mod.UiState,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+
+    // Toggle button: flush right, at the inspector toggle's height (the
+    // mission sidebar's convention).
+    const label = "Metadata";
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_shell.editor_group_header_font_size);
+    const width = @max(label_width + 2 * ui_element.ui_gap, editor_shell.editor_header_strip_height);
+    const button_cell: Rectangle = .{
+        .x = types.reference_width - width,
+        .y = ui_element.top_bar_height + ui_element.ui_gap,
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+        .action = .toggle_hub_metadata_sidebar,
+    } });
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = button_cell.placeCenter(label_width, editor_shell.editor_group_header_font_size).position(),
+        .font_size = editor_shell.editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+
+    if (!hub_editor.metadata_open) return;
+
+    // The drilled hub (the entries read its name + gradient keys).
+    var drilled: ?types.CampaignHubEdit = null;
+    for (campaign_editor.hubs) |candidate_hub| {
+        if (candidate_hub.handle == hub_editor.hub) drilled = candidate_hub;
+    }
+    const hub = drilled orelse return;
+
+    const entries = try editor_inspector.hubMetadataEntries(
+        allocator,
+        hub,
+        active_theme,
+        color_theme_definitions,
+        &ui_state.editor_inspector_section_expanded,
+    );
+    try editor_inspector.renderMetadataEntries(
+        elements,
+        allocator,
+        font_metrics,
+        entries,
+        button_color,
+        active_theme,
+        ui_state,
+    );
+}
+
 /// The hub palette group under the pointer - the `editorPaletteGroupAt`
 /// mirror over the hub's groups: the hit test walks the emitted tool
 /// cells (button_background buttons in the bottom bar) in emission order,
@@ -1394,5 +1473,126 @@ test "buildHubSpritePicker layer mode: local cells match the base dims, add mode
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 1), highlighted);
+    }
+}
+
+test "buildHubEditorMetadataSidebar: the mission's own rows over the drilled hub - name field, three gradients, the Auto toggles" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    var gradients: [3]types.ColorGradient = undefined;
+    for (&gradients, 0..) |*gradient, index| {
+        const value: u8 = @intCast(index * 40 + 10);
+        gradient.* = .{ .colors = @splat(types.Color{ .r = value, .g = value, .b = value }) };
+    }
+    const definitions: types.ColorThemeDefinitions = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .gradients = &gradients,
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+    // The drilled hub: name + a picked wheel (2) + a manual enemy override
+    // (1); the player override stays auto (the derived one).
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{.{
+            .handle = 0,
+            .name = "Alpha",
+            .position = .{ .x = 0, .y = 0 },
+            .grid = .{ .color_wheel_index = 2, .enemy_gradient_index = 1 },
+        }},
+        .next_handle = 1,
+    };
+    var ui_state = ui_state_mod.UiState{};
+
+    // Open (the default): the toggle button, the Hub section strip, the
+    // name field (the campaign hub-name identity over the drilled hub),
+    // and the mission's own gradient rows.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorMetadataSidebar(
+            &elements,
+            allocator,
+            test_metrics,
+            campaign_editor,
+            .{ .hub = 0 },
+            test_theme,
+            definitions,
+            &ui_state,
+        );
+        var toggle_seen = false;
+        var section_strips: usize = 0;
+        var name_field_seen = false;
+        var pick_buttons: usize = 0;
+        var auto_buttons: usize = 0;
+        var world_index_seen = false;
+        var enemy_index_seen = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .toggle_hub_metadata_sidebar => toggle_seen = true,
+                .toggle_editor_inspector_section => section_strips += 1,
+                .open_editor_level_gradient_picker => pick_buttons += 1,
+                .toggle_editor_level_gradient_auto => auto_buttons += 1,
+                else => {},
+            },
+            .text_field => |field| {
+                if (field.ref.id == .campaign_hub_name) {
+                    name_field_seen = true;
+                    try std.testing.expectEqualStrings("Alpha", field.text);
+                }
+            },
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "2")) world_index_seen = true;
+                if (std.mem.eql(u8, label.text, "1")) enemy_index_seen = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(toggle_seen);
+        try std.testing.expectEqual(@as(usize, 1), section_strips);
+        try std.testing.expect(name_field_seen);
+        try std.testing.expectEqual(@as(usize, 3), pick_buttons);
+        try std.testing.expectEqual(@as(usize, 2), auto_buttons);
+        // The effective indices render (world = the picked wheel; enemy =
+        // the manual override).
+        try std.testing.expect(world_index_seen);
+        try std.testing.expect(enemy_index_seen);
+    }
+
+    // Collapsed: the strip alone (the mission sidebar's rule).
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorMetadataSidebar(
+            &elements,
+            allocator,
+            test_metrics,
+            campaign_editor,
+            .{ .hub = 0, .metadata_open = false },
+            test_theme,
+            definitions,
+            &ui_state,
+        );
+        var toggle_seen = false;
+        var name_field_seen = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .toggle_hub_metadata_sidebar) toggle_seen = true;
+            },
+            .text_field => name_field_seen = true,
+            else => {},
+        };
+        try std.testing.expect(toggle_seen);
+        try std.testing.expect(!name_field_seen);
     }
 }

@@ -109,6 +109,9 @@ pub fn handleHubEditorEvent(
         .hub_toggle_inspector => {
             hub_editor.inspector_open = !hub_editor.inspector_open;
         },
+        .hub_toggle_metadata => {
+            hub_editor.metadata_open = !hub_editor.metadata_open;
+        },
         .hub_add_decoration_type => {
             // The "+": append the default-template decoration type to the
             // CAMPAIGN-SHARED palette (every hub's placements index into
@@ -552,6 +555,16 @@ pub fn handleHubEditorEvent(
             const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
             var hubs = mutableHubCopy(campaign_editor, allocator);
             hubs[index].grid.player_start = set.position;
+            campaign_editor.hubs = hubs;
+        },
+        .hub_set_gradient => |set| {
+            const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
+            var hubs = mutableHubCopy(campaign_editor, allocator);
+            switch (set.role) {
+                .world => hubs[index].grid.color_wheel_index = set.gradient_index orelse 0,
+                .enemy => hubs[index].grid.enemy_gradient_index = set.gradient_index,
+                .player => hubs[index].grid.player_gradient_index = set.gradient_index,
+            }
             campaign_editor.hubs = hubs;
         },
         .hub_select => |select| {

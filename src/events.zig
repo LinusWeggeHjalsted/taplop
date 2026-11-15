@@ -940,6 +940,8 @@ pub const HubEditorEvent = union(enum) {
     // Toggle the inspector sidebar (the editor_campaign_toggle_inspector
     // convention: the flag rides the undo timeline).
     hub_toggle_inspector: void,
+    // Toggle the metadata sidebar (the inspector field's own convention).
+    hub_toggle_metadata: void,
 
     // ── Tiles + decorations ──
     // Paint/erase one floor tile (the tile tool's click / the move chain's
@@ -1020,6 +1022,13 @@ pub const HubEditorEvent = union(enum) {
     hub_set_decoration_keep_original_colors: struct {
         type_id: u32,
         value: bool,
+    },
+    // A gradient key commit on the drilled hub's grid (the hub metadata
+    // sidebar's rows; the level editor's player_set_editor_level_*
+    // analogue - the null index = the auto-derivation revert).
+    hub_set_gradient: struct {
+        role: types.LevelGradientRole,
+        gradient_index: ?u32,
     },
     // The WHOLE-DEF commit (a sprite-picker pick): the full visual
     // identity, FLATTENED to top level (the session-log reader doesn't
@@ -1555,6 +1564,15 @@ pub const PlayerInputEvent = union(enum) {
     },
     // The inspector toggle (the player_toggle_campaign_inspector mirror).
     player_toggle_hub_inspector: void,
+    // The metadata sidebar toggle (the inspector field's own convention).
+    player_toggle_hub_metadata_sidebar: void,
+    // A gradient row commit from the hub editor's metadata sidebar (the
+    // player_set_editor_level_* mirror over the drilled hub's grid; the
+    // null index = the auto-derivation revert).
+    player_set_hub_gradient: struct {
+        role: types.LevelGradientRole,
+        gradient_index: ?u32,
+    },
     // Decoration-tool click over the hub grid (the
     // player_place_editor_decoration contract over the campaign palette).
     player_place_hub_decoration: struct {

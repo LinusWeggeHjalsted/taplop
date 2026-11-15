@@ -226,6 +226,7 @@ pub const buildCampaignEditorView = ui_campaign_editor.buildCampaignEditorView;
 pub const buildHubEditorTopBar = ui_hub_editor.buildHubEditorTopBar;
 pub const buildHubEditorBottomBar = ui_hub_editor.buildHubEditorBottomBar;
 pub const buildHubEditorInspector = ui_hub_editor.buildHubEditorInspector;
+pub const buildHubEditorMetadataSidebar = ui_hub_editor.buildHubEditorMetadataSidebar;
 pub const hubPaletteGroupAt = ui_hub_editor.hubPaletteGroupAt;
 pub const buildHubSpritePicker = ui_hub_editor.buildHubSpritePicker;
 pub const hubPaletteGroupSize = ui_hub_editor.hubPaletteGroupSize;

@@ -1361,6 +1361,9 @@ pub fn handlePlayerInputEvent(
         .player_toggle_hub_inspector => {
             pushEvents(current, &.{.{ .hub_editor_event = .hub_toggle_inspector }}, allocator);
         },
+        .player_toggle_hub_metadata_sidebar => {
+            pushEvents(current, &.{.{ .hub_editor_event = .hub_toggle_metadata }}, allocator);
+        },
         .player_set_hub_tool => |set| {
             const hub_editor = &(current.hub_editor orelse return);
             if (std.meta.eql(set.tool, hub_editor.active_tool)) return;
@@ -1421,6 +1424,18 @@ pub fn handlePlayerInputEvent(
         .player_add_hub_decoration_type => {
             if (current.hub_editor == null or current.campaign_editor == null) return;
             pushEvents(current, &.{.{ .hub_editor_event = .hub_add_decoration_type }}, allocator);
+        },
+        .player_set_hub_gradient => |set| {
+            if (current.hub_editor == null or current.campaign_editor == null) return;
+            // The theme-picker commit closes its picker in the same action
+            // (pick + close = one undo step - the mission arm's rule).
+            pushEvents(current, &.{
+                .{ .hub_editor_event = .hub_close_picker },
+                .{ .hub_editor_event = .{ .hub_set_gradient = .{
+                    .role = set.role,
+                    .gradient_index = set.gradient_index,
+                } } },
+            }, allocator);
         },
         .player_place_hub_decoration => |place| {
             if (hub_editor_handlers.drilledHub(current)) |hub| {

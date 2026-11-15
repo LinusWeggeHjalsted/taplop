@@ -1788,6 +1788,25 @@ pub const GameStateHistory = struct {
         self.rejectReplay("replay validation: campaign-editor action mission handle does not resolve");
     }
 
+    /// Structural legality for the hub-name commit: legal on EITHER
+    /// campaign screen (the campaign map's hub inspector + the hub
+    /// editor drill-in's metadata sidebar edit the same field through the
+    /// same event) - the campaign editor present + the handle resolving.
+    fn validateCampaignHubNameAction(self: *GameStateHistory, hub_handle: u32) void {
+        if (self.current_state.screen != .campaign_editor and self.current_state.screen != .hub_editor) {
+            self.rejectReplay("replay validation: hub-name commit outside a campaign screen");
+            return;
+        }
+        const campaign_editor = self.current_state.campaign_editor orelse {
+            self.rejectReplay("replay validation: hub-name commit with no campaign editor");
+            return;
+        };
+        for (campaign_editor.hubs) |hub| {
+            if (hub.handle == hub_handle) return;
+        }
+        self.rejectReplay("replay validation: hub-name commit target handle does not resolve");
+    }
+
     fn validateCampaignEditorAction(
         self: *GameStateHistory,
         hub_handle: ?u32,
@@ -2332,6 +2351,10 @@ pub const GameStateHistory = struct {
                             .entity_layer, .decoration_layer => true,
                             .decoration_footprint => |type_id| type_id < editor.decoration_types.len,
                             .level_gradient => |gradient| gradient.level_index < editor.levels.len,
+                            // The hub drill-in's target can never ride the
+                            // mission editor's picker (a crafted log) - the
+                            // pick arms no-op on the kind gate.
+                            .hub_gradient => false,
                         };
                         if (!target_legal) {
                             self.rejectReplay("replay validation: player_open_editor_picker target out of range");
@@ -2379,9 +2402,11 @@ pub const GameStateHistory = struct {
                     .player_set_editor_level_name => |set| self.validateEditorLevelMetadataCommit(set.level_index),
                     // The campaign editor's name-field commits: the
                     // campaign-editor screen + editor + (hub arm) a hub
-                    // handle that resolves.
+                    // handle that resolves. The hub-NAME commit is legal on
+                    // both campaign screens (the drill-in's sidebar edits
+                    // it too).
                     .player_set_campaign_hub_name => |set| {
-                        self.validateCampaignEditorAction(set.hub);
+                        self.validateCampaignHubNameAction(set.hub);
                     },
                     .player_set_campaign_tool,
                     .player_set_campaign_name,
@@ -2392,12 +2417,14 @@ pub const GameStateHistory = struct {
                     // clicks are legal in a recorded session).
                     .player_set_hub_tool,
                     .player_toggle_hub_inspector,
+                    .player_toggle_hub_metadata_sidebar,
                     .player_paint_hub_tile,
                     .player_place_hub_npc,
                     .player_place_hub_decoration,
                     .player_add_hub_decoration_type,
                     .player_delete_hub_decoration_type,
                     .player_set_hub_decoration_def,
+                    .player_set_hub_gradient,
                     .player_open_hub_picker,
                     .player_close_hub_picker,
                     .player_place_hub_exit_marker,

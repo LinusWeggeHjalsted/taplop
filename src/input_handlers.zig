@@ -436,8 +436,18 @@ fn expectPickerKind(
     editor: *const types.Editor,
     comptime kind: std.meta.Tag(types.EditorPickerTarget),
 ) ?@FieldType(types.EditorPickerTarget, @tagName(kind)) {
-    const picker = editor.picker orelse return null;
-    return switch (picker) {
+    return expectPickerKindOf(editor.picker, kind);
+}
+
+/// The picker-kind gate's core over an arbitrary picker state (the
+/// mission editor's `Editor.picker` + the hub editor drill-in's
+/// `HubEditor.picker` - the same target union).
+fn expectPickerKindOf(
+    picker: ?types.EditorPickerTarget,
+    comptime kind: std.meta.Tag(types.EditorPickerTarget),
+) ?@FieldType(types.EditorPickerTarget, @tagName(kind)) {
+    const open_picker = picker orelse return null;
+    return switch (open_picker) {
         .utility_skill_slot => |slot_index| if (kind == .utility_skill_slot) slot_index else null,
         .entity_sprite => if (kind == .entity_sprite) {} else null,
         .decoration_sprite => if (kind == .decoration_sprite) {} else null,
@@ -445,6 +455,7 @@ fn expectPickerKind(
         .decoration_layer => |layer_index| if (kind == .decoration_layer) layer_index else null,
         .decoration_footprint => |type_id| if (kind == .decoration_footprint) type_id else null,
         .level_gradient => |target| if (kind == .level_gradient) target else null,
+        .hub_gradient => |target| if (kind == .hub_gradient) target else null,
     };
 }
 
@@ -2543,6 +2554,29 @@ pub fn handleAnytimeInput(
             // level index - a mid-edit tab switch can't retarget the pick
             // (the footprint editor's convention).
             .open_editor_level_gradient_picker => {
+                // Surface-polymorphic (the metadata sidebar reuse): the hub
+                // editor drill-in opens the HUB theme picker over the
+                // drilled hub's grid + scrolls the current gradient into
+                // view (the mission arm's rule - an offscreen highlight
+                // reads as broken).
+                if (current.screen == .hub_editor) {
+                    const hub = hub_editor_handlers.drilledHub(current) orelse return;
+                    const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
+                    pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
+                        .target = .{ .hub_gradient = .{ .role = role } },
+                    } });
+                    const current_gradient: i32 = @intCast(loaders.effectiveGradientIndex(
+                        history.color_theme_definitions,
+                        hub.grid.color_wheel_index,
+                        hub.grid.enemy_gradient_index,
+                        hub.grid.player_gradient_index,
+                        role,
+                    ));
+                    const visible_rows: i32 = @intCast(ui.editorThemePickerVisibleRowLimit());
+                    history.session.ui_state.editor_theme_picker_scroll_offset =
+                        @max(current_gradient + 1 - visible_rows, 0);
+                    return;
+                }
                 if (current.editor == null) return;
                 const editor: *types.Editor = &current.editor.?;
                 const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
@@ -2581,6 +2615,54 @@ pub fn handleAnytimeInput(
             // choice - the state change null→index records even when the
             // derived gradient was visually the same).
             .select_editor_level_gradient => {
+                // Surface-polymorphic (the metadata sidebar reuse): the hub
+                // branch commits through the hub gradient event; the
+                // same-value + auto-flip rules are the mission's own (a
+                // pick while an enemy/player role is on AUTO flips it to
+                // manual in the same commit).
+                if (history.current_state.screen == .hub_editor) {
+                    const hub_editor_state = &(history.current_state.hub_editor orelse return);
+                    const target = expectPickerKindOf(hub_editor_state.picker, .hub_gradient) orelse return;
+                    const gradient_index = payloadAs(.editor_gradient, clicked_payload) orelse return;
+                    const hub = hub_editor_handlers.drilledHub(current) orelse return;
+                    switch (target.role) {
+                        .world => {
+                            if (hub.grid.color_wheel_index == gradient_index) {
+                                pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                                return;
+                            }
+                            pushPlayerActionAndDrain(history, .{ .player_set_hub_gradient = .{
+                                .role = .world,
+                                .gradient_index = gradient_index,
+                            } });
+                        },
+                        .enemy => {
+                            if (hub.grid.enemy_gradient_index != null and
+                                hub.grid.enemy_gradient_index.? == gradient_index)
+                            {
+                                pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                                return;
+                            }
+                            pushPlayerActionAndDrain(history, .{ .player_set_hub_gradient = .{
+                                .role = .enemy,
+                                .gradient_index = gradient_index,
+                            } });
+                        },
+                        .player => {
+                            if (hub.grid.player_gradient_index != null and
+                                hub.grid.player_gradient_index.? == gradient_index)
+                            {
+                                pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                                return;
+                            }
+                            pushPlayerActionAndDrain(history, .{ .player_set_hub_gradient = .{
+                                .role = .player,
+                                .gradient_index = gradient_index,
+                            } });
+                        },
+                    }
+                    return;
+                }
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const target = expectPickerKind(editor, .level_gradient) orelse return;
                 const gradient_index = payloadAs(.editor_gradient, clicked_payload) orelse return;
@@ -2632,6 +2714,45 @@ pub fn handleAnytimeInput(
             // index). The world row has no Auto button (its index is
             // always picked).
             .toggle_editor_level_gradient_auto => {
+                // Surface-polymorphic (the metadata sidebar reuse): the hub
+                // branch's freeze/revert runs over the drilled hub's grid
+                // (the mission's own semantics).
+                if (current.screen == .hub_editor) {
+                    const hub = hub_editor_handlers.drilledHub(current) orelse return;
+                    const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
+                    switch (role) {
+                        .world => return,
+                        .enemy => {
+                            const gradient_index: ?u32 = if (hub.grid.enemy_gradient_index != null)
+                                null
+                            else
+                                loaders.autoDerivedGradientIndex(
+                                    history.color_theme_definitions,
+                                    hub.grid.color_wheel_index,
+                                    .enemy,
+                                );
+                            pushPlayerActionAndDrain(history, .{ .player_set_hub_gradient = .{
+                                .role = .enemy,
+                                .gradient_index = gradient_index,
+                            } });
+                        },
+                        .player => {
+                            const gradient_index: ?u32 = if (hub.grid.player_gradient_index != null)
+                                null
+                            else
+                                loaders.autoDerivedGradientIndex(
+                                    history.color_theme_definitions,
+                                    hub.grid.color_wheel_index,
+                                    .player,
+                                );
+                            pushPlayerActionAndDrain(history, .{ .player_set_hub_gradient = .{
+                                .role = .player,
+                                .gradient_index = gradient_index,
+                            } });
+                        },
+                    }
+                    return;
+                }
                 if (current.editor == null) return;
                 const editor: *types.Editor = &current.editor.?;
                 const role = payloadAs(.editor_gradient_role, clicked_payload) orelse return;
@@ -3075,6 +3196,12 @@ pub fn handleAnytimeInput(
             .toggle_hub_inspector => {
                 if (current.screen != .hub_editor or current.hub_editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_hub_inspector);
+            },
+            // The hub editor's metadata sidebar toggle (the inspector
+            // field's own convention over the drill-in).
+            .toggle_hub_metadata_sidebar => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_hub_metadata_sidebar);
             },
             // The Decorations group's "+" cell: append the default-template
             // type + select its tool (the add_editor_palette_type

@@ -424,6 +424,9 @@ pub const Action = enum {
     // The hub editor's inspector sidebar toggle (the
     // toggle_campaign_inspector convention over the drill-in screen).
     toggle_hub_inspector,
+    // The metadata sidebar's toggle button (the inspector field's own
+    // convention over the drill-in).
+    toggle_hub_metadata_sidebar,
     // The hub editor's Decorations group "+" cell: append a new
     // campaign-shared decoration type from the default template (the
     // add_editor_palette_type convention).
@@ -1255,6 +1258,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .close_hub_editor,
         .select_hub_tool,
         .toggle_hub_inspector,
+        .toggle_hub_metadata_sidebar,
         .add_hub_decoration_type,
         .delete_hub_decoration_type,
         .toggle_hub_palette_group,
@@ -1670,6 +1674,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .validate_campaign,
         .close_hub_editor,
         .toggle_hub_inspector,
+        .toggle_hub_metadata_sidebar,
         .add_hub_decoration_type,
         .campaign_select_tool,
         .campaign_hub_tool,
@@ -3707,6 +3712,10 @@ pub const EditorPickerTarget = union(enum) {
     /// world index, or an enemy/player override) - a mid-edit tab switch
     /// can't retarget the pick.
     level_gradient: struct { level_index: u32, role: LevelGradientRole },
+    /// The hub editor drill-in's theme picker (the hub metadata sidebar's
+    /// gradient rows): the ROLE only - the drilled hub is the target by
+    /// construction (one hub live per drill-in).
+    hub_gradient: struct { role: LevelGradientRole },
 };
 
 pub const Editor = struct {
@@ -4120,6 +4129,10 @@ pub const HubEditor = struct {
     /// rides the undo timeline + replay reproduces it). OPEN by default
     /// (the sibling editors' default).
     inspector_open: bool = true,
+    /// The metadata sidebar's open state (the inspector field's own
+    /// convention: rides the undo timeline via the toggle event; open by
+    /// default - the sibling editors' default).
+    metadata_open: bool = true,
     /// The active tool (the active-tool model; a switch away from select
     /// clears the selection in the same event - the editor_set_tool
     /// invariant).
@@ -4287,6 +4300,13 @@ pub const Hub = struct {
     /// Campaigns & the Campaign Editor → Content identity).
     uuid: []const u8 = &.{},
     color_wheel_index: u32 = 0,
+    /// Optional per-role gradient overrides (same semantics as the
+    /// level's - the hub editor's metadata sidebar sets them). The enemy
+    /// gradient is unused at runtime in hubs (no enemies) - carried for
+    /// symmetry with the level metadata; see DESIGN → The hub editor
+    /// surface.
+    enemy_gradient_index: ?u32 = null,
+    player_gradient_index: ?u32 = null,
     hub_tiles: []const Vector2 = &.{},
     player: Entity = .{},
     npcs: []const NPC = &.{},

@@ -141,7 +141,7 @@ pub fn buildEditorSkillPicker(
         .utility_skill_slot => |index| index,
         // The sprite/footprint/theme targets aren't this picker's (the
         // view dispatches on the target); defensive for crafted calls.
-        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
+        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient, .hub_gradient => return,
     };
     var current: ?types.SkillId = null;
     if (slot_index < types.utility_skill_count) {
@@ -316,7 +316,7 @@ pub fn buildEditorSpritePicker(
     // target is the skill picker's own builder (the view dispatches).
     const PickerKind = enum { entity_base, decoration_base, entity_layer, decoration_layer };
     const picker_kind: PickerKind = switch (picker_target) {
-        .utility_skill_slot, .decoration_footprint, .level_gradient => return,
+        .utility_skill_slot, .decoration_footprint, .level_gradient, .hub_gradient => return,
         .entity_sprite => .entity_base,
         .decoration_sprite => .decoration_base,
         .entity_layer => .entity_layer,
@@ -852,10 +852,10 @@ pub fn buildEditorThemePicker(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    editor: types.Editor,
+    current_gradient: ?u32,
     color_theme_definitions: types.ColorThemeDefinitions,
     active_theme: types.ActiveColorTheme,
-    target: struct { level_index: u32, role: types.LevelGradientRole },
+    role: types.LevelGradientRole,
     scroll_offset: *i32,
 ) !void {
     const gradients = color_theme_definitions.gradients;
@@ -886,7 +886,7 @@ pub fn buildEditorThemePicker(
         .height = bounds.height,
         .color = active_theme.darkest,
     } });
-    const title = try std.fmt.allocPrint(allocator, "Pick {s}", .{switch (target.role) {
+    const title = try std.fmt.allocPrint(allocator, "Pick {s}", .{switch (role) {
         .world => "World colors",
         .enemy => "Enemy colors",
         .player => "Player colors",
@@ -915,21 +915,12 @@ pub fn buildEditorThemePicker(
     const index_column_x = content.x + @divFloor(content.width - cluster_width, 2);
     const strip_x = index_column_x + index_column_width + ui_gap;
 
-    // The level's current index for the role (the DERIVED one while an
-    // enemy/player role is on auto - it's what's in effect). A stale
-    // level index (defensive; picks gate at the input layer) highlights
-    // nothing.
-    var current_index: ?u32 = null;
-    if (target.level_index < editor.levels.len) {
-        const level = editor.levels[target.level_index];
-        current_index = loaders.effectiveGradientIndex(
-            color_theme_definitions,
-            level.color_wheel_index,
-            level.enemy_gradient_index,
-            level.player_gradient_index,
-            target.role,
-        );
-    }
+    // The picker's CURRENT index for the role (the DERIVED one while an
+    // enemy/player role is on auto - it's what's in effect), resolved by
+    // the caller (the def-seam parameterization, the 4-5d reuse: the
+    // mission view from the level, the hub view from the drilled grid;
+    // a stale target highlights nothing).
+    const current_index: ?u32 = current_gradient;
 
     for (gradients[first..last], first..) |gradient, index| {
         const row_rect: Rectangle = .{
@@ -2279,10 +2270,10 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             &elements,
             arena.allocator(),
             metrics,
-            editor,
+            if (editor.levels.len > 0) editor.levels[0].color_wheel_index else null,
             definitions,
             theme,
-            .{ .level_index = 0, .role = .world },
+            .world,
             &scroll,
         );
         // The FIXED picker overlay + header label + close + 3 rows ×
@@ -2359,7 +2350,8 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
     }
 
     // Enemy role on auto: the current index is the DERIVED one (wheel 2,
-    // 3 gradients → enemy = 2 + 1 = 0 mod 3).
+    // 3 gradients → enemy = 2 + 1 = 0 mod 3) - the caller resolves the
+    // effective index through the shared helper.
     {
         var elements: UiElementList = .empty;
         var scroll: i32 = 0;
@@ -2367,10 +2359,10 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             &elements,
             arena.allocator(),
             metrics,
-            editor,
+            loaders.effectiveGradientIndex(definitions, 2, null, null, .enemy),
             definitions,
             theme,
-            .{ .level_index = 0, .role = .enemy },
+            .enemy,
             &scroll,
         );
         var current_button: ?Button = null;
@@ -2426,10 +2418,10 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
         &elements,
         arena.allocator(),
         metrics,
-        editor,
+        editor.levels[0].color_wheel_index,
         definitions,
         theme,
-        .{ .level_index = 0, .role = .world },
+        .world,
         &scroll,
     );
     const max_offset: i32 = @intCast(gradient_count - visible);
@@ -2465,10 +2457,10 @@ test "buildEditorThemePicker: overflowing list windows, scrollbar, offset clampe
         &top_elements,
         arena.allocator(),
         metrics,
-        editor,
+        editor.levels[0].color_wheel_index,
         definitions,
         theme,
-        .{ .level_index = 0, .role = .world },
+        .world,
         &scroll,
     );
     try std.testing.expectEqual(@as(i32, 0), scroll);
