@@ -37,6 +37,39 @@ pub fn drilledHub(current: *const GameState) ?*const types.CampaignHubEdit {
     return null;
 }
 
+/// Whether a decoration placement is invalidated by its type's NEW
+/// footprint (the mission's pruneDecorationPlacementsForType rule): the
+/// translated footprint covers a level tile or ANOTHER decoration's
+/// footprint - the placement invariant editor_place/hub_place_decoration
+/// enforces. Entity/item placements always sit ON level tiles, so the
+/// tile check subsumes them.
+fn decorationPlacementInvalidated(
+    placement: types.DecorationPlacement,
+    grid: types.EditorLevel,
+    decoration_types: []const types.DecorationTypeDef,
+    type_id: u32,
+    new_footprint: []const types.Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    const world_tiles = loaders.decorationFootprintWorldTiles(new_footprint, placement.position, allocator);
+    for (world_tiles) |tile| {
+        if (functions.tileListContains(grid.level_tiles, tile)) return true;
+        for (grid.decoration_placements) |other| {
+            if (other.type_id == type_id and
+                other.position.x == placement.position.x and other.position.y == placement.position.y) continue;
+            const other_footprint = loaders.decorationFootprintWorldTiles(
+                decoration_types[other.type_id].footprint,
+                other.position,
+                allocator,
+            );
+            for (other_footprint) |other_tile| {
+                if (other_tile.x == tile.x and other_tile.y == tile.y) return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// Copy-on-write over the []const hub list (the campaign editor's
 /// convention): a MUTABLE copy the arm mutates in place, then re-owns as
 /// the editor's hubs. The drill-in's grid edits rebuild one hub per
@@ -403,6 +436,93 @@ pub fn handleHubEditorEvent(
                 else => {},
             }
             campaign_editor.hubs = hubs;
+        },
+        .hub_set_decoration_def => |set| {
+            if (set.type_id >= campaign_editor.decoration_types.len) return;
+            // The def write: the type replaced wholesale.
+            var palette: std.ArrayList(types.DecorationTypeDef) = .empty;
+            for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
+                if (type_id == set.type_id) {
+                    palette.append(allocator, .{
+                        .id = set.sprite,
+                        .sprite = set.sprite,
+                        .footprint = set.footprint,
+                        .pixel_dims = set.pixel_dims,
+                        .color_index = set.color_index,
+                        .keep_original_colors = set.keep_original_colors,
+                        .layers = set.layers,
+                    }) catch @panic("failed to rebuild campaign decoration types");
+                } else {
+                    palette.append(allocator, type_definition) catch
+                        @panic("failed to rebuild campaign decoration types");
+                }
+            }
+            campaign_editor.decoration_types = palette.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign decoration types");
+
+            // The placement prune (the editor_set_decoration_def
+            // convention, across EVERY hub): a placement goes when its
+            // translated footprint covers a level tile or ANOTHER
+            // decoration's footprint - the placement invariant. The
+            // selection reconcile is the drilled hub's only (its indices
+            // address its grid).
+            const old_drilled_placements: []const types.DecorationPlacement =
+                if (drilledHubIndex(hub_editor.*, campaign_editor)) |drilled_index|
+                    campaign_editor.hubs[drilled_index].grid.decoration_placements
+                else
+                    &.{};
+            const hubs = mutableHubCopy(campaign_editor, allocator);
+            for (hubs) |*hub| {
+                var kept: std.ArrayList(types.DecorationPlacement) = .empty;
+                for (hub.grid.decoration_placements) |placement| {
+                    if (placement.type_id == set.type_id and
+                        decorationPlacementInvalidated(placement, hub.grid, campaign_editor.decoration_types, set.type_id, set.footprint, allocator))
+                    {
+                        continue;
+                    }
+                    kept.append(allocator, placement) catch
+                        @panic("failed to rebuild hub decoration placements");
+                }
+                hub.grid.decoration_placements = kept.toOwnedSlice(allocator) catch
+                    @panic("failed to own hub decoration placements");
+            }
+            // The drilled hub's selection reconcile: drop the pruned
+            // entries, shift survivors by the pruned-below count.
+            {
+                var rebuilt: std.ArrayList(types.Selectable) = .empty;
+                for (hub_editor.selection) |selected| {
+                    if (selected != .decoration_placement) {
+                        rebuilt.append(allocator, selected) catch
+                            @panic("failed to reconcile hub editor selection");
+                        continue;
+                    }
+                    const old_index: usize = @intCast(selected.decoration_placement);
+                    if (old_index >= old_drilled_placements.len) continue;
+                    var pruned = false;
+                    var pruned_below: u32 = 0;
+                    for (old_drilled_placements[0 .. old_index + 1], 0..) |below, below_index| {
+                        if (below.type_id != set.type_id) continue;
+                        if (!decorationPlacementInvalidated(below, campaign_editor.hubs[drilledHubIndex(hub_editor.*, campaign_editor) orelse continue].grid, campaign_editor.decoration_types, set.type_id, set.footprint, allocator)) continue;
+                        if (below_index == old_index) {
+                            pruned = true;
+                        } else if (below_index < old_index) {
+                            pruned_below += 1;
+                        }
+                    }
+                    if (pruned) continue;
+                    rebuilt.append(allocator, .{ .decoration_placement = selected.decoration_placement - pruned_below }) catch
+                        @panic("failed to reconcile hub editor selection");
+                }
+                hub_editor.selection = rebuilt.toOwnedSlice(allocator) catch
+                    @panic("failed to own hub editor selection");
+            }
+            campaign_editor.hubs = hubs;
+        },
+        .hub_open_picker => |open| {
+            hub_editor.picker = open.target;
+        },
+        .hub_close_picker => {
+            hub_editor.picker = null;
         },
         .hub_set_decoration_color_index => |set| {
             if (set.type_id >= campaign_editor.decoration_types.len) return;

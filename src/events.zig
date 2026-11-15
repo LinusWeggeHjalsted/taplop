@@ -1021,6 +1021,26 @@ pub const HubEditorEvent = union(enum) {
         type_id: u32,
         value: bool,
     },
+    // The WHOLE-DEF commit (a sprite-picker pick): the full visual
+    // identity, FLATTENED to top level (the session-log reader doesn't
+    // regroup nested non-u8 slices - the editor_set_decoration_def
+    // convention). The handler prunes the type's placements whose
+    // position the new footprint invalidates, across EVERY hub.
+    hub_set_decoration_def: struct {
+        type_id: u32,
+        sprite: []const u8,
+        footprint: []const Vector2,
+        pixel_dims: Vector2,
+        color_index: u32,
+        keep_original_colors: bool = false,
+        layers: []const DecorationLayer,
+    },
+    // Open the centered picker (the editor_open_picker convention; the
+    // close rides the pick commit as a child - one undo step).
+    hub_open_picker: struct {
+        target: types.EditorPickerTarget,
+    },
+    hub_close_picker: void,
 
     // ── The spawn ──
     // Move the player-spawn marker ('!'). Singleton by construction - a
@@ -1559,6 +1579,22 @@ pub const PlayerInputEvent = union(enum) {
     player_toggle_hub_decoration_keep_original_colors: struct {
         type_id: u32,
     },
+    // A sprite-picker pick's whole-def commit (the
+    // player_set_editor_decoration_def mirror; the payload is
+    // deep-copied at the push site).
+    player_set_hub_decoration_def: struct {
+        type_id: u32,
+        sprite: []const u8,
+        footprint: []const Vector2,
+        pixel_dims: Vector2,
+        color_index: u32,
+        keep_original_colors: bool = false,
+        layers: []const DecorationLayer,
+    },
+    player_open_hub_picker: struct {
+        target: types.EditorPickerTarget,
+    },
+    player_close_hub_picker: void,
     // Tile-paint click over the hub grid (the tile tool): one click = one
     // tile, covering decorations replaced (the player_paint_editor_tile
     // contract).

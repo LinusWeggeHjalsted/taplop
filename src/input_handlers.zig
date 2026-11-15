@@ -914,6 +914,70 @@ fn actionLayerRidesConsumptionSite(action: types.Action) bool {
 /// main menu: the browser/New keybinds ship editor-screen contexts
 /// (either editor, split per screen for the New pair), so on the main
 /// menu only the button path reaches these consumption sites.
+/// The drilled-in hub's CONTENT path ("campaigns/<campaign>/hubs/<dir>")
+/// - the hub-local art scan + dims resolution root. Null for an unsaved
+/// hub (no dir yet - nothing to scan).
+fn hubContentPath(
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    allocator: std.mem.Allocator,
+) ?[]const u8 {
+    const drilled_index = drilled: {
+        for (campaign_editor.hubs, 0..) |hub, index| {
+            if (hub.handle == hub_editor.hub) break :drilled index;
+        }
+        return null;
+    };
+    const hub_dir = campaign_editor.hubs[drilled_index].dir;
+    if (hub_dir.len == 0) return null;
+    return std.fmt.allocPrint(allocator, "{s}/hubs/{s}", .{ campaign_editor.campaign_dir, hub_dir }) catch
+        @panic("failed to build hub content path");
+}
+
+/// The hub-local sprite scan (the rescanEditorMissionSprites mirror over
+/// the drilled-in hub's content dir): the PNGs' stems + dims +
+/// content-addressed ids, backing-owned. An unsaved hub scans nothing.
+fn rescanHubSprites(
+    history: *GameStateHistory,
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+) void {
+    const allocator = history.backing_allocator;
+    const session = &history.session;
+    for (session.hub_sprites) |entry| {
+        allocator.free(entry.file_name);
+        allocator.free(entry.stored_id);
+    }
+    allocator.free(session.hub_sprites);
+    session.hub_sprites = &.{};
+    const content_path = hubContentPath(campaign_editor, hub_editor, allocator) orelse return;
+    defer allocator.free(content_path);
+    const names = history.file_source.listPersistentPngFiles(
+        allocator,
+        content_path,
+    ) catch &[_][]const u8{};
+    defer allocator.free(names);
+
+    var sprites: std.ArrayList(state.MissionSprite) = .empty;
+    for (names) |file_name| {
+        const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+        const pixel_dims = loaders.resolveMissionSpriteDimensions(
+            history.file_source,
+            content_path,
+            stem,
+            allocator,
+        ) orelse types.Vector2{ .x = 0, .y = 0 };
+        const stored_id = file_source_mod.customStemForContentPath(content_path, stem, allocator);
+        sprites.append(allocator, .{
+            .file_name = file_name,
+            .stored_id = stored_id,
+            .pixel_dims = pixel_dims,
+        }) catch @panic("failed to scan hub sprites");
+    }
+    session.hub_sprites = sprites.toOwnedSlice(allocator) catch
+        @panic("failed to own hub sprite scan");
+}
+
 fn editorBrowserReachableScreen(current_state: *const state.GameState) bool {
     if (current_state.screen == .editor) return current_state.editor != null;
     if (current_state.screen == .campaign_editor) return current_state.campaign_editor != null;
@@ -2142,6 +2206,27 @@ pub fn handleAnytimeInput(
             // decoration picker (registry-fed Official tab, prefab-adopting
             // commits) - the same panel, target-resolved inside the builder.
             .open_editor_sprite_picker => {
+                // Surface-polymorphic (the shared sprite-button emitter):
+                // the hub editor drill-in opens the HUB picker (the
+                // decoration base kind; the hub-local scan first - the
+                // rescanEditorMissionSprites convention over the hub's
+                // content dir).
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor = current.campaign_editor orelse return;
+                    if (hub_editor_state.active_tool != .decoration_type) return;
+                    rescanHubSprites(history, campaign_editor, hub_editor_state);
+                    // The Official tab's registry: loaded at the mission
+                    // editor's open there - the campaign-editor session
+                    // never opened one, so ensure it here (the same
+                    // loader, idempotent per open).
+                    editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
+                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                    pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
+                        .target = .{ .decoration_sprite = {} },
+                    } });
+                    return;
+                }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 mission_io.rescanEditorMissionSprites(history, editor.*);
                 const picker_target: types.EditorPickerTarget = switch (ui.editorInspectorTarget(editor.*)) {
@@ -2798,6 +2883,104 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.hub_palette_collapsed[group_index] = true;
                 }
             },
+            // A sprite-picker pick: adopt the picked sprite as the type's
+            // whole definition (the select_editor_decoration_sprite
+            // mirror over the campaign palette).
+            .select_hub_decoration_sprite => {
+                if (current.screen != .hub_editor) return;
+                const hub_editor_state = current.hub_editor orelse return;
+                const campaign_editor_state = current.campaign_editor orelse return;
+                if (hub_editor_state.picker == null or hub_editor_state.picker.? != .decoration_sprite) return;
+                const sprite = payloadAs(.editor_sprite, clicked_payload) orelse return;
+                const type_id = switch (hub_editor_state.active_tool) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    else => return,
+                };
+                if (type_id >= campaign_editor_state.decoration_types.len) return;
+                const current_definition = campaign_editor_state.decoration_types[type_id];
+                const arena = history.current_arena.allocator();
+
+                // Resolve the new definition: a registry stem adopts its
+                // prefab; anything else is a hub-local stem (the hub's
+                // content path - the drilled-in hub's dir under the
+                // campaign's hubs/).
+                var prefab: ?types.DecorationTypeDef = null;
+                for (history.session.editor_decoration_registry) |definition| {
+                    if (std.mem.eql(u8, definition.sprite, sprite)) {
+                        prefab = definition;
+                        break;
+                    }
+                }
+                const new_definition: types.DecorationTypeDef = if (prefab) |definition| .{
+                    .id = definition.sprite,
+                    .sprite = definition.sprite,
+                    .footprint = definition.footprint,
+                    .pixel_dims = definition.pixel_dims,
+                    .color_index = definition.color_index,
+                    .keep_original_colors = definition.keep_original_colors,
+                    .layers = definition.layers,
+                } else blk: {
+                    // A hub-local stem needs the hub's content path - an
+                    // UNSAVED hub has none (no dir yet), so a local pick
+                    // cannot resolve: no-op (the Hub tab lists nothing
+                    // for an unsaved hub, so this is the crafted-log
+                    // belt).
+                    const hub_content_path = hubContentPath(campaign_editor_state, hub_editor_state, arena) orelse return;
+                    const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return;
+                    const file_stem = sprite[slash + 1 ..];
+                    const pixel_dims = loaders.resolveMissionSpriteDimensions(
+                        history.file_source,
+                        hub_content_path,
+                        file_stem,
+                        arena,
+                    ) orelse return;
+                    if (!types.decorationSpriteDimsConform(pixel_dims)) return;
+                    const sprite_grid_rows = @divTrunc(pixel_dims.y + 255, 256);
+                    const default_footprint = [_]types.Vector2{.{ .x = 0, .y = sprite_grid_rows - 1 }};
+                    break :blk .{
+                        .id = sprite,
+                        .sprite = sprite,
+                        .footprint = arena.dupe(types.Vector2, &default_footprint) catch
+                            @panic("failed to allocate default decoration footprint"),
+                        .pixel_dims = pixel_dims,
+                        .color_index = current_definition.color_index,
+                        .keep_original_colors = true,
+                        .layers = current_definition.layers,
+                    };
+                };
+
+                // Same-definition picks never fire (the FULL definition).
+                const unchanged = std.mem.eql(u8, current_definition.sprite, new_definition.sprite) and
+                    loaders.decorationFootprintEqual(current_definition.footprint, new_definition.footprint) and
+                    current_definition.pixel_dims.x == new_definition.pixel_dims.x and
+                    current_definition.pixel_dims.y == new_definition.pixel_dims.y and
+                    current_definition.color_index == new_definition.color_index and
+                    current_definition.keep_original_colors == new_definition.keep_original_colors and
+                    loaders.decorationLayersEqual(current_definition.layers, new_definition.layers);
+                if (unchanged) {
+                    pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                    return;
+                }
+
+                // Dupe into the current arena BEFORE pushing (the
+                // mission commit's ordering rule), then the def + close
+                // chain.
+                const footprint = arena.dupe(types.Vector2, new_definition.footprint) catch
+                    @panic("failed to dupe decoration footprint");
+                const layers = arena.dupe(types.DecorationLayer, new_definition.layers) catch
+                    @panic("failed to dupe decoration layers");
+                const sprite_owned = arena.dupe(u8, new_definition.sprite) catch
+                    @panic("failed to dupe decoration sprite");
+                pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_def = .{
+                    .type_id = type_id,
+                    .sprite = sprite_owned,
+                    .footprint = footprint,
+                    .pixel_dims = new_definition.pixel_dims,
+                    .color_index = new_definition.color_index,
+                    .keep_original_colors = new_definition.keep_original_colors,
+                    .layers = layers,
+                } });
+            },
             // The keep-colors toggle (the type from the active tool; the
             // flip is computed at the handler).
             .toggle_hub_decoration_keep_original_colors => {
@@ -3200,7 +3383,13 @@ pub fn handleAnytimeInput(
                 } });
             },
             // The picker's close button.
-            .close_editor_picker => pushPlayerActionAndDrain(history, .player_close_editor_picker),
+            .close_editor_picker => {
+                if (current.screen == .hub_editor) {
+                    pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                } else {
+                    pushPlayerActionAndDrain(history, .player_close_editor_picker);
+                }
+            },
             .delete_editor_item => {
                 const slot = payloadAs(.editor_gear_slot, clicked_payload) orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;

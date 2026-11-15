@@ -2048,3 +2048,96 @@ test "hub editor events: the decoration-type delete cascade + the granular edits
         try testing.expectEqual(@as(usize, 1), editor.hubs[1].grid.decoration_placements.len);
     }
 }
+
+test "hub editor: the sprite-picker pick commits the whole def + the cross-hub placement prune" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } },
+                        .player_start = .{ .x = 0, .y = 0 },
+                        // A tree_1 placement on the tile (3,0) - the new
+                        // footprint (2 tiles wide) invalidates it.
+                        .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 3, .y = 0 } }},
+                    },
+                },
+            },
+            .decoration_types = &.{
+                .{ .id = "tree_1", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }}, .pixel_dims = .{ .x = 256, .y = 256 } },
+            },
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The picker open (the surface-polymorphic sprite button) + the pick:
+    // a registry prefab adoption (the whole def incl. the flag).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_open_hub_picker = .{
+            .target = .{ .decoration_sprite = {} },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.hub_editor.?.picker != null);
+
+    // The pick (the orchestrator the consumption site would push - the
+    // def construction itself is exercised via the handler contract):
+    // adopt a 2-tile-wide footprint that invalidates the (3,0) placement.
+    const new_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_hub_decoration_def = .{
+            .type_id = 0,
+            .sprite = "bush_1",
+            .footprint = &new_footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+            .color_index = 2,
+            .keep_original_colors = false,
+            .layers = &.{},
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqualStrings("bush_1", editor.decoration_types[0].sprite);
+        try testing.expectEqual(@as(usize, 2), editor.decoration_types[0].footprint.len);
+        // The placement pruned: the (3,0) tile is covered by the new
+        // 2-wide footprint at (3,0).
+        try testing.expectEqual(@as(usize, 0), editor.hubs[0].grid.decoration_placements.len);
+        // The picker closed by the commit's child event... the
+        // consumption site pushes the close; the direct orchestrator
+        // here doesn't - the picker state is orthogonal to the def.
+    }
+
+    // Undo: the def + the placement return in one step.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqualStrings("tree_1", editor.decoration_types[0].sprite);
+        try testing.expectEqual(@as(usize, 1), editor.hubs[0].grid.decoration_placements.len);
+    }
+}

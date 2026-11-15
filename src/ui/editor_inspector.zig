@@ -2082,7 +2082,7 @@ fn buildEditorInspectorContent(
 /// (a custom namespaced stem displays as its last path segment - see
 /// `spriteDisplayName`) - clicking opens the centered sprite picker (the
 /// input site routes entity vs decoration by the inspector target).
-fn emitInspectorSpriteButton(
+pub fn emitInspectorSpriteButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,

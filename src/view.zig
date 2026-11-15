@@ -618,6 +618,21 @@ pub fn view(
                 &session.ui_state.hub_palette_collapsed,
                 &session.ui_state.hub_palette_scroll,
             ) catch @panic("failed to build hub editor bottom bar");
+            // The centered picker (the mission editor's dispatch - the
+            // picker draws LAST, above every hub-editor surface).
+            if (hub_editor.picker != null) {
+                ui.buildHubSpritePicker(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    current_state.campaign_editor.?,
+                    hub_editor.*,
+                    session.hub_sprites,
+                    session.editor_decoration_registry,
+                    active_theme,
+                    &session.ui_state,
+                ) catch @panic("failed to build hub sprite picker");
+            }
         }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either

@@ -436,6 +436,10 @@ pub const Action = enum {
     // tool; the value rides the editor_color payload - the
     // select_editor_entity_color convention).
     set_hub_decoration_color,
+    // A sprite-picker pick: adopt the picked sprite as the decoration
+    // type's whole definition (the select_editor_decoration_sprite
+    // convention; the stored id rides the editor_sprite payload).
+    select_hub_decoration_sprite,
     // The decoration type's untinted-render toggle (the type from the
     // active tool).
     toggle_hub_decoration_keep_original_colors,
@@ -1263,6 +1267,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .set_hub_decoration_color,
         .toggle_hub_decoration_keep_original_colors,
         .toggle_hub_palette_group,
+        .select_hub_decoration_sprite,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1525,6 +1530,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .delete_hub_decoration_type => .hub_tool,
         .set_hub_decoration_color => .editor_color,
         .toggle_hub_palette_group => .editor_group,
+        .select_hub_decoration_sprite => .editor_sprite,
         .select_editor_level => .editor_level,
         .delete_editor_level => .editor_level,
         .toggle_editor_inspector_section => .editor_section,
@@ -4144,6 +4150,12 @@ pub const HubEditor = struct {
     /// at open through the reconstruction cache). Hubs carry no
     /// player.txt; the '!' is a POSITION, the body is preview art.
     player_def: EntityTypeDef = .{ .id = "Player" },
+    /// The centered picker's open state (the Editor.picker convention:
+    /// on the state, riding the undo timeline; the pick commits push
+    /// the close as a child). The hub editor's picker kinds:
+    /// decoration_sprite (the inspector's Sprite row). The footprint
+    /// editor + layer picks land with 4-5c(ii).
+    picker: ?EditorPickerTarget = null,
 };
 
 /// Info carried through the end_level → end_mission → start_hub cascade for

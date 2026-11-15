@@ -1379,6 +1379,33 @@ pub fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
+        .player_open_hub_picker => |open| {
+            if (current.hub_editor == null) return;
+            pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_open_picker = .{
+                .target = open.target,
+            } } }}, allocator);
+        },
+        .player_close_hub_picker => {
+            if (current.hub_editor == null) return;
+            pushEvents(current, &.{.{ .hub_editor_event = .hub_close_picker }}, allocator);
+        },
+        .player_set_hub_decoration_def => |set| {
+            if (current.hub_editor == null or current.campaign_editor == null) return;
+            // The pick's commit: the def event + the close as its child
+            // (one undo step - the editor-picker convention).
+            pushEvents(current, &.{
+                .{ .hub_editor_event = .{ .hub_set_decoration_def = .{
+                    .type_id = set.type_id,
+                    .sprite = set.sprite,
+                    .footprint = set.footprint,
+                    .pixel_dims = set.pixel_dims,
+                    .color_index = set.color_index,
+                    .keep_original_colors = set.keep_original_colors,
+                    .layers = set.layers,
+                } } },
+                .{ .hub_editor_event = .hub_close_picker },
+            }, allocator);
+        },
         .player_toggle_hub_decoration_keep_original_colors => |toggle| {
             if (current.hub_editor == null or current.campaign_editor == null) return;
             // The flip reads the live flag (the handler's event carries the

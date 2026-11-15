@@ -314,6 +314,12 @@ pub const SessionState = struct {
     /// `backing_allocator`; each scan frees the previous list, so the only
     /// leak is the FINAL list at process exit (bounded, one slice).
     editor_mission_sprites: []MissionSprite = &.{},
+    /// The hub editor's HUB-LOCAL sprite scan (the drilled-in hub's
+    /// content dir PNGs - the editor_mission_sprites pattern over the
+    /// hub's path; empty for an unsaved hub, no dir to scan). Backing-
+    /// owned, freed + rebuilt by each rescan (the open_editor_sprite_
+    /// picker arm's hub branch).
+    hub_sprites: []MissionSprite = &.{},
 
     /// The decoration registry (`data/decorations.txt` prefabs - the
     /// decoration sprite picker's Official tab + the commit site's
@@ -2371,6 +2377,9 @@ pub const GameStateHistory = struct {
                     .player_delete_hub_decoration_type,
                     .player_set_hub_decoration_color,
                     .player_toggle_hub_decoration_keep_original_colors,
+                    .player_set_hub_decoration_def,
+                    .player_open_hub_picker,
+                    .player_close_hub_picker,
                     .player_place_hub_exit_marker,
                     .player_toggle_hub_selection,
                     .player_replace_hub_selection,

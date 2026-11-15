@@ -370,6 +370,7 @@ working rules).
 - [campaign-editor slice 4-5a: the hub editor's Decorations group - the tool, the palette, the add-new](#campaign-editor-slice-4-5a-the-hub-editors-decorations-group---the-tool-the-palette-the-add-new)
 - [campaign-editor slice 4-5b: the decoration palette's delete cascade + the type inspector's granular edits](#campaign-editor-slice-4-5b-the-decoration-palettes-delete-cascade--the-type-inspectors-granular-edits)
 - [campaign-editor slice 4-5b rider: the hub editor's palette + inspector mirror the mission editor's structure exactly](#campaign-editor-slice-4-5b-rider-the-hub-editors-palette--inspector-mirror-the-mission-editors-structure-exactly)
+- [campaign-editor slice 4-5c: the hub editor's sprite picker - the change-the-art loop](#campaign-editor-slice-4-5c-the-hub-editors-sprite-picker---the-change-the-art-loop)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22319,3 +22320,58 @@ mirror, not the ad-hoc layouts of 4-3/4-5a.
   positions exactly as the mission editor's does).
 
 1018 green.
+
+## campaign-editor slice 4-5c: the hub editor's sprite picker - the change-the-art loop
+
+The decoration type's art is now authorable end to end (the first half
+of 4-5c; the footprint editor + layers are 4-5c(ii)):
+
+- **The picker** (`buildHubSpritePicker` in ui/hub_editor.zig, the
+  mission editor's buildEditorSpritePicker mirror for the
+  decoration-base kind): the shared overlay band, two tabs (Hub-local /
+  Official), the fixed 6-column cell grid, the active-tab highlight,
+  close top-right, the empty + hidden-dims notes (never silent). The
+  tab toggle reuses select_editor_sprite_tab (already surface-agnostic
+  - a direct UiState write); the close (close_editor_picker) became
+  surface-polymorphic.
+- **The chain**: the inspector's Sprite row went LIVE (the shared
+  emitInspectorSpriteButton - its open_editor_sprite_picker action
+  branches per screen: the hub branch rescans the hub-local art + opens
+  the hub picker). The pick (select_hub_decoration_sprite, the stored
+  id riding the editor_sprite payload) resolves the new definition at
+  the consumption site - a registry stem ADOPTS its prefab (the whole
+  visual identity incl. layers + the flag); a hub-local stem resolves
+  its dims through the hub's content path + the default footprint +
+  keep_original_colors=true (the mission commit's exact mirror, incl.
+  the same-definition no-op + the dupe-before-push ordering). The
+  commit (player_set_hub_decoration_def) pushes the def + the close as
+  its child - one undo step.
+- **The prune**: hub_set_decoration_def's handler prunes the type's
+  placements whose position the new footprint invalidates - across
+  EVERY hub (the mission's pruneDecorationPlacementsForType rule:
+  the translated footprint covering a level tile or another
+  decoration's footprint), with the drilled hub's selection reconcile
+  (drop pruned entries, shift survivors).
+- **The hub-local art scan** (rescanHubSprites, the
+  rescanEditorMissionSprites mirror): the drilled-in hub's content dir
+  PNGs -> stems + dims + content-addressed ids, backing-owned; an
+  unsaved hub scans nothing (no dir yet). The registry: the
+  campaign-editor session never loaded one - the hub picker-open branch
+  ensures it (loadEditorDecorationRegistry, the mission open's
+  convention).
+- **The runtime drive found + fixed TWO live bugs** (both invisible to
+  the suite): (1) the Official tab was EMPTY - the registry never
+  loaded in a campaign-editor session; (2) the local-path resolution
+  bailed the WHOLE pick for an unsaved hub (the hubContentPath null
+  guard sat before the prefab branch - a registry pick needs no
+  content path; the guard moved into the local-stem branch). Plus a
+  drive-authoring lesson recorded: the palette restructure MOVED the
+  "+" cell - scripted coordinates must come from a fresh `report ui`,
+  not memory.
+- **Runtime-verified end to end**: "+" (default type) -> the live
+  Sprite row -> the picker -> the Official tab -> a pick -> the type
+  adopts the whole prefab (tree_2, footprint + dims + layers), and the
+  prune test pins the invalidated-placement removal + the one-step
+  undo.
+
+1021 green.
