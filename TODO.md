@@ -462,6 +462,77 @@ work:
         editor_pickers sibling (campaign_geometry stays shared with
         the world map - the one data-model-two-renderers file). Do it
         as its own session, not a rider on feature work.
+- **Map edges: baked arrow textures (the world map + campaign editor
+  rendering rework)** - design SETTLED (session discussion). The
+  steady-state per-segment curve drawing (the one-strip saga's survivor:
+  ~48 capped segments x2 layers per edge per frame, sub-pixel join
+  notches, double-drawn seams on ghosted strokes, the unmeasured
+  curve-draw-cost watch item) is replaced by ONE textured quad per
+  edge - the submission class every sprite already rides. The settle:
+  - **One texture per cache entry**: black outline stroke + WHITE
+        inner stroke rasterized together (white overdraws black); the
+        draw tints the whole texture - white becomes the edge color,
+        black stays black under any multiply tint, dim/ghost alpha
+        fades the WHOLE arrow (deliberate change: today the black
+        outline stays full-alpha when dimmed; the uniform fade reads
+        better - verify in the hands-on pass).
+  - **Rasterizer = the hit-test math**: distance-to-polyline <= half
+        width is the morphological sausage - round caps + round joins
+        by construction (the old per-sample-circle look, exact) + a
+        ~1px anti-aliased falloff at the silhouette edge. Reuses
+        element.zig's distanceToSegment; the "drawn edge and hit
+        region cannot disagree" invariant strengthens (the art IS
+        the hit region's shape, rasterized).
+  - **Classification derives from the curve's own points** (headless,
+        testable; unclassifiable/degenerate curves fall back to the
+        legacy drawCurveGeometry segment path, which also keeps the
+        hover/selected rim - one edge at a time, stripe scope):
+        start==end -> teardrop (axis = control midpoint; ONE entry -
+        fixed shape constants); collinear controls -> straight
+        (rotation = start->end angle, length bucketed to 8px); dashed
+        -> stub (ONE entry, fixed length).
+  - **Baked length clamps** to the platform's max texture size
+        (query at init; the ~4406px corner-to-corner diagonal on the
+        3840x2160 map is the one visible clamp case - accepted).
+  - **Cache** in TextureStore beside outline_cache/
+        composite_inset_cache (key `arrow|{variant}|{length}|{dashed}`);
+        the bake is CPU pixel-buffer generation, the established mask
+        pattern - no GPU readback. Silhouette canvas pads
+        edge_outline_width + slack on all sides or the outline band
+        clips at the canvas border.
+  - **Emission flips pair -> single**: both builders (world_map.zig
+        one site; campaign_editor.zig ~three - edges, ghost edges,
+        drag preview) emit ONE decorative curve per edge at the
+        outline-inclusive width carrying the color/alpha; the
+        renderer derives inner width = width - 2*edge_outline_width.
+        hit_curve / curveBounds / tooltip / hover rim unchanged. The
+        drag preview re-bakes per 8px bucket step (a straight bake is
+        ~3 segments - trivial; accepted).
+  - **8px buckets**: stroke-width distortion < 1%; realistic
+        campaigns land tens of cache entries. If an adversarial
+        campaign ever populates hundreds (~50MB VRAM), the tuning
+        knob is non-uniform buckets (8px short, 32/64px long) - a
+        DESIGN line then, not code now.
+  - DESIGN → The map surface gets the bake-model prose (the segment
+        draw becomes the fallback + hover description) with slice 3,
+        in the same commit.
+
+  Slices (each a commit unit):
+  - [ ] 1. Headless helpers + tests in element.zig: classify
+        (collinearity tolerance, degenerate guards, the 8px bucket +
+        max-length clamp) + canonical local polylines per variant +
+        the sausage rasterizer (pure buffer math - opaque at the
+        tail, empty in dash gaps, round-cap silhouette at a join,
+        black-under-white layering).
+  - [ ] 2. Bake + cache in textures.zig: silhouette buffer ->
+        premultiplied trilinear texture, the ensure-bake fn, cache
+        keyed like its siblings.
+  - [ ] 3. Emission flip + draw arm: pair->single in both builders
+        + structure-test updates (rider: fold the NEXT UP hit-curve
+        bounds-coherence item in here - the same tests) + the .curve
+        arm draws baked with fallback.
+  - [ ] 4. Hands-on pass both surfaces: the dim-fade check, the drag
+        preview, long/clamped edges, the 30-second web gate.
 - **Revalidate Mission follow-ups** (the button itself is DONE - DONE.md;
   design: DESIGN → Custom Missions & Online Services → Validation replay →
   Revalidate): consider promoting it from the options menu to the top bar
