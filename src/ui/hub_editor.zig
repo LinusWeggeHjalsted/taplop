@@ -13,6 +13,7 @@ const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const editor_shell = @import("editor_shell.zig");
 const editor_inspector = @import("editor_inspector.zig");
+const editor_pickers = @import("editor_pickers.zig");
 const ui_state_mod = @import("state.zig");
 const state = @import("../state.zig");
 const emit = @import("emit.zig");
@@ -486,13 +487,13 @@ fn emitHubDecorationCell(
     } });
 }
 
-/// The hub editor's centered SPRITE PICKER (the mission editor's
-/// buildEditorSpritePicker mirror for the decoration-base kind): the
-/// shared overlay band, two tabs (Hub-local - the drilled-in hub's own
-/// dir art; Official - the shipped decoration registry prefabs), a fixed
-/// 6-column grid of slot cells, the active tab highlight, close top-right.
-/// A pick (select_hub_decoration_sprite) adopts the sprite as the type's
-/// whole definition at the consumption site.
+/// The hub editor drill-in's centered SPRITE PICKER: the shared core
+/// (renderSpritePickerGrid) over the hub-local scan + the registry - the
+/// thin caller of the mission editor's machinery (the 4-5d reuse). Two
+/// tabs: Hub-local (the drilled-in hub's own dir art) + Official (the
+/// shipped decoration registry prefabs, rendered in their composed
+/// appearance). A pick (select_hub_decoration_sprite) adopts the sprite
+/// as the type's whole definition at the consumption site.
 pub fn buildHubSpritePicker(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -511,212 +512,62 @@ pub fn buildHubSpritePicker(
     };
     if (type_id >= campaign_editor.decoration_types.len) return;
     const type_definition = campaign_editor.decoration_types[type_id];
-    const world = active_theme.world_gradient.colors;
-    const button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
-    // One cell per offered sprite (the mission picker's PickerCell shape,
-    // reduced to the decoration-base needs).
-    const PickerCell = struct {
-        stored_id: []const u8,
-        label: []const u8,
-        graphic_id: []const u8,
-        frame_width: i32,
-        frame_height: i32,
-        untinted: bool,
-    };
-    var cells: std.ArrayList(PickerCell) = .empty;
+    // The cells: the hub-local scan (spec-gated, untinted custom art) +
+    // the shared registry-prefab arm (the composed appearance an
+    // official pick adopts whole).
+    var cells: std.ArrayList(editor_pickers.SpritePickerCell) = .empty;
     var hidden_count: usize = 0;
     switch (ui_state.editor_picker_sprite_tab) {
-        .mission_local => for (hub_sprites) |hub_sprite| {
-            const file_name = hub_sprite.file_name;
-            const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
-            const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{hub_sprite.stored_id});
-            if (!types.customSpriteDimsPassGate(graphic_id, hub_sprite.pixel_dims)) {
-                hidden_count += 1;
-                continue;
+        .mission_local => {
+            for (hub_sprites) |hub_sprite| {
+                const file_name = hub_sprite.file_name;
+                const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+                const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{hub_sprite.stored_id});
+                if (!types.customSpriteDimsPassGate(graphic_id, hub_sprite.pixel_dims)) {
+                    hidden_count += 1;
+                    continue;
+                }
+                try cells.append(allocator, .{
+                    .stored_id = hub_sprite.stored_id,
+                    .label = stem,
+                    .graphic_id = graphic_id,
+                    .frame_width = hub_sprite.pixel_dims.x,
+                    .frame_height = hub_sprite.pixel_dims.y,
+                    .untinted = true,
+                });
             }
-            try cells.append(allocator, .{
-                .stored_id = hub_sprite.stored_id,
-                .label = stem,
-                .graphic_id = graphic_id,
-                .frame_width = hub_sprite.pixel_dims.x,
-                .frame_height = hub_sprite.pixel_dims.y,
-                .untinted = true,
-            });
         },
-        .official => for (decoration_registry) |definition| {
-            try cells.append(allocator, .{
-                .stored_id = definition.sprite,
-                .label = definition.sprite,
-                .graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{definition.sprite}),
-                .frame_width = definition.pixel_dims.x,
-                .frame_height = definition.pixel_dims.y,
-                .untinted = false,
-            });
+        .official => try editor_pickers.appendDecorationRegistryCells(allocator, &cells, decoration_registry),
+    }
+
+    // The shared emission core (the mission editor's own): tabs, close,
+    // the 6-column grid, the prefab cells' composed appearance, the
+    // notes - identical by construction.
+    const world = active_theme.world_gradient.colors;
+    const empty_note: []const u8 = if (ui_state.editor_picker_sprite_tab == .mission_local)
+        "No hub-local sprites yet (unsaved hub, or no PNGs in its dir)"
+    else
+        "No sprites";
+    try editor_pickers.renderSpritePickerGrid(
+        elements,
+        allocator,
+        font_metrics,
+        cells.items,
+        .{
+            .tab = ui_state.editor_picker_sprite_tab,
+            .local_tab_label = "Hub",
+            .pick_action = .select_hub_decoration_sprite,
+            .current_sprite = type_definition.sprite,
+            .graphic_color = world[@min(type_definition.color_index, types.gradient_color_count - 1)],
+            .gradient = world,
+            .button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)],
+            .hidden_count = hidden_count,
+            .hidden_spec_note = "decoration art must be whole multiples of 256",
+            .empty_note = empty_note,
         },
-    }
-
-    const bounds = editor_inspector.editorPickerOverlayRect();
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = bounds.position(),
-        .width = bounds.width,
-        .height = bounds.height,
-        .color = active_theme.darkest,
-        .blocks_input = true,
-    } });
-
-    // The header: the tabs top-left, close top-right.
-    const origin = bounds.position();
-    const tab_specs = [_]struct { tab: types.EditorSpritePickerTab, label: []const u8 }{
-        .{ .tab = .mission_local, .label = "Hub" },
-        .{ .tab = .official, .label = "Official" },
-    };
-    var tab_x = origin.x + ui_element.ui_gap;
-    for (tab_specs) |spec| {
-        const label_width = font_metrics.measureSpanWidth(text(spec.label), ui_element.middle_panel_header_font_size);
-        const tab_width = label_width + 2 * ui_element.ui_gap;
-        const active = spec.tab == ui_state.editor_picker_sprite_tab;
-        try elements.append(allocator, .{ .nine_slice_panel = .{
-            .sprite_id = "ui/panel",
-            .screen_position = .{ .x = tab_x, .y = origin.y },
-            .width = tab_width,
-            .height = ui_element.middle_panel_header_height,
-            .color = active_theme.darkest,
-        } });
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = null,
-            .screen_position = .{ .x = tab_x, .y = origin.y },
-            .width = tab_width,
-            .height = ui_element.middle_panel_header_height,
-            .action = .select_editor_sprite_tab,
-            .payload = .{ .editor_sprite_tab = spec.tab },
-            .highlighted = active,
-        } });
-        try elements.append(allocator, .{ .text_label = .{
-            .text = spec.label,
-            .screen_position = .{
-                .x = tab_x + ui_element.ui_gap,
-                .y = origin.y + @divTrunc(
-                    ui_element.middle_panel_header_height - ui_element.middle_panel_header_font_size,
-                    2,
-                ),
-            },
-            .font_size = ui_element.middle_panel_header_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        tab_x += tab_width + ui_element.ui_gap;
-    }
-    {
-        const close_label = "Back";
-        const close_width = font_metrics.measureSpanWidth(text(close_label), ui_element.middle_panel_header_font_size) + 2 * ui_element.ui_gap;
-        const close_cell: Rectangle = .{
-            .x = bounds.x + bounds.width - close_width - ui_element.ui_gap,
-            .y = origin.y,
-            .width = close_width,
-            .height = ui_element.middle_panel_header_height,
-        };
-        try elements.append(allocator, .{ .nine_slice_panel = .{
-            .sprite_id = "ui/panel",
-            .screen_position = close_cell.position(),
-            .width = close_width,
-            .height = ui_element.middle_panel_header_height,
-            .color = button_color,
-        } });
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = null,
-            .screen_position = close_cell.position(),
-            .width = close_width,
-            .height = ui_element.middle_panel_header_height,
-            .action = .close_editor_picker,
-        } });
-        try elements.append(allocator, .{ .text_label = .{
-            .text = close_label,
-            .screen_position = close_cell.placeCenter(
-                font_metrics.measureSpanWidth(text(close_label), ui_element.middle_panel_header_font_size),
-                ui_element.middle_panel_header_font_size,
-            ).position(),
-            .font_size = ui_element.middle_panel_header_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-    }
-
-    // The fixed 6-column grid, centered below the header.
-    const columns: i32 = 6;
-    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.items.len)) + columns - 1, columns), 1);
-    const cell_size = ui_element.slot_size;
-    const grid_width = columns * cell_size + (columns - 1) * ui_element.ui_gap;
-    const grid_height = rows * cell_size + (rows - 1) * ui_element.ui_gap;
-    const grid_origin_x = bounds.x + @divTrunc(bounds.width - grid_width, 2);
-    const grid_origin_y = origin.y + ui_element.middle_panel_header_height + ui_element.ui_gap +
-        @divTrunc(@max(bounds.height - ui_element.middle_panel_header_height - 2 * ui_element.ui_gap - grid_height, 0), 2);
-    for (cells.items, 0..) |picker_cell, cell_index| {
-        const column: i32 = @intCast(cell_index % @as(usize, @intCast(columns)));
-        const grid_row: i32 = @intCast(cell_index / @as(usize, @intCast(columns)));
-        const cell: Rectangle = .{
-            .x = grid_origin_x + column * (cell_size + ui_element.ui_gap),
-            .y = grid_origin_y + grid_row * (cell_size + ui_element.ui_gap),
-            .width = cell_size,
-            .height = cell_size,
-        };
-        const is_current = std.mem.eql(u8, picker_cell.stored_id, type_definition.sprite);
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = emit.button_background_sprite_id,
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .action = .select_hub_decoration_sprite,
-            .payload = .{ .editor_sprite = picker_cell.stored_id },
-            .color = button_color,
-            .highlighted = is_current,
-            .tooltip = .{ .header = try spanRow(allocator, text(picker_cell.label)) },
-        } });
-        const fitted = editor_shell.scaleToFit(cell, @max(picker_cell.frame_width, 1), @max(picker_cell.frame_height, 1));
-        const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = picker_cell.graphic_id,
-            .screen_position = .{ .x = fitted.x, .y = fitted.y },
-            .width = fitted.width,
-            .height = fitted.height,
-            .color = if (picker_cell.untinted)
-                no_tint_color
-            else
-                world[color_index],
-            .blocks_input = false,
-        } });
-    }
-
-    // The empty + hidden notes (never silent).
-    if (cells.items.len == 0) {
-        const note = if (ui_state.editor_picker_sprite_tab == .mission_local)
-            "No hub-local sprites yet (unsaved hub, or no PNGs in its dir)"
-        else
-            "No official decoration sprites";
-        try elements.append(allocator, .{ .text_label = .{
-            .text = note,
-            .screen_position = .{
-                .x = bounds.x + ui_element.ui_gap,
-                .y = grid_origin_y + @divTrunc(cell_size - ui_element.middle_panel_header_font_size, 2),
-            },
-            .font_size = ui_element.middle_panel_header_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-    } else if (hidden_count > 0) {
-        const note = try std.fmt.allocPrint(allocator, "{d} sprite(s) hidden (dims not whole 256px tiles)", .{hidden_count});
-        try elements.append(allocator, .{ .text_label = .{
-            .text = note,
-            .screen_position = .{
-                .x = bounds.x + ui_element.ui_gap,
-                .y = bounds.y + bounds.height - ui_element.middle_panel_header_height - ui_element.ui_gap,
-            },
-            .font_size = ui_element.middle_panel_header_font_size,
-            .color = active_theme.darkest,
-            .blocks_input = false,
-        } });
-    }
+        active_theme,
+    );
 }
 
 /// The hub palette group under the pointer - the `editorPaletteGroupAt`

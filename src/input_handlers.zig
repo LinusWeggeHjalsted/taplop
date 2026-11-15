@@ -2834,11 +2834,42 @@ pub fn handleAnytimeInput(
             },
             // The Decorations group's "+" cell: append the default-template
             // type + select its tool (the add_editor_palette_type
-            // convention, over the campaign-shared palette).
+            // convention, over the campaign-shared palette), then open the
+            // sprite picker on the new type - the mission add flow's exact
+            // mirror (the 4-5d add-flow unification): the group expands +
+            // scrolls to the new cell, and the fresh art is the next
+            // authoring step.
             .add_hub_decoration_type => {
                 if (current.screen != .hub_editor or current.hub_editor == null) return;
                 if (current.campaign_editor == null) return;
                 pushPlayerActionAndDrain(history, .player_add_hub_decoration_type);
+                // A failed defaults read reverts the action (the popup
+                // path) - no picker on top of a reverted creation.
+                if (history.load_error) return;
+                // The Decorations accordion expands (the others collapse,
+                // the radio discipline) + its window scrolls to the end,
+                // making the new cell the last visible one - the mission
+                // arm's convention over the hub's view state.
+                for (&history.session.ui_state.hub_palette_collapsed) |*is_collapsed| {
+                    is_collapsed.* = true;
+                }
+                history.session.ui_state.hub_palette_collapsed[2] = false;
+                const group_size = (history.current_state.campaign_editor orelse return).decoration_types.len;
+                history.session.ui_state.hub_palette_scroll[2] =
+                    @intCast(group_size -| ui.editor_palette_max_tools);
+                // Open the picker on the new type (the sprite-row open
+                // branch's rescan + registry ensure; the local tab - the
+                // mission convention).
+                rescanHubSprites(
+                    history,
+                    history.current_state.campaign_editor orelse return,
+                    history.current_state.hub_editor orelse return,
+                );
+                editor_handlers.loadEditorDecorationRegistry(history, history.current_arena.allocator());
+                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
+                    .target = .{ .decoration_sprite = {} },
+                } });
             },
             // A palette cell's delete button (the type id rides the
             // hub_tool payload - the mission palette's delete convention).

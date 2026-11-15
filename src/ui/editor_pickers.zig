@@ -244,6 +244,51 @@ pub fn buildEditorSkillPicker(
     }
 }
 
+/// One offered sprite in a sprite picker: the stored id (a bare stem or
+/// a content-addressed `custom/<path>/<stem>`), the cell label, the
+/// renderable graphic (null = a text-only cell, the degenerate-dims
+/// fallback), and the graphic's aspect-fit frame. Built per frame into
+/// the frame arena by each surface's picker (the SOURCES differ - see
+/// buildEditorSpritePicker / buildHubSpritePicker); consumed by
+/// renderSpritePickerGrid.
+pub const SpritePickerCell = struct {
+    stored_id: []const u8,
+    label: []const u8,
+    graphic_id: ?[]const u8,
+    frame_width: i32,
+    frame_height: i32,
+    /// Registry-prefab decoration cells render the prefab's authored
+    /// composition - base tinted at the prefab's own color_index, its
+    /// layers at theirs - previewing exactly what an official pick
+    /// adopts (the whole prefab, colors included). Other cells keep
+    /// the shared edited-target tint and no layers.
+    base_color_index: ?u32 = null,
+    layers: []const types.DecorationLayer = &.{},
+    /// Untinted rendering - custom mission-bundled art keeps its own
+    /// colors (the settle `keep_original_colors` semantics' pick-side
+    /// counterpart: the picker shows each option in its natural
+    /// appearance, and custom art is authored pre-colored).
+    untinted: bool = false,
+};
+
+/// The shared inputs to renderSpritePickerGrid besides the cells: the
+/// tab state (+ the local-art tab's label - "Mission" vs "Hub"), the
+/// pick action, the edited def's context (the highlight target + the
+/// shared cell tint), the gradient (the prefab cells' + layers' tints),
+/// the button color, and the note texts.
+pub const SpritePickerView = struct {
+    tab: types.EditorSpritePickerTab,
+    local_tab_label: []const u8,
+    pick_action: types.Action,
+    current_sprite: ?[]const u8,
+    graphic_color: Color,
+    gradient: [types.gradient_color_count]types.Color,
+    button_color: Color,
+    hidden_count: usize,
+    hidden_spec_note: []const u8,
+    empty_note: []const u8,
+};
+
 /// The centered SPRITE picker (the picker framework's second consumer):
 /// pick the edited entity type's base sprite. Two tabs top-left - Mission
 /// (the .pngs scanned from the mission directory, stored as namespaced
@@ -368,38 +413,17 @@ pub fn buildEditorSpritePicker(
         .decoration_layer => .select_editor_decoration_layer,
     };
 
-    // One cell per offered sprite, built per frame into the frame arena:
-    // the stored id (a bare stem or a content-addressed `custom/<path>/<stem>`),
-    // the cell label, the renderable graphic (null = a text-only cell,
-    // the degenerate-dims fallback), and the graphic's aspect-fit
-    // frame. The Official tab's list differs per kind: the shipped entity
-    // sprites (base + layer - a layer may be any entity art, the fixed
-    // 512×640 frame), the registry prefabs (decoration base - each pick
-    // adopts the whole prefab), or the shipped decoration sprites
-    // FILTERED to the base type's dims (decoration layers must match
-    // their base - the load-time invariant; mismatched art is never
-    // offered). Mission-local art is the same list for every kind (dims
-    // are checked at the pick commit).
-    const PickerCell = struct {
-        stored_id: []const u8,
-        label: []const u8,
-        graphic_id: ?[]const u8,
-        frame_width: i32,
-        frame_height: i32,
-        /// Registry-prefab decoration cells render the prefab's authored
-        /// composition - base tinted at the prefab's own color_index, its
-        /// layers at theirs - previewing exactly what an official pick
-        /// adopts (the whole prefab, colors included). Other cells keep
-        /// the shared edited-target tint and no layers.
-        base_color_index: ?u32 = null,
-        layers: []const types.DecorationLayer = &.{},
-        /// Untinted rendering - custom mission-bundled art keeps its own
-        /// colors (the settle `keep_original_colors` semantics' pick-side
-        /// counterpart: the picker shows each option in its natural
-        /// appearance, and custom art is authored pre-colored).
-        untinted: bool = false,
-    };
-    var cells: std.ArrayList(PickerCell) = .empty;
+    // One cell per offered sprite, built per frame into the frame arena
+    // (SpritePickerCell - the shared shape, at file scope). The Official
+    // tab's list differs per kind: the shipped entity sprites (base +
+    // layer - a layer may be any entity art, the fixed 512×640 frame),
+    // the registry prefabs (decoration base - each pick adopts the whole
+    // prefab), or the shipped decoration sprites FILTERED to the base
+    // type's dims (decoration layers must match their base - the
+    // load-time invariant; mismatched art is never offered).
+    // Mission-local art is the same list for every kind (dims are
+    // checked at the pick commit).
+    var cells: std.ArrayList(SpritePickerCell) = .empty;
     // Custom (content-bundled) art renders under the kind's folder prefix
     // (the same id view() builds - the texture store resolves
     // `custom/<content-path>/<stem>` ids to the art's own location; see
@@ -478,23 +502,11 @@ pub fn buildEditorSpritePicker(
                     });
                 }
             },
-            .decoration_base => {
-                for (decoration_registry) |definition| {
-                    try cells.append(allocator, .{
-                        .stored_id = definition.sprite,
-                        .label = definition.sprite,
-                        .graphic_id = try std.fmt.allocPrint(
-                            allocator,
-                            "decorations/{s}",
-                            .{definition.sprite},
-                        ),
-                        .frame_width = definition.pixel_dims.x,
-                        .frame_height = definition.pixel_dims.y,
-                        .base_color_index = definition.color_index,
-                        .layers = definition.layers,
-                    });
-                }
-            },
+            .decoration_base => try appendDecorationRegistryCells(
+                allocator,
+                &cells,
+                decoration_registry,
+            ),
             .decoration_layer => {
                 // A stale open on a non-decoration target: no base dims to
                 // match against - no cells ("No sprites"), picks no-op.
@@ -518,13 +530,81 @@ pub fn buildEditorSpritePicker(
             },
         },
     }
+    // The generic emission: the shared core over the built cells (the
+    // 4-5d reuse - the hub editor drill-in's picker calls the same fn).
+    const hidden_spec_note: []const u8 = switch (picker_kind) {
+        .entity_base, .entity_layer => "entity art must be exactly 512x640",
+        .decoration_base => "decoration art must be whole multiples of 256",
+        .decoration_layer => "layer art must match the base sprite's dims",
+    };
+    try renderSpritePickerGrid(
+        elements,
+        allocator,
+        font_metrics,
+        cells.items,
+        .{
+            .tab = tab,
+            .local_tab_label = "Mission",
+            .pick_action = pick_action,
+            .current_sprite = current_sprite,
+            .graphic_color = graphic_color,
+            .gradient = gradient,
+            .button_color = button_color,
+            .hidden_count = hidden_sprite_count,
+            .hidden_spec_note = hidden_spec_note,
+            .empty_note = "No sprites",
+        },
+        active_theme,
+    );
+}
+
+/// The official-tab registry arm shared by both decoration pickers: one
+/// cell per registry prefab, carrying the prefab's own color_index +
+/// layers - the composed appearance an official pick adopts whole.
+pub fn appendDecorationRegistryCells(
+    allocator: std.mem.Allocator,
+    cells: *std.ArrayList(SpritePickerCell),
+    decoration_registry: []const types.DecorationTypeDef,
+) !void {
+    for (decoration_registry) |definition| {
+        try cells.append(allocator, .{
+            .stored_id = definition.sprite,
+            .label = definition.sprite,
+            .graphic_id = try std.fmt.allocPrint(
+                allocator,
+                "decorations/{s}",
+                .{definition.sprite},
+            ),
+            .frame_width = definition.pixel_dims.x,
+            .frame_height = definition.pixel_dims.y,
+            .base_color_index = definition.color_index,
+            .layers = definition.layers,
+        });
+    }
+}
+
+/// The sprite picker's GENERIC half: the overlay panel + the tab header
+/// + close, the hidden/empty notes, and the fixed 6-column grid emission
+/// (per-cell button + image incl. the registry-prefab cells' composed
+/// appearance) - shared by the mission editor's picker and the hub
+/// editor drill-in's (the 4-5d reuse). The caller builds the cells +
+/// resolves the edited def's context; everything here is
+/// surface-agnostic.
+pub fn renderSpritePickerGrid(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cells: []const SpritePickerCell,
+    view: SpritePickerView,
+    active_theme: types.ActiveColorTheme,
+) !void {
     // The FIXED picker overlay (the band between the sidebars) + a
     // FIXED-SIZE grid: 6 columns of `slot_size` cells, centered in the
     // area below the header (top-aligned if it ever outgrows it). The
     // overlay never resizes with its content - see
     // `editorPickerOverlayRect`.
     const columns: i32 = 6;
-    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.items.len)) + columns - 1, columns), 1);
+    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.len)) + columns - 1, columns), 1);
     const cell = slot_size;
     const bounds = editorPickerOverlayRect();
 
@@ -537,17 +617,17 @@ pub fn buildEditorSpritePicker(
     } });
 
     // The header: tab buttons top-left, close top-right (no title - the
-    // tabs ARE the header). Tab state is UiState (a view affordance).
+    // tabs ARE the header). Tab state is the caller's (a view affordance).
     const origin = bounds.position();
     const tab_specs = [_]struct { tab: types.EditorSpritePickerTab, label: []const u8 }{
-        .{ .tab = .mission_local, .label = "Mission" },
+        .{ .tab = .mission_local, .label = view.local_tab_label },
         .{ .tab = .official, .label = "Official" },
     };
     var tab_x = origin.x + ui_gap;
     for (tab_specs) |spec| {
         const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
         const tab_width = label_width + 2 * ui_gap;
-        const active = spec.tab == tab;
+        const active = spec.tab == view.tab;
         try elements.append(allocator, .{
             .nine_slice_panel = .{
                 .sprite_id = "ui/panel",
@@ -596,19 +676,14 @@ pub fn buildEditorSpritePicker(
         .height = bounds.height - middle_panel_header_height,
     };
 
-    // The hidden-files note (mission tab only): names WHY files don't show
+    // The hidden-files note (local tab only): names WHY files don't show
     // - the filter's silent alternative reads as a broken scan to an author
     // whose PNG just vanished.
-    if (tab == .mission_local and hidden_sprite_count > 0) {
-        const spec_note: []const u8 = switch (picker_kind) {
-            .entity_base, .entity_layer => "entity art must be exactly 512x640",
-            .decoration_base => "decoration art must be whole multiples of 256",
-            .decoration_layer => "layer art must match the base sprite's dims",
-        };
+    if (view.tab == .mission_local and view.hidden_count > 0) {
         const note = try std.fmt.allocPrint(
             allocator,
             "{d} sprites hidden - {s}",
-            .{ hidden_sprite_count, spec_note },
+            .{ view.hidden_count, view.hidden_spec_note },
         );
         const note_width = font_metrics.measureSpanWidth(text(note), editor_group_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -623,9 +698,9 @@ pub fn buildEditorSpritePicker(
         } });
     }
 
-    // The edited template's colors were resolved above (the target's
-    // single seam); a registry-prefab cell overrides the base tint with
-    // the prefab's own - the only per-cell color derivation.
+    // The caller resolves the edited def's colors (its single seam); a
+    // registry-prefab cell overrides the shared tint with the prefab's
+    // own - the only per-cell color derivation.
     // The grid is centered
     // horizontally (fixed 6-column width), top-anchored below the header
     // with the vertical centering clamp.
@@ -636,9 +711,9 @@ pub fn buildEditorSpritePicker(
         .y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2)),
     };
 
-    if (cells.items.len == 0) {
+    if (cells.len == 0) {
         try elements.append(allocator, .{ .text_label = .{
-            .text = "No sprites",
+            .text = view.empty_note,
             .screen_position = grid_origin,
             .font_size = editor_group_header_font_size,
             .color = active_theme.lightest,
@@ -647,7 +722,7 @@ pub fn buildEditorSpritePicker(
         return;
     }
 
-    for (cells.items, 0..) |picker_cell, index| {
+    for (cells, 0..) |picker_cell, index| {
         const column: i32 = @intCast(index % @as(usize, @intCast(columns)));
         const row: i32 = @intCast(index / @as(usize, @intCast(columns)));
         const cell_rect: Rectangle = .{
@@ -658,7 +733,7 @@ pub fn buildEditorSpritePicker(
         };
         // Nothing highlighted in layer-ADD mode (no current layer); a
         // stale layer index likewise highlights nothing.
-        const highlighted = if (current_sprite) |sprite|
+        const highlighted = if (view.current_sprite) |sprite|
             std.mem.eql(u8, sprite, picker_cell.stored_id)
         else
             false;
@@ -671,17 +746,17 @@ pub fn buildEditorSpritePicker(
             picker_cell.label,
             picker_cell.graphic_id,
             if (picker_cell.base_color_index) |color_index|
-                gradient[@min(color_index, types.gradient_color_count - 1)]
+                view.gradient[@min(color_index, types.gradient_color_count - 1)]
             else if (picker_cell.untinted)
                 default_tint
             else
-                graphic_color,
+                view.graphic_color,
             picker_cell.layers,
-            gradient,
-            button_color,
+            view.gradient,
+            view.button_color,
             highlighted,
             active_theme.lightest,
-            pick_action,
+            view.pick_action,
             picker_cell.frame_width,
             picker_cell.frame_height,
         );
