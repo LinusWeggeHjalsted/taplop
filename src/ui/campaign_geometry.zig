@@ -1086,8 +1086,8 @@ test "bakedArrowParams: short edges at awkward angles bake (the sampled-tangent 
     // back to the per-segment draw (fat monochrome arrows). Root cause:
     // the fit check compared chevron arms from the SAMPLED end tangent,
     // and at short lengths the sample step (~length/48) is below the
-    // integer rounding grain - consecutive samples can coincide, and
-    // `arrowheadArms` then falls back to east - so the arm comparison
+    // integer rounding grain - consecutive samples can coincide, making
+    // the last segment's direction pure noise - so the arm comparison
     // rejected bona fide family members over quantization noise. These
     // fixtures are the trap: a 24px chord (152px hub pair) at two
     // off-axis angles, sample steps of 0.5px.

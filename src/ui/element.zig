@@ -1033,22 +1033,33 @@ pub fn curveBounds(curve: Curve) Rectangle {
 }
 
 /// The arrowhead chevron's two arm endpoints for `curve` (every edge
-/// is an arrow - see Curve): from the END
-/// sample, along the REVERSED end tangent rotated +/-
-/// `arrowhead_arm_angle_degrees`, at `arrowhead_arm_length`. The end
-/// tangent is the last sampled segment's direction (the same samples the
-/// stroke draw + hit-testing use, so the chevron hugs the drawn curve).
+/// is an arrow - see Curve): from the END point, along the REVERSED end
+/// tangent rotated +/- `arrowhead_arm_angle_degrees`, at
+/// `arrowhead_arm_length`. The end tangent is ANALYTIC (3(p3 - p2), the
+/// direction from the last control into the endpoint) - the baked
+/// arrow, the fallback draw, the hover rim, and the bounds all derive
+/// their chevron from here, so the four cannot disagree.
 pub fn arrowheadArms(curve: Curve) [2]ScreenPosition {
-    var samples: [curve_sample_count + 1]ScreenPosition = undefined;
-    sampleCurve(curve, &samples);
-    const end = floatVec(samples[samples.len - 1]);
-    const previous = floatVec(samples[samples.len - 2]);
+    const end = floatVec(curve.end);
+    const control_end = floatVec(curve.control_end);
 
-    // The travel direction into the end; degenerate (zero-length closing
-    // segment) falls back to east.
-    var travel_x = end.x - previous.x;
-    var travel_y = end.y - previous.y;
-    const length = @sqrt(travel_x * travel_x + travel_y * travel_y);
+    // The travel direction into the end is ANALYTIC - 3(p3 - p2), the
+    // direction from the last control point into the endpoint - never
+    // sampled: at short lengths the sample step (~length/48) is below
+    // the integer rounding grain and the last sampled segment's
+    // direction is quantization noise (the trap the baked-arrow fit
+    // check hit and fixed the same way). Degenerate tangent
+    // (control_end == end) falls back to the chord direction, then a
+    // fully degenerate arrow to east.
+    var travel_x = end.x - control_end.x;
+    var travel_y = end.y - control_end.y;
+    var length = @sqrt(travel_x * travel_x + travel_y * travel_y);
+    if (length <= 0) {
+        const start = floatVec(curve.start);
+        travel_x = end.x - start.x;
+        travel_y = end.y - start.y;
+        length = @sqrt(travel_x * travel_x + travel_y * travel_y);
+    }
     if (length > 0) {
         travel_x /= length;
         travel_y /= length;
@@ -1798,9 +1809,10 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
     try std.testing.expectEqual(@as(i32, -12), arms[0].y);
     try std.testing.expectEqual(@as(i32, 12), arms[1].y);
 
-    // A bent curve: the chevron follows the END tangent (the last sampled
-    // segment), not the start-end chord. Curve heading east then bending
-    // down to south at the end (control_end distinct from end, so the
+    // A bent curve: the chevron follows the END tangent (the analytic
+    // control-point tangent), not the start-end chord. Curve heading east
+    // then bending down to south at the end (control_end distinct from
+    // end, so the
     // end tangent is well-defined): arms open back up-and-sideways from
     // the end (the reversed south tangent rotated +/- 15 degrees).
     const bent: Curve = .{
@@ -1815,6 +1827,35 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
     // Both arms sit above the end point (smaller y), mirrored in x.
     try std.testing.expect(bent_arms[0].y < 300 and bent_arms[1].y < 300);
     try std.testing.expect(bent_arms[0].x != bent_arms[1].x);
+
+    // Degenerate control (control_end == end): the analytic tangent is
+    // zero, so it falls back to the CHORD direction - an east-traveling
+    // arrow's chevron still opens west of the end, mirrored.
+    const degenerate_control: Curve = .{
+        .start = .{ .x = 0, .y = 0 },
+        .control_start = .{ .x = 100, .y = 0 },
+        .control_end = .{ .x = 200, .y = 0 },
+        .end = .{ .x = 200, .y = 0 },
+        .width = 8,
+    };
+    const degenerate_arms = arrowheadArms(degenerate_control);
+    try std.testing.expectEqual(@as(i32, 200 - 46), degenerate_arms[0].x);
+    try std.testing.expectEqual(@as(i32, 200 - 46), degenerate_arms[1].x);
+    try std.testing.expectEqual(@as(i32, -12), degenerate_arms[0].y);
+    try std.testing.expectEqual(@as(i32, 12), degenerate_arms[1].y);
+
+    // Fully degenerate (start == end == control_end): chord zero too -
+    // east, so the chevron opens west of the point.
+    const fully_degenerate: Curve = .{
+        .start = .{ .x = 50, .y = 50 },
+        .control_start = .{ .x = 50, .y = 50 },
+        .control_end = .{ .x = 50, .y = 50 },
+        .end = .{ .x = 50, .y = 50 },
+        .width = 8,
+    };
+    const point_arms = arrowheadArms(fully_degenerate);
+    try std.testing.expectEqual(@as(i32, 50 - 46), point_arms[0].x);
+    try std.testing.expectEqual(@as(i32, 50 - 46), point_arms[1].x);
 }
 
 test "buttonAt over a hit_curve button: the stroke is the hit region" {
