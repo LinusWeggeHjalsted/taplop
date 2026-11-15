@@ -1689,6 +1689,19 @@ pub fn handleAnytimeInput(
         }
     }
 
+    if (anytime.save_hub) {
+        // The hub editor's save: the same input-layer side-effect class,
+        // gated on the drill-in screen. Saves THIS hub's hub.txt only
+        // (the skip-unsaved-references rule; a full campaign save is the
+        // only reconciliation - see DESIGN → The editor save model).
+        if (history.current_state.screen == .hub_editor and
+            history.current_state.hub_editor != null and
+            history.current_state.campaign_editor != null)
+        {
+            campaign_editor_io.saveHubEditor(history);
+        }
+    }
+
     if (anytime.validate_campaign) {
         // The campaign Validate (the top-right primary button): the
         // mission editor's file-based contract - SAVE FIRST, then

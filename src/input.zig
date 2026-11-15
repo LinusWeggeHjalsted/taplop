@@ -370,6 +370,11 @@ pub const AnytimeInput = struct {
     /// mission's validation replay (the mission editor's file-based
     /// contract). Same screen discipline as `save_campaign`.
     validate_campaign: bool = false,
+    /// The hub editor's save (ctrl+S on the drill-in screen - this hub's
+    /// hub.txt only). The hub editor screen only (the consumption site
+    /// gates; the mission/campaign ctrl+S chords live in their own
+    /// disjoint contexts).
+    save_hub: bool = false,
     /// The tool-cycling chords (Tab / shift+Tab) - both editors: the
     /// consumption site computes the next tool over the live palette
     /// state and pushes the tool-switch event.
@@ -605,6 +610,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         .new_editor_campaign => player_input.anytime.new_editor_campaign = true,
         .save_campaign => player_input.anytime.save_campaign = true,
+        .save_hub => player_input.anytime.save_hub = true,
         .validate_campaign => player_input.anytime.validate_campaign = true,
         // Keyboard-only editor shortcuts - no button carries these (the
         // palette cells use the payload-carrying click actions). The

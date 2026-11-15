@@ -1562,17 +1562,23 @@ const HubLayoutCodes = struct {
 fn assignHubLayoutCodes(
     editor: types.CampaignEditor,
     hub: types.CampaignHubEdit,
+    mission_uuids: []const []const u8,
     allocator: std.mem.Allocator,
 ) !HubLayoutCodes {
     // Exits: digits by placement order. Only placements whose mission
     // STARTS here (the one-edge invariant - a placement on a non-start
     // hub is a crafted state; the writer skips it rather than
-    // laundering it into the file).
+    // laundering it into the file) AND whose mission has a resolved
+    // uuid (the skip-unsaved-references rule: the hub-only save writes
+    // no reference to a never-saved mission - the placement stays in
+    // the editor graph + lands at the next full save; the full save
+    // always resolves every uuid, so the gate is inert there).
     var exit_codes: std.ArrayList(u8) = .empty;
     for (hub.grid.exit_placements) |placement| {
-        for (editor.missions) |mission| {
+        for (editor.missions, 0..) |mission, mission_index| {
             if (mission.handle != placement.mission) continue;
             if (mission.start == null or mission.start.? != hub.handle) continue;
+            if (mission_uuids[mission_index].len == 0) continue;
             if (exit_codes.items.len >= 10) return error.TooManyExitsPerHub;
             try exit_codes.append(allocator, '0' + @as(u8, @intCast(exit_codes.items.len)));
         }
@@ -1643,7 +1649,7 @@ pub fn writeCampaignHub(
     hub_content_path: []const u8,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
-    const codes = try assignHubLayoutCodes(editor, hub, allocator);
+    const codes = try assignHubLayoutCodes(editor, hub, ids.mission_uuids, allocator);
 
     // The bbox over everything placed - the player start is always
     // present (the '!' is undeletable), so the bbox is never empty.
@@ -1702,13 +1708,14 @@ pub fn writeCampaignHub(
         }
         setGridCell(grid, grid_width, origin, npc.position, npc_code.?);
     }
-    // The exit cells + their mission-resolution (only start-here
-    // placements - the code assignment's rule).
+    // The exit cells + their mission-resolution (the code assignment's
+    // rule: start-here placements with a resolved mission uuid).
     var exit_index: usize = 0;
     for (hub.grid.exit_placements) |placement| {
-        for (editor.missions) |mission| {
+        for (editor.missions, 0..) |mission, mission_index| {
             if (mission.handle != placement.mission) continue;
             if (mission.start == null or mission.start.? != hub.handle) continue;
+            if (ids.mission_uuids[mission_index].len == 0) continue;
             setGridCell(grid, grid_width, origin, placement.position, codes.exit[exit_index]);
             exit_index += 1;
         }
@@ -1786,7 +1793,9 @@ pub fn writeCampaignHub(
 
     // Exits - the MARKER projection (pure tile materialization: the
     // marker's grid cell + the mission it starts; edge data lives in
-    // campaign.txt's Missions section).
+    // campaign.txt's Missions section). The skip-unsaved-references
+    // rule lives in the code assignment + the grid cells (the same
+    // gate) - the written exits stay parallel to both.
     if (codes.exit.len > 0) {
         try buffer.appendSlice(allocator, "\nExits\n");
         var written_exits: usize = 0;
@@ -1794,6 +1803,7 @@ pub fn writeCampaignHub(
             for (editor.missions, 0..) |mission, mission_index| {
                 if (mission.handle != placement.mission) continue;
                 if (mission.start == null or mission.start.? != hub.handle) continue;
+                if (ids.mission_uuids[mission_index].len == 0) continue;
                 if (written_exits > 0) try buffer.appendSlice(allocator, "\n");
                 try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{codes.exit[written_exits]}});
                 try buffer.print(allocator, "mission_uuid {s}\n", .{ids.mission_uuids[mission_index]});
@@ -2083,4 +2093,34 @@ test "writeCampaignMissionFile: the identity round trip through loadMission" {
     const mission = try loaders.loadMission(sections, allocator);
     try std.testing.expectEqualStrings("u1", mission.uuid);
     try std.testing.expectEqualStrings("One", mission.name);
+}
+
+test "writeCampaignHub: the skip-unsaved-references rule - a never-saved mission's exit is omitted entirely" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // The fixture with the second mission's uuid EMPTY (never saved): the
+    // hub-only save's ids shape. The first exit (u1) survives; the second
+    // (u2) is skipped - no Exits entry AND no marker cell (the marker
+    // projection carries the tile; both land again at the next full save,
+    // where every uuid is resolved).
+    const editor = campaignWriterFixture();
+    const ids = CampaignSaveIds{
+        .campaign_uuid = "cu",
+        .hub_uuids = &.{ "a", "b" },
+        .mission_uuids = &.{ "u1", "", "u3", "u4" },
+    };
+    const hub_txt = try writeCampaignHub(editor, editor.hubs[0], ids, "campaigns/fixture/hubs/alpha", allocator);
+
+    const sections = try parser.parseConfigFile(hub_txt, allocator, &parser.hub_sections);
+    const hub = try loaders.loadHub(sections, null, allocator, "campaigns/fixture/hubs/alpha/hub.txt", null);
+
+    // Only the saved mission's exit entry + marker cell survive; the
+    // skipped marker's GROUND stays (the fixture authors the exit tiles
+    // as level tiles - the marker vanishes, the walkable cell remains;
+    // both land again at the next full save).
+    try std.testing.expectEqual(@as(usize, 1), hub.mission_exits.len);
+    try std.testing.expectEqualStrings("u1", hub.mission_exits[0].mission_uuid);
+    try std.testing.expectEqual(@as(usize, 6), hub.hub_tiles.len);
 }

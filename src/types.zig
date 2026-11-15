@@ -404,6 +404,11 @@ pub const Action = enum {
     // full save projection, the reconciliation save). An input-layer side
     // effect, never a recorded event (the mission-save class).
     save_campaign,
+    // The hub editor's save (ctrl+S on the drill-in screen - THIS hub's
+    // hub.txt only, the skip-unsaved-references rule; the third sibling
+    // of the ctrl+S pair below, in its own disjoint binding context).
+    // An input-layer side effect, never a recorded event.
+    save_hub,
     // The campaign editor's top-right Validate button: SAVE FIRST, then
     // certify exactly the saved files (the mission editor's file-based
     // contract) - the graph findings + every mission's validation
@@ -1263,6 +1268,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .delete_hub_decoration_type,
         .toggle_hub_palette_group,
         .select_hub_decoration_sprite,
+        .save_hub,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1676,6 +1682,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .toggle_hub_inspector,
         .toggle_hub_metadata_sidebar,
         .add_hub_decoration_type,
+        .save_hub,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,

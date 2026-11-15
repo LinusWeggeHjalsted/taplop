@@ -317,3 +317,9 @@ input_name KeyN
 ctrl true
 action new_editor_campaign
 context campaign_editor
+
+input_type key
+input_name KeyS
+ctrl true
+action save_hub
+context hub_editor

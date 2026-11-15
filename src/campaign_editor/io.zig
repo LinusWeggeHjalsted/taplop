@@ -786,6 +786,140 @@ fn appendValidationWarning(
     warnings.append(allocator, message) catch {};
 }
 
+/// Save the drilled-in hub's hub.txt ONLY (the hub editor's ctrl+S - the
+/// save-granularity-per-screen rule, see DESIGN → The editor save
+/// model): the same writer + identity resolution as the full campaign
+/// save, with the SKIP-UNSAVED-REFERENCES rule - exit entries whose
+/// mission has no minted uuid yet (never saved) are omitted from the
+/// written Exits section (and the grid's marker cells - the writer's
+/// parallel gate) + warned; they stay in the editor graph and land at
+/// the next full save. A partial save never deletes anything and never
+/// creates campaign structure: a hub with no on-disk identity (no uuid
+/// or dir - never saved by a full campaign save) writes nothing and
+/// says so. The mission-save class: a pure input-layer side effect, no
+/// recorded event, never replayed.
+pub fn saveHubEditor(history: *GameStateHistory) void {
+    const allocator = history.current_arena.allocator();
+    const editor = history.current_state.campaign_editor orelse return;
+    const hub_editor_state = history.current_state.hub_editor orelse return;
+    var drilled: ?types.CampaignHubEdit = null;
+    for (editor.hubs) |candidate_hub| {
+        if (candidate_hub.handle == hub_editor_state.hub) drilled = candidate_hub;
+    }
+    const hub = drilled orelse {
+        surfaceSaveError(history, "the drilled-in hub no longer resolves - nothing saved");
+        return;
+    };
+    // The campaign's CURRENT on-disk dir: the save MEMO when this
+    // session saved or forked (the editor state's dir lags a side
+    // effect - the full save never mutates replayed state), else the
+    // opened dir. The write target must be a real folder: a FRESH
+    // campaign's anchor has none, and an official campaign's files are
+    // embedded + read-only (writing one requires the fork, which is
+    // full-save business). Both cases surface as no campaign.txt under
+    // the resolved dir - checked through the persistent layer, which
+    // embedded files never satisfy.
+    const campaign_dir: []const u8 = if (campaignSaveMemoFor(history, types.campaign_save_memo_handle)) |memo|
+        memo.dir
+    else
+        editor.campaign_dir;
+    {
+        const campaign_txt_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/campaign.txt",
+            .{campaign_dir},
+        ) catch @panic("failed to format campaign.txt path");
+        if (!file_source_mod.persistentFileExists(history.file_source, campaign_txt_path)) {
+            surfaceSaveError(history, "this campaign has no folder on disk yet (it was never saved, or it is an official campaign that has not been forked) - save the campaign first (ctrl+S on the campaign map)");
+            return;
+        }
+    }
+
+    // Resolve THIS hub's identity through the full save's own machinery
+    // (a saved hub reuses its memo; a never-saved hub MINTS its uuid +
+    // canonical dir, memoized so the next full save resolves the same
+    // identity). The hub lands unlisted in campaign.txt's Hubs section
+    // until that full save catches up - the same eventual-consistency
+    // class as the skipped exit markers below.
+    const hub_memo = resolveContentIdentity(
+        history,
+        allocator,
+        .{
+            .opened_campaign_dir = editor.campaign_dir,
+            .save_target_dir = campaign_dir,
+            .kind_dir = "hubs",
+            .config_name = "hub.txt",
+        },
+        hub.handle,
+        hub.uuid,
+        hub.dir,
+        hub.name,
+    );
+
+    // The identities: each entity's OWN state identity - only this hub's
+    // uuid + the exit-referenced missions' uuids are read by the writer;
+    // an empty mission uuid is the exit-skip gate's input (never-saved).
+    var hub_uuids: std.ArrayList([]const u8) = .empty;
+    for (editor.hubs) |candidate_hub| {
+        // THIS hub resolves through the memo (a minted identity for a
+        // never-saved hub); the others ride their own state uuids.
+        hub_uuids.append(
+            allocator,
+            if (candidate_hub.handle == hub.handle) hub_memo.uuid else candidate_hub.uuid,
+        ) catch @panic("failed to collect hub uuids");
+    }
+    var mission_uuids: std.ArrayList([]const u8) = .empty;
+    for (editor.missions) |mission| {
+        mission_uuids.append(allocator, mission.uuid) catch @panic("failed to collect mission uuids");
+    }
+
+    // Count the skipped exits for the never-silent warning (the writer's
+    // gate, computed here over the same conditions).
+    var skipped_exits: usize = 0;
+    for (hub.grid.exit_placements) |placement| {
+        for (editor.missions, 0..) |mission, mission_index| {
+            if (mission.handle != placement.mission) continue;
+            if (mission.start == null or mission.start.? != hub.handle) continue;
+            if (mission_uuids.items[mission_index].len == 0) skipped_exits += 1;
+        }
+    }
+
+    const hub_dir_path = std.fmt.allocPrint(
+        allocator,
+        "{s}/hubs/{s}",
+        .{ campaign_dir, hub_memo.dir },
+    ) catch @panic("failed to format hub dir path");
+    const hub_txt = writers.writeCampaignHub(
+        editor,
+        hub,
+        .{
+            .campaign_uuid = "",
+            .hub_uuids = hub_uuids.items,
+            .mission_uuids = mission_uuids.items,
+        },
+        hub_dir_path,
+        allocator,
+    ) catch @panic("failed to write campaign hub file");
+    const hub_txt_path = std.fmt.allocPrint(
+        allocator,
+        "{s}/hub.txt",
+        .{hub_dir_path},
+    ) catch @panic("failed to format hub.txt path");
+    history.file_source.writeFile(hub_txt_path, hub_txt) catch {
+        surfaceSaveError(history, "failed to write the hub's file");
+        return;
+    };
+
+    if (skipped_exits > 0) {
+        const message = std.fmt.allocPrint(
+            allocator,
+            "hub saved - {d} exit marker(s) skipped (their mission(s) were never saved; a full campaign save places them)",
+            .{skipped_exits},
+        ) catch @panic("failed to format the skip warning");
+        surfaceSaveError(history, message);
+    }
+}
+
 fn surfaceSaveError(history: *GameStateHistory, message: []const u8) void {
     history.session.setPendingError(history.history_arena.allocator(), message);
 }
