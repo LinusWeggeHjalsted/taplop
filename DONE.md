@@ -368,6 +368,7 @@ working rules).
 - [campaign-editor slice 4-4a: the NPC + exit-marker tools - the placements join the grid](#campaign-editor-slice-4-4a-the-npc--exit-marker-tools---the-placements-join-the-grid)
 - [campaign-editor slice 4-4b: the hub editor's inspector - the read-only exit summary](#campaign-editor-slice-4-4b-the-hub-editors-inspector---the-read-only-exit-summary)
 - [campaign-editor slice 4-5a: the hub editor's Decorations group - the tool, the palette, the add-new](#campaign-editor-slice-4-5a-the-hub-editors-decorations-group---the-tool-the-palette-the-add-new)
+- [campaign-editor slice 4-5b: the decoration palette's delete cascade + the type inspector's granular edits](#campaign-editor-slice-4-5b-the-decoration-palettes-delete-cascade--the-type-inspectors-granular-edits)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22236,3 +22237,42 @@ type inspector + the custom-art scan are 4-5b):
   invariant holding (the covered ground erased by the placement plan).
 
 1017 green.
+
+## campaign-editor slice 4-5b: the decoration palette's delete cascade + the type inspector's granular edits
+
+The palette maintenance half of 4-5 (the sprite picker + footprint
+editor + layers - the "change the art" loop - are 4-5c):
+
+- **The per-cell delete** (`hub_delete_decoration_type`): the
+  editor_delete_type cascade, INLINE - one atomic event, one undo step.
+  The inline shape is forced by design: the hub grid events address the
+  DRILLED hub implicitly, so the mission editor's placement-delete
+  SUB-EVENT fan-out cannot cross hubs; the cascade instead rebuilds
+  every hub's placement list itself (the type's placements pruned, the
+  higher type ids decremented) + removes the type + reconciles the
+  drilled hub's selection (per entry: removed drops, a survivor shifts
+  by the removed-below count - the index-keyed reconcile, recomputed
+  against the pre-cascade list) + resets the active tool. The delete
+  button: the mission palette's corner-cell shape, the type id riding
+  the hub_tool payload.
+- **The granular edits**: hub_set_decoration_color_index (the swatch
+  row) + hub_set_decoration_keep_original_colors (the toggle row) - the
+  editor_set_decoration_* conventions over the campaign palette, no
+  prune (the tint never affects placement validity).
+- **The inspector's decoration arm**: the ACTIVE TOOL's type (the
+  mission editor's tool-driven content rule) - the sprite name as
+  read-only text (the picker is 4-5c), the keep-colors toggle, and the
+  swatch row (hidden while the flag is on - the mission editor's
+  dead-control rule).
+- **The fail-fast payload check caught a real bug live**: the swatch
+  click crashed with "button payload on an action that carries none" -
+  the new actions were missing from the payload-kind switch (the exact
+  mismatch class the check exists to kill; the suite couldn't see it
+  because the check lives in the live relay). Fixed: delete ->
+  hub_tool, color -> editor_color, toggle -> payload-less.
+- **Runtime-verified**: the "+" -> the swatch recolors the type ->
+  the delete empties the palette + the placements, all over the console
+  channel; the cascade test pins the cross-hub prune, the id remap,
+  the selection shift, the tool reset, and the one-step undo.
+
+1019 green.

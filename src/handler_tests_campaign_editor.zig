@@ -1933,3 +1933,118 @@ test "hub editor events: the NPC placement, the exit-marker upsert + delete over
     runToIdle(&history);
     try testing.expect(history.current_state.hub_editor.?.active_tool == .select);
 }
+
+test "hub editor events: the decoration-type delete cascade + the granular edits over the campaign palette" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                        // type 0 at (1,0) + type 1 at (2,0) + type 2 at (3,0):
+                        // the delete of type 0 removes the first, decrements
+                        // the others' type ids.
+                        .decoration_placements = &.{
+                            .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+                            .{ .type_id = 1, .position = .{ .x = 2, .y = 0 } },
+                            .{ .type_id = 2, .position = .{ .x = 3, .y = 0 } },
+                        },
+                    },
+                },
+                .{
+                    .handle = 1,
+                    .name = "Beta",
+                    .position = .{ .x = 400, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                        // The SAME type placed in ANOTHER hub - the cascade
+                        // crosses hubs.
+                        .decoration_placements = &.{.{ .type_id = 0, .position = .{ .x = 1, .y = 1 } }},
+                    },
+                },
+            },
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                .{ .id = "bush", .sprite = "bush_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 2,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .{ .decoration_type = 0 }, .selection = &.{.{ .decoration_placement = 2 }} },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The granular edits first: the color + the keep-colors flag.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{
+            .{ .hub_editor_event = .{ .hub_set_decoration_color_index = .{ .type_id = 1, .value = 3 } } },
+            .{ .hub_editor_event = .{ .hub_set_decoration_keep_original_colors = .{ .type_id = 1, .value = true } } },
+        },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 3), history.current_state.campaign_editor.?.decoration_types[1].color_index);
+    try testing.expect(history.current_state.campaign_editor.?.decoration_types[1].keep_original_colors);
+
+    // The delete cascade: type 0 removed; its placements pruned from BOTH
+    // hubs; the higher type ids (1, 2 -> 0, 1) decremented everywhere; the
+    // selection's index 2 (type 2's placement, above one removed) shifts
+    // to 1; the ACTIVE TOOL (the deleted type) resets to select.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_hub_decoration_type = .{
+            .type_id = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 2), editor.decoration_types.len); // rock + bush
+        try testing.expectEqualStrings("rock_1", editor.decoration_types[0].sprite);
+        // Alpha's placements: type 0's gone; the others decremented.
+        const alpha = editor.hubs[0].grid.decoration_placements;
+        try testing.expectEqual(@as(usize, 2), alpha.len);
+        try testing.expectEqual(@as(u32, 0), alpha[0].type_id); // was 1 (rock)
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, alpha[0].position);
+        try testing.expectEqual(@as(u32, 1), alpha[1].type_id); // was 2 (bush)
+        // Beta's placement (type 0) pruned cross-hub.
+        try testing.expectEqual(@as(usize, 0), editor.hubs[1].grid.decoration_placements.len);
+        // The selection shifted; the tool reset.
+        const hub_editor = history.current_state.hub_editor.?;
+        try testing.expectEqual(@as(usize, 1), hub_editor.selection.len);
+        try testing.expectEqual(@as(u32, 1), hub_editor.selection[0].decoration_placement);
+        try testing.expect(hub_editor.active_tool == .select);
+    }
+
+    // One undo step reverts the whole cascade (the atomic-event design).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 3), editor.decoration_types.len);
+        try testing.expectEqual(@as(usize, 3), editor.hubs[0].grid.decoration_placements.len);
+        try testing.expectEqual(@as(usize, 1), editor.hubs[1].grid.decoration_placements.len);
+    }
+}

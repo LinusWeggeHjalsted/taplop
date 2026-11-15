@@ -2755,6 +2755,48 @@ pub fn handleAnytimeInput(
                 if (current.campaign_editor == null) return;
                 pushPlayerActionAndDrain(history, .player_add_hub_decoration_type);
             },
+            // A palette cell's delete button (the type id rides the
+            // hub_tool payload - the mission palette's delete convention).
+            .delete_hub_decoration_type => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                const tool = payloadAs(.hub_tool, clicked_payload) orelse return;
+                const type_id = switch (tool) {
+                    .decoration_type => |id| id,
+                    else => return,
+                };
+                pushPlayerActionAndDrain(history, .{ .player_delete_hub_decoration_type = .{
+                    .type_id = type_id,
+                } });
+            },
+            // The swatch row: the value rides the editor_color payload; the
+            // type comes from the ACTIVE TOOL (the mission swatch
+            // convention).
+            .set_hub_decoration_color => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                const value = payloadAs(.editor_color, clicked_payload) orelse return;
+                const tool = current.hub_editor.?.active_tool;
+                const type_id = switch (tool) {
+                    .decoration_type => |id| id,
+                    else => return,
+                };
+                pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_color = .{
+                    .type_id = type_id,
+                    .value = value,
+                } });
+            },
+            // The keep-colors toggle (the type from the active tool; the
+            // flip is computed at the handler).
+            .toggle_hub_decoration_keep_original_colors => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                const tool = current.hub_editor.?.active_tool;
+                const type_id = switch (tool) {
+                    .decoration_type => |id| id,
+                    else => return,
+                };
+                pushPlayerActionAndDrain(history, .{ .player_toggle_hub_decoration_keep_original_colors = .{
+                    .type_id = type_id,
+                } });
+            },
             // The hub editor's tool palette cell (the select_editor_tool
             // convention over the drill-in's tool union).
             .select_hub_tool => {

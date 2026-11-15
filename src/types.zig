@@ -428,6 +428,17 @@ pub const Action = enum {
     // campaign-shared decoration type from the default template (the
     // add_editor_palette_type convention).
     add_hub_decoration_type,
+    // A Decorations palette cell's delete button: remove the type + its
+    // placements across every hub (the delete_editor_palette_type
+    // convention; the type id rides the hub_tool payload).
+    delete_hub_decoration_type,
+    // The decoration type's color swatch row (the type from the active
+    // tool; the value rides the editor_color payload - the
+    // select_editor_entity_color convention).
+    set_hub_decoration_color,
+    // The decoration type's untinted-render toggle (the type from the
+    // active tool).
+    toggle_hub_decoration_keep_original_colors,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1244,6 +1255,9 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_hub_tool,
         .toggle_hub_inspector,
         .add_hub_decoration_type,
+        .delete_hub_decoration_type,
+        .set_hub_decoration_color,
+        .toggle_hub_decoration_keep_original_colors,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1503,6 +1517,8 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .delete_editor_palette_type => .editor_tool,
         .select_editor_tool => .editor_tool,
         .select_hub_tool => .hub_tool,
+        .delete_hub_decoration_type => .hub_tool,
+        .set_hub_decoration_color => .editor_color,
         .select_editor_level => .editor_level,
         .delete_editor_level => .editor_level,
         .toggle_editor_inspector_section => .editor_section,
@@ -1653,6 +1669,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .close_hub_editor,
         .toggle_hub_inspector,
         .add_hub_decoration_type,
+        .toggle_hub_decoration_keep_original_colors,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,

@@ -999,6 +999,28 @@ pub const HubEditorEvent = union(enum) {
     // cell - the editor_add_decoration_type convention over the
     // CAMPAIGN-shared palette: every hub's placements index into it).
     hub_add_decoration_type: void,
+    // Remove a decoration type + prune its placements across EVERY hub
+    // (the editor_delete_type cascade, inline: the whole fan-out is one
+    // atomic event - the hub-addressed placement-delete sub-events cannot
+    // cross hubs, so the cascade rebuilds each hub's placement list
+    // itself) + decrement the higher type ids (palette indices shift).
+    // The active tool reconciles (the deleted tool -> select, higher ->
+    // decremented).
+    hub_delete_decoration_type: struct {
+        type_id: u32,
+    },
+    // The decoration type's tint (the swatch row) - granular, no prune
+    // (the editor_set_decoration_color_index convention).
+    hub_set_decoration_color_index: struct {
+        type_id: u32,
+        value: u32,
+    },
+    // The decoration type's untinted-render toggle (the
+    // editor_set_decoration_keep_original_colors convention).
+    hub_set_decoration_keep_original_colors: struct {
+        type_id: u32,
+        value: bool,
+    },
 
     // ── The spawn ──
     // Move the player-spawn marker ('!'). Singleton by construction - a
@@ -1522,6 +1544,21 @@ pub const PlayerInputEvent = union(enum) {
     // The Decorations group's "+" cell (the player_add_editor_palette_type
     // convention): the handler pushes hub_add_decoration_type.
     player_add_hub_decoration_type: void,
+    // A palette cell's delete button (the player_delete_editor_type
+    // convention): the handler pushes hub_delete_decoration_type.
+    player_delete_hub_decoration_type: struct {
+        type_id: u32,
+    },
+    // The swatch row (the player_set_editor_entity_color convention over
+    // the campaign palette).
+    player_set_hub_decoration_color: struct {
+        type_id: u32,
+        value: u32,
+    },
+    // The keep-colors toggle.
+    player_toggle_hub_decoration_keep_original_colors: struct {
+        type_id: u32,
+    },
     // Tile-paint click over the hub grid (the tile tool): one click = one
     // tile, covering decorations replaced (the player_paint_editor_tile
     // contract).

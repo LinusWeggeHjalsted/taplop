@@ -359,6 +359,40 @@ pub fn buildHubEditorBottomBar(
                     world[color_index],
                 .blocks_input = false,
             } });
+
+            // The delete button (the mission palette's shape: a small
+            // corner cell over the tool cell, the hub_tool payload).
+            const delete_size = editor_shell.editor_plus_size;
+            const delete_cell = Rectangle{
+                .x = cell.x + cell.width - delete_size,
+                .y = cell.y,
+                .width = delete_size,
+                .height = delete_size,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = delete_cell.position(),
+                .width = delete_size,
+                .height = delete_size,
+                .color = active_theme.darkest,
+                .blocks_input = false,
+            } });
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = delete_cell.position(),
+                .width = delete_size,
+                .height = delete_size,
+                .action = .delete_hub_decoration_type,
+                .payload = .{ .hub_tool = .{ .decoration_type = @intCast(type_id) } },
+                .tooltip = .{ .header = try spanRow(allocator, text("Delete this decoration type (and its placements in every hub)")) },
+            } });
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "X",
+                .screen_position = delete_cell.placeCenter(font_metrics.measureSpanWidth(text("X"), header_font), header_font).position(),
+                .font_size = header_font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
         }
     }
 }
@@ -451,6 +485,112 @@ pub fn buildHubEditorInspector(
             return y;
         }
     }.at;
+
+    // The decoration-type content: the ACTIVE TOOL's type (the mission
+    // editor's tool-driven content rule). The sprite row is read-only
+    // text until the sprite picker lands (4-5c); the keep-colors toggle +
+    // the swatches are the live granular edits.
+    if (hub_editor.active_tool == .decoration_type) {
+        const type_id = hub_editor.active_tool.decoration_type;
+        if (type_id >= campaign_editor.decoration_types.len) return;
+        const type_definition = campaign_editor.decoration_types[type_id];
+        const world = active_theme.world_gradient.colors;
+
+        var y = content.y;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Decoration",
+            .screen_position = .{ .x = content.x, .y = y },
+            .font_size = font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        y += font + ui_element.ui_gap;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = type_definition.sprite,
+            .screen_position = .{ .x = content.x, .y = y },
+            .font_size = font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        y += font + ui_element.ui_gap;
+
+        // The keep-colors toggle (a plain panel-button row).
+        {
+            const toggle_rect = Rectangle{
+                .x = content.x,
+                .y = y,
+                .width = content.width,
+                .height = 2 * editor_shell.editor_header_strip_height,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = toggle_rect.position(),
+                .width = toggle_rect.width,
+                .height = toggle_rect.height,
+                .color = button_color,
+                .blocks_input = false,
+            } });
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = toggle_rect.position(),
+                .width = toggle_rect.width,
+                .height = toggle_rect.height,
+                .action = .toggle_hub_decoration_keep_original_colors,
+            } });
+            const toggle_label = if (type_definition.keep_original_colors)
+                "Keep colors: on"
+            else
+                "Keep colors: off";
+            try elements.append(allocator, .{ .text_label = .{
+                .text = toggle_label,
+                .screen_position = .{
+                    .x = toggle_rect.x + ui_element.ui_gap,
+                    .y = toggle_rect.y + @divTrunc(toggle_rect.height - font, 2),
+                },
+                .font_size = font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            y += 2 * editor_shell.editor_header_strip_height + ui_element.ui_gap;
+        }
+
+        // The swatch row (hidden while the flag is on - the mission
+        // editor's rule: a dead tint control under an untinted type
+        // confuses more than it informs).
+        if (!type_definition.keep_original_colors) {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "Color",
+                .screen_position = .{ .x = content.x, .y = y },
+                .font_size = font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            y += font + ui_element.ui_gap;
+            const swatch_size = editor_shell.editor_header_strip_height;
+            var swatch_row = Row.init(.{ .x = content.x, .y = y }, swatch_size, ui_element.ui_gap);
+            for (world, 0..) |swatch_color, color_index| {
+                const swatch_cell = swatch_row.next(swatch_size);
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = swatch_cell.position(),
+                    .width = swatch_size,
+                    .height = swatch_size,
+                    .color = swatch_color,
+                    .blocks_input = false,
+                } });
+                try elements.append(allocator, .{ .button = .{
+                    .sprite_id = null,
+                    .screen_position = swatch_cell.position(),
+                    .width = swatch_size,
+                    .height = swatch_size,
+                    .action = .set_hub_decoration_color,
+                    .payload = .{ .editor_color = @intCast(color_index) },
+                    .highlighted = type_definition.color_index == color_index,
+                } });
+            }
+        }
+        return;
+    }
 
     if (single != null and single.? == .exit_placement) {
         const placement_index = single.?.exit_placement;

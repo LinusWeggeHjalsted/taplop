@@ -329,6 +329,105 @@ pub fn handleHubEditorEvent(
             }
             campaign_editor.hubs = hubs;
         },
+        .hub_delete_decoration_type => |delete| {
+            if (delete.type_id >= campaign_editor.decoration_types.len) return;
+            // The drilled hub's OLD placement list drives the selection
+            // reconcile (the indices address the pre-cascade list).
+            const old_drilled_placements: []const types.DecorationPlacement =
+                if (drilledHubIndex(hub_editor.*, campaign_editor)) |drilled_index|
+                    campaign_editor.hubs[drilled_index].grid.decoration_placements
+                else
+                    &.{};
+
+            // The inline cascade (one atomic event, one undo step): every
+            // hub's placement list rebuilt without the type's placements,
+            // the higher type ids decremented (palette indices shift).
+            const hubs = mutableHubCopy(campaign_editor, allocator);
+            for (hubs) |*hub| {
+                var kept: std.ArrayList(types.DecorationPlacement) = .empty;
+                for (hub.grid.decoration_placements) |placement| {
+                    if (placement.type_id == delete.type_id) continue;
+                    var updated = placement;
+                    if (updated.type_id > delete.type_id) updated.type_id -= 1;
+                    kept.append(allocator, updated) catch
+                        @panic("failed to rebuild hub decoration placements");
+                }
+                hub.grid.decoration_placements = kept.toOwnedSlice(allocator) catch
+                    @panic("failed to own hub decoration placements");
+            }
+
+            // Remove the type (order-preserving).
+            var palette: std.ArrayList(types.DecorationTypeDef) = .empty;
+            for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
+                if (type_id == delete.type_id) continue;
+                palette.append(allocator, type_definition) catch
+                    @panic("failed to rebuild campaign decoration types");
+            }
+            campaign_editor.decoration_types = palette.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign decoration types");
+
+            // The drilled hub's selection: per entry - a removed placement
+            // drops, a survivor shifts down by the removed-below count,
+            // other kinds pass through.
+            {
+                var rebuilt: std.ArrayList(types.Selectable) = .empty;
+                for (hub_editor.selection) |selected| {
+                    if (selected != .decoration_placement) {
+                        rebuilt.append(allocator, selected) catch
+                            @panic("failed to reconcile hub editor selection");
+                        continue;
+                    }
+                    const old_index: usize = @intCast(selected.decoration_placement);
+                    if (old_index >= old_drilled_placements.len) continue; // stale (crafted)
+                    if (old_drilled_placements[old_index].type_id == delete.type_id) continue; // removed
+                    var removed_below: u32 = 0;
+                    for (old_drilled_placements[0..old_index]) |below| {
+                        if (below.type_id == delete.type_id) removed_below += 1;
+                    }
+                    rebuilt.append(allocator, .{ .decoration_placement = selected.decoration_placement - removed_below }) catch
+                        @panic("failed to reconcile hub editor selection");
+                }
+                hub_editor.selection = rebuilt.toOwnedSlice(allocator) catch
+                    @panic("failed to own hub editor selection");
+            }
+
+            // Active-tool reconciliation (the editor_delete_type rule).
+            switch (hub_editor.active_tool) {
+                .decoration_type => |type_id| {
+                    if (type_id == delete.type_id) {
+                        hub_editor.active_tool = .select;
+                    } else if (type_id > delete.type_id) {
+                        hub_editor.active_tool = .{ .decoration_type = type_id - 1 };
+                    }
+                },
+                else => {},
+            }
+            campaign_editor.hubs = hubs;
+        },
+        .hub_set_decoration_color_index => |set| {
+            if (set.type_id >= campaign_editor.decoration_types.len) return;
+            var palette: std.ArrayList(types.DecorationTypeDef) = .empty;
+            for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
+                var updated = type_definition;
+                if (type_id == set.type_id) updated.color_index = set.value;
+                palette.append(allocator, updated) catch
+                    @panic("failed to rebuild campaign decoration types");
+            }
+            campaign_editor.decoration_types = palette.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign decoration types");
+        },
+        .hub_set_decoration_keep_original_colors => |set| {
+            if (set.type_id >= campaign_editor.decoration_types.len) return;
+            var palette: std.ArrayList(types.DecorationTypeDef) = .empty;
+            for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
+                var updated = type_definition;
+                if (type_id == set.type_id) updated.keep_original_colors = set.value;
+                palette.append(allocator, updated) catch
+                    @panic("failed to rebuild campaign decoration types");
+            }
+            campaign_editor.decoration_types = palette.toOwnedSlice(allocator) catch
+                @panic("failed to own campaign decoration types");
+        },
         .hub_set_player_start => |set| {
             const index = drilledHubIndex(hub_editor.*, campaign_editor) orelse return;
             var hubs = mutableHubCopy(campaign_editor, allocator);
