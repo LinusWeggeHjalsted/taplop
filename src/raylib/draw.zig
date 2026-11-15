@@ -629,9 +629,9 @@ fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {
     while (index + 1 < samples.len) : (index += 1) {
         drawCappedSegment(samples[index], samples[index + 1], thickness, raylib_color);
     }
-    if (curve.arrowhead) {
+    {
         // The directionality chevron: two arms from the end point, drawn
-        // at the curve's own width, so an outline+stroke pair renders an
+        // at the curve's own width, so an outlined stroke renders an
         // outlined chevron.
         const arms = ui.arrowheadArms(curve);
         const end = samples[samples.len - 1];

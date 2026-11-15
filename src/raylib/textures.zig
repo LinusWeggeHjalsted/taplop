@@ -196,17 +196,16 @@ pub const TextureStore = struct {
     }
 
     /// The baked-arrow cache key for a params set:
-    /// `arrow|{variant}|{length}|{bow}|{width}|{arrowhead}` - one
+    /// `arrow|{variant}|{length}|{bow}|{width}` - one
     /// entry per distinct baked shape (the flat-composite-key convention
     /// of `outlineCacheKey`). A STORED key owns its string (duped at
     /// insert, freed in deinit); lookups may pass a stack-buffer borrow.
     fn arrowCacheKey(buffer: []u8, params: ui.BakedArrowParams) []const u8 {
-        return std.fmt.bufPrint(buffer, "arrow|{s}|{d}|{d}|{d}|{d}", .{
+        return std.fmt.bufPrint(buffer, "arrow|{s}|{d}|{d}|{d}", .{
             @tagName(params.variant),
             params.length,
             params.bow,
             params.width,
-            @intFromBool(params.arrowhead),
         }) catch @panic("arrow cache key overflow");
     }
 

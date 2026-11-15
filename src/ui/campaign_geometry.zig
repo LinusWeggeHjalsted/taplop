@@ -302,7 +302,6 @@ pub const BakedArrowParams = struct {
     /// bow. Always 0 for self_loop.
     bow: i32,
     width: i32,
-    arrowhead: bool,
     /// Clockwise degrees in screen space (y-down); the canonical bake
     /// points east (+x).
     rotation_degrees: f32,
@@ -371,7 +370,6 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .length = length_bucket,
         .bow = bow_bucket,
         .width = curve.width,
-        .arrowhead = curve.arrowhead,
         .rotation_degrees = 0,
     });
     if (!bakedArrowFits(curve, canonical, angle_radians)) return null;
@@ -384,7 +382,6 @@ fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowP
         .length = @min(length_bucket, max_baked_length),
         .bow = bow_bucket,
         .width = curve.width,
-        .arrowhead = curve.arrowhead,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
 }
@@ -408,7 +405,6 @@ fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
         .length = self_loop_length,
         .bow = 0,
         .width = curve.width,
-        .arrowhead = curve.arrowhead,
         .rotation_degrees = 0,
     });
     if (!bakedArrowFits(curve, canonical, angle_radians)) return null;
@@ -417,7 +413,6 @@ fn bakedLoopParams(curve: element.Curve) ?BakedArrowParams {
         .length = self_loop_length,
         .bow = 0,
         .width = curve.width,
-        .arrowhead = curve.arrowhead,
         .rotation_degrees = std.math.radiansToDegrees(angle_radians),
     };
 }
@@ -436,7 +431,6 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
             .control_end = .{ .x = @divTrunc(2 * params.length, 3), .y = params.bow },
             .end = .{ .x = params.length, .y = 0 },
             .width = params.width,
-            .arrowhead = params.arrowhead,
         },
         .self_loop => element.Curve{
             .start = .{ .x = 0, .y = 0 },
@@ -444,7 +438,6 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
             .control_end = .{ .x = self_loop_length, .y = -self_loop_half_width },
             .end = .{ .x = 0, .y = 0 },
             .width = params.width,
-            .arrowhead = params.arrowhead,
         },
     };
 }
@@ -504,7 +497,7 @@ fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians:
     // the world tangent into the canonical's local frame, then measure
     // the angle between the two directions. A degenerate tangent cannot
     // be compared - conservatively reject.
-    if (curve.arrowhead) {
+    {
         const curve_tangent = endTangentDirection(curve) orelse return false;
         const local_tangent = unrotate(curve_tangent, angle_radians);
         const canonical_tangent = endTangentDirection(canonical) orelse return false;
@@ -547,7 +540,7 @@ fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segm
         segments[count] = .{ .start = floatVec(samples[index]), .end = floatVec(samples[index + 1]) };
         count += 1;
     }
-    if (params.arrowhead) {
+    {
         const tip = floatVec(samples[samples.len - 1]);
         for (element.arrowheadArms(canonical)) |arm| {
             segments[count] = .{ .start = tip, .end = floatVec(arm) };
@@ -809,7 +802,6 @@ fn drawnCurve(geometry: EdgeGeometry) element.Curve {
         .control_end = geometry.control_end,
         .end = geometry.end,
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
     };
 }
 
@@ -827,7 +819,6 @@ test "bakedArrowParams: straight edge classifies with the chord rotation + exact
     try expectEqualInt(672, params.length);
     try expectEqualInt(0, params.bow);
     try expectEqualInt(edge_width + 2 * edge_outline_width, params.width);
-    try std.testing.expect(params.arrowhead);
     try std.testing.expectEqual(@as(f32, 0), params.rotation_degrees);
 }
 
@@ -932,7 +923,6 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
         .control_end = .{ .x = 70, .y = -40 },
         .end = .{ .x = 100, .y = 0 },
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
     };
     try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(s_curve, 4096));
 
@@ -954,7 +944,6 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
         .control_end = .{ .x = 500, .y = -100 },
         .end = .{ .x = 0, .y = 0 },
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
     };
     try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(foreign_loop, 4096));
 
@@ -971,7 +960,6 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
         .control_end = north_loop.control_start,
         .end = north_loop.start,
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
     };
     try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(swapped, 4096));
 }
@@ -1006,7 +994,6 @@ test "rasterizeBakedArrow: the straight arrow layers white inner + black outline
         .length = 128,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = false,
         .rotation_degrees = 0,
     };
     const canvas = bakedArrowCanvas(params);
@@ -1047,7 +1034,6 @@ test "rasterizeBakedArrow: the chevron arms rasterize with the stroke" {
         .length = 128,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
         .rotation_degrees = 0,
     };
     const canvas = bakedArrowCanvas(params);
@@ -1071,7 +1057,6 @@ test "rasterizeBakedArrow: the teardrop silhouette stays inside its control hull
         .length = self_loop_length,
         .bow = 0,
         .width = edge_width + 2 * edge_outline_width,
-        .arrowhead = true,
         .rotation_degrees = 0,
     };
     const canvas = bakedArrowCanvas(params);

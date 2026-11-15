@@ -251,7 +251,7 @@ pub fn buildWorldMap(
         // stroke (painter order; the curves are hit-test-transparent, so
         // emission order only affects paint). The hit_curve carries the
         // drawn arrow's OUTLINE-INCLUSIVE width (black outline + inner
-        // stroke) + the arrowhead flag - hit-testing, the tooltip
+        // stroke) - hit-testing, the tooltip
         // bounds (curveBounds), and the highlight rim all derive from it.
         // Clickable exactly when the edge is lit (its start hub
         // discovered-or-start = the mission-entry legality); the mission
@@ -273,7 +273,6 @@ pub fn buildWorldMap(
                 .control_end = geometry.control_end,
                 .end = geometry.end,
                 .width = edge_width + 2 * edge_outline_width,
-                .arrowhead = true,
             };
             const bounds = ui_element.curveBounds(hit_curve);
             try elements.append(allocator, .{ .button = .{
@@ -304,7 +303,6 @@ pub fn buildWorldMap(
             .width = edge_width + 2 * edge_outline_width,
             .color = lightest,
             .alpha = if (lit) 255 else dimmed_alpha,
-            .arrowhead = true,
             .blocks_input = false,
         } });
     }
@@ -554,14 +552,13 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     const loop_curve = elements.items[try findLightCurve(elements.items, loop_geometry)].curve;
     try std.testing.expectEqual(test_theme.lightest, loop_curve.color);
     try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_curve.width);
-    try std.testing.expect(loop_curve.arrowhead);
     // The decorative curve carries NO tooltip (its bounds-rect hover
     // would cover the whole bezier bbox); the mission tooltip rides the
     // clickable button, whose hit region is the stroke's samples - the
     // tooltip shows exactly where a click would work.
     try std.testing.expect(loop_curve.tooltip == null);
     // The button's hit_curve carries the drawn arrow's geometry at the
-    // outline-inclusive width + the arrowhead flag, and its rect is the
+    // outline-inclusive width, and its rect is the
     // drawn arrow's bbox (curveBounds) - the tooltip anchors to the FULL
     // arrow, not a corner on the start point.
     const loop_button = elements.items[try findEdgeButton(elements.items, 0)].button;
@@ -571,7 +568,6 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     try std.testing.expectEqual(loop_geometry.control_end, loop_button.hit_curve.?.control_end);
     try std.testing.expectEqual(loop_geometry.end, loop_button.hit_curve.?.end);
     try std.testing.expectEqual(edge_width + 2 * edge_outline_width, loop_button.hit_curve.?.width);
-    try std.testing.expect(loop_button.hit_curve.?.arrowhead);
     const loop_bounds = ui_element.curveBounds(loop_button.hit_curve.?);
     try std.testing.expectEqual(loop_bounds, Rectangle{
         .x = loop_button.screen_position.x,
@@ -593,7 +589,6 @@ test "buildWorldMap: surface, background, hubs, and the three edge classes" {
     // the dedicated test below).
     const stub_geometry = fixtureEdgeGeometry(campaign, 2);
     const stub_curve = elements.items[try findLightCurve(elements.items, stub_geometry)].curve;
-    try std.testing.expect(stub_curve.arrowhead);
     try std.testing.expectEqual(@as(u8, 255), stub_curve.alpha);
     _ = try findEdgeButton(elements.items, 2);
 

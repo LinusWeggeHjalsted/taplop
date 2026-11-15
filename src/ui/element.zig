@@ -939,7 +939,10 @@ pub const arrowhead_arm_length: i32 = 48;
 pub const arrowhead_arm_angle_degrees: i32 = 15;
 
 /// A cubic bezier stroke - the world map's mission-edge rendering (see
-/// DESIGN → Campaigns & the Campaign Editor → Edge geometry): straight
+/// DESIGN → Campaigns & the Campaign Editor → Edge geometry). Every
+/// edge is an ARROW: a directionality chevron always rides the end
+/// (`arrowheadArms` - two arms off the reversed end tangent; NOT part
+/// of the hit region, it hugs the stroke's end). Straight
 /// edges are the degenerate case (all controls on the segment), self-loops
 /// the teardrop control placement, dangling stubs the straight family
 /// at a fixed reach (faded - the orphan/incomplete marker). Purely
@@ -954,13 +957,6 @@ pub const Curve = struct {
     width: i32,
     color: Color = default_tint,
     alpha: u8 = 255,
-    /// Draw a directionality chevron at the curve's END: two short arms
-    /// from the end point, `arrowhead_arm_angle_degrees` off the reversed
-    /// end tangent, `arrowhead_arm_length` long (see `arrowheadArms` - the
-    /// backend draws them at the curve's own width, so an outlined edge
-    /// pair renders an outlined chevron). The chevron is NOT part of the
-    /// hit region (it hugs the stroke's end).
-    arrowhead: bool = false,
     tooltip: ?Tooltip = null,
     blocks_input: bool = false,
 };
@@ -999,8 +995,8 @@ fn floatVec(position: ScreenPosition) struct { x: f32, y: f32 } {
 }
 
 /// The curve's DRAWN extent as a bounds rect: the sampled polyline's
-/// min/max (plus the arrowhead chevron's arm endpoints when `arrowhead`
-// is set), padded by `width / 2` (the stroke's drawn reach). The world
+/// min/max (plus the arrowhead chevron's arm endpoints), padded by
+// `width / 2` (the stroke's drawn reach). The world
 /// map's edge button carries this as its rect - the tooltip anchors to
 /// the FULL arrow (the 0x0-at-the-start-point rect put the tooltip's
 /// corner on the arrow tip), and the bounds are the truthful extents.
@@ -1019,7 +1015,7 @@ pub fn curveBounds(curve: Curve) Rectangle {
         min_y = @min(min_y, sample.y);
         max_y = @max(max_y, sample.y);
     }
-    if (curve.arrowhead) {
+    {
         for (arrowheadArms(curve)) |arm| {
             min_x = @min(min_x, arm.x);
             max_x = @max(max_x, arm.x);
@@ -1036,7 +1032,8 @@ pub fn curveBounds(curve: Curve) Rectangle {
     };
 }
 
-/// The arrowhead chevron's two arm endpoints for `curve`: from the END
+/// The arrowhead chevron's two arm endpoints for `curve` (every edge
+/// is an arrow - see Curve): from the END
 /// sample, along the REVERSED end tangent rotated +/-
 /// `arrowhead_arm_angle_degrees`, at `arrowhead_arm_length`. The end
 /// tangent is the last sampled segment's direction (the same samples the
@@ -1794,7 +1791,6 @@ test "arrowheadArms: symmetric chevron opening backward from the end" {
         .control_end = .{ .x = 320, .y = 0 },
         .end = .{ .x = 480, .y = 0 },
         .width = 8,
-        .arrowhead = true,
     };
     const arms = arrowheadArms(curve);
     try std.testing.expectEqual(@as(i32, 480 - 46), arms[0].x);
@@ -1887,51 +1883,42 @@ test "buttonAt: a decorative curve never occludes" {
 }
 
 test "curveBounds: the sampled extent incl. arrowhead, padded by the stroke" {
-    // A straight horizontal segment: the bounds span both endpoints,
-    // padded by width/2 on every side (the drawn stroke's reach).
-    const straight = Curve{
+    // A straight horizontal segment: the bounds span the sampled
+    // polyline, padded by width/2 on every side (the drawn stroke's
+    // reach), PLUS the chevron arms - every edge is an arrow, and the
+    // arms open backward into the curve at 15 degrees off the reversed
+    // tangent, 48 long, so they extend beyond the stroke's perpendicular
+    // (the tooltip anchors to the FULL arrow).
+    const arrow = Curve{
         .start = .{ .x = 100, .y = 200 },
         .control_start = .{ .x = 200, .y = 200 },
         .control_end = .{ .x = 300, .y = 200 },
         .end = .{ .x = 400, .y = 200 },
         .width = 24,
     };
-    const straight_bounds = curveBounds(straight);
+    const arrow_bounds = curveBounds(arrow);
+    const arms = arrowheadArms(arrow);
+    for (arms) |arm| {
+        try std.testing.expect(arrow_bounds.contains(arm));
+    }
+    // Derived from the arm geometry: the arms reach 48sin(15) ~ 12 beyond
+    // the axis on each side, so the bounds span the stroke's 24px padding
+    // PLUS the arm reach, and never past the endpoints along the axis
+    // (the arms open BACKWARD from the end).
     try std.testing.expectEqual(Rectangle{
         .x = 100 - 12,
-        .y = 200 - 12,
+        .y = 200 - 12 - 12,
         .width = 300 + 24,
-        .height = 0 + 24,
-    }, straight_bounds);
-
-    // The arrowhead chevron's arms extend BEYOND the endpoint's
-    // perpendicular (the arms open backward into the curve at 15 degrees
-    // off the reversed tangent, 48 long): the bounds must include them -
-    // the tooltip anchors to the FULL arrow.
-    const arrowed = Curve{
-        .start = .{ .x = 100, .y = 200 },
-        .control_start = .{ .x = 200, .y = 200 },
-        .control_end = .{ .x = 300, .y = 200 },
-        .end = .{ .x = 400, .y = 200 },
-        .width = 24,
-        .arrowhead = true,
-    };
-    const arrowed_bounds = curveBounds(arrowed);
-    const arms = arrowheadArms(arrowed);
-    for (arms) |arm| {
-        try std.testing.expect(arrowed_bounds.contains(arm));
-    }
-    // The arms open up/down beyond the stroke's padding: strictly taller
-    // than the stroke-only bounds. On a SHORT edge the arms also reach
-    // backward past the start (the 48px arm reach vs the 40px segment).
-    try std.testing.expect(arrowed_bounds.height > straight_bounds.height);
+        .height = 24 + 24,
+    }, arrow_bounds);
+    // On a SHORT edge the arms also reach backward past the start (the
+    // 48px arm reach vs the 30px segment).
     const short = Curve{
         .start = .{ .x = 100, .y = 200 },
         .control_start = .{ .x = 110, .y = 200 },
         .control_end = .{ .x = 120, .y = 200 },
         .end = .{ .x = 130, .y = 200 },
         .width = 24,
-        .arrowhead = true,
     };
     const short_bounds = curveBounds(short);
     try std.testing.expect(short_bounds.x < 130 - 12 - 40);

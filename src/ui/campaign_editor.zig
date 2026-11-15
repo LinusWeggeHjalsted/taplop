@@ -357,7 +357,6 @@ pub fn buildCampaignEditorView(
                 .control_end = panned.control_end,
                 .end = panned.end,
                 .width = edge_width + 2 * edge_outline_width,
-                .arrowhead = true,
             };
             const bounds = ui_element.curveBounds(hit_curve);
             try elements.append(allocator, .{ .button = .{
@@ -386,7 +385,6 @@ pub fn buildCampaignEditorView(
             .width = edge_width + 2 * edge_outline_width,
             .color = lightest,
             .alpha = if (orphaned) orphaned_alpha else 255,
-            .arrowhead = true,
             .blocks_input = false,
         } });
     }
@@ -418,7 +416,6 @@ pub fn buildCampaignEditorView(
                     .end = .{ .x = preview_geometry.end.x + pan_offset.x, .y = preview_geometry.end.y + pan_offset.y },
                     .width = edge_width + 2 * edge_outline_width,
                     .color = lightest,
-                    .arrowhead = true,
                     .blocks_input = false,
                 } });
             }
@@ -541,7 +538,6 @@ pub fn buildCampaignEditorView(
             .end = arrow_end,
             .width = edge_width + 2 * edge_outline_width,
             .color = lightest,
-            .arrowhead = true,
             .blocks_input = false,
         } });
     }
@@ -1612,9 +1608,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
     for (elements.items) |element| switch (element) {
         .curve => |curve| {
             const is_palette_arrow = curve.start.y == curve.end.y and
-                curve.end.x > curve.start.x and
-                curve.end.x - curve.start.x == mission_tool_arrow_length and
-                curve.arrowhead;
+                curve.end.x - curve.start.x == mission_tool_arrow_length;
             if (!is_palette_arrow) continue;
             palette_arrows += 1;
             try std.testing.expectEqual(edge_width + 2 * edge_outline_width, curve.width);
