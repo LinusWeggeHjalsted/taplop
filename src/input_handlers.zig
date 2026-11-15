@@ -4473,8 +4473,10 @@ pub fn resolveTileCursor(
     // Editor edit mode: every tool resolves the tile cursor (paint / place
     // / anchor / select target - the view branches per tool for the
     // outline: single tile, footprint region, or the select tool's
-    // hovered-decoration preview).
-    if (current.screen == .editor) {
+    // hovered-decoration preview). The hub editor drill-in shares the
+    // resolver (its mouse path; the arrow-key nudges stay dormant there
+    // until cursor bindings ship in the hub_editor context).
+    if (current.screen == .editor or current.screen == .hub_editor) {
         resolveEditorTileCursor(history, player_input, ui_elements);
         return;
     }

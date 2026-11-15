@@ -364,6 +364,7 @@ working rules).
 - [campaign-editor slice 4-1: the hub editor framing - screen, state, open/close, the read-only scene](#campaign-editor-slice-4-1-the-hub-editor-framing---screen-state-openclose-the-read-only-scene)
 - [campaign-editor slice 4-2: the planner extraction - the neutral grid core under the mission editor's facades](#campaign-editor-slice-4-2-the-planner-extraction---the-neutral-grid-core-under-the-mission-editors-facades)
 - [campaign-editor slice 4-3a: hub grid editing - the event family, handlers, facades, palette](#campaign-editor-slice-4-3a-hub-grid-editing---the-event-family-handlers-facades-palette)
+- [campaign-editor slice 4-3b: the hub editor's gestures + view overlays](#campaign-editor-slice-4-3b-the-hub-editors-gestures--view-overlays)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22084,3 +22085,44 @@ recipe: no `wait` padding needed; `report ui` lists every clickable
 surface with its center.
 
 1006 green.
+
+## campaign-editor slice 4-3b: the hub editor's gestures + view overlays
+
+The second half of the recut's 4-3 - the hub editor now FEELS like the
+mission editor:
+
+- **The gesture layer's EditorSurface dispatch** (input_gestures.zig):
+  instead of hub twins of the four gesture handlers (which would
+  duplicate the claim/promote/threshold/release lifecycle - exactly the
+  drift class the planner extraction killed), ONE `EditorSurface`
+  context (mission editor | drilled-in hub) with the per-surface planner
+  calls + orchestrator pushes as methods. The four handlers
+  (right-click delete, marquee, move-drag, tile-drag) refactored onto it
+  - each exists ONCE, the mission paths behavior-identical (the existing
+  gesture tests unchanged and green). The hub's move veto is
+  structurally unreachable (no level_end) - a constant false arm, noted
+  at the method.
+- **The tile cursor** routes .hub_editor through the shared editor
+  resolver (the mouse path; arrow-key nudges stay dormant until cursor
+  bindings ship in the hub_editor context).
+- **The view overlays** (view.zig): the hub twins of the cursor /
+  selection / move-drag-preview builders over the drilled-in grid (the
+  click-group outline, the translated selection outlines, the
+  unselected-claim preview) + the marquee overlay reused as-is (already
+  surface-agnostic). The hub editor's world arm renders them.
+- **Tests**: one per gesture over a drilled-in fixture (the tile drag's
+  visited-set + replace semantics; the right-click delete's progressive
+  priority + the spawn's protected ground; the marquee's region add +
+  the shift+click toggle; the move-drag's unselected-claim replace+move
+  chain with the marker ground swap). The tile-drag test taught the
+  in-flight guard: the handlers push but never drain - direct-call tests
+  drain between steps.
+- **Runtime-verified**: the move-drag over the console channel (press on
+  the spawn, drag one tile, release - the spawn moved, its new ground
+  painted, the old ground erased). The drive also calibrated the
+  editor-camera mapping: the hub grid does NOT sit at the raw screen
+  center (the editor view region is asymmetric) - a scripted press must
+  aim at the camera-projected tile position, not (1920,1080) by
+  assumption.
+
+1010 green.

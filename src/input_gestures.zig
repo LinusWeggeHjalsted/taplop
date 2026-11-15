@@ -844,6 +844,269 @@ fn clearPendingRightClick(
 /// clean release fires the delete. The pressed tile is recorded at PRESS
 /// (a clean click acts on what was under the pointer when the button went
 /// down).
+/// The editor viewport surface a gesture runs over: the mission editor's
+/// active level or the hub editor's drilled-in grid (the slice-4
+/// drill-in). One abstraction so each gesture handler (the marquee, the
+/// move drag, the tile drag, the right-click delete) exists ONCE - the
+/// per-surface planner calls + orchestrator pushes dispatch through it
+/// (the planner-extraction principle, applied to the gesture layer: the
+/// claim/promote/threshold/release lifecycle is the drift-prone part and
+/// must not be duplicated per surface).
+const EditorSurface = union(enum) {
+    mission: *const types.Editor,
+    hub: struct {
+        hub: *const types.CampaignHubEdit,
+        decoration_types: []const types.DecorationTypeDef,
+        state: *const types.HubEditor,
+    },
+
+    fn selectToolActive(self: EditorSurface) bool {
+        return switch (self) {
+            .mission => |editor| editor.active_tool == .select,
+            .hub => |context| context.state.active_tool == .select,
+        };
+    }
+
+    fn tileToolActive(self: EditorSurface) bool {
+        return switch (self) {
+            .mission => |editor| editor.active_tool == .tile,
+            .hub => |context| context.state.active_tool == .tile,
+        };
+    }
+
+    fn selection(self: EditorSurface) []const types.Selectable {
+        return switch (self) {
+            .mission => |editor| editor.selection,
+            .hub => |context| context.state.selection,
+        };
+    }
+
+    fn selectionContainsPosition(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.editorSelectionContainsPosition(editor, position, allocator),
+            .hub => |context| planning.hubSelectionContainsPosition(context.hub, context.decoration_types, context.state.selection, position, allocator),
+        };
+    }
+
+    fn clickGroupNonempty(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.editorClickGroupNonempty(editor, position, allocator),
+            .hub => |context| planning.hubClickGroup(context.hub, context.decoration_types, position, allocator).len > 0,
+        };
+    }
+
+    fn clickGroup(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) []const types.Selectable {
+        return switch (self) {
+            .mission => |editor| planning.editorClickGroup(editor, position, allocator),
+            .hub => |context| planning.hubClickGroup(context.hub, context.decoration_types, position, allocator),
+        };
+    }
+
+    fn selectionMoveVetoed(
+        self: EditorSurface,
+        selection_to_check: []const types.Selectable,
+        delta: types.Vector2,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.editorSelectionMoveVetoed(editor, selection_to_check, delta),
+            .hub => false, // a hub grid has no level_end - the veto is structurally unreachable
+        };
+    }
+
+    fn planTilePaintNonempty(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.planEditorTilePaintActions(editor, position, allocator).len > 0,
+            .hub => |context| planning.planHubTilePaintActions(context.hub, context.decoration_types, position, allocator).len > 0,
+        };
+    }
+
+    fn planDeleteNonempty(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.planEditorDeleteActions(editor, position, allocator).len > 0,
+            .hub => |context| planning.planHubDeleteActions(context.hub, context.decoration_types, position, allocator).len > 0,
+        };
+    }
+
+    fn planRegionSelectNonempty(
+        self: EditorSurface,
+        start_position: types.Vector2,
+        end_position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.planEditorRegionSelectActions(editor, start_position, end_position, allocator).len > 0,
+            .hub => |context| planning.planHubRegionSelectActions(context.hub, context.decoration_types, context.state.selection, start_position, end_position, allocator).len > 0,
+        };
+    }
+
+    fn planToggleNonempty(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.planEditorSelectionActions(editor, position, allocator).len > 0,
+            .hub => |context| planning.planHubToggleSelectionActions(context.hub, context.decoration_types, context.state.selection, position, allocator).len > 0,
+        };
+    }
+
+    fn planReplaceNonempty(
+        self: EditorSurface,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) bool {
+        return switch (self) {
+            .mission => |editor| planning.planEditorReplaceSelectionActions(editor, position, allocator).len > 0,
+            .hub => |context| planning.planHubReplaceSelectionActions(context.hub, context.decoration_types, context.state.selection, position, allocator).len > 0,
+        };
+    }
+
+    fn pushTilePaint(
+        self: EditorSurface,
+        current: *state.GameState,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+                .position = position,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_paint_hub_tile = .{
+                .position = position,
+            } }, allocator),
+        }
+    }
+
+    fn pushDeleteAt(
+        self: EditorSurface,
+        current: *state.GameState,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_delete_editor_at = .{
+                .position = position,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_delete_hub_at = .{
+                .position = position,
+            } }, allocator),
+        }
+    }
+
+    fn pushRegionSelect(
+        self: EditorSurface,
+        current: *state.GameState,
+        start_position: types.Vector2,
+        end_position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_select_editor_region = .{
+                .start_position = start_position,
+                .end_position = end_position,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_select_hub_region = .{
+                .start_position = start_position,
+                .end_position = end_position,
+            } }, allocator),
+        }
+    }
+
+    fn pushToggle(
+        self: EditorSurface,
+        current: *state.GameState,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                .position = position,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_toggle_hub_selection = .{
+                .position = position,
+            } }, allocator),
+        }
+    }
+
+    fn pushReplace(
+        self: EditorSurface,
+        current: *state.GameState,
+        position: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
+                .position = position,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_replace_hub_selection = .{
+                .position = position,
+            } }, allocator),
+        }
+    }
+
+    fn pushMove(
+        self: EditorSurface,
+        current: *state.GameState,
+        delta: types.Vector2,
+        allocator: std.mem.Allocator,
+    ) void {
+        switch (self) {
+            .mission => event_push.pushPlayerAction(current, .{ .player_move_editor_selection = .{
+                .delta = delta,
+            } }, allocator),
+            .hub => event_push.pushPlayerAction(current, .{ .player_move_hub_selection = .{
+                .delta = delta,
+            } }, allocator),
+        }
+    }
+};
+
+/// Resolve the editor viewport surface for the gesture handlers: the
+/// mission editor on `.editor`, the drilled-in hub on `.hub_editor` (its
+/// handle resolving against the live authored graph - a dead handle is
+/// not a surface, the gestures clear + no-op), null otherwise.
+fn resolveEditorSurface(current: *const state.GameState) ?EditorSurface {
+    if (current.screen == .editor) {
+        if (current.editor) |*editor| return .{ .mission = editor };
+        return null;
+    }
+    if (current.screen == .hub_editor) {
+        const hub_editor_state = current.hub_editor orelse return null;
+        const campaign_editor = current.campaign_editor orelse return null;
+        for (campaign_editor.hubs) |*hub| {
+            if (hub.handle == hub_editor_state.hub) {
+                return .{ .hub = .{
+                    .hub = hub,
+                    .decoration_types = campaign_editor.decoration_types,
+                    .state = &current.hub_editor.?,
+                } };
+            }
+        }
+        return null;
+    }
+    return null;
+}
+
 pub fn handleRightClickEditorDelete(
     history: *GameStateHistory,
     pointer: input.PointerInput,
@@ -855,13 +1118,14 @@ pub fn handleRightClickEditorDelete(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode only (playtest/validate are the .level screen,
-    // where the inspect handler owns right-clicks). Not our screen - drop
-    // only OUR kind of pending.
-    if (current.screen != .editor or current.editor == null) {
+    // An editor viewport only (the mission editor's edit mode, or the hub
+    // editor drill-in; playtest/validate are the .level screen, where the
+    // inspect handler owns right-clicks). Not our surface - drop only OUR
+    // kind of pending.
+    const surface = resolveEditorSurface(current) orelse {
         clearPendingRightClick(ui_state, .editor_delete);
         return;
-    }
+    };
 
     if (pointer.right_pressed) {
         if (ui.blockingElementAt(ui_elements, pointer.position.toScreenPosition()) != null) {
@@ -901,15 +1165,10 @@ pub fn handleRightClickEditorDelete(
             switch (press) {
                 .editor_delete => |pending| {
                     // No-op gate: empty ground / the '!' / '=' never fire
-                    // (see planEditorDeleteActions).
-                    if (current.editor) |*editor| {
-                        const arena = history.current_arena.allocator();
-                        const plan = planning.planEditorDeleteActions(editor, pending.position, arena);
-                        if (plan.len > 0) {
-                            event_push.pushPlayerAction(current, .{ .player_delete_editor_at = .{
-                                .position = pending.position,
-                            } }, arena);
-                        }
+                    // (see the planners' delete cores).
+                    const arena = history.current_arena.allocator();
+                    if (surface.planDeleteNonempty(pending.position, arena)) {
+                        surface.pushDeleteAt(current, pending.position, arena);
                     }
                 },
                 else => {},
@@ -1146,11 +1405,13 @@ pub fn handleEditorMarquee(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the select tool only. Not our context - clear any
-    // in-progress marquee (a stale gesture must not fire later).
-    if (current.screen != .editor or current.editor == null or
-        current.editor.?.active_tool != .select)
-    {
+    // An editor viewport + the select tool only. Not our surface - clear
+    // any in-progress marquee (a stale gesture must not fire later).
+    const surface = resolveEditorSurface(current) orelse {
+        ui_state.editor_marquee = null;
+        return;
+    };
+    if (!surface.selectToolActive()) {
         ui_state.editor_marquee = null;
         return;
     }
@@ -1210,35 +1471,17 @@ pub fn handleEditorMarquee(
                 // an empty or all-already-selected region never fires - no
                 // dead undo step); Shift released mid-drag → cancel.
                 if (pointer.modifiers.shift) {
-                    if (current.editor) |*editor| {
-                        const arena = history.current_arena.allocator();
-                        if (planning.planEditorRegionSelectActions(
-                            editor,
-                            marquee.start_position,
-                            marquee.end_position,
-                            arena,
-                        ).len > 0) {
-                            event_push.pushPlayerAction(current, .{ .player_select_editor_region = .{
-                                .start_position = marquee.start_position,
-                                .end_position = marquee.end_position,
-                            } }, arena);
-                        }
+                    const alloc = history.current_arena.allocator();
+                    if (surface.planRegionSelectNonempty(marquee.start_position, marquee.end_position, alloc)) {
+                        surface.pushRegionSelect(current, marquee.start_position, marquee.end_position, alloc);
                     }
                 }
             } else {
                 // No drag: the shift+click TOGGLE - fire it at the press
                 // tile (the same no-op gate: empty ground never fires).
-                if (current.editor) |*editor| {
-                    const arena = history.current_arena.allocator();
-                    if (planning.planEditorSelectionActions(
-                        editor,
-                        marquee.start_position,
-                        arena,
-                    ).len > 0) {
-                        event_push.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
-                            .position = marquee.start_position,
-                        } }, arena);
-                    }
+                const alloc = history.current_arena.allocator();
+                if (surface.planToggleNonempty(marquee.start_position, alloc)) {
+                    surface.pushToggle(current, marquee.start_position, alloc);
                 }
             }
         }
@@ -1282,11 +1525,13 @@ pub fn handleEditorMoveDrag(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the select tool only. Not our context - clear any
-    // in-progress drag (a stale gesture must not fire later).
-    if (current.screen != .editor or current.editor == null or
-        current.editor.?.active_tool != .select)
-    {
+    // An editor viewport + the select tool only. Not our surface - clear
+    // any in-progress drag (a stale gesture must not fire later).
+    const surface = resolveEditorSurface(current) orelse {
+        ui_state.editor_move_drag = null;
+        return;
+    };
+    if (!surface.selectToolActive()) {
         ui_state.editor_move_drag = null;
         return;
     }
@@ -1303,19 +1548,11 @@ pub fn handleEditorMoveDrag(
             viewport,
         );
         const arena = history.current_arena.allocator();
-        const selected_at_press = planning.editorSelectionContainsPosition(
-            &current.editor.?,
-            press_tile,
-            arena,
-        );
+        const selected_at_press = surface.selectionContainsPosition(press_tile, arena);
         // A press on an UNSELECTED thing claims too when it is
         // selectable (a nonempty click group). Empty ground claims
         // nothing - its click-to-deselect stays the plain release path.
-        const claims = selected_at_press or planning.editorClickGroupNonempty(
-            &current.editor.?,
-            press_tile,
-            arena,
-        );
+        const claims = selected_at_press or surface.clickGroupNonempty(press_tile, arena);
         if (!claims) return;
         ui_state.editor_marquee = null;
         ui_state.editor_move_drag = .{
@@ -1369,13 +1606,12 @@ pub fn handleEditorMoveDrag(
                 // evaluates against the current selection. See
                 // planning.editorSelectionMoveVetoed. The editor is
                 // non-null here (the gesture's context guard).
-                const editor = &current.editor.?;
                 const selection_to_move: []const types.Selectable = if (move_drag.selected_at_press)
-                    editor.selection
+                    surface.selection()
                 else
-                    planning.editorClickGroup(editor, move_drag.press_position_tile, arena);
+                    surface.clickGroup(move_drag.press_position_tile, arena);
                 const move_fires = nonzero_delta and
-                    !planning.editorSelectionMoveVetoed(editor, selection_to_move, delta);
+                    !surface.selectionMoveVetoed(selection_to_move, delta);
                 if (!move_drag.selected_at_press) {
                     // An unselected-claim drag: select the grabbed group
                     // AND move it. The replace is pushed SECOND (on top of
@@ -1390,47 +1626,25 @@ pub fn handleEditorMoveDrag(
                     // reachable only via a mid-drag selection change)
                     // skips the replace; the move still runs.
                     const replace_plan_nonempty =
-                        planning.planEditorReplaceSelectionActions(
-                            editor,
-                            move_drag.press_position_tile,
-                            arena,
-                        ).len > 0;
+                        surface.planReplaceNonempty(move_drag.press_position_tile, arena);
                     if (move_fires) {
-                        event_push.pushPlayerAction(
-                            current,
-                            .{ .player_move_editor_selection = .{ .delta = delta } },
-                            arena,
-                        );
+                        surface.pushMove(current, delta, arena);
                     }
                     if (replace_plan_nonempty) {
-                        event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
-                            .position = move_drag.press_position_tile,
-                        } }, arena);
+                        surface.pushReplace(current, move_drag.press_position_tile, arena);
                     }
                 } else if (move_fires) {
                     // A vetoed or zero-delta move → no event (no dead undo
                     // step). The commit machinery handles everything else.
-                    event_push.pushPlayerAction(
-                        current,
-                        .{ .player_move_editor_selection = .{ .delta = delta } },
-                        arena,
-                    );
+                    surface.pushMove(current, delta, arena);
                 }
             } else {
                 // No drag: a plain click - fire the REPLACE at the press
                 // tile (the same path + no-op gate as the select arm; a
                 // plain click on the whole current selection changes
                 // nothing and never fires).
-                if (current.editor) |*editor| {
-                    if (planning.planEditorReplaceSelectionActions(
-                        editor,
-                        move_drag.press_position_tile,
-                        arena,
-                    ).len > 0) {
-                        event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
-                            .position = move_drag.press_position_tile,
-                        } }, arena);
-                    }
+                if (surface.planReplaceNonempty(move_drag.press_position_tile, arena)) {
+                    surface.pushReplace(current, move_drag.press_position_tile, arena);
                 }
             }
         }
@@ -1470,11 +1684,13 @@ pub fn handleEditorTileDrag(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Editor edit mode + the tile tool only. Not our context - clear any
+    // An editor viewport + the tile tool only. Not our surface - clear any
     // in-progress drag (a stale gesture must not fire later).
-    if (current.screen != .editor or current.editor == null or
-        current.editor.?.active_tool != .tile)
-    {
+    const surface = resolveEditorSurface(current) orelse {
+        ui_state.editor_tile_drag = false;
+        return;
+    };
+    if (!surface.tileToolActive()) {
         ui_state.editor_tile_drag = false;
         return;
     }
@@ -1512,13 +1728,9 @@ pub fn handleEditorTileDrag(
     }
     history.session.editor_tile_drag_visited.append(history.backing_allocator, tile) catch
         @panic("failed to append tile-drag visited entry");
-    if (current.editor) |*editor| {
-        const arena = history.current_arena.allocator();
-        if (planning.planEditorTilePaintActions(editor, tile, arena).len > 0) {
-            event_push.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
-                .position = tile,
-            } }, arena);
-        }
+    const arena = history.current_arena.allocator();
+    if (surface.planTilePaintNonempty(tile, arena)) {
+        surface.pushTilePaint(current, tile, arena);
     }
 }
 
@@ -1913,4 +2125,283 @@ test "handleCampaignHubDrag: a promoted release commits one move; an unpromoted 
         elements.items,
     );
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+// ============================================================
+// Hub editor gesture tests (the drilled-in grid over the shared
+// gesture machinery - one per gesture, the campaign fixture's
+// conventions: direct handler calls, then drain + assert the
+// authored graph).
+// ============================================================
+
+/// A drilled-in hub with grid content: tiles (0,0)+(1,0), the spawn at
+/// (0,0), a tree decoration at (3,0) (tile-free footprint ground).
+fn hubGestureFixtureState(active_tool: types.HubEditorToolId) state.GameState {
+    return .{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = active_tool },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+}
+
+/// The shared gesture test projection: camera at the origin, zoom 1, the
+/// reference viewport - tile (n,0)'s press point is screen
+/// (1920 + n*256, 1080).
+fn hubGestureProjection() struct { camera: types.Camera, zoom: f32, viewport: input.ViewportSize } {
+    return .{
+        .camera = .{ .position = .{ .x = 0, .y = 0 } },
+        .zoom = 1.0,
+        .viewport = .{ .width = 3840, .height = 2160 },
+    };
+}
+
+test "hub editor gestures: the tile drag paints each newly-visited tile" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(hubGestureFixtureState(.tile));
+    const projection = hubGestureProjection();
+    const elements: []const ui.UiElement = &.{};
+
+    // Press at tile (2,0) - empty ground: the press paints immediately.
+    // The handler pushes the orchestrator but never drains (the live loop
+    // does), so each step drains here before the next can act - the
+    // in-flight guard (`event_stack.len != 0`) is part of the contract.
+    handleEditorTileDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 2432, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+    // Drag onto tile (3,0) - the decoration's ground: the paint fires
+    // (replace - the covering decoration is deleted with it, at the
+    // orchestrator's plan).
+    handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = 2688, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+    // Re-visiting the same tile paints nothing (the visited set).
+    handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = 2689, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    handleEditorTileDrag(
+        &history,
+        .{ .released = true, .position = .{ .x = 2688, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+
+    const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+    try std.testing.expectEqual(@as(usize, 4), grid.level_tiles.len); // (0,0) (1,0) (2,0) (3,0)
+    try std.testing.expectEqual(@as(usize, 0), grid.decoration_placements.len); // the tree replaced
+    try std.testing.expect(history.session.ui_state.editor_tile_drag == false);
+}
+
+test "hub editor gestures: the right-click delete removes the covering decoration" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(hubGestureFixtureState(.tile));
+    const projection = hubGestureProjection();
+    const elements: []const ui.UiElement = &.{};
+
+    // A clean right press + release at the decoration's tile: the
+    // covering decoration goes (progressive delete - the ground survives
+    // for the next click).
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 2688, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 2688, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+
+    const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+    try std.testing.expectEqual(@as(usize, 0), grid.decoration_placements.len);
+    try std.testing.expectEqual(@as(usize, 2), grid.level_tiles.len);
+
+    // The spawn's tile never deletes (the marker keeps its ground).
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_pressed = true, .right_held = true, .position = .{ .x = 1920, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_released = true, .position = .{ .x = 1920, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.campaign_editor.?.hubs[0].grid.level_tiles.len);
+}
+
+test "hub editor gestures: the marquee adds the region; the shift+click toggles" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(hubGestureFixtureState(.select));
+    const projection = hubGestureProjection();
+    const elements: []const ui.UiElement = &.{};
+
+    // Shift+press at tile (0,0), drag past the threshold to tile (1,0),
+    // shift+release: the region [0..1, 0..0] adds - both tiles + the
+    // spawn at (0,0).
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 1920, .y = 1080 }, .modifiers = .{ .shift = true } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_marquee != null);
+    handleEditorMarquee(
+        &history,
+        .{ .held = true, .position = .{ .x = 2176, .y = 1080 }, .modifiers = .{ .shift = true } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_marquee.?.promoted);
+    handleEditorMarquee(
+        &history,
+        .{ .released = true, .position = .{ .x = 2176, .y = 1080 }, .modifiers = .{ .shift = true } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 3), history.current_state.hub_editor.?.selection.len);
+    try std.testing.expect(history.session.ui_state.editor_marquee == null);
+
+    // An unpromoted shift+release (no drag) IS the toggle: the pressed
+    // tile's group deselects (the spawn was just selected).
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 1920, .y = 1080 }, .modifiers = .{ .shift = true } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    handleEditorMarquee(
+        &history,
+        .{ .released = true, .position = .{ .x = 1925, .y = 1080 }, .modifiers = .{ .shift = true } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.hub_editor.?.selection.len);
+}
+
+test "hub editor gestures: the move drag selects the grabbed group and moves it" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(hubGestureFixtureState(.select));
+    const projection = hubGestureProjection();
+    const elements: []const ui.UiElement = &.{};
+
+    // A plain press on the UNSELECTED spawn claims (a nonempty click
+    // group); drag past the threshold by one tile, release: the
+    // replace + move chain selects the group and moves the spawn to
+    // (1,0), painting its ground there and erasing the old ground.
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = .{ .x = 1920, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag != null);
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.selected_at_press);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = 2176, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = .{ .x = 2176, .y = 1080 } },
+        elements,
+        projection.camera,
+        projection.zoom,
+        projection.viewport,
+    );
+    @import("test_harness.zig").runToIdle(&history);
+
+    const grid = history.current_state.campaign_editor.?.hubs[0].grid;
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, grid.player_start);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.hub_editor.?.selection.len); // a move deselects
+    try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+    // The old spawn ground is erased (a marker takes its ground with it);
+    // the new ground is painted.
+    try std.testing.expect(!@import("functions.zig").tileListContains(grid.level_tiles, .{ .x = 0, .y = 0 }));
+    try std.testing.expect(@import("functions.zig").tileListContains(grid.level_tiles, .{ .x = 1, .y = 0 }));
 }

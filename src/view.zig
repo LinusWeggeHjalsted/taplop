@@ -242,25 +242,79 @@ pub fn view(
         );
     } else if (current_state.hub_editor) |*hub_editor| {
         // The hub editor drill-in: the hub's grid projected into the same
-        // drawable kinds (read-only for now - the editing tools land with
-        // the later slice-4 slices). The hub resolves by handle against
-        // the live authored graph (in scope on this screen); a dead
-        // handle (a crafted log) renders nothing.
+        // drawable kinds, plus the editor viewport's overlay set (cursor,
+        // selection, marquee, move-drag preview - the gesture arms' visual
+        // feedback). The hub resolves by handle against the live authored
+        // graph (in scope on this screen); a dead handle (a crafted log)
+        // renders nothing.
         if (current_state.campaign_editor) |*campaign_editor| {
-            buildHubEditorScene(
-                &tiles,
-                &ground_entries,
-                frame_allocator,
-                hub_editor,
-                campaign_editor,
-                active_theme,
-                settings.player_color_index,
-                camera,
-                camera_zoom,
-                render.sprite_bounds,
-                session.animation_clock,
-                settings.animation_fps,
-            );
+            for (campaign_editor.hubs) |*hub| {
+                if (hub.handle != hub_editor.hub) continue;
+                buildHubEditorScene(
+                    &tiles,
+                    &ground_entries,
+                    frame_allocator,
+                    hub_editor,
+                    campaign_editor,
+                    active_theme,
+                    settings.player_color_index,
+                    camera,
+                    camera_zoom,
+                    render.sprite_bounds,
+                    session.animation_clock,
+                    settings.animation_fps,
+                );
+                buildHubEditorCursorOverlay(
+                    &tile_overlays,
+                    frame_allocator,
+                    hub,
+                    campaign_editor.decoration_types,
+                    hub_editor,
+                    session,
+                    active_theme,
+                    camera,
+                    camera_zoom,
+                );
+                buildHubEditorSelectionOverlay(
+                    &tile_overlays,
+                    frame_allocator,
+                    hub,
+                    campaign_editor.decoration_types,
+                    hub_editor,
+                    // While a selection move drag is promoted on a
+                    // selected-at-press claim, the outlines preview the
+                    // translation (the editor arm's derivation).
+                    if (session.ui_state.editor_move_drag) |move_drag| blk: {
+                        if (!move_drag.promoted or !move_drag.selected_at_press) break :blk null;
+                        break :blk Vector2{
+                            .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
+                            .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
+                        };
+                    } else null,
+                    active_theme,
+                    camera,
+                    camera_zoom,
+                );
+                buildHubEditorMoveDragOverlay(
+                    &tile_overlays,
+                    frame_allocator,
+                    hub,
+                    campaign_editor.decoration_types,
+                    session.ui_state.editor_move_drag,
+                    active_theme,
+                    camera,
+                    camera_zoom,
+                );
+                buildEditorMarqueeOverlay(
+                    &tile_overlays,
+                    frame_allocator,
+                    session.ui_state.editor_marquee,
+                    active_theme,
+                    camera,
+                    camera_zoom,
+                );
+                break;
+            }
         }
     }
 
@@ -2972,6 +3026,154 @@ fn buildEditorMoveDragOverlay(
         // The delta anchors the grabbed group's ANCHOR at the pointer -
         // `current_position_tile` keeps the last valid tile over blocking
         // UI, so the preview pauses there like the marquee's corner.
+        Vector2{
+            .x = drag.current_position_tile.x - drag.press_position_tile.x,
+            .y = drag.current_position_tile.y - drag.press_position_tile.y,
+        },
+        active_theme.lightest,
+        camera,
+        zoom,
+    );
+}
+
+/// The hub editor's click-group outline at `position` over the drilled-in
+/// hub grid (the appendEditorClickGroupOutline mirror): the FIRST covering
+/// decoration's footprint region, else the single tile.
+fn appendHubClickGroupOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    position: Vector2,
+    delta: Vector2,
+    outline_color: types.Color,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    for (hub.grid.decoration_placements) |placement| {
+        const type_definition = decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            const region_tiles = loaders.decorationFootprintWorldTiles(
+                type_definition.footprint,
+                .{ .x = placement.position.x + delta.x, .y = placement.position.y + delta.y },
+                allocator,
+            );
+            appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);
+            return;
+        }
+    }
+    appendSingleTileOutline(
+        list,
+        allocator,
+        .{ .x = position.x + delta.x, .y = position.y + delta.y },
+        outline_color,
+        camera,
+        zoom,
+    );
+}
+
+/// The hub editor's cursor outline (the buildEditorCursorOverlay mirror
+/// over the drilled-in grid): the tile tool's plain cursor, or the select
+/// tool's hover preview (what a click at the cursor would grab, outlined).
+/// The decoration tool's footprint preview joins at 4-5.
+fn buildHubEditorCursorOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    hub_editor: *const types.HubEditor,
+    session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const cursor = session.tile_cursor orelse return;
+    if (hub_editor.active_tool == .select) {
+        appendHubClickGroupOutline(
+            list,
+            allocator,
+            hub,
+            decoration_types,
+            cursor,
+            Vector2{ .x = 0, .y = 0 },
+            active_theme.lightest,
+            camera,
+            zoom,
+        );
+        return;
+    }
+    list.append(allocator, .{
+        .screen_position = tileToScreen(cursor, camera, zoom),
+        .overlay_type = .cursor,
+        .color = active_theme.lightest,
+    }) catch @panic("failed to append hub editor cursor overlay");
+}
+
+/// The hub editor's selection outlines (the buildEditorSelectionOverlay
+/// mirror over the drilled-in grid): every selected thing outlined in the
+/// theme lightest, translated by the live move-drag delta (the world
+/// stays put - only the outlines preview the move).
+fn buildHubEditorSelectionOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    hub_editor: *const types.HubEditor,
+    move_delta: ?Vector2,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (hub_editor.selection.len == 0) return;
+    const outline_color = active_theme.lightest;
+    const delta = move_delta orelse Vector2{ .x = 0, .y = 0 };
+    const translated = struct {
+        fn call(position: Vector2, by: Vector2) Vector2 {
+            return .{ .x = position.x + by.x, .y = position.y + by.y };
+        }
+    }.call;
+
+    for (hub_editor.selection) |selected| switch (selected) {
+        .tile => |position| appendSingleTileOutline(list, allocator, translated(position, delta), outline_color, camera, zoom),
+        .player_start => appendSingleTileOutline(list, allocator, translated(hub.grid.player_start, delta), outline_color, camera, zoom),
+        .decoration_placement => |placement_index| {
+            if (placement_index < hub.grid.decoration_placements.len) {
+                const placement = hub.grid.decoration_placements[placement_index];
+                const type_definition = decoration_types[placement.type_id];
+                const region_tiles = loaders.decorationFootprintWorldTiles(
+                    type_definition.footprint,
+                    translated(placement.position, delta),
+                    allocator,
+                );
+                appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);
+            }
+        },
+        // Mission vocabulary a hub selection never carries.
+        .entity_placement, .ground_item_placement, .level_end => {},
+    };
+}
+
+/// The hub editor's unselected-claim move-drag preview (the
+/// buildEditorMoveDragOverlay mirror): the grabbed click group's outline
+/// translated by the live delta.
+fn buildHubEditorMoveDragOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    hub: *const types.CampaignHubEdit,
+    decoration_types: []const types.DecorationTypeDef,
+    move_drag: ?ui.EditorMoveDrag,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const drag = move_drag orelse return;
+    if (!drag.promoted or drag.selected_at_press) return;
+    appendHubClickGroupOutline(
+        list,
+        allocator,
+        hub,
+        decoration_types,
+        drag.press_position_tile,
         Vector2{
             .x = drag.current_position_tile.x - drag.press_position_tile.x,
             .y = drag.current_position_tile.y - drag.press_position_tile.y,
