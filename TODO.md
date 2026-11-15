@@ -467,14 +467,13 @@ work:
              `renderInspectorEntries` + the bundled `InspectorRenderContext`
              struct; DONE.md entry arrives with the whole refactor).
           2. SURFACE-POLYMORPHIC ACTIONS (the select-keys + picker
-             open/close precedent): the decoration entries carry mission
-             actions - toggle_editor_decoration_keep_original_colors +
-             select_editor_decoration_color - their consumption arms
-             branch per screen (.hub_editor -> the hub orchestrators,
-             the type from the active tool). Then DELETE the 4-5b
-             hub-specific granular actions (toggle_hub_decoration_
-             keep_original_colors, set_hub_decoration_color) - dead
-             vocabulary, with their events/orchestrators/handler arms.
+             open/close precedent): DONE (the mission decoration
+             actions' consumption + orchestrator arms branch per screen
+             at the player-event layer - `player_set_editor_decoration
+             _color_index`/`_keep_original_colors` route to the hub
+             events on .hub_editor; the hub-specific actions + player
+             events + arms deleted; the emission-identity contract test
+             arrives with step 3).
           3. THE HUB INSPECTOR'S DECORATION ARM becomes:
              editorInspectorDecorationEntries (the mission's own fn,
              over the campaign palette's def) + renderInspectorEntries
