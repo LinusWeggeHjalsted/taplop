@@ -3020,13 +3020,20 @@ pub fn emitInspectorLayerButton(
         .height = rect.height,
         .color = button_color,
     } });
-    try elements.append(allocator, .{ .button = .{
-        .screen_position = rect.position(),
-        .width = rect.width,
-        .height = rect.height,
-        .action = action,
-        .payload = .{ .editor_layer = layer_index },
-    } });
+    try elements.append(allocator, .{
+        .button = .{
+            .screen_position = rect.position(),
+            .width = rect.width,
+            .height = rect.height,
+            .action = action,
+            // No layer identity (the ADD buttons + the footprint editor's
+            // Confirm) carries NO payload - an action that carries no button
+            // identity must not have one attached (the clicked-payload
+            // fail-fast at main.zig's update seam); the consumption reads a
+            // missing payload the same as an editor_layer(null).
+            .payload = if (layer_index) |index| .{ .editor_layer = index } else null,
+        },
+    });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -4862,10 +4869,12 @@ test "inspector Layers sections: per-layer rows + add button (enemy + decoration
                     if (std.mem.eql(u8, label.text, "hood")) saw_hood_label = true;
                 },
                 .button => |button| {
-                    if (button.action == .open_editor_entity_layer_picker and
-                        button.payload.?.editor_layer != null and button.payload.?.editor_layer.? == 0)
-                    {
-                        stem_button_seen = true;
+                    if (button.action == .open_editor_entity_layer_picker) {
+                        // The EDIT rows carry their layer index; the ADD
+                        // button carries no payload (no layer identity).
+                        if (button.payload) |payload| {
+                            if (payload.editor_layer != null and payload.editor_layer.? == 0) stem_button_seen = true;
+                        }
                     }
                     if (button.action == .delete_editor_entity_layer and
                         button.payload.?.editor_layer != null and button.payload.?.editor_layer.? == 0)

@@ -2121,7 +2121,13 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
                     toggle_buttons += 1;
                     try std.testing.expect(button.payload != null);
                 }
-                if (button.action == .confirm_editor_footprint) saw_confirm = true;
+                if (button.action == .confirm_editor_footprint) {
+                    saw_confirm = true;
+                    // The confirm carries NO payload (a payload-less
+                    // action - the fail-fast at the update seam traps a
+                    // stray one; the bug the hub drive caught).
+                    try std.testing.expect(button.payload == null);
+                }
                 if (button.action == .close_editor_picker) saw_close = true;
             },
             .image => |image| {
