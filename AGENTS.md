@@ -300,6 +300,72 @@ session + the ButtonPayload migration):
   from the scan because they link raylib and the test build must stay headless.
   `web.zig` is also excluded (same reason).
 
+## Running the Game (the Console Channel)
+
+The game is drivable from a script through the console channel (stdin) -
+the settled design lives in DESIGN → Input → Console input; this section
+is the agent's OPERATING MANUAL. Every runtime verification of UI/flow
+work goes through it: the suite cannot see prompts, popups, spacing, or
+anything interactive (CONSOLE COMPILES/RUNS ≠ works - the same class as
+WEB COMPILES ≠ RUNS). `zig build` first.
+
+### Launching a drive
+
+- `printf '<commands>\nquit\n' | timeout 60 ./zig-out/bin/ziglop` - the
+  native window opens + renders real frames (a human can watch); commands
+  drain one per frame; `timeout` is the hang guard. Prompts + the boot
+  hint print only on a TTY (piped runs are silent). `help` prints the
+  command list; `inputs` every key id.
+- Runs sharing a command prefix are deterministic: a `report ui` from
+  one run yields the coordinates a follow-up run (same prefix + more
+  commands) can click. NEVER script coordinates from memory - fresh
+  report, then click (the 4-5c lesson: a restructure moved the "+" cell).
+- A drive that can trigger a popup must still EXIT - check the exit
+  code, not just the output (the hung-run lesson).
+- Piped runs write REAL FILES into `~/.ziglop/` (the persistent dir).
+  Clean up your own drive artifacts only (check mtime - the author's
+  campaigns live there too).
+
+### The vocabulary (agent-relevant semantics)
+
+- `move <x> <y>` (reference-space pixels), `press`/`release <id>` (W3C
+  key codes - KeyA, Enter, ArrowUp - or left/right/middle), `type
+  <text>` (the text widget's char queue), `action <name>` (a semantic
+  action - the payload-less keybind vocabulary; contexts are
+  screen-gated at consumption).
+- `wait <n>` (n frames) / `wait idle` (hold while the game is ACTIVELY
+  processing - a draining stack or ticking wait; a drained or
+  input-paused game - any overlay, a modal popup - RELEASES; it cannot
+  stall, and a popup is recoverable via `action dismiss_error` or a
+  console click on its Dismiss button).
+- `report ui` - the interactive surfaces with click-point centers.
+  `report level` - the level's turn phase + the move-range highlights
+  WITH screen centers (click a highlight to move the player). `dump
+  <path>` - read-only reflection over the FrameState (`history.current_state`,
+  `history.session`, ...); struct values inside slices render as
+  opaque type names - address fields directly (entities[1].position).
+
+### Drive-authoring rules (the hard-won ones)
+
+- One command per frame, and the queue is read ahead: within a run a
+  later command cannot adapt to an earlier one's OUTPUT. Plan with
+  reports from prior runs.
+- An expanding section pushes every LATER strip down (and the content
+  overflows the windowed panel): click the lowest-expanding strip
+  first + re-report after any layout-shifting click. Both editors'
+  inspector scrolls by wheel over its panel.
+- The console's remembered pointer position re-merges into EVERY
+  input-command frame, so each console frame is mouse-owned: arrow-key
+  cursor nudges never fire after any scripted move (the fix is a TODO
+  punch-list item) - click the highlighted tile instead.
+- Gameplay drives: enemies act only when AGGROED (an inactive enemy's
+  turn never joins the cascade - move within the enemy's own
+  aggro_range). A click-driven action drains INLINE
+  (`pushPlayerActionAndDrain` - the whole cascade completes inside the
+  click's frame); `action skip` pushes WITHOUT draining (the enemy turn
+  spans frames over real-clock waits). A mid-drain frozen stack needs
+  skip, not a click.
+
 ## Code Style
 
 - Verbose naming everywhere: `ScreenPosition` not `ScreenPos`, `index` not `idx`, `allocator` not `alloc`
@@ -498,6 +564,14 @@ survived many sessions this way).
   page_allocator on native). Never call `std.heap.page_allocator` directly
   from shared code. Full why: DESIGN → Platform Seam → Allocator rule for
   emscripten.
+- **`std.meta.eql` and `std.testing.expectEqual` compare slices BY
+  POINTER** (`.slice => a.ptr == b.ptr and a.len == b.len`): two
+  byte-identical slices built at different addresses compare UNEQUAL.
+  For value comparison of anything containing slices (element lists,
+  tooltips, spans) use `std.testing.expectEqualDeep` (len + element-wise
+  deep). Found via the 4-5d emission-identity contract test: identical
+  tooltip rows from two emissions compared false under `eql` and true
+  under `expectEqualDeep`.
 
 ## Dev Tools
 
