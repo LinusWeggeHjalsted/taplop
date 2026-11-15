@@ -369,6 +369,7 @@ working rules).
 - [campaign-editor slice 4-4b: the hub editor's inspector - the read-only exit summary](#campaign-editor-slice-4-4b-the-hub-editors-inspector---the-read-only-exit-summary)
 - [campaign-editor slice 4-5a: the hub editor's Decorations group - the tool, the palette, the add-new](#campaign-editor-slice-4-5a-the-hub-editors-decorations-group---the-tool-the-palette-the-add-new)
 - [campaign-editor slice 4-5b: the decoration palette's delete cascade + the type inspector's granular edits](#campaign-editor-slice-4-5b-the-decoration-palettes-delete-cascade--the-type-inspectors-granular-edits)
+- [campaign-editor slice 4-5b rider: the hub editor's palette + inspector mirror the mission editor's structure exactly](#campaign-editor-slice-4-5b-rider-the-hub-editors-palette--inspector-mirror-the-mission-editors-structure-exactly)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22276,3 +22277,45 @@ editor + layers - the "change the art" loop - are 4-5c):
   the selection shift, the tool reset, and the one-step undo.
 
 1019 green.
+
+## campaign-editor slice 4-5b rider: the hub editor's palette + inspector mirror the mission editor's structure exactly
+
+The author's UI-issue feedback: the hub editor's bottom bar and the
+decoration inspector should be the mission editor's EXACT structural
+mirror, not the ad-hoc layouts of 4-3/4-5a.
+
+- **The palette** (`buildHubEditorBottomBar`, rewritten): the mission
+  editor's exact group machinery - three ACCORDION groups (NPCs /
+  Missions / Decorations) with panel-backed header toggles (the radio
+  semantics: expanding one collapses the others), expanded headers
+  RISING to the strip above the bar (collapsed ones flush at the
+  bottom), the Decorations "+" adjacent to its header, scrollable cell
+  windows (hub_palette_scroll + editor_palette_max_tools), and the
+  footprint/header-width layout math. The hub groups' own shape: only
+  Decorations authors its membership (the "+" - the others' is the
+  fixed NpcType enum / the campaign graph's live outgoing missions).
+  The wheel scrolls the group under the pointer
+  (hubPaletteGroupAt/GroupSize - the editorPaletteGroupAt mirrors).
+  State: hub_palette_collapsed/hub_palette_scroll on UiState (the
+  mission editor's view-affordance convention, off the timeline).
+- **The inspector's decoration content** (restructured): the mission
+  editor's exact section structure - the IDENTITY section (Sprite /
+  Keep colors / Color) + the FOOTPRINT section, the shared
+  emitInspectorSectionStrip + emitInspectorToggle +
+  emitInspectorColorSwatches emitters (flipped pub), the two-unit
+  field-row layout (inspectorLabelY/inspectorControlRect), and the
+  SHARED section-expansion state (the campaign editor's array
+  precedent). The sections render independently (a collapsed Identity
+  still shows the Footprint strip - the mission editor's rule). The
+  Sprite + Footprint rows render as read-only panels in the mission's
+  shapes until the pickers land (4-5c): the layout is the mirror, the
+  buttons go live with their pickers.
+- **The runtime drive caught ANOTHER payload-kind miss live**
+  (toggle_hub_palette_group): the second of the class in two sessions -
+  the fail-fast check keeps earning its place. Fixed: the toggle ->
+  editor_group (and removed the stale payload-less listing).
+- Runtime-verified: the accordion (the header rises on expand, the
+  radio collapses the siblings, the layout math shifts the groups'
+  positions exactly as the mission editor's does).
+
+1018 green.

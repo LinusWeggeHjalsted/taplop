@@ -724,7 +724,7 @@ pub fn inspectorControlRect(cell: Rectangle) Rectangle {
 
 /// The label line's y inside a two-unit entry cell: flush to the BOTTOM of
 /// the upper unit, directly above the control line.
-fn inspectorLabelY(cell: Rectangle) i32 {
+pub fn inspectorLabelY(cell: Rectangle) i32 {
     return cell.y + editor_inspector_row_height - editor_group_header_font_size;
 }
 
@@ -2401,7 +2401,7 @@ pub fn emitTextFieldUi(
 /// `.select_editor_decoration_color`; the `_layer_color` actions for layer
 /// rows, with `layer_index` riding the payload). A swatch click commits
 /// the index (same-value picks never fire).
-fn emitInspectorColorSwatches(
+pub fn emitInspectorColorSwatches(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     gradient: [types.gradient_color_count]types.Color,
@@ -2444,7 +2444,7 @@ fn emitInspectorColorSwatches(
 /// value in the FORMAT's vocabulary ("true"/"false" - the exact tokens
 /// `asBool` parses); clicking flips it via `action`. Shared by the entity
 /// + decoration toggle rows (the plan resolves current + action).
-fn emitInspectorToggle(
+pub fn emitInspectorToggle(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,

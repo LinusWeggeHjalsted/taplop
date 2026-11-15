@@ -439,6 +439,10 @@ pub const Action = enum {
     // The decoration type's untinted-render toggle (the type from the
     // active tool).
     toggle_hub_decoration_keep_original_colors,
+    // A hub palette group header's accordion toggle (the
+    // toggle_editor_palette_group convention: expanding one collapses the
+    // others; the group index rides the editor_group payload).
+    toggle_hub_palette_group,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1258,6 +1262,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .delete_hub_decoration_type,
         .set_hub_decoration_color,
         .toggle_hub_decoration_keep_original_colors,
+        .toggle_hub_palette_group,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1519,6 +1524,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_hub_tool => .hub_tool,
         .delete_hub_decoration_type => .hub_tool,
         .set_hub_decoration_color => .editor_color,
+        .toggle_hub_palette_group => .editor_group,
         .select_editor_level => .editor_level,
         .delete_editor_level => .editor_level,
         .toggle_editor_inspector_section => .editor_section,

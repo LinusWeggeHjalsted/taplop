@@ -184,6 +184,12 @@ pub const UiState = struct {
     /// `editor_palette_scroll`).
     editor_palette_collapsed: [3]bool = .{ true, true, true },
 
+    /// The HUB editor's palette groups (NPCs / Missions / Decorations) -
+    /// the accordion + scroll conventions of `editor_palette_collapsed`
+    /// over the drill-in's own groups.
+    hub_palette_collapsed: [3]bool = .{ true, true, true },
+    hub_palette_scroll: [3]i32 = .{ 0, 0, 0 },
+
     /// Editor inspector section expansion: true = expanded (children
     /// emitted), false = collapsed (header only). The TOPMOST group of
     /// each panel starts EXPANDED (see `defaultInspectorSectionExpansion`);

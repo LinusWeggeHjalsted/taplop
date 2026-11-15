@@ -2784,6 +2784,20 @@ pub fn handleAnytimeInput(
                     .value = value,
                 } });
             },
+            // A hub palette group header's accordion toggle (the mission
+            // arm's exact radio semantics over the hub groups).
+            .toggle_hub_palette_group => {
+                const group_index = payloadAs(.editor_group, clicked_payload) orelse return;
+                if (group_index >= 3) return;
+                if (history.session.ui_state.hub_palette_collapsed[group_index]) {
+                    for (&history.session.ui_state.hub_palette_collapsed) |*is_collapsed| {
+                        is_collapsed.* = true;
+                    }
+                    history.session.ui_state.hub_palette_collapsed[group_index] = false;
+                } else {
+                    history.session.ui_state.hub_palette_collapsed[group_index] = true;
+                }
+            },
             // The keep-colors toggle (the type from the active tool; the
             // flip is computed at the handler).
             .toggle_hub_decoration_keep_original_colors => {
@@ -3786,6 +3800,17 @@ pub fn handleAnytimeInput(
                 )
             else
                 null
+        else if (history.current_state.screen == .hub_editor)
+            if (history.current_state.hub_editor) |hub_editor_state|
+                ui.hubPaletteGroupAt(
+                    history.current_state.campaign_editor orelse return,
+                    hub_editor_state,
+                    &history.session.ui_state.hub_palette_collapsed,
+                    ui_elements,
+                    pointer_position,
+                )
+            else
+                null
         else
             null;
         if (history.current_state.screen == .editor and
@@ -3857,15 +3882,29 @@ pub fn handleAnytimeInput(
             // one tool cell, wheel-up = earlier tools (matches the skills
             // panel's wheel-up = earlier rows). Both bounds clamped here;
             // the builder clamps in place too (authoritative).
-            const editor = history.current_state.editor.?;
             const delta: i32 = @intFromFloat(anytime.scroll_delta);
-            const group_size = ui.editorPaletteGroupSize(editor, group_index);
-            const max_offset: i32 = @intCast(group_size -| ui.editor_palette_max_tools);
-            const scrolled: i32 = @min(
-                @max(history.session.ui_state.editor_palette_scroll[group_index] - delta, 0),
-                max_offset,
-            );
-            history.session.ui_state.editor_palette_scroll[group_index] = scrolled;
+            if (history.current_state.screen == .hub_editor) {
+                const group_size = ui.hubPaletteGroupSize(
+                    history.current_state.campaign_editor orelse return,
+                    history.current_state.hub_editor orelse return,
+                    group_index,
+                );
+                const max_offset: i32 = @intCast(group_size -| ui.editor_palette_max_tools);
+                const scrolled: i32 = @min(
+                    @max(history.session.ui_state.hub_palette_scroll[group_index] - delta, 0),
+                    max_offset,
+                );
+                history.session.ui_state.hub_palette_scroll[group_index] = scrolled;
+            } else {
+                const editor = history.current_state.editor.?;
+                const group_size = ui.editorPaletteGroupSize(editor, group_index);
+                const max_offset: i32 = @intCast(group_size -| ui.editor_palette_max_tools);
+                const scrolled: i32 = @min(
+                    @max(history.session.ui_state.editor_palette_scroll[group_index] - delta, 0),
+                    max_offset,
+                );
+                history.session.ui_state.editor_palette_scroll[group_index] = scrolled;
+            }
         } else if (cameraZoomAllowed(history.current_state.screen)) {
             // Additive zoom in fixed steps, clamped to [min, max]. Additive
             // (not multiplicative) so one zoom-in followed by one zoom-out

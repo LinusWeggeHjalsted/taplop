@@ -604,6 +604,7 @@ pub fn view(
                     hub_editor.*,
                     active_theme,
                     button_color,
+                    &session.ui_state,
                 ) catch @panic("failed to build hub editor inspector");
             }
             ui.buildHubEditorBottomBar(
@@ -614,6 +615,8 @@ pub fn view(
                 current_state.campaign_editor.?,
                 hub_editor.*,
                 active_theme,
+                &session.ui_state.hub_palette_collapsed,
+                &session.ui_state.hub_palette_scroll,
             ) catch @panic("failed to build hub editor bottom bar");
         }
     } else if (current_state.screen == .main_menu) {

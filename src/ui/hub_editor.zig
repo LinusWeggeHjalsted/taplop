@@ -13,6 +13,7 @@ const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const editor_shell = @import("editor_shell.zig");
 const editor_inspector = @import("editor_inspector.zig");
+const ui_state_mod = @import("state.zig");
 const emit = @import("emit.zig");
 const ui_tooltip = @import("tooltip.zig");
 
@@ -67,14 +68,18 @@ pub fn buildHubEditorTopBar(
     );
 }
 
-/// The hub editor's tool palette (the mission editor's
-/// `buildEditorBottomBar` mirror - DESIGN → The hub editor surface): the
-/// FIXED pair (Select + Tile) at the bar's left edge, flush against the
-/// screen's left side (left-anchored so the fixed tools stay put as the
-/// groups land - the mission editor's convention). The palette groups
-/// (NPCs / Missions / Decorations) join with their slices: NPCs + the
-/// per-mission Missions group at 4-4 (membership live from the campaign
-/// graph), the Decorations group + pickers at 4-5.
+/// The hub editor's tool palette - the mission editor's
+/// `buildEditorBottomBar` EXACT structural mirror: the fixed pair
+/// (Select + Tile) left-anchored, then three GROUPS (NPCs / Missions /
+/// Decorations), each an accordion header (expanding one collapses the
+/// others - the radio semantics) with its cells in a scrollable window
+/// below/flush. The "+" add-new cell exists on Decorations only (the
+/// other groups' membership is fixed: the NpcType enum, the campaign
+/// graph's outgoing missions). The Missions group's membership is LIVE
+/// from the campaign graph (the one coupling between the surfaces).
+/// See DESIGN → Campaigns & the Campaign Editor → The hub editor
+/// surface + Architecture → Level Editor (the palette conventions this
+/// mirrors).
 pub fn buildHubEditorBottomBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -83,34 +88,54 @@ pub fn buildHubEditorBottomBar(
     campaign_editor: types.CampaignEditor,
     hub_editor: types.HubEditor,
     active_theme: types.ActiveColorTheme,
+    collapsed: *[3]bool,
+    scroll_offsets: *[3]i32,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const world = active_theme.world_gradient.colors;
 
-    // The Missions group's live membership: the outgoing missions (start
-    // == this hub), in authored order - the one live coupling between
-    // the two surfaces (re-wiring on the map changes the palette).
+    const group_labels = [_][]const u8{ "NPCs", "Missions", "Decorations" };
+    // The live group sizes: the fixed NPC pair, the outgoing missions,
+    // the campaign-shared decoration types.
     var outgoing_mission_count: usize = 0;
     for (campaign_editor.missions) |mission| {
         if (mission.start != null and mission.start.? == hub_editor.hub) outgoing_mission_count += 1;
     }
+    const group_sizes = [3]usize{ 2, outgoing_mission_count, campaign_editor.decoration_types.len };
+    // Only Decorations authors its membership - the other groups' "+"
+    // would have nothing to add.
+    const group_has_plus = [3]bool{ false, false, true };
 
-    const header_font = editor_shell.editor_group_header_font_size;
-    const npc_group_width = header_font * 2 + 2 * ui_element.slot_size + 3 * ui_element.ui_gap;
-    const missions_group_width = header_font * 2 + 2 * ui_element.ui_gap +
-        @as(i32, @intCast(outgoing_mission_count)) * (ui_element.slot_size + ui_element.ui_gap);
-    const decoration_count = campaign_editor.decoration_types.len;
-    const decorations_group_width = header_font * 2 + 2 * ui_element.ui_gap + editor_shell.editor_plus_size + ui_element.ui_gap +
-        @as(i32, @intCast(decoration_count)) * (ui_element.slot_size + ui_element.ui_gap);
-    const content_width = 2 * ui_element.slot_size + 3 * ui_element.ui_gap +
-        npc_group_width + missions_group_width + decorations_group_width;
+    // Per-group header widths + row footprints (the mission editor's
+    // math: an expanded group's footprint is its visible cells, or the
+    // header + "+" extent when narrower; a collapsed group's is the
+    // header + "+" extent (or just the header for plus-less groups)).
+    var header_widths: [group_labels.len]i32 = undefined;
+    var footprints: [group_labels.len]i32 = undefined;
+    var content_width: i32 = 2 * ui_element.slot_size;
+    for (group_labels, 0..) |label, group_index| {
+        header_widths[group_index] =
+            font_metrics.measureSpanWidth(text(label), editor_shell.editor_group_header_font_size) + 2 * ui_element.ui_gap;
+        const header_extent = header_widths[group_index] +
+            @as(i32, if (group_has_plus[group_index]) ui_element.ui_gap + editor_shell.editor_plus_size else 0);
+        if (collapsed[group_index] or group_sizes[group_index] == 0) {
+            footprints[group_index] = header_extent;
+        } else {
+            const visible: i32 = @intCast(@min(group_sizes[group_index], editor_shell.editor_palette_max_tools));
+            const cells_width = visible * ui_element.slot_size + (visible - 1) * ui_element.ui_gap;
+            footprints[group_index] = @max(cells_width, header_extent);
+        }
+        content_width += footprints[group_index];
+    }
+    content_width += (2 + group_labels.len - 1) * ui_element.ui_gap;
+
+    // Left-anchored (the fixed tools stay put as groups expand/collapse).
     const bar = screen.placeBottomLeft(content_width, ui_element.bottom_bar_height, 0);
     var row = Row.init(bar.position(), ui_element.bottom_bar_height, ui_element.ui_gap);
 
-    // Select: the clickable-tile highlight's look (the mission editor's
-    // fixed-tool graphic - an inset square outline in the outline class,
-    // so it animates with the world highlight).
+    // Fixed tools (the mission editor's graphics: the select outline, the
+    // half-scale tile art).
     {
         const cell = row.next(ui_element.slot_size);
         try elements.append(allocator, .{ .button = .{
@@ -136,8 +161,6 @@ pub fn buildHubEditorBottomBar(
             .blocks_input = false,
         } });
     }
-
-    // Tile paint: the tile art at half scale (the busy-art convention).
     {
         const cell = row.next(ui_element.slot_size);
         try elements.append(allocator, .{ .button = .{
@@ -167,142 +190,61 @@ pub fn buildHubEditorBottomBar(
         } });
     }
 
-    // The NPCs group: two FIXED tools (gear_upgrader, dream_guide - the
-    // NpcType enum's members; the sprites derive from the types). A plain
-    // header label + the cells (no collapse toggle - the group is fixed
-    // and small; the mission editor's header-toggle convention can ride
-    // later if the palette grows).
-    {
-        row.advance(ui_element.ui_gap);
-        const header_width = header_font * 2 + 2 * ui_element.ui_gap;
+    // The groups (the mission editor's emission order: header toggle +
+    // optional "+", then the visible cell window).
+    for (group_labels, 0..) |label, group_index| {
+        const size = group_sizes[group_index];
+        const group_left = bar.x + row.cursor_x;
+        const footprint = footprints[group_index];
+        const header_y: i32 = if (collapsed[group_index])
+            screen.bottom() - editor_shell.editor_header_strip_height
+        else
+            bar.y - ui_element.ui_gap - editor_shell.editor_header_strip_height;
+
+        // Header: panel-backed toggle button (the accordion), left-aligned
+        // with the group.
+        const header_width = header_widths[group_index];
+        const header_cell: Rectangle = .{
+            .x = group_left,
+            .y = header_y,
+            .width = header_width,
+            .height = editor_shell.editor_header_strip_height,
+        };
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = header_cell.position(),
+            .width = header_width,
+            .height = editor_shell.editor_header_strip_height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = null,
+            .screen_position = header_cell.position(),
+            .width = header_width,
+            .height = editor_shell.editor_header_strip_height,
+            .action = .toggle_hub_palette_group,
+            .payload = .{ .editor_group = @intCast(group_index) },
+        } });
         try elements.append(allocator, .{ .text_label = .{
-            .text = "NPCs",
+            .text = label,
             .screen_position = .{
-                .x = bar.x + row.cursor_x,
-                .y = screen.bottom() - editor_shell.editor_header_strip_height +
-                    @divTrunc(editor_shell.editor_header_strip_height - header_font, 2),
+                .x = header_cell.x + ui_element.ui_gap,
+                .y = header_cell.y + @divTrunc(
+                    editor_shell.editor_header_strip_height - editor_shell.editor_group_header_font_size,
+                    2,
+                ),
             },
-            .font_size = header_font,
+            .font_size = editor_shell.editor_group_header_font_size,
             .color = active_theme.lightest,
             .blocks_input = false,
         } });
-        row.advance(header_width);
-        inline for (@typeInfo(types.NpcType).@"enum".field_names) |field_name| {
-            const npc_type: types.NpcType = @field(types.NpcType, field_name);
-            const cell = row.next(ui_element.slot_size);
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = emit.button_background_sprite_id,
-                .screen_position = cell.position(),
-                .width = cell.width,
-                .height = cell.height,
-                .action = .select_hub_tool,
-                .payload = .{ .hub_tool = .{ .npc = npc_type } },
-                .color = button_color,
-                .highlighted = std.meta.eql(hub_editor.active_tool, .{ .npc = npc_type }),
-                .tooltip = .{ .header = try spanRow(allocator, text("Place a " ++ field_name ++ " NPC")) },
-            } });
-            const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = npc_type.spriteId(),
-                .screen_position = .{
-                    .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
-                    .y = fitted.y + @divTrunc(fitted.height - @divTrunc(fitted.height, 2), 2),
-                },
-                .width = @divTrunc(fitted.width, 2),
-                .height = @divTrunc(fitted.height, 2),
-                .color = no_tint_color,
-                .blocks_input = false,
-            } });
-        }
-    }
 
-    // The Missions group: ONE tool per outgoing mission (live membership),
-    // each cell placing/moving that mission's exit marker. The flag
-    // graphic (the mission-start banner's world sprite) + the mission's
-    // name across the cell bottom.
-    {
-        row.advance(ui_element.ui_gap);
-        const header_width = header_font * 2 + 2 * ui_element.ui_gap;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Missions",
-            .screen_position = .{
-                .x = bar.x + row.cursor_x,
-                .y = screen.bottom() - editor_shell.editor_header_strip_height +
-                    @divTrunc(editor_shell.editor_header_strip_height - header_font, 2),
-            },
-            .font_size = header_font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        row.advance(header_width);
-        for (campaign_editor.missions) |mission| {
-            if (mission.start == null or mission.start.? != hub_editor.hub) continue;
-            const cell = row.next(ui_element.slot_size);
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = emit.button_background_sprite_id,
-                .screen_position = cell.position(),
-                .width = cell.width,
-                .height = cell.height,
-                .action = .select_hub_tool,
-                .payload = .{ .hub_tool = .{ .mission = mission.handle } },
-                .color = button_color,
-                .highlighted = std.meta.eql(hub_editor.active_tool, .{ .mission = mission.handle }),
-                .tooltip = .{ .header = try spanRow(allocator, text("Place the exit marker for this mission")) },
-            } });
-            const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = "world/flag",
-                .screen_position = .{
-                    .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
-                    .y = fitted.y,
-                },
-                .width = @divTrunc(fitted.width, 2),
-                .height = fitted.height,
-                .color = no_tint_color,
-                .blocks_input = false,
-            } });
-            const name = if (mission.name.len > 0) mission.name else "Unsaved mission";
-            const name_font = editor_shell.editor_group_header_font_size;
-            try elements.append(allocator, .{ .text_label = .{
-                .text = name,
-                .screen_position = .{
-                    .x = cell.x + ui_element.ui_gap,
-                    .y = cell.y + cell.height - name_font - ui_element.ui_gap,
-                },
-                .font_size = name_font,
-                .color = active_theme.lightest,
-                .blocks_input = false,
-            } });
-        }
-    }
-
-    // The Decorations group: the CAMPAIGN-SHARED palette (one cell per
-    // type, the base sprite tinted like the mission editor's cells) + the
-    // "+" add-new cell (the default template; the sprite/footprint
-    // pickers + the type inspector land with 4-5b, so a fresh type keeps
-    // its default art until then).
-    {
-        row.advance(ui_element.ui_gap);
-        const header_width = header_font * 2 + 2 * ui_element.ui_gap;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Decorations",
-            .screen_position = .{
-                .x = bar.x + row.cursor_x,
-                .y = screen.bottom() - editor_shell.editor_header_strip_height +
-                    @divTrunc(editor_shell.editor_header_strip_height - header_font, 2),
-            },
-            .font_size = header_font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        row.advance(header_width);
-
-        // The "+" cell (the mission palette's shape - a square panel cell
-        // above the bar, adjacent to the header).
-        {
-            const plus_cell = Rectangle{
-                .x = bar.x + row.cursor_x,
-                .y = screen.bottom() - editor_shell.editor_header_strip_height,
+        // The "+" (Decorations only): the square panel cell one gap right
+        // of the header.
+        if (group_has_plus[group_index]) {
+            const plus_cell: Rectangle = .{
+                .x = group_left + header_width + ui_element.ui_gap,
+                .y = header_y,
                 .width = editor_shell.editor_plus_size,
                 .height = editor_shell.editor_plus_size,
             };
@@ -322,79 +264,302 @@ pub fn buildHubEditorBottomBar(
                 .action = .add_hub_decoration_type,
                 .tooltip = .{ .header = try spanRow(allocator, text("Add a decoration type (default art)")) },
             } });
+            const plus_label = "+";
+            const plus_width = font_metrics.measureSpanWidth(text(plus_label), editor_shell.editor_group_header_font_size);
             try elements.append(allocator, .{ .text_label = .{
-                .text = "+",
-                .screen_position = plus_cell.placeCenter(font_metrics.measureSpanWidth(text("+"), header_font), header_font).position(),
-                .font_size = header_font,
-                .color = active_theme.lightest,
-                .blocks_input = false,
-            } });
-            row.advance(editor_shell.editor_plus_size);
-        }
-
-        for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
-            const cell = row.next(ui_element.slot_size);
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = emit.button_background_sprite_id,
-                .screen_position = cell.position(),
-                .width = cell.width,
-                .height = cell.height,
-                .action = .select_hub_tool,
-                .payload = .{ .hub_tool = .{ .decoration_type = @intCast(type_id) } },
-                .color = button_color,
-                .highlighted = std.meta.eql(hub_editor.active_tool, .{ .decoration_type = @intCast(type_id) }),
-                .tooltip = .{ .header = try spanRow(allocator, text(type_definition.id)) },
-            } });
-            const fitted = editor_shell.scaleToFit(cell, @max(type_definition.pixel_dims.x, 1), @max(type_definition.pixel_dims.y, 1));
-            const sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
-            const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = sprite_id,
-                .screen_position = .{ .x = fitted.x, .y = fitted.y },
-                .width = fitted.width,
-                .height = fitted.height,
-                .color = if (type_definition.keep_original_colors)
-                    no_tint_color
-                else
-                    world[color_index],
-                .blocks_input = false,
-            } });
-
-            // The delete button (the mission palette's shape: a small
-            // corner cell over the tool cell, the hub_tool payload).
-            const delete_size = editor_shell.editor_plus_size;
-            const delete_cell = Rectangle{
-                .x = cell.x + cell.width - delete_size,
-                .y = cell.y,
-                .width = delete_size,
-                .height = delete_size,
-            };
-            try elements.append(allocator, .{ .nine_slice_panel = .{
-                .sprite_id = "ui/panel",
-                .screen_position = delete_cell.position(),
-                .width = delete_size,
-                .height = delete_size,
-                .color = active_theme.darkest,
-                .blocks_input = false,
-            } });
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = null,
-                .screen_position = delete_cell.position(),
-                .width = delete_size,
-                .height = delete_size,
-                .action = .delete_hub_decoration_type,
-                .payload = .{ .hub_tool = .{ .decoration_type = @intCast(type_id) } },
-                .tooltip = .{ .header = try spanRow(allocator, text("Delete this decoration type (and its placements in every hub)")) },
-            } });
-            try elements.append(allocator, .{ .text_label = .{
-                .text = "X",
-                .screen_position = delete_cell.placeCenter(font_metrics.measureSpanWidth(text("X"), header_font), header_font).position(),
-                .font_size = header_font,
+                .text = plus_label,
+                .screen_position = plus_cell.placeCenter(plus_width, editor_shell.editor_group_header_font_size).position(),
+                .font_size = editor_shell.editor_group_header_font_size,
                 .color = active_theme.lightest,
                 .blocks_input = false,
             } });
         }
+
+        // The cells: the visible window (skipped when collapsed).
+        if (!collapsed[group_index] and size > 0) {
+            const max_offset: i32 = @intCast(size -| editor_shell.editor_palette_max_tools);
+            scroll_offsets[group_index] = @min(@max(scroll_offsets[group_index], 0), max_offset);
+            const first_visible: usize = @intCast(scroll_offsets[group_index]);
+            const visible = @min(size, editor_shell.editor_palette_max_tools);
+
+            var ordinal: usize = 0;
+            const cell_x = group_left;
+            while (ordinal < visible) : (ordinal += 1) {
+                const cell: Rectangle = .{
+                    .x = cell_x + @as(i32, @intCast(ordinal)) * (ui_element.slot_size + ui_element.ui_gap),
+                    .y = bar.y,
+                    .width = ui_element.slot_size,
+                    .height = ui_element.bottom_bar_height,
+                };
+                switch (group_index) {
+                    0 => try emitHubNpcCell(elements, allocator, font_metrics, cell, hub_editor, active_theme, button_color, first_visible + ordinal),
+                    1 => {
+                        // The outgoing missions in authored order; the
+                        // ordinal indexes into them.
+                        var seen: usize = 0;
+                        for (campaign_editor.missions) |mission| {
+                            if (mission.start == null or mission.start.? != hub_editor.hub) continue;
+                            defer seen += 1;
+                            if (seen != first_visible + ordinal) continue;
+                            try emitHubMissionCell(elements, allocator, font_metrics, cell, campaign_editor, hub_editor, mission, active_theme, button_color);
+                            break;
+                        }
+                    },
+                    2 => try emitHubDecorationCell(elements, allocator, font_metrics, cell, campaign_editor.decoration_types[first_visible + ordinal], @intCast(first_visible + ordinal), hub_editor, active_theme, button_color, world),
+                    else => {},
+                }
+            }
+        }
+        row.advance(footprint + ui_element.ui_gap);
     }
+}
+
+/// One NPCs-group cell (the fixed NpcType pair): the button + the NPC's
+/// sprite at half scale.
+fn emitHubNpcCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: ui_element.FontMetrics,
+    cell: Rectangle,
+    hub_editor: types.HubEditor,
+    active_theme: types.ActiveColorTheme,
+    button_color: Color,
+    npc_ordinal: usize,
+) !void {
+    _ = font_metrics;
+    const npc_type: types.NpcType = switch (npc_ordinal) {
+        0 => .gear_upgrader,
+        else => .dream_guide,
+    };
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = emit.button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .select_hub_tool,
+        .payload = .{ .hub_tool = .{ .npc = npc_type } },
+        .color = button_color,
+        .highlighted = std.meta.eql(hub_editor.active_tool, .{ .npc = npc_type }),
+        .tooltip = .{ .header = try spanRow(allocator, text(try std.fmt.allocPrint(allocator, "Place a {s} NPC", .{@tagName(npc_type)}))) },
+    } });
+    const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = npc_type.spriteId(),
+        .screen_position = .{
+            .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
+            .y = fitted.y + @divTrunc(fitted.height - @divTrunc(fitted.height, 2), 2),
+        },
+        .width = @divTrunc(fitted.width, 2),
+        .height = @divTrunc(fitted.height, 2),
+        .color = no_tint_color,
+        .blocks_input = false,
+    } });
+    _ = active_theme;
+}
+
+/// One Missions-group cell: the flag graphic + the mission's name across
+/// the cell bottom.
+fn emitHubMissionCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: ui_element.FontMetrics,
+    cell: Rectangle,
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    mission: types.CampaignMissionEdit,
+    active_theme: types.ActiveColorTheme,
+    button_color: Color,
+) !void {
+    _ = campaign_editor;
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = emit.button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .select_hub_tool,
+        .payload = .{ .hub_tool = .{ .mission = mission.handle } },
+        .color = button_color,
+        .highlighted = std.meta.eql(hub_editor.active_tool, .{ .mission = mission.handle }),
+        .tooltip = .{ .header = try spanRow(allocator, text("Place the exit marker for this mission")) },
+    } });
+    const fitted = editor_shell.scaleToFit(cell, tool_graphic_tile_size, 2 * tool_graphic_tile_size);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = "world/flag",
+        .screen_position = .{
+            .x = fitted.x + @divTrunc(fitted.width - @divTrunc(fitted.width, 2), 2),
+            .y = fitted.y,
+        },
+        .width = @divTrunc(fitted.width, 2),
+        .height = fitted.height,
+        .color = no_tint_color,
+        .blocks_input = false,
+    } });
+    const name = if (mission.name.len > 0) mission.name else "Unsaved mission";
+    const name_font = editor_shell.editor_group_header_font_size;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = name,
+        .screen_position = .{
+            .x = cell.x + ui_element.ui_gap,
+            .y = cell.y + cell.height - name_font - ui_element.ui_gap,
+        },
+        .font_size = name_font,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+    _ = font_metrics;
+}
+
+/// One Decorations-group cell: the type's base sprite (tinted like the
+/// mission editor's cells) + the corner delete button.
+fn emitHubDecorationCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: ui_element.FontMetrics,
+    cell: Rectangle,
+    type_definition: types.DecorationTypeDef,
+    type_id: u32,
+    hub_editor: types.HubEditor,
+    active_theme: types.ActiveColorTheme,
+    button_color: Color,
+    world: [types.gradient_color_count]Color,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = emit.button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .select_hub_tool,
+        .payload = .{ .hub_tool = .{ .decoration_type = type_id } },
+        .color = button_color,
+        .highlighted = std.meta.eql(hub_editor.active_tool, .{ .decoration_type = type_id }),
+        .tooltip = .{ .header = try spanRow(allocator, text(type_definition.id)) },
+    } });
+    const fitted = editor_shell.scaleToFit(cell, @max(type_definition.pixel_dims.x, 1), @max(type_definition.pixel_dims.y, 1));
+    const sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
+    const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = sprite_id,
+        .screen_position = .{ .x = fitted.x, .y = fitted.y },
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = if (type_definition.keep_original_colors)
+            no_tint_color
+        else
+            world[color_index],
+        .blocks_input = false,
+    } });
+
+    // The delete button (the mission palette's corner-cell shape).
+    const delete_size = editor_shell.editor_plus_size;
+    const delete_cell = Rectangle{
+        .x = cell.x + cell.width - delete_size,
+        .y = cell.y,
+        .width = delete_size,
+        .height = delete_size,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = delete_cell.position(),
+        .width = delete_size,
+        .height = delete_size,
+        .color = active_theme.darkest,
+        .blocks_input = false,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = delete_cell.position(),
+        .width = delete_size,
+        .height = delete_size,
+        .action = .delete_hub_decoration_type,
+        .payload = .{ .hub_tool = .{ .decoration_type = type_id } },
+        .tooltip = .{ .header = try spanRow(allocator, text("Delete this decoration type (and its placements in every hub)")) },
+    } });
+    const delete_label = "X";
+    const delete_width = font_metrics.measureSpanWidth(text(delete_label), editor_shell.editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = delete_label,
+        .screen_position = delete_cell.placeCenter(delete_width, editor_shell.editor_group_header_font_size).position(),
+        .font_size = editor_shell.editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
+/// The hub palette group under the pointer - the `editorPaletteGroupAt`
+/// mirror over the hub's groups: the hit test walks the emitted tool
+/// cells (button_background buttons in the bottom bar) in emission order,
+/// mapping each flat cell index to its group.
+pub fn hubPaletteGroupAt(
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    collapsed: *const [3]bool,
+    ui_elements: []const ui_element.UiElement,
+    position: types.ScreenPosition,
+) ?usize {
+    if (position.y < types.reference_height - ui_element.bottom_bar_height) return null;
+    var cell_index: usize = 0;
+    for (ui_elements) |element| switch (element) {
+        .button => |button| {
+            const sprite_id = button.sprite_id orelse continue;
+            if (!std.mem.eql(u8, sprite_id, emit.button_background_sprite_id)) continue;
+            if (button.screen_position.y < types.reference_height - ui_element.bottom_bar_height) continue;
+            defer cell_index += 1;
+            const group = hubPaletteGroupOfCell(campaign_editor, hub_editor, collapsed, cell_index) orelse continue;
+            const cell: Rectangle = .{
+                .x = button.screen_position.x,
+                .y = button.screen_position.y,
+                .width = button.width,
+                .height = button.height,
+            };
+            if (cell.contains(position)) return group;
+        },
+        else => {},
+    };
+    return null;
+}
+
+/// Map a flat tool-cell index (bottom-bar emission order) to its group -
+/// the editorPaletteGroupOfCell mirror (the first 2 cells are the fixed
+/// tools; each expanded group contributes its visible window).
+fn hubPaletteGroupOfCell(
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    collapsed: *const [3]bool,
+    cell_index: usize,
+) ?usize {
+    var outgoing_mission_count: usize = 0;
+    for (campaign_editor.missions) |mission| {
+        if (mission.start != null and mission.start.? == hub_editor.hub) outgoing_mission_count += 1;
+    }
+    const group_sizes = [3]usize{ 2, outgoing_mission_count, campaign_editor.decoration_types.len };
+    var index = cell_index;
+    if (index < 2) return null;
+    index -= 2;
+    for (0..3) |group_index| {
+        if (collapsed[group_index]) continue;
+        const segment = @min(group_sizes[group_index], editor_shell.editor_palette_max_tools);
+        if (index < segment) return group_index;
+        index -= segment;
+    }
+    return null;
+}
+
+/// The hub palette group's live size (the wheel clamp's input - the
+/// editorPaletteGroupSize mirror).
+pub fn hubPaletteGroupSize(
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    group_index: usize,
+) usize {
+    var outgoing_mission_count: usize = 0;
+    for (campaign_editor.missions) |mission| {
+        if (mission.start != null and mission.start.? == hub_editor.hub) outgoing_mission_count += 1;
+    }
+    return switch (group_index) {
+        0 => 2,
+        1 => outgoing_mission_count,
+        else => campaign_editor.decoration_types.len,
+    };
 }
 
 /// The hub editor's inspector sidebar (the campaign editor's EXACT shape -
@@ -413,6 +578,7 @@ pub fn buildHubEditorInspector(
     hub_editor: types.HubEditor,
     active_theme: types.ActiveColorTheme,
     button_color: Color,
+    ui_state: *ui_state_mod.UiState,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const strip_button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
@@ -487,105 +653,204 @@ pub fn buildHubEditorInspector(
     }.at;
 
     // The decoration-type content: the ACTIVE TOOL's type (the mission
-    // editor's tool-driven content rule). The sprite row is read-only
-    // text until the sprite picker lands (4-5c); the keep-colors toggle +
-    // the swatches are the live granular edits.
+    // editor's tool-driven content rule), structured EXACTLY like the
+    // mission editor's decoration inspector - the Identity section
+    // (Sprite / Keep colors / Color) + the Footprint section, the section
+    // strips + two-line field rows through the shared emitters. The
+    // Sprite + Footprint rows render as read-only panels until the
+    // pickers land (4-5c): the layout is the mirror, the buttons
+    // become live with their pickers.
     if (hub_editor.active_tool == .decoration_type) {
         const type_id = hub_editor.active_tool.decoration_type;
         if (type_id >= campaign_editor.decoration_types.len) return;
         const type_definition = campaign_editor.decoration_types[type_id];
         const world = active_theme.world_gradient.colors;
+        const decoration_button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)];
+        const row_height = editor_inspector.editor_inspector_row_height;
 
-        var y = content.y;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Decoration",
-            .screen_position = .{ .x = content.x, .y = y },
-            .font_size = font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        y += font + ui_element.ui_gap;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = type_definition.sprite,
-            .screen_position = .{ .x = content.x, .y = y },
-            .font_size = font,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        y += font + ui_element.ui_gap;
-
-        // The keep-colors toggle (a plain panel-button row).
+        // Identity (the strip always renders - the mission editor's
+        // independent sections; only the children are conditional).
+        const identity_expanded = ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.identity)];
         {
-            const toggle_rect = Rectangle{
+            const strip: Rectangle = .{
                 .x = content.x,
-                .y = y,
+                .y = content.y,
                 .width = content.width,
-                .height = 2 * editor_shell.editor_header_strip_height,
+                .height = editor_shell.editor_header_strip_height,
             };
-            try elements.append(allocator, .{ .nine_slice_panel = .{
-                .sprite_id = "ui/panel",
-                .screen_position = toggle_rect.position(),
-                .width = toggle_rect.width,
-                .height = toggle_rect.height,
-                .color = button_color,
-                .blocks_input = false,
-            } });
-            try elements.append(allocator, .{ .button = .{
-                .sprite_id = null,
-                .screen_position = toggle_rect.position(),
-                .width = toggle_rect.width,
-                .height = toggle_rect.height,
-                .action = .toggle_hub_decoration_keep_original_colors,
-            } });
-            const toggle_label = if (type_definition.keep_original_colors)
-                "Keep colors: on"
-            else
-                "Keep colors: off";
-            try elements.append(allocator, .{ .text_label = .{
-                .text = toggle_label,
-                .screen_position = .{
-                    .x = toggle_rect.x + ui_element.ui_gap,
-                    .y = toggle_rect.y + @divTrunc(toggle_rect.height - font, 2),
-                },
-                .font_size = font,
-                .color = active_theme.lightest,
-                .blocks_input = false,
-            } });
-            y += 2 * editor_shell.editor_header_strip_height + ui_element.ui_gap;
+            try editor_inspector.emitInspectorSectionStrip(
+                elements,
+                allocator,
+                strip,
+                .identity,
+                identity_expanded,
+                decoration_button_color,
+                active_theme,
+            );
         }
+        // The field rows: the label line + the control line (the mission
+        // inspector's two-unit convention) - the identity children, only
+        // while expanded.
+        const row = struct {
+            fn at(content_rect: Rectangle, index: i32, row_height_units: i32) Rectangle {
+                return .{
+                    .x = content_rect.x,
+                    .y = content_rect.y + index * row_height_units * editor_inspector.editor_inspector_row_height,
+                    .width = content_rect.width,
+                    .height = row_height_units * editor_inspector.editor_inspector_row_height,
+                };
+            }
+        }.at;
 
-        // The swatch row (hidden while the flag is on - the mission
-        // editor's rule: a dead tint control under an untinted type
-        // confuses more than it informs).
-        if (!type_definition.keep_original_colors) {
-            try elements.append(allocator, .{ .text_label = .{
-                .text = "Color",
-                .screen_position = .{ .x = content.x, .y = y },
-                .font_size = font,
-                .color = active_theme.lightest,
-                .blocks_input = false,
-            } });
-            y += font + ui_element.ui_gap;
-            const swatch_size = editor_shell.editor_header_strip_height;
-            var swatch_row = Row.init(.{ .x = content.x, .y = y }, swatch_size, ui_element.ui_gap);
-            for (world, 0..) |swatch_color, color_index| {
-                const swatch_cell = swatch_row.next(swatch_size);
-                try elements.append(allocator, .{ .nine_slice_panel = .{
-                    .sprite_id = "ui/panel",
-                    .screen_position = swatch_cell.position(),
-                    .width = swatch_size,
-                    .height = swatch_size,
-                    .color = swatch_color,
+        if (identity_expanded) {
+            // Sprite (read-only panel until the picker): the mission's
+            // half-width button shape + the stem label.
+            {
+                const cell = row(content, 1, 2);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "Sprite",
+                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
                     .blocks_input = false,
                 } });
-                try elements.append(allocator, .{ .button = .{
-                    .sprite_id = null,
-                    .screen_position = swatch_cell.position(),
-                    .width = swatch_size,
-                    .height = swatch_size,
-                    .action = .set_hub_decoration_color,
-                    .payload = .{ .editor_color = @intCast(color_index) },
-                    .highlighted = type_definition.color_index == color_index,
+                const control_rect = editor_inspector.inspectorControlRect(cell);
+                const sprite_rect: Rectangle = .{
+                    .x = control_rect.x,
+                    .y = control_rect.y,
+                    .width = @divFloor(control_rect.width, 2),
+                    .height = control_rect.height,
+                };
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = sprite_rect.position(),
+                    .width = sprite_rect.width,
+                    .height = sprite_rect.height,
+                    .color = decoration_button_color,
+                    .blocks_input = false,
+                } });
+                const sprite_label = if (type_definition.sprite.len > 0) type_definition.sprite else "(none)";
+                const sprite_label_width = font_metrics.measureSpanWidth(text(sprite_label), editor_shell.editor_group_header_font_size);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = sprite_label,
+                    .screen_position = sprite_rect.placeCenter(sprite_label_width, editor_shell.editor_group_header_font_size).position(),
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+            }
+
+            // Keep colors (the shared toggle emitter, the hub action).
+            {
+                const cell = row(content, 3, 2);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "Keep colors",
+                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+                try editor_inspector.emitInspectorToggle(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    type_definition.keep_original_colors,
+                    .toggle_hub_decoration_keep_original_colors,
+                    decoration_button_color,
+                    editor_inspector.inspectorControlRect(cell),
+                    active_theme,
+                );
+            }
+
+            // Color (the shared swatch emitter: the world gradient + the hub
+            // commit action; hidden while the flag is on - the mission's
+            // dead-control rule).
+            if (!type_definition.keep_original_colors) {
+                const cell = row(content, 5, 2);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "Color",
+                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+                try editor_inspector.emitInspectorColorSwatches(
+                    elements,
+                    allocator,
+                    world,
+                    type_definition.color_index,
+                    .set_hub_decoration_color,
+                    null,
+                    editor_inspector.inspectorControlRect(cell),
+                );
+            }
+        }
+
+        // Footprint (the tile count; read-only until the editor). The
+        // strip sits after the identity strip + its expanded children
+        // (3 two-unit rows: Sprite, Keep colors, Color - Color hidden
+        // while the flag is on).
+        {
+            const footprint_expanded = ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.footprint)];
+            const identity_children_units: i32 = if (!identity_expanded)
+                0
+            else if (type_definition.keep_original_colors)
+                4
+            else
+                6;
+            const strip_y = content.y + editor_shell.editor_header_strip_height + identity_children_units * row_height;
+            const strip: Rectangle = .{
+                .x = content.x,
+                .y = strip_y,
+                .width = content.width,
+                .height = editor_shell.editor_header_strip_height,
+            };
+            try editor_inspector.emitInspectorSectionStrip(
+                elements,
+                allocator,
+                strip,
+                .footprint,
+                footprint_expanded,
+                decoration_button_color,
+                active_theme,
+            );
+            if (footprint_expanded) {
+                const cell: Rectangle = .{
+                    .x = content.x,
+                    .y = strip_y + editor_shell.editor_header_strip_height,
+                    .width = content.width,
+                    .height = 2 * row_height,
+                };
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = "Footprint",
+                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+                const control_rect = editor_inspector.inspectorControlRect(cell);
+                const count_label = try std.fmt.allocPrint(allocator, "{d} tiles", .{type_definition.footprint.len});
+                const count_width = font_metrics.measureSpanWidth(text(count_label), editor_shell.editor_group_header_font_size);
+                const count_rect: Rectangle = .{
+                    .x = control_rect.x,
+                    .y = control_rect.y,
+                    .width = @divFloor(control_rect.width, 2),
+                    .height = control_rect.height,
+                };
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = count_rect.position(),
+                    .width = count_rect.width,
+                    .height = count_rect.height,
+                    .color = decoration_button_color,
+                    .blocks_input = false,
+                } });
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = count_label,
+                    .screen_position = count_rect.placeCenter(count_width, editor_shell.editor_group_header_font_size).position(),
+                    .font_size = editor_shell.editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
                 } });
             }
         }
@@ -708,32 +973,64 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
         .start_hub = 0,
         .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 } }},
         .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 0 }},
+        .decoration_types = &.{
+            .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+        },
         .next_handle = 6,
     };
+    var collapsed = [3]bool{ true, true, true };
+    var scroll_offsets = [3]i32{ 0, 0, 0 };
     var elements: UiElementList = .empty;
     defer elements.deinit(arena.allocator());
-    try buildHubEditorBottomBar(&elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .tile }, test_theme);
+    try buildHubEditorBottomBar(&elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .tile }, test_theme, &collapsed, &scroll_offsets);
 
     var select_cell: ?ui_element.Button = null;
     var tile_cell: ?ui_element.Button = null;
-    var npc_cells: usize = 0;
-    var mission_cells: usize = 0;
+    var group_headers: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| switch (button.payload orelse continue) {
             .hub_tool => |tool| switch (tool) {
                 .select => select_cell = button,
                 .tile => tile_cell = button,
-                .npc => npc_cells += 1,
-                .mission => mission_cells += 1,
-                .decoration_type => {},
+                else => {},
+            },
+            .editor_group => group_headers += 1,
+            else => {},
+        },
+        else => {},
+    };
+    // All groups collapsed (the accordion default): the three headers
+    // render, no group cells.
+    try std.testing.expectEqual(@as(usize, 3), group_headers);
+
+    // Expanding the Decorations group: its cells render (the one type).
+    collapsed[2] = false;
+    var expanded_elements: UiElementList = .empty;
+    defer expanded_elements.deinit(arena.allocator());
+    try buildHubEditorBottomBar(&expanded_elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .tile }, test_theme, &collapsed, &scroll_offsets);
+    // One CELL (the button_background button) + its corner delete button
+    // (sprite-less) - both carry the type payload; the cell is the
+    // backgrounded one.
+    var decoration_cells: usize = 0;
+    var decoration_delete_cells: usize = 0;
+    for (expanded_elements.items) |element| switch (element) {
+        .button => |button| switch (button.payload orelse continue) {
+            .hub_tool => |tool| switch (tool) {
+                .decoration_type => {
+                    if (button.sprite_id != null) {
+                        decoration_cells += 1;
+                    } else {
+                        decoration_delete_cells += 1;
+                    }
+                },
+                else => {},
             },
             else => {},
         },
         else => {},
     };
-    // The groups: two fixed NPC cells + one per outgoing mission.
-    try std.testing.expectEqual(@as(usize, 2), npc_cells);
-    try std.testing.expectEqual(@as(usize, 1), mission_cells);
+    try std.testing.expectEqual(@as(usize, 1), decoration_cells);
+    try std.testing.expectEqual(@as(usize, 1), decoration_delete_cells);
     try std.testing.expect(select_cell != null);
     try std.testing.expect(tile_cell != null);
     try std.testing.expectEqual(@as(i32, 0), select_cell.?.screen_position.x);
@@ -743,7 +1040,7 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
     // The select tool active: the mirror.
     var select_elements: UiElementList = .empty;
     defer select_elements.deinit(arena.allocator());
-    try buildHubEditorBottomBar(&select_elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme);
+    try buildHubEditorBottomBar(&select_elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme, &collapsed, &scroll_offsets);
     for (select_elements.items) |element| switch (element) {
         .button => |button| switch (button.payload orelse continue) {
             .hub_tool => |tool| switch (tool) {
@@ -819,6 +1116,9 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
             .{ .handle = 1, .name = "Beta", .position = .{ .x = 400, .y = 0 } },
         },
         .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 1 }},
+        .decoration_types = &.{
+            .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+        },
         .next_handle = 6,
     };
 
@@ -841,12 +1141,59 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
         }
     }.at;
 
+    var ui_state = ui_state_mod.UiState{};
+    // The shared default expands Identity - collapse it for the
+    // strips-only case.
+    ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.identity)] = false;
+    // The decoration-type tool: the mission inspector's structure - the
+    // Identity section (Sprite / Keep colors / Color) + the Footprint
+    // section.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } }, test_theme, button_color, &ui_state);
+        var section_strips: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .toggle_editor_inspector_section => section_strips += 1,
+                else => {},
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 2), section_strips);
+        try std.testing.expect(findLabel(elements.items, "Sprite") == null);
+    }
+    // Identity expanded: the Sprite / Keep colors / Color rows + the live
+    // controls.
+    {
+        ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.identity)] = true;
+        ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.footprint)] = false;
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } }, test_theme, button_color, &ui_state);
+        try std.testing.expect(findLabel(elements.items, "Sprite") != null);
+        try std.testing.expect(findLabel(elements.items, "Keep colors") != null);
+        try std.testing.expect(findLabel(elements.items, "Color") != null);
+        var toggle_count: usize = 0;
+        var swatch_count: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .toggle_hub_decoration_keep_original_colors => toggle_count += 1,
+                .set_hub_decoration_color => swatch_count += 1,
+                else => {},
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), toggle_count);
+        try std.testing.expectEqual(@as(usize, types.gradient_color_count), swatch_count);
+    }
+
     // The single selected exit marker: the read-only summary (mission
     // name + destination hub name).
     {
         var elements: UiElementList = .empty;
         defer elements.deinit(allocator);
-        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .exit_placement = 0 }} }, test_theme, button_color);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .exit_placement = 0 }} }, test_theme, button_color, &ui_state);
         try std.testing.expect(findToggle(elements.items) != null);
         try std.testing.expect(findLabel(elements.items, "Exit Marker") != null);
         try std.testing.expect(findLabel(elements.items, "One") != null);
@@ -858,7 +1205,7 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
     {
         var elements: UiElementList = .empty;
         defer elements.deinit(allocator);
-        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .npc_placement = 0 }} }, test_theme, button_color);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .npc_placement = 0 }} }, test_theme, button_color, &ui_state);
         try std.testing.expect(findLabel(elements.items, "NPC") != null);
         try std.testing.expect(findLabel(elements.items, "Interaction semantics land with NPC interaction") != null);
     }
@@ -868,7 +1215,7 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
     {
         var elements: UiElementList = .empty;
         defer elements.deinit(allocator);
-        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0 }, test_theme, button_color);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0 }, test_theme, button_color, &ui_state);
         try std.testing.expect(findLabel(elements.items, "Exit Marker") == null);
         try std.testing.expect(findLabel(elements.items, "NPC") == null);
     }
@@ -877,7 +1224,7 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
     {
         var elements: UiElementList = .empty;
         defer elements.deinit(allocator);
-        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .inspector_open = false }, test_theme, button_color);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .inspector_open = false }, test_theme, button_color, &ui_state);
         try std.testing.expect(findToggle(elements.items) != null);
         var panel_count: usize = 0;
         for (elements.items) |element| switch (element) {
