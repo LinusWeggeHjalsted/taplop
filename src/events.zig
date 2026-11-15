@@ -994,6 +994,12 @@ pub const HubEditorEvent = union(enum) {
         mission: u32,
     },
 
+    // ── The campaign-shared decoration palette (4-5) ──
+    // Append a new decoration type from the default template (the "+"
+    // cell - the editor_add_decoration_type convention over the
+    // CAMPAIGN-shared palette: every hub's placements index into it).
+    hub_add_decoration_type: void,
+
     // ── The spawn ──
     // Move the player-spawn marker ('!'). Singleton by construction - a
     // hub grid has no level_end, so the mission editor's marker-overlap
@@ -1507,6 +1513,15 @@ pub const PlayerInputEvent = union(enum) {
     },
     // The inspector toggle (the player_toggle_campaign_inspector mirror).
     player_toggle_hub_inspector: void,
+    // Decoration-tool click over the hub grid (the
+    // player_place_editor_decoration contract over the campaign palette).
+    player_place_hub_decoration: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    // The Decorations group's "+" cell (the player_add_editor_palette_type
+    // convention): the handler pushes hub_add_decoration_type.
+    player_add_hub_decoration_type: void,
     // Tile-paint click over the hub grid (the tile tool): one click = one
     // tile, covering decorations replaced (the player_paint_editor_tile
     // contract).

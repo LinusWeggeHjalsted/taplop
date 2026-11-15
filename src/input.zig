@@ -545,6 +545,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .close_hub_editor,
         .select_hub_tool,
         .toggle_hub_inspector,
+        .add_hub_decoration_type,
         => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

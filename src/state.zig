@@ -2366,6 +2366,8 @@ pub const GameStateHistory = struct {
                     .player_toggle_hub_inspector,
                     .player_paint_hub_tile,
                     .player_place_hub_npc,
+                    .player_place_hub_decoration,
+                    .player_add_hub_decoration_type,
                     .player_place_hub_exit_marker,
                     .player_toggle_hub_selection,
                     .player_replace_hub_selection,

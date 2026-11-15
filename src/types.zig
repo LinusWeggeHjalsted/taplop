@@ -424,6 +424,10 @@ pub const Action = enum {
     // The hub editor's inspector sidebar toggle (the
     // toggle_campaign_inspector convention over the drill-in screen).
     toggle_hub_inspector,
+    // The hub editor's Decorations group "+" cell: append a new
+    // campaign-shared decoration type from the default template (the
+    // add_editor_palette_type convention).
+    add_hub_decoration_type,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1239,6 +1243,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .close_hub_editor,
         .select_hub_tool,
         .toggle_hub_inspector,
+        .add_hub_decoration_type,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1647,6 +1652,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .validate_campaign,
         .close_hub_editor,
         .toggle_hub_inspector,
+        .add_hub_decoration_type,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
@@ -4070,6 +4076,10 @@ pub const HubEditorToolId = union(enum) {
     /// starts are re-wired on the map, the one live coupling between the
     /// two surfaces). The payload is the mission's campaign handle.
     mission: u32,
+    /// One tool per CAMPAIGN-SHARED decoration type (the Decorations
+    /// group; the payload is the type id into
+    /// CampaignEditor.decoration_types).
+    decoration_type: u32,
 };
 
 /// The hub editor drill-in state (the slice-4 surface - DESIGN →

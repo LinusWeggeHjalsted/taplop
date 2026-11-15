@@ -21,6 +21,7 @@ const loaders = @import("../loaders.zig");
 const event_push = @import("../event_push.zig");
 
 const GameState = state.GameState;
+const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
 const Vector2 = types.Vector2;
 
@@ -61,6 +62,7 @@ fn drilledHubIndex(hub_editor: types.HubEditor, editor: *const types.CampaignEdi
 /// states themselves alive on .hub_editor, so missing states are the
 /// fail-fast class (the handleEditorEvent posture).
 pub fn handleHubEditorEvent(
+    history: *GameStateHistory,
     current: *GameState,
     event: events.HubEditorEvent,
     allocator: std.mem.Allocator,
@@ -74,12 +76,32 @@ pub fn handleHubEditorEvent(
         .hub_toggle_inspector => {
             hub_editor.inspector_open = !hub_editor.inspector_open;
         },
+        .hub_add_decoration_type => {
+            // The "+": append the default-template decoration type to the
+            // CAMPAIGN-SHARED palette (every hub's placements index into
+            // it) + select the new tool (the addEditorPaletteType
+            // convention - the tool switch carries the selection clear).
+            const defaults = editor_handlers.readEditorDefaults(history, allocator) orelse return;
+            var palette: std.ArrayList(types.DecorationTypeDef) = .empty;
+            palette.appendSlice(allocator, campaign_editor.decoration_types) catch
+                @panic("failed to copy campaign decoration types");
+            palette.append(allocator, defaults.decoration) catch
+                @panic("failed to append the default decoration type");
+            campaign_editor.decoration_types = palette.toOwnedSlice(allocator) catch
+                @panic("failed to own the campaign decoration types");
+            hub_editor.active_tool = .{ .decoration_type = @intCast(campaign_editor.decoration_types.len - 1) };
+            hub_editor.selection = &.{};
+            hub_editor.inspector_open = true;
+        },
         .hub_set_tool => |set| {
             // Defensive against crafted logs (the editor_set_tool posture):
             // a mission tool must address an OUTGOING mission (start ==
             // this hub - the palette's live membership); an NPC tool is
             // always valid (the fixed enum).
             switch (set.tool) {
+                .decoration_type => |type_id| {
+                    if (type_id >= campaign_editor.decoration_types.len) return;
+                },
                 .mission => |mission_handle| {
                     var outgoing = false;
                     for (campaign_editor.missions) |mission| {

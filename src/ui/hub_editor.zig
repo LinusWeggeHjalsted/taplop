@@ -84,9 +84,6 @@ pub fn buildHubEditorBottomBar(
     hub_editor: types.HubEditor,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    _ = font_metrics; // the group cells measure their labels from the
-    // mission entries directly (the names render at the header font); the
-    // metrics ride along for the 4-5 decoration group's cell sizing.
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const world = active_theme.world_gradient.colors;
@@ -103,8 +100,11 @@ pub fn buildHubEditorBottomBar(
     const npc_group_width = header_font * 2 + 2 * ui_element.slot_size + 3 * ui_element.ui_gap;
     const missions_group_width = header_font * 2 + 2 * ui_element.ui_gap +
         @as(i32, @intCast(outgoing_mission_count)) * (ui_element.slot_size + ui_element.ui_gap);
+    const decoration_count = campaign_editor.decoration_types.len;
+    const decorations_group_width = header_font * 2 + 2 * ui_element.ui_gap + editor_shell.editor_plus_size + ui_element.ui_gap +
+        @as(i32, @intCast(decoration_count)) * (ui_element.slot_size + ui_element.ui_gap);
     const content_width = 2 * ui_element.slot_size + 3 * ui_element.ui_gap +
-        npc_group_width + missions_group_width;
+        npc_group_width + missions_group_width + decorations_group_width;
     const bar = screen.placeBottomLeft(content_width, ui_element.bottom_bar_height, 0);
     var row = Row.init(bar.position(), ui_element.bottom_bar_height, ui_element.ui_gap);
 
@@ -271,6 +271,92 @@ pub fn buildHubEditorBottomBar(
                 },
                 .font_size = name_font,
                 .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+        }
+    }
+
+    // The Decorations group: the CAMPAIGN-SHARED palette (one cell per
+    // type, the base sprite tinted like the mission editor's cells) + the
+    // "+" add-new cell (the default template; the sprite/footprint
+    // pickers + the type inspector land with 4-5b, so a fresh type keeps
+    // its default art until then).
+    {
+        row.advance(ui_element.ui_gap);
+        const header_width = header_font * 2 + 2 * ui_element.ui_gap;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Decorations",
+            .screen_position = .{
+                .x = bar.x + row.cursor_x,
+                .y = screen.bottom() - editor_shell.editor_header_strip_height +
+                    @divTrunc(editor_shell.editor_header_strip_height - header_font, 2),
+            },
+            .font_size = header_font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        row.advance(header_width);
+
+        // The "+" cell (the mission palette's shape - a square panel cell
+        // above the bar, adjacent to the header).
+        {
+            const plus_cell = Rectangle{
+                .x = bar.x + row.cursor_x,
+                .y = screen.bottom() - editor_shell.editor_header_strip_height,
+                .width = editor_shell.editor_plus_size,
+                .height = editor_shell.editor_plus_size,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = plus_cell.position(),
+                .width = plus_cell.width,
+                .height = plus_cell.height,
+                .color = button_color,
+                .blocks_input = false,
+            } });
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = null,
+                .screen_position = plus_cell.position(),
+                .width = plus_cell.width,
+                .height = plus_cell.height,
+                .action = .add_hub_decoration_type,
+                .tooltip = .{ .header = try spanRow(allocator, text("Add a decoration type (default art)")) },
+            } });
+            try elements.append(allocator, .{ .text_label = .{
+                .text = "+",
+                .screen_position = plus_cell.placeCenter(font_metrics.measureSpanWidth(text("+"), header_font), header_font).position(),
+                .font_size = header_font,
+                .color = active_theme.lightest,
+                .blocks_input = false,
+            } });
+            row.advance(editor_shell.editor_plus_size);
+        }
+
+        for (campaign_editor.decoration_types, 0..) |type_definition, type_id| {
+            const cell = row.next(ui_element.slot_size);
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = emit.button_background_sprite_id,
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .action = .select_hub_tool,
+                .payload = .{ .hub_tool = .{ .decoration_type = @intCast(type_id) } },
+                .color = button_color,
+                .highlighted = std.meta.eql(hub_editor.active_tool, .{ .decoration_type = @intCast(type_id) }),
+                .tooltip = .{ .header = try spanRow(allocator, text(type_definition.id)) },
+            } });
+            const fitted = editor_shell.scaleToFit(cell, @max(type_definition.pixel_dims.x, 1), @max(type_definition.pixel_dims.y, 1));
+            const sprite_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{type_definition.sprite});
+            const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = sprite_id,
+                .screen_position = .{ .x = fitted.x, .y = fitted.y },
+                .width = fitted.width,
+                .height = fitted.height,
+                .color = if (type_definition.keep_original_colors)
+                    no_tint_color
+                else
+                    world[color_index],
                 .blocks_input = false,
             } });
         }
@@ -493,11 +579,15 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
     var npc_cells: usize = 0;
     var mission_cells: usize = 0;
     for (elements.items) |element| switch (element) {
-        .button => |button| switch (button.payload.?.hub_tool) {
-            .select => select_cell = button,
-            .tile => tile_cell = button,
-            .npc => npc_cells += 1,
-            .mission => mission_cells += 1,
+        .button => |button| switch (button.payload orelse continue) {
+            .hub_tool => |tool| switch (tool) {
+                .select => select_cell = button,
+                .tile => tile_cell = button,
+                .npc => npc_cells += 1,
+                .mission => mission_cells += 1,
+                .decoration_type => {},
+            },
+            else => {},
         },
         else => {},
     };
@@ -515,9 +605,12 @@ test "buildHubEditorBottomBar: the fixed pair - Select + Tile cells, the active 
     defer select_elements.deinit(arena.allocator());
     try buildHubEditorBottomBar(&select_elements, arena.allocator(), test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .active_tool = .select }, test_theme);
     for (select_elements.items) |element| switch (element) {
-        .button => |button| switch (button.payload.?.hub_tool) {
-            .select => try std.testing.expect(button.highlighted),
-            .tile => try std.testing.expect(!button.highlighted),
+        .button => |button| switch (button.payload orelse continue) {
+            .hub_tool => |tool| switch (tool) {
+                .select => try std.testing.expect(button.highlighted),
+                .tile => try std.testing.expect(!button.highlighted),
+                .npc, .mission, .decoration_type => {},
+            },
             else => {},
         },
         else => {},

@@ -151,25 +151,37 @@ pub fn importEditorPlayer(
 /// One event = one undo step covering the append + the tool switch + the
 /// inspector open (and the selection clear the tool switch carries - the
 /// editor_set_tool invariant).
+/// Read + parse data/editor_defaults.txt (the add-palette-type template
+/// source - a recorded read, so the add event replays identically).
+/// Returns null with the recoverable error already surfaced. Shared by
+/// the mission editor's add (`addEditorPaletteType`) and the hub
+/// editor's decoration add (campaign_editor/hub_handlers).
+pub fn readEditorDefaults(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+) ?loaders.EditorDefaults {
+    const bytes = history.readReconstructionFile("data/editor_defaults.txt") catch {
+        failReconstructionRead(history, "failed to read data/editor_defaults.txt");
+        return null;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator, &parser.editor_defaults_sections) catch {
+        failReconstructionRead(history, "failed to parse data/editor_defaults.txt");
+        return null;
+    };
+    validateConfigKeys(history, sections, parser.level_key_map, "data/editor_defaults.txt", allocator);
+    return loaders.loadEditorDefaults(sections, history.file_source, allocator, "data/editor_defaults.txt", null) catch {
+        failReconstructionRead(history, "failed to parse data/editor_defaults.txt (a palette default entry is missing)");
+        return null;
+    };
+}
+
 pub fn addEditorPaletteType(
     history: *GameStateHistory,
     current: *GameState,
     allocator: std.mem.Allocator,
     kind: events.EditorTypeKind,
 ) void {
-    const bytes = history.readReconstructionFile("data/editor_defaults.txt") catch {
-        failReconstructionRead(history, "failed to read data/editor_defaults.txt");
-        return;
-    };
-    const sections = parser.parseConfigFile(bytes, allocator, &parser.editor_defaults_sections) catch {
-        failReconstructionRead(history, "failed to parse data/editor_defaults.txt");
-        return;
-    };
-    validateConfigKeys(history, sections, parser.level_key_map, "data/editor_defaults.txt", allocator);
-    const defaults = loaders.loadEditorDefaults(sections, history.file_source, allocator, "data/editor_defaults.txt", null) catch {
-        failReconstructionRead(history, "failed to parse data/editor_defaults.txt (a palette default entry is missing)");
-        return;
-    };
+    const defaults = readEditorDefaults(history, allocator) orelse return;
 
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     switch (kind) {

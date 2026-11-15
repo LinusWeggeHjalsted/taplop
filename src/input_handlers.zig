@@ -1541,6 +1541,15 @@ pub fn handleAnytimeInput(
                             }
                             break :next .select;
                         },
+                        .decoration_type => |type_id| next: {
+                            // The last mission cell wraps to the first
+                            // decoration cell; the decoration cells cycle
+                            // among themselves then wrap to Select.
+                            if (type_id + 1 < campaign_editor.decoration_types.len) {
+                                break :next .{ .decoration_type = type_id + 1 };
+                            }
+                            break :next .select;
+                        },
                     };
                     pushPlayerActionAndDrain(history, .{ .player_set_hub_tool = .{
                         .tool = next_tool,
@@ -2737,6 +2746,14 @@ pub fn handleAnytimeInput(
             .toggle_hub_inspector => {
                 if (current.screen != .hub_editor or current.hub_editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_hub_inspector);
+            },
+            // The Decorations group's "+" cell: append the default-template
+            // type + select its tool (the add_editor_palette_type
+            // convention, over the campaign-shared palette).
+            .add_hub_decoration_type => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                if (current.campaign_editor == null) return;
+                pushPlayerActionAndDrain(history, .player_add_hub_decoration_type);
             },
             // The hub editor's tool palette cell (the select_editor_tool
             // convention over the drill-in's tool union).
@@ -4289,6 +4306,15 @@ pub fn handleIdleInput(
                             if (plan.len > 0) {
                                 event_push.pushPlayerAction(current, .{ .player_place_hub_exit_marker = .{
                                     .mission = mission_handle,
+                                    .position = clicked_position,
+                                } }, allocator);
+                            }
+                        },
+                        .decoration_type => |type_id| {
+                            const plan = planning.planHubDecorationPlacementActions(hub, current.campaign_editor.?.decoration_types, type_id, clicked_position, allocator);
+                            if (plan.len > 0) {
+                                event_push.pushPlayerAction(current, .{ .player_place_hub_decoration = .{
+                                    .type_id = type_id,
                                     .position = clicked_position,
                                 } }, allocator);
                             }

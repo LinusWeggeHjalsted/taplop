@@ -149,6 +149,7 @@ pub fn processEvent(
             // pure transforms writing through into
             // current.campaign_editor.?.hubs by the drill-in's handle.
             hub_editor_handlers.handleHubEditorEvent(
+                history,
                 current,
                 hub_editor_event,
                 allocator,

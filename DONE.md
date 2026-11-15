@@ -367,6 +367,7 @@ working rules).
 - [campaign-editor slice 4-3b: the hub editor's gestures + view overlays](#campaign-editor-slice-4-3b-the-hub-editors-gestures--view-overlays)
 - [campaign-editor slice 4-4a: the NPC + exit-marker tools - the placements join the grid](#campaign-editor-slice-4-4a-the-npc--exit-marker-tools---the-placements-join-the-grid)
 - [campaign-editor slice 4-4b: the hub editor's inspector - the read-only exit summary](#campaign-editor-slice-4-4b-the-hub-editors-inspector---the-read-only-exit-summary)
+- [campaign-editor slice 4-5a: the hub editor's Decorations group - the tool, the palette, the add-new](#campaign-editor-slice-4-5a-the-hub-editors-decorations-group---the-tool-the-palette-the-add-new)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22205,3 +22206,33 @@ surface's inspector bullet):
   default, the closed strip).
 
 1016 green.
+
+## campaign-editor slice 4-5a: the hub editor's Decorations group - the tool, the palette, the add-new
+
+The decoration authoring core (the first half of 4-5; the pickers +
+type inspector + the custom-art scan are 4-5b):
+
+- **The tool**: HubEditorToolId += `decoration_type` - the placement
+  machinery needed NOTHING new (planHubDecorationPlacementActions +
+  hub_place/delete_decoration existed since 4-3 for the move chain);
+  only the tool arm + the `player_place_hub_decoration` orchestrator
+  wired the click path.
+- **The palette group** (buildHubEditorBottomBar): the CAMPAIGN-SHARED
+  types (one cell per type - the base sprite tinted like the mission
+  editor's cells, keep-original-colors respected) + the "+" add-new
+  cell (the mission palette's square-panel shape, `Row.advance` again).
+- **The add-new**: `hub_add_decoration_type` - the editor_defaults.txt
+  template appended to the CAMPAIGN palette + the new tool selected
+  (the addEditorPaletteType convention; the read extracted as
+  editor_handlers.readEditorDefaults for both surfaces' reuse). The
+  signature threading: handleHubEditorEvent gains `history` (the one
+  live seam - the recorded template read, so the add replays
+  identically).
+- **The Tab cycle** grows the decoration arms; hub_set_tool validates
+  the type id against the palette bounds.
+- **Runtime-verified end to end** over the console channel: the "+"
+  created the stone_1 default type, the palette grew its cell, the tool
+  selected, and a grid click placed it - with the tile-free-footprint
+  invariant holding (the covered ground erased by the placement plan).
+
+1017 green.

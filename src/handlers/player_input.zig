@@ -1366,6 +1366,15 @@ pub fn handlePlayerInputEvent(
                 );
             }
         },
+        .player_add_hub_decoration_type => {
+            if (current.hub_editor == null or current.campaign_editor == null) return;
+            pushEvents(current, &.{.{ .hub_editor_event = .hub_add_decoration_type }}, allocator);
+        },
+        .player_place_hub_decoration => |place| {
+            if (hub_editor_handlers.drilledHub(current)) |hub| {
+                pushEvents(current, planning.planHubDecorationPlacementActions(hub, current.campaign_editor.?.decoration_types, place.type_id, place.position, allocator), allocator);
+            }
+        },
         .player_place_hub_exit_marker => |place| {
             if (hub_editor_handlers.drilledHub(current)) |hub| {
                 pushEvents(

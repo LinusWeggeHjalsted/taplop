@@ -434,7 +434,15 @@ work:
     - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
           "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
     - [ ] 4-5. Decorations group + pickers + the
-          custom/campaigns/<c>/hubs/<hub>/ art stem rule.
+          custom/campaigns/<c>/hubs/<hub>/ art stem rule. Part A DONE
+          (DONE.md, "campaign-editor slice 4-5a"): the decoration TOOL
+          (the placement machinery already existed from 4-3), the
+          palette group (cells + the "+" add-new over the
+          campaign-SHARED palette, the default template), the Tab cycle
+          - runtime-verified over the console channel. REMAINING (4-5b):
+          the sprite/footprint pickers + the decoration-type inspector
+          arm + the hub-local custom-art scan
+          (custom/campaigns/<c>/hubs/<hub>/) + per-cell delete.
     - [ ] 4-6. Metadata sidebar (hub name + the three gradients) +
           hub-only ctrl+S (skip-unsaved-references rule, never
           deletes).

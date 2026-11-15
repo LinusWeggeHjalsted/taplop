@@ -76,7 +76,7 @@ pub const editor_header_strip_height: i32 = 128;
 
 /// Side length of the square ui/panel "+" cells (palette group add-new,
 /// level-tab add-level).
-const editor_plus_size: i32 = 128;
+pub const editor_plus_size: i32 = 128;
 
 /// Maximum type cells a palette group shows at once. Groups with more
 /// types scroll horizontally (wheel over the group shifts the window;
