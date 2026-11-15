@@ -890,7 +890,7 @@ const EditorInspectorControl = union(enum) {
 /// list is built PER FRAME from the editor state (a present item adds its
 /// sub-field rows after its slot row). Sections carry their identity (not
 /// a label string): the id keys the expansion state + the label lookup.
-const EditorInspectorEntry = union(enum) {
+pub const EditorInspectorEntry = union(enum) {
     section: types.EditorInspectorSectionId,
     /// One blank unit before every section header except the first - the
     /// section break reads as a break, not just a different strip.
@@ -1263,7 +1263,7 @@ fn editorInspectorPlayerEntries(
 /// Footprint (a read-only tile count; the footprint editor is a later
 /// slice). Decoration layers are deferred with the layer editor (they
 /// arrive whole via a registry prefab pick in the meantime).
-fn editorInspectorDecorationEntries(
+pub fn editorInspectorDecorationEntries(
     allocator: std.mem.Allocator,
     definition: types.DecorationTypeDef,
     expanded: *const [editor_inspector_section_count]bool,
@@ -1434,6 +1434,18 @@ pub const InspectorItemContext = struct {
     type_definition: types.ItemTypeDef,
 };
 
+/// The render half's inputs besides the entries: the resolved per-kind
+/// contexts (exactly one populated - the one its entries read) + the one
+/// button color the strips + controls tint with (resolved per target by
+/// the resolve half: a team gradient for entity/player content, the world
+/// gradient for decorations, the player gradient for items).
+pub const InspectorRenderContext = struct {
+    entity: ?InspectorEntityContext = null,
+    decoration: ?InspectorDecorationContext = null,
+    item: ?InspectorItemContext = null,
+    button_color: Color,
+};
+
 fn buildEditorInspectorContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1442,20 +1454,11 @@ fn buildEditorInspectorContent(
     active_theme: types.ActiveColorTheme,
     ui_state: *UiState,
 ) !void {
-    const panel = editorInspectorPanelRect();
-    const content: Rectangle = .{
-        .x = panel.x + ui_gap,
-        .y = panel.y + ui_gap,
-        .width = panel.width - 2 * ui_gap,
-        .height = panel.height - 2 * ui_gap,
-    };
-    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
-    const scroll_offset = &ui_state.editor_inspector_scroll;
-
     // Target resolution: the active entity/decoration tool, a selection of
     // placements that all reference one type, or the PLAYER fallback (the
     // '!' spawn's loadout) - see editorInspectorTarget. All paths share
-    // the windowing machinery below; they differ in entries + context.
+    // renderInspectorEntries' windowing machinery; they differ in entries
+    // + context.
     // Exactly one context is populated (the one its entries read).
     const target = editorInspectorTarget(editor);
     const entity_context: ?InspectorEntityContext = switch (target) {
@@ -1513,15 +1516,6 @@ fn buildEditorInspectorContent(
             &ui_state.editor_inspector_section_expanded,
         ),
     };
-    // Unit math: a section header is 1 row unit, a field entry 2 (label
-    // line + control line). Scroll + windowing are in units, so every line
-    // stays on the 128px grid at any offset.
-    var total_units: i32 = 0;
-    for (entries) |entry| total_units += editorInspectorEntryUnits(entry);
-    const max_scroll_row = @max(@as(i32, 0), total_units - visible_rows);
-    if (scroll_offset.* < 0) scroll_offset.* = 0;
-    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
-
     // Team gradient throughout - the context's gradient (enemy content
     // enemy, player content player; matching the entity-inspect panel's
     // team-gradient coloring). Decoration content tints with the WORLD
@@ -1540,6 +1534,65 @@ fn buildEditorInspectorContent(
             @min(@as(u32, 5), types.gradient_color_count - 1)
         ],
     };
+
+    try renderInspectorEntries(
+        elements,
+        allocator,
+        font_metrics,
+        entries,
+        .{
+            .entity = entity_context,
+            .decoration = decoration_context,
+            .item = item_context,
+            .button_color = button_color,
+        },
+        active_theme,
+        ui_state,
+    );
+}
+
+/// The inspector content's GENERIC half: the windowed entries -> elements
+/// emission - panel geometry, row-unit math + scroll clamping, section
+/// strips, field rows, controls, the overflow scrollbar. Shared by every
+/// inspector surface: the mission editor's panel (the resolve half above)
+/// and the hub editor drill-in's decoration arm. The caller resolves the
+/// inspector target, builds the entries, and packs the context; exactly
+/// one context is populated (the one its entries read).
+pub fn renderInspectorEntries(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    entries: []const EditorInspectorEntry,
+    context: InspectorRenderContext,
+    active_theme: types.ActiveColorTheme,
+    ui_state: *UiState,
+) !void {
+    // The unpacked context - the emission below reads the per-kind
+    // contexts + the button color directly.
+    const entity_context = context.entity;
+    const decoration_context = context.decoration;
+    const item_context = context.item;
+    const button_color = context.button_color;
+
+    const panel = editorInspectorPanelRect();
+    const content: Rectangle = .{
+        .x = panel.x + ui_gap,
+        .y = panel.y + ui_gap,
+        .width = panel.width - 2 * ui_gap,
+        .height = panel.height - 2 * ui_gap,
+    };
+    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
+    const scroll_offset = &ui_state.editor_inspector_scroll;
+
+    // Unit math: a section header is 1 row unit, a field entry 2 (label
+    // line + control line). Scroll + windowing are in units, so every line
+    // stays on the 128px grid at any offset.
+    var total_units: i32 = 0;
+    for (entries) |entry| total_units += editorInspectorEntryUnits(entry);
+    const max_scroll_row = @max(@as(i32, 0), total_units - visible_rows);
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
