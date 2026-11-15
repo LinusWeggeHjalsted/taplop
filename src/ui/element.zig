@@ -1096,7 +1096,14 @@ fn curveContains(curve: Curve, position: ScreenPosition) bool {
     return false;
 }
 
-fn distanceToSegment(point: anytype, segment_start: anytype, segment_end: anytype) f32 {
+/// Euclidean distance from `point` to the segment, with the projection
+/// clamped to the segment - the reach past an endpoint is the distance to
+/// that endpoint, i.e. the ROUND-CAP property (the distance-to-polyline
+/// "sausage" has round caps + round joins by construction). Shared by
+/// curve hit-testing and the campaign-geometry baked-arrow rasterizer
+/// (the baked silhouette is this same distance test run per pixel - see
+/// campaign_geometry.zig).
+pub fn distanceToSegment(point: anytype, segment_start: anytype, segment_end: anytype) f32 {
     const dx = segment_end.x - segment_start.x;
     const dy = segment_end.y - segment_start.y;
     const length_squared = dx * dx + dy * dy;

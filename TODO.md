@@ -518,12 +518,6 @@ work:
         in the same commit.
 
   Slices (each a commit unit):
-  - [ ] 1. Headless helpers + tests in element.zig: classify
-        (collinearity tolerance, degenerate guards, the 8px bucket +
-        max-length clamp) + canonical local polylines per variant +
-        the sausage rasterizer (pure buffer math - opaque at the
-        tail, empty in dash gaps, round-cap silhouette at a join,
-        black-under-white layering).
   - [ ] 2. Bake + cache in textures.zig: silhouette buffer ->
         premultiplied trilinear texture, the ensure-bake fn, cache
         keyed like its siblings.
