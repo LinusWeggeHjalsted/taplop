@@ -373,6 +373,7 @@ working rules).
 - [campaign-editor slice 4-5c: the hub editor's sprite picker - the change-the-art loop](#campaign-editor-slice-4-5c-the-hub-editors-sprite-picker---the-change-the-art-loop)
 - [campaign-editor slice 4-5d: the reuse refactor - the mission editor's inspector + picker become the shared code](#campaign-editor-slice-4-5d-the-reuse-refactor---the-mission-editors-inspector--picker-become-the-shared-code)
 - [campaign-editor slice 4-5c(ii): the footprint editor + the layer machinery ride the reuse seams](#campaign-editor-slice-4-5cii-the-footprint-editor--the-layer-machinery-ride-the-reuse-seams)
+- [campaign-editor slice 4-6: the hub editor's metadata sidebar + ctrl+S](#campaign-editor-slice-4-6-the-hub-editors-metadata-sidebar--ctrls)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22525,3 +22526,75 @@ The 4-5 slice is COMPLETE (4-5a-c(ii) + the 4-5d reuse refactor).
   click (the 4-5c coordinate lesson, now with section expansion).
 
 1022 green.
+
+## campaign-editor slice 4-6: the hub editor's metadata sidebar + ctrl+S
+
+The hub editor drill-in's authoring surface is now complete: the
+metadata sidebar (the hub name + the three gradients) through the
+mission editor's own machinery, and the hub-only save with the
+skip-unsaved-references rule.
+
+- **Part A - the metadata sidebar**: `buildEditorMetadataSidebar` split
+  at its seams the 4-5d way - the entry union gained a generic
+  `name_field` variant (identity + value; the mission/level/hub names
+  all ride it), the windowed emission + scrollbar extracted as
+  `renderMetadataEntries`, the three gradient rows single-sited in
+  `appendGradientRows`, and `hubMetadataEntries` builds the hub's plan
+  (one `campaign_hub` section - the shared expansion id, one surface
+  live at a time - with the name field + the gradient rows over the
+  authored grid's keys). `buildEditorThemePicker` parameterized at the
+  current-gradient seam (the caller resolves: the mission view from the
+  level, the hub view from the grid). hub.txt v5 gains the optional
+  `enemy_gradient_index`/`player_gradient_index` keys (Hub type +
+  parser + loader + the inverse projection + the writer); the enemy
+  override is carried unused-for-now for symmetry, per the settled
+  design. The gradient consumption arms (open/pick/auto-toggle) branch
+  per screen over one compact event pair
+  (`player_set_hub_gradient {role, index?}` -> `hub_set_gradient` -
+  the drilled hub needs no index, so one event serves all three roles);
+  the picker target union gained `hub_gradient {role}`. The hub NAME
+  field reuses the campaign hub-name field identity + event, with its
+  replay validation widened to a dedicated two-screen check
+  (`validateCampaignHubNameAction`). Handler + view tests pin the
+  flows; the shipped-defaults binding-lint test stays green with the
+  new binding (the hub context is disjoint from the mission/campaign
+  ctrl+S contexts by construction).
+- **Part B - ctrl+S**: `save_hub` (the third ctrl+S sibling, in its
+  own binding context) -> the input-layer side-effect consumption ->
+  `saveHubEditor`. The write target resolves through the save MEMO
+  (the editor state's dir lags a side effect - the first
+  implementation keyed on `editor.campaign_dir` and wrongly re-errored
+  after a successful full save; caught live in the drive), gated on a
+  persistent `campaign.txt` under the resolved dir (one check covering
+  fresh campaigns AND official embedded content, with a message that
+  names both situations + the way out). A never-saved hub MINTS its
+  identity through the full save's own `resolveContentIdentity` (same
+  memo, so the next full save resolves the same uuid + dir) - the hub
+  lands unlisted in campaign.txt's Hubs section until that full save
+  catches up, the same eventual-consistency class as the skipped
+  exits. The skip rule lives IN the writer (the code assignment, the
+  grid's marker cells, and the Exits section share one gate - an
+  exit whose mission has no uuid yet is omitted entirely, marker
+  included, its authored ground staying) + the save counts + warns.
+  A writer test pins the skip round trip.
+- **The console pointer-hijack fix** (found from the author's live
+  report - a stuck error popup they could not dismiss): the scripted
+  pointer position's persist-while-held rule keyed on ANY mouse button
+  down, including the HARDWARE one. With console commands held behind
+  a `wait idle` that never releases (a modal popup makes
+  `game_is_idle` false), the stale scripted position stayed in the
+  queue - and every hardware press teleported the pointer there,
+  making the game unclickable. The queue now tracks its OWN held
+  buttons (`mouse_buttons_held_by_console`, maintained at the scripted
+  press/release) and the position applies only during the console's
+  own gesture. Console parse-level tests exist; the merge machinery is
+  drive-verified (every post-fix drive gesture works).
+- **Runtime-verified end to end over the console channel**: the
+  sidebar renders (the Metadata toggle, the "New Hub" name field, the
+  three gradient rows with Auto buttons); the fresh-campaign save
+  surfaces the descriptive no-folder message; the popup dismisses by
+  click; after a full campaign save, the hub-only save writes the real
+  hub.txt into the memo-resolved dir (uuids consistent with
+  campaign.txt's Hubs section, verified on disk) with no popup.
+
+1025 green.
