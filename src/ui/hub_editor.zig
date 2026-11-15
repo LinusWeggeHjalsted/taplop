@@ -887,193 +887,34 @@ pub fn buildHubEditorInspector(
     }.at;
 
     // The decoration-type content: the ACTIVE TOOL's type (the mission
-    // editor's tool-driven content rule), structured EXACTLY like the
-    // mission editor's decoration inspector - the Identity section
-    // (Sprite / Keep colors / Color) + the Footprint section, the section
-    // strips + two-line field rows through the shared emitters. The
-    // Sprite + Footprint rows render as read-only panels until the
-    // pickers land (4-5c): the layout is the mirror, the buttons
-    // become live with their pickers.
+    // editor's tool-driven content rule) through the mission editor's
+    // OWN entries fn + renderer - spacing, section strips, row units,
+    // windowing + scroll identical by construction (the 4-5d reuse).
+    // The footprint + layers rows render in the mission's live shapes;
+    // their picks go live for the hub surface with 4-5c(ii).
     if (hub_editor.active_tool == .decoration_type) {
         const type_id = hub_editor.active_tool.decoration_type;
         if (type_id >= campaign_editor.decoration_types.len) return;
         const type_definition = campaign_editor.decoration_types[type_id];
         const world = active_theme.world_gradient.colors;
         const decoration_button_color = world[@min(@as(u32, 5), types.gradient_color_count - 1)];
-        const row_height = editor_inspector.editor_inspector_row_height;
-
-        // Identity (the strip always renders - the mission editor's
-        // independent sections; only the children are conditional).
-        const identity_expanded = ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.identity)];
-        {
-            const strip: Rectangle = .{
-                .x = content.x,
-                .y = content.y,
-                .width = content.width,
-                .height = editor_shell.editor_header_strip_height,
-            };
-            try editor_inspector.emitInspectorSectionStrip(
-                elements,
-                allocator,
-                strip,
-                .identity,
-                identity_expanded,
-                decoration_button_color,
-                active_theme,
-            );
-        }
-        // The field rows: the label line + the control line (the mission
-        // inspector's two-unit convention) - the identity children, only
-        // while expanded.
-        const row = struct {
-            fn at(content_rect: Rectangle, index: i32, row_height_units: i32) Rectangle {
-                return .{
-                    .x = content_rect.x,
-                    .y = content_rect.y + index * row_height_units * editor_inspector.editor_inspector_row_height,
-                    .width = content_rect.width,
-                    .height = row_height_units * editor_inspector.editor_inspector_row_height,
-                };
-            }
-        }.at;
-
-        if (identity_expanded) {
-            // Sprite (the shared emitter - the button opens the picker
-            // via the surface-polymorphic open_editor_sprite_picker).
-            {
-                const cell = row(content, 1, 2);
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = "Sprite",
-                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
-                    .font_size = editor_shell.editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-                try editor_inspector.emitInspectorSpriteButton(
-                    elements,
-                    allocator,
-                    font_metrics,
-                    type_definition.sprite,
-                    decoration_button_color,
-                    editor_inspector.inspectorControlRect(cell),
-                    active_theme,
-                );
-            }
-
-            // Keep colors (the shared toggle emitter, the surface-polymorphic
-            // mission action - the consumption site branches per screen).
-            {
-                const cell = row(content, 3, 2);
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = "Keep colors",
-                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
-                    .font_size = editor_shell.editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-                try editor_inspector.emitInspectorToggle(
-                    elements,
-                    allocator,
-                    font_metrics,
-                    type_definition.keep_original_colors,
-                    .toggle_editor_decoration_keep_original_colors,
-                    decoration_button_color,
-                    editor_inspector.inspectorControlRect(cell),
-                    active_theme,
-                );
-            }
-
-            // Color (the shared swatch emitter: the world gradient + the
-            // surface-polymorphic mission action; hidden while the flag is
-            // on - the mission's dead-control rule).
-            if (!type_definition.keep_original_colors) {
-                const cell = row(content, 5, 2);
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = "Color",
-                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
-                    .font_size = editor_shell.editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-                try editor_inspector.emitInspectorColorSwatches(
-                    elements,
-                    allocator,
-                    world,
-                    type_definition.color_index,
-                    .select_editor_decoration_color,
-                    null,
-                    editor_inspector.inspectorControlRect(cell),
-                );
-            }
-        }
-
-        // Footprint (the tile count; read-only until the editor). The
-        // strip sits after the identity strip + its expanded children
-        // (3 two-unit rows: Sprite, Keep colors, Color - Color hidden
-        // while the flag is on).
-        {
-            const footprint_expanded = ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.footprint)];
-            const identity_children_units: i32 = if (!identity_expanded)
-                0
-            else if (type_definition.keep_original_colors)
-                4
-            else
-                6;
-            const strip_y = content.y + editor_shell.editor_header_strip_height + identity_children_units * row_height;
-            const strip: Rectangle = .{
-                .x = content.x,
-                .y = strip_y,
-                .width = content.width,
-                .height = editor_shell.editor_header_strip_height,
-            };
-            try editor_inspector.emitInspectorSectionStrip(
-                elements,
-                allocator,
-                strip,
-                .footprint,
-                footprint_expanded,
-                decoration_button_color,
-                active_theme,
-            );
-            if (footprint_expanded) {
-                const cell: Rectangle = .{
-                    .x = content.x,
-                    .y = strip_y + editor_shell.editor_header_strip_height,
-                    .width = content.width,
-                    .height = 2 * row_height,
-                };
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = "Footprint",
-                    .screen_position = .{ .x = cell.x, .y = editor_inspector.inspectorLabelY(cell) },
-                    .font_size = editor_shell.editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-                const control_rect = editor_inspector.inspectorControlRect(cell);
-                const count_label = try std.fmt.allocPrint(allocator, "{d} tiles", .{type_definition.footprint.len});
-                const count_width = font_metrics.measureSpanWidth(text(count_label), editor_shell.editor_group_header_font_size);
-                const count_rect: Rectangle = .{
-                    .x = control_rect.x,
-                    .y = control_rect.y,
-                    .width = @divFloor(control_rect.width, 2),
-                    .height = control_rect.height,
-                };
-                try elements.append(allocator, .{ .nine_slice_panel = .{
-                    .sprite_id = "ui/panel",
-                    .screen_position = count_rect.position(),
-                    .width = count_rect.width,
-                    .height = count_rect.height,
-                    .color = decoration_button_color,
-                    .blocks_input = false,
-                } });
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = count_label,
-                    .screen_position = count_rect.placeCenter(count_width, editor_shell.editor_group_header_font_size).position(),
-                    .font_size = editor_shell.editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-            }
-        }
+        const entries = try editor_inspector.editorInspectorDecorationEntries(
+            allocator,
+            type_definition,
+            &ui_state.editor_inspector_section_expanded,
+        );
+        try editor_inspector.renderInspectorEntries(
+            elements,
+            allocator,
+            font_metrics,
+            entries,
+            .{
+                .decoration = .{ .type_definition = type_definition },
+                .button_color = decoration_button_color,
+            },
+            active_theme,
+            ui_state,
+        );
         return;
     }
 
@@ -1362,12 +1203,15 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
     }.at;
 
     var ui_state = ui_state_mod.UiState{};
-    // The shared default expands Identity - collapse it for the
+    // All sections expanded by default - collapse them for the
     // strips-only case.
     ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.identity)] = false;
-    // The decoration-type tool: the mission inspector's structure - the
-    // Identity section (Sprite / Keep colors / Color) + the Footprint
-    // section.
+    ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.footprint)] = false;
+    ui_state.editor_inspector_section_expanded[@backingInt(types.EditorInspectorSectionId.layers)] = false;
+    // The decoration-type tool: the mission inspector's own structure
+    // (editorInspectorDecorationEntries + renderInspectorEntries) - the
+    // Identity (Sprite / Keep colors / Color) + Footprint + Layers
+    // sections, identical by construction (the 4-5d reuse).
     {
         var elements: UiElementList = .empty;
         defer elements.deinit(allocator);
@@ -1380,7 +1224,7 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
             },
             else => {},
         };
-        try std.testing.expectEqual(@as(usize, 2), section_strips);
+        try std.testing.expectEqual(@as(usize, 3), section_strips);
         try std.testing.expect(findLabel(elements.items, "Sprite") == null);
     }
     // Identity expanded: the Sprite / Keep colors / Color rows + the live
@@ -1453,4 +1297,106 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
         };
         try std.testing.expectEqual(@as(usize, 1), panel_count); // the strip's own panel only
     }
+}
+
+test "hub editor inspector: the decoration arm emits the mission editor's exact content (the 4-5d identity contract)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // The SAME definition (incl. a layer - a mission-live row class)
+    // through both surfaces, with the same theme + view state: the
+    // mission editor's own entries fn + renderer produce the hub's
+    // decoration arm, so the emitted content must be identical
+    // element-for-element. Any drift in either resolve half (button
+    // color, panel rect, entries) breaks here.
+    const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const layers = [_]types.DecorationLayer{.{
+        .sprite = "tree_grass_back",
+        .color_index = 1,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+    }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "tree_2",
+        .sprite = "tree_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+        .color_index = 2,
+        .layers = &layers,
+    }};
+
+    var ui_state = ui_state_mod.UiState{};
+
+    // The mission editor's panel.
+    const mission_editor: types.Editor = .{
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+    };
+    var mission_elements: UiElementList = .empty;
+    defer mission_elements.deinit(allocator);
+    try editor_inspector.buildEditorInspectorPanel(
+        &mission_elements,
+        allocator,
+        test_metrics,
+        mission_editor,
+        test_theme,
+        true,
+        &ui_state,
+    );
+
+    // The hub editor drill-in's panel, over the campaign palette.
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{
+            .{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{} },
+        },
+        .decoration_types = &decoration_types,
+        .next_handle = 1,
+    };
+    var hub_elements: UiElementList = .empty;
+    defer hub_elements.deinit(allocator);
+    try buildHubEditorInspector(
+        &hub_elements,
+        allocator,
+        test_metrics,
+        ui_element.screenRect(),
+        campaign_editor,
+        .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } },
+        test_theme,
+        button_color,
+        &ui_state,
+    );
+
+    // Both wrappers are the toggle strip (panel + button + label) + the
+    // background panel - 4 elements, differing by design (the toggle
+    // action name, the panel's input blocking). Everything after must
+    // match exactly (expectEqualDeep: value comparison - the emissions
+    // build their own slices, so pointer identity does not hold).
+    try std.testing.expect(mission_elements.items.len >= 5);
+    try std.testing.expectEqual(mission_elements.items.len, hub_elements.items.len);
+    for (mission_elements.items[4..], hub_elements.items[4..]) |mission_element, hub_element| {
+        try std.testing.expectEqualDeep(mission_element, hub_element);
+    }
+
+    // The compared span is the real content, not a vacuous empty tail:
+    // the identity children render (all sections expanded by default).
+    var sprite_label_seen = false;
+    for (mission_elements.items[4..]) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "Sprite")) sprite_label_seen = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(sprite_label_seen);
 }
