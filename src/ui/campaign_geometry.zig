@@ -292,7 +292,7 @@ fn bucketToMultiple(value: f32, granularity: i32) i32 {
 /// straight family covers plain straight edges, the parallel-spread bow,
 /// and the dashed dangling stub (dashed is a cache-key axis, not a shape);
 /// the self_loop family is the fixed-constant teardrop.
-const BakedArrowVariant = enum { straight, self_loop };
+pub const BakedArrowVariant = enum { straight, self_loop };
 
 /// One curve's baked-arrow identity: everything the render seam needs to
 /// look up (or bake) the texture and place it. `length`/`bow` are the
@@ -301,7 +301,7 @@ const BakedArrowVariant = enum { straight, self_loop };
 /// point (the draw pivot). The width is the outline-INCLUSIVE stroke width
 /// (the single decorative curve per edge), so the raster's black outline
 /// reaches width/2 and the white inner stroke width/2 - edge_outline_width.
-const BakedArrowParams = struct {
+pub const BakedArrowParams = struct {
     variant: BakedArrowVariant,
     /// The bucketed chord length (straight family) or the teardrop's fixed
     /// reach (self_loop family), reference px.
@@ -326,11 +326,25 @@ const BakedArrowParams = struct {
 /// bucket-rounded): longer edges draw CLAMPED - the accepted shortening -
 /// rather than falling back. The self_loop family ignores the bound (its
 /// canvas is small). Pure: identical curves give identical params.
-fn bakedArrowParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowParams {
+pub fn bakedArrowParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowParams {
     if (max_baked_length < baked_arrow_length_bucket) return null;
     if (curve.start.x == curve.end.x and curve.start.y == curve.end.y)
         return bakedLoopParams(curve);
     return bakedStraightParams(curve, max_baked_length);
+}
+
+/// The longest straight-arrow length bakeable against a platform texture
+/// size limit: the canvas pads the drawn length on both sides (the
+/// outline reach + falloff + slack, at the standard edge width) and the
+/// classifier expects bucket-aligned bounds, so the bound floors to a
+/// bucket multiple. The self_loop family ignores the bound - its canvas
+/// is small, and a bake that somehow exceeds the real limit simply fails
+/// and the draw falls back to the per-segment path.
+pub fn maxBakedArrowLength(max_texture_size: i32) i32 {
+    const overhead = 2 * (@divTrunc(edge_width + 2 * edge_outline_width, 2) +
+        @as(i32, @intFromFloat(baked_arrow_edge_falloff)) + 1);
+    const bounded = @max(baked_arrow_length_bucket, max_texture_size - overhead);
+    return @divTrunc(bounded, baked_arrow_length_bucket) * baked_arrow_length_bucket;
 }
 
 fn bakedStraightParams(curve: element.Curve, max_baked_length: i32) ?BakedArrowParams {
@@ -485,7 +499,7 @@ fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians:
 
 /// The baked texture's dimensions + the draw pivot (the local origin,
 /// i.e. the curve's start point) in canvas pixels.
-const BakedArrowCanvas = struct {
+pub const BakedArrowCanvas = struct {
     width: u32,
     height: u32,
     pivot_x: u32,
@@ -528,7 +542,7 @@ fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segm
 /// bounding box padded by the outline's reach + the anti-aliased falloff +
 /// slack. The padding MUST clear the full outline half-width - the
 /// silhouette clips at the canvas border, which would shave the black rim.
-fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
+pub fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
     var segments: [max_baked_arrow_segments]BakedArrowSegment = undefined;
     const count = bakedArrowSegments(params, &segments);
 
@@ -571,7 +585,7 @@ fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
 /// `element.distanceToSegment`, the same math the hit region uses): round
 /// caps + round joins by construction, with a ~1px anti-aliased falloff at
 /// the outer edge. Pure: identical params give identical pixels.
-fn rasterizeBakedArrow(params: BakedArrowParams, canvas: BakedArrowCanvas, pixels: []u8) void {
+pub fn rasterizeBakedArrow(params: BakedArrowParams, canvas: BakedArrowCanvas, pixels: []u8) void {
     std.debug.assert(pixels.len == @as(usize, @intCast(canvas.width)) * @as(usize, @intCast(canvas.height)) * 4);
 
     var segments: [max_baked_arrow_segments]BakedArrowSegment = undefined;
@@ -948,6 +962,18 @@ test "bakedArrowParams: foreign curves fall back to the per-segment draw" {
         .arrowhead = true,
     };
     try std.testing.expectEqual(@as(?BakedArrowParams, null), bakedArrowParams(swapped, 4096));
+}
+
+test "maxBakedArrowLength: the bound subtracts the canvas padding, floors to a bucket" {
+    // The canvas pads 12 (outline reach) + 1 (falloff) + 1 (slack) per
+    // side = 28 total at the standard edge width; the remainder floors
+    // to an 8px multiple (a BOUND rounds down - rounding up could exceed
+    // the platform limit).
+    try expectEqualInt(4064, maxBakedArrowLength(4096));
+    try expectEqualInt(2016, maxBakedArrowLength(2048));
+    // A degenerate limit still yields one bucket, never zero or negative
+    // (the classifier guards max < bucket itself).
+    try expectEqualInt(16, maxBakedArrowLength(50));
 }
 
 fn pixelColor(pixels: []const u8, canvas: BakedArrowCanvas, x: usize, y: usize) [4]u8 {

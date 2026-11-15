@@ -44,6 +44,12 @@ const diagnostics_probes = @import("diagnostics.zig");
 const draw_mod = @import("draw.zig");
 
 const reference_width_int: i32 = types.reference_width;
+
+// Direct GL capability probe (the diagnostics.glGetString precedent;
+// raylib itself calls glGetIntegerv during rlglInit, so the symbol links
+// on every platform incl. web).
+extern "c" fn glGetIntegerv(name: c_int, params: *c_int) void;
+const gl_max_texture_size: c_int = 0x0D33;
 const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
@@ -241,6 +247,10 @@ pub const RaylibBackend = struct {
     textures: textures_mod.TextureStore,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
+    /// The platform's GL_MAX_TEXTURE_SIZE, queried once at init (4096
+    /// fallback if the probe returns nothing usable). Bounds the baked
+    /// arrow lengths - see `ui.maxBakedArrowLength`.
+    max_texture_size: i32,
     /// Current render target pixel dimensions (a `RenderResolution` preset,
     /// applied via `applyRenderResolution`). The struct fields (not comptime
     /// consts) so the `render_resolution` setting can change them at runtime.
@@ -320,6 +330,15 @@ pub const RaylibBackend = struct {
         rl.initWindow(width, height, title);
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
 
+        // The capability probe needs the context live (initWindow just
+        // created it).
+        var texture_capability: c_int = 0;
+        glGetIntegerv(gl_max_texture_size, &texture_capability);
+        const max_texture_size: i32 = if (texture_capability > 0)
+            @intCast(texture_capability)
+        else
+            4096;
+
         // Create the render target at the DEFAULT preset (settings load after
         // init - the backend is passed into createSessionSetup). `run`'s
         // per-frame diff-and-apply (main.zig) recreates it at the user's
@@ -364,6 +383,7 @@ pub const RaylibBackend = struct {
         return .{
             .allocator = allocator,
             .render_target = render_target,
+            .max_texture_size = max_texture_size,
             .render_width = default_dims.width,
             .render_height = default_dims.height,
             .text = text_mod.TextRenderer.init(allocator),

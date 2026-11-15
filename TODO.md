@@ -518,9 +518,6 @@ work:
         in the same commit.
 
   Slices (each a commit unit):
-  - [ ] 2. Bake + cache in textures.zig: silhouette buffer ->
-        premultiplied trilinear texture, the ensure-bake fn, cache
-        keyed like its siblings.
   - [ ] 3. Emission flip + draw arm: pair->single in both builders
         + structure-test updates (rider: fold the NEXT UP hit-curve
         bounds-coherence item in here - the same tests) + the .curve

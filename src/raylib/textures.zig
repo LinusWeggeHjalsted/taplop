@@ -1,6 +1,7 @@
 //! Texture subsystem of the raylib backend: the lazy sprite-texture
 //! caches (main textures, edge-outline masks, composite occlusion-inset
-//! masks, opaque-pixel bounds) and all mask-generation math. Asset paths
+//! masks, opaque-pixel bounds, baked arrow sprites) and all mask-generation
+//! math. Asset paths
 //! are built into fixed stack buffers (sprite ids are bounded by filesystem
 //! component limits; an overflow is a fail-fast panic, same class as the
 //! old arena OOM). See DESIGN → Platform Seam (missing-art magenta
@@ -9,6 +10,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const types = @import("../types.zig");
+const ui = @import("../ui.zig");
 const file_source = @import("../file_source.zig");
 
 /// Which side of the silhouette an outline mask sits on. OUTER = the band
@@ -96,6 +98,15 @@ pub const TextureStore = struct {
     /// overlays against an entity's actual rendered art. See DESIGN →
     /// Animation.
     sprite_bounds_cache: std.StringHashMapUnmanaged(?types.SpriteBounds) = .empty,
+    /// Baked-arrow params key -> the rasterized edge texture (the black
+    /// outline + white inner stroke in one sprite; the shape math lives in
+    /// campaign_geometry's baked-arrow section). Generated lazily by
+    /// `ensureArrowBaked` on the first `getArrowTexture` request - the map
+    /// edges' draw sites. A cached `null` means the bake failed (e.g. the
+    /// canvas exceeds the platform texture limit) -> the caller falls back
+    /// to the per-segment draw. Keys own their duped strings (freed in
+    /// deinit).
+    arrow_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
 
     /// Unload every cached texture + free the cache maps. No outline or
     /// inset masks outlive the textures they derive from.
@@ -125,6 +136,12 @@ pub const TextureStore = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.sprite_bounds_cache.deinit(self.allocator);
+        var arrows = self.arrow_cache.iterator();
+        while (arrows.next()) |entry| {
+            if (entry.value_ptr.*) |texture| rl.unloadTexture(texture);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.arrow_cache.deinit(self.allocator);
     }
 
     /// Load a texture for `sprite_id` (assets/<id>.png), caching the result.
@@ -176,6 +193,69 @@ pub const TextureStore = struct {
             self.ensureCompositeInsetLoaded(key, stack, frame_width, frame_height);
         }
         return self.composite_inset_cache.get(key).?;
+    }
+
+    /// The baked-arrow cache key for a params set:
+    /// `arrow|{variant}|{length}|{bow}|{width}|{dashed}|{arrowhead}` - one
+    /// entry per distinct baked shape (the flat-composite-key convention
+    /// of `outlineCacheKey`). A STORED key owns its string (duped at
+    /// insert, freed in deinit); lookups may pass a stack-buffer borrow.
+    fn arrowCacheKey(buffer: []u8, params: ui.BakedArrowParams) []const u8 {
+        return std.fmt.bufPrint(buffer, "arrow|{s}|{d}|{d}|{d}|{d}|{d}", .{
+            @tagName(params.variant),
+            params.length,
+            params.bow,
+            params.width,
+            @intFromBool(params.dashed),
+            @intFromBool(params.arrowhead),
+        }) catch @panic("arrow cache key overflow");
+    }
+
+    /// The baked arrow texture for `params` (the black outline + white
+    /// inner stroke rasterized from the curve family's canonical shape -
+    /// see campaign_geometry.zig): drawn once per distinct shape and
+    /// reused by every edge of that shape, tinted + rotated at the draw
+    /// site. Lazily baked via `ensureArrowBaked`. null if the bake failed
+    /// (cached miss) - the caller falls back to the per-segment draw.
+    pub fn getArrowTexture(self: *TextureStore, params: ui.BakedArrowParams) ?rl.Texture2D {
+        var key_buffer: [path_buffer_size]u8 = undefined;
+        const key = arrowCacheKey(&key_buffer, params);
+        if (!self.arrow_cache.contains(key)) self.ensureArrowBaked(key, params);
+        return self.arrow_cache.get(key).?;
+    }
+
+    /// Rasterize + cache the arrow for `params`: the headless rasterizer
+    /// paints the straight-alpha silhouette, then the same upload path
+    /// every composited texture takes (premultiply for
+    /// BLEND_ALPHA_PREMULTIPLY, trilinear mipmaps - see
+    /// `premultiplyAlpha`/`rgbaBufToTexture`). Idempotent via
+    /// `arrow_cache` presence; caches null on failure.
+    fn ensureArrowBaked(self: *TextureStore, lookup_key: []const u8, params: ui.BakedArrowParams) void {
+        const owned_key = self.allocator.dupe(u8, lookup_key) catch
+            @panic("failed to dupe arrow cache key");
+
+        const texture: ?rl.Texture2D = blk: {
+            const canvas = ui.bakedArrowCanvas(params);
+            const width: i32 = @intCast(canvas.width);
+            const height: i32 = @intCast(canvas.height);
+            const pixels = self.allocator.alloc(u8, @as(usize, @intCast(width)) * @as(usize, @intCast(height)) * 4) catch
+                break :blk null;
+            defer self.allocator.free(pixels);
+            ui.rasterizeBakedArrow(params, canvas, pixels);
+
+            var image = rl.Image{
+                .data = @ptrCast(pixels.ptr),
+                .width = width,
+                .height = height,
+                .mipmaps = 1,
+                .format = .uncompressed_r8g8b8a8,
+            };
+            premultiplyAlpha(&image);
+            break :blk self.rgbaBufToTexture(pixels, width, height) catch null;
+        };
+
+        self.arrow_cache.put(self.allocator, owned_key, texture) catch
+            @panic("failed to cache baked arrow");
     }
 
     /// Build and cache the INNER outline mask for a composited silhouette.
