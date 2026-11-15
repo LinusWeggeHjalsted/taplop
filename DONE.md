@@ -375,6 +375,7 @@ working rules).
 - [campaign-editor slice 4-5c(ii): the footprint editor + the layer machinery ride the reuse seams](#campaign-editor-slice-4-5cii-the-footprint-editor--the-layer-machinery-ride-the-reuse-seams)
 - [campaign-editor slice 4-6: the hub editor's metadata sidebar + ctrl+S](#campaign-editor-slice-4-6-the-hub-editors-metadata-sidebar--ctrls)
 - [console input: the wait-idle hold can no longer stall the channel](#console-input-the-wait-idle-hold-can-no-longer-stall-the-channel)
+- [campaign-editor slice 4-7: hub-content validation findings folded into the campaign Validate](#campaign-editor-slice-4-7-hub-content-validation-findings-folded-into-the-campaign-validate)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22642,3 +22643,35 @@ that change only through INPUT - which the hold itself was withholding.
   cascade (the aggro_check rule - an inactive enemy acts never).
 
 1027 green.
+
+## campaign-editor slice 4-7: hub-content validation findings folded into the campaign Validate
+
+The last slice-4 piece: the Validate button now certifies every hub's
+CONTENT, not just the graph. `loaders.checkHubContent` (pure over one
+loaded hub - no IO, unit-tested with a hand-built fixture) collects:
+off-grid exit markers and NPCs (not on the hub's tile grid - the
+click/reach machinery keys on tiles); stacked placements (two markers,
+two NPCs, a marker on an NPC, or either on the player spawn); and
+decoration footprints covering tile-grid ground (which subsumes
+covering the spawn/markers/NPCs - all of them are tiles) or another
+decoration's footprint. The belt-and-braces layer: the edit-time
+planners veto + prune every one of these live; the Validate certifies
+the FILES a player receives, catching hand-edited content. The wiring
+(`validateCampaignHubs` in the campaign io) reads + loads every
+resolved hub's saved hub.txt through the same load pipeline a session
+uses, then runs the pure check - the markerless/unstartable finding
+was already `checkCampaignGraph`'s, so 4-7's remainder was exactly
+these two check families.
+
+The integration test caught the existing validate fixtures carrying
+degenerate hubs all along - exit markers stacked on the player spawn,
+a state the file format cannot represent (one layout char per cell);
+the previous Validate never read the hub files, so it never noticed.
+The fixtures now author legal placements, and the test exercises the
+full chain end to end: save, validate, read + load the hub.txt through
+the real file source, findings surface.
+
+Slice 4 (the hub editor drill-in) is COMPLETE: 4-1 framing through
+4-7 validation, all landed.
+
+1028 green.

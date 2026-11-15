@@ -433,8 +433,6 @@ work:
           console channel).
     - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
           "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
-    - [ ] 4-7. Hub-content validation findings (overlapping
-          placements, off-grid) folded into the campaign Validate.
   - [ ] 5. The mission-editor hand-off (campaign context - SETTLED:
         only the save target (the campaign's missions/) + the
         world-map return button differ; export unchanged - DESIGN →

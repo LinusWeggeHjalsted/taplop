@@ -687,6 +687,10 @@ fn missionMemoExistedBefore(history: *GameStateHistory, handle: u32) bool {
 ///     inline orphan warnings - stubs, orphans, markerless missions,
 ///     unresolvable missions, unreachable hubs; the finalized-campaign
 ///     doctrine)
+///   - the hub-content findings (`loaders.checkHubContent` over every
+///     resolved hub's saved file - off-grid markers/NPCs, stacked
+///     placements, decoration footprints on walkable ground or on each
+///     other; the belt-and-braces layer over the edit-time planners)
 ///   - every declared mission's validation replay
 ///     (`validation_replay.checkMissionValidationArtifact` - a missing or
 ///     stale replay reads as unvalidated)
@@ -719,6 +723,7 @@ pub fn validateSavedCampaign(
     campaign.missions = loaders.resolveCampaignMissions(campaign, history.file_source, allocator, &warnings);
     loaders.deriveCampaignEdges(&campaign, sections, history.file_source, allocator, &warnings);
     loaders.checkCampaignGraph(campaign, allocator, &warnings);
+    validateCampaignHubs(history, campaign, allocator, &warnings);
     validateCampaignMissions(history, sections, campaign, allocator, &warnings);
 
     if (warnings.items.len == 0) {
@@ -729,6 +734,42 @@ pub fn validateSavedCampaign(
         return;
     }
     shared.surfaceWarnings(history, &warnings, allocator);
+}
+
+/// The hub-content findings (DESIGN → The hub editor surface →
+/// Validation): every RESOLVED hub's file is read + loaded through the
+/// same load-side pipeline a player's session uses, then the pure
+/// `loaders.checkHubContent` certifies its content (off-grid markers /
+/// NPCs, stacked placements, decoration footprints on walkable ground or
+/// on each other). Unresolved hub dirs are skipped (the graph checks
+/// already named them).
+fn validateCampaignHubs(
+    history: *GameStateHistory,
+    campaign: types.Campaign,
+    allocator: std.mem.Allocator,
+    warnings: *std.ArrayList([]const u8),
+) void {
+    for (campaign.hubs) |hub_entry| {
+        if (hub_entry.dir.len == 0) continue;
+        const hub_txt_path = std.fmt.allocPrint(
+            allocator,
+            "campaigns/{s}/hubs/{s}/hub.txt",
+            .{ campaign.dir, hub_entry.dir },
+        ) catch @panic("failed to format hub.txt validation path");
+        const hub_bytes = history.file_source.readFile(allocator, hub_txt_path) catch {
+            appendValidationWarning(allocator, warnings, "hub '{s}': could not read the saved hub.txt", .{hub_entry.name});
+            continue;
+        };
+        const hub_sections = parser.parseConfigFile(hub_bytes, allocator, &parser.hub_sections) catch {
+            appendValidationWarning(allocator, warnings, "hub '{s}': the saved hub.txt is malformed", .{hub_entry.name});
+            continue;
+        };
+        const hub = loaders.loadHub(hub_sections, history.file_source, allocator, hub_txt_path, warnings) catch {
+            appendValidationWarning(allocator, warnings, "hub '{s}': the saved hub.txt failed to load", .{hub_entry.name});
+            continue;
+        };
+        loaders.checkHubContent(hub, allocator, warnings);
+    }
 }
 
 /// Every mission the campaign DECLARES (the Missions section) must carry

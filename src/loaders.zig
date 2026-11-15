@@ -10,6 +10,7 @@ const std = @import("std");
 const utility_skills = @import("utility_skills.zig");
 const types = @import("types.zig");
 const parser = @import("parser.zig");
+const functions = @import("functions.zig");
 const deep_copy = @import("deep_copy.zig");
 const lookups = @import("generated_lookups.zig");
 const file_source_mod = @import("file_source.zig");
@@ -3402,6 +3403,84 @@ pub fn checkCampaignGraph(
         for (campaign.hubs) |hub| {
             if (!reachable.contains(hub.uuid)) {
                 appendWarning(warnings, allocator, "hub '{s}' is unreachable from the start hub (no mission path leads there)", .{hub.uuid});
+            }
+        }
+    }
+}
+
+/// The hub-content findings of the campaign Validate (DESIGN → Campaigns
+/// & the Campaign Editor → The hub editor surface → Validation): over one
+/// LOADED hub, every exit marker and NPC must sit on the hub's tile grid
+/// (walkable ground - the click/reach machinery keys on tiles), nothing
+/// may stack on one tile (two markers, two NPCs, a marker on an NPC, or
+/// either on the player spawn), and no decoration footprint may cover
+/// tile-grid ground (the model's own rule - the edit-time planners veto
+/// + prune all of these; the Validate is the belt-and-braces layer that
+/// certifies the FILES, catching hand-edited content). Pure over the
+/// loaded hub - no IO, unit-testable with a hand-built fixture.
+pub fn checkHubContent(
+    hub: types.Hub,
+    allocator: std.mem.Allocator,
+    warnings: ?*std.ArrayList([]const u8),
+) void {
+    if (warnings == null) return;
+    const hub_name = if (hub.name.len > 0) hub.name else hub.uuid;
+
+    // Markers: on the tile grid, never pairwise-stacked, never on the
+    // player spawn.
+    for (hub.mission_exits, 0..) |exit, exit_index| {
+        if (!functions.tileListContains(hub.hub_tiles, exit.position)) {
+            appendWarning(warnings, allocator, "hub '{s}': the exit marker for mission '{s}' is off the tile grid at ({d}, {d})", .{ hub_name, exit.mission_uuid, exit.position.x, exit.position.y });
+        }
+        if (exit.position.x == hub.player.position.x and exit.position.y == hub.player.position.y) {
+            appendWarning(warnings, allocator, "hub '{s}': the exit marker for mission '{s}' covers the player spawn at ({d}, {d})", .{ hub_name, exit.mission_uuid, exit.position.x, exit.position.y });
+        }
+        for (hub.mission_exits[exit_index + 1 ..]) |other| {
+            if (exit.position.x == other.position.x and exit.position.y == other.position.y) {
+                appendWarning(warnings, allocator, "hub '{s}': two exit markers stack at ({d}, {d}) (one layout char per cell - the format cannot carry both)", .{ hub_name, exit.position.x, exit.position.y });
+            }
+        }
+        for (hub.npcs) |npc| {
+            if (exit.position.x == npc.position.x and exit.position.y == npc.position.y) {
+                appendWarning(warnings, allocator, "hub '{s}': an exit marker and an NPC ({s}) stack at ({d}, {d})", .{ hub_name, @tagName(npc.npc_type), exit.position.x, exit.position.y });
+            }
+        }
+    }
+
+    // NPCs: on the tile grid, never on the player spawn, never pairwise.
+    for (hub.npcs, 0..) |npc, npc_index| {
+        if (!functions.tileListContains(hub.hub_tiles, npc.position)) {
+            appendWarning(warnings, allocator, "hub '{s}': an NPC ({s}) is off the tile grid at ({d}, {d})", .{ hub_name, @tagName(npc.npc_type), npc.position.x, npc.position.y });
+        }
+        if (npc.position.x == hub.player.position.x and npc.position.y == hub.player.position.y) {
+            appendWarning(warnings, allocator, "hub '{s}': an NPC ({s}) covers the player spawn at ({d}, {d})", .{ hub_name, @tagName(npc.npc_type), npc.position.x, npc.position.y });
+        }
+        for (hub.npcs[npc_index + 1 ..]) |other| {
+            if (npc.position.x == other.position.x and npc.position.y == other.position.y) {
+                appendWarning(warnings, allocator, "hub '{s}': two NPCs ({s}) stack at ({d}, {d})", .{ hub_name, @tagName(npc.npc_type), npc.position.x, npc.position.y });
+            }
+        }
+    }
+
+    // Decorations: no footprint tile on the tile grid (which subsumes
+    // covering the spawn, a marker, or an NPC - all of them are tiles),
+    // and no footprint overlap with another decoration.
+    for (hub.decorations, 0..) |decoration, decoration_index| {
+        const footprint_tiles = decorationFootprintWorldTiles(
+            decoration.footprint,
+            decoration.position,
+            allocator,
+        );
+        for (footprint_tiles) |tile| {
+            if (functions.tileListContains(hub.hub_tiles, tile)) {
+                appendWarning(warnings, allocator, "hub '{s}': the decoration '{s}' covers the tile grid at ({d}, {d}) (footprints sit beside the walkable ground - the editor prunes these)", .{ hub_name, decoration.name, tile.x, tile.y });
+            }
+        }
+        for (hub.decorations[decoration_index + 1 ..]) |other| {
+            for (footprint_tiles) |tile| {
+                if (decorationFootprintCovers(other.footprint, other.position, tile, allocator)) {
+                    appendWarning(warnings, allocator, "hub '{s}': the decorations '{s}' and '{s}' overlap at ({d}, {d})", .{ hub_name, decoration.name, other.name, tile.x, tile.y });
+                }
             }
         }
     }
@@ -7197,4 +7276,103 @@ test "loadSettings warns (keeps) a binding naming an unproducible input id" {
     // Kept, not dropped - the advisory leaves the entry in place.
     try std.testing.expectEqual(@as(usize, 1), settings.input_bindings.len);
     try std.testing.expectEqual(.escape, settings.input_bindings[0].action);
+}
+
+test "checkHubContent: off-grid + stacked placements, footprints on ground + on each other; the clean hub is silent" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // The ground: the spawn (0,0) + walkable tiles at (1,0), (2,0), (0,1).
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 1 },
+    };
+
+    // A clean hub: the marker on (2,0), an NPC on (0,1), a decoration
+    // beside the ground at (3,0) (its single-tile footprint).
+    {
+        const single_tile = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+        const hub = types.Hub{
+            .name = "Alpha",
+            .uuid = "u-a",
+            .hub_tiles = &tiles,
+            .player = .{ .position = .{ .x = 0, .y = 0 } },
+            .npcs = &.{.{ .npc_type = .gear_upgrader, .position = .{ .x = 0, .y = 1 } }},
+            .decorations = &.{.{ .name = "tree_1", .position = .{ .x = 3, .y = 0 }, .footprint = &single_tile, .pixel_dims = .{ .x = 256, .y = 256 } }},
+            .mission_exits = &.{.{ .mission_uuid = "m1", .position = .{ .x = 2, .y = 0 } }},
+        };
+        var warnings: std.ArrayList([]const u8) = .empty;
+        checkHubContent(hub, allocator, &warnings);
+        try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    }
+
+    // Every finding at once: a marker off the grid, two markers stacked,
+    // a marker on the spawn, an NPC off the grid, an NPC on the spawn,
+    // two NPCs stacked, a marker on an NPC, a decoration covering
+    // walkable ground, and two decorations overlapping each other.
+    {
+        const single_tile = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+        const hub = types.Hub{
+            .name = "Beta",
+            .uuid = "u-b",
+            .hub_tiles = &tiles,
+            .player = .{ .position = .{ .x = 0, .y = 0 } },
+            .npcs = &.{
+                // (9,9): off the grid. (1,0): two NPCs stacked. (0,0): on
+                // the spawn. (2,0): stacked with a marker.
+                .{ .npc_type = .gear_upgrader, .position = .{ .x = 9, .y = 9 } },
+                .{ .npc_type = .gear_upgrader, .position = .{ .x = 1, .y = 0 } },
+                .{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } },
+                .{ .npc_type = .dream_guide, .position = .{ .x = 0, .y = 0 } },
+                .{ .npc_type = .dream_guide, .position = .{ .x = 2, .y = 0 } },
+            },
+            .decorations = &.{
+                // On walkable ground at (1,0) - and overlapping the second
+                // decoration beside it at (3,0).
+                .{ .name = "tree_1", .position = .{ .x = 1, .y = 0 }, .footprint = &single_tile, .pixel_dims = .{ .x = 256, .y = 256 } },
+                .{ .name = "rock_1", .position = .{ .x = 1, .y = 0 }, .footprint = &single_tile, .pixel_dims = .{ .x = 256, .y = 256 } },
+            },
+            .mission_exits = &.{
+                // (7,7): off the grid. (2,0): two markers stacked + a
+                // marker on an NPC. (0,0): on the spawn.
+                .{ .mission_uuid = "m1", .position = .{ .x = 7, .y = 7 } },
+                .{ .mission_uuid = "m2", .position = .{ .x = 2, .y = 0 } },
+                .{ .mission_uuid = "m3", .position = .{ .x = 2, .y = 0 } },
+                .{ .mission_uuid = "m4", .position = .{ .x = 0, .y = 0 } },
+            },
+        };
+        var warnings: std.ArrayList([]const u8) = .empty;
+        checkHubContent(hub, allocator, &warnings);
+        // Every finding class names itself: assert by substring so the
+        // count can grow with wording, but each class is present.
+        var off_grid_marker = false;
+        var stacked_markers = false;
+        var marker_on_spawn = false;
+        var marker_on_npc = false;
+        var off_grid_npc = false;
+        var npc_on_spawn = false;
+        var stacked_npcs = false;
+        var footprint_on_ground = false;
+        var footprints_overlapping = false;
+        for (warnings.items) |warning| {
+            if (std.mem.indexOf(u8, warning, "exit marker for mission 'm1' is off the tile grid") != null) off_grid_marker = true;
+            if (std.mem.indexOf(u8, warning, "two exit markers stack") != null) stacked_markers = true;
+            if (std.mem.indexOf(u8, warning, "exit marker for mission 'm4' covers the player spawn") != null) marker_on_spawn = true;
+            if (std.mem.indexOf(u8, warning, "exit marker and an NPC") != null) marker_on_npc = true;
+            if (std.mem.indexOf(u8, warning, "NPC (gear_upgrader) is off the tile grid") != null) off_grid_npc = true;
+            if (std.mem.indexOf(u8, warning, "NPC (dream_guide) covers the player spawn") != null) npc_on_spawn = true;
+            if (std.mem.indexOf(u8, warning, "two NPCs") != null) stacked_npcs = true;
+            if (std.mem.indexOf(u8, warning, "'tree_1' covers the tile grid") != null) footprint_on_ground = true;
+            if (std.mem.indexOf(u8, warning, "'tree_1' and 'rock_1' overlap") != null) footprints_overlapping = true;
+        }
+        try std.testing.expect(off_grid_marker);
+        try std.testing.expect(stacked_markers);
+        try std.testing.expect(marker_on_spawn);
+        try std.testing.expect(marker_on_npc);
+        try std.testing.expect(off_grid_npc);
+        try std.testing.expect(npc_on_spawn);
+        try std.testing.expect(stacked_npcs);
+        try std.testing.expect(footprint_on_ground);
+        try std.testing.expect(footprints_overlapping);
+    }
 }

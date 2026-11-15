@@ -989,11 +989,11 @@ test "validateSavedCampaign: the file-level findings popup + the clean success" 
                     .name = "Alpha",
                     .position = .{ .x = 0, .y = 0 },
                     .grid = .{
-                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
                         .player_start = .{ .x = 0, .y = 0 },
                         .exit_placements = &.{
-                            .{ .mission = 2, .position = .{ .x = 0, .y = 0 } },
-                            .{ .mission = 3, .position = .{ .x = 0, .y = 0 } },
+                            .{ .mission = 2, .position = .{ .x = 1, .y = 0 } },
+                            .{ .mission = 3, .position = .{ .x = 2, .y = 0 } },
                         },
                     },
                 },
@@ -1090,10 +1090,10 @@ test "validateSavedCampaign: the file-level findings popup + the clean success" 
                     .name = "Alpha",
                     .position = .{ .x = 0, .y = 0 },
                     .grid = .{
-                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .level_tiles = &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
                         .player_start = .{ .x = 0, .y = 0 },
                         .exit_placements = &.{
-                            .{ .mission = 1, .position = .{ .x = 0, .y = 0 } },
+                            .{ .mission = 1, .position = .{ .x = 1, .y = 0 } },
                         },
                     },
                 },
