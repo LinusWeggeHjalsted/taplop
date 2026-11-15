@@ -594,6 +594,18 @@ pub fn view(
                 frame_allocator,
                 active_theme,
             ) catch @panic("failed to build hub editor top bar");
+            if (current_state.campaign_editor) |campaign_editor| {
+                ui.buildHubEditorInspector(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    ui.screenRect(),
+                    campaign_editor,
+                    hub_editor.*,
+                    active_theme,
+                    button_color,
+                ) catch @panic("failed to build hub editor inspector");
+            }
             ui.buildHubEditorBottomBar(
                 &ui_elements,
                 frame_allocator,

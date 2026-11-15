@@ -431,19 +431,8 @@ work:
           move-drag) render over the drilled-in grid, and the move-drag
           is runtime-verified (spawn moved + ground swap over the
           console channel).
-    - [ ] 4-4. NPC + exit-marker tools. Part A DONE (DONE.md,
-          "campaign-editor slice 4-4a"): the placements MIGRATED into
-          the EditorLevel grid (the whole slice-4 machinery covers them
-          for free), the Selectable/EditorSelectionMoveEntry arms, the
-          NPC + exit planners (the marker upsert + the mutual
-          protection rules), the events + handlers + orchestrators, the
-          palette groups (NPCs fixed + Missions live), the delete
-          chain's marker tier, the Tab cycle - runtime-verified over
-          the console channel (map-created mission -> live palette ->
-          marker placed + ground ensured). REMAINING (4-4b): the hub
-          inspector panel (empty default, the read-only exit summary:
-          mission name + destination hub name / dangling, NPC
-          empty-for-now).
+    - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
+          "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
     - [ ] 4-5. Decorations group + pickers + the
           custom/campaigns/<c>/hubs/<hub>/ art stem rule.
     - [ ] 4-6. Metadata sidebar (hub name + the three gradients) +

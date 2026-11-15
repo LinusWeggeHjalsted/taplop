@@ -2732,6 +2732,12 @@ pub fn handleAnytimeInput(
                     .tool = tool,
                 } });
             },
+            // The hub editor's inspector toggle (the
+            // toggle_campaign_inspector convention over the drill-in).
+            .toggle_hub_inspector => {
+                if (current.screen != .hub_editor or current.hub_editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_hub_inspector);
+            },
             // The hub editor's tool palette cell (the select_editor_tool
             // convention over the drill-in's tool union).
             .select_hub_tool => {

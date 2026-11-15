@@ -12,10 +12,12 @@ const std = @import("std");
 const types = @import("../types.zig");
 const ui_element = @import("element.zig");
 const editor_shell = @import("editor_shell.zig");
+const editor_inspector = @import("editor_inspector.zig");
 const emit = @import("emit.zig");
 const ui_tooltip = @import("tooltip.zig");
 
 const UiElementList = ui_element.UiElementList;
+const UiElement = ui_element.UiElement;
 const Rectangle = types.Rectangle;
 const Color = types.Color;
 const spanRow = ui_tooltip.spanRow;
@@ -275,6 +277,181 @@ pub fn buildHubEditorBottomBar(
     }
 }
 
+/// The hub editor's inspector sidebar (the campaign editor's EXACT shape -
+/// the top-left toggle strip below the options button, the panel + content
+/// only while open): the panel is EMPTY by default (no player.txt for
+/// hubs), a single selected EXIT MARKER shows its READ-ONLY summary (all
+/// editing stays on the campaign map - name, re-attach, and direction each
+/// have exactly one editing site there), and a selected NPC shows the
+/// empty-for-now placeholder (semantics arrive with NPC interaction).
+pub fn buildHubEditorInspector(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: ui_element.FontMetrics,
+    screen: Rectangle,
+    campaign_editor: types.CampaignEditor,
+    hub_editor: types.HubEditor,
+    active_theme: types.ActiveColorTheme,
+    button_color: Color,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const strip_button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const label = "Inspector";
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_shell.editor_group_header_font_size);
+    const width = @max(label_width + 2 * ui_element.ui_gap, editor_shell.editor_header_strip_height);
+    const button_cell = Rectangle{
+        .x = screen.x,
+        .y = screen.y + ui_element.top_bar_height + ui_element.ui_gap,
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+        .color = strip_button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_shell.editor_header_strip_height,
+        .action = .toggle_hub_inspector,
+    } });
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = button_cell.placeCenter(label_width, editor_shell.editor_group_header_font_size).position(),
+        .font_size = editor_shell.editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+
+    if (!hub_editor.inspector_open) return;
+
+    const panel_rect = editor_inspector.editorInspectorPanelRect();
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = panel_rect.position(),
+        .width = panel_rect.width,
+        .height = panel_rect.height,
+        .color = active_theme.darkest,
+        .blocks_input = true,
+    } });
+    const content = Rectangle{
+        .x = panel_rect.x + ui_element.ui_gap,
+        .y = panel_rect.y + ui_element.ui_gap,
+        .width = panel_rect.width - 2 * ui_element.ui_gap,
+        .height = panel_rect.height - 2 * ui_element.ui_gap,
+    };
+
+    // The target inference: a SINGLE-entry selection of the right kind.
+    // A multi-selection (marquee) shows the empty panel - the read-only
+    // summary addresses ONE marker.
+    const single: ?types.Selectable = if (hub_editor.selection.len == 1)
+        hub_editor.selection[0]
+    else
+        null;
+
+    // Resolve the drilled-in hub (the placements index into its grid).
+    var drilled: ?types.CampaignHubEdit = null;
+    for (campaign_editor.hubs) |candidate_hub| {
+        if (candidate_hub.handle == hub_editor.hub) drilled = candidate_hub;
+    }
+
+    const font = editor_shell.editor_group_header_font_size;
+    const line = struct {
+        fn at(y: i32) i32 {
+            return y;
+        }
+    }.at;
+
+    if (single != null and single.? == .exit_placement) {
+        const placement_index = single.?.exit_placement;
+        const hub = drilled orelse return;
+        if (placement_index >= hub.grid.exit_placements.len) return;
+        const placement = hub.grid.exit_placements[placement_index];
+
+        // The mission (by handle) + its destination hub (by handle).
+        var mission: ?types.CampaignMissionEdit = null;
+        for (campaign_editor.missions) |candidate| {
+            if (candidate.handle == placement.mission) mission = candidate;
+        }
+        var destination: ?types.CampaignHubEdit = null;
+        if (mission) |resolved| {
+            if (resolved.destination) |destination_handle| {
+                for (campaign_editor.hubs) |candidate_hub| {
+                    if (candidate_hub.handle == destination_handle) destination = candidate_hub;
+                }
+            }
+        }
+
+        var y = content.y;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Exit Marker",
+            .screen_position = .{ .x = content.x, .y = y },
+            .font_size = font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        y += font + ui_element.ui_gap;
+        const mission_name = if (mission) |resolved|
+            (if (resolved.name.len > 0) resolved.name else "Unsaved mission")
+        else
+            "Unknown mission";
+        try elements.append(allocator, .{ .text_label = .{
+            .text = mission_name,
+            .screen_position = .{ .x = content.x, .y = line(y) },
+            .font_size = font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        y += font + ui_element.ui_gap;
+        const destination_text = if (mission == null)
+            "Dangling - no destination hub"
+        else if (destination == null)
+            "Dangling - no destination hub"
+        else
+            (if (destination.?.name.len > 0) destination.?.name else "Unnamed hub");
+        try elements.append(allocator, .{ .text_label = .{
+            .text = destination_text,
+            .screen_position = .{ .x = content.x, .y = line(y) },
+            .font_size = font,
+            .color = if (destination == null) button_color else active_theme.lightest,
+            .blocks_input = false,
+        } });
+        y += font + ui_element.ui_gap;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Edit on the campaign map",
+            .screen_position = .{ .x = content.x, .y = line(y) },
+            .font_size = font,
+            .color = active_theme.darkest,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    if (single != null and single.? == .npc_placement) {
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "NPC",
+            .screen_position = .{ .x = content.x, .y = content.y },
+            .font_size = font,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Interaction semantics land with NPC interaction",
+            .screen_position = .{ .x = content.x, .y = content.y + font + ui_element.ui_gap },
+            .font_size = font,
+            .color = active_theme.darkest,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    // The default: empty (no player.txt for hubs).
+}
+
 /// The tool graphic's fitted tile size (the mission editor's fixed-tool
 /// convention - the tile art is authored at 256px).
 const tool_graphic_tile_size: i32 = 256;
@@ -379,4 +556,101 @@ test "buildHubEditorTopBar: one world-map return button flush top-right" {
     try std.testing.expectEqual(@as(i32, 0), button.screen_position.y);
     try std.testing.expectEqual(ui_element.top_bar_slot_size, button.width);
     try std.testing.expect(button.tooltip != null);
+}
+
+test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const test_theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = @splat(black) },
+        .enemy_gradient = .{ .colors = @splat(black) },
+        .player_gradient = .{ .colors = @splat(black) },
+    };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+    const test_metrics = ui_element.FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+
+    // A drilled-in hub with an exit marker (wired to a destination) + an
+    // NPC.
+    const campaign_editor = types.CampaignEditor{
+        .start_hub = 0,
+        .hubs = &.{
+            .{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{
+                .npc_placements = &.{.{ .npc_type = .dream_guide, .position = .{ .x = 1, .y = 0 } }},
+                .exit_placements = &.{.{ .mission = 5, .position = .{ .x = 2, .y = 0 } }},
+            } },
+            .{ .handle = 1, .name = "Beta", .position = .{ .x = 400, .y = 0 } },
+        },
+        .missions = &.{.{ .handle = 5, .name = "One", .start = 0, .destination = 1 }},
+        .next_handle = 6,
+    };
+
+    const findLabel = struct {
+        fn at(elements: []const UiElement, needle: []const u8) ?ui_element.TextLabel {
+            for (elements) |element| switch (element) {
+                .text_label => |label| if (std.mem.eql(u8, label.text, needle)) return label,
+                else => {},
+            };
+            return null;
+        }
+    }.at;
+    const findToggle = struct {
+        fn at(elements: []const UiElement) ?ui_element.Button {
+            for (elements) |element| switch (element) {
+                .button => |button| if (button.action == .toggle_hub_inspector) return button,
+                else => {},
+            };
+            return null;
+        }
+    }.at;
+
+    // The single selected exit marker: the read-only summary (mission
+    // name + destination hub name).
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .exit_placement = 0 }} }, test_theme, button_color);
+        try std.testing.expect(findToggle(elements.items) != null);
+        try std.testing.expect(findLabel(elements.items, "Exit Marker") != null);
+        try std.testing.expect(findLabel(elements.items, "One") != null);
+        try std.testing.expect(findLabel(elements.items, "Beta") != null);
+        try std.testing.expect(findLabel(elements.items, "Dangling - no destination hub") == null);
+    }
+
+    // The single selected NPC: the placeholder.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .selection = &.{.{ .npc_placement = 0 }} }, test_theme, button_color);
+        try std.testing.expect(findLabel(elements.items, "NPC") != null);
+        try std.testing.expect(findLabel(elements.items, "Interaction semantics land with NPC interaction") != null);
+    }
+
+    // No selection (and a multi-selection): the empty default - no
+    // content labels beyond the strip's own.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0 }, test_theme, button_color);
+        try std.testing.expect(findLabel(elements.items, "Exit Marker") == null);
+        try std.testing.expect(findLabel(elements.items, "NPC") == null);
+    }
+
+    // Closed: the strip alone.
+    {
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildHubEditorInspector(&elements, allocator, test_metrics, ui_element.screenRect(), campaign_editor, .{ .hub = 0, .inspector_open = false }, test_theme, button_color);
+        try std.testing.expect(findToggle(elements.items) != null);
+        var panel_count: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .nine_slice_panel => panel_count += 1,
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), panel_count); // the strip's own panel only
+    }
 }

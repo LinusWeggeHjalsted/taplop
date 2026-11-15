@@ -366,6 +366,7 @@ working rules).
 - [campaign-editor slice 4-3a: hub grid editing - the event family, handlers, facades, palette](#campaign-editor-slice-4-3a-hub-grid-editing---the-event-family-handlers-facades-palette)
 - [campaign-editor slice 4-3b: the hub editor's gestures + view overlays](#campaign-editor-slice-4-3b-the-hub-editors-gestures--view-overlays)
 - [campaign-editor slice 4-4a: the NPC + exit-marker tools - the placements join the grid](#campaign-editor-slice-4-4a-the-npc--exit-marker-tools---the-placements-join-the-grid)
+- [campaign-editor slice 4-4b: the hub editor's inspector - the read-only exit summary](#campaign-editor-slice-4-4b-the-hub-editors-inspector---the-read-only-exit-summary)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22175,3 +22176,32 @@ panel is 4-4b):
   refuses it (the protection rules) - all over the console channel.
 
 1014 green.
+
+## campaign-editor slice 4-4b: the hub editor's inspector - the read-only exit summary
+
+The second half of 4-4 (the inspector panel - DESIGN → The hub editor
+surface's inspector bullet):
+
+- **The toggle chain** (the toggle_campaign_inspector convention, full
+  mirror): the `toggle_hub_inspector` action (hub_editor context) ->
+  the `player_toggle_hub_inspector` orchestrator -> the
+  `hub_toggle_inspector` event -> the `HubEditor.inspector_open` flag
+  (on the state, riding the undo timeline). OPEN by default.
+- **The panel** (`buildHubEditorInspector` in ui/hub_editor.zig, the
+  campaign editor's strip + panel shape): EMPTY by default (no
+  player.txt for hubs - the hub editor's default view is nothing, by
+  design), a SINGLE selected exit marker shows its READ-ONLY summary
+  (the mission's name, the destination hub's name, or "Dangling - no
+  destination hub" highlighted, plus the "Edit on the campaign map"
+  pointer - all editing stays on the map: name, re-attach, and
+  direction each have exactly one editing site there), and a selected
+  NPC shows the empty-for-now placeholder ("Interaction semantics land
+  with NPC interaction"). A multi-selection (marquee) shows the empty
+  panel - the summary addresses ONE marker.
+- Runtime-verified: the marker's singleton click group selects it live
+  (the console drive selects `.exit_placement 0` through the real
+  pipeline), and the structure test pins all four panel states (exit
+  summary with a wired destination, the NPC placeholder, the empty
+  default, the closed strip).
+
+1016 green.

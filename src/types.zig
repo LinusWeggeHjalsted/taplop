@@ -421,6 +421,9 @@ pub const Action = enum {
     // The hub editor's tool palette cell click: the HubEditorToolId
     // rides the `hub_tool` payload (the select_editor_tool convention).
     select_hub_tool,
+    // The hub editor's inspector sidebar toggle (the
+    // toggle_campaign_inspector convention over the drill-in screen).
+    toggle_hub_inspector,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1235,6 +1238,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         // either sibling editor's).
         .close_hub_editor,
         .select_hub_tool,
+        .toggle_hub_inspector,
         => .{ .hub_editor = true },
         // The mission editor's own surface.
         .overwrite_validation_replay,
@@ -1642,6 +1646,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .save_campaign,
         .validate_campaign,
         .close_hub_editor,
+        .toggle_hub_inspector,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
@@ -4082,6 +4087,11 @@ pub const HubEditor = struct {
     /// against the live graph at open; the editing events re-check it
     /// defensively (the crafted-log convention).
     hub: u32,
+    /// The inspector sidebar's open state (the toggle_campaign_inspector
+    /// convention: on the state, mutated only via the toggle event, so it
+    /// rides the undo timeline + replay reproduces it). OPEN by default
+    /// (the sibling editors' default).
+    inspector_open: bool = true,
     /// The active tool (the active-tool model; a switch away from select
     /// clears the selection in the same event - the editor_set_tool
     /// invariant).

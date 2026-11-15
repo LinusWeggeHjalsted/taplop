@@ -71,6 +71,9 @@ pub fn handleHubEditorEvent(
         @panic("hub editor event with no campaign editor"));
 
     switch (event) {
+        .hub_toggle_inspector => {
+            hub_editor.inspector_open = !hub_editor.inspector_open;
+        },
         .hub_set_tool => |set| {
             // Defensive against crafted logs (the editor_set_tool posture):
             // a mission tool must address an OUTGOING mission (start ==

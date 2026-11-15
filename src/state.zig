@@ -2363,6 +2363,7 @@ pub const GameStateHistory = struct {
                     // positions/types are unrestricted - occupant no-op
                     // clicks are legal in a recorded session).
                     .player_set_hub_tool,
+                    .player_toggle_hub_inspector,
                     .player_paint_hub_tile,
                     .player_place_hub_npc,
                     .player_place_hub_exit_marker,

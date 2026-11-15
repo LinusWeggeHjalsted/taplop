@@ -936,6 +936,11 @@ pub const HubEditorEvent = union(enum) {
         tool: types.HubEditorToolId,
     },
 
+    // ── Inspector ──
+    // Toggle the inspector sidebar (the editor_campaign_toggle_inspector
+    // convention: the flag rides the undo timeline).
+    hub_toggle_inspector: void,
+
     // ── Tiles + decorations ──
     // Paint/erase one floor tile (the tile tool's click / the move chain's
     // ground-ensuring paint). Idempotent on the current state (an erase of
@@ -1500,6 +1505,8 @@ pub const PlayerInputEvent = union(enum) {
     player_set_hub_tool: struct {
         tool: types.HubEditorToolId,
     },
+    // The inspector toggle (the player_toggle_campaign_inspector mirror).
+    player_toggle_hub_inspector: void,
     // Tile-paint click over the hub grid (the tile tool): one click = one
     // tile, covering decorations replaced (the player_paint_editor_tile
     // contract).

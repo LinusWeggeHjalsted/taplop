@@ -1339,6 +1339,9 @@ pub fn handlePlayerInputEvent(
         // the shared planning facades - the input layer fires only
         // nonempty plans, so a dead-handle or no-op click records
         // nothing) ---
+        .player_toggle_hub_inspector => {
+            pushEvents(current, &.{.{ .hub_editor_event = .hub_toggle_inspector }}, allocator);
+        },
         .player_set_hub_tool => |set| {
             const hub_editor = &(current.hub_editor orelse return);
             if (std.meta.eql(set.tool, hub_editor.active_tool)) return;
