@@ -371,6 +371,7 @@ working rules).
 - [campaign-editor slice 4-5b: the decoration palette's delete cascade + the type inspector's granular edits](#campaign-editor-slice-4-5b-the-decoration-palettes-delete-cascade--the-type-inspectors-granular-edits)
 - [campaign-editor slice 4-5b rider: the hub editor's palette + inspector mirror the mission editor's structure exactly](#campaign-editor-slice-4-5b-rider-the-hub-editors-palette--inspector-mirror-the-mission-editors-structure-exactly)
 - [campaign-editor slice 4-5c: the hub editor's sprite picker - the change-the-art loop](#campaign-editor-slice-4-5c-the-hub-editors-sprite-picker---the-change-the-art-loop)
+- [campaign-editor slice 4-5d: the reuse refactor - the mission editor's inspector + picker become the shared code](#campaign-editor-slice-4-5d-the-reuse-refactor---the-mission-editors-inspector--picker-become-the-shared-code)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22375,3 +22376,90 @@ of 4-5c; the footprint editor + layers are 4-5c(ii)):
   undo.
 
 1021 green.
+
+## campaign-editor slice 4-5d: the reuse refactor - the mission editor's inspector + picker become the shared code
+
+The author's architectural ruling, after three drift bugs in one slice
+(the spacing/flow/coloring issues were all the same bug: the hub UI
+re-approximated machinery the mission editor already has, and each
+approximation drifted). The dependency inverted: the mission editor's
+code IS the shared code, the hub a thin caller. Six steps, each
+behavior-preserving for the mission editor (its tests
+untouched-and-green throughout - the proof the extractions are
+faithful); 4-5c(ii) (the footprint editor + the layers picks) rides
+these seams next.
+
+- **Step 1 - the inspector split**: `buildEditorInspectorContent`
+  split into resolve (the target -> contexts -> entries -> button
+  color, mission-specific) + `renderInspectorEntries` (the windowed
+  entries -> elements emission: panel geometry, row-unit math + scroll
+  clamping, section strips, field rows, controls, the overflow
+  scrollbar) taking the bundled `InspectorRenderContext` (the three
+  optional per-kind contexts + the button color). The emission loop
+  stayed byte-identical by unpacking the context into the same local
+  names. `editorInspectorDecorationEntries` + `EditorInspectorEntry`
+  flipped pub.
+- **Step 2 - surface-polymorphic commits, at the player-event layer**:
+  `select_editor_decoration_color` +
+  `toggle_editor_decoration_keep_original_colors` resolve the type per
+  screen (the inspector target vs the hub's active tool) and push the
+  SAME `player_set_editor_decoration_*` events; the orchestrator arms
+  route per screen to the `editor_event`/`hub_editor_event` mutations;
+  replay validation branches via `validateDecorationTypeCommit`. The
+  hub-specific actions + player events + all their arms deleted (8
+  files). A handler test pins the hub routing, the out-of-range no-op,
+  and the per-commit undo.
+- **Step 3 - the hub inspector's decoration arm is the mission's own**:
+  `editorInspectorDecorationEntries` + `renderInspectorEntries` over
+  the campaign palette's def (188 lines of hand-mirrored emission
+  deleted; the arm is 30 lines). The hub inherits windowing/scroll +
+  the Layers section; the footprint/layers picks no-op on .hub_editor
+  until 4-5c(ii) wires them (the 4-5b "layout is the mirror, the
+  buttons go live with their pickers" posture). The
+  EMISSION-IDENTITY CONTRACT TEST pins it: the same def through both
+  panels -> the element lists identical beyond the 4-element wrappers,
+  compared with `expectEqualDeep` (std.meta.eql compares slices BY
+  POINTER - the gotcha that cost a debugging detour; the emissions
+  build their own slices, so pointer identity never holds).
+- **Steps 4+5 - the picker core + the add flow**:
+  `renderSpritePickerGrid` + `SpritePickerCell`/`SpritePickerView`
+  (the core body transformed programmatically from the mission's own
+  emission text - substitutions with asserted counts, never retyped)
+  + `appendDecorationRegistryCells` (the shared registry arm).
+  `buildHubSpritePicker` is the thin caller (233 lines deleted): the
+  Official tab's prefab cells now carry the composed appearance (the
+  author's third issue, fallen out of reuse), and the grid math /
+  notes / close unify on the mission's shapes (the drifted hub
+  variants - its own vertical-centering formula, its "Back" close, its
+  note styling - die). The hub's add flow mirrors the mission's
+  `.add_editor_palette_type` arm: add -> failed-read guard -> the
+  Decorations accordion expands + scrolls to the new cell -> the
+  hub-local rescan + the registry ensure -> the picker opens on the
+  new type (the local tab, the mission convention).
+- **Runtime-verified end to end over the console channel**: fresh
+  campaign -> hub drill-in -> `action add_hub_decoration_type` -> the
+  accordion expands + scrolls, the inspector opens with the mission's
+  own structure (the live Sprite row, the surface-polymorphic toggle +
+  swatches, the Identity/Footprint/Layers strips), the picker opens
+  (the Hub/Official tabs + the shared close button), the Official
+  tab's registry cells render, a tree_1 pick commits the whole prefab
+  (footprint + four layers + colors) and closes the picker - the 4-5c
+  change-the-art loop, now through the shared machinery.
+
+Session scars worth keeping: an inline python edit truncated
+`hub_editor.zig` to zero bytes (the `open(path, 'w')` before its own
+read - the assert-then-write-all sweep failure mode, at file scale;
+recovered from git, the uncommitted step-3 work redone); a splice
+matched the skill picker's identical overlay comment (the anchor
+exists 4x - splices must scope marker searches inside their function);
+and stale slice indices after a mid-script insertion. All three
+classes are why the 4-5d splices assert their cut regions and write
+once at the end.
+
+The meta-lesson for the record (the TODO's files-mirror note pointed
+at FILE structure; the real mirror was FUNCTION structure): when a
+second consumer arrives for a surface, parameterize the first
+consumer's implementation, don't hand-write a sibling - the same
+"belong, don't fit" rule, at the UI layer.
+
+1019 green.

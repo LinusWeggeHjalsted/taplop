@@ -448,62 +448,9 @@ work:
           4-5c"): the picker (Hub-local + Official tabs, the registry
           prefab adoption), the whole-def commit + the cross-hub
           placement prune, the hub-local art scan, the live Sprite row -
-          runtime-verified end to end. REMAINING (4-5c(ii) + the
-          REUSE REFACTOR below): the footprint editor + the layers
-          section + layer picks.
-    - [ ] 4-5d. THE REUSE REFACTOR - parameterize the mission editor's
-          inspector + picker at their seams, then DELETE the hub's
-          hand-mirrored copies (the author's architectural ruling, after
-          three drift bugs in one slice: the spacing/flow/coloring
-          issues were all the same bug - the hub UI re-approximated
-          machinery the mission editor already has, and each
-          approximation drifted; the fix is to invert the dependency so
-          the mission editor's code IS the shared code, with the hub as
-          a thin caller). The plan, each step behavior-preserving for
-          the mission editor (its tests stay untouched-and-green - the
-          proof the extraction is faithful):
-          1. SPLIT buildEditorInspectorContent (editor_inspector.zig)
-             into resolve + render: DONE (the render half is pub
-             `renderInspectorEntries` + the bundled `InspectorRenderContext`
-             struct; DONE.md entry arrives with the whole refactor).
-          2. SURFACE-POLYMORPHIC ACTIONS (the select-keys + picker
-             open/close precedent): DONE (the mission decoration
-             actions' consumption + orchestrator arms branch per screen
-             at the player-event layer - `player_set_editor_decoration
-             _color_index`/`_keep_original_colors` route to the hub
-             events on .hub_editor; the hub-specific actions + player
-             events + arms deleted; the emission-identity contract test
-             arrives with step 3).
-          3. THE HUB INSPECTOR'S DECORATION ARM becomes: DONE
-             (editorInspectorDecorationEntries + renderInspectorEntries
-             over the campaign palette's def; the footprint + layers
-             rows render in the mission's live shapes - their picks
-             no-op on .hub_editor until 4-5c(ii) wires them; the hub-only
-             arms stayed hub-local; the emission-identity contract test
-             pins element-for-element equality via expectEqualDeep).
-          4. EXTRACT THE SPRITE PICKER'S GENERIC CORE (editor_pickers.
-             zig): the cells -> grid emission (tabs, close, the
-             6-column grid, per-cell button + images incl. the prefab
-             cells' base_color_index + layers composed appearance)
-             parameterized over (cells, current-def context, pick
-             action, theme, ui_state tab state). Both pickers call it;
-             the hub's Official cells then carry the prefab coloring
-             (the author's third issue - falls out of reuse).
-          5. THE ADD FLOW: the mission's "+" opens the sprite picker
-             after the add (find the input-layer site - the shell
-             comment names it); the hub's add_hub_decoration_type
-             consumption pushes player_open_hub_picker after the add
-             drains (the author's second issue).
-          6. DELETE the hand-mirrored hub picker cell emission + the
-             ad-hoc inspector field rows (the code 1-5 replaced).
-          THEN 4-5c(ii) rides the same seams: the footprint editor +
-          the layers section + layer picks, parameterized the same way.
-          The meta-lesson for the record: the TODO's files-mirror note
-          pointed at FILE structure; the real mirror was FUNCTION
-          structure - when a second consumer arrives for a surface,
-          parameterize the first consumer's implementation, don't
-          hand-write a sibling (the same "belong, don't fit" rule, at
-          the UI layer).
+          runtime-verified end to end. REMAINING (4-5c(ii)): the footprint
+          editor + the layers section + layer picks, riding the 4-5d
+          reuse seams (DONE.md, "campaign-editor slice 4-5d").
     - [ ] 4-6. Metadata sidebar (hub name + the three gradients) +
           hub-only ctrl+S (skip-unsaved-references rule, never
           deletes).
