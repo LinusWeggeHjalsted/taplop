@@ -486,16 +486,21 @@ pub fn view(
                     ) catch @panic("failed to build editor sprite picker"),
                     // The decoration footprint editor: its own panel -
                     // the full-size sprite + the toggleable tile grid
-                    // (the type id rides the picker target).
-                    .decoration_footprint => |type_id| ui.buildEditorFootprintEditor(
-                        &ui_elements,
-                        frame_allocator,
-                        font_metrics,
-                        editor,
-                        active_theme,
-                        type_id,
-                        &session.ui_state,
-                    ) catch @panic("failed to build editor footprint editor"),
+                    // (the type id rides the picker target; the def-seam
+                    // parameterization moved the bounds check here - a
+                    // type deleted mid-edit renders nothing).
+                    .decoration_footprint => |type_id| {
+                        if (type_id < editor.decoration_types.len) {
+                            ui.buildEditorFootprintEditor(
+                                &ui_elements,
+                                frame_allocator,
+                                font_metrics,
+                                editor.decoration_types[type_id],
+                                active_theme,
+                                &session.ui_state,
+                            ) catch @panic("failed to build editor footprint editor");
+                        }
+                    },
                     // The metadata sidebar's theme picker: every gradient
                     // as a strip (the level index + role ride the picker
                     // target; the list scrolls - see UiState).
@@ -618,20 +623,38 @@ pub fn view(
                 &session.ui_state.hub_palette_collapsed,
                 &session.ui_state.hub_palette_scroll,
             ) catch @panic("failed to build hub editor bottom bar");
-            // The centered picker (the mission editor's dispatch - the
-            // picker draws LAST, above every hub-editor surface).
-            if (hub_editor.picker != null) {
-                ui.buildHubSpritePicker(
-                    &ui_elements,
-                    frame_allocator,
-                    font_metrics,
-                    current_state.campaign_editor.?,
-                    hub_editor.*,
-                    session.hub_sprites,
-                    session.editor_decoration_registry,
-                    active_theme,
-                    &session.ui_state,
-                ) catch @panic("failed to build hub sprite picker");
+            // The centered pickers (the mission editor's dispatch - the
+            // picker draws LAST, above every hub-editor surface). The
+            // footprint editor is the mission editor's OWN builder over
+            // the campaign palette's def (the 4-5d reuse); the sprite
+            // picker is the hub's thin caller of the shared core.
+            if (hub_editor.picker) |hub_picker_target| {
+                switch (hub_picker_target) {
+                    .decoration_footprint => |type_id| {
+                        const campaign_editor = current_state.campaign_editor.?;
+                        if (type_id < campaign_editor.decoration_types.len) {
+                            ui.buildEditorFootprintEditor(
+                                &ui_elements,
+                                frame_allocator,
+                                font_metrics,
+                                campaign_editor.decoration_types[type_id],
+                                active_theme,
+                                &session.ui_state,
+                            ) catch @panic("failed to build hub footprint editor");
+                        }
+                    },
+                    else => ui.buildHubSpritePicker(
+                        &ui_elements,
+                        frame_allocator,
+                        font_metrics,
+                        current_state.campaign_editor.?,
+                        hub_editor.*,
+                        session.hub_sprites,
+                        session.editor_decoration_registry,
+                        active_theme,
+                        &session.ui_state,
+                    ) catch @panic("failed to build hub sprite picker"),
+                }
             }
         }
     } else if (current_state.screen == .main_menu) {

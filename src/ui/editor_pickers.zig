@@ -763,16 +763,6 @@ pub fn renderSpritePickerGrid(
     }
 }
 
-/// The decoration FOOTPRINT editor (the `.decoration_footprint` picker):
-/// a centered panel showing the type's sprite FULL-SIZE (1:1 - 256 screen
-/// px per sprite-grid tile) with one toggleable cell per tile, a
-/// continuous WHITE outline around the draft-selected region (the
-/// placement preview's region-edge style - 8px bars centered on the
-/// boundary, seamless at corners), a close button top-right (discard),
-/// and a Confirm button bottom-center. The draft rides
-/// `UiState.editor_footprint_draft`; the type id rides the picker target
-/// (see the union). Custom-stem art renders too - its ids resolve to the
-/// mission dir at the texture store (see assetPathFor).
 /// Swatch block size in the theme picker's gradient strips (one block per
 /// gradient color) - 128px blocks keep the 24-gradient wheel listy rather
 /// than hero-sized.
@@ -993,21 +983,30 @@ pub fn buildEditorThemePicker(
     }
 }
 
+/// The decoration FOOTPRINT editor (the `.decoration_footprint` picker):
+/// a centered panel showing the type's sprite FULL-SIZE (1:1 - 256 screen
+/// px per sprite-grid tile) with one toggleable cell per tile, a
+/// continuous WHITE outline around the draft-selected region (the
+/// placement preview's region-edge style - 8px bars centered on the
+/// boundary, seamless at corners), a close button top-right (discard),
+/// and a Confirm button bottom-center. The draft rides
+/// `UiState.editor_footprint_draft`; the type id rides the picker target
+/// (see the union). Custom-stem art renders too - its ids resolve to the
+/// mission dir at the texture store (see assetPathFor).
+/// Parameterized at the DEF seam (the 4-5d reuse): the caller resolves +
+/// bounds-checks the edited type's definition (the mission editor from
+/// its palette + the picker target's type id; the hub editor drill-in
+/// from the campaign palette) - an out-of-range type is skipped by the
+/// caller and renders nothing; the input arms' own guards remain the
+/// real defense.
 pub fn buildEditorFootprintEditor(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    editor: types.Editor,
+    definition: types.DecorationTypeDef,
     active_theme: types.ActiveColorTheme,
-    type_id: u32,
     ui_state: *const UiState,
 ) !void {
-    // The type deleted mid-edit (or a stale open): nothing to edit -
-    // the panel vanishes; the close button is unreachable, so the input
-    // arms' own guards are the real defense (the toggle no-ops on an
-    // out-of-range type).
-    if (type_id >= editor.decoration_types.len) return;
-    const definition = editor.decoration_types[type_id];
     const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
     const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
     if (grid_width <= 0 or grid_height <= 0) return;
@@ -2054,7 +2053,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         ui_state.editor_footprint_draft[0] = true;
-        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, editor, theme, 0, &ui_state);
+        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, editor.decoration_types[0], theme, &ui_state);
 
         var toggle_buttons: usize = 0;
         var saw_graphic = false;
@@ -2103,7 +2102,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         var ui_state: UiState = .{};
         ui_state.editor_footprint_draft[0] = true;
         ui_state.editor_footprint_draft[1] = true;
-        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, custom_editor, theme, 0, &ui_state);
+        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, custom_editor.decoration_types[0], theme, &ui_state);
 
         var saw_image = false;
         var dark_fills: usize = 0;
@@ -2158,7 +2157,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         };
         var wide_elements: UiElementList = .empty;
         var wide_ui_state: UiState = .{};
-        try buildEditorFootprintEditor(&wide_elements, arena.allocator(), metrics, wide_editor, theme, 0, &wide_ui_state);
+        try buildEditorFootprintEditor(&wide_elements, arena.allocator(), metrics, wide_editor.decoration_types[0], theme, &wide_ui_state);
         var saw_scaled_cell = false;
         for (wide_elements.items) |element| switch (element) {
             .button => |button| {

@@ -448,6 +448,69 @@ fn expectPickerKind(
     };
 }
 
+/// Seed the footprint-edit draft grid from a definition's committed
+/// footprint - the shared half of the footprint editor's open arm (both
+/// editor surfaces). Returns false when the art's grid is degenerate or
+/// exceeds the draft capacity: the deliberate UI gate (huge art keeps
+/// its committed footprint; see DESIGN → Custom Missions & Online
+/// Services → Custom-asset dimensions).
+fn seedFootprintDraft(
+    history: *GameStateHistory,
+    definition: types.DecorationTypeDef,
+) bool {
+    const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+    const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+    if (grid_width <= 0 or grid_height <= 0) return false;
+    if (@as(usize, @intCast(grid_width * grid_height)) > ui.editor_footprint_grid_cell_limit) return false;
+    history.session.ui_state.editor_footprint_draft = @splat(false);
+    for (definition.footprint) |tile| {
+        if (tile.x < 0 or tile.y < 0 or tile.x >= grid_width or tile.y >= grid_height) continue;
+        history.session.ui_state.editor_footprint_draft[@intCast(tile.y * grid_width + tile.x)] = true;
+    }
+    return true;
+}
+
+/// Flip one footprint-draft cell (the tile-toggle arm's shared half,
+/// both editor surfaces): the index is bounds-checked against the
+/// definition's CURRENT grid - a stale index can't come from the live
+/// buttons (the builder re-derives the grid every frame).
+fn flipFootprintDraftCell(
+    history: *GameStateHistory,
+    definition: types.DecorationTypeDef,
+    cell_index: u32,
+) void {
+    const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+    const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+    if (cell_index >= @as(u32, @intCast(grid_width * grid_height))) return;
+    history.session.ui_state.editor_footprint_draft[cell_index] =
+        !history.session.ui_state.editor_footprint_draft[cell_index];
+}
+
+/// Build the draft's committed footprint (row-major sprite-grid coords)
+/// into the current arena - the confirm arm's shared half. Returns null
+/// for an EMPTY draft: a footprint must reserve at least one tile (the
+/// load-time invariant), so the confirm visibly doesn't take.
+fn footprintFromDraft(
+    history: *GameStateHistory,
+    definition: types.DecorationTypeDef,
+) ?[]types.Vector2 {
+    const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+    const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+    var footprint: std.ArrayList(types.Vector2) = .empty;
+    for (0..@as(usize, @intCast(grid_height))) |row| {
+        for (0..@as(usize, @intCast(grid_width))) |column| {
+            if (history.session.ui_state.editor_footprint_draft[row * @as(usize, @intCast(grid_width)) + column]) {
+                footprint.append(history.current_arena.allocator(), .{
+                    .x = @intCast(column),
+                    .y = @intCast(row),
+                }) catch @panic("failed to allocate footprint draft");
+            }
+        }
+    }
+    if (footprint.items.len == 0) return null;
+    return footprint.items;
+}
+
 pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     if (history.session.ui_state.text_edit == null) return;
     const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
@@ -2272,24 +2335,32 @@ pub fn handleAnytimeInput(
             // footprint; see DESIGN → Custom Missions & Online Services →
             // Custom-asset dimensions).
             .open_editor_footprint_picker => {
+                // Surface-polymorphic (the inspector reuse): the hub
+                // editor drill-in resolves the type from its ACTIVE TOOL
+                // + opens the HUB picker; the mission editor keeps the
+                // inspector target + editor picker. Both seed the same
+                // draft grid.
+                if (current.screen == .hub_editor) {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const type_id = switch (hub_editor_state.active_tool) {
+                        .decoration_type => |resolved_type_id| resolved_type_id,
+                        else => return,
+                    };
+                    if (type_id >= campaign_editor_state.decoration_types.len) return;
+                    if (!seedFootprintDraft(history, campaign_editor_state.decoration_types[type_id])) return;
+                    pushPlayerActionAndDrain(history, .{ .player_open_hub_picker = .{
+                        .target = .{ .decoration_footprint = type_id },
+                    } });
+                    return;
+                }
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
                     .entity_type, .item_type, .player => return,
                 };
-                const definition = editor.decoration_types[type_id];
-                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
-                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
-                if (grid_width <= 0 or grid_height <= 0) return;
-                if (@as(usize, @intCast(grid_width * grid_height)) > ui.editor_footprint_grid_cell_limit) return;
-                history.session.ui_state.editor_footprint_draft =
-                    @splat(false);
-                for (definition.footprint) |tile| {
-                    if (tile.x < 0 or tile.y < 0 or tile.x >= grid_width or tile.y >= grid_height) continue;
-                    history.session.ui_state.editor_footprint_draft[
-                        @intCast(tile.y * grid_width + tile.x)
-                    ] = true;
-                }
+                if (type_id >= editor.decoration_types.len) return;
+                if (!seedFootprintDraft(history, editor.decoration_types[type_id])) return;
                 pushPlayerActionAndDrain(history, .{ .player_open_editor_picker = .{
                     .target = .{ .decoration_footprint = type_id },
                 } });
@@ -2301,16 +2372,24 @@ pub fn handleAnytimeInput(
             // the live buttons - the builder re-derives the grid every
             // frame).
             .toggle_editor_footprint_tile => {
+                const cell_index = payloadAs(.editor_footprint_tile, clicked_payload) orelse return;
+                // Surface-polymorphic (the inspector reuse): the picker
+                // kind + the type's grid resolve per screen.
+                if (history.current_state.screen == .hub_editor) {
+                    const hub_editor_state = &(history.current_state.hub_editor orelse return);
+                    const campaign_editor_state = &(history.current_state.campaign_editor orelse return);
+                    const type_id = switch (hub_editor_state.picker orelse return) {
+                        .decoration_footprint => |picker_type_id| picker_type_id,
+                        else => return,
+                    };
+                    if (type_id >= campaign_editor_state.decoration_types.len) return;
+                    flipFootprintDraftCell(history, campaign_editor_state.decoration_types[type_id], cell_index);
+                    return;
+                }
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const type_id = expectPickerKind(editor, .decoration_footprint) orelse return;
-                const cell_index = payloadAs(.editor_footprint_tile, clicked_payload) orelse return;
                 if (type_id >= editor.decoration_types.len) return;
-                const definition = editor.decoration_types[type_id];
-                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
-                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
-                if (cell_index >= @as(u32, @intCast(grid_width * grid_height))) return;
-                history.session.ui_state.editor_footprint_draft[cell_index] =
-                    !history.session.ui_state.editor_footprint_draft[cell_index];
+                flipFootprintDraftCell(history, editor.decoration_types[type_id], cell_index);
             },
             // The footprint editor's Confirm: close the picker and commit
             // the draft IF it differs (row-major sprite-grid coords). An
@@ -2320,37 +2399,63 @@ pub fn handleAnytimeInput(
             // take. The handler prunes the type's now-invalid placements
             // (an edited footprint re-anchors).
             .confirm_editor_footprint => {
+                // Surface-polymorphic (the inspector reuse): the hub
+                // editor drill-in commits through the WHOLE-DEF event
+                // (player_set_hub_decoration_def - one commit path, the
+                // cross-hub placement prune included; the base sprite
+                // pick's route); the mission editor keeps its footprint
+                // event. Both build the draft identically.
+                if (history.current_state.screen == .hub_editor) {
+                    const hub_editor_state = &(history.current_state.hub_editor orelse return);
+                    const campaign_editor_state = &(history.current_state.campaign_editor orelse return);
+                    const type_id = switch (hub_editor_state.picker orelse return) {
+                        .decoration_footprint => |picker_type_id| picker_type_id,
+                        else => return,
+                    };
+                    if (type_id >= campaign_editor_state.decoration_types.len) return;
+                    const definition = campaign_editor_state.decoration_types[type_id];
+                    const footprint = footprintFromDraft(history, definition) orelse return;
+                    // An UNCHANGED draft closes without committing (the
+                    // close is the recorded change; a changed draft commits
+                    // and the commit orchestrator pushes the close as its
+                    // child - one undo step).
+                    if (loaders.decorationFootprintEqual(definition.footprint, footprint)) {
+                        pushPlayerActionAndDrain(history, .player_close_hub_picker);
+                        return;
+                    }
+                    // Dupe the def's other fields into the current arena
+                    // BEFORE pushing (the mission commit's ordering rule).
+                    const arena = history.current_arena.allocator();
+                    pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_def = .{
+                        .type_id = type_id,
+                        .sprite = arena.dupe(u8, definition.sprite) catch
+                            @panic("failed to allocate decoration sprite commit value"),
+                        .footprint = footprint,
+                        .pixel_dims = definition.pixel_dims,
+                        .color_index = definition.color_index,
+                        .keep_original_colors = definition.keep_original_colors,
+                        .layers = arena.dupe(types.DecorationLayer, definition.layers) catch
+                            @panic("failed to allocate decoration layers commit value"),
+                    } });
+                    return;
+                }
                 const editor: *types.Editor = &(history.current_state.editor orelse return);
                 const type_id = expectPickerKind(editor, .decoration_footprint) orelse return;
                 if (type_id >= editor.decoration_types.len) return;
                 const definition = editor.decoration_types[type_id];
-                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
-                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
-
-                var footprint: std.ArrayList(types.Vector2) = .empty;
-                for (0..@as(usize, @intCast(grid_height))) |row| {
-                    for (0..@as(usize, @intCast(grid_width))) |column| {
-                        if (history.session.ui_state.editor_footprint_draft[row * @as(usize, @intCast(grid_width)) + column]) {
-                            footprint.append(history.current_arena.allocator(), .{
-                                .x = @intCast(column),
-                                .y = @intCast(row),
-                            }) catch @panic("failed to allocate footprint draft");
-                        }
-                    }
-                }
-                if (footprint.items.len == 0) return;
+                const footprint = footprintFromDraft(history, definition) orelse return;
                 // An UNCHANGED draft closes without committing - the close
                 // itself is the recorded change (the picker surface event;
                 // a changed draft commits, and the commit orchestrator's
                 // handler pushes the close as a child - pick+close is one
                 // undo step).
-                if (loaders.decorationFootprintEqual(definition.footprint, footprint.items)) {
+                if (loaders.decorationFootprintEqual(definition.footprint, footprint)) {
                     pushPlayerActionAndDrain(history, .player_close_editor_picker);
                     return;
                 }
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_footprint = .{
                     .type_id = type_id,
-                    .value = footprint.items,
+                    .value = footprint,
                 } });
             },
             // The metadata sidebar's gradient swatch: open the centered

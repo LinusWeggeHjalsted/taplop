@@ -2231,3 +2231,157 @@ test "hub editor: the sprite-picker pick commits the whole def + the cross-hub p
         try testing.expectEqual(@as(usize, 1), editor.hubs[0].grid.decoration_placements.len);
     }
 }
+
+test "hub editor: the footprint editor flow - open seeds the draft, tile toggles flip it, confirm commits the whole def" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const input_handlers_mod = @import("input_handlers.zig");
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{ .handle = 0, .name = "Alpha", .position = .{ .x = 0, .y = 0 }, .grid = .{} }},
+            // A 512x256 sprite -> a 2x1 tile grid, footprint {0,0}.
+            .decoration_types = &.{.{
+                .id = "tree_1",
+                .sprite = "tree_1",
+                .footprint = &.{.{ .x = 0, .y = 0 }},
+                .pixel_dims = .{ .x = 512, .y = 256 },
+            }},
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The open arm (the surface-polymorphic footprint button): seeds the
+    // draft from the committed footprint + opens the HUB picker.
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_footprint_picker },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    const hub_editor = &(history.current_state.hub_editor.?);
+    try testing.expect(hub_editor.picker != null);
+    try testing.expectEqual(@as(u32, 0), hub_editor.picker.?.decoration_footprint);
+    try testing.expect(history.session.ui_state.editor_footprint_draft[0]);
+    try testing.expect(!history.session.ui_state.editor_footprint_draft[1]);
+
+    // A tile toggle flips one draft cell (a direct UiState write, off the
+    // timeline).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_editor_footprint_tile },
+        .{ .editor_footprint_tile = 1 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_editor_footprint_tile },
+        .{ .editor_footprint_tile = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(!history.session.ui_state.editor_footprint_draft[0]);
+    try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
+
+    // The confirm: the whole-def commit route (the base sprite pick's
+    // path - one recorded player event, the close as its child).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .confirm_editor_footprint },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.decoration_types[0].footprint.len);
+        try testing.expectEqual(@as(i32, 1), editor.decoration_types[0].footprint[0].x);
+        try testing.expectEqual(@as(i32, 0), editor.decoration_types[0].footprint[0].y);
+        // The sprite + dims ride along unchanged (the whole-def route).
+        try testing.expectEqualStrings("tree_1", editor.decoration_types[0].sprite);
+        try testing.expectEqual(@as(i32, 512), editor.decoration_types[0].pixel_dims.x);
+        // The picker closed (the commit's close child).
+        try testing.expect(history.current_state.hub_editor.?.picker == null);
+    }
+
+    // One undo step reverts the footprint change (the whole-def event).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.decoration_types[0].footprint.len);
+        try testing.expectEqual(@as(i32, 0), editor.decoration_types[0].footprint[0].x);
+    }
+
+    // The UNCHANGED-draft confirm closes without committing; the EMPTY
+    // draft stays open (a footprint reserves at least one tile).
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_footprint_picker },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.hub_editor.?.picker != null);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .confirm_editor_footprint },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.hub_editor.?.picker == null);
+    {
+        const editor = history.current_state.campaign_editor.?;
+        try testing.expectEqual(@as(i32, 0), editor.decoration_types[0].footprint[0].x);
+    }
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .open_editor_footprint_picker },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .toggle_editor_footprint_tile },
+        .{ .editor_footprint_tile = 0 },
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    input_handlers_mod.handleAnytimeInput(
+        &history,
+        .{ .options_action = .confirm_editor_footprint },
+        null,
+        .{ .x = -4096, .y = -4096 },
+        &.{},
+    );
+    runToIdle(&history);
+    // The empty draft keeps the editor open - the confirm visibly
+    // doesn't take.
+    try testing.expect(history.current_state.hub_editor.?.picker != null);
+}
