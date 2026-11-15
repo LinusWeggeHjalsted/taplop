@@ -1459,7 +1459,22 @@ pub fn handleAnytimeInput(
         if (history.current_state.screen == .campaign_editor and
             history.current_state.campaign_editor != null)
         {
-            campaign_editor_io.saveCampaignEditor(history);
+            _ = campaign_editor_io.saveCampaignEditor(history);
+        }
+    }
+
+    if (anytime.validate_campaign) {
+        // The campaign Validate (the top-right primary button): the
+        // mission editor's file-based contract - SAVE FIRST, then
+        // certify exactly the files a player receives (a failed save
+        // surfaces its own popup; the validation aborts). Same
+        // input-layer side-effect class as the save.
+        if (history.current_state.screen == .campaign_editor and
+            history.current_state.campaign_editor != null)
+        {
+            if (campaign_editor_io.saveCampaignEditor(history)) |saved_dir| {
+                campaign_editor_io.validateSavedCampaign(history, saved_dir);
+            }
         }
     }
 

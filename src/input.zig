@@ -365,6 +365,11 @@ pub const AnytimeInput = struct {
     /// campaign editor screen only (the consumption site gates; the
     /// mission's ctrl+S no-ops there and vice versa).
     save_campaign: bool = false,
+    /// The campaign Validate (the top-right primary button): save first,
+    /// then certify the saved files - the graph findings + every
+    /// mission's validation replay (the mission editor's file-based
+    /// contract). Same screen discipline as `save_campaign`.
+    validate_campaign: bool = false,
     /// The tool-cycling chords (Tab / shift+Tab) - both editors: the
     /// consumption site computes the next tool over the live palette
     /// state and pushes the tool-switch event.
@@ -591,6 +596,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .new_editor_mission => player_input.anytime.new_editor_mission = true,
         .new_editor_campaign => player_input.anytime.new_editor_campaign = true,
         .save_campaign => player_input.anytime.save_campaign = true,
+        .validate_campaign => player_input.anytime.validate_campaign = true,
         // Keyboard-only editor shortcuts - no button carries these (the
         // palette cells use the payload-carrying click actions). The
         // keybind→click-action BRIDGE lives here: the keyboard action folds

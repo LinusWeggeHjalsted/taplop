@@ -360,6 +360,7 @@ working rules).
 - [map edges: baked arrow textures (the edge rendering rework)](#map-edges-baked-arrow-textures-the-edge-rendering-rework)
 - [map edges: session follow-ups - the analytic chevron tangent + the Arrow rename (session reflection)](#map-edges-session-follow-ups---the-analytic-chevron-tangent--the-arrow-rename-session-reflection)
 - [map edges: the hover rim rides the baked-arrow outline mask (the jagged-rim fix)](#map-edges-the-hover-rim-rides-the-baked-arrow-outline-mask-the-jagged-rim-fix)
+- [campaign-editor slice 3f: the Validate button - file-level campaign validation](#campaign-editor-slice-3f-the-validate-button---file-level-campaign-validation)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21839,3 +21840,76 @@ KeyboardEvent + frame-split mousedown/up) with a hover diff confirming
 the rim renders as the striped teardrop band at the expected ~11px
 stripe period with zero console errors. The smoothness judgment is the
 player's - the pixel diff proves presence, not beauty.
+
+## campaign-editor slice 3f: the Validate button - file-level campaign validation
+
+The campaign editor's top-right Validate button, plus the shared
+findings machinery under it. The original TODO plan (parameterize
+checkCampaignGraph over an authored-graph view, validate in-memory
+state) was SUPERSEDED mid-discussion: the mission editor's Validate
+contract is file-based ("the run certifies the artifact a player
+receives, not the editor memory" - save first, then validate the saved
+files), and the campaign editor mirrors it. That killed the
+authored-graph adapter entirely - validation re-loads the SAVED
+campaign through the plain-read load pipeline and runs the SAME checks
+the in-game load runs. One standard, two call sites.
+
+- **The finalized-campaign doctrine (the session's settle)**: stubs
+  (destination unset), orphans (missions wired to no placed hub), and
+  markerless missions are editor-INTERMEDIATE state - honest to carry
+  mid-editing, a finding in a finished campaign. Every mission must
+  have a start AND an end set, and a marker in its start hub. This
+  REVERSED the older "dangling stub - save-legal by design" doctrine
+  (the docs + tests that pinned the old silence were updated in the
+  same commits); the campaign editor still saves all of it (orphan
+  salvage is the point), the findings are advisory.
+- **The shared findings** (`62c93bc`): `checkCampaignGraph` grew the
+  stub + markerless checks; `deriveCampaignEdges` warns the orphan
+  classes (missing/empty/unplaced start_hub - the unplaced case
+  already warned, the silent cases joined it). The shipped-content
+  contract test picks these up automatically (the official campaign
+  passes: self-loops, markers, full wiring).
+- **The per-mission validation standard**
+  (`validation_replay.checkMissionValidationArtifact`): every mission
+  the campaign DECLARES must carry a `validation_replay.txt`
+  certifying its CURRENT content - missing, malformed, foreign-uuid,
+  and hash-stale all read as unvalidated (the established "a later
+  hash mismatch reads as unvalidated" reading, promoted to a campaign
+  gate). The import rider: `copyMissionIntoCampaign` now carries
+  validation_replay.txt so an imported validated mission STAYS
+  validated (the copy previously dropped it - the one file-set gap the
+  new standard exposed).
+- **The surface** (this commit): `saveCampaignEditor` returns the
+  saved content dir (the mission save's `?[]const u8` contract - the
+  Validate consumption aborts when a save fails, its popup already
+  up); `validateSavedCampaign` (campaign_editor/io.zig) runs the
+  pipeline + the mission checks over plain file-source reads (the
+  import-read precedent - nothing is recorded, the reconstruction
+  cache stays uninvolved) and surfaces findings-or-success through
+  the standard warning popup. The `.validate_campaign` anytime action
+  (the save_campaign pattern: input-layer side effect, screen-gated,
+  never a recorded event).
+- **The UI**: ONE Validate icon button at the mission editor's exact
+  validate cell (flush top-right, `buildCampaignEditorPrimaryActions`
+  in campaign_editor.zig - the files-mirror convention); the global
+  top bar's tips `?` now hides on BOTH editor screens (the mission
+  editor's rule, second screen). No Save button (ctrl+S + the options
+  menu are the paths), no Test button (nothing to play in a campaign).
+- **The load-drop is deliberately PHASED (b)**: the in-game load
+  surfaces the graph findings warn-only; refusing the load on any
+  finding lands as its own slice GATED on the official campaign's four
+  missions getting real validation replays (TODO) - until the
+  mission-editor hand-off (slice 5) there is no in-campaign validation
+  path, and the drop would brick new_game on the shipped content (the
+  campaign editor's open never drops - it is the fixer).
+
+Verification: 999 tests (the derive/check test grew stub + orphan +
+markerless runs; the artifact-check test covers all five statuses over
+a real mission dir; the validateSavedCampaign test walks
+findings -> replays-resolve -> clean-success across two saved
+campaigns; the view test pins the tips-hide + the button cell). The
+graph fixture cleanup exposed a stale-warning-count trap (the shared
+sink accumulates across pipeline runs - each counting run must clear
+first) and a fixture written under the old silence doctrine (the
+direction run carried a stub + markerless missions); both fixed by
+making fixtures doctrine-clean rather than relaxing assertions.

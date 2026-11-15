@@ -500,6 +500,11 @@ pub fn view(
                 reattach_end,
                 session.editor_local_missions,
             ) catch @panic("failed to build campaign editor view");
+            ui.buildCampaignEditorPrimaryActions(
+                &ui_elements,
+                frame_allocator,
+                active_theme,
+            ) catch @panic("failed to build campaign editor primary actions");
         }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either
@@ -797,9 +802,10 @@ pub fn view(
     // over the mission-complete overlay (undoing the completing move
     // dismisses it - it's on the timeline). The editor's level tabs are NOT
     // part of this layer (they sit under overlays by design). The tips `?`
-    // hides on the editor screen - its top-right corner is the Test/
-    // Validate row, the one screen with UI already occupying it. See DESIGN
-    // → UI Framework (global top bar).
+    // hides on BOTH editor screens - their top-right corners are the
+    // primary-actions rows (Test/Validate on the mission editor, Validate
+    // on the campaign editor), the screens with UI already occupying that
+    // corner. See DESIGN → UI Framework (global top bar).
     ui.buildGlobalTopBar(
         &ui_elements,
         frame_allocator,
@@ -808,7 +814,7 @@ pub fn view(
         active_theme,
         render.can_undo,
         render.can_redo,
-        tips.len > 0 and current_state.screen != .editor,
+        tips.len > 0 and current_state.screen != .editor and current_state.screen != .campaign_editor,
         current_state.screen == .level or current_state.screen == .hub,
     ) catch @panic("failed to build global top bar");
 
@@ -5450,6 +5456,49 @@ test "tips overlay: top-bar ? button, panel structure, cycle payloads" {
             },
         );
         try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) == null);
+    }
+
+    // Campaign editor screen: the same rule - the `?` HIDES (its
+    // top-right corner is the campaign editor's Validate button) and the
+    // Validate button itself renders (the primary-actions spot).
+    {
+        var session = state.SessionState{};
+        const tips = [_][]const u8{ "alpha", "beta" };
+        const campaign_editor_state = GameState{
+            .screen = .campaign_editor,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .campaign_editor = types.CampaignEditor{},
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        };
+        const view_state = view(
+            &campaign_editor_state,
+            &session,
+            .{ .input_bindings = &.{} },
+            harness.color_theme_definitions,
+            &harness.weapon_type_definitions,
+            &tips,
+            .{
+                .camera = types.Camera{ .position = .{ .x = 0, .y = 0 } },
+                .camera_zoom = 1.0,
+                .event_history = &.{},
+                .level_start_index = null,
+                .current_event_index = 0,
+                .frame_allocator = arena,
+                .font_metrics = font_metrics,
+                .sprite_bounds = .{},
+                .can_undo = false,
+                .can_redo = false,
+            },
+        );
+        try std.testing.expect(findButton(view_state.ui_elements, .open_tips, null) == null);
+        try std.testing.expect(findButton(view_state.ui_elements, .validate_campaign, null) != null);
     }
 
     // Open at index 1: the second tip's text, both nav buttons with

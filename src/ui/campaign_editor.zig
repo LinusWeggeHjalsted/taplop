@@ -219,6 +219,49 @@ fn pannedMapToScreen(position: Vector2, pan: ?types.Vector2) ScreenPosition {
 /// inspector (left), the metadata sidebar (right), the hub select buttons
 /// (over the icons), and the transient pan offset. Pure over its inputs;
 /// the pan + text-edit states are session-side (replay-irrelevant).
+/// The campaign editor's top-right primary action: the Validate button
+/// (save first, then certify the saved files - the graph findings +
+/// every mission's validation replay). The mission editor's
+/// `buildEditorPrimaryActions` pattern at its Validate cell exactly
+/// (flush against the right screen edge, the options/undo icon class);
+/// no Test button - there is nothing to play in a campaign, and no Save
+/// button (ctrl+S + the options menu are the save paths). The global
+/// top bar hides its tips `?` button on this screen for the same reason
+/// as on the mission editor: the top-right corner is the primary-actions
+/// spot. See DESIGN → The campaign editor surface (Validation).
+pub fn buildCampaignEditorPrimaryActions(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    // Match the top-bar options/undo buttons: background = gradient[5],
+    // icon = gradient[1] (the mission editor's primary-actions treatment).
+    const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    const validate_cell: Rectangle = .{
+        .x = types.reference_width - ui_element.top_bar_slot_size,
+        .y = 0,
+        .width = ui_element.top_bar_slot_size,
+        .height = ui_element.top_bar_slot_size,
+    };
+
+    try emit.emitIconButton(
+        elements,
+        allocator,
+        validate_cell,
+        emit.small_button_background_sprite_id,
+        "ui/icon_validate",
+        .validate_campaign,
+        .{ .header = try spanRow(allocator, text("Validate (save + check the whole campaign)")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
+}
+
 pub fn buildCampaignEditorView(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1292,6 +1335,35 @@ fn buildFixtureEditor() types.CampaignEditor {
         },
         .next_handle = 7,
     };
+}
+
+test "buildCampaignEditorPrimaryActions: one Validate button, flush top-right at the mission editor's cell" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var elements: UiElementList = .empty;
+    defer elements.deinit(arena.allocator());
+    try buildCampaignEditorPrimaryActions(&elements, arena.allocator(), test_theme);
+
+    // Exactly one button (no Test - nothing to play in a campaign, no
+    // Save - ctrl+S + the options menu are the paths), at the shared
+    // validate cell: flush against the right edge, top bar's height.
+    var found: ?ui_element.Button = null;
+    var button_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| {
+            button_count += 1;
+            if (button.action == .validate_campaign) found = button;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 1), button_count);
+    const button = found orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(types.reference_width - ui_element.top_bar_slot_size, button.screen_position.x);
+    try std.testing.expectEqual(@as(i32, 0), button.screen_position.y);
+    try std.testing.expectEqual(ui_element.top_bar_slot_size, button.width);
+    try std.testing.expectEqual(ui_element.top_bar_slot_size, button.height);
+    try std.testing.expect(button.tooltip != null);
 }
 
 test "buildCampaignEditorView: surface, background, hubs, and the edge classes incl. orphans" {

@@ -407,16 +407,9 @@ work:
     - [ ] later. New-game campaign picker + the speedrun seed
           (all-hubs-discovered start option, runtime-derived) - main-menu
           work, rides the same machinery.
-  - [ ] 3. The campaign editor - design fully SETTLED (the state
-        shape: DESIGN → The editor-state split; the interaction design:
-        DESIGN → The campaign editor surface). Recut into implementation
-        sub-steps (each a commit unit: builds, tests green, harness /
-        round-trip coverage per the tier conventions):
-    - [ ] 3f. The Validate button: parameterize checkCampaignGraph
-          over a graph view (pure, no file reads) + run it over the
-          authored graph (the graph checks + unstartable missions -
-          outgoing with no marker placed - + the orphan findings);
-          findings through the standard warning surface.
+  - [ ] 3. The campaign editor - COMPLETE (slices 3a-3f; the Validate
+        button's file-level design superseded the original
+        parameterized-graph-view plan mid-slice - see DONE.md, slice 3f).
   - [ ] 4. The hub editor drill-in - design SETTLED (DESIGN → Campaigns
         & the Campaign Editor → The hub editor surface): the level-editor
         mirror over the level-shaped hub grid (select / tile / NPC group
@@ -437,6 +430,20 @@ work:
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
         field is the v1 path).
+  - [ ] The official campaign's validation replays (the 3f
+        dependency): author real validation playthroughs for
+        main_campaign's four missions (the mission editor's Validate
+        flow) + commit the artifacts - the campaign-level standard
+        requires every mission to carry one, so the shipped campaign
+        itself must comply before the load-drop can land. Honest runs
+        (the author-medal turn targets derive from the replay - a
+        skip-level fast-forward would mint unachievably-fast medals).
+  - [ ] The campaign load DROP (gated on the replays above): any
+        validation finding refuses the IN-GAME campaign load (the
+        findings popup + stay on the current screen) - the same
+        standard the Validate button certifies (DESIGN → The campaign
+        editor surface → Validation); the editor's open keeps loading
+        broken campaigns (it is the fixer).
   - **The campaign editor's UI files mirror the mission editor's
         structure** (session-reflection note): the two editors are
         parallel systems - keep the FILES parallel where sensible.

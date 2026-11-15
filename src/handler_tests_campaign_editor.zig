@@ -807,7 +807,7 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     const campaign_editor_io = @import("campaign_editor/io.zig");
 
     // The in-place save of a FRESH campaign: everything mints.
-    campaign_editor_io.saveCampaignEditor(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
     try testing.expect(history.session.pending_error == null);
     // The memo values are SNAPSHOT into the test's arena: the reopen
     // below clears the memos (freeing their backing strings), and the
@@ -924,7 +924,7 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    campaign_editor_io.saveCampaignEditor(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
     // The reopen still finds Alpha's dir (delete-then-undo-then-save kept
     // it).
     event_push.pushEvents(
@@ -947,7 +947,7 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     runToIdle(&history);
     // The second delete leaves the start on Beta (the reload resolved
     // it); the save + reopen confirm the deletion stuck.
-    campaign_editor_io.saveCampaignEditor(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .open_campaign_editor = .{
@@ -958,6 +958,185 @@ test "saveCampaignEditor: the full round trip - save, reopen, compare; the delet
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.campaign_editor.?.hubs.len);
     try testing.expectEqualStrings("Beta", history.current_state.campaign_editor.?.hubs[0].name);
+}
+
+test "validateSavedCampaign: the file-level findings popup + the clean success" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const session_log = @import("session_log.zig");
+    const content_hash = @import("content_hash.zig");
+    const campaign_editor_io = @import("campaign_editor/io.zig");
+
+    // A campaign with every finding class: a fully wired + marked
+    // self-loop (clean), a marked STUB (start, no destination), and an
+    // ORPHAN (no start). No mission has a validation replay yet.
+    var history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Validate Me",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                    },
+                    .exit_placements = &.{
+                        .{ .mission = 2, .position = .{ .x = 0, .y = 0 } },
+                        .{ .mission = 3, .position = .{ .x = 0, .y = 0 } },
+                    },
+                },
+            },
+            .missions = &.{
+                .{ .handle = 2, .name = "One", .dir = "New Mission", .start = 0, .destination = 0 },
+                .{ .handle = 3, .name = "Stub", .dir = "New Mission 2", .start = 0 },
+                .{ .handle = 4, .name = "Orphan", .dir = "New Mission 3" },
+            },
+            .next_handle = 5,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // Save first (the Validate contract) - the returned dir is the
+    // certification target.
+    const saved_dir = campaign_editor_io.saveCampaignEditor(&history) orelse
+        return error.TestUnexpectedResult;
+    try testing.expect(history.session.pending_error == null);
+
+    // Phase 1 - the findings: the stub, the orphan, and every declared
+    // mission unvalidated (no replay on disk). The wired self-loop is
+    // clean (marked + destined + reachable).
+    campaign_editor_io.validateSavedCampaign(&history, saved_dir);
+    const findings = history.session.pending_error orelse
+        return error.TestUnexpectedResult;
+    try testing.expect(std.mem.indexOf(u8, findings, "no destination hub set (a dangling stub") != null);
+    // The orphan warning names the mission by UUID (the derive reads
+    // campaign.txt only - names live in the mission table); the replay
+    // findings below use the resolved names.
+    try testing.expect(std.mem.indexOf(u8, findings, "has no start hub - it is not wired into the graph (an orphan)") != null);
+    try testing.expect(std.mem.indexOf(u8, findings, "mission 'One': no validation replay") != null);
+    try testing.expect(std.mem.indexOf(u8, findings, "mission 'Stub': no validation replay") != null);
+    try testing.expect(std.mem.indexOf(u8, findings, "mission 'Orphan': no validation replay") != null);
+    try testing.expect(std.mem.indexOf(u8, findings, "unstartable") == null);
+
+    // Phase 2 - the replays resolve: writing each mission's validation
+    // replay (its minted uuid + the CURRENT content hash - the exact
+    // artifact writeValidationReplay produces) removes the unvalidated
+    // findings; the GRAPH findings (the stub, the orphan) remain - they
+    // are wiring defects, not replay defects. The full clean-success
+    // case is phase 3.
+    history.session.pending_error = null;
+    for ([_]u32{ 2, 3, 4 }) |handle| {
+        const memo = campaign_editor_io.campaignSaveMemoFor(&history, handle) orelse
+            return error.TestUnexpectedResult;
+        const mission_path = std.fmt.allocPrint(backing.allocator(), "{s}/missions/{s}", .{ saved_dir, memo.dir }) catch
+            return error.TestUnexpectedResult;
+        const hash = try content_hash.computeMissionHash(history.file_source, backing.allocator(), mission_path);
+        const hash_hex = content_hash.hashToHex(hash);
+        const replay_events = [_]events.Event{
+            .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
+            .{ .meta_event = .{ .end_validation = .{ .success = true } } },
+        };
+        const replay_body = try session_log.writeEventLogWithMetadata(
+            replay_events[0..],
+            "20260101_000000",
+            &.{
+                .{ .name = "mission_uuid", .value = memo.uuid },
+                .{ .name = "content_hash", .value = &hash_hex },
+            },
+            backing.allocator(),
+        );
+        const replay_path = std.fmt.allocPrint(backing.allocator(), "{s}/validation_replay.txt", .{mission_path}) catch
+            return error.TestUnexpectedResult;
+        history.file_source.writeFile(replay_path, replay_body) catch
+            return error.TestUnexpectedResult;
+    }
+    campaign_editor_io.validateSavedCampaign(&history, saved_dir);
+    const replays_resolved = history.session.pending_error orelse
+        return error.TestUnexpectedResult;
+    try testing.expect(std.mem.indexOf(u8, replays_resolved, "no validation replay") == null);
+    try testing.expect(std.mem.indexOf(u8, replays_resolved, "no destination hub set") != null);
+
+    // Phase 3 - the clean success: a second campaign, fully wired +
+    // marked, its single mission's replay written after save.
+    var clean_history = harness.newHistory(.{
+        .screen = .campaign_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Clean",
+            .start_hub = 0,
+            .hubs = &.{
+                .{
+                    .handle = 0,
+                    .name = "Alpha",
+                    .position = .{ .x = 0, .y = 0 },
+                    .grid = .{
+                        .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                        .player_start = .{ .x = 0, .y = 0 },
+                    },
+                    .exit_placements = &.{
+                        .{ .mission = 1, .position = .{ .x = 0, .y = 0 } },
+                    },
+                },
+            },
+            .missions = &.{
+                .{ .handle = 1, .name = "One", .dir = "New Mission", .start = 0, .destination = 0 },
+            },
+            .next_handle = 2,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&clean_history);
+    const clean_dir = campaign_editor_io.saveCampaignEditor(&clean_history) orelse
+        return error.TestUnexpectedResult;
+    const clean_memo = campaign_editor_io.campaignSaveMemoFor(&clean_history, 1) orelse
+        return error.TestUnexpectedResult;
+    const clean_mission_path = std.fmt.allocPrint(backing.allocator(), "{s}/missions/{s}", .{ clean_dir, clean_memo.dir }) catch
+        return error.TestUnexpectedResult;
+    const clean_hash = try content_hash.computeMissionHash(clean_history.file_source, backing.allocator(), clean_mission_path);
+    const clean_hash_hex = content_hash.hashToHex(clean_hash);
+    const clean_events = [_]events.Event{
+        .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
+        .{ .meta_event = .{ .end_validation = .{ .success = true } } },
+    };
+    const clean_replay = try session_log.writeEventLogWithMetadata(
+        clean_events[0..],
+        "20260101_000000",
+        &.{
+            .{ .name = "mission_uuid", .value = clean_memo.uuid },
+            .{ .name = "content_hash", .value = &clean_hash_hex },
+        },
+        backing.allocator(),
+    );
+    const clean_replay_path = std.fmt.allocPrint(backing.allocator(), "{s}/validation_replay.txt", .{clean_mission_path}) catch
+        return error.TestUnexpectedResult;
+    clean_history.file_source.writeFile(clean_replay_path, clean_replay) catch
+        return error.TestUnexpectedResult;
+
+    campaign_editor_io.validateSavedCampaign(&clean_history, clean_dir);
+    try testing.expectEqualStrings("Campaign validated - no findings.", clean_history.session.pending_error orelse
+        return error.TestUnexpectedResult);
 }
 
 test "saveCampaignEditor: an official-origin campaign forks - fresh identity, whole-dir carry, no shadow" {
@@ -988,7 +1167,7 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
 
     // The save FORKS: a fresh campaign identity + dir, never the official
     // path.
-    campaign_editor_io.saveCampaignEditor(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
     try testing.expect(history.session.pending_error == null);
     const campaign_memo = campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?;
     const fork_dir = try arena.dupe(u8, campaign_memo.dir);
@@ -1087,7 +1266,7 @@ test "saveCampaignEditor: an official-origin campaign forks - fresh identity, wh
     runToIdle(&history);
 
     // A second save in the session is stable (the memo - no re-fork).
-    campaign_editor_io.saveCampaignEditor(&history);
+    _ = campaign_editor_io.saveCampaignEditor(&history);
     try testing.expectEqualStrings(fork_dir, campaign_editor_io.campaignSaveMemoFor(&history, types.campaign_save_memo_handle).?.dir);
 
     // The reopen through the ordinary open path: the fork loads with its

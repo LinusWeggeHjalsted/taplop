@@ -222,6 +222,7 @@ pub const BakedArrowCanvas = ui_campaign_geometry.BakedArrowCanvas;
 pub const bakedArrowCanvas = ui_campaign_geometry.bakedArrowCanvas;
 pub const rasterizeBakedArrow = ui_campaign_geometry.rasterizeBakedArrow;
 pub const buildCampaignEditorView = ui_campaign_editor.buildCampaignEditorView;
+pub const buildCampaignEditorPrimaryActions = ui_campaign_editor.buildCampaignEditorPrimaryActions;
 pub const HubPositionOverride = ui_campaign_editor.HubPositionOverride;
 pub const buildGlobalTopBar = ui_screens.buildGlobalTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;

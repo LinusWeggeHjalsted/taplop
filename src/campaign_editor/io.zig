@@ -18,6 +18,9 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const parser = @import("../parser.zig");
 const file_source_mod = @import("../file_source.zig");
+const loaders = @import("../loaders.zig");
+const validation_replay = @import("../validation_replay.zig");
+const shared = @import("../handlers/shared.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -427,11 +430,16 @@ pub fn recordCampaignContentDeletion(history: *GameStateHistory, dir: []const u8
 ///      is removed, directory-level.
 /// A pure input-layer side effect (the mission save's class): no
 /// recorded event, never replayed.
+/// Returns the SAVED campaign's content dir ("campaigns/<id>" - the memo
+/// target, current-arena-owned and valid through the frame) on success,
+/// null on any failure (each failure surfaces its own popup - the
+/// Validate consumption aborts without certifying a failed save). The
+/// mission save's `?[]const u8` contract.
 pub fn saveCampaignEditor(
     history: *GameStateHistory,
-) void {
+) ?[]const u8 {
     const allocator = history.current_arena.allocator();
-    const editor = history.current_state.campaign_editor orelse return;
+    const editor = history.current_state.campaign_editor orelse return null;
 
     const campaign_memo = resolveCampaignIdentity(history, allocator, editor);
 
@@ -448,7 +456,7 @@ pub fn saveCampaignEditor(
         if (!file_source_mod.persistentFileExists(history.file_source, carried_campaign_txt)) {
             if (!copyDirFiles(history, allocator, editor.campaign_dir, campaign_memo.dir)) {
                 surfaceSaveError(history, "failed to carry the opened campaign's files into the new campaign dir");
-                return;
+                return null;
             }
         }
     }
@@ -490,7 +498,7 @@ pub fn saveCampaignEditor(
             defer allocator.free(carry_destination);
             if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
                 surfaceSaveError(history, "failed to carry the opened mission's files into the fork");
-                return;
+                return null;
             }
         }
     }
@@ -517,7 +525,7 @@ pub fn saveCampaignEditor(
             defer allocator.free(carry_destination);
             if (!copyDirFiles(history, allocator, carry_source, carry_destination)) {
                 surfaceSaveError(history, "failed to carry the opened hub's files into the fork");
-                return;
+                return null;
             }
         }
     }
@@ -541,12 +549,12 @@ pub fn saveCampaignEditor(
         ) catch @panic("failed to format mission.txt path");
         history.file_source.writeFile(mission_txt_path, mission_txt) catch {
             surfaceSaveError(history, "failed to write the campaign's mission file");
-            return;
+            return null;
         };
         if (mission_needs_template.items[mission_index]) {
             const default_level = history.file_source.readFile(allocator, "data/default_level.txt") catch {
                 surfaceSaveError(history, "failed to read the default level template");
-                return;
+                return null;
             };
             const level_path = std.fmt.allocPrint(
                 allocator,
@@ -555,7 +563,7 @@ pub fn saveCampaignEditor(
             ) catch @panic("failed to format level_1 path");
             history.file_source.writeFile(level_path, default_level) catch {
                 surfaceSaveError(history, "failed to write the fresh mission's default level");
-                return;
+                return null;
             };
         }
     }
@@ -585,7 +593,7 @@ pub fn saveCampaignEditor(
         ) catch @panic("failed to format hub.txt path");
         history.file_source.writeFile(hub_txt_path, hub_txt) catch {
             surfaceSaveError(history, "failed to write the campaign's hub file");
-            return;
+            return null;
         };
         // The cosmetic dir tidy: a loaded dir whose name no longer
         // matches the canonical form is renamed in passing - only when
@@ -620,7 +628,7 @@ pub fn saveCampaignEditor(
     ) catch @panic("failed to format campaign.txt path");
     history.file_source.writeFile(campaign_txt_path, campaign_txt) catch {
         surfaceSaveError(history, "failed to write the campaign file");
-        return;
+        return null;
     };
 
     // 4. The deletion reconciliation.
@@ -656,6 +664,7 @@ pub fn saveCampaignEditor(
     // The session continues under the SAVED identity (a fork's saves hit
     // the fork) - the memo carries it; ALSO the browser lists need a
     // rescan next open (they rescan on open anyway).
+    return campaign_memo.dir;
 }
 
 /// Whether a memo for `handle` existed BEFORE this save's resolution
@@ -666,6 +675,115 @@ fn missionMemoExistedBefore(history: *GameStateHistory, handle: u32) bool {
         if (memo.handle == handle) return true;
     }
     return false;
+}
+
+/// Validate the SAVED campaign files - the file-level certification (the
+/// mission editor's Validate contract: save first, then certify exactly
+/// the files a player receives). Runs the load-side pipeline over the
+/// saved dir through PLAIN file-source reads (the input layer owns this
+/// side effect; nothing is recorded, so the reconstruction cache stays
+/// uninvolved - the import-read precedent), collecting:
+///   - the graph findings (`loaders.checkCampaignGraph` + the derive's
+///     inline orphan warnings - stubs, orphans, markerless missions,
+///     unresolvable missions, unreachable hubs; the finalized-campaign
+///     doctrine)
+///   - every declared mission's validation replay
+///     (`validation_replay.checkMissionValidationArtifact` - a missing or
+///     stale replay reads as unvalidated)
+/// Findings surface as one popup through the standard warning surface; a
+/// clean campaign gets the success popup (visible feedback that the
+/// click ran - the Revalidate-success precedent; a real toast surface is
+/// the tracked follow-up).
+pub fn validateSavedCampaign(
+    history: *GameStateHistory,
+    campaign_content_dir: []const u8,
+) void {
+    const allocator = history.current_arena.allocator();
+    var warnings: std.ArrayList([]const u8) = .empty;
+
+    const campaign_txt_path = std.fmt.allocPrint(allocator, "{s}/campaign.txt", .{campaign_content_dir}) catch
+        @panic("failed to allocate campaign.txt path");
+    const campaign_bytes = history.file_source.readFile(allocator, campaign_txt_path) catch {
+        surfaceSaveError(history, "validation failed: could not read the saved campaign.txt");
+        return;
+    };
+    const sections = parser.parseConfigFile(campaign_bytes, allocator, &parser.campaign_sections) catch {
+        surfaceSaveError(history, "validation failed: the saved campaign.txt is malformed");
+        return;
+    };
+    var campaign = loaders.loadCampaign(sections, campaign_content_dir, allocator, &warnings) catch {
+        surfaceSaveError(history, "validation failed: the saved campaign.txt is malformed");
+        return;
+    };
+    loaders.resolveCampaignHubs(&campaign, history.file_source, allocator, &warnings);
+    campaign.missions = loaders.resolveCampaignMissions(campaign, history.file_source, allocator, &warnings);
+    loaders.deriveCampaignEdges(&campaign, sections, history.file_source, allocator, &warnings);
+    loaders.checkCampaignGraph(campaign, allocator, &warnings);
+    validateCampaignMissions(history, sections, campaign, allocator, &warnings);
+
+    if (warnings.items.len == 0) {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "Campaign validated - no findings.",
+        );
+        return;
+    }
+    shared.surfaceWarnings(history, &warnings, allocator);
+}
+
+/// Every mission the campaign DECLARES (the Missions section) must carry
+/// a validation replay certifying its current content - the finalized-
+/// campaign standard. Unresolved missions are skipped here (the graph
+/// checks already named them); `entry.dir` is the scan table's full
+/// content-relative mission path, the convention
+/// `checkMissionValidationArtifact` + `computeMissionHash` take.
+fn validateCampaignMissions(
+    history: *GameStateHistory,
+    sections: []const parser.Section,
+    campaign: types.Campaign,
+    allocator: std.mem.Allocator,
+    warnings: *std.ArrayList([]const u8),
+) void {
+    const missions_section = parser.findSection(sections, "Missions") orelse return;
+    for (missions_section.entry_groups) |group| {
+        const mission_uuid = parser.findValue(group.pairs, "mission_uuid") orelse continue;
+        if (mission_uuid.len == 0) continue;
+        var resolved: ?types.CampaignMissionEntry = null;
+        for (campaign.missions) |entry| {
+            if (std.mem.eql(u8, entry.uuid, mission_uuid)) {
+                resolved = entry;
+                break;
+            }
+        }
+        const entry = resolved orelse continue;
+        const status = validation_replay.checkMissionValidationArtifact(
+            history.file_source,
+            allocator,
+            mission_uuid,
+            entry.dir,
+        );
+        const label = if (entry.name.len > 0) entry.name else mission_uuid;
+        switch (status) {
+            .validated => {},
+            .missing => appendValidationWarning(allocator, warnings, "mission '{s}': no validation replay - run Validate in the mission editor", .{label}),
+            .malformed => appendValidationWarning(allocator, warnings, "mission '{s}': the stored validation replay is malformed", .{label}),
+            .wrong_mission => appendValidationWarning(allocator, warnings, "mission '{s}': the stored validation replay belongs to a different mission", .{label}),
+            .content_changed => appendValidationWarning(allocator, warnings, "mission '{s}': the mission changed since its validation run - re-run Validate", .{label}),
+        }
+    }
+}
+
+/// Append one formatted validation warning (the load.zig `warn` shape:
+/// format + append both swallow allocation failure - warnings are
+/// advisory, never a crash path).
+fn appendValidationWarning(
+    allocator: std.mem.Allocator,
+    warnings: *std.ArrayList([]const u8),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const message = std.fmt.allocPrint(allocator, format, args) catch return;
+    warnings.append(allocator, message) catch {};
 }
 
 fn surfaceSaveError(history: *GameStateHistory, message: []const u8) void {

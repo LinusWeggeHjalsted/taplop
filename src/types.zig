@@ -404,6 +404,11 @@ pub const Action = enum {
     // full save projection, the reconciliation save). An input-layer side
     // effect, never a recorded event (the mission-save class).
     save_campaign,
+    // The campaign editor's top-right Validate button: SAVE FIRST, then
+    // certify exactly the saved files (the mission editor's file-based
+    // contract) - the graph findings + every mission's validation
+    // replay. An input-layer side effect, never a recorded event.
+    validate_campaign,
     // An import picker row: the mission dir rides the
     // `editor_campaign_import` payload variant (the copy + entry event
     // follow at the consumption site).
@@ -1204,6 +1209,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .open_campaign_import_picker,
         .select_editor_campaign_import,
         .save_campaign,
+        .validate_campaign,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,
@@ -1607,6 +1613,7 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .reattach_campaign_mission_destination,
         .open_campaign_import_picker,
         .save_campaign,
+        .validate_campaign,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,

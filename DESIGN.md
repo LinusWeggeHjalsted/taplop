@@ -3974,13 +3974,25 @@ The slice-3 interaction design. The state shape is settled separately
   from the same start hub) spread
   evenly among THEMSELVES over the full circle; authored ones sit
   where placed. No gap bookkeeping.
-- **Validation**: a Validate button (next to Save) runs the
-  graph-integrity checks over the AUTHORED GRAPH in memory
-  (checkCampaignGraph parameterized over a graph view instead of
-  file reads - pure, no IO): unset/unresolvable start hub, dangling
-  destinations, exits naming missing missions, unreachable hubs, the
-  orphan findings above. Findings render through the standard warning
-  surface.
+- **Validation**: a top-right Validate button (the mission editor's
+  file-based contract: SAVE FIRST, then certify exactly the files a
+  player receives - never editor memory). The saved campaign re-loads
+  through the plain-read load pipeline and runs the shared findings
+  (`loaders.checkCampaignGraph` + the derive's inline orphan warnings):
+  unset start hub, unreachable hubs, stubs, orphans, markerless
+  (unstartable) missions, unresolvable missions - plus EVERY mission
+  the campaign declares must carry a validation replay certifying its
+  CURRENT content (`validation_replay.checkMissionValidationArtifact`:
+  missing, malformed, foreign-uuid, and content-changed all read as
+  unvalidated). Findings render through the standard warning popup; a
+  clean campaign gets the success popup (a real toast surface is the
+  tracked follow-up). No Test button (nothing to play in a campaign)
+  and no Save button (ctrl+S + the options menu are the paths); the
+  global top bar's tips `?` hides on this screen for the button's spot
+  (the mission editor's rule, second screen). The in-game campaign
+  load surfaces the same graph findings warn-only; the DROP (any
+  finding refuses the load) lands with the official campaign's own
+  validation replays (TODO).
 
 ### The hub editor surface (settled requirements)
 
@@ -6987,9 +6999,10 @@ glyph buttons flanking it, and an n/N ordinal directly beneath the
 header. Opened from the global top bar's `?` button
 (top-right, mirroring options at top-left - `Action.open_tips`, a toggle
 like open_credits; the `?` and the `<`/`>` are font glyphs, no icon
-sprites). The `?` hides in the EDITOR - that corner is the Test/Validate
-row, the one screen with UI already occupying the top-right (the
-overlay itself stays legal there). The OPEN state is class-1 (`UiSurfaceId.tips` /
+sprites). The `?` hides on BOTH editor screens - that corner is the
+primary-actions row (Test/Validate on the mission editor, Validate on
+the campaign editor), the screens with UI already occupying the
+top-right (the overlay itself stays legal on both). The OPEN state is class-1 (`UiSurfaceId.tips` /
 `isSurfaceOpen(.tips)`, the recorded `toggle_ui_surface` event); the VIEWED index is a view
 affordance (`UiState.tips_index`, the settings_tab convention -
 `Action.cycle_tips` + the `tips_direction` payload mutate it directly at
