@@ -318,7 +318,8 @@ pub const BakedArrowParams = struct {
 /// family (the render seam falls back to the per-segment draw). The fit
 /// check is the honest gate: a curve bakes only when its bucketed
 /// canonical reconstruction draws within `baked_arrow_fit_tolerance` of
-/// the curve's own samples + chevron arms. `max_baked_length` bounds the
+/// the curve's own samples, with the chevron's orientation pinned by an
+/// analytic end-tangent comparison. `max_baked_length` bounds the
 /// straight family's baked length (the platform texture limit, expected
 /// bucket-rounded): longer edges draw CLAMPED - the accepted shortening -
 /// rather than falling back. The self_loop family ignores the bound (its
@@ -460,11 +461,34 @@ fn bakedArrowCanonical(params: BakedArrowParams) element.Curve {
     };
 }
 
+/// The chevron-orientation fit tolerance: the angle between the curve's
+/// and the canonical's end tangents (see `bakedArrowFits`). Generous by
+/// design - the stroke's sample fit is the shape gate, and the residual
+/// error sources here (integer-rounded controls on the shortest chords)
+/// are exactly the lengths where no renderer draws a principled chevron
+/// direction anyway.
+const baked_arrow_tangent_tolerance_degrees: f32 = 30;
+const baked_arrow_tangent_tolerance_radians = std.math.degreesToRadians(baked_arrow_tangent_tolerance_degrees);
+
+/// The unit direction of a cubic's end tangent from its last control +
+/// endpoint (3(p3 - p2), magnitude dropped), or null when the tangent is
+/// degenerate (control_end == end).
+fn endTangentDirection(curve: element.Curve) ?FloatVec {
+    const end = floatVec(curve.end);
+    const control_end = floatVec(curve.control_end);
+    const vec = FloatVec{ .x = end.x - control_end.x, .y = end.y - control_end.y };
+    const length = floatLength(vec);
+    if (length <= 0) return null;
+    return .{ .x = vec.x / length, .y = vec.y / length };
+}
+
 /// Whether `curve` (un-rotated by `angle_radians` about its start point)
-/// stays within `baked_arrow_fit_tolerance` of the canonical's samples +
-/// chevron arms. Corresponding samples are compared point-to-point (both
-/// curves are the same family up to a rigid transform, so corresponding
-/// points are the near ones).
+/// stays within `baked_arrow_fit_tolerance` of the canonical's samples,
+/// with the chevron's orientation pinned by an analytic end-tangent
+/// comparison (see the tangent block for why never the sampled one).
+/// Corresponding samples are compared point-to-point (both curves are
+/// the same family up to a rigid transform, so corresponding points are
+/// the near ones).
 fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians: f32) bool {
     var curve_samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
     var canonical_samples: [element.curve_sample_count + 1]ScreenPosition = undefined;
@@ -480,16 +504,28 @@ fn bakedArrowFits(curve: element.Curve, canonical: element.Curve, angle_radians:
         if (floatDistance(local, floatVec(canonical_sample)) > baked_arrow_fit_tolerance) return false;
     }
 
+    // The chevron check compares the curves' end tangents computed from
+    // their CONTROL POINTS, never from the sampled last segment: at
+    // short lengths the sample step (~length/48) is below the integer
+    // rounding grain, so the sampled tangent is quantization noise
+    // (consecutive samples can coincide, and `arrowheadArms` then falls
+    // back to east) - the pre-fix code rejected real family members
+    // over exactly that artifact (the hands-on finding: short off-axis
+    // edges fell back to the per-segment draw). The comparison is
+    // ANGULAR (the chevron's job is directional affordance): un-rotate
+    // the world tangent into the canonical's local frame, then measure
+    // the angle between the two directions. A degenerate tangent cannot
+    // be compared - conservatively reject.
     if (curve.arrowhead) {
-        const curve_arms = element.arrowheadArms(curve);
-        const canonical_arms = element.arrowheadArms(canonical);
-        for (curve_arms, canonical_arms) |curve_arm, canonical_arm| {
-            const local = unrotate(.{
-                .x = @as(f32, @floatFromInt(curve_arm.x)) - origin.x,
-                .y = @as(f32, @floatFromInt(curve_arm.y)) - origin.y,
-            }, angle_radians);
-            if (floatDistance(local, floatVec(canonical_arm)) > baked_arrow_fit_tolerance) return false;
-        }
+        const curve_tangent = endTangentDirection(curve) orelse return false;
+        const local_tangent = unrotate(curve_tangent, angle_radians);
+        const canonical_tangent = endTangentDirection(canonical) orelse return false;
+        const dot = std.math.clamp(
+            local_tangent.x * canonical_tangent.x + local_tangent.y * canonical_tangent.y,
+            -1.0,
+            1.0,
+        );
+        if (std.math.acos(dot) > baked_arrow_tangent_tolerance_radians) return false;
     }
     return true;
 }
@@ -1111,4 +1147,36 @@ test "rasterizeBakedArrow: the teardrop silhouette stays inside its control hull
     // Well past the silhouette's widest reach (~35px off-axis at the
     // bulb): transparent.
     try std.testing.expectEqual([4]u8{ 0, 0, 0, 0 }, pixelColor(pixels, canvas, pivot_x + 225, pivot_y + 45));
+}
+
+test "bakedArrowParams: short edges at awkward angles bake (the sampled-tangent trap)" {
+    // The user's hands-on finding: short edges at certain angles fell
+    // back to the per-segment draw (fat monochrome arrows). Root cause:
+    // the fit check compared chevron arms from the SAMPLED end tangent,
+    // and at short lengths the sample step (~length/48) is below the
+    // integer rounding grain - consecutive samples can coincide, and
+    // `arrowheadArms` then falls back to east - so the arm comparison
+    // rejected bona fide family members over quantization noise. These
+    // fixtures are the trap: a 24px chord (152px hub pair) at two
+    // off-axis angles, sample steps of 0.5px.
+    for ([_]Vector2{ .{ .x = 140, .y = 60 }, .{ .x = 60, .y = 140 } }) |to_position| {
+        const geometry = deriveEdgeGeometry(
+            .{ .x = 0, .y = 0 },
+            .{ .hub = to_position },
+            0,
+            .{ .index = 1, .count = 1 },
+        );
+        const params = bakedArrowParams(drawnCurve(geometry), 4096) orelse
+            return error.TestUnexpectedResult;
+        try std.testing.expectEqual(BakedArrowVariant.straight, params.variant);
+        try expectEqualInt(24, params.length);
+    }
+
+    // The same short pair WITH a parallel sibling: the bow (half the
+    // spacing) dominates the end-tangent vector, which is even better
+    // conditioned - must also bake.
+    const first_geometry = deriveEdgeGeometry(.{ .x = 0, .y = 0 }, .{ .hub = .{ .x = 140, .y = 60 } }, 0, .{ .index = 1, .count = 2 });
+    const first = bakedArrowParams(drawnCurve(first_geometry), 4096) orelse
+        return error.TestUnexpectedResult;
+    try expectEqualInt(-@divTrunc(parallel_edge_spacing, 2), first.bow);
 }
