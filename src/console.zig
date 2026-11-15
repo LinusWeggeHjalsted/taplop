@@ -93,12 +93,12 @@ pub const ConsoleCommand = union(enum) {
     /// button clicks use (context-free; the consumption sites gate
     /// themselves). Payload-less actions only (the keybind vocabulary).
     action: types.Action,
-    /// Hold commands until the game is idle (stack empty, no wait, no
-    /// modal error - the same condition under which the game accepts
-    /// player input). The pacing primitive for scripted turn flow: enemy
-    /// turns drain over real-clock waits, and a frame count is a guess;
-    /// `wait idle` releases the next command on the first frame the game
-    /// would accept input again.
+    /// Hold commands while the game is ACTIVELY processing (a draining
+    /// stack or a ticking wait - see `consoleCommandsMayFlow`); a drained
+    /// or input-paused game (overlay / popup) releases. The pacing
+    /// primitive for scripted turn flow: enemy turns drain over
+    /// real-clock waits, and a frame count is a guess. Never stalls: the
+    /// states it waits on progress by real time alone.
     wait_idle: void,
     /// Skip n frames before the next command (the pacing primitive).
     wait: u32,
@@ -458,8 +458,11 @@ pub const ConsoleQueue = struct {
     read_counter: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// Idle frames remaining from a popped `wait` (game thread only).
     wait_frames_remaining: u32 = 0,
-    /// Set by a popped `wait idle` (game thread only): hold commands until
-    /// the game is idle, then release the next command on that same frame.
+    /// Set by a popped `wait idle` (game thread only): hold commands while
+    /// the game is ACTIVELY processing (a draining stack or a ticking
+    /// wait); a drained OR input-paused game (overlay / modal popup)
+    /// releases the next command on that same frame - see
+    /// `consoleCommandsMayFlow` for why paused states must release.
     wait_until_idle: bool = false,
     /// The console's remembered pointer position - set by `move`, persists
     /// across frames like held keys (the console's pointer is where the
@@ -526,14 +529,15 @@ pub const ConsoleQueue = struct {
     /// popped `wait n` arms n idle frames and yields null this frame; while
     /// frames remain, each call decrements and yields null - so `wait n`
     /// spaces the surrounding commands n idle frames apart. A popped
-    /// `wait idle` holds until `game_is_idle` (computed by the caller from
-    /// the game state), then releases the next command on that same frame.
-    fn takeFrameCommand(self: *ConsoleQueue, game_is_idle: bool) ?ConsoleCommand {
+    /// `wait idle` holds until the caller reports commands may flow
+    /// (`consoleCommandsMayFlow` - the ACTIVE-work-only rule), then
+    /// releases the next command on that same frame.
+    fn takeFrameCommand(self: *ConsoleQueue, commands_may_flow: bool) ?ConsoleCommand {
         if (self.wait_until_idle) {
-            if (!game_is_idle) return null;
+            if (!commands_may_flow) return null;
             self.wait_until_idle = false;
-            // Fall through: the next command releases on the first idle
-            // frame, not the one after.
+            // Fall through: the next command releases on the first
+            // flow-eligible frame, not the one after.
         }
         if (self.wait_frames_remaining > 0) {
             self.wait_frames_remaining -= 1;
@@ -614,6 +618,29 @@ pub fn announceConsoleInput(queue: *ConsoleQueue) void {
 // Per-frame drain + merge
 // ============================================================
 
+/// The `wait idle` release condition: the hold waits out ACTIVE work
+/// only - a draining event stack or a ticking wait, both of which
+/// progress by real time alone - so it can never stall. A PAUSED game
+/// RELEASES instead: any fullscreen overlay (the options menu and its
+/// siblings, which freeze the stack + wait timer underneath until they
+/// close) or a modal error popup are stable, input-responsive states that
+/// change only through input the hold would otherwise withhold - holding
+/// against them deadlocks the channel (both cases observed live: a popup
+/// from a scripted save, and an options menu over a frozen enemy-turn
+/// drain). A script that pauses mid-flow does its overlay/popup business
+/// (dismiss, menu interactions - their input paths run ahead of the
+/// pause gates), and a later `wait idle` waits out the resumed drain.
+fn consoleCommandsMayFlow(
+    current_state: *const state.GameState,
+    session: *const state.SessionState,
+) bool {
+    const drained = current_state.event_stack.len == 0 and
+        current_state.waiting == null;
+    const input_paused = current_state.ui_surfaces.anyOverlayOpen() or
+        session.pending_error != null;
+    return drained or input_paused;
+}
+
 /// The per-frame console step (called from `frame()` right after the backend
 /// poll): drain one command and apply it. Input commands return the
 /// backend's PlatformInput with the command merged in (frame-arena-owned
@@ -634,13 +661,11 @@ pub fn applyFrameCommand(
     camera: types.Camera,
     camera_zoom: f32,
 ) PlatformInput {
-    // The game is idle - the condition under which it accepts player input
-    // (empty stack, no wait, no modal error): the release condition for
-    // `wait idle`.
-    const game_is_idle = history.current_state.event_stack.len == 0 and
-        history.current_state.waiting == null and
-        history.session.pending_error == null;
-    const command = queue.takeFrameCommand(game_is_idle) orelse {
+    const commands_may_flow = consoleCommandsMayFlow(
+        &history.current_state,
+        &history.session,
+    );
+    const command = queue.takeFrameCommand(commands_may_flow) orelse {
         // No command this frame (a wait's idle frames, or an empty queue):
         // the scripted pointer position applies ONLY while the CONSOLE
         // itself holds a mouse button - its gesture's in-between frames
@@ -2136,4 +2161,95 @@ test "takeFrameCommand records the taken command (any kind, waits included)" {
     _ = applyFrameCommand(&queue, backend_input, backing.allocator(), &history, &no_root, &.{}, .{ .position = .{ .x = 0, .y = 0 } }, 1.0);
     try std_testing.expect(queue.last_taken_command != null);
     try std_testing.expect(queue.last_taken_command.? == .wait);
+}
+
+test "consoleCommandsMayFlow: the wait-idle hold waits out active work only - drained or input-paused releases" {
+    const Event = @import("events.zig").Event;
+    const testing = std.testing;
+
+    // The stall invariant: the hold may only wait on states that progress
+    // by real time alone. A draining stack or a ticking wait holds; a
+    // drained game flows; an overlay or a modal popup flows EVEN WITH
+    // frozen work underneath - those states change only through input the
+    // hold would otherwise withhold (the two live deadlocks: a popup from
+    // a scripted save, an options menu over a frozen enemy-turn drain).
+    const one_event = [_]Event{.{ .hub_editor_event = .hub_toggle_inspector }};
+
+    // The base fixture: a drained game (empty stack, no wait, nothing
+    // open) - commands flow. Each case below tweaks one factor.
+    const base = state.GameState{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    {
+        var game_state = base;
+        const session: state.SessionState = .{};
+        try testing.expect(consoleCommandsMayFlow(&game_state, &session));
+    }
+    // Active drain: a non-empty stack holds.
+    {
+        var game_state = base;
+        game_state.event_stack = &one_event;
+        const session: state.SessionState = .{};
+        try testing.expect(!consoleCommandsMayFlow(&game_state, &session));
+    }
+    // Active wait: a ticking wait holds.
+    {
+        var game_state = base;
+        game_state.waiting = .{ .remaining_microseconds = 500 };
+        const session: state.SessionState = .{};
+        try testing.expect(!consoleCommandsMayFlow(&game_state, &session));
+    }
+    // An overlay with frozen work underneath releases (the pause gate
+    // blocks the drain; only input closes the overlay).
+    {
+        var game_state = base;
+        game_state.event_stack = &one_event;
+        game_state.ui_surfaces.open_overlays[0] = .options_menu;
+        const session: state.SessionState = .{};
+        try testing.expect(consoleCommandsMayFlow(&game_state, &session));
+    }
+    {
+        var game_state = base;
+        game_state.waiting = .{ .remaining_microseconds = 500 };
+        game_state.ui_surfaces.open_overlays[0] = .options_menu;
+        const session: state.SessionState = .{};
+        try testing.expect(consoleCommandsMayFlow(&game_state, &session));
+    }
+    // A modal error popup releases even with frozen work underneath.
+    {
+        var game_state = base;
+        game_state.event_stack = &one_event;
+        const session: state.SessionState = .{ .pending_error = "stalled once" };
+        try testing.expect(consoleCommandsMayFlow(&game_state, &session));
+    }
+}
+
+test "takeFrameCommand: the wait-idle hold releases the next command on the flow-eligible frame" {
+    const testing = std.testing;
+
+    var queue = ConsoleQueue{};
+    queue.push(.{ .wait_idle = {} });
+    queue.push(.{ .action = .escape });
+
+    // The wait command itself pops (arming the hold) and yields null.
+    try testing.expect(queue.takeFrameCommand(true) == null);
+    // Active work: the held command stays held, frame after frame.
+    try testing.expect(queue.takeFrameCommand(false) == null);
+    try testing.expect(queue.takeFrameCommand(false) == null);
+    // The flow-eligible frame releases the next command on that same frame.
+    const released = queue.takeFrameCommand(true);
+    try testing.expect(released != null);
+    try testing.expect(std.meta.activeTag(released.?) == .action);
+    try testing.expect(released.?.action == .escape);
+    // The hold is disarmed; later frames take commands unconditionally.
+    try testing.expect(queue.takeFrameCommand(false) == null); // the queue is empty
 }

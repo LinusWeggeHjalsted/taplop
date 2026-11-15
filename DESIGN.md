@@ -1971,12 +1971,21 @@ the reader thread exits, zero cost.
   hardware position), `scroll <delta>`, `type <text>` (the char
   queue - the text-input widget's own machinery consumes it; commit via
   the normal paths: `press Enter` or the M2 click rule), `action <name>`,
-  `wait <n>` (skip n frames) / `wait idle` (hold until the game is
-  idle - stack empty, no wait, no modal error, the same condition
-  under which the game accepts player input - then release the next
-  command on that first idle frame; the pacing primitive for scripted
+  `wait <n>` (skip n frames) / `wait idle` (hold while the game is
+  ACTIVELY processing - a draining stack or a ticking wait, both of
+  which progress by real time alone - then release the next command on
+  the first such-completed frame; the pacing primitive for scripted
   turn flow, where enemy turns drain over real-clock waits and a frame
-  count is a guess), `dump <thing>`
+  count is a guess. NEVER stalls: a DRAINED game releases, and so does
+  an INPUT-PAUSED one - any fullscreen overlay with events frozen
+  underneath, or a modal error popup. Those states are stable and
+  input-responsive, changing only through input the hold would
+  otherwise withhold - holding against them deadlocks the channel
+  (both observed live: a popup from a scripted save, an options menu
+  over a frozen enemy-turn drain). A script that pauses mid-flow does
+  its overlay/popup business - dismiss, menu interactions, their input
+  paths run ahead of the pause gates - and a later `wait idle` waits
+  out the resumed drain), `dump <thing>`
   (plain text on stdout), `report ui` / `report level` (the curated
   projections - see the next bullet), `help` (the command list), `inputs`
   (every input id `press`/`release` accept - the producible-id tables

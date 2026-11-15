@@ -374,6 +374,7 @@ working rules).
 - [campaign-editor slice 4-5d: the reuse refactor - the mission editor's inspector + picker become the shared code](#campaign-editor-slice-4-5d-the-reuse-refactor---the-mission-editors-inspector--picker-become-the-shared-code)
 - [campaign-editor slice 4-5c(ii): the footprint editor + the layer machinery ride the reuse seams](#campaign-editor-slice-4-5cii-the-footprint-editor--the-layer-machinery-ride-the-reuse-seams)
 - [campaign-editor slice 4-6: the hub editor's metadata sidebar + ctrl+S](#campaign-editor-slice-4-6-the-hub-editors-metadata-sidebar--ctrls)
+- [console input: the wait-idle hold can no longer stall the channel](#console-input-the-wait-idle-hold-can-no-longer-stall-the-channel)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22598,3 +22599,46 @@ skip-unsaved-references rule.
   campaign.txt's Hubs section, verified on disk) with no popup.
 
 1025 green.
+
+## console input: the wait-idle hold can no longer stall the channel
+
+The author's design question after the pointer-hijack fix ("wait idle
+should not be able to stall the game like this - can we make sure
+something like this can't happen?"), plus the edge they named (an
+options menu with unprocessed events frozen underneath) exposed a
+second deadlock: the hold released only on fully-idle (stack empty + no
+wait + no modal error), but two of those components describe states
+that change only through INPUT - which the hold itself was withholding.
+
+- **The settle**: the hold waits out ACTIVE work only - a draining
+  stack or a ticking wait, both of which progress by real time alone -
+  so it can never stall by construction. A DRAINED game releases, and
+  so does an INPUT-PAUSED one: any fullscreen overlay (which freezes
+  the stack + wait timer underneath until it closes) or a modal error
+  popup. The release condition lives in `consoleCommandsMayFlow`
+  (extracted so the matrix is unit-testable), the invariant stated in
+  its doc + DESIGN → Input → Console input.
+- **Unit test**: the condition matrix (drained / active stack / active
+  wait / overlay over each / popup over frozen work) + the queue's
+  release mechanics (hold while false, release the next command on the
+  flow-eligible frame).
+- **Runtime-verified, both stall shapes end to end over the console
+  channel**: (1) the original hang's exact script (a popup from a
+  scripted save + `wait idle` + dump + quit behind it) now completes -
+  the hold releases on the paused frame, the dump prints the pending
+  error, quit exits; (2) the options-menu shape, reproduced for real -
+  a playtest level, the player moved into an enemy's aggro range (the
+  move's INLINE drain consumes the first cascade; the frame-spanning
+  one comes from `skip`'s non-inline push), then Escape mid-drain
+  froze a three-event enemy turn under the menu; the dump taken WHILE
+  paused shows the frozen stack + the open menu, the second Escape
+  closed it, the final `wait idle` waited out the resumed drain, and
+  the process exited cleanly. Drive lessons recorded: a scripted move
+  re-applies the remembered pointer position on every input-command
+  frame, so each console frame is mouse-owned (arrow-key cursor
+  nudges never fire after any scripted `move` - click the highlighted
+  tile instead; `report level` prints the move range with screen
+  positions), and enemies need AGGRO before their turn joins the
+  cascade (the aggro_check rule - an inactive enemy acts never).
+
+1027 green.
