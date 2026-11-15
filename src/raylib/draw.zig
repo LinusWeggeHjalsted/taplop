@@ -504,7 +504,22 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 backend.endOutlineStripeScope(backend.renderScale());
             }
         },
-        .curve => |curve| drawCurveGeometry(curve, toRaylibColor(curve.color, curve.alpha)),
+        .curve => |curve| {
+            // The baked-arrow path: classify into the cache families and
+            // draw ONE rotated textured quad (the sprite submission
+            // class). Anything outside the families - or a failed bake
+            // (the platform texture limit) - keeps the per-segment draw,
+            // which is also the hover/selected rim's path (one edge at a
+            // time, inside the outline-stripe scope).
+            const max_baked_length = ui.maxBakedArrowLength(backend.max_texture_size);
+            if (ui.bakedArrowParams(curve, max_baked_length)) |params| {
+                if (backend.textures.getArrowTexture(params)) |texture| {
+                    drawBakedArrow(texture, params, curve);
+                    return;
+                }
+            }
+            drawCurveGeometry(curve, toRaylibColor(curve.color, curve.alpha));
+        },
         .slider => |slider| {
             // Integer slider: track (dark) + fill (lightest, proportional)
             // + thumb (lightest square at the fill end). The value label
@@ -540,6 +555,45 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// outline stripe shader (the marching flip between the highlight tint
 /// and the theme's darkest - see DESIGN → Platform Seam → Outline stripe
 /// shader).
+/// The baked arrow as one rotated quad: the texture's pivot texel (the
+/// canonical shape's local origin - see `bakedArrowCanvas`) lands on the
+/// curve's start point, rotated by the classification's placement angle.
+/// The tint is PREMULTIPLIED (the texture is premultiplied and the render
+/// pass blends with BLEND_ALPHA_PREMULTIPLY): the white inner stroke
+/// becomes the edge color, the black outline stays black under any tint,
+/// and dim/ghost alpha fades the whole arrow uniformly.
+fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, curve: ui.Curve) void {
+    const canvas = ui.bakedArrowCanvas(params);
+    const source = rl.Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = @floatFromInt(texture.width),
+        .height = @floatFromInt(texture.height),
+    };
+    // raylib rotates the destination rect about the origin point and the
+    // origin texel lands exactly at (destination.x, destination.y), so the
+    // destination position IS the pivot's world position: the curve's
+    // start point.
+    const destination = rl.Rectangle{
+        .x = @floatFromInt(curve.start.x),
+        .y = @floatFromInt(curve.start.y),
+        .width = @floatFromInt(texture.width),
+        .height = @floatFromInt(texture.height),
+    };
+    const origin = rl.Vector2{
+        .x = @floatFromInt(canvas.pivot_x),
+        .y = @floatFromInt(canvas.pivot_y),
+    };
+    rl.drawTexturePro(
+        texture,
+        source,
+        destination,
+        origin,
+        params.rotation_degrees,
+        conversions.toPremultipliedColor(curve.color, curve.alpha),
+    );
+}
+
 /// Draw one curve's full geometry: the sampled stroke as per-segment
 /// `drawLineEx` quads + the arrowhead chevron's two arm quads - the SAME
 /// short submissions the pre-batching-rewrite code used (rebuilt after
@@ -556,7 +610,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// map). The join + end-cap jobs those circles did are handled by
 /// `drawCappedSegment` instead (segment overlap - no extra primitives,
 /// no flushes). The dashed variant alternates segments. Shared by the
-/// `.curve` draw arm and the
+/// `.curve` arm's FALLBACK path and the
 /// hit-curve button's hover highlight, so the highlight is the SAME
 /// arrow, just wider.
 fn drawCurveGeometry(curve: ui.Curve, raylib_color: rl.Color) void {

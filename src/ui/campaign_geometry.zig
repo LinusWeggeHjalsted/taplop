@@ -46,9 +46,6 @@ const parallel_edge_spacing: i32 = 64;
 pub const edge_width: i32 = 8;
 pub const edge_outline_width: i32 = 8;
 
-/// The edge stroke's outline color.
-pub const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
-
 /// The hub icon's draw size (reference px, centered on the hub's map
 /// position). A dedicated icon ships eventually; until then the id is
 /// MISSING and draws the magenta placeholder (the art_report shopping list

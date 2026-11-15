@@ -38,16 +38,6 @@ Test by running `zig build run` and clicking through.
       consumption layer for outcome-gated cases (the design note in
       types.zig's applyAction already names this class). Leaving it: the
       cases are rare + the fix touches the audio choke point.
-- **Hit-curve button bounds coherence is unchecked (session-reflection
-      rider)** - the 2e full-arrow fixes established that a `hit_curve`
-      button's rect should equal `curveBounds(hit_curve)` (the 0x0 rect
-      shipped two user-visible bugs: tooltip corner on the arrow tip,
-      tiny highlight at the anchor). True by construction in
-      buildWorldMap now, but nothing enforces it elsewhere - a
-      view-level contract test (every hit-curve button's bounds ==
-      curveBounds of its curve) would make it true everywhere, the
-      z-order-census spirit. Fold into the world-map test work riding
-      slice 3's predicate-scan rewrite.
 - **Mission-scan duplication (session-reflection rider, low priority)** -
       `listMissions` + `listOfficialMissions` (file_source.zig) are
       near-clones (the same mission.txt-parse-in-arena dance, different

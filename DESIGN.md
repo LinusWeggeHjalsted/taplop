@@ -146,7 +146,11 @@ VANISHES in real sessions in a way that resisted two falsified theories
 (leftover-texture-state, batch-buffer-rollover) and a falsified
 shapes-texture-bind "fix" - the one-strip approach is abandoned (the
 record is in DONE.md); the short per-segment quads always rendered.
-The pre-strip code's fps was fixed by (a) alone.
+The pre-strip code's fps was fixed by (a) alone. Map edges now sidestep
+the class entirely - the baked-arrow rework draws each edge as ONE
+rotated TEXTURED quad (campaign_geometry's baked-arrow section), the
+submission class every sprite rides; the rules above govern the
+fallback + hover-rim path only.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
   - `frame(backend, *FrameState)` is the deterministic core: poll input,
@@ -3633,10 +3637,10 @@ missing information:
   elliptical teardrop. Straight edges are the degenerate bezier (all
   controls on the segment). One `curve` UiElement variant (two endpoints
   + two control points + width + color; ONE deterministic sampling
-  helper - `sampleCurve` in element.zig - feeds both the backend's
-  line-strip draw (portable to web) and hit-testing, which is distance
-  to the SAME sampled polyline, so the drawn edge and its hit region
-  cannot disagree - see The map surface);
+  helper - `sampleCurve` in element.zig - feeds both hit-testing and
+  the baked-arrow rasterizer, which is the distance-to-SAME-polyline
+  test run per pixel, so the drawn edge and its hit region cannot
+  disagree - see The map surface);
 - **Defaults when unauthored: auto-spread.** The UNAUTHORED exits
   sharing a hub space their directions evenly among themselves over the
   full circle (four unauthored camp loops land at 90° spacing;
@@ -3704,12 +3708,27 @@ widened by one `outline_thickness` per side, stripe-treated - the rim
 sits OUTSIDE the black outline, which is part of the arrow art, the
 sprite-backed convention) all derive from the one curve, so they cannot
 disagree. No new element contract for input.
-- **One sampling function for the curve.** `sampleCurve` in
-element.zig is the single deterministic bezier sampler (fixed
-segment count in v1): the backend draws the sampled stroke (per-segment
-`drawLineEx` quads over the same samples) and hit-testing is
-distance-to-polyline against the SAME samples, so the drawn edge and its
-hit region cannot disagree. Headless-testable.
+- **One sampling function + one baked texture per shape.** `sampleCurve`
+in element.zig is the single deterministic bezier sampler (fixed
+segment count in v1): hit-testing is distance-to-polyline against its
+samples, and the DRAWN edge is the same distance test rasterized once
+per shape - campaign_geometry classifies a curve into a canonical
+east-pointing arrow (a FIT, not a shape enumeration: the bucketed
+reconstruction must stay within an 8px tolerance of the curve's own
+samples + chevron arms, else the curve falls back to the per-segment
+draw), bakes the black outline + WHITE inner stroke into one texture
+(the render seam's `arrow_cache`, the outline/inset-mask pattern), and
+every edge of that shape draws ONE rotated textured quad - tinted so
+the white inner becomes the edge color while black stays black, dim /
+ghost alpha fading the whole arrow uniformly. Straight edges key on 8px
+length + bow buckets (parallel siblings bow apart - the spread offset
+is a cache axis, not a straight-line assumption); the teardrop and the
+stub are fixed shapes, one entry each. Lengths clamp to the platform
+texture limit (`maxBakedArrowLength`). The builders emit ONE decorative
+curve per edge at the outline-inclusive width carrying color + dim
+state; the per-segment `drawLineEx` path survives as the fallback and
+as the hover/selected rim (widened, stripe-treated). Headless-testable
+end to end: the classifier + rasterizer are pure, in campaign_geometry.
 - **Dimming**: undiscovered hubs dim + edges whose start hub is
 undiscovered dim (the clickable rule is exactly start-hub
 discovered); a never-entered campaign's view shows the start hub +
