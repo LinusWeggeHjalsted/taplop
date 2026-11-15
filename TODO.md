@@ -463,14 +463,9 @@ work:
           the mission editor (its tests stay untouched-and-green - the
           proof the extraction is faithful):
           1. SPLIT buildEditorInspectorContent (editor_inspector.zig)
-             into resolve + render: the target resolution + context
-             building stays Editor-specific; the generic half (the
-             entries -> windowed emission loop: row-unit math, section
-             strips, field rows, controls, scroll) extracts as a pub
-             renderInspectorEntries(elements, allocator, font_metrics,
-             entries, entity_context, decoration_context, item_context,
-             button_color, active_theme, ui_state). Flip
-             editorInspectorDecorationEntries pub.
+             into resolve + render: DONE (the render half is pub
+             `renderInspectorEntries` + the bundled `InspectorRenderContext`
+             struct; DONE.md entry arrives with the whole refactor).
           2. SURFACE-POLYMORPHIC ACTIONS (the select-keys + picker
              open/close precedent): the decoration entries carry mission
              actions - toggle_editor_decoration_keep_original_colors +
