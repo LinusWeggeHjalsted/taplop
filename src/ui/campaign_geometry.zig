@@ -254,6 +254,25 @@ const baked_arrow_fit_tolerance: f32 = 8.0;
 /// The anti-aliased falloff at the baked silhouette's outer edge (px).
 const baked_arrow_edge_falloff: f32 = 1.0;
 
+/// The hover-outline mask's band around the baked silhouette (source px):
+/// the hit-arrow rim dilates the arrow's alpha silhouette OUTWARD at the
+/// constant outline width (the sprite-hover mask machinery in
+/// textures.zig), and the mask rides the arrow's OWN canvas - so the
+/// canvas must pad past the band or the halo clips at its border (the
+/// mask generator's documented clipping rule).
+const baked_arrow_halo_width: i32 = types.outline_thickness;
+
+/// The canvas padding per side for a baked arrow at `width` (the
+/// outline-inclusive stroke width): the outline's reach (width/2) + the
+/// hover-halo band + the anti-aliased falloff + slack. ONE helper behind
+/// both consumers - `bakedArrowCanvas`'s pad and `maxBakedArrowLength`'s
+/// overhead - so the texture-size bound always subtracts exactly what
+/// the canvas pads.
+fn bakedArrowPadPerSide(width: i32) i32 {
+    return @divTrunc(width, 2) + baked_arrow_halo_width +
+        @as(i32, @intFromFloat(baked_arrow_edge_falloff)) + 1;
+}
+
 const FloatVec = struct { x: f32, y: f32 };
 
 fn floatVec(position: ScreenPosition) FloatVec {
@@ -332,8 +351,7 @@ pub fn bakedArrowParams(arrow: element.Arrow, max_baked_length: i32) ?BakedArrow
 /// is small, and a bake that somehow exceeds the real limit simply fails
 /// and the draw falls back to the per-segment path.
 pub fn maxBakedArrowLength(max_texture_size: i32) i32 {
-    const overhead = 2 * (@divTrunc(edge_width + 2 * edge_outline_width, 2) +
-        @as(i32, @intFromFloat(baked_arrow_edge_falloff)) + 1);
+    const overhead = 2 * bakedArrowPadPerSide(edge_width + 2 * edge_outline_width);
     const bounded = @max(baked_arrow_length_bucket, max_texture_size - overhead);
     return @divTrunc(bounded, baked_arrow_length_bucket) * baked_arrow_length_bucket;
 }
@@ -551,9 +569,11 @@ fn bakedArrowSegments(params: BakedArrowParams, segments: *[max_baked_arrow_segm
 }
 
 /// Compute the baked texture's canvas for `params`: the local segments'
-/// bounding box padded by the outline's reach + the anti-aliased falloff +
-/// slack. The padding MUST clear the full outline half-width - the
-/// silhouette clips at the canvas border, which would shave the black rim.
+/// bounding box padded by the outline's reach + the hover-halo band + the
+/// anti-aliased falloff + slack. The padding MUST clear the full outline
+/// half-width (the silhouette would clip at the canvas border, shaving
+/// the black rim) AND the hover-outline mask's band (the mask rides this
+/// same canvas - see `baked_arrow_halo_width`).
 pub fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
     var segments: [max_baked_arrow_segments]BakedArrowSegment = undefined;
     const count = bakedArrowSegments(params, &segments);
@@ -571,7 +591,7 @@ pub fn bakedArrowCanvas(params: BakedArrowParams) BakedArrowCanvas {
         }
     }
 
-    const pad = @as(f32, @floatFromInt(@divTrunc(params.width, 2))) + baked_arrow_edge_falloff + 1.0;
+    const pad = @as(f32, @floatFromInt(bakedArrowPadPerSide(params.width)));
     min_x -= pad;
     min_y -= pad;
     max_x += pad;
@@ -965,15 +985,15 @@ test "bakedArrowParams: foreign arrows fall back to the per-segment draw" {
 }
 
 test "maxBakedArrowLength: the bound subtracts the canvas padding, floors to a bucket" {
-    // The canvas pads 12 (outline reach) + 1 (falloff) + 1 (slack) per
-    // side = 28 total at the standard edge width; the remainder floors
-    // to an 8px multiple (a BOUND rounds down - rounding up could exceed
-    // the platform limit).
-    try expectEqualInt(4064, maxBakedArrowLength(4096));
-    try expectEqualInt(2016, maxBakedArrowLength(2048));
+    // The canvas pads 12 (outline reach) + 8 (hover halo) + 1 (falloff) +
+    // 1 (slack) per side = 44 total at the standard edge width; the
+    // remainder floors to an 8px multiple (a BOUND rounds down - rounding
+    // up could exceed the platform limit).
+    try expectEqualInt(4048, maxBakedArrowLength(4096));
+    try expectEqualInt(2000, maxBakedArrowLength(2048));
     // A degenerate limit still yields one bucket, never zero or negative
     // (the classifier guards max < bucket itself).
-    try expectEqualInt(16, maxBakedArrowLength(50));
+    try expectEqualInt(8, maxBakedArrowLength(50));
 }
 
 fn pixelColor(pixels: []const u8, canvas: BakedArrowCanvas, x: usize, y: usize) [4]u8 {
@@ -1001,12 +1021,12 @@ test "rasterizeBakedArrow: the straight arrow layers white inner + black outline
     defer std.testing.allocator.free(pixels);
     rasterizeBakedArrow(params, canvas, pixels);
 
-    // The canvas pads the outline half-width (12) + falloff (1) + slack
-    // (1) = 14 on every side; a bow-0 arrow with no chevron spans
-    // exactly [0, length] on the axis, so the width is length + 2x14
-    // and the pivot sits 14px in.
-    try expectEqualInt(14, @intCast(canvas.pivot_x));
-    try expectEqualInt(params.length + 28, @intCast(canvas.width));
+    // The canvas pads the outline half-width (12) + hover halo (8) +
+    // falloff (1) + slack (1) = 22 on every side; a bow-0 arrow with no
+    // chevron spans exactly [0, length] on the axis, so the width is
+    // length + 2x22 and the pivot sits 22px in.
+    try expectEqualInt(22, @intCast(canvas.pivot_x));
+    try expectEqualInt(params.length + 44, @intCast(canvas.width));
 
     const pivot_x: usize = @intCast(canvas.pivot_x);
     const pivot_y: usize = @intCast(canvas.pivot_y);
@@ -1024,7 +1044,8 @@ test "rasterizeBakedArrow: the straight arrow layers white inner + black outline
     // past the inner stroke - black.
     try std.testing.expectEqual(opaque_black, pixelColor(pixels, canvas, pivot_x, pivot_y - 6));
 
-    // 13.5px off the axis: beyond the outline + falloff - transparent.
+    // The canvas top row is the full pad (22px) off the axis: beyond the
+    // outline + falloff (and past the hover halo's outer edge) - transparent.
     try std.testing.expectEqual(transparent, pixelColor(pixels, canvas, pivot_x, 0));
 }
 
@@ -1066,8 +1087,8 @@ test "rasterizeBakedArrow: the teardrop silhouette stays inside its control hull
 
     // The bezier never reaches its controls: the teardrop's farthest
     // sample is exactly (3/4 x 300, 0) = (225, 0) at t = 0.5, so the
-    // canvas is 225 + 2x14 wide - NOT control-width + padding.
-    try expectEqualInt(225 + 28, @intCast(canvas.width));
+    // canvas is 225 + 2x22 wide - NOT control-width + padding.
+    try expectEqualInt(225 + 44, @intCast(canvas.width));
 
     const pivot_x: usize = @intCast(canvas.pivot_x);
     const pivot_y: usize = @intCast(canvas.pivot_y);

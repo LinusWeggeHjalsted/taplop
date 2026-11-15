@@ -404,22 +404,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
                 if (button.highlighted) drawHighlightOutline(backend, sprite_id, dest, highlight_color);
             } else if (button.highlighted) {
                 if (button.hit_arrow) |hit_arrow| {
-                    // A hit-arrow button's hover outline is the FULL ARROW
-                    // (stroke + chevron), drawn from
-                    // the SAME arrow widened by one outline thickness per
-                    // side - the black outline is part of the arrow art,
-                    // so the rim sits OUTSIDE it (the sprite-backed
-                    // convention: the halo outlines the whole drawn
-                    // thing). The stripe treatment matches every other
-                    // hover outline. Painter order does the rest: the
-                    // button emits BEFORE the edge's stroke pair, so this
-                    // wider draw renders beneath the black outline +
-                    // lightest stroke.
-                    var outlined = hit_arrow;
-                    outlined.width = hit_arrow.width + 2 * types.outline_thickness;
-                    backend.beginOutlineStripeScope();
-                    drawArrowGeometry(outlined, toRaylibColor(highlight_color, 255));
-                    backend.endOutlineStripeScope(backend.renderScale());
+                    drawHitArrowRim(backend, hit_arrow, highlight_color);
                 } else {
                     // Stroked rect OUTSIDE the bounds: inflate by the outline
                     // thickness on all sides so the stroke frames the button
@@ -514,7 +499,7 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
             const max_baked_length = ui.maxBakedArrowLength(backend.max_texture_size);
             if (ui.bakedArrowParams(arrow, max_baked_length)) |params| {
                 if (backend.textures.getArrowTexture(params)) |texture| {
-                    drawBakedArrow(texture, params, arrow);
+                    drawBakedArrow(texture, params, arrow, toPremultipliedColor(arrow.color, arrow.alpha));
                     return;
                 }
             }
@@ -558,11 +543,13 @@ pub fn drawUiElement(backend: *RaylibBackend, element: ui.UiElement, highlight_c
 /// The baked arrow as one rotated quad: the texture's pivot texel (the
 /// canonical shape's local origin - see `bakedArrowCanvas`) lands on the
 /// arrow's start point, rotated by the classification's placement angle.
-/// The tint is PREMULTIPLIED (the texture is premultiplied and the render
-/// pass blends with BLEND_ALPHA_PREMULTIPLY): the white inner stroke
-/// becomes the edge color, the black outline stays black under any tint,
-/// and dim/ghost alpha fades the whole arrow uniformly.
-fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, arrow: ui.Arrow) void {
+/// The caller supplies the tint in the texture's blend form: the arrow
+/// texture is PREMULTIPLIED (the render pass draws under
+/// BLEND_ALPHA_PREMULTIPLY - the white inner stroke becomes the edge
+/// color, the black outline stays black under any tint, dim/ghost alpha
+/// fades the whole arrow uniformly); the hover-outline mask is opaque
+/// white like the sprite masks, where straight and premultiplied agree.
+fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, arrow: ui.Arrow, tint: rl.Color) void {
     const canvas = ui.bakedArrowCanvas(params);
     const source = rl.Rectangle{
         .x = 0,
@@ -590,8 +577,38 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, arrow: ui.
         destination,
         origin,
         params.rotation_degrees,
-        conversions.toPremultipliedColor(arrow.color, arrow.alpha),
+        tint,
     );
+}
+
+/// A hit-arrow button's hover/selection rim: the FULL ARROW (stroke +
+/// chevron, black outline included - the sprite-backed convention: the
+/// halo outlines the whole drawn thing). PRIMARY path: the baked arrow's
+/// OUTER outline mask - the same disk-dilation machinery as every sprite
+/// hover halo, drawn as the arrow's OWN rotated quad (mask canvas == arrow
+/// canvas) with the highlight tint, through the outline-stripe scope; the
+/// smooth dilated band replaced the old widened per-segment rim, whose
+/// bevel-joined, unantialiased quads read jagged against the baked
+/// arrow's anti-aliased edge. FALLBACK (arrow outside the bake families,
+/// or a failed bake/mask): the widened per-segment draw - same reach (one
+/// outline thickness per side), still correct, just rougher. Painter order
+/// does the rest: the button emits BEFORE the edge's stroke, so the rim
+/// renders beneath the black outline + lightest stroke.
+fn drawHitArrowRim(backend: *RaylibBackend, hit_arrow: ui.Arrow, highlight_color: types.Color) void {
+    const max_baked_length = ui.maxBakedArrowLength(backend.max_texture_size);
+    if (ui.bakedArrowParams(hit_arrow, max_baked_length)) |params| {
+        if (backend.textures.getArrowOutlineTexture(params)) |mask| {
+            backend.beginOutlineStripeScope();
+            drawBakedArrow(mask, params, hit_arrow, toRaylibColor(highlight_color, 255));
+            backend.endOutlineStripeScope(backend.renderScale());
+            return;
+        }
+    }
+    var outlined = hit_arrow;
+    outlined.width = hit_arrow.width + 2 * types.outline_thickness;
+    backend.beginOutlineStripeScope();
+    drawArrowGeometry(outlined, toRaylibColor(highlight_color, 255));
+    backend.endOutlineStripeScope(backend.renderScale());
 }
 
 /// Draw one arrow's full geometry: the sampled stroke as per-segment
@@ -609,10 +626,9 @@ fn drawBakedArrow(texture: rl.Texture2D, params: ui.BakedArrowParams, arrow: ui.
 /// QUADS + the shapes texture = a flush, ~5000/frame on a 48-mission
 /// map). The join + end-cap jobs those circles did are handled by
 /// `drawCappedSegment` instead (segment overlap - no extra primitives,
-/// no flushes). Shared by the
-/// `.arrow` arm's FALLBACK path and the
-/// hit-arrow button's hover highlight, so the highlight is the SAME
-/// arrow, just wider.
+/// no flushes). Shared by BOTH baked-arrow fallbacks: the `.arrow` arm's
+/// per-segment draw and the hit-arrow rim's widened stroke (see
+/// `drawHitArrowRim`) - the rim is the SAME arrow, just wider.
 fn drawArrowGeometry(arrow: ui.Arrow, raylib_color: rl.Color) void {
     var samples: [ui.arrow_sample_count + 1]rl.Vector2 = undefined;
     var screen_samples: [ui.arrow_sample_count + 1]types.ScreenPosition = undefined;

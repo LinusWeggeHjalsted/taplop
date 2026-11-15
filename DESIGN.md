@@ -523,7 +523,9 @@ highlight (an INSET square outline, `ui.tile_highlight_inset_divisor` =
 side/16, the retired `world/tile_highlight` marching-ants sheet's band
 position; the sheet was the earliest-prototype art, replaced by the
 outline class), cursor, range, radius, aggro, region edges - the UI icon
-halo masks, the spriteless panel-button hover rect, and the stroked
+halo masks, the baked-arrow hover rim (the same halo-mask class over
+the arrow's rasterized silhouette), the spriteless panel-button hover
+rect, and the stroked
 `.solid_rect` branch = the inventory multi-salvage drag region + the editor
 Select tool's icon of the tile highlight) read weakly over busy art. They
 all draw through one fragment shader (`backend.zig`, the spriteLodSnapBias
@@ -3702,10 +3704,12 @@ marker, no entry - the 3f validation finding closes the loop). The
 button's `hit_arrow` carries the DRAWN ARROW's geometry at its
 outline-inclusive width (black outline + inner stroke): the hit region (sampled polyline), the tooltip
 bounds (`arrowBounds` - the bbox incl. the chevron, so the tooltip
-frames the whole arrow), and the hover highlight (the same geometry
-widened by one `outline_thickness` per side, stripe-treated - the rim
-sits OUTSIDE the black outline, which is part of the arrow art, the
-sprite-backed convention) all derive from the one arrow, so they cannot
+frames the whole arrow), and the hover highlight (the baked arrow's
+OUTER outline mask - the same disk-dilation machinery as every sprite
+hover halo, drawn as the arrow's OWN rotated quad + the highlight tint,
+stripe-treated; the rim sits OUTSIDE the black outline, which is part
+of the arrow art, the sprite-backed convention - see the baked-arrow
+section below) all derive from the one arrow, so they cannot
 disagree. No new element contract for input.
 - **One sampling function + one baked texture per shape.** `sampleArrow`
 in element.zig is the single deterministic bezier sampler (fixed
@@ -3725,8 +3729,17 @@ is a cache axis, not a straight-line assumption); the teardrop and the
 stub are fixed shapes, one entry each. Lengths clamp to the platform
 texture limit (`maxBakedArrowLength`). The builders emit ONE decorative
 arrow per edge at the outline-inclusive width carrying color + dim
-state; the per-segment `drawLineEx` path survives as the fallback and
-as the hover/selected rim (widened, stripe-treated). Headless-testable
+state. The hover/selected rim rides the SAME bake: the arrow canvas
+pads past an `outline_thickness` halo band, and the rim is the
+rasterized silhouette dilated OUTER at that width (the render seam's
+`arrow_outline_cache`, lazily generated per hovered shape - the third
+caller of the disk-dilation pass shared with the sprite masks), drawn
+as the arrow's own quad through the outline-stripe scope. The smooth
+rolling-disk outer edge replaced the old widened per-segment rim,
+whose bevel-joined, unantialiased quads read jagged against the baked
+arrow's anti-aliased edge; the per-segment `drawLineEx` path survives
+as the fallback for BOTH the arrow and its rim (arrows outside the
+bake families, failed bakes/masks). Headless-testable
 end to end: the classifier + rasterizer are pure, in campaign_geometry.
 - **Dimming**: undiscovered hubs dim + edges whose start hub is
 undiscovered dim (the clickable rule is exactly start-hub

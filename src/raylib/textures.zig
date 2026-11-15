@@ -1,7 +1,7 @@
 //! Texture subsystem of the raylib backend: the lazy sprite-texture
 //! caches (main textures, edge-outline masks, composite occlusion-inset
-//! masks, opaque-pixel bounds, baked arrow sprites) and all mask-generation
-//! math. Asset paths
+//! masks, opaque-pixel bounds, baked arrow sprites + their hover-outline
+//! masks) and all mask-generation math. Asset paths
 //! are built into fixed stack buffers (sprite ids are bounded by filesystem
 //! component limits; an overflow is a fail-fast panic, same class as the
 //! old arena OOM). See DESIGN → Platform Seam (missing-art magenta
@@ -108,6 +108,16 @@ pub const TextureStore = struct {
     /// deinit).
     arrow_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
 
+    /// The hover-outline masks for baked arrows (`getArrowOutlineTexture`):
+    /// key = the arrow shape's key + `outline` (`arrowOutlineCacheKey`),
+    /// value = the OUTER dilation of that arrow's rasterized silhouette at
+    /// the constant outline width. One mask per distinct baked shape,
+    /// generated lazily on the first hover. Same shape as `arrow_cache`
+    /// (STORED keys own their strings, freed in deinit; a cached `null`
+    /// means generation failed -> the caller falls back to the widened
+    /// per-segment rim).
+    arrow_outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
+
     /// Unload every cached texture + free the cache maps. No outline or
     /// inset masks outlive the textures they derive from.
     pub fn deinit(self: *TextureStore) void {
@@ -142,6 +152,12 @@ pub const TextureStore = struct {
             self.allocator.free(entry.key_ptr.*);
         }
         self.arrow_cache.deinit(self.allocator);
+        var arrow_outlines = self.arrow_outline_cache.iterator();
+        while (arrow_outlines.next()) |entry| {
+            if (entry.value_ptr.*) |texture| rl.unloadTexture(texture);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.arrow_outline_cache.deinit(self.allocator);
     }
 
     /// Load a texture for `sprite_id` (assets/<id>.png), caching the result.
@@ -209,6 +225,19 @@ pub const TextureStore = struct {
         }) catch @panic("arrow cache key overflow");
     }
 
+    /// The arrow hover-outline cache key: the arrow shape's key plus an
+    /// `outline` marker. No band axis - baked arrows draw 1:1 (destination
+    /// = canvas size), so the band is always the constant outline width in
+    /// source px (unlike sprite masks, which compensate per drawn scale).
+    fn arrowOutlineCacheKey(buffer: []u8, params: ui.BakedArrowParams) []const u8 {
+        return std.fmt.bufPrint(buffer, "arrow|outline|{s}|{d}|{d}|{d}", .{
+            @tagName(params.variant),
+            params.length,
+            params.bow,
+            params.width,
+        }) catch @panic("arrow outline cache key overflow");
+    }
+
     /// The baked arrow texture for `params` (the black outline + white
     /// inner stroke rasterized from the arrow families' canonical shape -
     /// see campaign_geometry.zig): drawn once per distinct shape and
@@ -220,6 +249,23 @@ pub const TextureStore = struct {
         const key = arrowCacheKey(&key_buffer, params);
         if (!self.arrow_cache.contains(key)) self.ensureArrowBaked(key, params);
         return self.arrow_cache.get(key).?;
+    }
+
+    /// The precomputed OUTER hover-outline mask for a baked arrow shape: a
+    /// white opaque halo just outside the arrow's full silhouette (black
+    /// outline included - the halo outlines the whole drawn thing, the
+    /// sprite-hover convention), at the constant outline width in SOURCE px
+    /// (baked arrows draw 1:1, so no scale compensation - see
+    /// `arrowOutlineCacheKey`). The mask rides the arrow's own canvas, so
+    /// the rim draw is the SAME rotated quad as the arrow's, texture + tint
+    /// swapped. Lazily generated via `ensureArrowOutlineLoaded` on the first
+    /// hover; null (cached) if generation failed - the caller falls back to
+    /// the widened per-segment rim.
+    pub fn getArrowOutlineTexture(self: *TextureStore, params: ui.BakedArrowParams) ?rl.Texture2D {
+        var key_buffer: [path_buffer_size]u8 = undefined;
+        const key = arrowOutlineCacheKey(&key_buffer, params);
+        if (!self.arrow_outline_cache.contains(key)) self.ensureArrowOutlineLoaded(key, params);
+        return self.arrow_outline_cache.get(key).?;
     }
 
     /// Rasterize + cache the arrow for `params`: the headless rasterizer
@@ -254,6 +300,43 @@ pub const TextureStore = struct {
 
         self.arrow_cache.put(self.allocator, owned_key, texture) catch
             @panic("failed to cache baked arrow");
+    }
+
+    /// Generate + cache the arrow's hover-outline mask: re-rasterize the
+    /// arrow's silhouette (the same pure rasterizer the baked texture
+    /// rides - identical pixels by purity, no GPU readback), threshold its
+    /// alpha (same >16 cutoff as every other mask), and dilate it OUTER at
+    /// the constant outline width - the third caller of `dilateToMask`
+    /// (after the single-sprite and composite-inset paths). Idempotent via
+    /// `arrow_outline_cache` presence; caches null on failure.
+    fn ensureArrowOutlineLoaded(self: *TextureStore, lookup_key: []const u8, params: ui.BakedArrowParams) void {
+        const owned_key = self.allocator.dupe(u8, lookup_key) catch
+            @panic("failed to dupe arrow outline cache key");
+
+        const mask: ?rl.Texture2D = blk: {
+            const canvas = ui.bakedArrowCanvas(params);
+            const width: i32 = @intCast(canvas.width);
+            const height: i32 = @intCast(canvas.height);
+            const pixel_count: usize = @as(usize, @intCast(width)) * @as(usize, @intCast(height));
+
+            const pixels = self.allocator.alloc(u8, pixel_count * 4) catch break :blk null;
+            defer self.allocator.free(pixels);
+            ui.rasterizeBakedArrow(params, canvas, pixels);
+
+            const opaque_mask = self.allocator.alloc(u8, pixel_count) catch break :blk null;
+            defer self.allocator.free(opaque_mask);
+            for (opaque_mask, 0..) |*slot, index| {
+                // Straight-alpha RGBA: the alpha byte is the threshold input.
+                slot.* = if (pixels[index * 4 + 3] > 16) 1 else 0;
+            }
+
+            const band = self.dilateToMask(opaque_mask, width, height, types.outline_thickness, .outer) catch break :blk null;
+            defer self.allocator.free(band);
+            break :blk self.rgbaBufToTexture(band, width, height) catch null;
+        };
+
+        self.arrow_outline_cache.put(self.allocator, owned_key, mask) catch
+            @panic("failed to cache arrow outline mask");
     }
 
     /// Build and cache the INNER outline mask for a composited silhouette.
@@ -671,7 +754,8 @@ pub const TextureStore = struct {
 
     /// Wrap an RGBA buffer as a raylib Image and upload it to a texture. The
     /// caller's `buf` is copied into the GPU upload; `buf` is freed by the
-    /// caller. Shared by the single-sprite and composite outline paths.
+    /// caller. Shared by the single-sprite, composite-inset, and
+    /// baked-arrow-outline mask paths.
     fn rgbaBufToTexture(self: *TextureStore, buf: []u8, width: i32, height: i32) !rl.Texture2D {
         _ = self;
         const mask_image = rl.Image{

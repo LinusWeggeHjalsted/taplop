@@ -359,6 +359,7 @@ working rules).
 - [map edges: capped segments (the join + end-cap follow-up)](#map-edges-capped-segments-the-join--end-cap-follow-up)
 - [map edges: baked arrow textures (the edge rendering rework)](#map-edges-baked-arrow-textures-the-edge-rendering-rework)
 - [map edges: session follow-ups - the analytic chevron tangent + the Arrow rename (session reflection)](#map-edges-session-follow-ups---the-analytic-chevron-tangent--the-arrow-rename-session-reflection)
+- [map edges: the hover rim rides the baked-arrow outline mask (the jagged-rim fix)](#map-edges-the-hover-rim-rides-the-baked-arrow-outline-mask-the-jagged-rim-fix)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -21783,3 +21784,58 @@ Session-reflection lessons:
   screen, hand the human a checklist immediately - the synthetic-
   event browser driving cost far more than the 30-second human look
   it tried to replace.
+
+## map edges: the hover rim rides the baked-arrow outline mask (the jagged-rim fix)
+
+The mission-edge hover/selected rim (world map + campaign editor) was
+ugly and jagged: it drew the SAME arrow widened by one
+`outline_thickness` per side via `drawArrowGeometry` - ~50 untextured
+`drawLineEx` quads whose outer edge is a bevel-notched overlap union
+with no antialiasing and integer-rounded sample vertices, sitting right
+under the baked arrow's anti-aliased round-joined edge (the contrast
+made it read worse). The fix reuses the sprite-hover outline machinery
+(the user's instinct, and it fit cleanly because the baked-arrow rework
+had already made every edge a TEXTURE):
+
+- **The rim is the baked arrow's OUTER outline mask** - the rasterized
+  silhouette dilated with the shared disk structuring element (the
+  third caller of `dilateToMask`, after the single-sprite and
+  composite-inset paths) at the constant outline width, cached per
+  arrow shape in `arrow_outline_cache` (textures.zig; lazily generated
+  on first hover - loading a map pays no mask cost). No band axis in
+  the key: baked arrows draw 1:1 (destination = canvas size), so no
+  drawn-scale compensation unlike sprite masks.
+- **The rim draw is the arrow's OWN rotated quad** - same canvas, same
+  pivot, texture + highlight tint swapped (`drawHitArrowRim` in
+  draw.zig, inside the outline-stripe scope like every hover halo).
+  The mask shares the arrow's canvas by construction, so the quad math
+  is literally `drawBakedArrow` with a tint parameter (the tint is now
+  a caller argument: premultiplied for the arrow's premultiplied
+  texture, straight/opaque for the white mask).
+- **The canvas pads past the halo band** (`bakedArrowPadPerSide` in
+  campaign_geometry: outline reach + halo + falloff + slack = 22/side,
+  was 14): the mask's band clips at the canvas border, so every baked
+  arrow carries the extra margin. ONE helper feeds both
+  `bakedArrowCanvas` and `maxBakedArrowLength`'s overhead, so the
+  texture-size bound always subtracts exactly what the canvas pads
+  (the bound's floor drops 4064 -> 4048 at a 4096 limit).
+- **Why the mask path is smoother where it matters**: the halo's outer
+  boundary is the rolling-disk envelope of the arrow's silhouette -
+  convex, hence smooth even over the raster's integer-vertex kinks -
+  while the old widened draw put a bevel corner at every one of the 48
+  joints. Geometry otherwise identical by design (a dilation of the
+  sausage by 8px IS the sausage at width+16), so the rim's reach
+  (one outline thickness past the black outline, the sprite-backed
+  "halo outlines the whole drawn thing" convention) is unchanged.
+- **The per-segment `drawLineEx` rim survives as the fallback** (arrow
+  outside the bake families, or a failed bake/mask) - same reach, just
+  rougher; the self-loop family always bakes, so real maps hit the
+  mask path.
+
+Verification: campaign_geometry's pinned canvas tests updated to the
+derived numbers (pivot 22, canvas +44, the bound floors); the web build
+driven to the world map via synthetic events (the keyCode-forged
+KeyboardEvent + frame-split mousedown/up) with a hover diff confirming
+the rim renders as the striped teardrop band at the expected ~11px
+stripe period with zero console errors. The smoothness judgment is the
+player's - the pixel diff proves presence, not beauty.
