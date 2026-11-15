@@ -472,6 +472,15 @@ pub const ConsoleQueue = struct {
     /// position - a human at the window never loses the pointer. Game
     /// thread only (set + read in applyFrameCommand).
     pointer_position: ?input.PointerPosition = null,
+    /// Which mouse buttons the CONSOLE itself holds (a bit per button -
+    /// the scripted `press left` ... `release left` gesture's in-between
+    /// frames). The scripted pointer position applies during exactly
+    /// those frames, never merely because A mouse button is down: a
+    /// hardware press must not teleport the pointer to a stale scripted
+    /// position (the input-hijack the stuck-popup drive caught - a held
+    /// `wait idle` + a hardware click merged the stale position in, and
+    /// the human's clicks could never land). Game thread only.
+    mouse_buttons_held_by_console: u8 = 0,
     /// The last command TAKEN by the frame drain (any kind - input, dump,
     /// quit, waits included), recorded for `dump console_queue.last_taken_command`
     /// (which command consumed a given frame - TAS pacing visibility).
@@ -633,16 +642,17 @@ pub fn applyFrameCommand(
         history.session.pending_error == null;
     const command = queue.takeFrameCommand(game_is_idle) orelse {
         // No command this frame (a wait's idle frames, or an empty queue):
-        // the scripted pointer position persists ONLY while a mouse button
-        // is held - the console is mid-gesture, and the hardware pointer
-        // bleeding into a held frame would phantom-promote a drag (the
-        // press stays at the scripted position, the hold reads the
-        // hardware's, the threshold trips - observed live as the console
-        // hub-click swallow). Outside a held gesture the frames stay on
-        // the hardware position (a human at the window never loses the
-        // pointer).
+        // the scripted pointer position applies ONLY while the CONSOLE
+        // itself holds a mouse button - its gesture's in-between frames
+        // (a hardware pointer bleeding into a held console gesture would
+        // phantom-promote a drag - the press stays at the scripted
+        // position, the hold reads the hardware's, the threshold trips -
+        // observed live as the console hub-click swallow). A HARDWARE
+        // press must never trigger this merge: with commands held (a
+        // `wait idle` that never releases), the stale scripted position
+        // would hijack the human's every click.
         if (queue.pointer_position) |position| {
-            if (anyMouseButtonDown(history.session.input_state)) {
+            if (queue.mouse_buttons_held_by_console != 0) {
                 return mergeIntoPlatformInput(.{ .move = position }, backend_input, arena);
             }
         }
@@ -684,8 +694,23 @@ pub fn applyFrameCommand(
         // after the backend's per-frame hardware position - last writer
         // wins), so the command acts where the console moved the pointer,
         // frames later. Without a remembered position (no `move` yet), the
-        // command acts at the hardware position.
+        // command acts at the hardware position. Mouse-button press/release
+        // also maintain the console's own held-button set (the gesture
+        // tracking the no-command branch gates on).
         else => blk: {
+            switch (command) {
+                .press => |command_id| {
+                    if (command_id == .mouse) {
+                        queue.mouse_buttons_held_by_console |= consoleMouseButtonBit(command_id.mouse);
+                    }
+                },
+                .release => |command_id| {
+                    if (command_id == .mouse) {
+                        queue.mouse_buttons_held_by_console &= ~consoleMouseButtonBit(command_id.mouse);
+                    }
+                },
+                else => {},
+            }
             var merged_input = backend_input;
             if (queue.pointer_position) |position| {
                 merged_input = mergeIntoPlatformInput(.{ .move = position }, merged_input, arena);
@@ -704,11 +729,15 @@ pub fn applyFrameCommand(
 /// Whether any mouse button is currently held (the game-side held model -
 /// the console's press/release pair completes it). Reads the SESSION's
 /// input state, so this is the live held set the gestures saw last frame.
-fn anyMouseButtonDown(input_state: input.InputState) bool {
-    for (input_state.mouse_buttons_held) |held| {
-        if (held != null) return true;
-    }
-    return false;
+/// The console's held-button bit for a scripted mouse id (left / right /
+/// middle - the producible set; the parse layer validated the id, so the
+/// miss arm is unreachable).
+fn consoleMouseButtonBit(mouse_id: IdText) u8 {
+    const text = mouse_id.view();
+    if (std.mem.eql(u8, text, "left")) return 1;
+    if (std.mem.eql(u8, text, "right")) return 2;
+    if (std.mem.eql(u8, text, "middle")) return 4;
+    @panic("console mouse id outside the producible set");
 }
 
 /// Merge one input command into the frame's PlatformInput. Key/mouse ids
