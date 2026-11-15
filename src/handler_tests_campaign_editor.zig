@@ -2049,6 +2049,96 @@ test "hub editor events: the decoration-type delete cascade + the granular edits
     }
 }
 
+test "hub editor: the surface-polymorphic decoration commits route to the campaign palette" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var history = harness.newHistory(.{
+        .screen = .hub_editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .campaign_editor = .{
+            .campaign_name = "Drill",
+            .start_hub = 0,
+            .hubs = &.{.{
+                .handle = 0,
+                .name = "Alpha",
+                .position = .{ .x = 0, .y = 0 },
+                .grid = .{
+                    .level_tiles = &.{.{ .x = 0, .y = 0 }},
+                    .player_start = .{ .x = 0, .y = 0 },
+                },
+            }},
+            .decoration_types = &.{
+                .{ .id = "tree", .sprite = "tree_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+                .{ .id = "rock", .sprite = "rock_1", .footprint = &.{.{ .x = 0, .y = 0 }} },
+            },
+            .next_handle = 1,
+        },
+        .hub_editor = .{ .hub = 0, .active_tool = .{ .decoration_type = 0 } },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    // The hub inspector's swatch + keep-colors rows emit the MISSION
+    // actions; the consumption + orchestrator route them per screen to
+    // the hub events (the 4-5d reuse). The orchestrator arms are the
+    // contract here: the same player events that edit the mission
+    // palette on .editor edit the CAMPAIGN palette on .hub_editor.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+            .type_id = 1,
+            .value = 2,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.campaign_editor.?.decoration_types[1].color_index);
+    try testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.decoration_types[0].color_index);
+
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_keep_original_colors = .{
+            .type_id = 1,
+            .value = true,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.campaign_editor.?.decoration_types[1].keep_original_colors);
+
+    // An out-of-range type id no-ops defensively (the hub handler's
+    // bound) instead of corrupting the palette.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+            .type_id = 99,
+            .value = 4,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.campaign_editor.?.decoration_types[1].color_index);
+
+    // Each commit is its own undo step, reverting to the prior palette.
+    // The out-of-range no-op is still a RECORDED event (a handler no-op
+    // is not a timeline skip), so it owns an undo step too.
+    try testing.expect(history.undo(event_handlers.processEvent)); // the out-of-range no-op
+    try testing.expect(history.undo(event_handlers.processEvent)); // the keep-colors commit
+    try testing.expect(!history.current_state.campaign_editor.?.decoration_types[1].keep_original_colors);
+    try testing.expectEqual(@as(u32, 2), history.current_state.campaign_editor.?.decoration_types[1].color_index);
+    try testing.expect(history.undo(event_handlers.processEvent)); // the color commit
+    try testing.expectEqual(@as(u32, 0), history.current_state.campaign_editor.?.decoration_types[1].color_index);
+}
+
 test "hub editor: the sprite-picker pick commits the whole def + the cross-hub placement prune" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

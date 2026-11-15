@@ -432,17 +432,10 @@ pub const Action = enum {
     // placements across every hub (the delete_editor_palette_type
     // convention; the type id rides the hub_tool payload).
     delete_hub_decoration_type,
-    // The decoration type's color swatch row (the type from the active
-    // tool; the value rides the editor_color payload - the
-    // select_editor_entity_color convention).
-    set_hub_decoration_color,
     // A sprite-picker pick: adopt the picked sprite as the decoration
     // type's whole definition (the select_editor_decoration_sprite
     // convention; the stored id rides the editor_sprite payload).
     select_hub_decoration_sprite,
-    // The decoration type's untinted-render toggle (the type from the
-    // active tool).
-    toggle_hub_decoration_keep_original_colors,
     // A hub palette group header's accordion toggle (the
     // toggle_editor_palette_group convention: expanding one collapses the
     // others; the group index rides the editor_group payload).
@@ -1264,8 +1257,6 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .toggle_hub_inspector,
         .add_hub_decoration_type,
         .delete_hub_decoration_type,
-        .set_hub_decoration_color,
-        .toggle_hub_decoration_keep_original_colors,
         .toggle_hub_palette_group,
         .select_hub_decoration_sprite,
         => .{ .hub_editor = true },
@@ -1528,7 +1519,6 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_tool => .editor_tool,
         .select_hub_tool => .hub_tool,
         .delete_hub_decoration_type => .hub_tool,
-        .set_hub_decoration_color => .editor_color,
         .toggle_hub_palette_group => .editor_group,
         .select_hub_decoration_sprite => .editor_sprite,
         .select_editor_level => .editor_level,
@@ -1681,7 +1671,6 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .close_hub_editor,
         .toggle_hub_inspector,
         .add_hub_decoration_type,
-        .toggle_hub_decoration_keep_original_colors,
         .campaign_select_tool,
         .campaign_hub_tool,
         .campaign_mission_tool,

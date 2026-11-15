@@ -1895,6 +1895,28 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Structural legality for the decoration-type commits shared by BOTH
+    /// editor surfaces (the inspector reuse): the mission editor's palette
+    /// via validateInspectorDecorationEdit; the hub editor drill-in's
+    /// campaign palette (the drill-in structural checks + the campaign
+    /// decoration-type bound). Used only by the two surface-polymorphic
+    /// commits; the mission-only decoration events (def / footprint /
+    /// layers) keep validateInspectorDecorationEdit.
+    fn validateDecorationTypeCommit(self: *GameStateHistory, type_id: u32) void {
+        if (self.current_state.screen != .hub_editor) {
+            self.validateInspectorDecorationEdit(type_id);
+            return;
+        }
+        self.validateHubEditorAction();
+        // A reject inside validateHubEditorAction already invalidated the
+        // replay; the bound below still guards the unwrap.
+        const campaign_editor = self.current_state.campaign_editor orelse return;
+        if (type_id >= campaign_editor.decoration_types.len) {
+            self.rejectReplay("replay validation: hub decoration commit type id out of range");
+            return;
+        }
+    }
+
     fn validateInspectorItemEdit(self: *GameStateHistory, type_id: u32) void {
         if (self.current_state.screen != .editor) {
             self.rejectReplay("replay validation: item inspector commit outside editor screen");
@@ -2375,8 +2397,6 @@ pub const GameStateHistory = struct {
                     .player_place_hub_decoration,
                     .player_add_hub_decoration_type,
                     .player_delete_hub_decoration_type,
-                    .player_set_hub_decoration_color,
-                    .player_toggle_hub_decoration_keep_original_colors,
                     .player_set_hub_decoration_def,
                     .player_open_hub_picker,
                     .player_close_hub_picker,
@@ -2525,8 +2545,8 @@ pub const GameStateHistory = struct {
                         }
                     },
                     .player_set_editor_decoration_def => |set| self.validateInspectorDecorationEdit(set.type_id),
-                    .player_set_editor_decoration_color_index => |set| self.validateInspectorDecorationEdit(set.type_id),
-                    .player_set_editor_decoration_keep_original_colors => |set| self.validateInspectorDecorationEdit(set.type_id),
+                    .player_set_editor_decoration_color_index => |set| self.validateDecorationTypeCommit(set.type_id),
+                    .player_set_editor_decoration_keep_original_colors => |set| self.validateDecorationTypeCommit(set.type_id),
                     .player_set_editor_decoration_footprint => |set| self.validateInspectorDecorationEdit(set.type_id),
                     .player_set_editor_item_def => |set| self.validateInspectorItemEdit(set.type_id),
                     .player_set_editor_item_name => |set| self.validateInspectorItemEdit(set.type_id),

@@ -1090,13 +1090,32 @@ pub fn handlePlayerInputEvent(
                 .layers = set.layers,
             } } } }, allocator);
         },
+        // Surface-polymorphic (the inspector reuse): on the hub editor
+        // screen the same commits target the campaign palette (the hub
+        // events); the mission editor keeps its editor events.
         .player_set_editor_decoration_color_index => |set| {
+            if (current.screen == .hub_editor) {
+                if (current.hub_editor == null or current.campaign_editor == null) return;
+                pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_set_decoration_color_index = .{
+                    .type_id = set.type_id,
+                    .value = set.value,
+                } } }}, allocator);
+                return;
+            }
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_color_index = .{
                 .type_id = set.type_id,
                 .value = set.value,
             } } }}, allocator);
         },
         .player_set_editor_decoration_keep_original_colors => |set| {
+            if (current.screen == .hub_editor) {
+                if (current.hub_editor == null or current.campaign_editor == null) return;
+                pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_set_decoration_keep_original_colors = .{
+                    .type_id = set.type_id,
+                    .value = set.value,
+                } } }}, allocator);
+                return;
+            }
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_keep_original_colors = .{
                 .type_id = set.type_id,
                 .value = set.value,
@@ -1372,13 +1391,6 @@ pub fn handlePlayerInputEvent(
                 .type_id = delete.type_id,
             } } }}, allocator);
         },
-        .player_set_hub_decoration_color => |set| {
-            if (current.hub_editor == null or current.campaign_editor == null) return;
-            pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_set_decoration_color_index = .{
-                .type_id = set.type_id,
-                .value = set.value,
-            } } }}, allocator);
-        },
         .player_open_hub_picker => |open| {
             if (current.hub_editor == null) return;
             pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_open_picker = .{
@@ -1405,19 +1417,6 @@ pub fn handlePlayerInputEvent(
                 } } },
                 .{ .hub_editor_event = .hub_close_picker },
             }, allocator);
-        },
-        .player_toggle_hub_decoration_keep_original_colors => |toggle| {
-            if (current.hub_editor == null or current.campaign_editor == null) return;
-            // The flip reads the live flag (the handler's event carries the
-            // absolute value - the consumption's would-change gate).
-            var current_value = false;
-            for (current.campaign_editor.?.decoration_types, 0..) |type_definition, type_id| {
-                if (type_id == toggle.type_id) current_value = type_definition.keep_original_colors;
-            }
-            pushEvents(current, &.{.{ .hub_editor_event = .{ .hub_set_decoration_keep_original_colors = .{
-                .type_id = toggle.type_id,
-                .value = !current_value,
-            } } }}, allocator);
         },
         .player_add_hub_decoration_type => {
             if (current.hub_editor == null or current.campaign_editor == null) return;

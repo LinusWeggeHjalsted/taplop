@@ -959,7 +959,8 @@ pub fn buildHubEditorInspector(
                 );
             }
 
-            // Keep colors (the shared toggle emitter, the hub action).
+            // Keep colors (the shared toggle emitter, the surface-polymorphic
+            // mission action - the consumption site branches per screen).
             {
                 const cell = row(content, 3, 2);
                 try elements.append(allocator, .{ .text_label = .{
@@ -974,16 +975,16 @@ pub fn buildHubEditorInspector(
                     allocator,
                     font_metrics,
                     type_definition.keep_original_colors,
-                    .toggle_hub_decoration_keep_original_colors,
+                    .toggle_editor_decoration_keep_original_colors,
                     decoration_button_color,
                     editor_inspector.inspectorControlRect(cell),
                     active_theme,
                 );
             }
 
-            // Color (the shared swatch emitter: the world gradient + the hub
-            // commit action; hidden while the flag is on - the mission's
-            // dead-control rule).
+            // Color (the shared swatch emitter: the world gradient + the
+            // surface-polymorphic mission action; hidden while the flag is
+            // on - the mission's dead-control rule).
             if (!type_definition.keep_original_colors) {
                 const cell = row(content, 5, 2);
                 try elements.append(allocator, .{ .text_label = .{
@@ -998,7 +999,7 @@ pub fn buildHubEditorInspector(
                     allocator,
                     world,
                     type_definition.color_index,
-                    .set_hub_decoration_color,
+                    .select_editor_decoration_color,
                     null,
                     editor_inspector.inspectorControlRect(cell),
                 );
@@ -1397,8 +1398,8 @@ test "buildHubEditorInspector: the exit summary, the NPC placeholder, the empty 
         var swatch_count: usize = 0;
         for (elements.items) |element| switch (element) {
             .button => |button| switch (button.action) {
-                .toggle_hub_decoration_keep_original_colors => toggle_count += 1,
-                .set_hub_decoration_color => swatch_count += 1,
+                .toggle_editor_decoration_keep_original_colors => toggle_count += 1,
+                .select_editor_decoration_color => swatch_count += 1,
                 else => {},
             },
             else => {},

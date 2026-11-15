@@ -1569,16 +1569,6 @@ pub const PlayerInputEvent = union(enum) {
     player_delete_hub_decoration_type: struct {
         type_id: u32,
     },
-    // The swatch row (the player_set_editor_entity_color convention over
-    // the campaign palette).
-    player_set_hub_decoration_color: struct {
-        type_id: u32,
-        value: u32,
-    },
-    // The keep-colors toggle.
-    player_toggle_hub_decoration_keep_original_colors: struct {
-        type_id: u32,
-    },
     // A sprite-picker pick's whole-def commit (the
     // player_set_editor_decoration_def mirror; the payload is
     // deep-copied at the push site).

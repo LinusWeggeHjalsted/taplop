@@ -547,8 +547,6 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_hub_inspector,
         .add_hub_decoration_type,
         .delete_hub_decoration_type,
-        .set_hub_decoration_color,
-        .toggle_hub_decoration_keep_original_colors,
         .toggle_hub_palette_group,
         .select_hub_decoration_sprite,
         => player_input.anytime.options_action = action,

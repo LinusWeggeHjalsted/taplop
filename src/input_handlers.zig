@@ -2853,22 +2853,6 @@ pub fn handleAnytimeInput(
                     .type_id = type_id,
                 } });
             },
-            // The swatch row: the value rides the editor_color payload; the
-            // type comes from the ACTIVE TOOL (the mission swatch
-            // convention).
-            .set_hub_decoration_color => {
-                if (current.screen != .hub_editor or current.hub_editor == null) return;
-                const value = payloadAs(.editor_color, clicked_payload) orelse return;
-                const tool = current.hub_editor.?.active_tool;
-                const type_id = switch (tool) {
-                    .decoration_type => |id| id,
-                    else => return,
-                };
-                pushPlayerActionAndDrain(history, .{ .player_set_hub_decoration_color = .{
-                    .type_id = type_id,
-                    .value = value,
-                } });
-            },
             // A hub palette group header's accordion toggle (the mission
             // arm's exact radio semantics over the hub groups).
             .toggle_hub_palette_group => {
@@ -2979,19 +2963,6 @@ pub fn handleAnytimeInput(
                     .color_index = new_definition.color_index,
                     .keep_original_colors = new_definition.keep_original_colors,
                     .layers = layers,
-                } });
-            },
-            // The keep-colors toggle (the type from the active tool; the
-            // flip is computed at the handler).
-            .toggle_hub_decoration_keep_original_colors => {
-                if (current.screen != .hub_editor or current.hub_editor == null) return;
-                const tool = current.hub_editor.?.active_tool;
-                const type_id = switch (tool) {
-                    .decoration_type => |id| id,
-                    else => return,
-                };
-                pushPlayerActionAndDrain(history, .{ .player_toggle_hub_decoration_keep_original_colors = .{
-                    .type_id = type_id,
                 } });
             },
             // The hub editor's tool palette cell (the select_editor_tool
@@ -3112,17 +3083,40 @@ pub fn handleAnytimeInput(
             },
             // The DECORATION inspector's color swatch: set the edited
             // decoration type's color_index (the WORLD gradient index).
-            // Same-value picks never fire.
+            // Surface-polymorphic (the inspector reuse): the mission
+            // editor resolves the type from the inspector target, the hub
+            // editor drill-in from its ACTIVE TOOL (the hub swatch
+            // convention) - both push the same commit (the orchestrator
+            // routes per screen). Same-value picks never fire on either.
             .select_editor_decoration_color => {
                 const color_index = payloadAs(.editor_color, clicked_payload) orelse return;
-                const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
-                    .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .item_type, .player => return,
+                const Resolved = struct { type_id: u32, current_color: u32 };
+                const resolved: Resolved = if (current.screen == .hub_editor) resolved_hub: {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const tool_type_id = switch (hub_editor_state.active_tool) {
+                        .decoration_type => |resolved_type_id| resolved_type_id,
+                        else => return,
+                    };
+                    if (tool_type_id >= campaign_editor_state.decoration_types.len) return;
+                    break :resolved_hub .{
+                        .type_id = tool_type_id,
+                        .current_color = campaign_editor_state.decoration_types[tool_type_id].color_index,
+                    };
+                } else resolved_mission: {
+                    const editor = if (current.editor) |*some_editor| some_editor else return;
+                    const target_type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                        .decoration_type => |resolved_type_id| resolved_type_id,
+                        .entity_type, .item_type, .player => return,
+                    };
+                    break :resolved_mission .{
+                        .type_id = target_type_id,
+                        .current_color = editor.decoration_types[target_type_id].color_index,
+                    };
                 };
-                if (editor.decoration_types[type_id].color_index == color_index) return;
+                if (resolved.current_color == color_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_color_index = .{
-                    .type_id = type_id,
+                    .type_id = resolved.type_id,
                     .value = color_index,
                 } });
             },
@@ -3242,16 +3236,41 @@ pub fn handleAnytimeInput(
                     .value = !template.keep_original_colors,
                 } });
             },
+            // The DECORATION inspector's keep-colors toggle. Surface-
+            // polymorphic (the inspector reuse): the mission editor
+            // resolves the type from the inspector target, the hub editor
+            // drill-in from its ACTIVE TOOL; both compute the flip HERE
+            // (the mission's input-layer convention) and push the same
+            // commit (the orchestrator routes per screen).
             .toggle_editor_decoration_keep_original_colors => {
-                const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
-                    .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .item_type, .player => return,
+                const Resolved = struct { type_id: u32, current_flag: bool };
+                const resolved: Resolved = if (current.screen == .hub_editor) resolved_hub: {
+                    const hub_editor_state = current.hub_editor orelse return;
+                    const campaign_editor_state = current.campaign_editor orelse return;
+                    const tool_type_id = switch (hub_editor_state.active_tool) {
+                        .decoration_type => |resolved_type_id| resolved_type_id,
+                        else => return,
+                    };
+                    if (tool_type_id >= campaign_editor_state.decoration_types.len) return;
+                    break :resolved_hub .{
+                        .type_id = tool_type_id,
+                        .current_flag = campaign_editor_state.decoration_types[tool_type_id].keep_original_colors,
+                    };
+                } else resolved_mission: {
+                    const editor = if (current.editor) |*some_editor| some_editor else return;
+                    const target_type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                        .decoration_type => |resolved_type_id| resolved_type_id,
+                        .entity_type, .item_type, .player => return,
+                    };
+                    if (target_type_id >= editor.decoration_types.len) return;
+                    break :resolved_mission .{
+                        .type_id = target_type_id,
+                        .current_flag = editor.decoration_types[target_type_id].keep_original_colors,
+                    };
                 };
-                if (type_id >= editor.decoration_types.len) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_keep_original_colors = .{
-                    .type_id = type_id,
-                    .value = !editor.decoration_types[type_id].keep_original_colors,
+                    .type_id = resolved.type_id,
+                    .value = !resolved.current_flag,
                 } });
             },
             // Weapon-type cell: CREATE a default weapon while the hand is
