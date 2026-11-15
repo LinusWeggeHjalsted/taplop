@@ -372,6 +372,7 @@ working rules).
 - [campaign-editor slice 4-5b rider: the hub editor's palette + inspector mirror the mission editor's structure exactly](#campaign-editor-slice-4-5b-rider-the-hub-editors-palette--inspector-mirror-the-mission-editors-structure-exactly)
 - [campaign-editor slice 4-5c: the hub editor's sprite picker - the change-the-art loop](#campaign-editor-slice-4-5c-the-hub-editors-sprite-picker---the-change-the-art-loop)
 - [campaign-editor slice 4-5d: the reuse refactor - the mission editor's inspector + picker become the shared code](#campaign-editor-slice-4-5d-the-reuse-refactor---the-mission-editors-inspector--picker-become-the-shared-code)
+- [campaign-editor slice 4-5c(ii): the footprint editor + the layer machinery ride the reuse seams](#campaign-editor-slice-4-5cii-the-footprint-editor--the-layer-machinery-ride-the-reuse-seams)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22463,3 +22464,64 @@ consumer's implementation, don't hand-write a sibling - the same
 "belong, don't fit" rule, at the UI layer.
 
 1019 green.
+
+## campaign-editor slice 4-5c(ii): the footprint editor + the layer machinery ride the reuse seams
+
+The 4-5 slice's remainder, landing on the 4-5d seams: the hub editor's
+decoration type is now authorable END to end - base sprite, footprint,
+and the full layer stack - through the mission editor's own machinery.
+The 4-5 slice is COMPLETE (4-5a-c(ii) + the 4-5d reuse refactor).
+
+- **Part A - the footprint editor**: `buildEditorFootprintEditor`
+  parameterized at the DEF seam (the caller resolves + bounds-checks the
+  type; the mission view + the hub view dispatch both call it); the
+  open/toggle/confirm consumption arms branch per screen over three
+  shared helpers (`seedFootprintDraft` / `flipFootprintDraftCell` /
+  `footprintFromDraft` - the draft machinery is single-sited); the hub
+  confirm commits through the WHOLE-DEF event
+  (`pushHubDecorationDefCommit`) - one commit path, the cross-hub
+  placement prune included (the base sprite pick's route). A handler
+  test drives the full flow through `handleAnytimeInput`: open seeds
+  the draft, toggles flip cells, the confirm commits + closes + undoes,
+  the unchanged draft closes without committing, the empty draft stays
+  open.
+- **Part B - the layer machinery**: the four consumption arms
+  (layer-picker open / pick / delete / layer-color) branch per screen;
+  the registry adoption (a new layer's authored color + draw side) is
+  single-sited (`registryLayerColor` / `registryLayerBehind`); every
+  hub layer commit rides the whole-def event. The cell arms went
+  shared: `appendLocalDecorationCells` (the local-tab decoration arm,
+  with the layer mode's base-dims match) +
+  `appendOfficialDecorationSpriteCells` (the dims-filtered shipped
+  sprites) - the mission's arms delegate, and `buildHubSpritePicker`
+  grew the layer mode (the mission picker's highlight/tint conventions
+  included). Handler + view tests pin the flows: the add adopts the
+  registry authoring, the color swap, the delete, per-commit undo, and
+  the local/official cell filtering.
+- **The runtime drive caught TWO live bugs** (both invisible to the
+  suite):
+  1. The inspector wheel was MISSION-gated (`screen == .editor`) - the
+     hub inspector could never scroll, stranding the layers section
+     below the windowing fold. The gate now covers both surfaces (the
+     same rect, the same scroll state).
+  2. A PRE-EXISTING crash, latent since the footprint editor's mission
+     debut: `emitInspectorLayerButton` unconditionally attached
+     `.{ .editor_layer = layer_index }`, so the footprint Confirm (a
+     null index) carried a payload on a payload-less action - the
+     fail-fast at the update seam traps it on ANY surface. The
+     first-ever runtime click of the confirm (either editor) would
+     have crashed the game. The emitter now attaches the payload only
+     when a layer index exists; the add-layer buttons' "(no layer
+     payload)" doc is finally true, and a structure assertion pins the
+     confirm's bareness.
+- **Runtime-verified end to end over the console channel**: the
+  footprint leg (strip -> row -> editor -> tile toggle -> confirm ->
+  footprint [{0,0},{1,2}] + close) + the layer leg (strip -> scroll ->
+  layer-0 row -> the picker's 31 dims-filtered Official cells -> a pick
+  swapping canopy -> grass with the layer's color kept -> close; an
+  unchanged re-pick closing without committing). A drive-authoring
+  lesson: an expanded section's children push every LATER strip down -
+  click the lowest strip first, and re-report after any layout-shifting
+  click (the 4-5c coordinate lesson, now with section expansion).
+
+1022 green.

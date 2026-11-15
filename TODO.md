@@ -433,24 +433,6 @@ work:
           console channel).
     - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
           "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
-    - [ ] 4-5. Decorations group + pickers + the
-          custom/campaigns/<c>/hubs/<hub>/ art stem rule. Part A DONE
-          (DONE.md, "campaign-editor slice 4-5a"): the decoration TOOL
-          (the placement machinery already existed from 4-3), the
-          palette group (cells + the "+" add-new over the
-          campaign-SHARED palette, the default template), the Tab cycle
-          - runtime-verified over the console channel. Part B DONE
-          (DONE.md, "campaign-editor slice 4-5b" + the palette/inspector
-          structural-mirror rider): the per-cell DELETE (the inline
-          cross-hub cascade) + the mission-structured palette accordion
-          + the inspector's mission-structured decoration arm. Part C
-          (the sprite picker) DONE (DONE.md, "campaign-editor slice
-          4-5c"): the picker (Hub-local + Official tabs, the registry
-          prefab adoption), the whole-def commit + the cross-hub
-          placement prune, the hub-local art scan, the live Sprite row -
-          runtime-verified end to end. REMAINING (4-5c(ii)): the footprint
-          editor + the layers section + layer picks, riding the 4-5d
-          reuse seams (DONE.md, "campaign-editor slice 4-5d").
     - [ ] 4-6. Metadata sidebar (hub name + the three gradients) +
           hub-only ctrl+S (skip-unsaved-references rule, never
           deletes).
