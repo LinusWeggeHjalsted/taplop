@@ -89,9 +89,12 @@ fn copyMissionFile(
 
 /// Copy a local mission's files into the campaign's missions/ dir (the
 /// copy-at-pick import): mission.txt (required - false when unreadable),
-/// player.txt + the consecutive level_N.txt files + every custom PNG in
-/// the dir (each optional - a hand-authored minimal mission copies with
-/// whatever it has). The destination dir keeps the source's name (dirs
+/// player.txt + validation_replay.txt + the consecutive level_N.txt
+/// files + every custom PNG in the dir (each optional - a hand-authored
+/// minimal mission copies with whatever it has). The validation replay
+/// rides along so an imported VALIDATED mission stays validated (the
+/// campaign-level check reads it - a copy without it would read as
+/// unvalidated). The destination dir keeps the source's name (dirs
 /// are storage, uuids are identity).
 pub fn copyMissionIntoCampaign(
     history: *GameStateHistory,
@@ -103,6 +106,7 @@ pub fn copyMissionIntoCampaign(
         return false;
     }
     _ = copyMissionFile(history, allocator, campaign_content_dir, mission_dir, "player.txt");
+    _ = copyMissionFile(history, allocator, campaign_content_dir, mission_dir, "validation_replay.txt");
     var level_number: u32 = 1;
     while (true) : (level_number += 1) {
         const level_name = std.fmt.allocPrint(

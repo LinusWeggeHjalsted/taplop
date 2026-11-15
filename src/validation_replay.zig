@@ -14,6 +14,7 @@ const state_mod = @import("state.zig");
 const types = @import("types.zig");
 const loaders = @import("loaders.zig");
 const content_hash_mod = @import("content_hash.zig");
+const file_source_mod = @import("file_source.zig");
 
 const Event = events_mod.Event;
 
@@ -89,6 +90,58 @@ pub fn loadValidationReplay(
         .content_hash = try allocator.dupe(u8, content_hash),
         .events = log.events,
     };
+}
+
+/// The per-mission validation check for campaign-level validation: does
+/// `mission_dir` carry a validation replay certifying THIS mission's
+/// CURRENT content? The campaign editor's Validate runs it for every
+/// mission the campaign declares; the in-game campaign load applies the
+/// same standard at the drop seam. Reads through `file_source` directly
+/// (no history, no state) - the caller passes a scratch/arena allocator,
+/// whose lifetime covers the transient read.
+pub const MissionValidationStatus = union(enum) {
+    /// The stored replay certifies this mission's current content (uuid
+    /// + content hash both match).
+    validated,
+    /// No validation_replay.txt in the mission dir - never validated (or
+    /// the file was removed).
+    missing,
+    /// The replay is unreadable/malformed/not a validation replay, or the
+    /// mission content it must hash is unreadable.
+    malformed,
+    /// The stored replay certifies a different mission (uuid mismatch).
+    wrong_mission,
+    /// The mission's content changed since the certified run (hash
+    /// mismatch) - the established "unvalidated" reading (a later hash
+    /// mismatch reads as unvalidated).
+    content_changed,
+};
+
+/// Check one mission's validation artifact (see `MissionValidationStatus`).
+/// `mission_uuid` is the uuid the campaign declares for the mission;
+/// `mission_dir` is the mission's dir path as `computeMissionHash` takes
+/// it (the dir containing mission.txt).
+pub fn checkMissionValidationArtifact(
+    file_source: *const file_source_mod.FileSource,
+    allocator: std.mem.Allocator,
+    mission_uuid: []const u8,
+    mission_dir: []const u8,
+) MissionValidationStatus {
+    const replay_path = std.fmt.allocPrint(allocator, "{s}/validation_replay.txt", .{mission_dir}) catch
+        @panic("failed to allocate the validation replay path");
+    const replay_bytes = file_source.readFile(allocator, replay_path) catch
+        return .missing;
+    const sections = parser.parseConfigFile(replay_bytes, allocator, &parser.session_log_sections) catch
+        return .malformed;
+    const replay = loadValidationReplay(sections, allocator) catch
+        return .malformed;
+    if (!std.mem.eql(u8, replay.mission_uuid, mission_uuid))
+        return .wrong_mission;
+    const hash = content_hash_mod.computeMissionHash(file_source, allocator, mission_dir) catch
+        return .malformed;
+    if (!std.mem.eql(u8, replay.content_hash, &content_hash_mod.hashToHex(hash)))
+        return .content_changed;
+    return .validated;
 }
 
 /// The author time: count the player's `turn_start` events (entity_index 0)
@@ -371,6 +424,101 @@ test "validation replay round trip through the session-log format" {
     try std.testing.expectEqual(@as(usize, events.len), replay.events.len);
     try std.testing.expectEqualDeep(events[0..], replay.events);
     try std.testing.expectEqual(@as(u32, 2), deriveValidationTurns(replay.events));
+}
+
+test "checkMissionValidationArtifact: the five statuses over a real mission dir" {
+    const allocator = std.testing.allocator;
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-mission-validation-status";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = file_source_mod.FileSource.init(io, dir);
+
+    // A minimal mission: mission.txt + level_1.txt (the hash's file set).
+    file_source.writeFile("m/mission.txt", "Metadata\nfile_format_version 1\nlevel_count 1\n") catch @panic("write mission");
+    file_source.writeFile("m/level_1.txt", "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("write level");
+
+    const events = [_]Event{
+        .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } },
+        .{ .meta_event = .{ .end_validation = .{ .success = true } } },
+    };
+
+    // Missing: no validation_replay.txt at all.
+    try std.testing.expectEqual(
+        MissionValidationStatus.missing,
+        checkMissionValidationArtifact(&file_source, arena, "uuid-1", "m"),
+    );
+
+    // Validated: the replay certifies this uuid + the CURRENT content
+    // hash (the replay is outside the hash's file set, so writing it
+    // does not change the mission's hash).
+    const hash = try content_hash_mod.computeMissionHash(&file_source, arena, "m");
+    const hash_hex = content_hash_mod.hashToHex(hash);
+    const valid_body = try session_log.writeEventLogWithMetadata(
+        events[0..],
+        "20260101_000000",
+        &.{
+            .{ .name = "mission_uuid", .value = "uuid-1" },
+            .{ .name = "content_hash", .value = &hash_hex },
+        },
+        arena,
+    );
+    file_source.writeFile("m/validation_replay.txt", valid_body) catch @panic("write replay");
+    try std.testing.expectEqual(
+        MissionValidationStatus.validated,
+        checkMissionValidationArtifact(&file_source, arena, "uuid-1", "m"),
+    );
+
+    // Content changed: a replay whose stored hash no longer matches the
+    // dir (a mission edited after the certified run reads as unvalidated).
+    const stale_body = try session_log.writeEventLogWithMetadata(
+        events[0..],
+        "20260101_000000",
+        &.{
+            .{ .name = "mission_uuid", .value = "uuid-1" },
+            .{ .name = "content_hash", .value = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+        },
+        arena,
+    );
+    file_source.writeFile("m/validation_replay.txt", stale_body) catch @panic("write stale replay");
+    try std.testing.expectEqual(
+        MissionValidationStatus.content_changed,
+        checkMissionValidationArtifact(&file_source, arena, "uuid-1", "m"),
+    );
+
+    // Wrong mission: the replay certifies another uuid.
+    const foreign_body = try session_log.writeEventLogWithMetadata(
+        events[0..],
+        "20260101_000000",
+        &.{
+            .{ .name = "mission_uuid", .value = "uuid-2" },
+            .{ .name = "content_hash", .value = &hash_hex },
+        },
+        arena,
+    );
+    file_source.writeFile("m/validation_replay.txt", foreign_body) catch @panic("write foreign replay");
+    try std.testing.expectEqual(
+        MissionValidationStatus.wrong_mission,
+        checkMissionValidationArtifact(&file_source, arena, "uuid-1", "m"),
+    );
+
+    // Malformed: bytes that fail the session-log parse (the strict
+    // grammar errors on a junk line outside any section).
+    file_source.writeFile("m/validation_replay.txt", "garbage line") catch @panic("write garbage replay");
+    try std.testing.expectEqual(
+        MissionValidationStatus.malformed,
+        checkMissionValidationArtifact(&file_source, arena, "uuid-1", "m"),
+    );
 }
 
 test "loadValidationReplay rejects non-bracket event streams" {

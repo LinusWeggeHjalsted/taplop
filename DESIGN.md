@@ -3397,12 +3397,17 @@ no rename in v1"): rename is free, for all three content kinds.
   below.
 - **Load-time graph integrity checks** (landed -
   `loaders.checkCampaignGraph`, called from `loadCampaignAndPushHub`,
-  warn-only through the standard surfaceWarnings popup): start hub not
-  placed; a placed hub with no readable/parsable hub.txt; a Missions
-  entry's `start_hub`/`destination_hub` naming an unplaced hub (the
-  dangling forward reference - save-legal by design, caught at load);
-  a Missions entry whose uuid resolves to no mission dir; unreachable
-  hubs (BFS from the start hub over the Missions edges). The checks read
+  warn-only through the standard surfaceWarnings popup; the same checks
+  ride the campaign editor's file-level Validate - one shared standard):
+  start hub not placed; a placed hub with no readable/parsable hub.txt;
+  every mission fully wired - no dangling stub (destination unset), no
+  destination naming an unplaced hub, no orphan (a Missions entry wired
+  to no placed hub), no markerless mission (unstartable - rendered,
+  not enterable); a Missions entry whose uuid resolves to no mission
+  dir; unreachable hubs (BFS from the start hub over the Missions
+  edges). The finalized-campaign doctrine: stubs, orphans, and
+  markerless missions are editor-INTERMEDIATE state - honest to carry
+  mid-editing, a finding in a finished campaign. The checks read
   campaign.txt/hub + mission
   files through `file_source` directly, NOT the reconstruction cache:
   warnings apply no bytes to state (surfaceWarnings is !replaying-gated,
@@ -3836,7 +3841,9 @@ Consequences:
   start/end. The hub editor only POSITIONS exit markers for missions
   already starting at its hub (see The hub editor surface). A
   mission's destination is picked on the map (click an end hub, or
-  re-attach) or left empty (the dangling stub - save-legal by design).
+  re-attach) or left empty (the dangling stub - editor-intermediate
+  state, tolerated mid-editing; a campaign-validation finding: a
+  finalized campaign wires every mission's end).
   All picks are by list or map click, never a uuid by hand.
 - **Saving keeps the campaign dir self-contained**: campaign.txt + map +
   `hubs/` (+ bundled art) + `missions/` (+ their art). The mission

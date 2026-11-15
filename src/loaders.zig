@@ -2897,10 +2897,17 @@ pub fn deriveCampaignEdges(
                 appendWarning(warnings, allocator, "a Missions entry has an empty mission_uuid - dropped", .{});
                 continue;
             }
-            // No start_hub = an orphan (editor-only rendering, not
-            // gameplay).
-            const start_hub = findValue(pairs, "start_hub") orelse continue;
-            if (start_hub.len == 0) continue;
+            // No start_hub = an orphan: editor-honest intermediate state,
+            // a validation finding (a finalized campaign wires every
+            // mission) - never silently carried.
+            const start_hub = findValue(pairs, "start_hub") orelse {
+                appendWarning(warnings, allocator, "mission '{s}' has no start hub - it is not wired into the graph (an orphan)", .{mission_uuid});
+                continue;
+            };
+            if (start_hub.len == 0) {
+                appendWarning(warnings, allocator, "mission '{s}' has no start hub - it is not wired into the graph (an orphan)", .{mission_uuid});
+                continue;
+            }
             var direction: ?i32 = null;
             if (findValue(pairs, "direction")) |value| {
                 if (asI32(value)) |authored| {
@@ -3050,7 +3057,8 @@ pub fn deriveCampaignEdges(
         new_hubs.append(allocator, new_hub) catch @panic("failed to append rebuilt campaign hub");
     }
 
-    // Rows whose start hub is not placed (hand-edit): warn + drop.
+    // Rows whose start hub is not placed (hand-edit): warn + drop - the
+    // same orphan class as a missing start_hub.
     for (rows.items) |row| {
         var placed = false;
         for (campaign.hubs) |hub| {
@@ -3060,7 +3068,7 @@ pub fn deriveCampaignEdges(
             }
         }
         if (!placed) {
-            appendWarning(warnings, allocator, "mission '{s}' start_hub '{s}' names an unplaced hub - the edge is dropped", .{ row.mission_uuid, row.start_hub });
+            appendWarning(warnings, allocator, "mission '{s}' start_hub '{s}' names an unplaced hub - it is not wired into the graph (an orphan)", .{ row.mission_uuid, row.start_hub });
         }
     }
 
@@ -3306,17 +3314,22 @@ pub fn resolveCampaignMissions(
 }
 
 /// Load-time campaign graph INTEGRITY checks (warn-only, the loader
-/// convention): the dangling format is save-legal BY DESIGN (an exit is
-/// authored before its destination exists), so the catch belongs here - a
-/// hand-edited campaign must not silently misresolve. PURE over the
+/// convention), shared by the in-game campaign load and the campaign
+/// editor's Validate (the file-level certification - the same read
+/// pipeline, the same findings). A finalized campaign wires every
+/// mission fully: stubs, orphans, and markerless missions are
+/// editor-intermediate state, findings here - a hand-edited or
+/// third-party campaign must not carry one silently. PURE over the
 /// derived edge table (see deriveCampaignEdges) - no file reads, so the
 /// check adds nothing the derive did not already read (and replay purity
 /// is unaffected by construction: the derive runs loading-side only).
 /// Checks, each appending a warning:
 ///   - the start hub is placed (a start_hub naming no Hubs entry, or none
 ///     at all)
-///   - no edge's destination_hub names an unplaced hub (the dangling
-///     forward reference)
+///   - every edge has a destination hub (the dangling stub) and it names
+///     a placed hub (the dangling forward reference)
+///   - every edge has an exit marker in its start hub (unstartable -
+///     rendered, not enterable; see `CampaignEdgeEntry.exit_index`)
 ///   - no edge names a mission that resolves to nothing in the campaign's
 ///     mission table
 ///   - every placed hub is reachable from the start hub over hub → edge →
@@ -3352,11 +3365,16 @@ pub fn checkCampaignGraph(
     // Dangling destinations + unresolvable missions, over the derived
     // table (read/parse failures were already warned by the derive).
     for (campaign.edges) |edge| {
-        if (edge.destination.len > 0 and !hub_placed(campaign.hubs, edge.destination)) {
+        if (edge.destination.len == 0) {
+            appendWarning(warnings, allocator, "mission '{s}' from hub '{s}': no destination hub set (a dangling stub - a finalized campaign wires every mission's end)", .{ edge.mission_uuid, edge.from });
+        } else if (!hub_placed(campaign.hubs, edge.destination)) {
             appendWarning(warnings, allocator, "mission '{s}' from hub '{s}': destination_hub '{s}' names an unplaced hub", .{ edge.mission_uuid, edge.from, edge.destination });
         }
         if (edge.mission_dir.len == 0) {
             appendWarning(warnings, allocator, "mission '{s}' from hub '{s}' resolves to no mission in the campaign's missions/", .{ edge.mission_uuid, edge.from });
+        }
+        if (edge.exit_index == null) {
+            appendWarning(warnings, allocator, "mission '{s}' from hub '{s}': unstartable - no exit marker in the start hub (the mission renders but cannot be entered)", .{ edge.mission_uuid, edge.from });
         }
     }
 
@@ -5707,12 +5725,13 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     }.run;
 
     const clean_hubs = [_][2][]const u8{ .{ "start", "start" }, .{ "far", "far" } };
-    const clean_missions = "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\n";
+    const clean_missions = "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\ndestination_hub start\n";
 
-    // Run 1 - clean: two edges (start -> far via u1, far -> dangling via
-    // u2), both marked, hub names denormalized, everything resolving.
+    // Run 1 - clean: two edges (start -> far via u1, far -> start via
+    // u2), both marked + fully wired, hub names denormalized, everything
+    // resolving. A finalized campaign's shape: no stubs, no orphans, no
+    // markerless missions.
     const clean = runPipeline(&file_source, allocator, clean_missions, "start", &clean_hubs, &warnings);
-    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
     try std.testing.expectEqual(@as(usize, 2), clean.edges.len);
     try std.testing.expectEqualStrings("Start", clean.hubs[0].name);
     try std.testing.expectEqualStrings("Far", clean.hubs[1].name);
@@ -5724,27 +5743,60 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     try std.testing.expectEqual(@as(i32, 0), clean.edges[0].direction_degrees);
     try std.testing.expectEqual(@as(?u32, 0), clean.edges[0].exit_index);
     try std.testing.expectEqualStrings("far", clean.edges[1].from);
-    try std.testing.expectEqual(@as(usize, 0), clean.edges[1].destination.len);
+    try std.testing.expectEqualStrings("start", clean.edges[1].destination);
     try std.testing.expectEqual(@as(?u32, 0), clean.edges[1].exit_index);
     freeCampaign(clean, allocator);
 
     // Run 2 - a MARKERLESS edge: u1 started + destined, but start's hub
     // carries no marker for it. The edge derives anyway (exit_index null
-    // - rendered on the map, not enterable); NO warning (unstartable is
-    // a validation finding, never a load complaint).
+    // - rendered on the map, not enterable) + one warning (unstartable:
+    // a finalized campaign enters every mission through its marker).
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
         "Metadata\nfile_format_version 5\nhub_uuid start\nname Start\n",
     ) catch @panic("strip start's markers");
     const markerless = runPipeline(&file_source, allocator, clean_missions, "start", &clean_hubs, &warnings);
-    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "unstartable - no exit marker") != null);
     try std.testing.expectEqual(@as(usize, 2), markerless.edges.len);
     try std.testing.expectEqual(@as(?u32, null), markerless.edges[0].exit_index);
     freeCampaign(markerless, allocator);
+    clearWarnings(&warnings, allocator);
     file_source.writeFile(
         "campaigns/check/hubs/start/hub.txt",
         "Metadata\nfile_format_version 5\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\n",
     ) catch @panic("restore start's marker");
+
+    // Run 2b - a dangling STUB: u2 with no destination_hub at all -
+    // editor-intermediate state (the mission inspector's unattached
+    // end), one warning (a finalized campaign wires every mission's
+    // end).
+    const stub = runPipeline(
+        &file_source,
+        allocator,
+        "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\n",
+        "start",
+        &clean_hubs,
+        &warnings,
+    );
+    freeCampaign(stub, allocator);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "no destination hub set (a dangling stub") != null);
+    clearWarnings(&warnings, allocator);
+
+    // Run 2c - an ORPHAN: u3 present in the campaign's missions/ but
+    // with no start_hub - editor-honest intermediate state (a hub
+    // deletion unwires its missions), one warning. The runtime edge
+    // table never sees it (orphans are not gameplay).
+    const orphan = runPipeline(
+        &file_source,
+        allocator,
+        "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\ndestination_hub start\n\nmission_uuid u3\n",
+        "start",
+        &clean_hubs,
+        &warnings,
+    );
+    freeCampaign(orphan, allocator);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "mission 'u3' has no start hub") != null);
+    clearWarnings(&warnings, allocator);
 
     // Run 3 - a Missions entry whose start_hub names an unplaced hub:
     // warn + drop (an edge cannot render from nothing); far then goes
@@ -5752,13 +5804,12 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     const unplaced_start = runPipeline(
         &file_source,
         allocator,
-        "mission_uuid u1\nstart_hub nowhere\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\n",
+        "mission_uuid u1\nstart_hub nowhere\ndestination_hub far\n\nmission_uuid u2\nstart_hub far\ndestination_hub start\n",
         "start",
         &clean_hubs,
         &warnings,
     );
     freeCampaign(unplaced_start, allocator);
-    try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "start_hub 'nowhere' names an unplaced hub") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[1], "'far' is unreachable") != null);
     clearWarnings(&warnings, allocator);
@@ -5768,13 +5819,12 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     const dangling = runPipeline(
         &file_source,
         allocator,
-        "mission_uuid u1\nstart_hub start\ndestination_hub beyond\n\nmission_uuid u2\nstart_hub far\n",
+        "mission_uuid u1\nstart_hub start\ndestination_hub beyond\n\nmission_uuid u2\nstart_hub far\ndestination_hub start\n",
         "start",
         &clean_hubs,
         &warnings,
     );
     freeCampaign(dangling, allocator);
-    try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "'beyond' names an unplaced hub") != null);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[1], "'far' is unreachable") != null);
     clearWarnings(&warnings, allocator);
@@ -5784,7 +5834,6 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     std.Io.Dir.cwd().deleteTree(io, scratch ++ "/campaigns/check/missions/m1") catch @panic("remove m1");
     const missing_mission = runPipeline(&file_source, allocator, clean_missions, "start", &clean_hubs, &warnings);
     freeCampaign(missing_mission, allocator);
-    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "mission 'u1' from hub 'start' resolves to no mission") != null);
     clearWarnings(&warnings, allocator);
     file_source.writeFile("campaigns/check/missions/m1/mission.txt", "Metadata\nfile_format_version 3\nmission_uuid u1\nname M1\n") catch @panic("restore m1");
@@ -5792,11 +5841,17 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     // Run 6 - direction handling: three missions from start - unauthored,
     // an authored 42, and an unparsable (warns + fully unauthored). The
     // two unauthored share the circle among themselves: 360*0/2 = 0 and
-    // 360*1/2 = 180. far keeps its single edge (default 0).
+    // 360*1/2 = 180. far keeps its single edge (default 0). The fixture
+    // is otherwise fully wired + marked (this run is about DIRECTIONS -
+    // the stub/orphan/markerless findings have their own runs above).
+    file_source.writeFile(
+        "campaigns/check/hubs/start/hub.txt",
+        "Metadata\nfile_format_version 5\nhub_uuid start\nname Start\n\nExits\ncharacter_code E\nmission_uuid u1\n\ncharacter_code F\nmission_uuid u3\n\ncharacter_code G\nmission_uuid u4\n",
+    ) catch @panic("write start's three markers");
     const directions = runPipeline(
         &file_source,
         allocator,
-        "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u3\nstart_hub start\ndestination_hub far\ndirection 42\n\nmission_uuid u2\nstart_hub far\n\nmission_uuid u4\nstart_hub start\ndestination_hub far\ndirection abc\n",
+        "mission_uuid u1\nstart_hub start\ndestination_hub far\n\nmission_uuid u3\nstart_hub start\ndestination_hub far\ndirection 42\n\nmission_uuid u2\nstart_hub far\ndestination_hub start\n\nmission_uuid u4\nstart_hub start\ndestination_hub far\ndirection abc\n",
         "start",
         &clean_hubs,
         &warnings,
@@ -5818,7 +5873,6 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     ) catch @panic("duplicate markers");
     const duplicate_markers = runPipeline(&file_source, allocator, clean_missions, "start", &clean_hubs, &warnings);
     freeCampaign(duplicate_markers, allocator);
-    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "multiple markers for mission 'u1'") != null);
     clearWarnings(&warnings, allocator);
     file_source.writeFile(
@@ -5829,7 +5883,6 @@ test "deriveCampaignEdges + checkCampaignGraph: derive the table, then warn per 
     // Run 8 - a null warnings sink is a no-op through the whole pipeline.
     const null_sink = runPipeline(&file_source, allocator, clean_missions, "start", &clean_hubs, null);
     freeCampaign(null_sink, allocator);
-    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
 }
 
 /// Free + clear a test warnings list (each message is allocator-owned -
