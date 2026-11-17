@@ -1238,6 +1238,79 @@ fn blocksInputOf(element: UiElement) bool {
     };
 }
 
+/// Test support: assert no element STRADDLES `panel` - every element that
+/// blocks input AND intersects the panel rect must be fully contained in
+/// it. This is the panel-overflow guard for the STRADDLE class: a row
+/// that starts inside the panel and extends past its fold (the
+/// campaign-inspector hand-off button shipped exactly this way, green
+/// tests and all - presence was asserted, fits-the-panel never was).
+/// Elements entirely outside pass by not intersecting (the toggle strip
+/// above the panel, the palette below) - which also means content
+/// rendered ENTIRELY below a panel is NOT this guard's class; that is
+/// the windowing renderer's contract, asserted by the per-surface
+/// windowing tests (row absent at scroll 0, present when scrolled in).
+/// Non-blocking elements are exempt because their bounds include
+/// placeholder shapes (text_label's font-size square) that can graze an
+/// edge harmlessly. Pub for the cross-file view tests that call it (the
+/// unused-pub report's TEST-ONLY class).
+pub fn expectNoElementStraddlesRect(
+    elements: []const UiElement,
+    panel: Rectangle,
+) !void {
+    for (elements) |element| {
+        if (!blocksInputOf(element)) continue;
+        const bounds = boundsOf(element);
+        // Disjoint on either axis: no interaction with the panel.
+        const disjoint_x = bounds.x >= panel.x + panel.width or
+            bounds.x + bounds.width <= panel.x;
+        const disjoint_y = bounds.y >= panel.y + panel.height or
+            bounds.y + bounds.height <= panel.y;
+        if (disjoint_x or disjoint_y) continue;
+        const contained = bounds.x >= panel.x and
+            bounds.y >= panel.y and
+            bounds.x + bounds.width <= panel.x + panel.width and
+            bounds.y + bounds.height <= panel.y + panel.height;
+        if (!contained) return error.TestElementStraddlesPanel;
+    }
+}
+
+test "expectNoElementStraddlesRect: contained + disjoint pass, a straddler fails" {
+    const panel = Rectangle{ .x = 0, .y = 100, .width = 100, .height = 100 };
+    // The three legal relationships to a panel: fully inside, above it
+    // (the inspector's toggle strip), below it (the palette).
+    const contained = UiElement{ .button = .{
+        .screen_position = .{ .x = 10, .y = 110 },
+        .width = 50,
+        .height = 50,
+        .action = .escape,
+    } };
+    const above = UiElement{ .button = .{
+        .screen_position = .{ .x = 10, .y = 0 },
+        .width = 50,
+        .height = 50,
+        .action = .escape,
+    } };
+    const below = UiElement{ .button = .{
+        .screen_position = .{ .x = 10, .y = 250 },
+        .width = 50,
+        .height = 50,
+        .action = .escape,
+    } };
+    try expectNoElementStraddlesRect(&.{ contained, above, below }, panel);
+    // The overflow shape: starts inside the panel, extends past its
+    // bottom edge (the campaign-inspector hand-off button class).
+    const straddler = UiElement{ .button = .{
+        .screen_position = .{ .x = 10, .y = 180 },
+        .width = 50,
+        .height = 50,
+        .action = .escape,
+    } };
+    try std.testing.expectError(
+        error.TestElementStraddlesPanel,
+        expectNoElementStraddlesRect(&.{straddler}, panel),
+    );
+}
+
 /// The one hit-testing primitive shared by every pointer query (tooltips,
 /// clicks, drags, ...). Walks elements top-to-bottom (reverse of draw order).
 /// Non-blocking elements are transparent and skipped; the walk halts at the

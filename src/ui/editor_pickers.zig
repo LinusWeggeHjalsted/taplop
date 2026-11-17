@@ -2183,6 +2183,10 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 2, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        // The panel-bounds guard at a NONZERO scroll: the overflowing
+        // content must fit the panel at every offset (the windowing
+        // contract, asserted - the campaign-inspector overflow class).
+        try ui_element.expectNoElementStraddlesRect(elements.items, inspector.editorInspectorPanelRect());
         var saw_footprint_button = false;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .open_editor_footprint_picker) {

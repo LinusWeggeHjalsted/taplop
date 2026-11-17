@@ -1244,6 +1244,10 @@ test "hub editor inspector: the decoration arm emits the mission editor's exact 
         true,
         &ui_state,
     );
+    try ui_element.expectNoElementStraddlesRect(
+        mission_elements.items,
+        editor_inspector.editorInspectorPanelRect(),
+    );
 
     // The hub editor drill-in's panel, over the campaign palette.
     const campaign_editor = types.CampaignEditor{
@@ -1266,6 +1270,10 @@ test "hub editor inspector: the decoration arm emits the mission editor's exact 
         test_theme,
         button_color,
         &ui_state,
+    );
+    try ui_element.expectNoElementStraddlesRect(
+        hub_elements.items,
+        editor_inspector.editorInspectorPanelRect(),
     );
 
     // Both wrappers are the toggle strip (panel + button + label) + the

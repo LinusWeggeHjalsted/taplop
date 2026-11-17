@@ -3446,6 +3446,7 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try ui_element.expectNoElementStraddlesRect(elements.items, editorInspectorPanelRect());
         const name_field = findTextField(&elements, .entity_name).?;
         try std.testing.expectEqualStrings("Skeleton Warrior", name_field.text);
         try std.testing.expect(name_field.caret == null);
@@ -3480,6 +3481,7 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         const arrow_left: [2]?[]const u8 = .{ "ArrowLeft", "ArrowLeft" };
         _ = routeTextInput(&ui_state.text_edit.?, "", &arrow_left, &no_keys, true);
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try ui_element.expectNoElementStraddlesRect(elements.items, editorInspectorPanelRect());
         const name_field = findTextField(&elements, .entity_name).?;
         try std.testing.expectEqualStrings("Skeleton W", name_field.text);
         // Selection spans buffer glyphs 8..10, caret sits at index 8 - the

@@ -1304,6 +1304,10 @@ test "buildCampaignEditorView: surface, background, hubs, and the edge classes i
         test_button_color,
         .{ .ui_state = &ui_state },
     );
+    // The panel-bounds guard: nothing that blocks input may straddle the
+    // inspector panel (the overflow class this surface's windowing
+    // renderer exists to prevent).
+    try ui_element.expectNoElementStraddlesRect(elements.items, inspector.editorInspectorPanelRect());
 
     // Derived total: the map (1 surface + 1 background + per hub an icon
     // + a select button + per mission 1 arrow + 1 edge button - the
@@ -1491,6 +1495,7 @@ test "buildCampaignEditorView: the selected-hub inspector - name field, start-hu
         test_button_color,
         .{ .ui_state = &ui_state },
     );
+    try ui_element.expectNoElementStraddlesRect(elements.items, inspector.editorInspectorPanelRect());
 
     var field_refs: usize = 0;
     var hub_name_field: ?ui_element.TextFieldUi = null;
@@ -1735,6 +1740,7 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         test_button_color,
         .{ .ui_state = &ui_state },
     );
+    try ui_element.expectNoElementStraddlesRect(elements.items, inspector.editorInspectorPanelRect());
 
     var mission_name_field: ?ui_element.TextFieldUi = null;
     var direction_field: ?ui_element.TextFieldUi = null;
@@ -1786,6 +1792,9 @@ test "buildCampaignEditorView: the mission inspector + edge buttons + the draw p
         .{ .ui_state = &ui_state },
     );
     try std.testing.expectEqual(@as(i32, 2), ui_state.editor_inspector_scroll);
+    // The windowed-in bottom rows still fit the panel - the guard holds
+    // at every scroll offset, not just the top.
+    try ui_element.expectNoElementStraddlesRect(scrolled_elements.items, inspector.editorInspectorPanelRect());
     open_mission_button = null;
     for (scrolled_elements.items) |element| switch (element) {
         .button => |button| if (button.action == .open_mission_editor) {
