@@ -236,6 +236,40 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
+    // The HUB editor drill-in's variant (the campaign editor's mirror,
+    // trimmed to the drill-in's verbs): the hub-only save, the browser
+    // (ctrl+O), and the world-map return - the same destination as the
+    // global top bar's return button next to redo (both the button and
+    // the menu entry push close_hub_editor).
+    if (current_screen == .hub_editor) {
+        const hub_save_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Ctrl+S - writes hub.txt under {s}/campaigns/", .{dir})
+        else
+            "Ctrl+S - saves to the browser's persistent storage";
+        buttons[button_count] = .{
+            .label = "Save Hub",
+            .action = .save_hub,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(hub_save_body))}) },
+        };
+        button_count += 1;
+        buttons[button_count] = .{
+            .label = "Open Browser",
+            .action = .toggle_editor_browser,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Ctrl+O - browse your saved campaigns and missions",
+            ))}) },
+        };
+        button_count += 1;
+        buttons[button_count] = .{
+            .label = "World Map",
+            .action = .close_hub_editor,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Returns to the campaign map",
+            ))}) },
+        };
+        button_count += 1;
+    }
+
     // Export Game (web only - the persistent-dir-path-null signal, the
     // same web case the Export Save tooltip uses): downloads ziglop.zip,
     // the FULL game folder (settings, saves, custom missions) - the web
@@ -338,6 +372,53 @@ test "buildOptionsMenu: Revalidate Mission is editor-only" {
             },
             else => {},
         };
+    }
+}
+
+test "buildOptionsMenu: the hub editor variant carries the drill-in's verbs" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // The hub editor variant: the hub-only save, the browser, and the
+    // world-map return (close_hub_editor - the same destination as the
+    // global top bar's return button).
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .hub_editor, null, button_color, null);
+        for ([_]types.Action{ .save_hub, .toggle_editor_browser, .close_hub_editor, .open_settings, .exit_to_menu }) |expected| {
+            var found = false;
+            for (elements.items) |element| switch (element) {
+                .button => |b| {
+                    if (b.action == expected) found = true;
+                },
+                else => {},
+            };
+            try std.testing.expect(found);
+        }
+        // The sibling editors' saves are absent (the wrong screen's verbs).
+        for ([_]types.Action{ .save_editor_mission, .save_campaign }) |forbidden| {
+            for (elements.items) |element| switch (element) {
+                .button => |b| try std.testing.expect(b.action != forbidden),
+                else => {},
+            };
+        }
+    }
+
+    // The campaign editor variant: the hub-only verbs are absent there.
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .campaign_editor, null, button_color, null);
+        for ([_]types.Action{ .save_hub, .close_hub_editor }) |forbidden| {
+            for (elements.items) |element| switch (element) {
+                .button => |b| try std.testing.expect(b.action != forbidden),
+                else => {},
+            };
+        }
     }
 }
 
