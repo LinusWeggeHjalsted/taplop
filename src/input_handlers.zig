@@ -6558,6 +6558,46 @@ test "handleCameraPan: pan engages only past the drag threshold" {
     try std.testing.expect(history.session.camera_pan_anchor == null);
     try std.testing.expect(history.session.camera_pan_press == null);
     try std.testing.expect(history.session.camera_pan != null);
+
+    // The hub editor drill-in pans too (the same world path - the screen
+    // gate is the only check; the drill-in's camera/clamp arm already
+    // exists in computeCamera). Press records the anchor, a
+    // past-threshold drag engages, exactly like the mission editor above.
+    {
+        var hub_history = harness.newHistory(.{
+            .screen = .hub_editor,
+            .event_stack = &.{},
+            .player_data = .{},
+            .camera = null,
+            .editor = null,
+            .hub_editor = .{ .hub = 0 },
+            .replay_viewer = null,
+            .campaign = null,
+            .mission = null,
+            .level = null,
+            .hub = null,
+        });
+        input_gestures.handleCameraPan(
+            &hub_history,
+            .{ .right_pressed = true, .position = center },
+            &.{},
+            camera,
+            1.0,
+            viewport,
+        );
+        try std.testing.expect(hub_history.session.camera_pan_anchor != null);
+        try std.testing.expect(hub_history.session.camera_pan == null);
+        input_gestures.handleCameraPan(
+            &hub_history,
+            .{ .right_held = true, .position = .{ .x = center.x + ui.drag_threshold_pixels + 1, .y = center.y } },
+            &.{},
+            camera,
+            1.0,
+            viewport,
+        );
+        try std.testing.expect(hub_history.session.camera_pan_press == null);
+        try std.testing.expect(hub_history.session.camera_pan != null);
+    }
 }
 
 // --- Drag no-op gate (pure predicate) ---------------------------------------
