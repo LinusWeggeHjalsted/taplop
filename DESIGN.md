@@ -86,6 +86,7 @@ next session meets it as a surprise instead of a known.
   - [The campaign editor](#the-campaign-editor)
   - [The campaign editor surface (settled requirements)](#the-campaign-editor-surface-settled-requirements)
   - [The hub editor surface (settled requirements)](#the-hub-editor-surface-settled-requirements)
+  - [The mission-editor hand-off (settled mechanics)](#the-mission-editor-hand-off-settled-mechanics)
   - [Known limitations](#known-limitations)
 - [Clones (clone system)](#clones-clone-system)
 - [Gear Upgrading (the upgrade economy + hub vendor panel)](#gear-upgrading-the-upgrade-economy--hub-vendor-panel)
@@ -3869,9 +3870,9 @@ Consequences:
   finalized campaign wires every mission's end).
   All picks are by list or map click, never a uuid by hand.
 - **Saving keeps the campaign dir self-contained**: campaign.txt + map +
-  `hubs/` (+ bundled art) + `missions/` (+ their art). The mission
-  STORE-zip pattern extends to campaign export at the online-services
-  seam.
+  `hubs/` (+ bundled art) + `missions/` (+ their art). Campaign export
+  + import ride the mission STORE-zip pattern (see The mission-editor
+  hand-off).
 - **The editor browser gains the Campaign kind tab** (a kind appears as a
   tab only when its editor lands) - lists/scans `campaigns/` in the
   persistent dir + a New Campaign button (the New-derives-from-active-kind
@@ -3886,7 +3887,10 @@ Consequences:
   The hub editor surface). Everything else is IDENTICAL to a
   standalone mission session: EXPORT (the mission STORE-zip)
   works just the same, as do Test/Validate and the rest of the
-  editor. Settled - nothing else differs.
+  editor. Settled - nothing else differs. The hand-off's wiring
+  mechanics (open/close, the save's identity self-serve, the
+  mission-editor-owned marker, name sync, export/import): see The
+  mission-editor hand-off.
 
 ### The campaign editor surface (settled requirements)
 
@@ -4088,11 +4092,20 @@ as their own screen-gated family.
     + missions - the reconciliation save, the ONLY save that deletes
     files; resolves every in-editor handle to a minted uuid through
     the session memo, missions first then hubs then campaign.txt).
-  - the hub editor saves THIS HUB's hub.txt only. Exit entries whose
-    mission or destination hub is still UNSAVED are skipped + warned
-    (their uuid does not exist yet - nothing to reference); they stay
-    in the editor graph and land at the next full save. A partial
-    save never deletes anything.
+  - the hub editor saves THIS HUB's hub.txt only, SELF-SERVING the
+    campaign identity (the drill-in save rule, settled at slice 5):
+    the save resolves the campaign through the memo machinery - a
+    fresh or official-origin campaign mints + memos its identity AT
+    the hub save (the official-origin root carry rides the same
+    helper the full save uses; writeFile mkdir-p materializes the
+    dirs), so there is no "save the campaign first" gate and
+    hub.txt carries the real campaign_uuid. A campaign dir without
+    campaign.txt stays unlisted in the browsers until the first
+    full save - the piecemeal materialization is invisible. Exit
+    entries whose mission or destination hub is still UNSAVED are
+    skipped + warned (their uuid does not exist yet - nothing to
+    reference); they stay in the editor graph and land at the next
+    full save. A partial save never deletes anything.
   - the mission editor in campaign context saves the mission (its
     files in the campaign's `missions/`).
 - **Exiting back to the campaign map NEVER autosaves** (settled):
@@ -4109,6 +4122,69 @@ as their own screen-gated family.
   Validate button): an outgoing mission with no marker placed
   (unstartable); overlapping placements (two markers / NPCs /
   decoration footprints on one tile); placements off-grid.
+
+### The mission-editor hand-off (settled mechanics)
+
+The slice-5 settle: what "only the save target + the return button
+differ" means mechanically (the state split + surface prose live in
+the sections above; this section is the hand-off's own wiring).
+
+- **The open** (the open_hub_editor pattern): a recorded
+  PlayerInputEvent orchestrator carrying the target mission's
+  handle, resolved against the live authored graph. An on-disk
+  mission loads through the reconstruction cache from the campaign's
+  `missions/<dir>`; a fresh mission opens the fresh-template branch,
+  anchored at the campaign's missions/ temp dir. The open ADOPTS THE
+  GRAPH'S NAME - the authored name is the fresher edit when a map
+  rename hasn't been full-saved yet (on-disk mission.txt lags; the
+  graph is the live truth). The return is a recorded pure transition
+  back to the campaign map (the close_hub_editor twin), surfaced as
+  the world-map top-bar button + an options-menu entry (the hub
+  editor's two return paths). The context is a field on the Editor
+  payload (the campaign's dir + the mission handle), so any plain
+  open that replaces the payload drops it naturally.
+- **Foreign-open clears the campaign**: opening other content from
+  the editor browser while campaign context is active clears
+  campaign_editor in the same open. The browser's mission list scans
+  the standalone `missions/`, so every row is foreign content;
+  without the clear, the campaign lingers alive-but-orphaned below
+  a context-free editor (the editor screen's scope keeps it),
+  reachable by no surface.
+- **The save self-serves identity** (the drill-in save rule): the
+  hand-off save resolves the campaign identity + the mission's
+  identity through the campaign memo machinery and records the
+  mission's memo (handle -> uuid + dir), so the next full save
+  resolves the same identity in place and skips the fresh-mission
+  template (the memo-existence check). A fresh campaign mints its
+  campaign identity AT the hand-off save; an official-origin
+  campaign does the root carry. No "save the campaign first" gate.
+- **The mission-editor-owned marker**: a session-side set of
+  hand-off-saved handles. The full campaign save skips its lean
+  mission.txt write for owned missions - the mission editor's saved
+  files are the file of record. The memo alone cannot be this
+  marker: a full save memos EVERY mission it resolves, so
+  memo-existence would stop the lean write from syncing graph
+  renames into mission.txt (the load denormalizes the name FROM
+  mission.txt - an unsynced rename reverts on reopen).
+- **Name sync on edit, not on save**: the mission editor's name-edit
+  event dual-writes the campaign's mission entry (by handle) while
+  context is active, so the names never diverge. The save side effect
+  never mutates state (the write-only mint rule's structural
+  sibling); syncing at the save would need a pushed state event per
+  save. The mission dir tidy at full save mirrors the hub tidy: a
+  renamed mission's old dir is renamed in passing, only when the
+  target is free.
+- **Export + import**: the mission STORE-zip pattern over the whole
+  campaign dir. Export (the campaign editor's options menu): full
+  save first (the settled order), then
+  `exported_campaigns/<uuid>_<name>.zip` (browser download on web).
+  Import (the game_zip staging + marker-poll machinery): extract
+  into `campaigns/` + rescan, with the mission import's caps +
+  name validation; a duplicate campaign uuid imports as a second
+  dir (the scan's latest-wins tolerance), never refused. The Import
+  button lives in BOTH campaign browsers - the editor browser's
+  Campaign tab (the mission-import mirror) and the world-map
+  campaign browser (campaigns are player-facing acquisitions too).
 
 ### Known limitations
 

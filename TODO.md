@@ -433,12 +433,32 @@ work:
           console channel).
     - [ ] 4-4. NPC + exit-marker tools - COMPLETE (4-4a + 4-4b - DONE.md,
           "campaign-editor slice 4-4a" / "campaign-editor slice 4-4b").
-  - [ ] 5. The mission-editor hand-off (campaign context - SETTLED:
-        only the save target (the campaign's missions/) + the
-        world-map return button differ; export unchanged - DESIGN →
-        The campaign editor) + campaign save/export bundling (the
-        STORE-zip pattern; autosave-on-exit settled NO - explicit save
-        only - DONE.md).
+  - [ ] 5. The mission-editor hand-off + campaign export/import
+        (design SETTLED incl. the wiring mechanics - DESIGN → Campaigns
+        & the Campaign Editor → The mission-editor hand-off; the
+        surface settle stands: only the save target + the world-map
+        return button differ, export unchanged; autosave-on-exit
+        settled NO - DONE.md):
+    - [ ] 5-0. Warm-up: the drill-in save rule for the HUB editor -
+          drop the "save the campaign first" gate
+          (resolveCampaignIdentity self-serve + the official-origin
+          root carry + the real campaign_uuid in hub.txt) - the
+          identity machinery 5b repeats, exercised first at the
+          existing save site.
+    - [ ] 5a. The hand-off framing: the open_mission_editor
+          orchestrator (graph-name adoption, reconstruction-cache
+          read, fresh-mission temp-anchor branch) + the campaign
+          context field on the Editor payload + the return
+          transition + the world-map return button + the
+          options-menu variant + the foreign-open-clears-campaign
+          rule.
+    - [ ] 5b. The save path: campaign-context save with the identity
+          self-serve, the mission memo + the mission-editor-owned
+          marker (the full save's lean mission.txt skip), the name
+          dual-write on edit, the mission dir tidy.
+    - [ ] 5c. Campaign export + import (the Import button in BOTH
+          campaign browsers - the editor browser's Campaign tab +
+          the world-map campaign browser).
   - future (post-slice-3 polish): multi-select + multi-reposition of
         hubs on the campaign map (single-select in v1); drag-the-tip
         re-angling of self-loop/dangling stubs (the inspector direction
