@@ -170,6 +170,28 @@ pub fn buildLoadSavePanel(
                     allocator.free(stamp);
                 }
             }
+
+            // The x delete button (every row - saves are all local): the
+            // shared close-button visual, flush right + vertically
+            // centered, emitted LAST so hit-testing prefers it over the
+            // full-row button.
+            const delete_cell: Rectangle = .{
+                .x = cell.x + cell.width - ui_element.close_button_size - ui_gap,
+                .y = cell.y + @divFloor(load_save_row_height - ui_element.close_button_size, 2),
+                .width = ui_element.close_button_size,
+                .height = ui_element.close_button_size,
+            };
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = ui_element.close_button_sprite_id,
+                .screen_position = delete_cell.position(),
+                .width = delete_cell.width,
+                .height = delete_cell.height,
+                .action = .delete_save,
+                .payload = .{ .save_row = @intCast(index) },
+                .tooltip = .{ .body = try allocator.dupe(ui_element.TooltipRow, &.{try @import("tooltip.zig").spanRow(allocator, text(
+                    "Deletes this save - moves the file to deleted/ in the game folder (recoverable by hand)",
+                ))}) },
+            } });
         }
 
         // Scrollbar: track + thumb along the rows region, the shared
@@ -476,6 +498,14 @@ const ListBrowserConfig = struct {
     official_tab_label: []const u8,
     empty_local_text: []const u8,
     empty_official_text: []const u8,
+    /// The row's x delete button (LOCAL rows only - official content is
+    /// embedded + read-only): moves the entry into `deleted/` under the
+    /// persistent dir (the recoverable delete). The row index rides the
+    /// same payload as `row_action`.
+    delete_action: types.Action,
+    /// The x tooltip's noun ("mission" / "campaign") - names what the
+    /// button moves.
+    delete_noun: []const u8,
 };
 
 /// The shared LIST-BROWSER body: the two list tabs + the rows +
@@ -640,6 +670,32 @@ fn buildListBrowserContent(
                     allocator.free(stamp);
                 }
             }
+
+            // The x delete button on LOCAL rows (official content is
+            // embedded + read-only): the shared close-button visual,
+            // flush right + vertically centered. Emitted LAST so
+            // hit-testing prefers it over the full-row button (the
+            // palette-cell convention). One click - the move to deleted/
+            // is recoverable, so no confirm step.
+            if (tab == .local) {
+                const delete_cell: Rectangle = .{
+                    .x = cell.x + cell.width - ui_element.close_button_size - ui_gap,
+                    .y = cell.y + @divFloor(load_save_row_height - ui_element.close_button_size, 2),
+                    .width = ui_element.close_button_size,
+                    .height = ui_element.close_button_size,
+                };
+                try elements.append(allocator, .{ .button = .{
+                    .sprite_id = ui_element.close_button_sprite_id,
+                    .screen_position = delete_cell.position(),
+                    .width = delete_cell.width,
+                    .height = delete_cell.height,
+                    .action = config.delete_action,
+                    .payload = @unionInit(types.ButtonPayload, @tagName(config.row_payload_tag), @as(u32, @intCast(index))),
+                    .tooltip = .{ .body = try allocator.dupe(ui_element.TooltipRow, &.{try @import("tooltip.zig").spanRow(allocator, text(
+                        try std.fmt.allocPrint(allocator, "Deletes this {s} - moves its folder to deleted/ in the game folder (recoverable by hand)", .{config.delete_noun}),
+                    ))}) },
+                } });
+            }
         }
 
         // Scrollbar: track + thumb, the shared emission.
@@ -671,6 +727,8 @@ const mission_list_browser_config = ListBrowserConfig{
     .official_tab_label = "Official",
     .empty_local_text = "No saved missions yet",
     .empty_official_text = "No official missions",
+    .delete_action = .delete_editor_mission,
+    .delete_noun = "mission",
 };
 
 /// The campaign browser's content configuration.
@@ -685,6 +743,8 @@ const campaign_list_browser_config = ListBrowserConfig{
     .official_tab_label = "Official",
     .empty_local_text = "No saved campaigns yet",
     .empty_official_text = "No official campaigns",
+    .delete_action = .delete_campaign,
+    .delete_noun = "campaign",
 };
 
 /// The editor browser's CAMPAIGN content configuration - the campaign
@@ -703,6 +763,8 @@ const editor_campaign_list_browser_config = ListBrowserConfig{
     .official_tab_label = "Official",
     .empty_local_text = "No saved campaigns yet",
     .empty_official_text = "No official campaigns",
+    .delete_action = .delete_campaign,
+    .delete_noun = "campaign",
 };
 
 fn buildMissionBrowserContent(
@@ -1044,6 +1106,78 @@ test "buildEditorBrowser: tabs, rows carry payloads + actions, window + clamp" {
         .{ .r = 50, .g = 50, .b = 50 },
     );
     try std.testing.expectEqual(@as(i32, 0), scroll);
+}
+
+test "buildEditorBrowser: local rows carry the x delete, official rows never" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = @as([95]i32, @splat(50)) };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const MissionEntry = @import("../file_source.zig").FileSource.MissionEntry;
+    const CampaignEntry = @import("../file_source.zig").FileSource.CampaignEntry;
+
+    const missions = [_]MissionEntry{
+        .{ .id = "m", .path = "missions/m", .name = "One", .level_count = 1, .has_custom_assets = false, .author_turns = null, .mtime_ns = 1794681933 * std.time.ns_per_s },
+    };
+    const campaigns = [_]CampaignEntry{.{ .uuid = "u", .dir = "campaigns/c", .name = "One" }};
+
+    // The mission kind, local tab: every row's x rides the row payload.
+    {
+        var scroll: i32 = 0;
+        var campaign_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildEditorBrowser(&elements, allocator, metrics, screen, .mission, &missions, &.{}, .local, &scroll, &.{}, &.{}, .local, &campaign_scroll, .{ .r = 50, .g = 50, .b = 50 });
+        var delete_buttons: usize = 0;
+        var saw_timestamp = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .delete_editor_mission) {
+                delete_buttons += 1;
+                try std.testing.expectEqual(@as(u32, 0), button.payload.?.editor_mission_row);
+                try std.testing.expect(button.tooltip != null);
+            },
+            // The recency label (the entry carries a nonzero mtime).
+            .text_label => |label| if (label.text.len > 0 and label.text[0] == '2') {
+                saw_timestamp = true;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), delete_buttons);
+        try std.testing.expect(saw_timestamp);
+    }
+
+    // The campaign kind, local tab: the shared delete_campaign action.
+    {
+        var scroll: i32 = 0;
+        var campaign_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildEditorBrowser(&elements, allocator, metrics, screen, .campaign, &.{}, &.{}, .local, &scroll, &campaigns, &.{}, .local, &campaign_scroll, .{ .r = 50, .g = 50, .b = 50 });
+        var delete_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .delete_campaign) {
+                delete_buttons += 1;
+                try std.testing.expectEqual(@as(u32, 0), button.payload.?.campaign_row);
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), delete_buttons);
+    }
+
+    // The official tabs: NO delete button (embedded + read-only).
+    {
+        var scroll: i32 = 0;
+        var campaign_scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        defer elements.deinit(allocator);
+        try buildEditorBrowser(&elements, allocator, metrics, screen, .mission, &.{}, &missions, .official, &scroll, &.{}, &.{}, .local, &campaign_scroll, .{ .r = 50, .g = 50, .b = 50 });
+        for (elements.items) |element| switch (element) {
+            .button => |button| try std.testing.expect(button.action != .delete_editor_mission),
+            else => {},
+        };
+    }
 }
 
 test "buildEditorBrowser: empty lists show per-tab placeholders, Back always emitted" {

@@ -765,6 +765,15 @@ pub const Action = enum {
     // unlike the static tool bridges below).
     cycle_editor_tool_forward,
     cycle_editor_tool_backward,
+    // The browser rows' delete buttons (the × in a list row's right edge,
+    // local tabs only): move the entry's directory/file into `deleted/`
+    // under the persistent dir - the recoverable delete (see
+    // FileSource.moveEntryToDeleted). Click-only (payload = the row); the
+    // delete_campaign action serves BOTH campaign lists (the editor
+    // browser's and the world-map campaign browser's - one shared list).
+    delete_editor_mission,
+    delete_campaign,
+    delete_save,
     // Editor tool/palette keyboard shortcuts (Digit1-5, context editor -
     // the first same-combo cross-context pair: Digit1-8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
@@ -1279,6 +1288,8 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         .import_editor_mission,
+        .delete_editor_mission,
+        .delete_campaign,
         => .{ .editor = true, .campaign_editor = true, .hub_editor = true },
         // The tool-cycling chords (Tab / shift+Tab) - all THREE editors
         // (the hub editor's cycle rides the same consumption arm in
@@ -1355,6 +1366,7 @@ fn actionBindingContextsSwitch(action: Action) BindingContextSet {
         .new_game,
         .toggle_load_save_menu,
         .load_save_row,
+        .delete_save,
         .import_save,
         // Import Game (web only, the main-menu button - the defensive
         // future-keybind half, the save_game discipline).
@@ -1650,6 +1662,9 @@ pub fn actionButtonPayload(action: Action) ?ButtonPayloadTag {
         .select_editor_campaign_background => .editor_campaign_background,
         .select_editor_campaign_mission => .editor_campaign_mission,
         .select_editor_campaign_import => .editor_campaign_import,
+        .delete_editor_mission => .editor_mission_row,
+        .delete_campaign => .campaign_row,
+        .delete_save => .save_row,
         .select_editor_mission_tab => .editor_mission_tab,
         .open_editor_mission_row => .editor_mission_row,
         .select_editor_campaign_tab => .campaign_browser_tab,

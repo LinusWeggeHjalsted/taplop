@@ -2350,7 +2350,13 @@ site; `builtin.os.tag` switch):
   reasoning, different platform convention.
 
 Holds `autosave.txt`,
-`saves/`, `logs/`, future `replays/` and `missions/`. Overridable via
+`saves/`, `logs/`, `missions/`, `campaigns/`, and `deleted/` (the browser
+delete's RECOVERABLE trash: a row's × moves the entry's dir/file into
+`deleted/<kind>/` with a deletion timestamp appended - no scan ever touches
+it, so the entry is gone as far as the game is concerned, but the player
+can restore it by hand; see `FileSource.moveEntryToDeleted`). Deleting the
+project OPEN in an editor is fine - the state is in memory and a resave
+recreates the folder (writeFile mkdir -p's its parents). Overridable via
 `--data-dir` flag / `$ZIGLOP_DATA` env var (dev, portable installs, tests);
 the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and

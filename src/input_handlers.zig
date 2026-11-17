@@ -3982,6 +3982,64 @@ pub fn handleAnytimeInput(
                     .mission_path = mission_path,
                 } });
             },
+            // A mission row's x button: move the folder into `deleted/`
+            // under the persistent dir - the RECOVERABLE delete (the
+            // player can restore it by hand; no scan ever touches
+            // deleted/, so the row is gone as far as the game is
+            // concerned). Deleting the mission OPEN in the editor is
+            // fine: the state is in memory and a resave recreates the
+            // folder identically (writeFile mkdir -p's its parents; the
+            // identity is held in memory, not on disk). Local tab only
+            // (official rows emit no x); the rescan drops the row live.
+            .delete_editor_mission => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser)) return;
+                if (history.session.ui_state.editor_mission_browser_tab != .local) return;
+                const row = payloadAs(.editor_mission_row, clicked_payload) orelse return;
+                if (row >= history.session.editor_local_missions.len) return; // stale-list belt
+                const mission_id = allocator.dupe(u8, history.session.editor_local_missions[row].id) catch
+                    @panic("failed to allocate mission id");
+                defer allocator.free(mission_id);
+                file_source_mod.moveEntryToDeleted(history.file_source, allocator, "missions", mission_id) catch {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "failed to move the mission to deleted/",
+                    );
+                    return;
+                };
+                mission_io.rescanEditorMissionsNow(history);
+            },
+            // A campaign row's x button - EITHER surface's rows (the
+            // editor browser's campaign kind and the world-map campaign
+            // browser share one list). The same recoverable-delete
+            // semantics as the mission x; deleting the campaign OPEN in
+            // the editor is fine (resave recreates; the hub-only save
+            // correctly asks for the full save first).
+            .delete_campaign => {
+                const in_editor_browser = history.current_state.ui_surfaces.isSurfaceOpen(.editor_browser);
+                const in_world_map_browser = history.current_state.ui_surfaces.isSurfaceOpen(.campaign_browser);
+                if (!in_editor_browser and !in_world_map_browser) return;
+                // The ACTIVE surface's tab must be local (official rows
+                // emit no x).
+                if (in_editor_browser and history.session.ui_state.editor_campaign_browser_tab != .local) return;
+                if (in_world_map_browser and history.session.ui_state.campaign_browser_tab != .local) return;
+                const row = payloadAs(.campaign_row, clicked_payload) orelse return;
+                if (row >= history.session.campaign_browser_local.len) return; // stale-list belt
+                // The entry's folder name is its dir's last path segment
+                // ("campaigns/<folder>").
+                const campaign_folder = allocator.dupe(
+                    u8,
+                    std.fs.path.basename(history.session.campaign_browser_local[row].dir),
+                ) catch @panic("failed to allocate campaign folder name");
+                defer allocator.free(campaign_folder);
+                file_source_mod.moveEntryToDeleted(history.file_source, allocator, "campaigns", campaign_folder) catch {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "failed to move the campaign to deleted/",
+                    );
+                    return;
+                };
+                shared.rescanCampaignBrowserLists(history);
+            },
             // The campaign content's tab switch (Your Campaigns / Official
             // - the editor browser's campaign kind). Same convention as the
             // mission tabs; its own scroll offset (its own extent).
@@ -4263,6 +4321,26 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_load_save = .{
                     .save_path = save_path,
                 } });
+            },
+            // A save row's x button: the same recoverable delete (the file
+            // moves into deleted/saves/ with a stamp). A deleted save's
+            // in-session state is untouched; deleting the autosave is
+            // fine too (it regenerates).
+            .delete_save => {
+                if (!history.current_state.ui_surfaces.isSurfaceOpen(.load_save_menu)) return;
+                const row = payloadAs(.save_row, clicked_payload) orelse return;
+                if (row >= history.session.save_files.len) return; // stale-list belt
+                const save_name = allocator.dupe(u8, history.session.save_files[row].name) catch
+                    @panic("failed to allocate save name");
+                defer allocator.free(save_name);
+                file_source_mod.moveEntryToDeleted(history.file_source, allocator, "saves", save_name) catch {
+                    history.session.setPendingError(
+                        history.history_arena.allocator(),
+                        "failed to move the save to deleted/",
+                    );
+                    return;
+                };
+                rescanSaveFilesNow(history);
             },
             // Web import: open the browser file picker. The picked file
             // lands in saves/ and the import marker is written; the poll in

@@ -601,6 +601,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_kind_tab,
         .select_editor_mission_tab,
         .open_editor_mission_row,
+        .delete_editor_mission,
+        .delete_campaign,
         .select_editor_campaign_tab,
         .open_editor_campaign_row,
         => player_input.anytime.options_action = action,
@@ -711,6 +713,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // (the editor-browser discipline).
         .toggle_load_save_menu,
         .load_save_row,
+        .delete_save,
         .import_save,
         => player_input.anytime.options_action = action,
         .continue_game,

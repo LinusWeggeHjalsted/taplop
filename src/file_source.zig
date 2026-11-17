@@ -303,6 +303,81 @@ pub fn resolveUuidDir(
     };
 }
 
+/// Move a content entry (a mission/campaign DIRECTORY, or a save FILE)
+/// into `deleted/<kind>/` with a deletion timestamp appended to its name -
+/// the browser delete button. As far as the game is concerned the entry is
+/// GONE: no scan ever touches `deleted/` (the lists iterate `missions/`,
+/// `campaigns/`, `saves/` specifically), so it disappears from every
+/// browser - but the player can recover it by hand (move it back, strip
+/// the stamp). The stamp (the session-log format, UTC) prevents same-name
+/// collisions; a same-second collision appends a counter. A FILE name's
+/// extension stays last ("autosave_20261117_122233.txt" - the id stays
+/// recognizable). `kind_dir` is the entry's owning dir ("missions" /
+/// "campaigns" / "saves"); `name` is the entry's own file/dir name within
+/// it. The `deleted/<kind>/` tree is created as needed; the move is a
+/// rename inside the persistent dir (atomic on native, plain MEMFS on
+/// web - same semantics).
+pub fn moveEntryToDeleted(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+    kind_dir: []const u8,
+    name: []const u8,
+) !void {
+    const session_log = @import("session_log.zig");
+    const stamp = session_log.formatSessionTimestamp(allocator, self.io);
+    defer allocator.free(stamp);
+
+    // Split the extension so the stamp lands before it (files only -
+    // directory names carry no extension by convention).
+    const extension = std.fs.path.extension(name);
+    const stem = name[0 .. name.len - extension.len];
+
+    const deleted_kind_path = std.fmt.allocPrint(allocator, "deleted/{s}", .{kind_dir}) catch
+        @panic("failed to allocate deleted kind path");
+    defer allocator.free(deleted_kind_path);
+    try self.persistent_dir.createDirPath(self.io, deleted_kind_path);
+
+    // Candidate targets: "<stem>_<stamp><extension>", then _2, _3... on a
+    // same-second collision. Existence is CHECKED FIRST: POSIX rename
+    // silently overwrites a same-named FILE (and an empty dir) instead of
+    // erroring, so the stat check is the only collision gate (the game is
+    // single-threaded here - no concurrent deletes can race it).
+    const source_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ kind_dir, name }) catch
+        @panic("failed to allocate delete source path");
+    defer allocator.free(source_path);
+
+    var counter: usize = 0;
+    while (counter < 100) : (counter += 1) {
+        const counter_suffix: []const u8 = if (counter == 0)
+            ""
+        else
+            std.fmt.allocPrint(allocator, "_{d}", .{counter + 1}) catch
+                @panic("failed to allocate delete counter suffix");
+        defer if (counter_suffix.len > 0) allocator.free(counter_suffix);
+
+        const target_name = std.fmt.allocPrint(allocator, "{s}_{s}{s}{s}", .{ stem, stamp, counter_suffix, extension }) catch
+            @panic("failed to allocate deleted target name");
+        defer allocator.free(target_name);
+        const target_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ deleted_kind_path, target_name }) catch
+            @panic("failed to allocate deleted target path");
+        defer allocator.free(target_path);
+
+        const stat = self.persistent_dir.statFile(self.io, target_path, .{});
+        if (stat) |_| {
+            // Taken (same-second delete of an identically-named entry):
+            // the next counter.
+            continue;
+        } else |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+
+        try self.persistent_dir.rename(source_path, self.persistent_dir, target_path, self.io);
+        return;
+    }
+    return error.PathAlreadyExists;
+}
+
 /// Does a file exist in the persistent tier (the player's dir) at this
 /// content-relative path? The editor saves' ORIGIN CHECK: content whose
 /// files exist only in the embedded map is OFFICIAL - saving it forks
@@ -1803,6 +1878,68 @@ test "listOfficialMissions: the shipped campaign missions with paths + metadata"
 // --- tests for listSaveFiles ---
 
 // --- tests for listCampaigns / listOfficialCampaigns ---
+
+test "moveEntryToDeleted: the recoverable delete - dirs, files, name collisions" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-move-to-deleted";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // A mission folder + a save file.
+    file_source.writeFile("missions/alpha/mission.txt", "Metadata\nfile_format_version 3\n") catch @panic("w1");
+    file_source.writeFile("saves/backup.txt", "save bytes") catch @panic("w2");
+
+    // Delete the mission: the folder is GONE from missions/ and lands in
+    // deleted/missions/ with a stamp appended to its name.
+    try moveEntryToDeleted(&file_source, allocator, "missions", "alpha");
+    try testing.expectError(error.FileNotFound, dir.statFile(io, "missions/alpha/mission.txt", .{}));
+    const deleted_missions = try dir.openDir(io, "deleted/missions", .{ .iterate = true });
+    var deleted_names: usize = 0;
+    var first_name: []const u8 = "";
+    var it = deleted_missions.iterate();
+    while (try it.next(io)) |entry| {
+        deleted_names += 1;
+        first_name = entry.name;
+    }
+    try testing.expectEqual(@as(usize, 1), deleted_names);
+    try testing.expect(std.mem.startsWith(u8, first_name, "alpha_"));
+    try testing.expect(first_name.len > "alpha_".len); // the stamp is appended
+
+    // Delete the save FILE: the extension stays LAST (the id stays
+    // recognizable).
+    try moveEntryToDeleted(&file_source, allocator, "saves", "backup.txt");
+    try testing.expectError(error.FileNotFound, dir.statFile(io, "saves/backup.txt", .{}));
+    const deleted_saves = try dir.openDir(io, "deleted/saves", .{ .iterate = true });
+    var save_names: usize = 0;
+    var save_name: []const u8 = "";
+    var save_it = deleted_saves.iterate();
+    while (try save_it.next(io)) |entry| {
+        save_names += 1;
+        save_name = entry.name;
+    }
+    try testing.expectEqual(@as(usize, 1), save_names);
+    try testing.expect(std.mem.startsWith(u8, save_name, "backup_"));
+    try testing.expect(std.mem.endsWith(u8, save_name, ".txt"));
+
+    // A same-name second delete never OVERWRITES: recreate + delete again,
+    // and the deleted/missions dir holds TWO distinct entries (either a
+    // later stamp or the same-second counter suffix).
+    file_source.writeFile("missions/alpha/mission.txt", "Metadata\nfile_format_version 3\n") catch @panic("w3");
+    try moveEntryToDeleted(&file_source, allocator, "missions", "alpha");
+    var deleted_names_after: usize = 0;
+    var it2 = deleted_missions.iterate();
+    while (try it2.next(io)) |_| {
+        deleted_names_after += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), deleted_names_after);
+}
 
 test "listCampaigns: local campaigns with metadata; skips + name fallbacks" {
     const allocator = testing.allocator;

@@ -381,6 +381,7 @@ working rules).
 - [The shipped-defaults binding-lint test + the hub_editor context bugs it caught](#the-shipped-defaults-binding-lint-test--the-hubeditor-context-bugs-it-caught)
 - [swap_hands: the last untested named primitive gets its drain test](#swaphands-the-last-untested-named-primitive-gets-its-drain-test)
 - [Hub editor: the mission-editor mirrors - Tab cycle, Digit1-5, ctrl+O, the options menu, the return button](#hub-editor-the-mission-editor-mirrors---tab-cycle-digit1-5-ctrlo-the-options-menu-the-return-button)
+- [The browser lists: newest-first everywhere, recency timestamps, + the recoverable delete](#the-browser-lists-newest-first-everywhere-recency-timestamps--the-recoverable-delete)
 <!-- doc index: end -->
 
 ## Logging & Replay
@@ -22850,3 +22851,59 @@ works, and the real find behind it was the kind-routing bug above.
 The official campaign row still sits below the fold with 7+ local
 campaigns, so reaching it in a drive needs a scroll the test data's
 list length finally exceeds.
+
+## The browser lists: newest-first everywhere, recency timestamps, + the recoverable delete
+
+The author's polish slice over the browser lists (the mission list, both
+campaign lists, the save list), settled in discussion:
+
+- **Newest-first everywhere**: the campaign lists were the odd one out
+  (name-ascending). `CampaignEntry` gained `mtime_ns` (the max folder-file
+  mtime via the existing `dirMtime` - the MissionEntry discipline), and
+  `campaignEntryOrder` became mtime-descending/name-ascending. Official
+  campaigns carry mtime 0 - the tiebreak keeps their name order. The
+  listCampaigns test was reshaped with sleeps (the mission recency-test
+  pattern): the old name-order assertion passed only by an mtime TIE
+  falling to the tiebreak - a cross-machine fragility. All four lists
+  agree on one order now (missions + saves already sorted).
+- **Recency timestamps**: every row shows the entry's most-recent file
+  mtime right-aligned ("YYYY-MM-DD HH:MM", UTC - the codebase's
+  no-timezone convention, deliberate per discussion; the name sits
+  left-aligned now). `session_log.formatMtimeTimestamp` is pure over its
+  input (the clock is read by callers); official rows show nothing
+  (mtime 0). The timestamp is placed in the zone left of the delete
+  button's reserve, so the delete button's landing didn't move it.
+- **The recoverable delete**: a small × on each LOCAL row's right edge
+  (the shared close-button visual, emitted last so hit-testing prefers it
+  - the palette-cell convention) moves the entry into `deleted/<kind>/`
+  under the persistent dir with a session-log-format deletion timestamp
+  appended (a same-second collision appends a counter; a FILE's
+  extension stays last). No confirm step - the delete is recoverable, so
+  the × is one click (tooltip says where it goes + that it's
+  hand-recoverable). No scan ever touches `deleted/`, so the row is gone
+  as far as the game is concerned; `deleted/` ships in the web Export
+  Game zip (the user's data rides the backup). Three new payload-
+  carrying actions (delete_editor_mission / delete_campaign /
+  delete_save) consumed in the input layer (the saves convention - side
+  effects never in event handlers) with the open arms' stale-index belt +
+  a live rescan. `delete_campaign` serves BOTH campaign surfaces (the
+  editor browser's campaign kind + the world-map campaign browser - one
+  shared list). Deleting the project OPEN in an editor is fine: the
+  state is in memory, a resave recreates the folder (writeFile mkdir -p's
+  its parents - verified), and the hub editor's hub-only save correctly
+  asks for the full campaign save first (its on-disk gate). Official
+  rows never get a × (embedded + read-only).
+
+Tests: the move mechanics (dirs, the file-extension case, the collision
+counter - existence checked by stat first because POSIX rename silently
+OVERWRITES same-named files rather than erroring), the campaign order
+pure fn, the browser structure (× on local rows only, payloads, the
+timestamp label). Runtime-verified over the console channel with a
+throwaway mission + a throwaway save: the × click moved each into
+deleted/ with the stamped name, the row vanished live, and the drive
+artifacts were cleaned (deleted/ removed entirely).
+
+A one-off oddity logged but not chased: one drive's `report ui` counted
+27 visible save rows where every other run (four attempts) shows 14 -
+not reproducible, current behavior deterministic; if it recurs, suspect
+the report's previous-view-state handoff, not the builder.
